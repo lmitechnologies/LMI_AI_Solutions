@@ -1,0 +1,3 @@
+[submodule "yolov5"]
+	path = yolov5
+	url = https://github.com/fringe-ai/yolov5.git
