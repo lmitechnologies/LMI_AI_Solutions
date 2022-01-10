@@ -1,2 +1,7 @@
+#ignore files
 *.pyc
+*.png
+*.pt
 
+#ignore folders
+**/data
