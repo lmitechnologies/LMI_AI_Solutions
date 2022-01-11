@@ -5,6 +5,7 @@
 *.pt
 
 #ignore folders
+**.vscode
 **/data
 **/.ipynb_checkpoints
 **/validation
