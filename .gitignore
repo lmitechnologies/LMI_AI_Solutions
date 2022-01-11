@@ -1,7 +1,12 @@
 #ignore files
 *.pyc
-*.png
+
+#pytorch weights
 *.pt
 
 #ignore folders
 **/data
+**/.ipynb_checkpoints
+**/validation
+**/weights
+
