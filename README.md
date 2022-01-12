@@ -1,1 +1,1 @@
-# object_detectors
+# LMI AI Solutions
