@@ -2,7 +2,7 @@ class Mask:
     """
     the class for polygon mask annotations
     """
-    def __init__(self, im_name, fullpath, category='', x_vals=[], y_vals=[]) -> None:
+    def __init__(self, im_name='', fullpath='', category='', x_vals=[], y_vals=[]) -> None:
         """
         Arguments:
             im_name(str): the image file basename
@@ -16,4 +16,4 @@ class Mask:
         self.category = category
         self.X = x_vals
         self.Y = y_vals
-        
+

@@ -2,7 +2,7 @@ class Rect:
     """
     the rectangle class for bounding box annotations
     """
-    def __init__(self, im_name, fullpath, category='', up_left=[0,0], bottom_right=[0,0]) -> None:
+    def __init__(self, im_name='', fullpath='', category='', up_left=[0,0], bottom_right=[0,0]) -> None:
         """
         Arguments:
             im_name(str): the image file basename
