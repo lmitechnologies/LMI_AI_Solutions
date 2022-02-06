@@ -1,4 +1,7 @@
-class Mask:
+from email.mime import image
+from shape import Shape
+
+class Mask(Shape):
     """
     the class for polygon mask annotations
     """
@@ -11,9 +14,7 @@ class Mask:
             x_vals(list): the x values [x1, x2, ..., xn] of the polygon
             y_vals(list): the y values [y1, y2, ..., yn] of the polygon
         """
-        self.im_name = im_name
-        self.fullpath = fullpath
-        self.category = category
+        super(Mask, self).__init__(image,fullpath,category)
         self.X = x_vals
         self.Y = y_vals
 

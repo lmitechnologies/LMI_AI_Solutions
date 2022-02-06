@@ -1,4 +1,6 @@
-class Rect:
+from shape import Shape
+
+class Rect(Shape):
     """
     the rectangle class for bounding box annotations
     """
@@ -11,8 +13,6 @@ class Rect:
             up_left(list): the up left point [x1,y1] of the bbox
             bottom_right(list): the bottom right point [x2,y2] of the bbox
         """
-        self.im_name = im_name
-        self.fullpath = fullpath
-        self.category = category
+        super(Rect, self).__init__(im_name,fullpath,category)
         self.up_left = up_left
         self.bottom_right = bottom_right
