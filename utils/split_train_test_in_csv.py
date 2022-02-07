@@ -17,7 +17,7 @@ def copy_images(data, out_path) -> None:
             shutil.copy2(mask.fullpath, out_path)
 
 def split_data_in_csv(path_csv, path_img, test_ratio=0.25, rs=777) -> list:
-    data = csv_utils.load_csv(path_csv, path_img)
+    data,class_map = csv_utils.load_csv(path_csv, path_img)
     img_names = list(data.keys())
     train_names,test_names = train_test_split(img_names, test_size=test_ratio, random_state=rs)
     #deal with train
@@ -49,5 +49,5 @@ if __name__ == '__main__':
     ap.add_argument('--test_ratio', default=0.25, help='the ratio of the test dataset')
     args = vars(ap.parse_args())
 
-    train_data, test_data = split_data_in_csv(args['path_csv'], args['path_img'], test_ratio=args['test_ratio'])
+    train_data, test_data = split_data_in_csv(args['path_csv'], args['path_img'], test_ratio=float(args['test_ratio']))
     generate_split_datasets(train_data, test_data, path_out=args['path_out'])
