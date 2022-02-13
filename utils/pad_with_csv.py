@@ -19,6 +19,7 @@ def pad_image_with_csv(input_path,csv_path,output_path,W,H):
         
         input_file = os.path.join(input_path, im_name)
         im = cv2.imread(input_file)
+        h,w = im.shape[:2]
 
         #pad image and shapes
         im_out, pad_l, pad_t = pad_array(im,W,H)
@@ -28,7 +29,12 @@ def pad_image_with_csv(input_path,csv_path,output_path,W,H):
         print('after: ',[(shape.up_left, shape.bottom_right) for shape in shapes])
 
         fname=os.path.splitext(im_name)[0]
-        fname=fname+'_'+str(W)+'x'+str(H)+'.png'
+        if fname.find(str(h)) != -1:
+            fname = fname.replace(str(h),str(H))
+            fname = fname.replace(str(w),str(W))
+        else:
+            fname=fname+'_'+str(W)+'x'+str(H)
+        fname += '.png'
         output_file=os.path.join(output_path,fname)
         print(f'Output file: {output_file}') 
         cv2.imwrite(output_file,im_out)
