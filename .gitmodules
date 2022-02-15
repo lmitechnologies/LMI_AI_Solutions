@@ -1,6 +1,3 @@
 [submodule "yolov5"]
 	path = object_detectors/yolov5
 	url = https://github.com/lmitechnologies/yolov5.git
-[submodule "models"]
-	path = models
-	url = git@github.com:lmitechnologies/models.git
