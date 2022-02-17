@@ -14,7 +14,8 @@ import csv_utils
 
 def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
     """
-    resize images and its annotations
+    resize images and its annotations, while keep the aspect ratio.
+    if the aspect ratio changes, it will generate an error.
     Arguments:
         path_imgs(str): the image folder
         path_csv(str): the path of csv annotation file
@@ -35,7 +36,7 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
         assert ratio_x==ratio_y,'asepect ratio changed'
         
         if im_name.find(f'{input_size[0]}') != -1:
-       	    out_name = im_name.replace('{}'.format(input_size[0]),'{}'.format(output_imsize[0]))
+            out_name = im_name.replace('{}'.format(input_size[0]),'{}'.format(output_imsize[0]))
             out_name = out_name.replace('{}'.format(input_size[1]),'{}'.format(output_imsize[1]))
         else:
             out_name = os.path.splitext(im_name)[0] + f'{output_imsize[0]}x{output_imsize[1]}' + '.png'

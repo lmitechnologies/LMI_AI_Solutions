@@ -18,6 +18,9 @@ from detectron2.data.datasets import register_coco_instances
 def plot(path_img, path_json):
     """
     plot to verify if dataset is loaded correctly
+    arguments:
+        path_img(str): the path to the image folder
+        path_json(str): the path to the json annotation file
     """
     register_coco_instances("dataset", {}, path_json, path_img)
     dataset_dicts = DatasetCatalog.get("dataset")
@@ -33,7 +36,7 @@ if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument('-p','--path_img', required=True, type=str, help='the path to the image folder')
-    ap.add_argument('-i','--path_json', required=True, type=str, help='the path to the json file')
+    ap.add_argument('-i','--path_json', required=True, type=str, help='the path to the json annotation file')
     args = vars(ap.parse_args())
 
     TORCH_VERSION = ".".join(torch.__version__.split(".")[:2])

@@ -12,7 +12,7 @@ class Dataset(object):
     """
     create a coco format dataset from csv file
     """
-    def __init__(self, path_pngs:str, path_csv:str, dt_category:dict, super_category:dict, json_out_path, visualize=True) -> None:
+    def __init__(self, path_pngs:str, path_csv:str, dt_category:dict, super_category:dict, json_out_path, plot=True) -> None:
         super().__init__()
         self.info = {
             "description": "Custom Dataset",
@@ -29,11 +29,17 @@ class Dataset(object):
         #func
         self.add_categories(dt_category, super_category)
         self.add_imgs(path_pngs)
-        self.add_annotations(path_csv, dt_category, visualize)
+        self.add_annotations(path_csv, dt_category, plot)
         self.write_to_json(json_out_path)
 
 
     def add_categories(self, dt_category, super_category={}):
+        """
+        add categories for later writting to json
+        arguments:
+            dt_category(dict): the category dictionary <class name, id>
+            super_category(dict): the super category dictionary
+        """
         for cat in dt_category:
             dt = {}
             dt['supercategory'] = super_category[cat] if cat in super_category else ''
@@ -43,6 +49,11 @@ class Dataset(object):
         
 
     def add_imgs(self, path_imgs):
+        """
+        add images from the path_img
+        arguments:
+            path_imgs(str): the path to image folder
+        """
         files = glob.glob(os.path.join(path_imgs,'*.png'))
         for f in files:
             dt = {}
@@ -59,9 +70,14 @@ class Dataset(object):
             self.images.append(dt)
 
 
-    def add_annotations(self, path_csv, dt_category, visualize, iscrowd=0):
+    def add_annotations(self, path_csv, dt_category, plot, iscrowd=False):
         """
-        assume that each instance is not crowd
+        add annotations from csv, assume that each instance is not crowd
+        arugments:
+            path_csv(str): the path to csv file
+            dt_category(dict): the mapping <category, id>
+            plot(bool): wether to plot or not
+            iscrowd(bool): wether the annotated instance is crowd or not
         """
         masks = {}
         rects = {}
@@ -104,7 +120,7 @@ class Dataset(object):
                 vertex = [float(v) for pt in zip(x,y) for v in pt] #(x1,y1,x2,y2)
                 poly = Polygon([(float(xi),float(yi)) for xi,yi in zip(x,y)])
 
-                if visualize:
+                if plot:
                     self.visualize(poly,fname)
 
                 x_min,y_min,x_max,y_max = poly.bounds
@@ -130,7 +146,7 @@ class Dataset(object):
                 w,h = x2-x1+1, y2-y1+1
                 poly = Polygon([(x1,y1), (x2,y1), (x2,y2), (x1,y2)])
 
-                if visualize:
+                if plot:
                     self.visualize(poly,fname)
 
                 dt['segmentation'] = []
@@ -147,6 +163,8 @@ class Dataset(object):
     def write_to_json(self, json_out_path):
         """
         write the whole dataset to coco json format
+        arguments:
+            json_out_path(str): the path to json output file
         """
         data = {
             'info': self.info, 'licenses': self.licenses, 
@@ -160,6 +178,9 @@ class Dataset(object):
     def visualize(self, polygon, fname):
         """
         visualize the polygon
+        arguments:
+            polygon(object): the polygon mask object
+            fname(str): the file name
         """
         im = cv2.imread(self.fname_to_fullpath[fname])
         h,w = im.shape[:2]
@@ -184,7 +205,7 @@ if __name__ == '__main__':
     ap.add_argument('--path_csv', required=True, type=str, help='the path to the csv file')
     ap.add_argument('--classes', required=True, type=str, help='the class categories in the dataset using comma to separate each category')
     ap.add_argument('--output_json', required=True, type=str, help='the path to the output json file')
-    ap.add_argument('--visualize', default=True, type=lambda x: x in ['True', 'true', '1'])
+    ap.add_argument('--plot', default=True, type=lambda x: x in ['True', 'true', '1'], help='plot the annotations')
     args = vars(ap.parse_args())
 
     #create a dictionary in this format: {'up':1, 'down':2}
@@ -193,4 +214,4 @@ if __name__ == '__main__':
     for cat in args['classes'].split(','):
         category[cat] = id
         id+=1
-    Dataset(args['path_img'], args['path_csv'], dt_category=category, super_category={}, json_out_path=args['output_json'], visualize=args['visualize'])
+    Dataset(args['path_img'], args['path_csv'], dt_category=category, super_category={}, json_out_path=args['output_json'], plot=args['plot'])

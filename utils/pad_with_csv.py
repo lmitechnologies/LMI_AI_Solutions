@@ -8,7 +8,15 @@ from csv_utils import load_csv, write_to_csv
 
 BLACK=(0,0,0)
 
-def pad_image_with_csv(input_path,csv_path,output_path,W,H):
+def pad_image_with_csv(input_path, csv_path, output_path, W, H):
+    """
+    pad the image to the size [W,H] and modify its annotations accordingly
+    arguments:
+        input_path(str): the input image path
+        csv_path(str): the path to the csv annotation file
+        W(int): the width of the output image
+        H(int): the height of the output image
+    """
     if not os.path.isdir(input_path):
         raise Exception(f'input image folder does not exist: {input_path}')
     fname_to_shape, class_map = load_csv(csv_path, input_path)
