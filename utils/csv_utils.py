@@ -1,6 +1,7 @@
 #built-in packages
 import csv
 import collections
+from logging import warning
 import os
 
 #LMI packages
@@ -8,21 +9,28 @@ import mask
 import rect
 
 
-def load_csv(fname, path_img, zero_index=True) -> dict:
+def load_csv(fname, path_img, class_map=None, zero_index=True) -> dict:
     """
     load csv file into a dictionary mapping <image_name, a list of mask objects>
     Arguments:
         fname(str): the input csv file name
         path_img(str): the path to the image folder where its images should be listed in the csv file
-	zero_index(bool): whether the class ID is 0 or 1 indexed, default is True.
+        class_map(dict): map <class, class ID>
+	    zero_index(bool): it's used when class_map is None. whether the class ID is 0 or 1 indexed, default is True.
     Return:
         a dictionary maps <image_name, a list of Mask or Rect objects>
-	class_map(dict): <classname, ID> where IDs are 0-indexed if zero_index is true else 1-indexed.
+	    class_map(dict): <classname, ID> where IDs are 0-indexed if zero_index is true else 1-indexed.
     """
     masks = collections.defaultdict(list)
     rects = collections.defaultdict(list)
-    class_map = {}
-    id = 0 if zero_index else 1
+    if class_map is None:
+        new_map = True
+        class_map = {}
+        id = 0 if zero_index else 1
+    else:
+        new_map = False
+        id = max(class_map.values())+1
+
     with open(fname, newline='') as f:
         reader = csv.reader(f, delimiter=';')
         for row in reader:
@@ -32,6 +40,8 @@ def load_csv(fname, path_img, zero_index=True) -> dict:
             coord_type = row[3]
             coordinates = row[4:]
             if category not in class_map:
+                if not new_map:
+                    warning(f'found new class in the csv: {category}')
                 class_map[category] = id
                 id += 1
 

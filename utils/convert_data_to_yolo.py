@@ -81,16 +81,24 @@ if __name__ =='__main__':
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument('-i', '--path_imgs', type=str, required=True, help='the path of a data folder, where it contains images and a labels.csv file')
+    ap.add_argument('-c','--class_map_json', type=str, help='[optinal] the class map json file')
     ap.add_argument('-o', '--path_out', type=str, required=True, help='the output path')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
+    class_map_file = args['class_map_json']
     csv_file = os.path.join(path_imgs, 'labels.csv')
 
     if not os.path.isfile(csv_file):
         raise Exception(f'cannot find labels.csv in {path_imgs}')
 
-    fname_to_shapes,class_to_id = load_csv(csv_file, path_imgs, zero_index=True)
+    class_map = None
+    if class_map_file:
+        with open(class_map_file) as f:
+            class_map = json.load(f)
+        fname_to_shapes,class_to_id = load_csv(csv_file, path_imgs, class_map)
+    else:
+        fname_to_shapes,class_to_id = load_csv(csv_file, path_imgs, zero_index=True)
     fname_to_rows = convert_to_txt(fname_to_shapes, class_to_id)
 
     #generate output yolo dataset

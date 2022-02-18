@@ -1,6 +1,4 @@
-import csv
 import collections
-from numpy.core.numeric import full
 from sklearn.model_selection import train_test_split
 import os
 

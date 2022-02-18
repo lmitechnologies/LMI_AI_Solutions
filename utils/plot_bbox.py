@@ -10,12 +10,12 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     """
     description: Plots one bounding box on image img,
                  this function comes from YoLov5 project.
-    param: 
-        x:      a box likes [x1,y1,x2,y2]
-        img:    a opencv image object in BGR format
-        color:  color to draw rectangle, such as (0,255,0)
-        label:  str
-        line_thickness: int
+    arguments:
+        x(list):      a box likes [x1,y1,x2,y2]
+        img(np array):    a opencv image object in BGR format
+        color(tuple):  color to draw rectangle, such as (0,255,0)
+        label(str):  the class name
+        line_thickness(int): the thickness of the line
     return:
         no return
     """
@@ -46,13 +46,13 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('-i', '--input_path', required=True, help='the path to the input image folder')
-    ap.add_argument('-c', '--csv_path', required=True, help='the path to the csv file')
+    ap.add_argument('-i', '--input_path', required=True, help='the path to the input image folder, where it has labels.csv')
+    #ap.add_argument('-c', '--csv_path', required=True, help='the path to the csv file')
     ap.add_argument('-o', '--output_path', required=True, help='the path to the output folder')
     args = vars(ap.parse_args())
 
     input_path = args['input_path']
-    csv_path = args['csv_path']
+    csv_path = os.path.join(input_path, 'labels.csv')
     output_path = args['output_path']
 
     if not os.path.isfile(csv_path):
@@ -70,6 +70,6 @@ if __name__ == '__main__':
         im = cv2.imread(shapes[0].fullpath)
         for shape in shapes:
             box = shape.up_left + shape.bottom_right
-            plot_one_box(box, im)
+            plot_one_box(box, im, label=shape.category)
         outname = os.path.join(output_path, im_name)
         cv2.imwrite(outname, im)
