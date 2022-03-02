@@ -9,7 +9,7 @@ import mask
 import rect
 
 
-def load_csv(fname, path_img, class_map=None, zero_index=True) -> dict:
+def load_csv(fname:str, path_img:str, class_map:dict=None, zero_index=True) -> dict:
     """
     load csv file into a dictionary mapping <image_name, a list of mask objects>
     Arguments:
@@ -68,7 +68,7 @@ def load_csv(fname, path_img, class_map=None, zero_index=True) -> dict:
     return masks if masks else rects, class_map
 
 
-def write_to_csv(shapes, filename) -> None:
+def write_to_csv(shapes:dict, filename:str) -> None:
     """
     write a dictionary of list of shapes into a csv file
     Arguments:

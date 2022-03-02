@@ -45,7 +45,7 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--path_img', required=True, type=str, help='the path to the image folder where it contains the labels.csv')
     ap.add_argument('--path_out', required=True, type=str, help='the output path to the train dataset')
-    ap.add_argument('--test_ratio', default=0.25, type=float, help='the ratio of the test dataset, default=0.25')
+    ap.add_argument('--test_ratio', default=0.2, type=float, help='the ratio of the test dataset, default=0.2')
     args = vars(ap.parse_args())
 
     path_csv = os.path.join(args['path_img'],'labels.csv')
