@@ -62,7 +62,8 @@ def write_txts(fname_to_rows, path_txts):
             for class_id, cx, cy, w, h in fname_to_rows[fname]:
                 row2 = '{} {:.4f} {:.4f} {:.4f} {:.4f}\n'.format(class_id, cx, cy, w, h)
                 f.write(row2)
-
+    print(f'[INFO] wrote {len(fname_to_rows)} txt files to {path_txts}')
+    
 
 def copy_images_in_folder(path_img, path_out):
     """
