@@ -43,11 +43,15 @@ def generate_split_datasets(train_data, test_data, path_out):
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_img', required=True, type=str, help='the path to the image folder where it contains the labels.csv')
+    ap.add_argument('--path_img', required=True, type=str, help='the path to the image folder where it contains the "labels.csv"')
     ap.add_argument('--path_out', required=True, type=str, help='the output path to the train dataset')
     ap.add_argument('--test_ratio', default=0.2, type=float, help='the ratio of the test dataset, default=0.2')
     args = vars(ap.parse_args())
-
-    path_csv = os.path.join(args['path_img'],'labels.csv')
-    train_data, test_data = split_data_in_csv(path_csv, args['path_img'], test_ratio=args['test_ratio'])
+    
+    path_img = args['path_img']
+    path_csv = os.path.join(path_img,'labels.csv')
+    #check if annotation exists
+    if not os.path.isfile(path_csv):
+        raise Exception(f'Not found labels.csv in {path_img}')
+    train_data, test_data = split_data_in_csv(path_csv, path_img, test_ratio=args['test_ratio'])
     generate_split_datasets(train_data, test_data, path_out=args['path_out'])

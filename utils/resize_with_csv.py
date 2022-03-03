@@ -27,22 +27,24 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
     file_list = glob.glob(os.path.join(path_imgs, '*.png'))
     shapes,_ = csv_utils.load_csv(path_csv, path_img=path_imgs)
     name_to_im = {}
+    W,H = output_imsize
+    ratio_out = W/H
     for file in file_list:
         im = cv2.imread(file)
         im_name = os.path.basename(file)
-        input_size = im.shape[:2]
-        ratio_x = output_imsize[0]/input_size[0]
-        ratio_y = output_imsize[1]/input_size[1]
-        assert ratio_x==ratio_y,'asepect ratio changed'
+        h,w = im.shape[:2]
         
-        if im_name.find(f'{input_size[0]}') != -1:
-            out_name = im_name.replace('{}'.format(input_size[0]),'{}'.format(output_imsize[0]))
-            out_name = out_name.replace('{}'.format(input_size[1]),'{}'.format(output_imsize[1]))
+        ratio_in = w/h
+        assert ratio_in==ratio_out,f'asepect ratio changed from {ratio_in} to {ratio_out}'
+        
+        if im_name.find(str(h)) != -1 and im_name.find(str(w)) != -1:
+            out_name = im_name.replace(str(h), str(H))
+            out_name = out_name.replace(str(w),str(W))
         else:
-            out_name = os.path.splitext(im_name)[0] + f'{output_imsize[0]}x{output_imsize[1]}' + '.png'
+            out_name = os.path.splitext(im_name)[0] + f'_{W}x{H}' + '.png'
         
-        ratio = ratio_x
-        im2 = cv2.resize(im,dsize=output_imsize)
+        ratio = W/w
+        im2 = cv2.resize(im, dsize=output_imsize)
         name_to_im[out_name] = im2
 
         for i in range(len(shapes[im_name])):
@@ -83,11 +85,10 @@ if __name__=='__main__':
     #resize images with annotation csv file
     name_to_im,shapes = resize_imgs_with_csv(path_imgs, path_csv, output_imsize)
 
-    # clear output path
-    if os.path.isdir(path_out):
-        print(f'found {path_out}, deleting...')
-        shutil.rmtree(path_out)
-    os.makedirs(path_out)
+    # create output path
+    assert path_imgs!=path_out, 'input and output path must be different'
+    if not os.path.isdir(path_out):
+        os.makedirs(path_out)
 
     #write images and csv file
     for im_name in name_to_im:

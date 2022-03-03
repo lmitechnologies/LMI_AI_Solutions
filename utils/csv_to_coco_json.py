@@ -201,12 +201,16 @@ class Dataset(object):
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_img', required=True, type=str, help='the path to the images')
-    ap.add_argument('--path_csv', required=True, type=str, help='the path to the csv file')
+    ap.add_argument('--path_img', required=True, type=str, help='the path to the images, where it has "labels.csv"')
     ap.add_argument('--classes', required=True, type=str, help='the class categories in the dataset using comma to separate each category')
     ap.add_argument('--output_json', required=True, type=str, help='the path to the output json file')
     ap.add_argument('--plot', default=True, type=lambda x: x in ['True', 'true', '1'], help='plot the annotations')
     args = vars(ap.parse_args())
+
+    path_img = args['path_img']
+    path_csv = os.path.join(path_img, 'labels.csv')
+    if not os.path.isfile(path_csv):
+        raise Exception(f'Not found labels.csv in {path_img}')
 
     #create a dictionary in this format: {'up':1, 'down':2}
     id = 1
@@ -214,4 +218,4 @@ if __name__ == '__main__':
     for cat in args['classes'].split(','):
         category[cat] = id
         id+=1
-    Dataset(args['path_img'], args['path_csv'], dt_category=category, super_category={}, json_out_path=args['output_json'], plot=args['plot'])
+    Dataset(path_img, path_csv, dt_category=category, super_category={}, json_out_path=args['output_json'], plot=args['plot'])

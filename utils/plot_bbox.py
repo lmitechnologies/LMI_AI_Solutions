@@ -46,7 +46,7 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('-i', '--input_path', required=True, help='the path to the input image folder, where it has labels.csv')
+    ap.add_argument('-i', '--input_path', required=True, help='the path to the input image folder, where it has "labels.csv"')
     #ap.add_argument('-c', '--csv_path', required=True, help='the path to the csv file')
     ap.add_argument('-o', '--output_path', required=True, help='the path to the output folder')
     args = vars(ap.parse_args())
@@ -56,7 +56,7 @@ if __name__ == '__main__':
     output_path = args['output_path']
 
     if not os.path.isfile(csv_path):
-        raise Exception(f'the csv file does not exist: {csv_path}')
+        raise Exception(f'Not found labels.csv in {input_path}')
 
     assert input_path!=output_path, 'output path must be different with input path'
 
