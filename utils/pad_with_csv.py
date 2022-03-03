@@ -32,10 +32,10 @@ def pad_image_with_csv(input_path, csv_path, output_path, W, H):
         #pad image and shapes
         im_out, pad_l, pad_t = fit_array_to_size(im,W,H)
         shapes = fname_to_shape[im_name]
-        print('[INFO] before: ',[(s.up_left, s.bottom_right) for s in shapes])
+        print('[INFO] before: ',[s.up_left+s.bottom_right for s in shapes])
         shapes = fit_shapes_to_size(shapes, pad_l, pad_t)
         shapes = chop_shapes(shapes, W, H)
-        print('[INFO] after: ',[(s.up_left, s.bottom_right) for s in shapes])
+        print('[INFO] after: ',[s.up_left+s.bottom_right for s in shapes])
 
         fname=os.path.splitext(im_name)[0]
         if fname.find(str(h)) != -1 and fname.find(str(w)) != -1:
@@ -70,12 +70,13 @@ def chop_shapes(shapes, W, H):
             print(f'[*WARNING] bbox [{x1},{y1},{x2},{y2}] is outside of the size [{W},{H}]')
             to_del.append(i)
         else:
-            x2 = min(x2,W)
-            y2 = min(y2,H)
-            if x2==W or y2==H:
-                print(f'[*WARNING] chopped to fit in the size [{W}, {H}]')
-    shapes[to_del] = []
-    return shapes.tolist()
+            nx = min(x2,W)
+            ny = min(y2,H)
+            shapes[i].bottom_right = [nx,ny]
+            if nx==W or ny==H:
+                print(f'[*WARNING] bbox [{x1},{y1},{x2},{y2}] is chopped to fit in the size [{W}, {H}]')
+    new_shapes = np.delete(shapes,to_del,axis=0)
+    return new_shapes.tolist()
     
 def fit_shapes_to_size(shapes, pad_l, pad_t):
     """
