@@ -7,7 +7,7 @@ import argparse
 import csv
 
 
-def csv_to_dictionary(csv_file: str,object_classes: str) -> list:
+def csv_to_dictionary(csv_file: str,object_classes: str):
     '''
     DESCRIPTION: 
         Converts a .csv file with image paths, labels, and ROIs to a python dictionary.

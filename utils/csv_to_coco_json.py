@@ -12,7 +12,7 @@ class Dataset(object):
     """
     create a coco format dataset from csv file
     """
-    def __init__(self, path_pngs:str, path_csv:str, dt_category:dict, super_category:dict, json_out_path, plot=True) -> None:
+    def __init__(self, path_pngs:str, path_csv:str, dt_category:dict, super_category:dict, json_out_path, plot=True):
         super().__init__()
         self.info = {
             "description": "Custom Dataset",

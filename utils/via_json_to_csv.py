@@ -61,11 +61,11 @@ def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name
                                 y_ul=yj.min()
                                 x_lr=xj.max()
                                 y_lr=yj.max()
-                                labelWriter.writerow([fname,label,'rect','upper left',x_ul,y_ul])
-                                labelWriter.writerow([fname,label,'rect','lower right',x_lr,y_lr])
+                                labelWriter.writerow([fname,label, '1.0', 'rect','upper left',x_ul,y_ul])
+                                labelWriter.writerow([fname,label, '1.0', 'rect','lower right',x_lr,y_lr])
                             else:         
-                                labelWriter.writerow([fname,label,'polygon','x values']+xj)
-                                labelWriter.writerow([fname,label,'polygon','y values']+yj)
+                                labelWriter.writerow([fname,label, '1.0', 'polygon','x values']+xj)
+                                labelWriter.writerow([fname,label, '1.0', 'polygon','y values']+yj)
                         # test for simple bounding box region
                         elif regions[j]['shape_attributes']['name']=='rect':
                             xj=regions[j]['shape_attributes']['x']
@@ -76,8 +76,8 @@ def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name
                             y_ul=yj
                             x_lr=xj+wj
                             y_lr=yj+hj
-                            labelWriter.writerow([fname,label,'rect','upper left',x_ul,y_ul])
-                            labelWriter.writerow([fname,label,'rect','lower right',x_lr,y_lr])
+                            labelWriter.writerow([fname,label, '1.0', 'rect','upper left',x_ul,y_ul])
+                            labelWriter.writerow([fname,label, '1.0', 'rect','lower right',x_lr,y_lr])
                         else:
                             raise Exception('Unsupported label type.  polygon and rect supported.')
 
@@ -91,8 +91,8 @@ def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name
                         y_ul=yj
                         x_lr=xj+wj
                         y_lr=yj+hj
-                        labelWriter.writerow([fname,label,'rect','upper left',x_ul,y_ul])
-                        labelWriter.writerow([fname,label,'rect','lower right',x_lr,y_lr])
+                        labelWriter.writerow([fname,label, '1.0', 'rect','upper left',x_ul,y_ul])
+                        labelWriter.writerow([fname,label, '1.0', 'rect','lower right',x_lr,y_lr])
                     
                     if render:
                         # display image

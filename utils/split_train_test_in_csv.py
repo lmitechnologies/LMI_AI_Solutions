@@ -6,7 +6,7 @@ import os
 import csv_utils
 
 
-def copy_images(data, out_path) -> None:
+def copy_images(data, out_path):
     import shutil
     if not os.path.isdir(out_path):
         os.makedirs(out_path)
@@ -14,7 +14,7 @@ def copy_images(data, out_path) -> None:
         for mask in data[im_name]:
             shutil.copy2(mask.fullpath, out_path)
 
-def split_data_in_csv(path_csv, path_img, test_ratio=0.25, rs=777) -> list:
+def split_data_in_csv(path_csv, path_img, test_ratio=0.25, rs=777):
     data,class_map = csv_utils.load_csv(path_csv, path_img)
     img_names = list(data.keys())
     train_names,test_names = train_test_split(img_names, test_size=test_ratio, random_state=rs)

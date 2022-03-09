@@ -9,7 +9,7 @@ import mask
 import rect
 
 
-def load_csv(fname:str, path_img:str, class_map:dict=None, zero_index=True) -> dict:
+def load_csv(fname:str, path_img:str, class_map:dict=None, zero_index:bool=True):
     """
     load csv file into a dictionary mapping <image_name, a list of mask objects>
     Arguments:
@@ -36,9 +36,10 @@ def load_csv(fname:str, path_img:str, class_map:dict=None, zero_index=True) -> d
         for row in reader:
             im_name = row[0]
             category = row[1]
-            shape_type = row[2]
-            coord_type = row[3]
-            coordinates = row[4:]
+            confidence = row[2]
+            shape_type = row[3]
+            coord_type = row[4]
+            coordinates = row[5:]
             if category not in class_map:
                 if not new_map:
                     warning(f'found new class in the csv: {category}')
@@ -47,7 +48,7 @@ def load_csv(fname:str, path_img:str, class_map:dict=None, zero_index=True) -> d
 
             if shape_type=='polygon':
                 if coord_type=='x values':
-                    M = mask.Mask(im_name=im_name, fullpath=os.path.join(path_img,im_name), category=category)
+                    M = mask.Mask(im_name=im_name, fullpath=os.path.join(path_img,im_name), category=category, confidence=confidence)
                     M.X = list(map(int,coordinates))
                 elif coord_type=='y values':
                     assert(im_name==M.im_name)
@@ -57,7 +58,7 @@ def load_csv(fname:str, path_img:str, class_map:dict=None, zero_index=True) -> d
                     raise Exception("invalid keywords: {}".format(coord_type))
             elif shape_type=='rect':
                 if coord_type=='upper left':
-                    R = rect.Rect(im_name=im_name, fullpath=os.path.join(path_img,im_name), category=category)
+                    R = rect.Rect(im_name=im_name, fullpath=os.path.join(path_img,im_name), category=category, confidence=confidence)
                     R.up_left = list(map(int,coordinates))
                 elif coord_type=='lower right':
                     assert(im_name==R.im_name)
@@ -68,7 +69,7 @@ def load_csv(fname:str, path_img:str, class_map:dict=None, zero_index=True) -> d
     return masks if masks else rects, class_map
 
 
-def write_to_csv(shapes:dict, filename:str) -> None:
+def write_to_csv(shapes:dict, filename:str):
     """
     write a dictionary of list of shapes into a csv file
     Arguments:
@@ -80,11 +81,11 @@ def write_to_csv(shapes:dict, filename:str) -> None:
         for im_name in shapes:
             for shape in shapes[im_name]:
                 if isinstance(shape, rect.Rect):
-                    writer.writerow([shape.im_name, shape.category, 'rect', 'upper left'] + shape.up_left)
-                    writer.writerow([shape.im_name, shape.category, 'rect', 'lower right'] + shape.bottom_right)
+                    writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'rect', 'upper left'] + shape.up_left)
+                    writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'rect', 'lower right'] + shape.bottom_right)
                 elif isinstance(shape, mask.Mask):
-                    writer.writerow([shape.im_name, shape.category, 'polygon', 'x values'] + shape.X)
-                    writer.writerow([shape.im_name, shape.category, 'polygon', 'y values'] + shape.Y)
+                    writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'polygon', 'x values'] + shape.X)
+                    writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'polygon', 'y values'] + shape.Y)
                 else:
                     raise Exception("Found unsupported classes. Supported classes are mask and rect")
                     
