@@ -35,8 +35,8 @@ def plot(path_img, path_json):
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('-p','--path_img', required=True, type=str, help='the path to the image folder')
-    ap.add_argument('-i','--path_json', required=True, type=str, help='the path to the json annotation file')
+    ap.add_argument('--path_img', required=True, type=str, help='the path to the image folder')
+    ap.add_argument('--path_json', required=True, type=str, help='the path to the json annotation file')
     args = vars(ap.parse_args())
 
     TORCH_VERSION = ".".join(torch.__version__.split(".")[:2])

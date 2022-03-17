@@ -65,9 +65,10 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
 if __name__=='__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('-i', '--path_imgs', type=str, required=True, help='the path to images and the labels.csv file')
+    ap.add_argument('--path_imgs', type=str, required=True, help='the path to images')
+    ap.add_argument('--path_csv', type=str, required=True, help='the path of a csv file that corresponds to path_imgs')
     ap.add_argument('--out_imsz', type=str, required=True, help='the output image size [w,h], w and h are separated by a comma')
-    ap.add_argument('-o', '--path_out', type=str, required=True, help='the path to resized images')
+    ap.add_argument('--path_out', type=str, required=True, help='the path to resized images')
     args = vars(ap.parse_args())
 
     output_imsize = list(map(int,args['out_imsz'].split(',')))
@@ -75,12 +76,12 @@ if __name__=='__main__':
     print(f'output image size: {output_imsize}')
     
     path_imgs = args['path_imgs']
-    path_csv = os.path.join(path_imgs, 'labels.csv')
+    path_csv = args['path_csv']
     path_out = args['path_out']
     
     #check if annotation exists
     if not os.path.isfile(path_csv):
-        raise Exception(f'cannot find labels.csv in {path_imgs}')
+        raise Exception(f'cannot find file: {path_csv}')
 
     #resize images with annotation csv file
     name_to_im,shapes = resize_imgs_with_csv(path_imgs, path_csv, output_imsize)

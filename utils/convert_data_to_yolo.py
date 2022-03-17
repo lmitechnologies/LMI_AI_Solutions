@@ -81,17 +81,18 @@ def copy_images_in_folder(path_img, path_out):
 if __name__ =='__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('-i', '--path_imgs', type=str, required=True, help='the path of a data folder, where it contains images and a labels.csv file')
-    ap.add_argument('-c','--class_map_json', type=str, help='[optinal] the class map json file')
-    ap.add_argument('-o', '--path_out', type=str, required=True, help='the output path')
+    ap.add_argument('--path_imgs', type=str, required=True, help='the path of a image folder')
+    ap.add_argument('--path_csv', type=str, required=True, help='the path of a csv file that corresponds to path_imgs')
+    ap.add_argument('--class_map_json', type=str, help='[optinal] the class map json file')
+    ap.add_argument('--path_out', type=str, required=True, help='the output path')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
     class_map_file = args['class_map_json']
-    csv_file = os.path.join(path_imgs, 'labels.csv')
+    csv_file = args['path_csv']
 
     if not os.path.isfile(csv_file):
-        raise Exception(f'cannot find labels.csv in {path_imgs}')
+        raise Exception(f'Not found file: {csv_file}')
 
     class_map = None
     if class_map_file:

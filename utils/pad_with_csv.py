@@ -138,14 +138,15 @@ def fit_array_to_size(im,W,H):
 
 if __name__=="__main__":
     ap=argparse.ArgumentParser()
-    ap.add_argument('-i', '--image_path', required=True, help='the path to the images and a "labels.csv" file')
-    ap.add_argument('-o', '--output_path', required=True, help='the output path')
+    ap.add_argument('--path_imgs', required=True, help='the path to the images')
+    ap.add_argument('--path_csv', type=str, required=True, help='the path of a csv file that corresponds to path_imgs')
+    ap.add_argument('--output_path', required=True, help='the output path')
     ap.add_argument('--W', type=int, required=True, help='the target width after padding/chopping')
     ap.add_argument('--H', type=int, required=True, help='the target height after padding/chopping')
     args=vars(ap.parse_args())
 
-    input_path = args['image_path']
-    csv_path = os.path.join(input_path, 'labels.csv')
+    input_path = args['path_imgs']
+    csv_path = args['path_csv']
     if not os.path.isfile(csv_path):
         raise Exception(f'Not found labels.csv in {input_path}')
     output_path=args['output_path']
