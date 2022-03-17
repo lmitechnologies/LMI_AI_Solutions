@@ -148,7 +148,7 @@ if __name__=="__main__":
     input_path = args['path_imgs']
     csv_path = args['path_csv']
     if not os.path.isfile(csv_path):
-        raise Exception(f'Not found labels.csv in {input_path}')
+        raise Exception(f'Not found file: {csv_path}')
     output_path=args['output_path']
     W=args['W']
     H=args['H']
