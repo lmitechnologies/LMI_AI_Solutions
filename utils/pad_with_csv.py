@@ -139,22 +139,22 @@ def fit_array_to_size(im,W,H):
 if __name__=="__main__":
     ap=argparse.ArgumentParser()
     ap.add_argument('--path_imgs', required=True, help='the path to the images')
-    ap.add_argument('--path_csv', type=str, required=True, help='the path of a csv file that corresponds to path_imgs')
+    ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--output_path', required=True, help='the output path')
     ap.add_argument('--W', type=int, required=True, help='the target width after padding/chopping')
     ap.add_argument('--H', type=int, required=True, help='the target height after padding/chopping')
     args=vars(ap.parse_args())
 
-    input_path = args['path_imgs']
-    csv_path = args['path_csv']
-    if not os.path.isfile(csv_path):
-        raise Exception(f'Not found file: {csv_path}')
+    path_imgs = args['path_imgs']
+    path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
+    if not os.path.isfile(path_csv):
+        raise Exception(f'Not found file: {path_csv}')
     output_path=args['output_path']
     W=args['W']
     H=args['H']
 
-    assert input_path!=output_path, 'input and output path must be different'
+    assert path_imgs!=output_path, 'input and output path must be different'
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     
-    pad_image_with_csv(input_path,csv_path,output_path,W,H)
+    pad_image_with_csv(path_imgs,path_csv,output_path,W,H)

@@ -201,15 +201,15 @@ class Dataset(object):
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_imgs', required=True, type=str, help='the path to the images')
-    ap.add_argument('--path_csv', type=str, required=True, help='the path of a csv file that corresponds to path_imgs')
-    ap.add_argument('--classes', required=True, type=str, help='the class categories in the dataset using comma to separate each category')
-    ap.add_argument('--output_json', required=True, type=str, help='the path to the output json file')
+    ap.add_argument('--path_imgs', required=True, help='the path to the images')
+    ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
+    ap.add_argument('--classes', required=True, help='the class categories in the dataset using comma to separate each category')
+    ap.add_argument('--output_json', required=True, help='the path to the output json file')
     ap.add_argument('--plot', default=True, type=lambda x: x in ['True', 'true', '1'], help='plot the annotations')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
-    path_csv = args['path_csv']
+    path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
     if not os.path.isfile(path_csv):
         raise Exception(f'Not found file: {path_csv}')
 

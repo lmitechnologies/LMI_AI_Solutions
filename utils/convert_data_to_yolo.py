@@ -81,33 +81,31 @@ def copy_images_in_folder(path_img, path_out):
 if __name__ =='__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_imgs', type=str, required=True, help='the path of a image folder')
-    ap.add_argument('--path_csv', type=str, required=True, help='the path of a csv file that corresponds to path_imgs')
-    ap.add_argument('--class_map_json', type=str, help='[optinal] the class map json file')
-    ap.add_argument('--path_out', type=str, required=True, help='the output path')
+    ap.add_argument('--path_imgs', required=True, help='the path of a image folder')
+    ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
+    ap.add_argument('--class_map_json', help='[optinal] the class map json file')
+    ap.add_argument('--path_out', required=True, help='the output path')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
     class_map_file = args['class_map_json']
-    csv_file = args['path_csv']
+    path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
 
-    if not os.path.isfile(csv_file):
-        raise Exception(f'Not found file: {csv_file}')
+    if not os.path.isfile(path_csv):
+        raise Exception(f'Not found file: {path_csv}')
 
     class_map = None
     if class_map_file:
         with open(class_map_file) as f:
             class_map = json.load(f)
-        fname_to_shapes,class_to_id = load_csv(csv_file, path_imgs, class_map)
+        fname_to_shapes,class_to_id = load_csv(path_csv, path_imgs, class_map)
     else:
-        fname_to_shapes,class_to_id = load_csv(csv_file, path_imgs, zero_index=True)
+        fname_to_shapes,class_to_id = load_csv(path_csv, path_imgs, zero_index=True)
     fname_to_rows = convert_to_txt(fname_to_shapes, class_to_id)
 
     #generate output yolo dataset
-    if os.path.isdir(args['path_out']):
-        print('found output folder, deleting...')
-        shutil.rmtree(args['path_out'])
-    os.makedirs(args['path_out'])
+    if not os.path.isdir(args['path_out']):
+        os.makedirs(args['path_out'])
 
     #write class map file
     fname = os.path.join(args['path_out'], 'class_map.json')

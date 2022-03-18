@@ -46,24 +46,24 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('--input_path', required=True, help='the path to the input image folder')
-    ap.add_argument('--csv_path', required=True, help='the path to the csv file')
+    ap.add_argument('--path_imgs', required=True, help='the path to the input image folder')
+    ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--output_path', required=True, help='the path to the output folder')
     args = vars(ap.parse_args())
 
-    input_path = args['input_path']
-    csv_path = args['csv_path']
+    path_imgs = args['path_imgs']
+    path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
     output_path = args['output_path']
 
-    if not os.path.isfile(csv_path):
-        raise Exception(f'Not found file: {csv_path}')
+    if not os.path.isfile(path_csv):
+        raise Exception(f'Not found file: {path_csv}')
 
-    assert input_path!=output_path, 'output path must be different with input path'
+    assert path_imgs!=output_path, 'output path must be different with input path'
 
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
 
-    fname_to_shape, class_map = load_csv(csv_path, input_path)
+    fname_to_shape, class_map = load_csv(path_csv, path_imgs)
     for im_name in fname_to_shape:
         print(f'[FILE] {im_name}')
         shapes = fname_to_shape[im_name]
