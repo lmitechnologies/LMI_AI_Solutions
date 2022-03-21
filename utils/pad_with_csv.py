@@ -2,7 +2,6 @@ import cv2
 import os
 import argparse
 import numpy as np
-import shutil
 import glob
 from csv_utils import load_csv, write_to_csv
 
@@ -21,22 +20,19 @@ def pad_image_with_csv(input_path, csv_path, output_path, W, H):
         raise Exception(f'input image folder does not exist: {input_path}')
     fname_to_shape, class_map = load_csv(csv_path, input_path)
 
+    cnt = 0
     output_shapes = {}
-    for im_name in fname_to_shape:
+    img_paths = glob.glob(os.path.join(input_path, '*.png'))
+    for path in img_paths:
+        im_name = os.path.basename(path)
         print(f'[INFO] Input file: {im_name}')
         
         input_file = os.path.join(input_path, im_name)
         im = cv2.imread(input_file)
         h,w = im.shape[:2]
 
-        #pad image and shapes
+        #pad image and save it
         im_out, pad_l, pad_t = fit_array_to_size(im,W,H)
-        shapes = fname_to_shape[im_name]
-        print('[INFO] before: ',[s.up_left+s.bottom_right for s in shapes])
-        shapes = fit_shapes_to_size(shapes, pad_l, pad_t)
-        shapes = chop_shapes(shapes, W, H)
-        print('[INFO] after: ',[s.up_left+s.bottom_right for s in shapes])
-
         fname=os.path.splitext(im_name)[0]
         if fname.find(str(h)) != -1 and fname.find(str(w)) != -1:
             fname = fname.replace(str(h),str(H))
@@ -45,13 +41,26 @@ def pad_image_with_csv(input_path, csv_path, output_path, W, H):
             fname=fname+'_'+str(W)+'x'+str(H)
         fname += '.png'
         output_file=os.path.join(output_path,fname)
-        print(f'[INFO] Output file: {output_file}\n') 
+        print(f'[INFO] Output file: {output_file}') 
         cv2.imwrite(output_file,im_out)
+
+        #pad shapes
+        if im_name not in fname_to_shape:
+            print('No shapes found, skipping...\n')
+            cnt += 1
+            continue
+        shapes = fname_to_shape[im_name]
+        #print('[INFO] before: ',[s.up_left+s.bottom_right for s in shapes])
+        shapes = fit_shapes_to_size(shapes, pad_l, pad_t)
+        shapes = chop_shapes(shapes, W, H)
+        #print('[INFO] after: ',[s.up_left+s.bottom_right for s in shapes])
+        print()
 
         #modify the image name 
         for shape in shapes:
             shape.im_name = fname
         output_shapes[fname] = shapes
+    print(f'[INFO] found {cnt} images with no bbox')
     output_csv = os.path.join(output_path, "labels.csv")
     write_to_csv(output_shapes, output_csv)
     
@@ -140,7 +149,7 @@ if __name__=="__main__":
     ap=argparse.ArgumentParser()
     ap.add_argument('--path_imgs', required=True, help='the path to the images')
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
-    ap.add_argument('--output_path', required=True, help='the output path')
+    ap.add_argument('--path_out', required=True, help='the output path')
     ap.add_argument('--W', type=int, required=True, help='the target width after padding/chopping')
     ap.add_argument('--H', type=int, required=True, help='the target height after padding/chopping')
     args=vars(ap.parse_args())
@@ -149,7 +158,7 @@ if __name__=="__main__":
     path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
     if not os.path.isfile(path_csv):
         raise Exception(f'Not found file: {path_csv}')
-    output_path=args['output_path']
+    output_path=args['path_out']
     W=args['W']
     H=args['H']
 

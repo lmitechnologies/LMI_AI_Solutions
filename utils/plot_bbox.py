@@ -48,12 +48,12 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--path_imgs', required=True, help='the path to the input image folder')
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
-    ap.add_argument('--output_path', required=True, help='the path to the output folder')
+    ap.add_argument('--path_out', required=True, help='the path to the output folder')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
     path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
-    output_path = args['output_path']
+    output_path = args['path_out']
 
     if not os.path.isfile(path_csv):
         raise Exception(f'Not found file: {path_csv}')

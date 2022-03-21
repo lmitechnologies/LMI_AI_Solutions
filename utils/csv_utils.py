@@ -42,9 +42,12 @@ def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=Tr
             coordinates = row[5:]
             if category not in class_map:
                 if not new_map:
-                    warning(f'found new class in the csv: {category}')
-                class_map[category] = id
-                id += 1
+                    warning(f'found new class in the {fname}: {category}, skip')
+                    continue
+                else:
+                    warning(f'found new class in the {fname}: {category}, add to class_map')
+                    class_map[category] = id
+                    id += 1
             fullpath = os.path.join(path_img,im_name) if path_img else ''
             if shape_type=='polygon':
                 if coord_type=='x values':

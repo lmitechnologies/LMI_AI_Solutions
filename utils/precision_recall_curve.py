@@ -98,7 +98,7 @@ def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=
             # not found any bbox found
             if not m_pred.sum():
                 if m_label.sum():
-                    print(f'FN found in class: {c}, filename: {fname}')
+                    #print(f'FN found in class: {c}, filename: {fname}')
                     FN_im[c] += 1
                     FN[c] += m_label.sum()
 
@@ -185,6 +185,7 @@ if __name__ == '__main__':
         raise Exception(f'Not found the "labels.csv" in {os.path.dirname(label_csv)}')
 
     label_dt,class_map = csv_utils.load_csv(label_csv)
+    print(f'found class map: {class_map}')
     pred_dt,_ = csv_utils.load_csv(model_csv, class_map=class_map)
     confs = set([shape.confidence for fname in pred_dt for shape in pred_dt[fname]])
     #X = [0.2]
