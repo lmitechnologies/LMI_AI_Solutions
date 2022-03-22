@@ -45,7 +45,7 @@ def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=Tr
                     warning(f'found new class in the {fname}: {category}, skip')
                     continue
                 else:
-                    warning(f'found new class in the {fname}: {category}, add to class_map')
+                    #warning(f'found new class in the {fname}: {category}, add to class_map')
                     class_map[category] = id
                     id += 1
             fullpath = os.path.join(path_img,im_name) if path_img else ''
