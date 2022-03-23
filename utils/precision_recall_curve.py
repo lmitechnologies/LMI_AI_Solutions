@@ -56,9 +56,9 @@ def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=
     # get TP (num of tp), FP(num of fp) and GT(num of ground truth)
     TP,FP,GT,FN = collections.defaultdict(int),collections.defaultdict(int),collections.defaultdict(int),collections.defaultdict(int)
     TP_im,FP_im,GT_im,FN_im = collections.defaultdict(int),collections.defaultdict(int),collections.defaultdict(int),collections.defaultdict(int)
-    # TODO: deal with found detects but no GT
+    
     fnames = set([f for f in label_dt]+[f for f in pred_dt])
-    total_imgs = len(label_dt)
+    total_imgs = len(fnames)
     cnt = 0
     for fname in fnames:
         #bbox: [x1,y1,x2,y2]
@@ -91,14 +91,12 @@ def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=
             # no GT labels
             if not m_label.sum():
                 if m_pred.sum():
-                    #print(f'fp: in {fname}, no GT but found detection')
                     FP_im[c] += 1
                     FP[c] += m_pred.sum()
 
             # not found any bbox found
             if not m_pred.sum():
                 if m_label.sum():
-                    #print(f'FN found in class: {c}, filename: {fname}')
                     FN_im[c] += 1
                     FN[c] += m_label.sum()
 
@@ -107,15 +105,19 @@ def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=
 
             ious = bbox_iou(bbox_pred[m_pred,:], bbox_label[m_label,:])
             M = np.max(ious, axis=1) >= threshold_iou
+            N = np.max(ious, axis=0) < threshold_iou
+
+            if N.sum():
+                FN_im[c] += 1
+                FN[c] += N.sum()
 
             if M.sum():
                 TP_im[c] += 1
             else:
-                #print(f'fp: in {fname}, lower than threshold')
                 FP_im[c] += 1 
             TP[c] += M.sum()
             FP[c] += (~M).sum()
-    print(f'found {cnt} images has GT but not found any detections')
+
     print(f'threshold_iou: {threshold_iou}, threshold_conf: {threshold_conf}')
     #calcualte precision and recall
     epsilon=1e-16
@@ -169,13 +171,13 @@ if __name__ == '__main__':
     parse.add_argument('--label_csv', required=True, help='the path to the ground truth csv')
     parse.add_argument('--threshold_iou', type=float, default=0.5, help='the iou threshold, default=0.5')
     parse.add_argument('--image_level', action='store_true', help='calculate the precision and recall on image level')
-    parse.add_argument('--out_path', required=True, help='the output path for storing Precision and Recall figures')
+    parse.add_argument('--path_out', required=True, help='the output path for storing Precision and Recall figures')
     args = vars(parse.parse_args())
 
     threshold_iou = args['threshold_iou']
     model_csv = args['model_csv']
     label_csv = args['label_csv']
-    out_path = args['out_path']
+    out_path = args['path_out']
     image_level = args['image_level']
 
     if not os.path.isfile(model_csv):
