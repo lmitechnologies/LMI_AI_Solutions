@@ -35,7 +35,7 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
         im_out, pad_l, pad_t = fit_array_to_size(im,W,H)
 
         #create output fname
-        l_name = im_name.split('_')
+        l_name = os.path.splitext(im_name)[0].split('_')
         fname = '_'.join(l_name[:-1])
         suffix = l_name[-1]
         if suffix.find(str(h)) != -1 and suffix.find(str(w)) != -1:
@@ -43,7 +43,7 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
             suffix = suffix.replace(str(w),str(W),1)
         else:
             suffix = suffix+'_'+str(W)+'x'+str(H)
-        fname += '_'+suffix
+        fname += '_'+suffix+'.png'
         output_file=os.path.join(output_path,fname)
         print(f'[INFO] Output file: {output_file}') 
         cv2.imwrite(output_file,im_out)
