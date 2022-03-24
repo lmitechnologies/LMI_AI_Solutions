@@ -46,7 +46,7 @@ if __name__ == '__main__':
     ap.add_argument('--path_imgs', required=True, help='the path to the image folder')
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--path_out', required=True, help='the output path to the train dataset')
-    ap.add_argument('--test_ratio', default=0.2, type=float, help='the ratio of the test dataset, default=0.2')
+    ap.add_argument('--test_ratio', default=0.2, type=float, help='[optinal] the ratio of the test dataset, default=0.2')
     args = vars(ap.parse_args())
     
     path_imgs = args['path_imgs']
