@@ -1,3 +1,4 @@
+from mimetypes import suffix_map
 import cv2
 import os
 import argparse
@@ -7,39 +8,41 @@ from csv_utils import load_csv, write_to_csv
 
 BLACK=(0,0,0)
 
-def pad_image_with_csv(input_path, csv_path, output_path, W, H):
+def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
     """
     pad the image to the size [W,H] and modify its annotations accordingly
     arguments:
         input_path(str): the input image path
         csv_path(str): the path to the csv annotation file
-        W(int): the width of the output image
-        H(int): the height of the output image
+        output_imsize(list): the width and height of the output image
     """
     if not os.path.isdir(input_path):
         raise Exception(f'input image folder does not exist: {input_path}')
-    fname_to_shape, class_map = load_csv(csv_path, input_path)
+    fname_to_shape, _ = load_csv(csv_path, input_path)
 
+    W,H = output_imsize
     cnt = 0
     output_shapes = {}
     img_paths = glob.glob(os.path.join(input_path, '*.png'))
     for path in img_paths:
-        im_name = os.path.basename(path)
-        print(f'[INFO] Input file: {im_name}')
-        
-        input_file = os.path.join(input_path, im_name)
-        im = cv2.imread(input_file)
+        im = cv2.imread(path)
         h,w = im.shape[:2]
+        im_name = os.path.basename(path)
+        print(f'[INFO] Input file: {im_name} with size of [{w},{h}]')
 
         #pad image and save it
         im_out, pad_l, pad_t = fit_array_to_size(im,W,H)
-        fname=os.path.splitext(im_name)[0]
-        if fname.find(str(h)) != -1 and fname.find(str(w)) != -1:
-            fname = fname.replace(str(h),str(H))
-            fname = fname.replace(str(w),str(W))
+
+        #create output fname
+        l_name = im_name.split('_')
+        fname = '_'.join(l_name[:-1])
+        suffix = l_name[-1]
+        if suffix.find(str(h)) != -1 and suffix.find(str(w)) != -1:
+            suffix = suffix.replace(str(h),str(H),1)
+            suffix = suffix.replace(str(w),str(W),1)
         else:
-            fname=fname+'_'+str(W)+'x'+str(H)
-        fname += '.png'
+            suffix = suffix+'_'+str(W)+'x'+str(H)
+        fname += '_'+suffix
         output_file=os.path.join(output_path,fname)
         print(f'[INFO] Output file: {output_file}') 
         cv2.imwrite(output_file,im_out)
@@ -150,8 +153,7 @@ if __name__=="__main__":
     ap.add_argument('--path_imgs', required=True, help='the path to the images')
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--path_out', required=True, help='the output path')
-    ap.add_argument('--W', type=int, required=True, help='the target width after padding/chopping')
-    ap.add_argument('--H', type=int, required=True, help='the target height after padding/chopping')
+    ap.add_argument('--out_imsz', required=True, help='the output image size [w,h], w and h are separated by a comma')
     args=vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
@@ -159,11 +161,12 @@ if __name__=="__main__":
     if not os.path.isfile(path_csv):
         raise Exception(f'Not found file: {path_csv}')
     output_path=args['path_out']
-    W=args['W']
-    H=args['H']
+    output_imsize = list(map(int,args['out_imsz'].split(',')))
+    assert len(output_imsize)==2, 'the output image size must be two ints'
+    print(f'output image size: {output_imsize}')
 
     assert path_imgs!=output_path, 'input and output path must be different'
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     
-    pad_image_with_csv(path_imgs,path_csv,output_path,W,H)
+    pad_image_with_csv(path_imgs, path_csv, output_path, output_imsize)
