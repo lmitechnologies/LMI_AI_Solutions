@@ -1,4 +1,3 @@
-from mimetypes import suffix_map
 import cv2
 import os
 import argparse
@@ -10,7 +9,7 @@ BLACK=(0,0,0)
 
 def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
     """
-    pad the image to the size [W,H] and modify its annotations accordingly
+    pad/crop the image to the size [W,H] and modify its annotations accordingly
     arguments:
         input_path(str): the input image path
         csv_path(str): the path to the csv annotation file
@@ -128,7 +127,6 @@ def fit_array_to_size(im,W,H):
         im(numpy array): the padded image 
     """
     h_im,w_im=im.shape[:2]
-    #assert H>=h_im and W>=w_im, f"the target size: {H,W} must be greater equal to the image size: {h_im,w_im}"
 
     # pad or chop width
     if W >= w_im:
@@ -157,8 +155,9 @@ def fit_array_to_size(im,W,H):
     return im, pad_L, pad_T
     
 
+
 if __name__=="__main__":
-    ap=argparse.ArgumentParser()
+    ap=argparse.ArgumentParser(description='Pad or crop images with csv to output size.')
     ap.add_argument('--path_imgs', required=True, help='the path to the images')
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--path_out', required=True, help='the output path')
@@ -171,10 +170,10 @@ if __name__=="__main__":
         raise Exception(f'Not found file: {path_csv}')
     output_path=args['path_out']
     output_imsize = list(map(int,args['out_imsz'].split(',')))
-    assert len(output_imsize)==2, 'the output image size must be two ints'
-    print(f'output image size: {output_imsize}')
 
-    assert path_imgs!=output_path, 'input and output path must be different'
+    print(f'output image size: {output_imsize}')
+    assert len(output_imsize)==2, 'the output image size must be two ints'
+    
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     
