@@ -1,6 +1,5 @@
 #%% extract bbox regions from JSON file
 import json
-import pandas as pd
 import argparse
 import csv
 import os
@@ -9,7 +8,7 @@ import ast
 import glob
 import numpy as np
 
-from image_utils import resize
+from resize_image import resize
 
 def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name',render=False,is_mask=False,mask_to_bbox=False):
     """
