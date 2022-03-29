@@ -9,6 +9,9 @@
 **/data
 **/.ipynb_checkpoints
 **/validation
+**/training
 **/weights
 **/wandb
-test*
+**/trained-inference-models
+**/pretrained-models
+config
