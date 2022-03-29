@@ -1,6 +1,7 @@
 [submodule "yolov5"]
 	path = object_detectors/yolov5
 	url = git@github.com:lmitechnologies/yolov5.git
+	branch = master
 [submodule "object_detectors/models"]
 	path = object_detectors/models
 	url = git@github.com:lmitechnologies/models.git
