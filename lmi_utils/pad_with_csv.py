@@ -42,7 +42,10 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
             suffix = suffix.replace(str(w),str(W),1)
         else:
             suffix = suffix+'_'+str(W)+'x'+str(H)
-        fname += '_'+suffix+'.png'
+        if fname:
+            fname += '_'+suffix+'.png'
+        else:
+            fname = suffix+'.png'
         output_file=os.path.join(output_path,fname)
         print(f'[INFO] Output file: {output_file}') 
         cv2.imwrite(output_file,im_out)
