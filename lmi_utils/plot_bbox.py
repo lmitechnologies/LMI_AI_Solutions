@@ -64,12 +64,13 @@ if __name__ == '__main__':
         os.makedirs(output_path)
 
     fname_to_shape, class_map = load_csv(path_csv, path_imgs)
+    color_map = {cls:[random.randint(0, 255) for _ in range(3)] for cls in class_map }
     for im_name in fname_to_shape:
         print(f'[FILE] {im_name}')
         shapes = fname_to_shape[im_name]
         im = cv2.imread(shapes[0].fullpath)
         for shape in shapes:
             box = shape.up_left + shape.bottom_right
-            plot_one_box(box, im, label=shape.category)
+            plot_one_box(box, im, label=shape.category, color=color_map[shape.category])
         outname = os.path.join(output_path, im_name)
         cv2.imwrite(outname, im)
