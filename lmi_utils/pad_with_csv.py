@@ -1,8 +1,12 @@
+from logging import warning
 import cv2
 import os
 import argparse
 import numpy as np
 import glob
+
+import rect
+import mask
 from csv_utils import load_csv, write_to_csv
 
 BLACK=(0,0,0)
@@ -68,8 +72,8 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
         for shape in shapes:
             shape.im_name = fname
         output_shapes[fname] = shapes
-    print(f'[INFO] found {cnt} images with no bbox')
-    print(f'[INFO] found {cnt_warnings} images with bbox that is either removed entirely, or chopped to fit the new size')
+    print(f'[INFO] found {cnt} images with no labels')
+    print(f'[INFO] found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
     output_csv = os.path.join(output_path, "labels.csv")
     write_to_csv(output_shapes, output_csv)
     
@@ -83,19 +87,34 @@ def chop_shapes(shapes, W, H):
     is_warning = False
     shapes = np.array(shapes)
     for i,shape in enumerate(shapes):
-        x1,y1 = shape.up_left
-        x2,y2 = shape.bottom_right
-        if x1>=W or y1>=H:
-            print(f'[*WARNING] bbox [{x1},{y1},{x2},{y2}] is outside of the size [{W},{H}]')
+        is_del = 0
+        if isinstance(shape, rect.Rect):
+            x1,y1 = shape.up_left
+            x2,y2 = shape.bottom_right
+            if x1>=W or y1>=H:
+                is_del = 1
+            else:
+                nx = min(x2,W)
+                ny = min(y2,H)
+                shapes[i].bottom_right = [nx,ny]
+                if nx==W or ny==H:
+                    warning(f'bbox [{x1},{y1},{x2},{y2}] is chopped to fit in the size [{W}, {H}]')
+                    is_warning = True
+        elif isinstance(shape, mask.Mask):
+            X,Y = np.array(shape.X), np.array(shape.Y)
+            X[X>=W] = W
+            Y[Y>=H] = H
+            shape.X,shape.Y = X.tolist(),Y.tolist()
+            if np.all(X==W) or np.all(Y==H):
+                is_del = 1
+            elif np.any(X==W) or np.any(Y==H):
+                warning(f'polygon X:{X},Y:{Y} is chopped to fit in the size [{W}, {H}]')
+                is_warning = True
+        if is_del:
+            warning(f'bbox [{x1},{y1},{x2},{y2}] is outside of the size [{W},{H}]')
             is_warning = True
             to_del.append(i)
-        else:
-            nx = min(x2,W)
-            ny = min(y2,H)
-            shapes[i].bottom_right = [nx,ny]
-            if nx==W or ny==H:
-                print(f'[*WARNING] bbox [{x1},{y1},{x2},{y2}] is chopped to fit in the size [{W}, {H}]')
-                is_warning = True
+            
     new_shapes = np.delete(shapes,to_del,axis=0)
     return new_shapes.tolist(), is_warning
     
@@ -110,10 +129,14 @@ def fit_shapes_to_size(shapes, pad_l, pad_t):
         pad_t(int): the top paddings 
     """
     for shape in shapes:
-        shape.up_left[0] += pad_l
-        shape.up_left[1] += pad_t
-        shape.bottom_right[0] += pad_l
-        shape.bottom_right[1] += pad_t
+        if isinstance(shape, rect.Rect):
+            shape.up_left[0] += pad_l
+            shape.up_left[1] += pad_t
+            shape.bottom_right[0] += pad_l
+            shape.bottom_right[1] += pad_t
+        elif isinstance(shape, mask.Mask):
+            shape.X = [v+pad_l for v in shape.X]
+            shape.Y = [v+pad_t for v in shape.Y]
     return shapes
 
 

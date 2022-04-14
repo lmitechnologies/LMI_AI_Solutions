@@ -1,4 +1,3 @@
-from email.mime import image
 from shape import Shape
 
 class Mask(Shape):
@@ -15,7 +14,7 @@ class Mask(Shape):
             y_vals(list): the y values [y1, y2, ..., yn] of the polygon
             confidence(double): the confidence level between [0.0, 1.0] 
         """
-        super(Mask, self).__init__(image,fullpath,category)
+        super(Mask, self).__init__(im_name,fullpath,category)
         self.X = x_vals
         self.Y = y_vals
         self.confidence = confidence
