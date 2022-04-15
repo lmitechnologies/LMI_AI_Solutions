@@ -105,6 +105,7 @@ class DataLoader(object):
         raw = tf.io.read_file(path_file)
         #loads the image as a uint8 tensor
         image = tf.io.decode_image(raw, expand_animations=False)
+        image = tf.image.grayscale_to_rgb(image)
         
         if self.normalize:
             #convert to float values in [0,1]
@@ -114,7 +115,7 @@ class DataLoader(object):
             image = tf.cast(image, dtype=tf.float32)
 
         #resize image
-        image = tf.image.resize(image, size=self.img_shape)
+        image = tf.image.resize(image, size=self.img_shape, method='bicubic')
         return image, file_name
 
 
