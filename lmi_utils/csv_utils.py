@@ -18,11 +18,10 @@ def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=Tr
         class_map(dict): map <class, class ID>, default is None
 	    zero_index(bool): it's used when class_map is None. whether the class ID is 0 or 1 indexed, default is True
     Return:
-        a dictionary maps <image_name, a list of Mask or Rect objects>
+        shapes(dict): a dictionary maps <image_name, a list of Mask or Rect objects>
 	    class_map(dict): <classname, ID> where IDs are 0-indexed if zero_index is true else 1-indexed
     """
-    masks = collections.defaultdict(list)
-    rects = collections.defaultdict(list)
+    shapes = collections.defaultdict(list)
     if class_map is None:
         new_map = True
         class_map = {}
@@ -56,7 +55,7 @@ def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=Tr
                 elif coord_type=='y values':
                     assert(im_name==M.im_name)
                     M.Y = list(map(int,coordinates))
-                    masks[im_name].append(M)
+                    shapes[im_name].append(M)
                 else:
                     raise Exception("invalid keywords: {}".format(coord_type))
             elif shape_type=='rect':
@@ -66,10 +65,10 @@ def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=Tr
                 elif coord_type=='lower right':
                     assert(im_name==R.im_name)
                     R.bottom_right = list(map(int,coordinates))
-                    rects[im_name].append(R)
+                    shapes[im_name].append(R)
                 else:
                     raise Exception("invalid keywords: {}".format(coord_type))
-    return masks if masks else rects, class_map
+    return shapes, class_map
 
 
 def write_to_csv(shapes:dict, filename:str):
