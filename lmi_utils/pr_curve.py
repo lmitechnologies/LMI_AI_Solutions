@@ -2,7 +2,7 @@ import os
 import numpy as np
 import collections
 import matplotlib.pyplot as plt
-from skimage.draw import polygon
+from shapely.geometry import Polygon
 
 import csv_utils
 import rect
@@ -50,20 +50,16 @@ def polygon_iou(polygon_1, polygon_2):
     return:
         IOU
     """
-    rr1, cc1 = polygon(polygon_2[:, 0], polygon_2[:, 1])
-    rr2, cc2 = polygon(polygon_1[:, 0], polygon_1[:, 1])
-
-    r_max = np.maximum(rr1.max(), rr2.max()) + 1
-    c_max = np.maximum(cc1.max(), cc2.max()) + 1
-
-    canvas = np.zeros((r_max, c_max))
-    canvas[rr1, cc1] += 1
-    canvas[rr2, cc2] += 1
-    union = np.sum(canvas > 0)
-    if union == 0:
+    try:
+        poly_1 = Polygon(polygon_1)
+        poly_2 = Polygon(polygon_2)
+    except Exception as e:
+        #usually less than 3 points for creating the polygons
+        #print(e)
         return 0
-    intersection = np.sum(canvas == 2)
-    return intersection / union
+    
+    iou = poly_1.intersection(poly_2).area / poly_1.union(poly_2).area
+    return iou
 
 
 def polygon_ious(polygons_1, polygons_2):
