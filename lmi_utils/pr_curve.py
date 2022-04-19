@@ -3,6 +3,7 @@ import numpy as np
 import collections
 import matplotlib.pyplot as plt
 from shapely.geometry import Polygon
+from shapely.validation import make_valid
 
 import csv_utils
 import rect
@@ -57,7 +58,12 @@ def polygon_iou(polygon_1, polygon_2):
         #usually less than 3 points for creating the polygons
         #print(e)
         return 0
-    
+
+    if not poly_1.is_valid:
+        poly_1 = make_valid(poly_1)
+    if not poly_2.is_valid:
+        poly_2 = make_valid(poly_2)
+
     iou = poly_1.intersection(poly_2).area / poly_1.union(poly_2).area
     return iou
 
