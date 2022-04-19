@@ -18,7 +18,7 @@ from skimage import morphology
 # 3. Own modules
 from padim.data_loader import DataLoader
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.ERROR)
 
 def plot_histogram(xvec):
     '''
@@ -36,7 +36,7 @@ def plot_histogram(xvec):
     plt.xlabel('Value')
     plt.ylabel('Frequency')
     plt.title('Error Histogram')
-    plt.text(23, 45, r'$\mu=15, b=3$')
+    plt.text(23, 45, f'$\mu={xvec.mean()}, $\sigma={xvec.std()}')
     maxfreq = n.max()
     # Set a clean upper y-axis limit.
     plt.ylim(ymax=np.ceil(maxfreq / 10) * 10 if maxfreq % 10 else maxfreq + 10)
@@ -44,7 +44,7 @@ def plot_histogram(xvec):
     figure.savefig('./test_hist.png')
 
 
-def plot_fig(predict_results, err_mean, err_std, save_dir, err_ceil_z=1):
+def plot_fig(predict_results, err_mean, err_std, save_dir, err_thresh=None):
     '''
     DESCRIPTION: generate matplotlib figures for inspection results
 
@@ -69,21 +69,15 @@ def plot_fig(predict_results, err_mean, err_std, save_dir, err_ceil_z=1):
         fname=fname.decode('ascii')
         fname=os.path.splitext(fname)[0]
         err_dist=np.squeeze(err_dist)
-        err_min=err_dist.min()
+        err_mean=err_dist.mean()
+        err_std=err_dist.std()
         err_max=err_dist.max()
-        mask=(err_dist-err_min)/(err_max-err_min)
-        kernel = morphology.disk(4)
-        mask = morphology.opening(mask, kernel)
-        mask *= 255
-        # compute z score of error data using training statistics
-        heat_map=(err_dist-err_mean)/err_std
-        # Disregard errors below an error floor
-        heat_map[heat_map<ERR_FLOOR]=0
-        # Map errors greater than error ceiling to the error ceiling
-        heat_map[heat_map>err_ceil_z]=err_ceil_z
-        # Normalize z scores to the error ceiling for plotting
-        heat_map=heat_map/err_ceil_z
-        heat_map=np.nan_to_num(heat_map)
+        if err_thresh is None:
+            err_thresh=err_mean+3*err_std
+        if err_max<=1.1*err_thresh:
+            err_max=err_thresh*2
+        heat_map=err_dist.copy()
+        heat_map[heat_map<err_thresh]=err_thresh
         fig_img, ax_img = plt.subplots(1, 3, figsize=(12, 3))
         fig_img.subplots_adjust(right=0.9)
         for ax_i in ax_img:
@@ -91,12 +85,19 @@ def plot_fig(predict_results, err_mean, err_std, save_dir, err_ceil_z=1):
             ax_i.axes.yaxis.set_visible(False)
         ax_img[0].imshow(img.astype(int))
         ax_img[0].title.set_text('Image')
-        # ax = ax_img[1].imshow(heat_map, cmap='jet')
-        ax_img[1].imshow(img.astype(int), cmap='gray', interpolation='none')
-        ax=ax_img[1].imshow(heat_map, cmap='jet', alpha=0.5, interpolation='none',vmin=0,vmax=1)
-        ax_img[1].title.set_text('Predicted Heat Map')
-        ax_img[2].imshow(mask.astype(int), cmap='gray')
-        ax_img[2].title.set_text('Predicted Mask')
+        n, bins, patches = ax_img[1].hist(x=err_dist.flatten(), bins='auto', color='#0504aa',alpha=0.7, rwidth=0.85)
+        ax_img[1].axes.xaxis.set_visible(True)
+        ax_img[1].axes.yaxis.set_visible(True)
+        ax_img[1].grid(axis='y', alpha=0.75)
+        ax_img[1].xaxis.axis_name='Error'
+        ax_img[1].yaxis.axis_name='Frequency'
+        ax_img[1].title.set_text('Error Histogram')
+        ax_img[1].text(bins.mean(), n.mean(), f'\u03BC={err_mean:0.1f}, \u03C3={err_std:0.1f}')
+        ax_img[2].imshow(img.astype(int), cmap='gray', interpolation='none')
+        ax=ax_img[2].imshow(heat_map, cmap='jet', alpha=0.5, interpolation='none',vmin=err_thresh,vmax=err_max)
+        ax_img[2].title.set_text('Predicted Heat Map')
+        # ax_img[2].imshow(mask.astype(int), cmap='gray')
+        # ax_img[2].title.set_text('Predicted Mask')
         left = 0.92
         bottom = 0.15
         width = 0.015
@@ -506,7 +507,7 @@ class PaDiM(object):
             predict_results=zip(image_array,err_dist_array,fname_array)
             # Plot results
             if is_plot:
-                plot_fig(predict_results,self.training_mean_dist,self.training_std_dist,'./validation',err_ceil_z=err_ceil_z)
+                plot_fig(predict_results,self.training_mean_dist,self.training_std_dist,'./training_validation',err_ceil_z=err_ceil_z)
 
 
     def padim_predict(self,dataset):
