@@ -109,7 +109,7 @@ if __name__ == '__main__':
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
 
-    fname_to_shape, _ = load_csv(path_csv, path_imgs, class_map)
+    fname_to_shape, class_map = load_csv(path_csv, path_imgs, class_map)
     min_id = min(class_map.values())
     colors = [(0,0,255),(255,0,0),(0,255,0),(102,51,153),(255,140,0),(105,105,105),(127,25,27),(9,200,100)]
     color_map = {}
