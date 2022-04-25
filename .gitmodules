@@ -5,3 +5,7 @@
 [submodule "object_detectors/models"]
 	path = object_detectors/models
 	url = git@github.com:lmitechnologies/models.git
+[submodule "classifiers/efficientnet"]
+	path = classifiers/efficientnet
+	url = git@github.com:lmitechnologies/EfficientNet-PyTorch.git
+	branch = master
