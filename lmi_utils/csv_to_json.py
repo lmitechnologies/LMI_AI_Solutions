@@ -1,5 +1,5 @@
 #%%
-from iou.iou_from_csv import csv_to_dictionary
+from iou_from_csv import csv_to_dictionary
 import json
 import os
 import argparse
