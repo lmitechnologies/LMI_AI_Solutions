@@ -89,29 +89,30 @@ def chop_shapes(shapes, W, H):
     for i,shape in enumerate(shapes):
         is_del = 0
         if isinstance(shape, rect.Rect):
-            x1,y1 = shape.up_left
-            x2,y2 = shape.bottom_right
-            if x1>=W or y1>=H:
+            box = np.array(shape.up_left+shape.bottom_right)
+            new_box = np.clip(box, a_min=0, a_max=[W,H,W,H])
+            shapes[i].up_left = new_box[:2].tolist()
+            shapes[i].bottom_right = new_box[2:].tolist()
+            if np.all(new_box==0) or new_box[0]==new_box[2] or new_box[1]==new_box[3]:
                 is_del = 1
-            else:
-                nx = min(x2,W)
-                ny = min(y2,H)
-                shapes[i].bottom_right = [nx,ny]
-                if nx==W or ny==H:
-                    warning(f'bbox [{x1},{y1},{x2},{y2}] is chopped to fit in the size [{W}, {H}]')
-                    is_warning = True
+                warning(f'bbox {box} is outside of the size [{W},{H}]')
+            elif (np.any(new_box==W) and np.all(box!=W)) or (np.any(new_box==H) and np.all(box!=H)) \
+                    or (np.any(new_box==0) and np.all(box!=0)):
+                warning(f'bbox {box} is chopped to fit the size [{W}, {H}]')
+                is_warning = True
         elif isinstance(shape, mask.Mask):
             X,Y = np.array(shape.X), np.array(shape.Y)
-            X[X>=W] = W
-            Y[Y>=H] = H
-            shape.X,shape.Y = X.tolist(),Y.tolist()
-            if np.all(X==W) or np.all(Y==H):
+            new_X = np.clip(X, a_min=0, a_max=W)
+            new_Y = np.clip(Y, a_min=0, a_max=H)
+            shapes[i].X,shapes[i].Y = new_X.tolist(),new_Y.tolist()
+            if np.all(new_X==W) or np.all(new_Y==H) or np.all(new_X==0) or np.all(new_Y==0):
                 is_del = 1
-            elif np.any(X==W) or np.any(Y==H):
-                warning(f'polygon X:{X},Y:{Y} is chopped to fit in the size [{W}, {H}]')
+                warning(f'polygon {[(x,y) for x,y in zip(new_X,new_Y)]} is outside of the size [{W},{H}]')
+            elif (np.any(new_X==W) and np.all(X!=W)) or (np.any(new_Y==H) and np.all(Y!=H)) \
+                or (np.any(new_X==0) and np.all(X!=0)) or (np.any(new_Y==0) and np.all(Y!=0)):
+                warning(f'polygon {[(x,y) for x,y in zip(new_X,new_Y)]} is chopped to fit the size [{W}, {H}]')
                 is_warning = True
         if is_del:
-            warning(f'bbox [{x1},{y1},{x2},{y2}] is outside of the size [{W},{H}]')
             is_warning = True
             to_del.append(i)
             
