@@ -37,11 +37,7 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
         ratio_in = w/h
         assert ratio_in==ratio_out,f'asepect ratio changed from {ratio_in} to {ratio_out}'
         
-        if im_name.find(str(h)) != -1 and im_name.find(str(w)) != -1:
-            out_name = im_name.replace(str(h), str(H))
-            out_name = out_name.replace(str(w),str(W))
-        else:
-            out_name = os.path.splitext(im_name)[0] + f'_{W}x{H}' + '.png'
+        out_name = os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
         
         ratio = W/w
         im2 = cv2.resize(im, dsize=output_imsize)

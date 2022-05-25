@@ -38,20 +38,9 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
         im_out, pad_l, pad_t = fit_array_to_size(im,W,H)
 
         #create output fname
-        l_name = os.path.splitext(im_name)[0].split('_')
-        fname = '_'.join(l_name[:-1])
-        suffix = l_name[-1]
-        if suffix.find(str(h)) != -1 and suffix.find(str(w)) != -1:
-            suffix = suffix.replace(str(h),str(H),1)
-            suffix = suffix.replace(str(w),str(W),1)
-        else:
-            suffix = suffix+'_'+str(W)+'x'+str(H)
-        if fname:
-            fname += '_'+suffix+'.png'
-        else:
-            fname = suffix+'.png'
-        output_file=os.path.join(output_path,fname)
-        print(f'[INFO] Output file: {output_file}') 
+        out_name = os.path.splitext(im_name)[0] + f'_padded_{W}x{H}' + '.png'
+        output_file=os.path.join(output_path, out_name)
+        print(f'[INFO] Output file: {output_file}')
         cv2.imwrite(output_file,im_out)
 
         #pad shapes
@@ -70,8 +59,8 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
 
         #modify the image name 
         for shape in shapes:
-            shape.im_name = fname
-        output_shapes[fname] = shapes
+            shape.im_name = out_name
+        output_shapes[out_name] = shapes
     print(f'[INFO] found {cnt} images with no labels')
     print(f'[INFO] found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
     output_csv = os.path.join(output_path, "labels.csv")
