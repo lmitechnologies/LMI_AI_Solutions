@@ -105,7 +105,8 @@ class DataLoader(object):
         raw = tf.io.read_file(path_file)
         #loads the image as a uint8 tensor
         image = tf.io.decode_image(raw, expand_animations=False)
-        image = tf.image.grayscale_to_rgb(image)
+        if tf.shape(image)[-1] == 1:
+            image = tf.image.grayscale_to_rgb(image)
         
         if self.normalize:
             #convert to float values in [0,1]

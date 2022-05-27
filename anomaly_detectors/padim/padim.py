@@ -3,6 +3,7 @@ import os
 import argparse
 import random
 import cv2
+from skimage import morphology
 import logging
 import time
 import glob
@@ -13,12 +14,12 @@ import tensorflow as tf
 import tensorflow_addons as tfa
 import matplotlib
 from matplotlib import pyplot as plt
-from skimage import morphology
+
 
 # 3. Own modules
 from padim.data_loader import DataLoader
 
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.INFO)
 
 def plot_histogram(xvec):
     '''
