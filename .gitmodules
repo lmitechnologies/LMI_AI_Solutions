@@ -9,3 +9,6 @@
 	path = classifiers/efficientnet
 	url = git@github.com:lmitechnologies/EfficientNet-PyTorch.git
 	branch = master
+[submodule "object_detectors/tf_objdet/models"]
+	path = object_detectors/tf_objdet/models
+	url = git@github.com:lmitechnologies/models.git
