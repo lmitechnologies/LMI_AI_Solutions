@@ -1,0 +1,16 @@
+item {
+	id: 1
+	name: 'hog'
+}
+item {
+	id: 2
+	name: 'leg'
+	keypoints: {
+		id: 0
+		label: 'hoof'
+	}
+	keypoints: {
+		id: 1
+		label: 'aitch-bone'
+	}
+}

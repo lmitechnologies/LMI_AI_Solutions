@@ -8,14 +8,10 @@ import cv2
 import ast
 import glob
 import numpy as np
-import image_utils.Rosenbrock as imutils
+from image_utils.img_resize import resize 
 
 
-#TODO: 
-# expand to support keypoints
-# remove Rosenbrock dependency
-
-def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name',render=False,is_mask=False,mask_to_bbox=False):
+def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name',render=False,mask_to_bbox=False):
     """
     Description:
         parses JSON and writes values to csv
@@ -52,56 +48,63 @@ def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name
                 for j,_ in enumerate(regions):
                     label=regions[j]['region_attributes'][label_name]
                     # general mask label file
-                    if is_mask:
-                        # test for polygon region
-                        if regions[j]['shape_attributes']['name']=='polygon':
-                            xj=regions[j]['shape_attributes']['all_points_x']
-                            yj=regions[j]['shape_attributes']['all_points_y']
-                            if mask_to_bbox:
-                                print('[INFO] Writing bounding box from mask region: ',label)
-                                xj=np.array(xj,dtype=np.int32)
-                                yj=np.array(yj,dtype=np.int32)
-                                x_ul=xj.min()
-                                y_ul=yj.min()
-                                x_lr=xj.max()
-                                y_lr=yj.max()
-                                labelWriter.writerow([fname,label,'rect','upper left',x_ul,y_ul])
-                                labelWriter.writerow([fname,label,'rect','lower right',x_lr,y_lr])
-                            else:         
-                                labelWriter.writerow([fname,label,'polygon','x values']+xj)
-                                labelWriter.writerow([fname,label,'polygon','y values']+yj)
-                        # test for simple bounding box region
-                        elif regions[j]['shape_attributes']['name']=='rect':
-                            xj=regions[j]['shape_attributes']['x']
-                            yj=regions[j]['shape_attributes']['y']
-                            wj=regions[j]['shape_attributes']['width']
-                            hj=regions[j]['shape_attributes']['height']
-                            x_ul=xj
-                            y_ul=yj
-                            x_lr=xj+wj
-                            y_lr=yj+hj
+                    # if is_mask:
+                    # test for polygon region
+                    if regions[j]['shape_attributes']['name']=='polygon':
+                        xj=regions[j]['shape_attributes']['all_points_x']
+                        yj=regions[j]['shape_attributes']['all_points_y']
+                        if mask_to_bbox:
+                            print('[INFO] Writing bounding box from mask region: ',label)
+                            xj=np.array(xj,dtype=np.int32)
+                            yj=np.array(yj,dtype=np.int32)
+                            x_ul=xj.min()
+                            y_ul=yj.min()
+                            x_lr=xj.max()
+                            y_lr=yj.max()
                             labelWriter.writerow([fname,label,'rect','upper left',x_ul,y_ul])
                             labelWriter.writerow([fname,label,'rect','lower right',x_lr,y_lr])
-                        else:
-                            raise Exception('Unsupported label type.  polygon and rect supported.')
-
-                    else:
+                        else:         
+                            labelWriter.writerow([fname,label,'polygon','x values']+xj)
+                            labelWriter.writerow([fname,label,'polygon','y values']+yj)
+                    # test for simple bounding box region
+                    elif regions[j]['shape_attributes']['name']=='rect':
                         xj=regions[j]['shape_attributes']['x']
                         yj=regions[j]['shape_attributes']['y']
                         wj=regions[j]['shape_attributes']['width']
                         hj=regions[j]['shape_attributes']['height']
-
                         x_ul=xj
                         y_ul=yj
                         x_lr=xj+wj
                         y_lr=yj+hj
                         labelWriter.writerow([fname,label,'rect','upper left',x_ul,y_ul])
                         labelWriter.writerow([fname,label,'rect','lower right',x_lr,y_lr])
+                    elif regions[j]['shape_attributes']['name']=='point':
+                        cx=regions[j]['shape_attributes']['cx']
+                        cy=regions[j]['shape_attributes']['cy']
+                        labelWriter.writerow([fname,label,'point','cx',cx])
+                        labelWriter.writerow([fname,label,'point','cy',cy])
+                    else:
+                        raise Exception('Unsupported label type.  polygon and rect supported.')
+
+                    # else:
+                    #     xj=regions[j]['shape_attributes']['x']
+                    #     yj=regions[j]['shape_attributes']['y']
+                    #     wj=regions[j]['shape_attributes']['width']
+                    #     hj=regions[j]['shape_attributes']['height']
+
+                    #     x_ul=xj
+                    #     y_ul=yj
+                    #     x_lr=xj+wj
+                    #     y_lr=yj+hj
+                    #     labelWriter.writerow([fname,label,'rect','upper left',x_ul,y_ul])
+                    #     labelWriter.writerow([fname,label,'rect','lower right',x_lr,y_lr])
                     
                     if render:
                         # display image
+                        THICKNESS=2
+                        RADIUS=20
                         image=cv2.imread(filepath)
-                        if is_mask and not mask_to_bbox and regions[j]['shape_attributes']['name']=='polygon':
+                        if regions[j]['shape_attributes']['name']=='polygon' and (not mask_to_bbox):
                             overlay=image.copy()
                             xj=np.array(xj,dtype=np.int32)
                             yj=np.array(yj,dtype=np.int32)
@@ -112,13 +115,16 @@ def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name
                             pts=np.stack((xj,yj),axis=1)
                             pts=np.expand_dims(pts,axis=0)
                             overlay=cv2.fillPoly(overlay,pts,(255,0,0))
-                            cv2.addWeighted(overlay,0.5,image,0.5,0,image)
-                            
-                        image=cv2.rectangle(image,(x_ul,y_ul),(x_lr,y_lr),(255,0,0),thickness=2)
-                        cv2.putText(image,label,(x_ul,y_ul-4),cv2.FONT_HERSHEY_SIMPLEX,0.8,(0,0,255),2,cv2.LINE_AA)
-                        image=imutils.resize(image,width=512)
+                        elif regions[j]['shape_attributes']['name']=='rect' or (regions[j]['shape_attributes']['name']=='polygon' and mask_to_bbox):
+                            image=cv2.rectangle(image,(x_ul,y_ul),(x_lr,y_lr),(255,0,0),thickness=THICKNESS)
+                            cv2.putText(image,label,(x_ul,y_ul-4),cv2.FONT_HERSHEY_SIMPLEX,0.8,(0,0,255),THICKNESS,cv2.LINE_AA)
+                        elif regions[j]['shape_attributes']['name']=='point':
+                            image=cv2.circle(image,(cx,cy),RADIUS,(0,255,0),-1)
+                            cv2.putText(image,label,(cx-RADIUS-2*THICKNESS,cy-RADIUS-2*THICKNESS),cv2.FONT_HERSHEY_SIMPLEX,0.8,(0,255,0),THICKNESS,cv2.LINE_AA)
+                        image=resize(image,width=512)    
                         cv2.imshow('image',image)
-                        cv2.waitKey(1000)
+                        cv2.waitKey(500)
+
             # append csv file for each additional json file
             write_append_option='a'
 
@@ -129,7 +135,6 @@ if __name__ == '__main__':
     ap.add_argument('-d','--data_path',required=True)
     ap.add_argument('--output_fname',required=True)
     ap.add_argument('-r','--render',default="False")
-    ap.add_argument('--is_mask',default="False")
     ap.add_argument('--mask_to_bbox',default="False")
     ap.add_argument('--label_name',default='Name')
     args=vars(ap.parse_args())
@@ -138,9 +143,9 @@ if __name__ == '__main__':
     output_filename=args['output_fname']
     label_name=args['label_name']
 
-    is_mask=ast.literal_eval(args['is_mask'])
-    if type(is_mask) is not type(True):
-        raise Exception('is_mask should be "True" or "False".') 
+    # is_mask=ast.literal_eval(args['is_mask'])
+    # if type(is_mask) is not type(True):
+    #     raise Exception('is_mask should be "True" or "False".') 
 
     render=ast.literal_eval(args['render'])
     if type(render) is not type(True):
@@ -151,4 +156,4 @@ if __name__ == '__main__':
         raise Exception('mask_to_bbox should be "True" or "False".')
 
     
-    extract_ROI_from_JSON(data_path,output_filename,label_name=label_name,render=render,is_mask=is_mask,mask_to_bbox=mask_to_bbox)
+    extract_ROI_from_JSON(data_path,output_filename,label_name=label_name,render=render,mask_to_bbox=mask_to_bbox)
