@@ -4,7 +4,7 @@ from object_detection.utils import label_map_util
 import tensorflow as tf
 import numpy as np 
 import argparse
-import image_utils.Rosenbrock as imutils
+from image_utils.img_resize import resize
 import ast
 import os
 import glob
@@ -137,24 +137,24 @@ for i,image_file in enumerate(images):
 
     if W0<=H0:
         if W0 != dmin:
-            image=imutils.resize(image,width=dmin)
+            image=resize(image,width=dmin)
             (H,W)=image.shape[:2]
             print('[INFO] Resizing image, height: %5d, width: %5d' % (H,W) )
         else:
             W,H=W0,H0
         if H>dmax:
-            image=imutils.resize(image,height=dmax)
+            image=resize(image,height=dmax)
             (H,W)=image.shape[:2]
             print('[INFO] Resizing image, height: %5d, width: %5d' % (H,W) )
     else:
         if H0 != dmin:
-            image=imutils.resize(image,height=dmin)
+            image=resize(image,height=dmin)
             (H,W)=image.shape[:2]
             print('[INFO] Resizing image, height: %5d, width: %5d' % (H,W) )
         else:
             W,H=W0,H0
         if W>dmax:
-            image=imutils.resize(image,width=dmax)
+            image=resize(image,width=dmax)
             (H,W)=image.shape[:2]
             print('[INFO] Resizing image, height: %5d, width: %5d' % (H,W) )
 
@@ -179,6 +179,12 @@ for i,image_file in enumerate(images):
     else:
         masks=np.empty((boxes.shape[1],1))
         masks[:]=np.nan
+    if 'detection_keypoints' in list(detections.keys()):
+        keypoints=detections['detection_keypoints'].numpy()
+    else:
+        keypoints=np.empty((boxes.shape[1],1))
+        keypoints[:]=np.nan
+
     
     #perform inference and compute bounding boxes, probabilities, and labels
     
@@ -194,21 +200,18 @@ for i,image_file in enumerate(images):
     print('[INFO] Processing Time: ',proc_time[i], 's.')
     #recast to 1-D array
     boxes=np.squeeze(boxes)
-    masks=np.squeeze(masks)
     scores=np.squeeze(scores)
     labels=np.squeeze(labels)
+    masks=np.squeeze(masks)
+    keypoints=np.squeeze(keypoints)
 
     #loop over bounding box predictions
     draw=ast.literal_eval(args['draw'])
     
-    for (box,mask,score,label) in zip(boxes,masks,scores,labels):
+    for (box,mask,keypoint_pairs,score,label) in zip(boxes,masks,keypoints,scores,labels):
         if score<args['min_confidence']:
             continue
 
-        # box=np.squeeze(box)
-        # mask=np.squeeze(mask)
-        # score=np.squeeze(score)
-        # label=np.squeeze(label)
 
         #extract bounding box
         (startY,startX,endY,endX)=box
@@ -267,8 +270,13 @@ for i,image_file in enumerate(images):
             label = "{}: {:.2f}".format(label["name"], score)
             cv2.rectangle(output, (startX, startY), (endX, endY),COLORS[idx], 1)
             y = startY - 10 if startY - 10 > 10 else startY + 10
-            cv2.putText(output, label, (startX, y),cv2.FONT_HERSHEY_SIMPLEX, 0.3, COLORS[idx], 1)
+            cv2.putText(output, label, (startX, y),cv2.FONT_HERSHEY_SIMPLEX, 0.3, COLORS[1], 1)
             # show the output image, 1 found image at a time
+
+            if not np.isnan(keypoint_pairs).any():
+                for pair in keypoint_pairs:
+                    cv2.circle(output,(int(pair[1]*W),int(pair[0]*H)),3,(0,255,0),-1)
+                # cv2.line(output, (int(keypoint_pairs[0][1]*W), int(keypoint_pairs[0][0]*H)), (int(keypoint_pairs[1][1]*W), int(keypoint_pairs[1][0]*H)), (0, 255, 0), thickness=1)
 
             if draw==True:
                 cv2.imshow("Output", output)
