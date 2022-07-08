@@ -84,7 +84,7 @@ class TFAnnotation:
 			keypoints_y=float_list_feature(self.keypoints_y)
 			keypoints_visibility=int64_list_feature(self.keypoints_visibility)
 			keypoints_name = bytes_list_feature(self.keypoints_name)
-			keypoints_num=int64_feature(self.num_keypoints)
+			keypoints_num=int64_list_feature(self.num_keypoints)
 			data["image/object/keypoint/x"]=keypoints_x
 			data["image/object/keypoint/y"]=keypoints_y
 			data["image/object/keypoint/num"]=keypoints_num

@@ -14,11 +14,15 @@ import cv2
 import io
 from image_utils.img_resize import resize
 
-# TODO: 
-# expand to support keypoints
-# remove Rosenbrock dependency
+# get item in a recursive dictionary 
+def _finditem(obj, key):
+    if key in obj: return obj[key]
+    for k, v in obj.items():
+        if isinstance(v,dict):
+            item = _finditem(v, key)
+            if item is not None:
+                return item
 
-#%%
 def main(config):
 
     if not os.path.exists(os.path.split(config.CLASSES_FILE)[0]):
@@ -26,24 +30,45 @@ def main(config):
 
     f=open(config.CLASSES_FILE,'w')
 
-    # Catch errors for unspecified config parameters
-    # try:
-    #     MASK_OPTION=config.MASK_OPTION
-    # except:
-    #     print('[INFO] Faster R-CNN by default since MASK_OPTION is not defined in ',args['config_path'])
-    #     MASK_OPTION=False   
+    # Load training options
+    # masks
+    try:
+        MASK_OPTION=config.MASK_OPTION
+    except:
+        print(f'[INFO] MASK_OPTION is not defined in config file.  Finding bounding boxes.')
+        MASK_OPTION=False
+    # keypoints
+    keypoints=None
+    keypoint_num=None
+    keypoint_ids=None
+    keypoint_names=None
+    try:
+        KEYPOINT_OPTION=config.KEYPOINT_OPTION
+    except:
+        print(f'[INFO] KEYPOINT_OPTION is not defined in config file.  Ignoring keypoints.')
+        KEYPOINT_OPTION=False 
+    if KEYPOINT_OPTION:
+        try:
+            keypoints=config.KEYPOINTS
+            keypoint_num=0
+            keypoint_ids=[]
+            keypoint_names=[]
+        except:
+            print(f'[INFO] KEYPOINTS not defined in config file.  Ignoring keypoints.')
+            KEYPOINT_OPTION=False
+    
+    # resize
     try:
         RESIZE_OPTION=config.RESIZE_OPTION
     except:
-        print('[INFO] No resizing because RESIZE_OPTION is not defined in ',args['config_path'])
-        RESIZE_OPTION=False
-    try:
-        keypoints=config.KEYPOINTS
-        keypoint_num=0
-        KEYPOINT_OPTION=True
-    except:
-        print('No keypoint definition.  Skipping all keypoint features.')
-        KEYPOINT_OPTION=False
+        print(f'[INFO] RESIZE_OPTION is not defined in config file.  No resizing applied.')
+    if RESIZE_OPTION:
+        try:
+            MAX_W=config.MAX_W
+        except:
+            print(f'[INFO] MAX_W is not defined in config file.  No resizing applied.')
+            RESIZE_OPTION=False
+
 
     # loop over classes and place labels in a JSON-like file
     # required keys:id, name
@@ -59,6 +84,8 @@ def main(config):
                 if kk0==k:
                     for (kk1,kv1) in kv0.items():
                         keypoint_num+=1
+                        keypoint_names.append(kk1)
+                        keypoint_ids.append(kv1)
                         kpi=("\tkeypoints: {\n"
                         "\t\tid: " + str(kv1) +"\n"
                         "\t\tlabel: '" + str(kk1) +"'\n"
@@ -77,21 +104,7 @@ def main(config):
         is_mask, is_bbox, is_keypoint=False, False, False
         print('[INFO] row:',row)
         row=row.split(';')
-        # if MASK_OPTION:
-        if row[2]=='polygon':
-            if row[3]=='x values':
-                imagePath=row[0]
-                label=row[1]
-                xvec=np.array(row[4:],dtype=np.float)
-                startX=xvec.min()
-                endX=xvec.max()
-                continue
-            if row[3]=='y values':
-                yvec=np.array(row[4:],dtype=np.float)
-                startY=yvec.min()
-                endY=yvec.max()
-                is_mask=True
-        elif row[2]=='rect':
+        if row[2]=='rect':
             if row[3]=='upper left':
                 (imagePath,label,_,_,startX,startY)=row
                 (startX,startY)=(float(startX),float(startY))
@@ -100,19 +113,39 @@ def main(config):
                 (endX,endY)=(row[4],row[5]) 
                 (endX,endY)=(float(endX),float(endY))
                 is_bbox=True
-        elif row[2]=='point':
-            if row[3]=='cx':
-                kp_label
-                cx=float(row[4])
+        elif row[2]=='polygon':
+            if MASK_OPTION:  
+                if row[3]=='x values':
+                    imagePath=row[0]
+                    label=row[1]
+                    xvec=np.array(row[4:],dtype=np.float)
+                    startX=xvec.min()
+                    endX=xvec.max()
+                    continue
+                if row[3]=='y values':
+                    yvec=np.array(row[4:],dtype=np.float)
+                    startY=yvec.min()
+                    endY=yvec.max()
+                    is_mask=True
+            else:
                 continue
-            if row[3]=='cy':
-                cy=float(row[4])
-                is_keypoint=True
+        elif row[2]=='point':
+            if KEYPOINT_OPTION:
+                if row[3]=='cx':
+                    label=row[1]
+                    cx=float(row[4])
+                    continue
+                if row[3]=='cy':
+                    cy=float(row[4])
+                    is_keypoint=True
+            else:
+                print(f'[INFO] KEYPOINT_OPTION set to false in config file.  Skipping Keypoint.')
+                continue
         else:
             raise Exception(f'Unregonized feature: {row[2]}.  This conversion only supports: polygon,rect,point')
 
         # optional:ignore label if not interested
-        if label not in config.CLASSES:
+        if (label not in config.CLASSES) and (label not in keypoint_names):
             print('[INFO] Skipping class: ',label)
             continue
 
@@ -123,12 +156,10 @@ def main(config):
         #build tuple consisting of the label and bounding box, then update the list and store it in the dictionary
         if is_mask:
             b.append((label,('mask',startX,startY,endX,endY,xvec,yvec)))
-            project_mask_option=True
         elif is_bbox:
             b.append((label,('bbox',startX,startY,endX,endY)))
         elif is_keypoint:
             b.append((label,('keypoint',cx,cy)))
-            project_keypoint_option=True
         D[p]=b
     
     # create training and testing splits from data dictionary
@@ -154,7 +185,6 @@ def main(config):
             # resize input image
             if RESIZE_OPTION:
                 try:
-                    MAX_W=config.MAX_W
                     if w0>MAX_W:
                         img_resize=resize(img,width=MAX_W)
                         (h,w)=img_resize.shape[:2]
@@ -165,12 +195,11 @@ def main(config):
                         img_pil.save(output,format='PNG')
                         encoded=output.getvalue()
                     else:
-                        #skip resize if w<MAX_W
-                        RESIZE_OPTION=False
+                        print(f'[INFO] Image w={w0} is less than MAX_W={MAX_W}.  Skipping resize.')
                         encoded=tf.io.gfile.GFile(k,'rb').read()
                         encoded=bytes(encoded)              
                 except:
-                    print('[INFO] No resizing because MAX_W is not defined in ',args['config_path'])
+                    print(f'[INFO] No resizing because MAX_W is not correctly defined in config file.')
                     # if MAX_W is undefined, then skip resize
                     RESIZE_OPTION=False
                     encoded=tf.io.gfile.GFile(k,'rb').read()
@@ -183,10 +212,6 @@ def main(config):
             if not RESIZE_OPTION:
                 h=h0
                 w=w0
-         
-            #load the image from disk again, this time as a PIL object
-            # pilImage=Image.open(k)
-            # (w,h)=pilImage.size[:2]
 
             #parse the filename and encoding from the input path
             filename=k.split(os.path.sep)[-1]
@@ -200,12 +225,24 @@ def main(config):
             tfAnnot.filename=filename
             tfAnnot.width=w
             tfAnnot.height=h
+            if KEYPOINT_OPTION:
+                tfAnnot.is_keypoint=True
+                tfAnnot.num_keypoints=[keypoint_num]
+                tfAnnot.keypoints_visibility=[0]*keypoint_num
+                tfAnnot.keypoints_x=[0]*keypoint_num
+                tfAnnot.keypoints_y=[0]*keypoint_num
+                tfAnnot.keypoints_name=[name.encode('utf8') for name in keypoint_names]
+
             
             # loop over image bounding boxes + labels
             # (type,startX,startY,endX,endY,xvec,yvec)
             for (label,annot) in D[k]:
-                tfAnnot.textLabels.append(label.encode('utf8'))
-                tfAnnot.classes.append(config.CLASSES[label])
+                try:
+                    tfAnnot.classes.append(config.CLASSES[label])
+                    tfAnnot.textLabels.append(label.encode('utf8'))
+                except:
+                    assert (label in keypoint_names)
+                    
                 if annot[0]=='bbox' or annot[0]=='mask':
                 # TensorFlow requires normalized bounding boxes
                 # Normalized bounding boxes don't need resizing
@@ -238,16 +275,15 @@ def main(config):
                 if annot[0]=='keypoint':
                     kx=annot[1]/w0
                     ky=annot[2]/h0
-                    kn=keypoint_num
-
-
-                
+                    index=_finditem(config.KEYPOINTS,label)
+                    tfAnnot.keypoints_x[index]=kx
+                    tfAnnot.keypoints_y[index]=ky
+                    tfAnnot.keypoints_visibility[index]=1
                 total+=1
 
             # encode the data point attributes using the TensorFlow helper functions
             features=tf.train.Features(feature=tfAnnot.build())
             example=tf.train.Example(features=features)
-
             # add the example to the writer
             writer.write(example.SerializeToString())
         # close writer adn show diagnostics
