@@ -12,12 +12,12 @@ import os
 import inspect
 import sys
 
-#LMI packages
-currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-if currentdir not in sys.path:
-    sys.path.insert(0, currentdir)
+#currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+#if currentdir not in sys.path:
+#    sys.path.insert(0, currentdir)
 
-from csv_utils import load_csv
+#LMI packages
+from label_utils.csv_utils import load_csv
 
 
 
