@@ -3,7 +3,7 @@ import glob
 import cv2
 import os
 import numpy as np
-from image_utils.img_resize import resize
+from img_resize import resize
 import logging
 
 logging.basicConfig(level=logging.INFO)
