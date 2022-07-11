@@ -5,9 +5,9 @@ import argparse
 import numpy as np
 import glob
 
-import rect
-import mask
-from csv_utils import load_csv, write_to_csv
+#LMI packages
+from label_utils import rect, mask
+from label_utils.csv_utils import load_csv, write_to_csv
 
 BLACK=(0,0,0)
 

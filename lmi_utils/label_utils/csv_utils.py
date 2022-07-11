@@ -2,11 +2,17 @@
 import csv
 import collections
 from logging import warning
+
 import os
+import inspect
+import sys
+
+#currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+#if currentdir not in sys.path:
+#    sys.path.insert(0, currentdir)
 
 #LMI packages
-import mask
-import rect
+from label_utils import rect,mask
 
 
 def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=True):

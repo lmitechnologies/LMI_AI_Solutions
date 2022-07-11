@@ -21,14 +21,6 @@ def filter_by_label(inputfile,datapath,outpath):
 
 
 
-
-
-
-    
-
-
-
-
 if __name__=='__main__':
     ap=argparse.ArgumentParser()
     ap.add_argument('--input_csv_file',required=True)
