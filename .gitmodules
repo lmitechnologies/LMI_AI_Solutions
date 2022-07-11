@@ -15,4 +15,4 @@
 [submodule "object_detectors/detectron2"]
 	path = object_detectors/detectron2
 	url = git@github.com:lmitechnologies/detectron2.git
-	branch = master
+
