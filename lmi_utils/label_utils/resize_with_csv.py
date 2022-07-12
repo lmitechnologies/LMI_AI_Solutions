@@ -7,7 +7,7 @@ import shutil
 import cv2
 
 #LMI packages
-from shape_utils import mask, rect, csv_utils
+from label_utils import mask, rect, csv_utils
 
 
 def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
