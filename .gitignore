@@ -14,4 +14,7 @@
 **/wandb
 **/trained-inference-models
 **/pretrained-models
+**/records
+**/venv
+**/testfiles
 config

@@ -3,15 +3,23 @@ convert the data (images with a csv annotation file) to yolo file format
 """
 
 #built-in packages
-import os
 import cv2
 import shutil
 import glob
 import json
 
-#LMI utils packages
-#need to activate this environment: lmi_ai.env
-from csv_utils import load_csv
+import os
+import inspect
+import sys
+
+#currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+#if currentdir not in sys.path:
+#    sys.path.insert(0, currentdir)
+
+#LMI packages
+from label_utils.csv_utils import load_csv
+
+
 
 def convert_to_txt(fname_to_shapes, class_to_id):
     """

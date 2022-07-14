@@ -5,9 +5,9 @@ import argparse
 import numpy as np
 import glob
 
-import rect
-import mask
-from csv_utils import load_csv, write_to_csv
+#LMI packages
+from label_utils import rect, mask
+from label_utils.csv_utils import load_csv, write_to_csv
 
 BLACK=(0,0,0)
 
@@ -33,21 +33,22 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
         h,w = im.shape[:2]
         im_name = os.path.basename(path)
         print(f'[INFO] Input file: {im_name} with size of [{w},{h}]')
+        
+        if im_name not in fname_to_shape:
+            print('No shapes found, skipping...\n')
+            cnt += 1
+            continue
 
-        #pad image and save it
+        #pad image
         im_out, pad_l, pad_t = fit_array_to_size(im,W,H)
 
-        #create output fname
+        #create output fname and save it
         out_name = os.path.splitext(im_name)[0] + f'_padded_{W}x{H}' + '.png'
         output_file=os.path.join(output_path, out_name)
         print(f'[INFO] Output file: {output_file}')
         cv2.imwrite(output_file,im_out)
 
         #pad shapes
-        if im_name not in fname_to_shape:
-            print('No shapes found, skipping...\n')
-            cnt += 1
-            continue
         shapes = fname_to_shape[im_name]
         #print('[INFO] before: ',[s.up_left+s.bottom_right for s in shapes])
         shapes = fit_shapes_to_size(shapes, pad_l, pad_t)

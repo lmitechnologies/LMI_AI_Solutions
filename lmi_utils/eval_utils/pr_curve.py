@@ -4,10 +4,10 @@ import collections
 import matplotlib.pyplot as plt
 from shapely.geometry import Polygon
 from shapely.validation import make_valid
+import sys
 
-import csv_utils
-import rect
-import mask
+#LMI packages
+from label_utils import csv_utils,rect,mask
 
 
 def bbox_iou(bbox1, bbox2):

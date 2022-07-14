@@ -4,9 +4,9 @@ import cv2
 import os
 import json
 
-from csv_utils import load_csv
-import rect
-import mask
+#LMI packages
+from label_utils.csv_utils import load_csv
+from label_utils import rect, mask
 
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     """

@@ -1,4 +1,4 @@
-from shape import Shape
+from label_utils.shape import Shape
 
 class Mask(Shape):
     """

@@ -3,7 +3,7 @@ import re
 import numpy as np
 import cv2
 import os
-import argparse 
+import argparse
 import csv
 
 
