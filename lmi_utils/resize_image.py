@@ -31,7 +31,7 @@ def resize_images(path_imgs, output_imsize, path_out):
         
         out_name = os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
         
-        im2 = cv2.resize(im, dsize=output_imsize)
+        im2 = cv2.resize(im, dsize=tuple(output_imsize))
 
         print(f'writting to {out_name}\n')
         cv2.imwrite(os.path.join(path_out,out_name), im2)
