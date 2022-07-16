@@ -4,6 +4,7 @@ import time
 
 import cv2
 import numpy as np
+import open3d
 
 
 import sys
@@ -134,7 +135,7 @@ class PointCloud():
         return img
         
     def get_PCD(self):
-        import open3d
+        # import open3d
         pcd = open3d.geometry.PointCloud()
         np_points = np.empty((self.x.shape[0], 3))
         np_points[:, 0] = self.x
@@ -200,7 +201,7 @@ class PointCloud():
     def read_points(self, path, zmin=None, zmax=None, clip_mode=0):
         self.input_path, ext = os.path.splitext(path)
         if ext == '.pcd':
-            import open3d
+            # import open3d
             pcddata = open3d.io.read_point_cloud(path, remove_nan_points=False, remove_infinite_points=False)
             points = np.asarray(pcddata.points)
         elif ext == '.npy':
