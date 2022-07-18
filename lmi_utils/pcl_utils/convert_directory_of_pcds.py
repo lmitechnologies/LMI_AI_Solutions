@@ -28,25 +28,26 @@ class DirectoryConverter(object):
             logger.info(f"Processing {input_file}.")
             pcd = PointCloud()
             pcd.read_points(input_file)
-            if convert_to_color:
-                pcd.convert_points_to_color_image(normalize=normalize)
-            else:
-                pcd.convert_points_to_greyscale_image(
-                    normalize=normalize, equalize_histograms=equalize_histograms
-                )
             filename, _ = os.path.splitext(os.path.basename(input_file))
             outfile = os.path.join(self.output_directory, filename + ext)
-            if ext == '.npy':
+            if ext=='.png':
+                if convert_to_color:
+                    pcd.convert_points_to_image(color_mapping='rainbow')
+                else:
+                    pcd.convert_points_to_image(color_mapping='gray') 
+                pcd.save_img(outfile)
+            elif ext == '.npy':
                 pcd.save_as_npy(outfile)
             else:
-                pcd.save_img(outfile)
+                raise Exception(f'Unrecognized extension: {ext}. Choose .png or .npy.')
+                
             logger.info(f"Converted {i+1}/{num_input_files}")
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--input_path', '-i', required=True)
     ap.add_argument('--output_path', '-o', required=True)
-    ap.add_argument('--normalize', type=bool, default=True)
+    ap.add_argument('--normalize', type=bool, default=False)
     ap.add_argument('--extension', default='.png')
     args = vars(ap.parse_args())
     inp  = args['input_path']
@@ -58,5 +59,5 @@ if __name__ == '__main__':
         print('[INFO] Creating new directory:', out)
         os.mkdir(out)
     dc = DirectoryConverter(inp, out)
-    dc.convert(convert_to_color=True, normalize=norm, ext=ext)
+    dc.convert(convert_to_color=False, normalize=norm, ext=ext)
 

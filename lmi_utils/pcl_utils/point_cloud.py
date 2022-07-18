@@ -328,21 +328,22 @@ def main():
         print('Bad path.')
         sys.exit(1)
     tstart = time.time()
-    pc.convert_points_to_color_image(
-        rgb_mapping='rainbow', contrast_enhancement=True)
+    pc.convert_points_to_image(
+        colore_mapping='rainbow', contrast_enhancement=True)
     tstop = time.time()
     print(f'[INFO] Time to gen rainbow: {tstop-tstart}s')
     image_rb = pc.img
     pc.reinitialize_fp_image()
     tstart = time.time()
-    pc.convert_points_to_color_image(
-        rgb_mapping='rgb', contrast_enhancement=True)
+    pc.convert_points_to_image(
+        color_mapping='rgb', contrast_enhancement=True)
     tstop = time.time()
     print(f'[INFO] Time to gen rgb: {tstop-tstart}s')
     image_rgb = pc.img
     pc.reinitialize_fp_image()
     tstart = time.time()
-    pc.convert_points_to_grayscale_image(contrast_enhancement=True)
+    pc.convert_points_to_image(
+        color_mapping='gray',contrast_enhancement=True)
     tstop = time.time()
     print(f'[INFO] Time to gen gray: {tstop-tstart}s')
     image_gray = pc.img
