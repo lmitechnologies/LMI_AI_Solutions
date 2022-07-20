@@ -258,13 +258,18 @@ class PointCloud():
         # set inf values to nan for consistency
         self.z[self.z == -np.inf] = np.nan
         # filter all nan to determine dataset min/max
-        ind=self.z[np.isnan(self.z)]
-        if not np.empty(ind):
-            zkeep=self.z[ind]
-        else:
+        try:
+            ind=self.z[np.isnan(self.z)]
+            if ind.size != 0:
+                zkeep=self.z[ind]
+            else:
+                zkeep=self.z
+        except:
             zkeep=self.z
+        
         self.zmin=zkeep.min()
         self.zmax=zkeep.max()
+
 
         #create the height map
         self.__make_maps()
