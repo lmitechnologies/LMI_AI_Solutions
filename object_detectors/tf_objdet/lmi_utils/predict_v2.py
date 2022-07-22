@@ -71,7 +71,7 @@ def _force_gpu_resync(func):
 #%% get colors for labels
 class_max=args['num_classes']
 #COLORS=np.random.uniform(0,255,size=(class_max,3))
-COLORS=[(0,0,255),(255,0,0),(0,255,0),(102,51,153),(255,140,0),(105,105,105),(127,25,27),(9,200,100)]
+COLORS=[(0,0,255),(255,0,0),(0,255,0),(255,0,255),(255,255,0),(113,0,0),(0,113,0),(0,0,113),(113,113,0)]
 
 #%% Load the model
 
@@ -225,8 +225,8 @@ for i,image_file in enumerate(images):
             startY0=int(startY*H0)
             endX0=int(endX*W0)
             endY0=int(endY*H0)
-            csv_out.append([os.path.split(image_file)[1],label['name'],'rect','upper left',startX0,startY0])
-            csv_out.append([os.path.split(image_file)[1],label['name'],'rect','lower right',endX0,endY0])
+            csv_out.append([os.path.split(image_file)[1],label['name'],score,'rect','upper left',startX0,startY0])
+            csv_out.append([os.path.split(image_file)[1],label['name'],score,'rect','lower right',endX0,endY0])
             if not np.isnan(mask).any():
                 mask0=cv2.resize(mask,(endX0-startX0,endY0-startY0),interpolation=cv2.INTER_CUBIC)
                 mask0 = (mask0>args['min_confidence'])
