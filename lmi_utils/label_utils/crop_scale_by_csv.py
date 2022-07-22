@@ -112,7 +112,7 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                             text_ind=pts.min(axis=0)
                             cv2.putText(new_image,label,(text_ind[0],text_ind[1]-4),cv2.FONT_HERSHEY_SIMPLEX,0.8,(255,0,0),1,cv2.LINE_AA)
                             cv2.imshow('Validation Image',new_image)
-                            cv2.waitKey(500)
+                            cv2.waitKey(100)
                 fpath=os.path.splitext(fpath)[0]+'_annot.png'
                 cv2.imwrite(fpath,new_image)
                 
