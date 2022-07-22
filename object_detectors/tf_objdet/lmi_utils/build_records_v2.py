@@ -1,5 +1,5 @@
 #%% import packages
-from tfannotation import TFAnnotation
+from tf_objdet.lmi_utils.tfannotation import TFAnnotation
 from sklearn.model_selection import train_test_split
 from PIL import Image
 import tensorflow as tf 
