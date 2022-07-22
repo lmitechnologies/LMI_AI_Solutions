@@ -9,6 +9,7 @@
 [submodule "object_detectors/tf_objdet/models"]
 	path = object_detectors/tf_objdet/models
 	url = git@github.com:lmitechnologies/models.git
+	branch = master
 [submodule "ocr_models/PaddleOCR"]
 	path = ocr_models/PaddleOCR
 	url = git@github.com:lmitechnologies/PaddleOCR.git
