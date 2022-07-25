@@ -5,6 +5,7 @@ from logging import warning
 
 import os
 import inspect
+from shutil import ExecError
 import sys
 
 #currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
@@ -41,10 +42,19 @@ def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=Tr
         for row in reader:
             im_name = row[0]
             category = row[1]
-            confidence = float(row[2])
-            shape_type = row[3]
-            coord_type = row[4]
-            coordinates = row[5:]
+            try:
+                # expect to find confidence level
+                confidence = float(row[2])
+                shape_type = row[3]
+                coord_type = row[4]
+                coordinates = row[5:]
+            except Exception:
+                # in case cannot find confidence level, set it to 1.0
+                confidence = 1.0
+                shape_type = row[2]
+                coord_type = row[3]
+                coordinates = row[4:]
+            
             if category not in class_map:
                 if not new_map:
                     warning(f'found new class in the {fname}: {category}, skip')
