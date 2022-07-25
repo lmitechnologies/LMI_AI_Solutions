@@ -49,7 +49,7 @@ def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=Tr
                 coord_type = row[4]
                 coordinates = row[5:]
             except Exception:
-                # Incase cannot find confidence level, set it to 1.0
+                # in case cannot find confidence level, set it to 1.0
                 confidence = 1.0
                 shape_type = row[2]
                 coord_type = row[3]
