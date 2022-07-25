@@ -205,7 +205,7 @@ if __name__ == '__main__':
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--classes', required=True, help='the class categories in the dataset using comma to separate each category')
     ap.add_argument('--output_json', required=True, help='the path to the output json file')
-    ap.add_argument('--plot', default=True, type=lambda x: x in ['True', 'true', '1'], help='plot the annotations')
+    ap.add_argument('--plot', default=False, type=lambda x: x in ['True', 'true', '1'], help='plot the annotations')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
