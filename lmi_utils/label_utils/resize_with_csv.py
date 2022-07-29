@@ -38,7 +38,7 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
         out_name = os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
         
         ratio = W/w
-        im2 = cv2.resize(im, dsize=output_imsize)
+        im2 = cv2.resize(im, dsize=tuple(output_imsize))
         name_to_im[out_name] = im2
 
         for i in range(len(shapes[im_name])):
