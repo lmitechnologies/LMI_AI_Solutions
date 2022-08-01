@@ -95,6 +95,7 @@ class PointCloud():
             self.img_x = self.x.reshape((H, W))
             self.img_y = self.y.reshape((H, W))
         else:
+            print('[WARNING] Number of z points does not align with grid. Creating height map with for loop.')
             self.img_fp = np.zeros([H, W], dtype='f')
             self.img_fp[:]=np.nan
             self.img_y, self.img_x = np.meshgrid(y_val, x_val)
