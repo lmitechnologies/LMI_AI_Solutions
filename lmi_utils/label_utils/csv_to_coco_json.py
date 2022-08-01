@@ -86,24 +86,24 @@ class Dataset(object):
             reader = csv.reader(csvfile, delimiter=';')
             for row in reader:
                 fname = row[0]
-                if row[2]=='polygon':
+                if row[3]=='polygon':
                     if fname not in masks:
                         masks[fname] = collections.defaultdict(list)
-                    if row[3]=='x values':
+                    if row[4]=='x values':
                         if 'x' not in masks:
-                            masks[fname]['x'].append(row[4:])
-                    if row[3]=='y values':
-                            masks[fname]['y'].append(row[4:])
+                            masks[fname]['x'].append(row[5:])
+                    if row[4]=='y values':
+                            masks[fname]['y'].append(row[5:])
                             masks[fname]['category'].append(row[1])
                             masks[fname]['iscrowd'].append(iscrowd)
                             masks[fname]['image_id'].append(self.imgfile2id[fname])
-                elif row[2]=='rect':
+                elif row[3]=='rect':
                     if fname not in rects:
                         rects[fname] = collections.defaultdict(list)
-                    if row[3]=='upper left':
+                    if row[4]=='upper left':
                         bbox = row[4:][:]
-                    if row[3]=='lower right':
-                        bbox += row[4:]
+                    if row[4]=='lower right':
+                        bbox += row[5:]
                         rects[fname]['bbox'].append(bbox)
                         rects[fname]['category'].append(row[1])
                         rects[fname]['iscrowd'].append(iscrowd)
