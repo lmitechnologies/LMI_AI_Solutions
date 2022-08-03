@@ -11,7 +11,7 @@ import numpy as np
 NAN_INT=-999999
 
 #%% File paths
-def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all_labels,boundingbox_label,object_labels,scl_w,p2w,p2h): 
+def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all_labels,boundingbox_label,object_labels,scl_w,p2w,p2h,is_plot): 
     # def_width=False
     # try:
     #     scl_w=int(scl_w)
@@ -97,13 +97,13 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                         yj=list(new_objects[j][:,1])
                         if not (np.any(np.asarray(xj)<NAN_INT) or np.any(np.asarray(yj)<NAN_INT)):
                             if label_type=='polygon':
-                                rowWriter.writerow([fname,label,'polygon','x values']+xj)
-                                rowWriter.writerow([fname,label,'polygon','y values']+yj)
+                                rowWriter.writerow([fname,label,'1.0','polygon','x values']+xj)
+                                rowWriter.writerow([fname,label,'1.0','polygon','y values']+yj)
                             elif label_type=='rect':
                                 ul=[xj[0],yj[0]]
                                 lr=[xj[2],yj[2]]
-                                rowWriter.writerow([fname,label,'rect','upper left']+ul)
-                                rowWriter.writerow([fname,label,'rect','lower right']+lr)
+                                rowWriter.writerow([fname,label,'1.0','rect','upper left']+ul)
+                                rowWriter.writerow([fname,label,'1.0','rect','lower right']+lr)
                             else:
                                 raise Exception('Unknown object shape.')
                             # plot 
@@ -111,8 +111,9 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                             cv2.polylines(new_image,[pts],True,(255,0,0),1)
                             text_ind=pts.min(axis=0)
                             cv2.putText(new_image,label,(text_ind[0],text_ind[1]-4),cv2.FONT_HERSHEY_SIMPLEX,0.8,(255,0,0),1,cv2.LINE_AA)
-                            cv2.imshow('Validation Image',new_image)
-                            cv2.waitKey(100)
+                            if is_plot:    
+                                cv2.imshow('Validation Image',new_image)
+                                cv2.waitKey(100)
                 fpath=os.path.splitext(fpath)[0]+'_annot.png'
                 cv2.imwrite(fpath,new_image)
                 
@@ -142,6 +143,7 @@ if __name__ == '__main__':
     ap.add_argument('--scale_width',type=int,default=None,help='Width of new image.  Scaling will preserve aspect ratio.')
     ap.add_argument('--pad2width',type=int,default=None,help='Pad to width')
     ap.add_argument('--pad2height',type=int,default=None,help='Pad to height')
+    ap.add_argument('--plot', action='store_true', help='plot the crop region')
     args=vars(ap.parse_args())
 
     idp=args['input_data_path']
@@ -154,6 +156,7 @@ if __name__ == '__main__':
     scl_w=args['scale_width']
     p2w=args['pad2width']
     p2h=args['pad2height']
+    is_plot=args['plot']
     
     ldef=ldef.split(",")
     # bblab=bblab.split(",")
@@ -162,4 +165,4 @@ if __name__ == '__main__':
     else:
         mlab=[]
 
-    crop_scale(idp,icsv,odp,ocsv,ldef,bblab,mlab,scl_w,p2w,p2h)
+    crop_scale(idp,icsv,odp,ocsv,ldef,bblab,mlab,scl_w,p2w,p2h,is_plot)
