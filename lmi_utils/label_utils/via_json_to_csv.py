@@ -31,99 +31,102 @@ def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name
     for json_file in json_files:
         # parse the labeling data
         with open(json_file,'r') as read_file:
-            defect_labels=json.load(read_file)
+            object_labels=json.load(read_file)
         
         # keys for each region
-        keys=list(defect_labels.keys())
+        keys=list(object_labels.keys())
 
         # create a new csv file for first JSONfile, append the same for all subsequent json files
         with open(output_csv_file_path,write_append_option,newline='') as csvfile:
             # extract top left corner and bbox dimensions
             labelWriter=csv.writer(csvfile,delimiter=';')
             for i,key in enumerate(keys):         
-                regions=defect_labels[key]['regions']
-                fname=defect_labels[key]['filename']
+                regions=object_labels[key]['regions']
+                fname=object_labels[key]['filename']
                 print('[INFO] filename=',fname)
                 filepath=os.path.join(data_folder_path,fname)
-                for j,_ in enumerate(regions):
-                    label=regions[j]['region_attributes'][label_name]
-                    # general mask label file
-                    # if is_mask:
-                    # test for polygon region
-                    if regions[j]['shape_attributes']['name']=='polygon':
-                        xj=regions[j]['shape_attributes']['all_points_x']
-                        yj=regions[j]['shape_attributes']['all_points_y']
-                        if mask_to_bbox:
-                            print('[INFO] Writing bounding box from mask region: ',label)
-                            xj=np.array(xj,dtype=np.int32)
-                            yj=np.array(yj,dtype=np.int32)
-                            x_ul=xj.min()
-                            y_ul=yj.min()
-                            x_lr=xj.max()
-                            y_lr=yj.max()
+                if os.path.exists(filepath):
+                    for j,_ in enumerate(regions):
+                        label=regions[j]['region_attributes'][label_name]
+                        # general mask label file
+                        # if is_mask:
+                        # test for polygon region
+                        if regions[j]['shape_attributes']['name']=='polygon':
+                            xj=regions[j]['shape_attributes']['all_points_x']
+                            yj=regions[j]['shape_attributes']['all_points_y']
+                            if mask_to_bbox:
+                                print('[INFO] Writing bounding box from mask region: ',label)
+                                xj=np.array(xj,dtype=np.int32)
+                                yj=np.array(yj,dtype=np.int32)
+                                x_ul=xj.min()
+                                y_ul=yj.min()
+                                x_lr=xj.max()
+                                y_lr=yj.max()
+                                labelWriter.writerow([fname,label,'1.0','rect','upper left',x_ul,y_ul])
+                                labelWriter.writerow([fname,label,'1.0','rect','lower right',x_lr,y_lr])
+                            else:         
+                                labelWriter.writerow([fname,label,'1.0','polygon','x values']+xj)
+                                labelWriter.writerow([fname,label,'1.0','polygon','y values']+yj)
+                        # test for simple bounding box region
+                        elif regions[j]['shape_attributes']['name']=='rect':
+                            xj=regions[j]['shape_attributes']['x']
+                            yj=regions[j]['shape_attributes']['y']
+                            wj=regions[j]['shape_attributes']['width']
+                            hj=regions[j]['shape_attributes']['height']
+                            x_ul=xj
+                            y_ul=yj
+                            x_lr=xj+wj
+                            y_lr=yj+hj
                             labelWriter.writerow([fname,label,'1.0','rect','upper left',x_ul,y_ul])
                             labelWriter.writerow([fname,label,'1.0','rect','lower right',x_lr,y_lr])
-                        else:         
-                            labelWriter.writerow([fname,label,'1.0','polygon','x values']+xj)
-                            labelWriter.writerow([fname,label,'1.0','polygon','y values']+yj)
-                    # test for simple bounding box region
-                    elif regions[j]['shape_attributes']['name']=='rect':
-                        xj=regions[j]['shape_attributes']['x']
-                        yj=regions[j]['shape_attributes']['y']
-                        wj=regions[j]['shape_attributes']['width']
-                        hj=regions[j]['shape_attributes']['height']
-                        x_ul=xj
-                        y_ul=yj
-                        x_lr=xj+wj
-                        y_lr=yj+hj
-                        labelWriter.writerow([fname,label,'1.0','rect','upper left',x_ul,y_ul])
-                        labelWriter.writerow([fname,label,'1.0','rect','lower right',x_lr,y_lr])
-                    elif regions[j]['shape_attributes']['name']=='point':
-                        cx=regions[j]['shape_attributes']['cx']
-                        cy=regions[j]['shape_attributes']['cy']
-                        labelWriter.writerow([fname,label,'1.0','point','cx',cx])
-                        labelWriter.writerow([fname,label,'1.0','point','cy',cy])
-                    else:
-                        raise Exception('Unsupported label type.  polygon and rect supported.')
-
-                    # else:
-                    #     xj=regions[j]['shape_attributes']['x']
-                    #     yj=regions[j]['shape_attributes']['y']
-                    #     wj=regions[j]['shape_attributes']['width']
-                    #     hj=regions[j]['shape_attributes']['height']
-
-                    #     x_ul=xj
-                    #     y_ul=yj
-                    #     x_lr=xj+wj
-                    #     y_lr=yj+hj
-                    #     labelWriter.writerow([fname,label,'1.0','rect','upper left',x_ul,y_ul])
-                    #     labelWriter.writerow([fname,label,'1.0','rect','lower right',x_lr,y_lr])
-                    
-                    if render:
-                        # display image
-                        THICKNESS=2
-                        RADIUS=20
-                        image=cv2.imread(filepath)
-                        if regions[j]['shape_attributes']['name']=='polygon' and (not mask_to_bbox):
-                            overlay=image.copy()
-                            xj=np.array(xj,dtype=np.int32)
-                            yj=np.array(yj,dtype=np.int32)
-                            x_ul=xj.min()
-                            y_ul=yj.min()
-                            x_lr=xj.max()
-                            y_lr=yj.max()
-                            pts=np.stack((xj,yj),axis=1)
-                            pts=np.expand_dims(pts,axis=0)
-                            overlay=cv2.fillPoly(overlay,pts,(255,0,0))
-                        elif regions[j]['shape_attributes']['name']=='rect' or (regions[j]['shape_attributes']['name']=='polygon' and mask_to_bbox):
-                            image=cv2.rectangle(image,(x_ul,y_ul),(x_lr,y_lr),(255,0,0),thickness=THICKNESS)
-                            cv2.putText(image,label,(x_ul,y_ul-4),cv2.FONT_HERSHEY_SIMPLEX,0.8,(0,0,255),THICKNESS,cv2.LINE_AA)
                         elif regions[j]['shape_attributes']['name']=='point':
-                            image=cv2.circle(image,(cx,cy),RADIUS,(0,255,0),-1)
-                            cv2.putText(image,label,(cx-RADIUS-2*THICKNESS,cy-RADIUS-2*THICKNESS),cv2.FONT_HERSHEY_SIMPLEX,0.8,(0,255,0),THICKNESS,cv2.LINE_AA)
-                        image=resize(image,width=512)    
-                        cv2.imshow('image',image)
-                        cv2.waitKey(500)
+                            cx=regions[j]['shape_attributes']['cx']
+                            cy=regions[j]['shape_attributes']['cy']
+                            labelWriter.writerow([fname,label,'1.0','point','cx',cx])
+                            labelWriter.writerow([fname,label,'1.0','point','cy',cy])
+                        else:
+                            raise Exception('Unsupported label type.  polygon and rect supported.')
+
+                        # else:
+                        #     xj=regions[j]['shape_attributes']['x']
+                        #     yj=regions[j]['shape_attributes']['y']
+                        #     wj=regions[j]['shape_attributes']['width']
+                        #     hj=regions[j]['shape_attributes']['height']
+
+                        #     x_ul=xj
+                        #     y_ul=yj
+                        #     x_lr=xj+wj
+                        #     y_lr=yj+hj
+                        #     labelWriter.writerow([fname,label,'1.0','rect','upper left',x_ul,y_ul])
+                        #     labelWriter.writerow([fname,label,'1.0','rect','lower right',x_lr,y_lr])
+                        
+                        if render:
+                            # display image
+                            THICKNESS=2
+                            RADIUS=20
+                            image=cv2.imread(filepath)
+                            if regions[j]['shape_attributes']['name']=='polygon' and (not mask_to_bbox):
+                                overlay=image.copy()
+                                xj=np.array(xj,dtype=np.int32)
+                                yj=np.array(yj,dtype=np.int32)
+                                x_ul=xj.min()
+                                y_ul=yj.min()
+                                x_lr=xj.max()
+                                y_lr=yj.max()
+                                pts=np.stack((xj,yj),axis=1)
+                                pts=np.expand_dims(pts,axis=0)
+                                overlay=cv2.fillPoly(overlay,pts,(255,0,0))
+                            elif regions[j]['shape_attributes']['name']=='rect' or (regions[j]['shape_attributes']['name']=='polygon' and mask_to_bbox):
+                                image=cv2.rectangle(image,(x_ul,y_ul),(x_lr,y_lr),(255,0,0),thickness=THICKNESS)
+                                cv2.putText(image,label,(x_ul,y_ul-4),cv2.FONT_HERSHEY_SIMPLEX,0.8,(0,0,255),THICKNESS,cv2.LINE_AA)
+                            elif regions[j]['shape_attributes']['name']=='point':
+                                image=cv2.circle(image,(cx,cy),RADIUS,(0,255,0),-1)
+                                cv2.putText(image,label,(cx-RADIUS-2*THICKNESS,cy-RADIUS-2*THICKNESS),cv2.FONT_HERSHEY_SIMPLEX,0.8,(0,255,0),THICKNESS,cv2.LINE_AA)
+                            image=resize(image,width=512)    
+                            cv2.imshow('image',image)
+                            cv2.waitKey(500)
+                else:
+                    print(f'[INFO] File does not exist in data path: {filepath}')
 
             # append csv file for each additional json file
             write_append_option='a'
