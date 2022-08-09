@@ -77,7 +77,7 @@ def polygon_ious(polygons_1, polygons_2):
     return ious
 
 
-def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=0.5, threshold_conf=0.1, image_level=False):
+def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=0.5, threshold_conf=0.1, skip_classes=[], image_level=False):
     """
     calculate the precision and recall based on the threshold of iou and confidence
     arguments:
@@ -187,21 +187,23 @@ def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=
     Err = {} #image level results
     total_tp, total_fp, total_gt = 0,0,0
     for c in class_map:
+        if c in skip_classes:
+            continue
         if image_level:
             tp,fp,gt,fn = TP_im[c],FP_im[c],GT_im[c],FN_im[c]
         else:
             tp,fp,gt,fn = TP[c],FP[c],GT[c],FN[c]
         
-        P[c] = tp / (tp + fp + epsilon)
-        R[c] = tp / (gt + epsilon)
+        P[c] = min(1, tp / (tp + fp + epsilon))
+        R[c] = min(1, tp / (gt + epsilon))
         Err[c] = FN_im[c]/total_imgs
         print(f'class {c}: ', f'error rate: {Err[c]:.4f}, ', f'precision: {P[c]:.4f}, ', f'recall: {R[c]:.4f}')
 
         total_tp += tp
         total_fp += fp
         total_gt += gt
-    P['all'] = total_tp / (total_tp + total_fp + epsilon)
-    R['all'] = total_tp / (total_gt + epsilon)
+    P['all'] = min(1, total_tp / (total_tp + total_fp + epsilon))
+    R['all'] = min(1, total_tp / (total_gt + epsilon))
     print('')
     return P,R,Err
 
@@ -232,6 +234,7 @@ if __name__ == '__main__':
     parse.add_argument('--model_csv', required=True, help='the path to the model prediction csv')
     parse.add_argument('--label_csv', required=True, help='the path to the ground truth csv')
     parse.add_argument('--path_out', required=True, help='the output path for storing Precision and Recall figures')
+    parse.add_argument('--skip_classes', default='', help='skip calculating the P/R curves for these comma separated classes')
     parse.add_argument('--threshold_iou', type=float, default=0.5, help='[optional] the iou threshold, default=0.5')
     parse.add_argument('--image_level', action='store_true', help='[optional] calculate the precision and recall on image level')
     args = vars(parse.parse_args())
@@ -241,6 +244,11 @@ if __name__ == '__main__':
     label_csv = args['label_csv']
     out_path = args['path_out']
     image_level = args['image_level']
+    skip_classes = args['skip_classes']
+    if skip_classes=='':
+        skip_classes = []
+    else:
+        skip_classes = skip_classes.split(',')
 
     if not os.path.isfile(model_csv):
         raise Exception(f'Not found the "preds.csv" in {os.path.dirname(model_csv)}')
@@ -257,7 +265,7 @@ if __name__ == '__main__':
     Ps,Rs = collections.defaultdict(list),collections.defaultdict(list)
     Errs = collections.defaultdict(list)
     for conf in X:
-        P,R,err = precision_recall(label_dt, pred_dt, class_map, threshold_iou, conf, image_level)
+        P,R,err = precision_recall(label_dt,pred_dt,class_map,threshold_iou,conf,skip_classes,image_level)
         for c in P:
             Ps[c].append(P[c])
         for c in R:

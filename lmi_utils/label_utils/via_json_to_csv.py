@@ -11,7 +11,7 @@ import numpy as np
 from image_utils.img_resize import resize 
 
 
-def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name',render=False,mask_to_bbox=False):
+def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name',target_classes=[],render=False,mask_to_bbox=False):
     """
     Description:
         parses JSON and writes values to csv
@@ -48,6 +48,8 @@ def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name
                 if os.path.exists(filepath):
                     for j,_ in enumerate(regions):
                         label=regions[j]['region_attributes'][label_name]
+                        if label not in target_classes:
+                            continue
                         # general mask label file
                         # if is_mask:
                         # test for polygon region
@@ -139,12 +141,19 @@ if __name__ == '__main__':
     ap.add_argument('--output_fname',required=True)
     ap.add_argument('-r','--render',default="False")
     ap.add_argument('--mask_to_bbox',default="False")
+    ap.add_argument('--target_classes',default='',help='comma separated target class names')
     ap.add_argument('--label_name',default='Name')
     args=vars(ap.parse_args())
 
     data_path=args['data_path']
     output_filename=args['output_fname']
     label_name=args['label_name']
+    target_classes=args['target_classes']
+    if target_classes=='':
+        target_classes = []
+    else:
+        target_classes = target_classes.split(',')
+    print(f'target_classes: {target_classes}')
 
     # is_mask=ast.literal_eval(args['is_mask'])
     # if type(is_mask) is not type(True):
@@ -159,4 +168,4 @@ if __name__ == '__main__':
         raise Exception('mask_to_bbox should be "True" or "False".')
 
     
-    extract_ROI_from_JSON(data_path,output_filename,label_name=label_name,render=render,mask_to_bbox=mask_to_bbox)
+    extract_ROI_from_JSON(data_path,output_filename,label_name=label_name,target_classes=target_classes,render=render,mask_to_bbox=mask_to_bbox)
