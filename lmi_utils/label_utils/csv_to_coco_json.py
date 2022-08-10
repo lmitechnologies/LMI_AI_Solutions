@@ -101,7 +101,7 @@ class Dataset(object):
                     if fname not in rects:
                         rects[fname] = collections.defaultdict(list)
                     if row[4]=='upper left':
-                        bbox = row[4:][:]
+                        bbox = row[5:][:]
                     if row[4]=='lower right':
                         bbox += row[5:]
                         rects[fname]['bbox'].append(bbox)
