@@ -48,7 +48,7 @@ def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name
                 if os.path.exists(filepath):
                     for j,_ in enumerate(regions):
                         label=regions[j]['region_attributes'][label_name]
-                        if label not in target_classes:
+                        if target_classes and label not in target_classes:
                             continue
                         # general mask label file
                         # if is_mask:
