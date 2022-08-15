@@ -104,45 +104,45 @@ def main(config):
         is_mask, is_bbox, is_keypoint=False, False, False
         print('[INFO] row:',row)
         row=row.split(';')
-        if row[2]=='rect':
-            if row[3]=='upper left':
+        if row[3]=='rect':
+            if row[4]=='upper left':
                 (imagePath,label,_,_,startX,startY)=row
                 (startX,startY)=(float(startX),float(startY))
                 continue
-            if row[3]=='lower right':
-                (endX,endY)=(row[4],row[5]) 
+            if row[4]=='lower right':
+                (endX,endY)=(row[5],row[6]) 
                 (endX,endY)=(float(endX),float(endY))
                 is_bbox=True
-        elif row[2]=='polygon':
+        elif row[3]=='polygon':
             if MASK_OPTION:  
-                if row[3]=='x values':
+                if row[4]=='x values':
                     imagePath=row[0]
                     label=row[1]
-                    xvec=np.array(row[4:],dtype=np.float)
+                    xvec=np.array(row[5:],dtype=np.float)
                     startX=xvec.min()
                     endX=xvec.max()
                     continue
-                if row[3]=='y values':
-                    yvec=np.array(row[4:],dtype=np.float)
+                if row[4]=='y values':
+                    yvec=np.array(row[5:],dtype=np.float)
                     startY=yvec.min()
                     endY=yvec.max()
                     is_mask=True
             else:
                 continue
-        elif row[2]=='point':
+        elif row[3]=='point':
             if KEYPOINT_OPTION:
-                if row[3]=='cx':
+                if row[4]=='cx':
                     label=row[1]
-                    cx=float(row[4])
+                    cx=float(row[5])
                     continue
-                if row[3]=='cy':
-                    cy=float(row[4])
+                if row[4]=='cy':
+                    cy=float(row[5])
                     is_keypoint=True
             else:
                 print(f'[INFO] KEYPOINT_OPTION set to false in config file.  Skipping Keypoint.')
                 continue
         else:
-            raise Exception(f'Unregonized feature: {row[2]}.  This conversion only supports: polygon,rect,point')
+            raise Exception(f'Unregonized feature: {row[3]}.  This conversion only supports: polygon,rect,point')
 
         # optional:ignore label if not interested
         if (label not in config.CLASSES) and (label not in keypoint_names):
