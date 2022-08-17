@@ -104,9 +104,9 @@ def main(config):
         is_mask, is_bbox, is_keypoint=False, False, False
         print('[INFO] row:',row)
         row=row.split(';')
-        if row[3]=='rect':
-            if row[4]=='upper left':
-                (imagePath,label,_,_,_,startX,startY)=row
+        if row[2]=='rect':
+            if row[3]=='upper left':
+                (imagePath,label,_,_,startX,startY)=row
                 (startX,startY)=(float(startX),float(startY))
                 continue
             if row[4]=='lower right':

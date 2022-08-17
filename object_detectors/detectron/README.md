@@ -77,7 +77,8 @@ where the `REPO_PATH` is the path to LMI_AI_Solutions repository, `INPUT_YAML_FI
 ## Create a yaml file for testing
 ```yaml
 DATASETS:
-  TEST: ("dataset_test",)
+  # dataset name, generate subfolder inside OUTPUT_DIR
+  TEST: ("2022-07-05_R18",)
   TEST_DIR: ("./data/test_512x512",)
 INPUT: 
   FORMAT: "RGB"
@@ -95,8 +96,7 @@ MODEL:
   PIXEL_MEAN: [0, 0, 0]
   PIXEL_STD: [1, 1, 1]
 TRAINED_MODEL_DIR: './trained-inference-models/2022-07-05_R18'
-#generate subfolder inside OUTPUT_DIR
-OUTPUT_DIR: './validation/2022-07-05_R18'
+OUTPUT_DIR: './validation'
 VERSION: 2
 ```
 

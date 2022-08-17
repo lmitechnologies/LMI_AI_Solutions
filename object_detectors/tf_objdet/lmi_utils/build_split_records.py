@@ -1,5 +1,5 @@
 #%% import packages
-from tfannotation import TFAnnotation
+from tf_objdet.lmi_utils.tfannotation import TFAnnotation
 from sklearn.model_selection import train_test_split
 from PIL import Image
 import tensorflow as tf 
@@ -11,7 +11,7 @@ import importlib.util
 import numpy as np
 import cv2
 import io
-import image_utils.Rosenbrock as imutils
+from image_utils.img_resize import resize
 
 
 #%%
@@ -26,40 +26,40 @@ def load_csv(path_imgs, path_csv, CLASSES, MASK_OPTION):
         for row in rows:
             #print('[INFO] row:',row)
             if MASK_OPTION:
-                if row[2]=='polygon':
-                    if row[3]=='x values':
+                if row[3]=='polygon':
+                    if row[4]=='x values':
                         imagePath=row[0]
                         label=row[1]
-                        xvec=np.array(row[4:],dtype=np.float)
+                        xvec=np.array(row[5:],dtype=np.float)
                         startX=xvec.min()
                         endX=xvec.max()
                         continue
-                    if row[3]=='y values':
-                        yvec=np.array(row[4:],dtype=np.float)
+                    if row[4]=='y values':
+                        yvec=np.array(row[5:],dtype=np.float)
                         startY=yvec.min()
                         endY=yvec.max()
                 else:
                     raise Exception('csv file includes non-polygon regions.')
             else:
-                if row[2]=='rect':
-                    if row[3]=='upper left':
+                if row[3]=='rect':
+                    if row[4]=='upper left':
                         (imagePath,label,_,_,startX,startY)=row
                         (startX,startY)=(float(startX),float(startY))
                         continue
-                    if row[3]=='lower right':
-                        (endX,endY)=(row[4],row[5]) 
+                    if row[4]=='lower right':
+                        (endX,endY)=(row[5],row[6]) 
                         (endX,endY)=(float(endX),float(endY))
-                elif row[2]=='polygon':
+                elif row[3]=='polygon':
                     print('[INFO] Converting ROIs of type "polygon" to bounding boxes.')
-                    if row[3]=='x values':
+                    if row[4]=='x values':
                         imagePath=row[0]
                         label=row[1]
-                        xvec=np.array(row[4:],dtype=np.float)
+                        xvec=np.array(row[5:],dtype=np.float)
                         startX=xvec.min()
                         endX=xvec.max()
                         continue
-                    if row[3]=='y values':
-                        yvec=np.array(row[4:],dtype=np.float)
+                    if row[4]=='y values':
+                        yvec=np.array(row[5:],dtype=np.float)
                         startY=yvec.min()
                         endY=yvec.max()
 
@@ -158,7 +158,7 @@ def main():
                 try:
                     MAX_W=config.MAX_W
                     if w0>MAX_W:
-                        img_resize=imutils.resize(img,width=MAX_W)
+                        img_resize=resize(img,width=MAX_W)
                         (h,w)=img_resize.shape[:2]
                         print(f'[INFO] Resized input image & polygons to image size w={w}, h={h}.')
                         img_rgb=cv2.cvtColor(img_resize, cv2.COLOR_BGR2RGB)
@@ -222,7 +222,7 @@ def main():
                 tfAnnot.yMaxs.append(yMax)
                 tfAnnot.textLabels.append(label.encode('utf8'))
                 tfAnnot.classes.append(CLASSES[label])
-                tfAnnot.difficult.append(0)
+                # tfAnnot.difficult.append(0)
                 
                 if MASK_OPTION:
                     canvas=np.zeros((h0,w0),dtype=np.uint8)
@@ -230,7 +230,7 @@ def main():
                     pts=np.expand_dims(pts,axis=0).astype(np.int32)
                     mask_img=cv2.fillPoly(canvas,pts,1).astype(np.uint8)
                     if RESIZE_OPTION and w0>MAX_W:
-                        img_resize=imutils.resize(mask_img,width=MAX_W,inter=cv2.INTER_NEAREST)
+                        img_resize=resize(mask_img,width=MAX_W,inter=cv2.INTER_NEAREST)
                         mask_img=img_resize
                     img=Image.fromarray(mask_img)
                     output = io.BytesIO()

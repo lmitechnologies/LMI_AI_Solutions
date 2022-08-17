@@ -69,9 +69,10 @@ def test(cfg):
             instances = outputs["instances"]
             h,w = im.shape[:2]
             #loop through each instance (mask)
-            for mask,bbox,c in zip(instances.pred_masks, instances.pred_boxes, instances.pred_classes):
+            for mask,bbox,c,score in zip(instances.pred_masks, instances.pred_boxes, instances.pred_classes, instances.scores):
                 mask = mask.cpu().numpy()
                 bbox = bbox.cpu().numpy()
+                score = score.item()
                 c = c.item()
                 GM = GenericMask(mask,h,w)
                 #merge multiple polygons
@@ -84,22 +85,23 @@ def test(cfg):
                 X = X.astype(np.int)
                 Y = Y.astype(np.int)
                 bbox = bbox.astype(np.int)
-                temp_dt = {'name':im_name,'class':meta_data.thing_classes[c],'bbox':bbox.tolist(), 'x':X.tolist(), 'y':Y.tolist()}
+                temp_dt = {'name':im_name,'class':meta_data.thing_classes[c],'conf':score,'bbox':bbox.tolist(), 'x':X.tolist(), 'y':Y.tolist()}
                 pred_list.append(temp_dt)
 
         #generate output csv file
         import csv
-        with open(os.path.join(out_path,'output.csv'), 'w', newline='') as csvfile:
+        with open(os.path.join(out_path,'preds.csv'), 'w', newline='') as csvfile:
             writer = csv.writer(csvfile, delimiter=';')
             for dt in pred_list:
                 name = dt['name']
                 class_name = dt['class']
                 bbox = dt['bbox']
+                conf = dt['conf']
                 x,y = dt['x'],dt['y']
-                writer.writerow([name,class_name,'rect','upper left']+bbox[:2])
-                writer.writerow([name,class_name,'rect','lower right']+bbox[2:])
-                writer.writerow([name,class_name,'polygon','x values']+x)
-                writer.writerow([name,class_name,'polygon','y values']+y)
+                writer.writerow([name,class_name,conf,'rect','upper left']+bbox[:2])
+                writer.writerow([name,class_name,conf,'rect','lower right']+bbox[2:])
+                writer.writerow([name,class_name,conf,'polygon','x values']+x)
+                writer.writerow([name,class_name,conf,'polygon','y values']+y)
         proc_times = np.array(proc_times[1:]) 
         print('[INFO]average proc time: {}'.format(proc_times.mean()))
         print('[INFO]min proc time: {}'.format(proc_times.min()))
