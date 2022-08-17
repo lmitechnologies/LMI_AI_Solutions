@@ -1,24 +1,28 @@
 import cv2
 import numpy as np
-from os import listdir
-from os.path import isfile, join
+from os import listdir, makedirs
+from os.path import isfile, join, isdir
 
 class NumpyUtils():
-    def png_to_npy(self,source_path, destination_path):
+    def png_to_npy(self,source_path, destination_path, rotate=False):
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".png" in f]
 
         for f in files:
             print(join(source_path, f))
             np_frame = cv2.imread(join(source_path, f))
+            if rotate:
+                np_frame = np.rot90(np_frame)
             np.save(join(destination_path, f.replace('.png', '.npy')), np_frame)
 
-    def npy_to_png(self,source_path, destination_path):
+    def npy_to_png(self,source_path, destination_path, rotate=False):
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".npy" in f]
 
         for f in files:
-             print(join(source_path, f))
-             np_frame = np.load(join(source_path, f))
-             cv2.imwrite(join(destination_path, f.replace('.npy', '.png')), np_frame)
+            print(join(source_path, f))
+            np_frame = np.load(join(source_path, f))
+            if rotate:
+                np_frame = np.rot90(np_frame)
+            cv2.imwrite(join(destination_path, f.replace('.npy', '.png')), np_frame)
 
 if __name__=="__main__":
     import argparse
@@ -26,20 +30,26 @@ if __name__=="__main__":
     ap.add_argument('--option',required=True,help='npy_2_png or png_2_npy')
     ap.add_argument('--src',required=True)
     ap.add_argument('--dest',required=True)
+    ap.add_argument('--rotate', action='store_true',help='rotate image to 90 degree')
+    
     args=vars(ap.parse_args())
     option=args['option']
     src=args['src']
     dest=args['dest']
+    rotate = args['rotate']
 
     translate=NumpyUtils()
 
     print(f'Src: {src}')
     print(f'Dest: {dest}')
+    
+    if not isdir(dest):
+        makedirs(dest)
 
     if option=='npy_2_png':
-        translate.npy_to_png(src,dest)
+        translate.npy_to_png(src,dest,rotate)
     elif option=='png_2_npy':
-        translate.png_to_npy(src,dest)
+        translate.png_to_npy(src,dest,rotate)
     else:
         raise Exception('Input option must be npy_2_png or png_2_npy')
     
