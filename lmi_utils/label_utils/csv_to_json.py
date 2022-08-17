@@ -40,6 +40,14 @@ def csv_to_json(input_csv,output_json):
                 'width':int(width),\
                 'height':int(height)},\
                 'region_attributes':{'Name':label['obj_class']}} )
+        elif label['shape'] == 'point':
+            x=label['cx']
+            y=label['cy']
+            output_dict[label['image_file']]['regions'].append({'shape_attributes':{\
+                'name':'point',\
+                'cx':int(x),\
+                'cy':int(y)},\
+                'region_attributes':{'Name':label['obj_class']}} )
         else:
             raise Exception(f"[ERROR] Unrecognized shape: {label['shape']}")
     

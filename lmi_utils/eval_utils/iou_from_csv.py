@@ -19,13 +19,15 @@ def csv_to_dictionary(csv_file: str,object_classes: str):
     
     '''
     
-    supported_shapes=['rect','polygon']
+    supported_shapes=['rect','polygon','point']
     list_of_dics=[]
     rows=open(csv_file).read().strip().split('\n')
     ul_found=False 
     lr_found=False 
     x_found=False 
     y_found=False
+    cx_found=False
+    cy_found=False
 
     # Step through each row and create a new dictionary when the row includes a target object
     for row in rows:
@@ -88,6 +90,20 @@ def csv_to_dictionary(csv_file: str,object_classes: str):
                 list_of_dics.append({"image_file":this_file,"obj_class":this_obj,"shape":this_shape,"x_values":this_x,"y_values":this_y})
                 x_found=False 
                 y_found=False
+        
+        if this_shape=='point':
+            cxi=[i for i,s in enumerate(row) if 'cx' in s]
+            if len(cxi)==1:
+                cx=int(row[cxi[0]+1])
+                cx_found=True
+            cyi=[i for i,s in enumerate(row) if 'cy' in s]
+            if len(cyi)==1:
+                cy=int(row[cyi[0]+1])
+                cy_found=True
+            if cx_found and cy_found:
+                list_of_dics.append({"image_file":this_file,"obj_class":this_obj,"shape":this_shape,"cx":cx,"cy":cy})
+                cx_found=False 
+                cy_found=False 
         
     return list_of_dics
 
