@@ -237,8 +237,13 @@ for i,image_file in enumerate(images):
                     cont_size=contour.shape[0]
                     xval=list(contour.reshape((cont_size,2))[:,0])
                     yval=list(contour.reshape((cont_size,2))[:,1])
-                    csv_out.append([os.path.split(image_file)[1],label['name'],'polygon','x values'] + xval)
-                    csv_out.append([os.path.split(image_file)[1],label['name'],'polygon','y values'] + yval)
+                    csv_out.append([os.path.split(image_file)[1],label['name'],score,'polygon','x values'] + xval)
+                    csv_out.append([os.path.split(image_file)[1],label['name'],score,'polygon','y values'] + yval)
+            if not np.isnan(keypoint_pairs).any():
+                for pair in keypoint_pairs:
+                    yval,xval=pair
+                    csv_out.append([os.path.split(image_file)[1],label['name'],score,'point','cx'] + xval)
+                    csv_out.append([os.path.split(image_file)[1],label['name'],score,'point','cy'] + yval)
 
         # draw the prediction on the output image 1 box at a time
         if (draw==True) or (args['save'] is not None):
@@ -276,11 +281,11 @@ for i,image_file in enumerate(images):
             if not np.isnan(keypoint_pairs).any():
                 for pair in keypoint_pairs:
                     cv2.circle(output,(int(pair[1]*W),int(pair[0]*H)),3,(0,255,0),-1)
-                try: 
-                    cv2.line(output, (int(keypoint_pairs[0][1]*W), int(keypoint_pairs[0][0]*H)), (int(keypoint_pairs[2][1]*W), int(keypoint_pairs[2][0]*H)), (0, 255, 0), thickness=1)
-                    cv2.line(output, (int(keypoint_pairs[2][1]*W), int(keypoint_pairs[2][0]*H)), (int(keypoint_pairs[1][1]*W), int(keypoint_pairs[1][0]*H)), (0, 255, 0), thickness=1)
-                except:
-                    print('[INFO] could not generate segment between points.')
+                # try: 
+                #     cv2.line(output, (int(keypoint_pairs[0][1]*W), int(keypoint_pairs[0][0]*H)), (int(keypoint_pairs[2][1]*W), int(keypoint_pairs[2][0]*H)), (0, 255, 0), thickness=1)
+                #     cv2.line(output, (int(keypoint_pairs[2][1]*W), int(keypoint_pairs[2][0]*H)), (int(keypoint_pairs[1][1]*W), int(keypoint_pairs[1][0]*H)), (0, 255, 0), thickness=1)
+                # except:
+                #     print('[INFO] could not generate segment between points.')
 
             if draw==True:
                 cv2.imshow("Output", output)
