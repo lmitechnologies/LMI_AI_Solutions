@@ -86,6 +86,15 @@ def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name
                             cy=regions[j]['shape_attributes']['cy']
                             labelWriter.writerow([fname,label,'1.0','point','cx',cx])
                             labelWriter.writerow([fname,label,'1.0','point','cy',cy])
+                        elif regions[j]['shape_attributes']['name']=='circle':
+                            cx=regions[j]['shape_attributes']['cx']
+                            cy=regions[j]['shape_attributes']['cy']
+                            radius=regions[j]['shape_attributes']['r']
+                            phi = np.linspace(0,2*np.pi,20)[:-1]
+                            xj=(cx+radius*np.cos(phi)).astype(int)
+                            yj=(cy-radius*np.sin(phi)).astype(int)
+                            labelWriter.writerow([fname,label,'1.0','polygon','x values']+list(xj))
+                            labelWriter.writerow([fname,label,'1.0','polygon','y values']+list(yj))
                         else:
                             raise Exception('Unsupported label type.  polygon and rect supported.')
 
