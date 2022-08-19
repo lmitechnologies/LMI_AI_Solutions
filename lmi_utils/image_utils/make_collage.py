@@ -4,6 +4,7 @@ import cv2
 import os
 import numpy as np
 from image_utils.img_resize import resize
+from image_utils.pad_image import fit_array_to_size
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -27,11 +28,30 @@ def gen_collage(input_path,output_path,colmax,width):
     currentRow=None
     lastRow=None
     collage=None
+
+    img_h=[]
+    img_w=[]
+    imgs=[]
     for file in files:
         img=cv2.imread(file)
+        img_h.append(img.shape[0])
+        img_w.append(img.shape[1])
+        imgs.append(img)
+    img_h=np.array(img_h)
+    img_w=np.array(img_w)
+    max_h=img_h.max()
+    print(f'[INFO] Max Input Image Height: {max_h}')
+    max_w=img_w.max()
+    print(f'[INFO] Max Input Image Width: {max_w}')
+
+    for img in imgs:
+        # img,_,_=fit_array_to_size(img,max_w,max_h)
+        h,w=img.shape[:2]
+        pad_h = 0 if h==max_h else max_h-h
+        pad_w = 0 if w==max_w else max_w-w
+        img=cv2.copyMakeBorder(img,0,pad_h,0,pad_w,cv2.BORDER_CONSTANT,None,(0,0,0))
         if width is not None:
             img=resize(img, width=width)
-
         if currentRow is None:    
             currentRow=img
         else:

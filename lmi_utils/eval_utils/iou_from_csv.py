@@ -171,6 +171,7 @@ def main(model_path:str,manual_path:str,data_dir:str,labels:str,output_dir:str,r
                 if (not i_manual) and (not i_model):
                     continue
                 else:
+                    label = f'{obj_class}'
                     found_polygons=False
                     found_boxes=False
                     manual_mask=np.zeros(image.shape[0:2],dtype=np.uint8)
@@ -180,15 +181,19 @@ def main(model_path:str,manual_path:str,data_dir:str,labels:str,output_dir:str,r
                             x_manual=current_manual[i]['x_values']
                             y_manual=current_manual[i]['y_values']
                             pts=np.stack((x_manual,y_manual),axis=1)
+                            label_coord=pts.min(axis=0)
                             pts_manual=np.expand_dims(pts,axis=0).astype(np.int32)
                             cv2.polylines(image,pts_manual,True,(255,0,0),1)
                             cv2.fillPoly(manual_mask,pts_manual,255)
+                            cv2.putText(image, label, label_coord,cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255,0,0), 1)
                         elif current_manual[i]['shape']=='rect':
                             found_boxes=True
                             uleft=current_manual[i]['upper_left']
                             bright=current_manual[i]['lower_right']
+                            label_coord=uleft
                             cv2.rectangle(image,uleft,bright,(255,0,0),1)
                             cv2.rectangle(manual_mask,uleft,bright,255,-1)
+                            cv2.putText(image, label, label_coord,cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255,0,0), 1)
                         else:
                             raise Exception('Unknown mask shape.')
 
@@ -198,14 +203,25 @@ def main(model_path:str,manual_path:str,data_dir:str,labels:str,output_dir:str,r
                             x_model=current_model[i]['x_values']
                             y_model=current_model[i]['y_values']
                             pts=np.stack((x_model,y_model),axis=1)
+                            label_coord=pts.max(axis=0)
                             pts_model=np.expand_dims(pts,axis=0).astype(np.int32)
                             cv2.polylines(image,pts_model,True,(0,0,255),1)
                             cv2.fillPoly(model_mask,pts_model,255)
+                            label_size=cv2.getTextSize(label,cv2.FONT_HERSHEY_SIMPLEX,0.3,1)
+                            label_size=label_size[0][0]
+                            print(f'[INFO] Label size: {label_size}')
+                            overrun=label_coord[0]+label_size
+                            if overrun > image.shape[1]:
+                                delta=overrun-image.shape[1]
+                                image=cv2.copyMakeBorder(image,0,0,0,delta,cv2.BORDER_CONSTANT,None,(0,0,0))
+                            cv2.putText(image, label, label_coord,cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,0,255), 1)
                         elif found_boxes and current_model[i]['shape']=='rect':
                             uleft=current_model[i]['upper_left']
                             bright=current_model[i]['lower_right']
+                            label_coord=bright
                             cv2.rectangle(image,uleft,bright,(0,0,255),1)
                             cv2.rectangle(model_mask,uleft,bright,255,-1)
+                            cv2.putText(image, label, label_coord,cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,0,255), 1)
                         else:
                             print(f"[INFO] skipping model, {current_model[i]['shape']} not present in labeled data.")
                     
