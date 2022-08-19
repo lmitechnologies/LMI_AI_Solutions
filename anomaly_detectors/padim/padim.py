@@ -578,6 +578,7 @@ class PaDiM(object):
         logging.info(f'Avg Proc Time: {proctime.mean()}')
 
         return image_tensor,dist_tensor,fname_tensor
+
       
 
 if __name__=="__main__":
