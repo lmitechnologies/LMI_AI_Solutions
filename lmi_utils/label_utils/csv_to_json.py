@@ -8,7 +8,7 @@ import numpy as np
 #%% read csv
 def csv_to_json(input_csv,output_json):
 
-    obj_classes=np.genfromtxt(input_csv,delimiter=';',dtype=str)[:,1]
+    obj_classes=np.genfromtxt(input_csv,delimiter=';',usecols=(1),dtype=str)
     obj_classes=list(np.unique(obj_classes))
 
     label_dict=csv_to_dictionary(input_csv,obj_classes)
