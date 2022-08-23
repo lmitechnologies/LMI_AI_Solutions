@@ -584,9 +584,8 @@ class PaDiM(object):
         from tensorflow.python.compiler.tensorrt import trt_convert as trt
         saved_model_path=os.path.join(saved_model_dir,'saved_model')
         tfrecords_path=os.path.join(saved_model_dir,'padim.tfrecords')
-        padim.import_tfrecords(tfrecords_path)
-        padim.net=tf.keras.models.load_model(saved_model_path)
-        padim=PaDiM(GPU_memory=gpu_mem_limit)
+        self.import_tfrecords(tfrecords_path)
+        self.net=tf.keras.models.load_model(saved_model_path)
 
         # https://docs.nvidia.com/deeplearning/frameworks/tf-trt-user-guide/index.html
         params = copy.deepcopy(trt.DEFAULT_TRT_CONVERSION_PARAMS)
