@@ -548,8 +548,8 @@ class PaDiM(object):
             # fname_str=' '.join(fname_decode)
             logging.info(f'Processing images {fname_decode}')
             t0=time.time()
-            # if len(x.shape)<4:
-            #     x=tf.expand_dims(x,0)
+            if len(x.shape)<4:
+                x=tf.expand_dims(x,0)
             image_list.append(x)
             output_layers=self.net(x)
             test_layers=self.upsample_concatenate_output_layers(output_layers)
