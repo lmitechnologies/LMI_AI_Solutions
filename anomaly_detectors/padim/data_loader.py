@@ -42,7 +42,7 @@ class DataLoader(object):
         self.normalize = normalize
 
         #get image file list from path_base and its subfolders
-        self.file_list, self.file_names = self.get_file_list(path_base)
+        self.file_list, self.file_names = self._get_file_list(path_base)
         self.n_samples = len(self.file_list)
 
         #generate dataset from the file list
@@ -53,7 +53,7 @@ class DataLoader(object):
             dataset = dataset.shuffle(self.n_samples, reshuffle_each_iteration=True)
 
         #apply the parse function to each element in the dataset
-        dataset = dataset.map(self.parse_function, num_parallel_calls=tf.data.AUTOTUNE)
+        dataset = dataset.map(self._parse_function, num_parallel_calls=tf.data.AUTOTUNE)
 
         #set batch size
         dataset = dataset.batch(batch_size)
@@ -62,7 +62,7 @@ class DataLoader(object):
         self.dataset = dataset.prefetch(tf.data.AUTOTUNE)
         
     @staticmethod
-    def get_file_list(path_base):
+    def _get_file_list(path_base):
         """
         DESCRIPTION:
             get image file list from path_base and its subfolders
@@ -87,8 +87,7 @@ class DataLoader(object):
             file_names += fnames
         return file_list, file_names
 
-    @staticmethod
-    def parse_function(self, path_file, file_name):
+    def _parse_function(self, path_file, file_name):
         """
         DESCRIPTION:
             parse each element in the dataset
