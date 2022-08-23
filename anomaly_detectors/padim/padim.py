@@ -7,6 +7,7 @@ from skimage import morphology
 import logging
 import time
 import glob
+import copy
 
 # 2. Third-party modules
 import numpy as np
@@ -578,11 +579,69 @@ class PaDiM(object):
         logging.info(f'Avg Proc Time: {proctime.mean()}')
 
         return image_tensor,dist_tensor,fname_tensor
+    
+    def convert_tensorRT(self,saved_model_dir,trt_saved_model_dir,calibration_data_dir=None,gpu_mem_limit=2048,precision_mode='FP16'):
+        from tensorflow.python.compiler.tensorrt import trt_convert as trt
+        padim.import_tfrecords('./saved_model/padim.tfrecords')
+        padim.net=tf.keras.models.load_model('./saved_model/saved_model')
+        padim=PaDiM(GPU_memory=gpu_mem_limit)
 
+        # https://docs.nvidia.com/deeplearning/frameworks/tf-trt-user-guide/index.html
+        params = copy.deepcopy(trt.DEFAULT_TRT_CONVERSION_PARAMS)
+        allow_build_at_runtime=True if calibration_data_dir is None else False
+        max_workspace_size_bytes=1073741824 # Default: 1e9. The maximum GPU temporary memory which the TensorRT engine can use at execution time
+        minimum_segment_size=3 # Default: 3. This is the minimum number of nodes required for a subgraph to be replaced by TRTEngineOp.
+        # Set precision
+        def get_trt_precision():
+            if precision_mode == "FP32":
+                return trt.TrtPrecisionMode.FP32
+            elif precision_mode == "FP16":
+                return trt.TrtPrecisionMode.FP16
+            elif precision_mode == "INT8":
+                return trt.TrtPrecisionMode.INT8
+            else:
+                raise RuntimeError("Unknown precision received: `{}`. Expected: "
+                                    "FP32, FP16 or INT8")
+        # Set key properties
+        params = params._replace(
+            allow_build_at_runtime=allow_build_at_runtime,
+            max_workspace_size_bytes=max_workspace_size_bytes,
+            minimum_segment_size=minimum_segment_size,
+            precision_mode=get_trt_precision()
+        )
+
+        # Convert
+        converter = trt.TrtGraphConverterV2(input_saved_model_dir=saved_model_dir,conversion_params=params)
+        # Convert for FP16,FP32
+        converter.convert()
+        # TODO: add support for INT8: converter.convert(calibration_input_fn=calibration_input_fn)
+        
+        # Build
+        if not allow_build_at_runtime:
+            try: 
+                path_to_cal_images=calibration_data_dir
+                image_path_list=glob.glob(os.path.join(path_to_cal_images,'*.png'))
+                cal_image_list=[]
+                for image_path in image_path_list:
+                    image,_=DataLoader.parse_function(image_path)
+                    cal_image_list.append(image)
+                def calibration_input_fn():
+                    for x in cal_image_list:
+                        print(f'Calibration image shape: {x.shape}')
+                        yield [x]
+                converter.build(input_fn=calibration_input_fn)
+            except:
+                print('Calibration data directory is not specified properly.')
+
+        # Save the converted model
+        if not os.path.exists(trt_saved_model_dir):
+            os.makedirs(trt_saved_model_dir)
+        converter.save(trt_saved_model_dir)
       
 
 if __name__=="__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--gpu_mem_limit",default=2048, type=int, help='GPU memory limit (MB)')
     parser.add_argument("--seed", default=42, type=int, help='What seed to use')
     parser.add_argument("--cprime", default=250, type=int, help='Random sampling dimension')
     parser.add_argument("--data_path", default='./data/test_data_transistor/expected', type=str, help="Input Data Path.")
