@@ -585,8 +585,7 @@ class PaDiM(object):
         saved_model_path=os.path.join(saved_model_dir,'saved_model')
         tfrecords_path=os.path.join(saved_model_dir,'padim.tfrecords')
         self.import_tfrecords(tfrecords_path)
-        self.net=tf.keras.models.load_model(saved_model_path)
-
+        # self.net=tf.keras.models.load_model(saved_model_path)
         # https://docs.nvidia.com/deeplearning/frameworks/tf-trt-user-guide/index.html
         params = copy.deepcopy(trt.DEFAULT_TRT_CONVERSION_PARAMS)
         allow_build_at_runtime=True if calibration_data_dir is None else False
@@ -612,19 +611,20 @@ class PaDiM(object):
         )
 
         # Convert
-        converter = trt.TrtGraphConverterV2(input_saved_model_dir=saved_model_dir,conversion_params=params)
+        converter = trt.TrtGraphConverterV2(input_saved_model_dir=saved_model_path,conversion_params=params)
         # Convert for FP16,FP32
         converter.convert()
         # TODO: add support for INT8: converter.convert(calibration_input_fn=calibration_input_fn)
         
         # Build
         if not allow_build_at_runtime:
-            try: 
-                path_to_cal_images=calibration_data_dir
-                image_path_list=glob.glob(os.path.join(path_to_cal_images,'*.png'))
+            try:    
+                predictdata=DataLoader(path_base=calibration_data_dir, img_shape=self.img_shape, batch_size=1, shuffle=False)
+                dataset=predictdata.dataset
                 cal_image_list=[]
-                for image_path in image_path_list:
-                    image,_=DataLoader.parse_function(image_path)
+                for image,_ in dataset:
+                    if len(image.shape)<4:
+                        image=tf.expand_dims(image,0)
                     cal_image_list.append(image)
                 def calibration_input_fn():
                     for x in cal_image_list:
