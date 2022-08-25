@@ -223,10 +223,11 @@ def write_to_csv(all_ious:dict, mean_ious:dict, filename:str):
     """
     with open(filename, 'w') as f:
         writer = csv.writer(f, delimiter=';')
-        writer.writerow(["nan: false negative","0: false positive"])
         for im_name in all_ious:
             for category in all_ious[im_name]:
-                writer.writerow([im_name, category] + all_ious[im_name][category].tolist())
+                l = all_ious[im_name][category].tolist()
+                l2 = ['fn' if np.isnan(x) else 'fp' if x==0 else x for x in l]
+                writer.writerow([im_name, category] + l2)
                     
         for c in mean_ious:
             writer.writerow([f'mean iou of {c}: {mean_ious[c]}'])
