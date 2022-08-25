@@ -177,6 +177,8 @@ def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, class_map:d
         outname = os.path.splitext(fname)[0]+'_iou.png'
         if I is not None:
             cv2.imwrite(os.path.join(path_out,outname),I)
+        else:
+            print(f'[warning] cannot find image: {fname}')
 
         # get iou
         class_to_iou = {}
