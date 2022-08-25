@@ -85,28 +85,35 @@ def plot_shapes(image, shape_label, class_label, shape_pred, class_pred, is_mask
     BLUE = (255,0,0)
     RED = (0,0,255)
     
-    def plot_bboxs(image, bboxs, labels, color:tuple):
+    def plot_bboxs(image, bboxs, labels, color:tuple, pos='uleft'):
         for i in range(len(bboxs)):
             x1,y1,x2,y2 = bboxs[i]
             label = labels[i]
             uleft,bright = (x1,y1),(x2,y2)
             cv2.rectangle(image,uleft,bright,color,1)
-            cv2.putText(image, label, uleft, cv2.FONT_HERSHEY_SIMPLEX, 0.3, color, 1)
+            if pos=='uleft':
+                cv2.putText(image, label, uleft, cv2.FONT_HERSHEY_SIMPLEX, 0.3, color, 1)
+            else:
+                cv2.putText(image, label, bright, cv2.FONT_HERSHEY_SIMPLEX, 0.3, color, 1)
             
-    def plot_masks(image, masks, labels, color:tuple):
+    def plot_masks(image, masks, labels, color:tuple, pos='uleft'):
         for i in range(len(masks)):
             pts = masks[i]
             label = labels[i]
-            label_coord=pts.min(axis=0)
+            uleft = pts.min(axis=0)
+            bright = pts.max(axis=0)
             cv2.polylines(image,pts,True,color,1)
-            cv2.putText(image, label, label_coord,cv2.FONT_HERSHEY_SIMPLEX, 0.3, color, 1)
+            if pos=='uleft':
+                cv2.putText(image, label, uleft, cv2.FONT_HERSHEY_SIMPLEX, 0.3, color, 1)
+            else:
+                cv2.putText(image, label, bright, cv2.FONT_HERSHEY_SIMPLEX, 0.3, color, 1)
     
     if not is_mask:
         plot_bboxs(image,shape_label,class_label,color=BLUE)
-        plot_bboxs(image,shape_pred,class_pred,color=RED)
+        plot_bboxs(image,shape_pred,class_pred,color=RED,pos='bright')
     else:
         plot_masks(image,shape_label,class_label,color=BLUE)
-        plot_masks(image,shape_pred,class_pred,color=RED)
+        plot_masks(image,shape_pred,class_pred,color=RED,pos='bright')
 
 
 def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, class_map:dict, skip_classes=[]):
@@ -138,7 +145,13 @@ def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, class_map:d
     for fname in fnames:
         is_mask = 0
         I = cv2.imread(os.path.join(path_imgs,fname))
-        if isinstance(label_dt[fname][0], rect.Rect):
+        if not label_dt[fname]:
+            print(f'[warning] cannot find corresponding labels for the file: {fname}')
+            bbox_label = np.empty((0,4))
+            bbox_pred = np.empty((0,4))
+            class_label = np.empty((0,))
+            class_pred = np.empty((0,))
+        elif isinstance(label_dt[fname][0], rect.Rect):
             # bbox: [x1,y1,x2,y2]
             bbox_label = np.array([shape.up_left+shape.bottom_right for shape in label_dt[fname] if isinstance(shape, rect.Rect) ])
             bbox_pred = np.array([shape.up_left+shape.bottom_right for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
@@ -162,7 +175,8 @@ def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, class_map:d
         
         # write image
         outname = os.path.splitext(fname)[0]+'_iou.png'
-        cv2.imwrite(os.path.join(path_out,outname),I)
+        if I is not None:
+            cv2.imwrite(os.path.join(path_out,outname),I)
 
         # get iou
         class_to_iou = {}
