@@ -585,7 +585,7 @@ class PaDiM(object):
     
     def get_raw_image_zeros(self):
         # append channel depth to input shape
-        image_shape=self.image_shape+3
+        image_shape=self.img_shape+(3,)
         raw_image_zeros=tf.zeros(image_shape,dtype=tf.dtypes.int8)
         return raw_image_zeros
 
