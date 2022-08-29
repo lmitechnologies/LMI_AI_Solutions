@@ -496,7 +496,7 @@ class PaDiM(object):
         
         # Compute training data statistics for error thresholds
         # run PaDiM predict
-        image_tensor,dist_tensor,fname_tensor=self.padim_predict(trainingdataset)
+        image_tensor,dist_tensor,fname_tensor=self.predict(trainingdataset)
         self.training_mean_dist=tf.math.reduce_mean(dist_tensor).numpy()
         self.training_std_dist=tf.math.reduce_std(dist_tensor).numpy()        
         
@@ -512,7 +512,7 @@ class PaDiM(object):
                 plot_fig(predict_results,self.training_mean_dist,self.training_std_dist,'./training_validation',err_ceil_z=err_ceil_z)
 
 
-    def padim_predict(self,dataset):
+    def predict(self,dataset):
         '''
         DESCRIPTION: Predict PaDiM model
 
@@ -685,7 +685,7 @@ if __name__=="__main__":
         padim.net=tf.keras.models.load_model('./saved_model/saved_model')
 
     
-    image_tensor,dist_tensor,fname_tensor=padim.padim_predict('./data/padim/anomaly')
+    image_tensor,dist_tensor,fname_tensor=padim.predict('./data/padim/anomaly')
     err_dist_array=dist_tensor.numpy()
     image_array=image_tensor.numpy()
     fname_array=fname_tensor.numpy()
