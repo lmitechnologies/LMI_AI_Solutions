@@ -573,13 +573,22 @@ class PaDiM(object):
         dist_tensor=tf.concat(dist_list,axis=0)
         fname_tensor=tf.concat(fname_list,axis=0)
 
-        proctime=np.asarray(proctime)
-        logging.info(f'Min Proc Time: {proctime.min()}')
-        logging.info(f'Max Proc Time: {proctime.max()}')
-        logging.info(f'Avg Proc Time: {proctime.mean()}')
+        if len(proctime)>1:
+            proctime=np.asarray(proctime)
+            logging.info(f'Min Proc Time: {proctime.min()}')
+            logging.info(f'Max Proc Time: {proctime.max()}')
+            logging.info(f'Avg Proc Time: {proctime.mean()}')
+        else:
+            logging.info(f'Proc Time: {proctime}')
 
         return image_tensor,dist_tensor,fname_tensor
     
+    def get_raw_image_zeros(self):
+        # append channel depth to input shape
+        image_shape=self.image_shape+3
+        raw_image_zeros=tf.zeros(image_shape,dtype=tf.dtypes.int8)
+        return raw_image_zeros
+
     def convert_tensorRT(self,saved_model_dir,trt_saved_model_dir,calibration_data_dir=None,gpu_mem_limit=2048,precision_mode='FP16'):
         from tensorflow.python.compiler.tensorrt import trt_convert as trt
         saved_model_path=os.path.join(saved_model_dir,'saved_model')
