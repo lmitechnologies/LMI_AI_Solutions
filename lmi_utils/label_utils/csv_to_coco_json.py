@@ -149,7 +149,7 @@ class Dataset(object):
                 if plot:
                     self.visualize(poly,fname)
 
-                dt['segmentation'] = [[x1,y1,x2,y2]]
+                dt['segmentation'] = [[x1,y1]+[x2,y1]+[x2,y2]+[x1,y2]]
                 dt['area'] = w*h
                 dt['iscrowd'] = iscrowd
                 dt['image_id'] = im_id

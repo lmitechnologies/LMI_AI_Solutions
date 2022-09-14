@@ -16,7 +16,7 @@ from detectron2.data import MetadataCatalog, DatasetCatalog
 from detectron2.data.datasets import register_coco_instances
 
 
-def plot(path_img, path_json, path_out):
+def plot(path_img, path_json, path_out, plot=False):
     """
     plot to verify if dataset is loaded correctly
     arguments:
@@ -25,15 +25,17 @@ def plot(path_img, path_json, path_out):
     """
     register_coco_instances("dataset", {}, path_json, path_img)
     dataset_dicts = DatasetCatalog.get("dataset")
-    for d in random.sample(dataset_dicts, 10):
+    for d in dataset_dicts:
         img = cv2.imread(d["file_name"])
         visualizer = Visualizer(img[:, :, ::-1], metadata=MetadataCatalog.get('dataset'), scale=1)
         out = visualizer.draw_dataset_dict(d)
         im_name = 'annot_'+os.path.basename(d["file_name"])
         out.save(os.path.join(path_out, im_name))
-        #cv2.imshow('plot',out.get_image()[:, :, ::-1])
-        #cv2.waitKey(0)
-    #cv2.destroyAllWindows()
+        if plot:
+            cv2.imshow('plot',out.get_image()[:, :, ::-1])
+            cv2.waitKey(0)
+    if plot:
+        cv2.destroyAllWindows()
 
 if __name__ == '__main__':
     import argparse
