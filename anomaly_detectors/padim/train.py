@@ -27,7 +27,7 @@ if __name__== '__main__':
     parser.add_argument('--imsz', default="224,224", help='comma separated image dimension: w,h. default=224,224')
     parser.add_argument('--n', default=200, type=int, help='the number of vectors to randomly draw, default=200')
     parser.add_argument('--batch_sz', default=8, type=int, help='batch size, default=8')
-    parser.add_argument('--gpu_mem', default=4096, type=int, help='gpu memory limit, default=2048')
+    parser.add_argument('--gpu_mem', default=16384, type=int, help='gpu memory limit, default=16384')
     args = parser.parse_args()
     
     with open(args.config_yaml, "r") as stream:
