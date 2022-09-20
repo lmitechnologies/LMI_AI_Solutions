@@ -12,6 +12,7 @@ Currently, the padim model supports two backbones: efficientnet and resnet.
 The layers to select for resnet: 
 - pool1_pool
 - conv{i}_block1_preact_relu, where i = 2,3,4,5
+
 The layers to select for efficientnet: 
 - stem_activation
 - block{i}a_activation, where i = 2,3,4,5,6
