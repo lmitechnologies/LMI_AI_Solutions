@@ -1,0 +1,8 @@
+backbone:
+  name: eff
+  # the layers to select for efficientnet: 
+  #   stem_activation
+  #   block{i}a_activation, where i = 2,3,4,5,6
+  layer1: stem_activation
+  layer2: block2a_activation
+  layer3: block3a_activation

@@ -1,0 +1,8 @@
+backbone:
+  name: res
+  # the layers to select for resnet: 
+  #   pool1_pool
+  #   conv{i}_block1_preact_relu, where i = 2,3,4,5
+  layer1: pool1_pool
+  layer2: conv2_block1_preact_relu
+  layer3: conv3_block1_preact_relu
