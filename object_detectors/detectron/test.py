@@ -33,7 +33,7 @@ def register_datasets(cfg):
     
 
 
-def test(cfg):
+def test(cfg, save_img):
     #path to the model we just trained
     cfg.MODEL.WEIGHTS = os.path.join(cfg.TRAINED_MODEL_DIR, "model_final.pth")  
     predictor = DefaultPredictor(cfg)
@@ -55,15 +55,16 @@ def test(cfg):
             outputs = predictor(im) 
             et = time.time()
             proc_times.append(et-st)
-            print('[INFO]proc time: {:.4f}'.format(et-st))
+            print(f'[INFO] {im_name} --> proc time: {et-st:.4f}')
 
-            v = Visualizer(im[:, :, ::-1],
-                metadata=meta_data, 
-                scale=2, 
-                instance_mode=ColorMode.IMAGE_BW  
-            )
-            out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
-            out.save(os.path.join(out_path, im_name))
+            if save_img:
+                v = Visualizer(im[:, :, ::-1],
+                    metadata=meta_data, 
+                    scale=2, 
+                    instance_mode=ColorMode.IMAGE_BW  
+                )
+                out = v.draw_instance_predictions(outputs["instances"].to("cpu"))
+                out.save(os.path.join(out_path, im_name))
             
             #prepare for csv outputs
             instances = outputs["instances"]
@@ -98,14 +99,17 @@ def test(cfg):
                 bbox = dt['bbox']
                 conf = dt['conf']
                 x,y = dt['x'],dt['y']
-                writer.writerow([name,class_name,conf,'rect','upper left']+bbox[:2])
-                writer.writerow([name,class_name,conf,'rect','lower right']+bbox[2:])
-                writer.writerow([name,class_name,conf,'polygon','x values']+x)
-                writer.writerow([name,class_name,conf,'polygon','y values']+y)
+                if len(x) and len(y):
+                    writer.writerow([name,class_name,conf,'polygon','x values']+x)
+                    writer.writerow([name,class_name,conf,'polygon','y values']+y)
+                elif len(bbox):
+                    writer.writerow([name,class_name,conf,'rect','upper left']+bbox[:2])
+                    writer.writerow([name,class_name,conf,'rect','lower right']+bbox[2:])
+                
         proc_times = np.array(proc_times[1:]) 
-        print('[INFO]average proc time: {}'.format(proc_times.mean()))
-        print('[INFO]min proc time: {}'.format(proc_times.min()))
-        print('[INFO]max proc time: {}'.format(proc_times.max()))
+        print('[INFO] average proc time: {}'.format(proc_times.mean()))
+        print('[INFO] min proc time: {}'.format(proc_times.min()))
+        print('[INFO] max proc time: {}'.format(proc_times.max()))
 
 
 
@@ -113,6 +117,7 @@ if __name__=='__main__':
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument('-i', '--input', required=True, type=str, help='the input yaml file')
+    ap.add_argument('--save_img', action='store_true', help='whether to save the image or not')
     ap.add_argument('--base_yaml', default="mask_rcnn_R_50_C4_1x.yaml", help='the base yaml file provided in https://github.com/facebookresearch/detectron2/tree/main/configs/COCO-InstanceSegmentation')
     args = vars(ap.parse_args())
 
@@ -120,10 +125,13 @@ if __name__=='__main__':
     #create new customized keys in config file
     cfg.DATASETS.TEST_DIR = ()
     cfg.TRAINED_MODEL_DIR = ""
+
+    base_yaml = args['base_yaml']
+    print(f'base yaml file: {base_yaml}')
     #load yaml files
-    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/"+args['base_yaml']))
+    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/"+base_yaml))
     cfg.merge_from_file(args['input'])
     #register train and test datasets
     register_datasets(cfg)
     #testing
-    test(cfg)
+    test(cfg, args['save_img'])

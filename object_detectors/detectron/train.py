@@ -52,8 +52,11 @@ if __name__=='__main__':
     cfg = get_cfg()
     #create new customized keys in config file
     cfg.DATASETS.TRAIN_DIR = ()
+
+    base_yaml = args['base_yaml']
+    print(f'base yaml file: {base_yaml}')
     #load yaml files
-    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/"+args['base_yaml']))
+    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/"+base_yaml))
     cfg.merge_from_file(args['input'])
     #register train and test datasets
     register_datasets(cfg)

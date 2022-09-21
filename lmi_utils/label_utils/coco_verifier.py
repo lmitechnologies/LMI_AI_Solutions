@@ -29,7 +29,7 @@ def plot(path_img, path_json, path_out, plot=False):
         img = cv2.imread(d["file_name"])
         visualizer = Visualizer(img[:, :, ::-1], metadata=MetadataCatalog.get('dataset'), scale=1)
         out = visualizer.draw_dataset_dict(d)
-        im_name = 'annot_'+os.path.basename(d["file_name"])
+        im_name = os.path.basename(d["file_name"])
         out.save(os.path.join(path_out, im_name))
         if plot:
             cv2.imshow('plot',out.get_image()[:, :, ::-1])

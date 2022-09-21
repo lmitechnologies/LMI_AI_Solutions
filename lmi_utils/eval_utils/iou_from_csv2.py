@@ -98,11 +98,12 @@ def plot_shapes(image, shape_label, class_label, shape_pred, class_pred, is_mask
             
     def plot_masks(image, masks, labels, color:tuple, pos='uleft'):
         for i in range(len(masks)):
-            pts = masks[i]
+            pts = masks[i].astype(np.int)
             label = labels[i]
             uleft = pts.min(axis=0)
             bright = pts.max(axis=0)
-            cv2.polylines(image,pts,True,color,1)
+            pts = pts.reshape((-1, 1, 2))
+            cv2.polylines(image,[pts],True,color,1)
             if pos=='uleft':
                 cv2.putText(image, label, uleft, cv2.FONT_HERSHEY_SIMPLEX, 0.3, color, 1)
             else:
@@ -136,7 +137,15 @@ def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, class_map:d
             for x,y in zip(shape.X,shape.Y):
                 cur = np.concatenate((cur,[[x,y]]),axis=0)
             masks.append(cur)
-        masks = np.array(masks,dtype=object)
+        return masks
+    
+    def bboxs_to_np(bboxs):
+        def bbox_to_pts(bbox):
+            x1,y1,x2,y2 = bbox
+            return np.array([[x1,y1],[x2,y1],[x2,y2],[x1,y2]])
+        masks = []
+        for bbox in bboxs:
+            masks.append(bbox_to_pts(bbox))
         return masks
     
     all_ious = {}
@@ -151,25 +160,28 @@ def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, class_map:d
             bbox_pred = np.empty((0,4))
             class_label = np.empty((0,))
             class_pred = np.empty((0,))
-        elif isinstance(label_dt[fname][0], rect.Rect):
+        else:
             # bbox: [x1,y1,x2,y2]
             bbox_label = np.array([shape.up_left+shape.bottom_right for shape in label_dt[fname] if isinstance(shape, rect.Rect) ])
-            bbox_pred = np.array([shape.up_left+shape.bottom_right for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
             class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, rect.Rect) ])
-            class_pred = np.array([shape.category for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
-            conf = np.array([shape.confidence for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
-        elif isinstance(label_dt[fname][0], mask.Mask):
-            is_mask = 1
             # mask: [[x1,y1],[x2,y2] ...]
-            bbox_label = mask_to_np(label_dt[fname])
-            bbox_pred = mask_to_np(pred_dt[fname])
-            class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, mask.Mask) ])
+            mask_pred = np.array(mask_to_np(pred_dt[fname]),np.object)
             class_pred = np.array([shape.category for shape in pred_dt[fname] if isinstance(shape, mask.Mask) ])
-            conf = np.array([shape.confidence for shape in pred_dt[fname] if isinstance(shape, mask.Mask) ])
+            if len(mask_pred):
+                # found masks
+                is_mask = 1
+                # convert label bbox to masks
+                mask_label = np.array(mask_to_np(label_dt[fname]) + bboxs_to_np(bbox_label),np.object)
+                mask_class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, mask.Mask) ])
+                class_label = np.concatenate((mask_class_label,class_label))
+            else:
+                bbox_pred = np.array([shape.up_left+shape.bottom_right for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
+                class_pred = np.array([shape.category for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
+                
 
         # plot shapes
         if is_mask:
-            plot_shapes(I, bbox_label, class_label, bbox_pred, class_pred, is_mask=True)
+            plot_shapes(I, mask_label, class_label, mask_pred, class_pred, is_mask=True)
         else:
             plot_shapes(I, bbox_label, class_label, bbox_pred, class_pred, is_mask=False)
         
@@ -198,7 +210,7 @@ def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, class_map:d
                 final_ious_nan = np.zeros((m_label.sum(),))*np.nan
             else:
                 if is_mask:
-                    ious = polygon_ious(bbox_pred[m_pred], bbox_label[m_label])
+                    ious = polygon_ious(mask_pred[m_pred], mask_label[m_label])
                 else:
                     ious = bbox_iou(bbox_pred[m_pred,:], bbox_label[m_label,:])
                 M,N = ious.shape[:2]

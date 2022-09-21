@@ -100,7 +100,15 @@ def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=
             for x,y in zip(shape.X,shape.Y):
                 cur = np.concatenate((cur,[[x,y]]),axis=0)
             masks.append(cur)
-        masks = np.array(masks,dtype=object)
+        return masks
+    
+    def bboxs_to_np(bboxs):
+        def bbox_to_pts(bbox):
+            x1,y1,x2,y2 = bbox
+            return np.array([[x1,y1],[x2,y1],[x2,y2],[x1,y2]])
+        masks = []
+        for bbox in bboxs:
+            masks.append(bbox_to_pts(bbox))
         return masks
     
     # get TP (num of tp), FP(num of fp) and GT(num of ground truth)
@@ -111,22 +119,26 @@ def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=
     total_imgs = len(fnames)
     cnt = 0
     for fname in fnames:
-        is_mask = 0
-        if isinstance(label_dt[fname][0], rect.Rect):
-            #bbox: [x1,y1,x2,y2]
-            bbox_label = np.array([shape.up_left+shape.bottom_right for shape in label_dt[fname] if isinstance(shape, rect.Rect) ])
+        # bbox: [x1,y1,x2,y2]
+        bbox_label = np.array([shape.up_left+shape.bottom_right for shape in label_dt[fname] if isinstance(shape, rect.Rect) ])
+        class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, rect.Rect) ])
+        # mask: [[x1,y1],[x2,y2] ...]
+        mask_pred = np.array(mask_to_np(pred_dt[fname]),np.object)
+        conf = np.array([shape.confidence for shape in pred_dt[fname] if isinstance(shape, mask.Mask) ])
+        class_pred = np.array([shape.category for shape in pred_dt[fname] if isinstance(shape, mask.Mask) ])
+        if len(mask_pred):
+            # found masks
+            is_mask = 1
+            # convert label bbox to masks
+            mask_label = np.array(mask_to_np(label_dt[fname]) + bboxs_to_np(bbox_label),np.object)
+            mask_class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, mask.Mask) ])
+            class_label = np.concatenate((mask_class_label,class_label))
+        else:
+            is_mask = 0
             bbox_pred = np.array([shape.up_left+shape.bottom_right for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
-            class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, rect.Rect) ])
             class_pred = np.array([shape.category for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
             conf = np.array([shape.confidence for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
-        elif isinstance(label_dt[fname][0], mask.Mask):
-            is_mask = 1
-            #bbox: [[x1,y1],[x2,y2] ...]
-            bbox_label = mask_to_np(label_dt[fname])
-            bbox_pred = mask_to_np(pred_dt[fname])
-            class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, mask.Mask) ])
-            class_pred = np.array([shape.category for shape in pred_dt[fname] if isinstance(shape, mask.Mask) ])
-            conf = np.array([shape.confidence for shape in pred_dt[fname] if isinstance(shape, mask.Mask) ])
+            
 
         #found GT but no predictions
         if class_label.shape[0] and not class_pred.shape[0]:
@@ -163,7 +175,7 @@ def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=
                 continue
 
             if is_mask:
-                ious = polygon_ious(bbox_pred[m_pred], bbox_label[m_label])
+                ious = polygon_ious(mask_pred[m_pred], mask_label[m_label])
             else:
                 ious = bbox_iou(bbox_pred[m_pred,:], bbox_label[m_label,:])
             M = np.max(ious, axis=1) >= threshold_iou
