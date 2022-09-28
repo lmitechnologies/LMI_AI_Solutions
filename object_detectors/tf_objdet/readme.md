@@ -1,3 +1,22 @@
+# Install Dependencies
+## Clone LMI AI Solutions Repo
+```bash
+git clone git@github.com:lmitechnologies/LMI_AI_Solutions.git
+```
+## Activate the Object Detection API
+Run following from within ./LMI_AI_Solutions/object_detectors/tf_objdet/models/research
+```bash
+protoc object_detection/protos/*.proto --python_out=.
+```
+## Install Dependencies
+    -pip3 install tensorflow
+    -pip3 install tf_slim
+    -pip3 install pycocotools
+    -pip3 install lvis
+    -pip3 install scipy
+    -pip3 install tensorflow_io
+    -pip3 install tf-models-official
+
 # Training Steps
 
 ## Activate LMI_AI environment
@@ -13,30 +32,21 @@ source ~/LMI_AI_Solutions/lmi_ai.env
 
 ## Export Label Data
 
-## Initialize Project
+## Initialize Project Directory Structure
 
 ```
 |-- config
-|   
+|
 |-- data
-|   |-- attributes
-|   |-- labels_v0
-|   `-- labels_v1
+|
 |-- pretrained-models
-|   -- centernet_resnet50_v1_fpn_512x512_kpts_coco17_tpu-8
-|       |-- checkpoint
-|       `-- saved_model
-|           -- variables
+|
 |-- records
-|   |-- v0
-|   `-- v1
+|
 |-- trained-inference-models
-|   `-- trained_model
-|       |-- checkpoint
-|       `-- saved_model
-|           `-- variables
+|
 |-- training
-|   `-- train
+|
 `-- validation
 ```
 
