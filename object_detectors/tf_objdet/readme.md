@@ -2,13 +2,14 @@
 ## Clone LMI AI Solutions Repo
 ```bash
 git clone git@github.com:lmitechnologies/LMI_AI_Solutions.git
+git submodule update --init --recursive
 ```
 ## Activate the Object Detection API
 Run following from within ./LMI_AI_Solutions/object_detectors/tf_objdet/models/research
 ```bash
 protoc object_detection/protos/*.proto --python_out=.
 ```
-## Install Dependencies
+## Install Python Modules
     pip3 install tensorflow
     pip3 install tf_slim
     pip3 install pycocotools
