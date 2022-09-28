@@ -80,7 +80,7 @@ def polygon_ious(polygons_1, polygons_2):
     return ious
 
 
-def plot_shapes(image, shape_label, class_label, shape_pred, class_pred, is_mask=False):
+def plot_shapes(image, shape_label, class_label, shape_pred, class_pred, skip_classes=[], is_mask=False):
     # BGR
     BLUE = (255,0,0)
     RED = (0,0,255)
@@ -89,6 +89,8 @@ def plot_shapes(image, shape_label, class_label, shape_pred, class_pred, is_mask
         for i in range(len(bboxs)):
             x1,y1,x2,y2 = bboxs[i]
             label = labels[i]
+            if label in skip_classes:
+                continue
             uleft,bright = (x1,y1),(x2,y2)
             cv2.rectangle(image,uleft,bright,color,1)
             if pos=='uleft':
@@ -100,6 +102,8 @@ def plot_shapes(image, shape_label, class_label, shape_pred, class_pred, is_mask
         for i in range(len(masks)):
             pts = masks[i].astype(np.int)
             label = labels[i]
+            if label in skip_classes:
+                continue
             uleft = pts.min(axis=0)
             bright = pts.max(axis=0)
             pts = pts.reshape((-1, 1, 2))
@@ -117,7 +121,7 @@ def plot_shapes(image, shape_label, class_label, shape_pred, class_pred, is_mask
         plot_masks(image,shape_pred,class_pred,color=RED,pos='bright')
 
 
-def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, class_map:dict, skip_classes=[]):
+def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, skip_classes=[]):
     """
     calculate the precision and recall based on the threshold of iou and confidence
     arguments:
@@ -181,9 +185,9 @@ def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, class_map:d
 
         # plot shapes
         if is_mask:
-            plot_shapes(I, mask_label, class_label, mask_pred, class_pred, is_mask=True)
+            plot_shapes(I, mask_label, class_label, mask_pred, class_pred, is_mask=True, skip_classes=skip_classes)
         else:
-            plot_shapes(I, bbox_label, class_label, bbox_pred, class_pred, is_mask=False)
+            plot_shapes(I, bbox_label, class_label, bbox_pred, class_pred, is_mask=False, skip_classes=skip_classes)
         
         # write image
         outname = os.path.splitext(fname)[0]+'_iou.png'
@@ -196,6 +200,8 @@ def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, class_map:d
         class_to_iou = {}
         all_classes = np.concatenate((class_label, class_pred), axis=0)
         for c in set(all_classes):
+            if c in skip_classes:
+                continue
             m_label = np.empty((0,))
             if class_label.shape[0]:
                 m_label = class_label==c    
@@ -254,7 +260,7 @@ if __name__ == '__main__':
     parse.add_argument('--model_csv', required=True, help='the path to the model prediction csv')
     parse.add_argument('--label_csv', required=True, help='the path to the ground truth csv')
     parse.add_argument('--path_out', required=True, help='the output path')
-    parse.add_argument('--skip_classes', default='', help='skip calculating the P/R curves for these comma separated classes')
+    parse.add_argument('--skip_classes', default='', help='skip calculating ious for these comma separated classes')
     args = vars(parse.parse_args())
 
     path_imgs = args['path_imgs']
@@ -278,9 +284,10 @@ if __name__ == '__main__':
 
     label_dt,class_map = csv_utils.load_csv(label_csv)
     print(f'found class map: {class_map}')
+    print(f'skipped classes: {skip_classes}')
     pred_dt,_ = csv_utils.load_csv(model_csv, class_map=class_map)
 
-    all_ious, all_not_nan_ious = get_ious(path_imgs,path_out,label_dt,pred_dt,class_map,skip_classes)
+    all_ious, all_not_nan_ious = get_ious(path_imgs,path_out,label_dt,pred_dt,skip_classes)
     
     # get mean IOU
     mean_ious = {}
