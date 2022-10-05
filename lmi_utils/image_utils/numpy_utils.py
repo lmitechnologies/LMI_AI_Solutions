@@ -14,7 +14,7 @@ class NumpyUtils():
                 np_frame = np.rot90(np_frame)
             np.save(join(destination_path, f.replace('.png', '.npy')), np_frame)
 
-    def npy_to_png(self,source_path, destination_path, rotate=False):
+    def npy_to_png(self,source_path, destination_path, rotate=False, rgb2bgr=False):
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".npy" in f]
 
         for f in files:
@@ -22,6 +22,8 @@ class NumpyUtils():
             np_frame = np.load(join(source_path, f))
             if rotate:
                 np_frame = np.rot90(np_frame)
+            if rgb2bgr:
+                np_frame=cv2.cvtColor(np_frame,cv2.COLOR_RGB2BGR)
             cv2.imwrite(join(destination_path, f.replace('.npy', '.png')), np_frame)
 
 if __name__=="__main__":
@@ -31,12 +33,14 @@ if __name__=="__main__":
     ap.add_argument('--src',required=True)
     ap.add_argument('--dest',required=True)
     ap.add_argument('--rotate', action='store_true',help='rotate image to 90 degree')
+    ap.add_argument('--rgb2bgr',action='store_true',help='apply rgb to bgr correction')
     
     args=vars(ap.parse_args())
     option=args['option']
     src=args['src']
     dest=args['dest']
     rotate = args['rotate']
+    rgb2bgr=args['rgb2bgr']
 
     translate=NumpyUtils()
 
@@ -47,7 +51,7 @@ if __name__=="__main__":
         makedirs(dest)
 
     if option=='npy_2_png':
-        translate.npy_to_png(src,dest,rotate)
+        translate.npy_to_png(src,dest,rotate,rgb2bgr)
     elif option=='png_2_npy':
         translate.png_to_npy(src,dest,rotate)
     else:
