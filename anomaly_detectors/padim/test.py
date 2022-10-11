@@ -2,7 +2,7 @@ import argparse
 import os
 import yaml
 import tensorflow as tf
-from padim.padim import PaDiM
+from padim.padim import PaDiM, plot_fig
 from padim.data_loader import DataLoader
 
 
@@ -10,7 +10,7 @@ def test_padim(testdata_path:str, outpath:str, modelpath:str, err_thresh:float, 
     padim=PaDiM(GPU_memory=gpu_mem)
     padim.import_tfrecords(os.path.join(modelpath,'padim.tfrecords'))
     padim.net=tf.keras.models.load_model(os.path.join(modelpath,'saved_model'))
-    image_tensor,dist_tensor,fname_tensor=padim.padim_predict(testdata_path)
+    image_tensor,dist_tensor,fname_tensor=padim.predict(testdata_path)
     err_dist_array=dist_tensor.numpy()
     image_array=image_tensor.numpy()
     fname_array=fname_tensor.numpy()
