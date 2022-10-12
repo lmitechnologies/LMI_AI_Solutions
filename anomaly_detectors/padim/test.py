@@ -26,7 +26,7 @@ if __name__== '__main__':
     parser.add_argument('--path_model', required=True, help='the path to the saved model')
     parser.add_argument('--path_out', required=True, help='the output path')
     parser.add_argument('--thres_err', default=20, type=int, help='the error threshold, default=20')
-    parser.add_argument('--gpu_mem', default=2048, type=int, help='gpu memory limit, default=2048')
+    parser.add_argument('--gpu_mem', default=4096, type=int, help='gpu memory limit, default=4096')
     args = parser.parse_args()
 
     test_padim(args.path_data, args.path_out, args.path_model, args.thres_err, args.gpu_mem)
