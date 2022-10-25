@@ -10,7 +10,7 @@ Run following from within ./LMI_AI_Solutions/object_detectors/tf_objdet/models/r
 protoc object_detection/protos/*.proto --python_out=.
 ```
 ## Install Python Modules
-    pip3 install tensorflow
+    pip3 install tensorflow --upgrade
     pip3 install tf_slim
     pip3 install pycocotools
     pip3 install lvis

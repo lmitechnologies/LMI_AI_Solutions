@@ -3,7 +3,6 @@ import os
 import argparse
 import random
 import cv2
-from skimage import morphology
 import logging
 import time
 import glob
