@@ -125,7 +125,7 @@ def plot_fig(predict_results, err_mean, err_std, save_dir, err_thresh=None):
 
 class PaDiM(object):
 
-    def __init__(self,GPU_memory=4096):
+    def __init__(self,GPU_memory=None):
         self.net=None
         self.mean=None
         self.cov_inv=None
@@ -136,8 +136,9 @@ class PaDiM(object):
         self.training_std_dist=None
         self.training_min_dist=None
         self.training_max_dist=None
-        logging.info(f'Setting GPU memory limit to {GPU_memory} MB')
-        self.set_gpu_memory(GPU_memory)
+        if GPU_memory is not None:
+            logging.info(f'Setting GPU memory limit to {GPU_memory} MB')
+            self.set_gpu_memory(GPU_memory)
         
 
     def set_gpu_memory(self,mem_limit):
@@ -532,6 +533,9 @@ class PaDiM(object):
         if isinstance(dataset,type('string')):
             predictdata=DataLoader(path_base=dataset, img_shape=self.img_shape, batch_size=1, shuffle=False)
             dataset=predictdata.dataset
+        elif tf.is_tensor(dataset):
+            fname=tf.constant(np.char.encode('Current Image Tensor.'))
+            dataset=zip([dataset],[fname])
         else:
             pass
             
