@@ -145,19 +145,21 @@ def main(args):
 
     set_gpu(args['gpu_mem_limit'])
 
-    TRAINED_MODEL_PATH='./trained-inference-models'
-    if os.path.isdir(TRAINED_MODEL_PATH):
-        pass
-    else:
-        os.makedir(TRAINED_MODEL_PATH)
+    # TRAINED_MODEL_PATH='./trained-inference-models'
+    # if os.path.isdir(TRAINED_MODEL_PATH):
+    #     pass
+    # else:
+    #     os.makedir(TRAINED_MODEL_PATH)
 
     #%% load dataset from tensorflow datasets
     #%% Load test images
     path_to_test_images=args['data_dir']
     image_path_list=glob.glob(os.path.join(path_to_test_images,'*.png'))
 
-    baseline_model_dir=os.path.join(TRAINED_MODEL_PATH,args['baseline_saved_model_dir'])
-    trt_model_dir=os.path.join(TRAINED_MODEL_PATH,args['tensorrt_saved_model_dir'])
+    # baseline_model_dir=os.path.join(TRAINED_MODEL_PATH,args['baseline_saved_model_dir'])
+    # trt_model_dir=os.path.join(TRAINED_MODEL_PATH,args['tensorrt_saved_model_dir'])
+    baseline_model_dir=args['baseline_saved_model_dir']
+    trt_model_dir=args['tensorrt_saved_model_dir']
     if args['generate_trt']:    
         convert_tensorRT(baseline_model_dir,trt_model_dir,calibration_data_dir=args['cal_data_dir'])
         tf.keras.backend.clear_session()
