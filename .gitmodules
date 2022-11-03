@@ -1,17 +1,17 @@
 [submodule "yolov5"]
 	path = object_detectors/yolov5
 	url = https://github.com/lmitechnologies/yolov5.git
-	branch = master
+	branch = ais
 [submodule "classifiers/efficientnet"]
 	path = classifiers/efficientnet
 	url = https://github.com/lmitechnologies/EfficientNet-PyTorch.git
-	branch = master
+	branch = ais
 [submodule "object_detectors/tf_objdet/models"]
 	path = object_detectors/tf_objdet/models
 	url = https://github.com/lmitechnologies/models.git
-	branch = master
+	branch = ais
 [submodule "ocr_models/PaddleOCR"]
 	path = ocr_models/PaddleOCR
 	url = https://github.com/lmitechnologies/PaddleOCR.git
-	branch = release/2.5
+	branch = ais
 
