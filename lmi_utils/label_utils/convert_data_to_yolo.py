@@ -7,26 +7,22 @@ import cv2
 import shutil
 import glob
 import json
-
 import os
-import inspect
-import sys
-
-#currentdir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-#if currentdir not in sys.path:
-#    sys.path.insert(0, currentdir)
 
 #LMI packages
 from label_utils.csv_utils import load_csv
+from label_utils.mask import Mask
+from label_utils.rect import Rect
 
 
-
-def convert_to_txt(fname_to_shapes, class_to_id):
+def convert_to_txt(fname_to_shapes, class_to_id, is_seg=False, is_convert=False):
     """
     convert the map <fname, list of shape objects> to YOLO format
     Arguments:
         fname_to_shapes(dict): the map <fname, list of shape objects>
         class_to_id(dict): the map <class_name, class_ID>
+        is_seg: whether to load as segmentation labels
+        is_convert: whether to perform conversion: the bbox-to-mask if is_seg is true, or mask-to-bbox if is_seg is false
     Return:
         fname_to_rows: the map <file name, list of row>, where each row is [class_ID, x, y, w, h]
     """
@@ -40,16 +36,41 @@ def convert_to_txt(fname_to_shapes, class_to_id):
             #get the image H,W
             I = cv2.imread(shape.fullpath)
             H,W = I.shape[:2]
-            #get bbox w,h
-            x0,y0 = shape.up_left
-            x1,y1 = shape.bottom_right
-            w = x1 - x0 + 1
-            h = y1 - y0 + 1
-            #get bbox center
-            cx,cy = (x0+x1)/2, (y0+y1)/2
-            # normalize to [0-1]
-            row = [class_id, cx/W, cy/H, w/W, h/H]
-            rows.append(row)
+            if isinstance(shape, Rect):
+                #get bbox w,h
+                x0,y0 = shape.up_left
+                x2,y2 = shape.bottom_right
+                if not is_seg:
+                    w = x2 - x0 + 1
+                    h = y2 - y0 + 1
+                    #get bbox center
+                    cx,cy = (x0+x2)/2, (y0+y2)/2
+                    # normalize to [0-1]
+                    row = [class_id, cx/W, cy/H, w/W, h/H]
+                    rows.append(row)
+                elif is_convert:
+                    # bbox-to-mask
+                    x1,y1 = x2,y0
+                    x3,y3 = x0,y2
+                    xyxy = [x0/W, y0/H, x1/W, y1/H, x2/W, y2/H, x3/W, y3/H]
+                    row = [class_id]+xyxy
+                    rows.append(row)
+            elif isinstance(shape, Mask):
+                if is_seg:
+                    xyxy = []
+                    for x,y in zip(shape.X,shape.Y):
+                        xyxy += [x/W,y/H]
+                    row = [class_id]+xyxy
+                    rows.append(row)
+                elif is_convert:
+                    # mask-to-bbox
+                    x0,y0 = min(shape.X),min(shape.Y)
+                    x2,y2 = max(shape.X),max(shape.Y)
+                    w = x2 - x0 + 1
+                    h = y2 - y0 + 1
+                    cx,cy = (x0+x2)/2, (y0+y2)/2
+                    row = [class_id, cx/W, cy/H, w/W, h/H]
+                    rows.append(row)
         txt_name = fname.replace('.png','.txt')
         fname_to_rows[txt_name] = rows
     return fname_to_rows
@@ -67,8 +88,13 @@ def write_txts(fname_to_rows, path_txts):
         txt_file = os.path.join(path_txts, fname)
         print('writting to {}'.format(fname))
         with open(txt_file, 'w') as f:
-            for class_id, cx, cy, w, h in fname_to_rows[fname]:
-                row2 = '{} {:.4f} {:.4f} {:.4f} {:.4f}\n'.format(class_id, cx, cy, w, h)
+            for shape in fname_to_rows[fname]:
+                class_id = shape[0]
+                xyxy = shape[1:]
+                row2 = f'{class_id} '
+                for pt in xyxy:
+                    row2 += f'{pt:.4f} '
+                row2 += '\n'
                 f.write(row2)
     print(f'[INFO] wrote {len(fname_to_rows)} txt files to {path_txts}')
     
@@ -93,11 +119,15 @@ if __name__ =='__main__':
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--class_map_json', help='[optinal] the class map json file')
     ap.add_argument('--path_out', required=True, help='the output path')
+    ap.add_argument('--seg', action='store_true', help='generate labels in instance segmentation format, otherwise object detection format')
+    ap.add_argument('--convert', action='store_true', help='perform conversions: bbox-to-mask or mask-to-bbox, otherwise skip')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
     class_map_file = args['class_map_json']
     path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
+    is_seg = args['seg']
+    is_convert = args['convert']
 
     if not os.path.isfile(path_csv):
         raise Exception(f'Not found file: {path_csv}')
@@ -109,7 +139,7 @@ if __name__ =='__main__':
         fname_to_shapes,class_to_id = load_csv(path_csv, path_imgs, class_map)
     else:
         fname_to_shapes,class_to_id = load_csv(path_csv, path_imgs, zero_index=True)
-    fname_to_rows = convert_to_txt(fname_to_shapes, class_to_id)
+    fname_to_rows = convert_to_txt(fname_to_shapes, class_to_id, is_seg, is_convert)
 
     #generate output yolo dataset
     if not os.path.isdir(args['path_out']):
