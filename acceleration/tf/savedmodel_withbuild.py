@@ -50,6 +50,7 @@ def preprocess_image(image_path):
     image=cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
     image=np.expand_dims(image,axis=0)
     image_tensor=tf.convert_to_tensor(image)
+    image_tensor=tf.cast(image_tensor,tf.uint8)
     return image_tensor
 
 def run_benchmark(loaded_model,image_path_list):
