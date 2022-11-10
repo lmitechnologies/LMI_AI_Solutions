@@ -14,4 +14,7 @@
 	path = ocr_models/PaddleOCR
 	url = https://github.com/lmitechnologies/PaddleOCR.git
 	branch = ais
-
+[submodule "acceleration/tf/tensorrt"]
+	path = acceleration/tf/tensorrt
+	url = https://github.com/tensorflow/tensorrt.git
+	branch = master
