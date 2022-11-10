@@ -5,6 +5,7 @@ Currently, the following submodules are included in the repo:
 - [efficientnet](https://github.com/lmitechnologies/EfficientNet-PyTorch)
 - [tensorflow object detection API](https://github.com/lmitechnologies/models)
 - [paddleOCR](https://github.com/lmitechnologies/models)
+- [tf-trt](https://github.com/tensorflow/tensorrt.git)
 
 ## Clone this master repo
 For users who haven't set up the ssh keys
