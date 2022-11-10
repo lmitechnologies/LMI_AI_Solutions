@@ -24,7 +24,7 @@ Go to the master repo
 ```bash
 cd LMI_AI_Solutions
 ```
-Clone the submodules to the commit that is specified in this repo 
+Each submodule is pointing to a specific commit in its `ais` branch. Clone the submodules to the commit that is specified in this repo 
 ```bash
 git submodule update --init --recursive
 ```
