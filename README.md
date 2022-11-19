@@ -1,5 +1,5 @@
 # LMI AI Solutions
-This repo contains the utils scripts, and several submodules for LMI AI modeling development.
+This repo contains the utils scripts, and several submodules for LMI Technologies Inc. AI modeling development.
 Currently, the following submodules are included in the repo:
 - [yolov5](https://github.com/lmitechnologies/yolov5)
 - [efficientnet](https://github.com/lmitechnologies/EfficientNet-PyTorch)
