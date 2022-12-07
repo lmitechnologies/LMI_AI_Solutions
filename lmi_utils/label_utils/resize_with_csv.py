@@ -11,6 +11,11 @@ import cv2
 from label_utils import mask, rect, csv_utils
 
 
+logging.basicConfig()
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+
 def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
     """
     resize images and its annotations, while keep the aspect ratio.
@@ -35,7 +40,7 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
         
         ratio_in = w/h
         if ratio_in != ratio_out:
-            logging.warning(f'file: {im_name}, asepect ratio changed from {ratio_in} to {ratio_out}')
+            logger.warning(f'file: {im_name}, asepect ratio changed from {ratio_in} to {ratio_out}')
         
         out_name = os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
         
@@ -69,7 +74,7 @@ if __name__=='__main__':
 
     output_imsize = list(map(int,args['out_imsz'].split(',')))
     assert len(output_imsize)==2, 'the output image size must be two ints'
-    logging.info(f'output image size: {output_imsize}')
+    logger.info(f'output image size: {output_imsize}')
     
     path_imgs = args['path_imgs']
     path_out = args['path_out']
@@ -89,6 +94,6 @@ if __name__=='__main__':
 
     #write images and csv file
     for im_name in name_to_im:
-        logging.info(f'writting to {im_name}')
+        logger.info(f'writting to {im_name}')
         cv2.imwrite(os.path.join(path_out,im_name), name_to_im[im_name])
     csv_utils.write_to_csv(shapes, os.path.join(path_out,'labels.csv'))
