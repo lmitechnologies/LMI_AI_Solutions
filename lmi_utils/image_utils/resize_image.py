@@ -1,6 +1,7 @@
 #built-in packages
 import os
 import glob
+import logging
 
 #3rd party packages
 import cv2
@@ -24,16 +25,17 @@ def resize_images(path_imgs, output_imsize, path_out):
         im = cv2.imread(file)
         im_name = os.path.basename(file)
         h,w = im.shape[:2]
-        print(f'[INFO] Input file: {im_name} with size of [{w},{h}]')
+        logging.info(f'input file: {im_name} with size of [{w},{h}]')
         
         ratio_in = w/h
-        assert ratio_in==ratio_out,f'asepect ratio changed from {ratio_in} to {ratio_out}'
+        if ratio_in != ratio_out:
+            logging.warning(f'file: {im_name}, asepect ratio changed from {ratio_in} to {ratio_out}')
         
         out_name = os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
         
         im2 = cv2.resize(im, dsize=tuple(output_imsize))
 
-        print(f'writting to {out_name}\n')
+        logging.info(f'writting to {out_name}\n')
         cv2.imwrite(os.path.join(path_out,out_name), im2)
     return
 
@@ -49,7 +51,7 @@ if __name__=='__main__':
 
     output_imsize = list(map(int,args['out_imsz'].split(',')))
     assert len(output_imsize)==2, 'the output image size must be two ints'
-    print(f'output image size: {output_imsize}')
+    logging.info(f'output image size: {output_imsize}')
     
     path_imgs = args['path_imgs']
     path_out = args['path_out']

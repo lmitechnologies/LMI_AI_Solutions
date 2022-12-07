@@ -2,6 +2,7 @@
 import os
 import glob
 import shutil
+import logging
 
 #3rd party packages
 import cv2
@@ -33,7 +34,8 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
         h,w = im.shape[:2]
         
         ratio_in = w/h
-        assert ratio_in==ratio_out,f'asepect ratio changed from {ratio_in} to {ratio_out}'
+        if ratio_in != ratio_out:
+            logging.warning(f'file: {im_name}, asepect ratio changed from {ratio_in} to {ratio_out}')
         
         out_name = os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
         
@@ -67,7 +69,7 @@ if __name__=='__main__':
 
     output_imsize = list(map(int,args['out_imsz'].split(',')))
     assert len(output_imsize)==2, 'the output image size must be two ints'
-    print(f'output image size: {output_imsize}')
+    logging.info(f'output image size: {output_imsize}')
     
     path_imgs = args['path_imgs']
     path_out = args['path_out']
@@ -87,6 +89,6 @@ if __name__=='__main__':
 
     #write images and csv file
     for im_name in name_to_im:
-        print(f'writting to {im_name}')
+        logging.info(f'writting to {im_name}')
         cv2.imwrite(os.path.join(path_out,im_name), name_to_im[im_name])
     csv_utils.write_to_csv(shapes, os.path.join(path_out,'labels.csv'))
