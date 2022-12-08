@@ -18,3 +18,8 @@
 	path = acceleration/tf/tensorrt
 	url = https://github.com/tensorflow/tensorrt.git
 	branch = master
+[submodule "acceleration/tensorrtx"]
+	path = acceleration/tensorrtx
+	url = https://github.com/lmitechnologies/tensorrtx.git
+	branch = master
+
