@@ -34,8 +34,13 @@ def rot90(x,y,h,w):
 
 def rot90_shape(shape,h,w):
     if isinstance(shape, rect.Rect):
-        shape.up_left = rot90(shape.up_left[0],shape.up_left[1],h,w)
-        shape.bottom_right = rot90(shape.bottom_right[0],shape.bottom_right[1],h,w)
+        x0,y0,x2,y2 = shape.up_left+shape.bottom_right
+        x0,x2 = np.clip([x0,x2],a_min=0,a_max=w)
+        y0,y2 = np.clip([y0,y2],a_min=0,a_max=h)
+        x1,y1 = x2,y0
+        x3,y3 = x0,y2
+        shape.up_left = rot90(x1,y1,h,w)
+        shape.bottom_right = rot90(x3,y3,h,w)
     elif isinstance(shape, mask.Mask):
         new_x,new_y = [],[]
         for x,y in zip(shape.X,shape.Y):
