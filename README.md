@@ -42,7 +42,7 @@ source PATH_TO_REPO/lmi_ai.env
 ```
 where ``PATH_TO_REPO`` is the path to the LMI_AI_Solutions repo.   
 
-2. run any scripts in this repo, for example:
+2. Run any scripts in this repo, for example:
 ```bash
 python -m label_utils.plot_labels -h
 ```
