@@ -16,34 +16,35 @@ DATASETS:
   #training dataset name(s)
   TRAIN: ("dataset_train",)
   #training dataset location(s)
-  TRAIN_DIR: ("./data/512x512",)
+  TRAIN_DIR: ("./data/2022-11-18_640_192_all",)
   TEST: ()
 INPUT: 
   FORMAT: "RGB"
-  MIN_SIZE_TRAIN: (256,)
-  MAX_SIZE_TRAIN: 512
+  MIN_SIZE_TRAIN: (640,)
+  MAX_SIZE_TRAIN: 640
   RANDOM_FLIP: "horizontal"
 MODEL:
-  #WEIGHTS: './pretrained-models/resnet18-f37072fd.pkl'
+  WEIGHTS: './pretrained-models/model_final_9243eb.pkl'
   BACKBONE:
     #training the whole model 
     FREEZE_AT: 0
   ROI_HEADS:
-    BATCH_SIZE_PER_IMAGE: 64
     NUM_CLASSES: 2
+    BATCH_SIZE_PER_IMAGE: 128
   RESNETS:
-    DEPTH: 18
-    STRIDE_IN_1X1: False
-    RES2_OUT_CHANNELS: 64
-  PIXEL_MEAN: [0, 0, 0]
-  PIXEL_STD: [1, 1, 1]
+    DEPTH: 50
+    STRIDE_IN_1X1: True
+    RES2_OUT_CHANNELS: 256
+  PIXEL_MEAN: [123.675, 116.280, 103.530]
+  PIXEL_STD: [58.395, 57.120, 57.375]
 SOLVER:
-  IMS_PER_BATCH: 4
-  BASE_LR: 0.00025  
-  MAX_ITER: 20000
-  STEPS: ()
-  CHECKPOINT_PERIOD: 1000
-OUTPUT_DIR: './trained-inference-models/2022-07-05_R18'
+  IMS_PER_BATCH: 8
+  BASE_LR: 0.001  
+  #BASE_LR_END: 0.00025
+  MAX_ITER: 80000
+  STEPS: (60000,)
+  CHECKPOINT_PERIOD: 10000
+OUTPUT_DIR: './trained-inference-models/2022-11-18_R50'
 VERSION: 2
 ```
 
