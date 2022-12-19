@@ -28,11 +28,23 @@ cd LMI_AI_Solutions
 ```
 Each submodule is pointing to a specific commit in its `ais` branch. Clone the submodules to the commit that is specified in this repo 
 ```bash
-git submodule update --init --recursive
+git submodule update --init
 ```
-(optional) if you want to update all submodules to the `lastest` commit in the `ais` branch, use the `--remote` argument
+(**not recommend**) if you want to update all submodules to the `lastest` commit in the `ais` branch, use the `--remote` argument
 ```bash
-git submodule update --init --recursive --remote
+git submodule update --init --remote
+```
+
+## Use this repo
+1. Activate the environmental file - [lmi_ai.env](https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/lmi_ai.env): 
+```bash
+source PATH_TO_REPO/lmi_ai.env
+```
+where ``PATH_TO_REPO`` is the path to the LMI_AI_Solutions repo.   
+
+2. Run any scripts in this repo, for example:
+```bash
+python -m label_utils.plot_labels -h
 ```
 
 ## Make contributions to this repo
