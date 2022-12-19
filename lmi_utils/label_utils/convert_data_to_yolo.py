@@ -15,7 +15,7 @@ from label_utils.mask import Mask
 from label_utils.rect import Rect
 
 
-def convert_to_txt(fname_to_shapes, class_to_id, is_seg=False, is_convert=False):
+def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=False, is_convert=False):
     """
     convert the map <fname, list of shape objects> to YOLO format
     Arguments:
@@ -32,6 +32,8 @@ def convert_to_txt(fname_to_shapes, class_to_id, is_seg=False, is_convert=False)
         rows = []
         for shape in shapes:
             #get class ID
+            if shape.category not in target_classes:
+                continue
             class_id = class_to_id[shape.category]
             #get the image H,W
             I = cv2.imread(shape.fullpath)
@@ -119,13 +121,15 @@ if __name__ =='__main__':
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--class_map_json', help='[optinal] the class map json file')
     ap.add_argument('--path_out', required=True, help='the output path')
+    ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')
     ap.add_argument('--seg', action='store_true', help='generate labels in instance segmentation format, otherwise object detection format')
-    ap.add_argument('--convert', action='store_true', help='perform conversions: bbox-to-mask or mask-to-bbox, otherwise skip')
+    ap.add_argument('--convert', action='store_true', help='perform conversions: bbox-to-mask or mask-to-bbox depends on "--seg", otherwise skip')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
     class_map_file = args['class_map_json']
     path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
+    target_classes = args['target_classes'].split(',')
     is_seg = args['seg']
     is_convert = args['convert']
 
@@ -139,7 +143,26 @@ if __name__ =='__main__':
         fname_to_shapes,class_to_id = load_csv(path_csv, path_imgs, class_map)
     else:
         fname_to_shapes,class_to_id = load_csv(path_csv, path_imgs, zero_index=True)
-    fname_to_rows = convert_to_txt(fname_to_shapes, class_to_id, is_seg, is_convert)
+    
+    if len(target_classes)==1 and target_classes[0]=='all':
+        target_classes = [cls for cls in class_to_id]
+    for cls in target_classes:
+        if cls not in class_to_id:
+            raise Exception(f'Not found target class: {cls}')
+    print(f'target_classes: {target_classes}')
+    
+    # modify the map class to id
+    keys = class_to_id.keys()
+    del_keys = set(keys)-set(target_classes)
+    for key in del_keys:
+        del class_to_id[key]
+    # re-assign id 
+    id = 0
+    for cls in class_to_id:
+        class_to_id[cls] = id
+        id += 1
+    
+    fname_to_rows = convert_to_txt(fname_to_shapes, class_to_id, target_classes, is_seg, is_convert)
 
     #generate output yolo dataset
     if not os.path.isdir(args['path_out']):
