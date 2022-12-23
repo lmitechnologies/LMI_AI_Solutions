@@ -34,7 +34,8 @@ def resize_images(path_imgs, output_imsize, path_out):
         if ratio_in != ratio_out:
             logger.warning(f'file: {im_name}, asepect ratio changed from {ratio_in} to {ratio_out}')
         
-        out_name = os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
+        # out_name = os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
+        out_name = im_name
         
         im2 = cv2.resize(im, dsize=tuple(output_imsize))
 
