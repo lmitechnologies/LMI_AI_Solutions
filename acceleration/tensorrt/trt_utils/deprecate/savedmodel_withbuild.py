@@ -79,14 +79,14 @@ def run_benchmark(loaded_model,image_path_list):
     print(f'*****************************************')
 
 
-def convert_tensorRT(saved_model_dir,trt_saved_model_dir,calibration_data_dir,precision_mode='FP16'):
+def convert_tensorRT(saved_model_dir,trt_saved_model_dir,cal_data_dir,precision_mode='FP16'):
     '''
     DESCRIPTION: Converts a saved_model to a tensorRT saved model.  Also builds the engine that gets loaded at runtime if calibration data directory is specified.
 
     ARGUMENTS:
         -saved_model_dir: path to input tensorflow saved_model
         -trt_saved_model_dir: path to output tensorflow saved_model  
-        -calibration_data_dir: path to calibration data directory used to prebuild executable
+        -cal_data_dir: path to calibration data directory used to prebuild executable
         -precision_mode: fixed point precision used by converter
     '''
     # Define key properties
@@ -124,7 +124,7 @@ def convert_tensorRT(saved_model_dir,trt_saved_model_dir,calibration_data_dir,pr
     # Build
     if not allow_build_at_runtime:
         try: 
-            path_to_cal_images=calibration_data_dir
+            path_to_cal_images=cal_data_dir
             image_path_list=glob.glob(os.path.join(path_to_cal_images,'*.png'))
             cal_image_list=[]
             for image_path in image_path_list:
@@ -156,15 +156,15 @@ def main(args):
     path_to_test_images=args['data_dir']
     image_path_list=glob.glob(os.path.join(path_to_test_images,'*.png'))
 
-    # baseline_model_dir=os.path.join(TRAINED_MODEL_PATH,args['baseline_saved_model_dir'])
-    # trt_model_dir=os.path.join(TRAINED_MODEL_PATH,args['tensorrt_saved_model_dir'])
-    baseline_model_dir=args['baseline_saved_model_dir']
-    trt_model_dir=args['tensorrt_saved_model_dir']
+    # baseline_saved_model_dir=os.path.join(TRAINED_MODEL_PATH,args['baseline_saved_model_dir'])
+    # trt_model_dir=os.path.join(TRAINED_MODEL_PATH,args['trt_saved_model_dir'])
+    baseline_saved_model_dir=args['baseline_saved_model_dir']
+    trt_model_dir=args['trt_saved_model_dir']
     if args['generate_trt']:    
-        convert_tensorRT(baseline_model_dir,trt_model_dir,calibration_data_dir=args['cal_data_dir'])
+        convert_tensorRT(baseline_saved_model_dir,trt_model_dir,cal_data_dir=args['cal_data_dir'])
         tf.keras.backend.clear_session()
     if args['benchmark_baseline']:
-        loaded_model=tf.saved_model.load(baseline_model_dir)
+        loaded_model=tf.saved_model.load(baseline_saved_model_dir)
         run_benchmark(loaded_model,image_path_list)
     if args['benchmark_trt']:
         loaded_model=tf.saved_model.load(trt_model_dir)
@@ -175,7 +175,7 @@ if __name__=='__main__':
     ap=argparse.ArgumentParser()
     ap.add_argument('--gpu_mem_limit',default=2048,type=int,help='GPU memory limit (MB)')
     ap.add_argument('--baseline_saved_model_dir',default='fasterrcnn_400x400/2021-12-08_400/saved_model')
-    ap.add_argument('--tensorrt_saved_model_dir',default='fasterrcnn_400x400/rt-2021-12-08_400')
+    ap.add_argument('--trt_saved_model_dir',default='fasterrcnn_400x400/rt-2021-12-08_400')
     ap.add_argument('--data_dir',default='data/testdata_400x400/training')
     ap.add_argument('--cal_data_dir',default='data/testdata_400x400/trt_calibration')
     ap.add_argument('--generate_trt',dest='generate_trt',action='store_true')

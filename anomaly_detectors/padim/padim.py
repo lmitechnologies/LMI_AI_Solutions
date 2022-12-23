@@ -11,10 +11,10 @@ import copy
 # 2. Third-party modules
 import numpy as np
 import tensorflow as tf
-import tensorflow_addons as tfa
+
 import matplotlib
 from matplotlib import pyplot as plt
-
+import shutil
 
 # 3. Own modules
 from padim.data_loader import DataLoader
@@ -139,6 +139,15 @@ class PaDiM(object):
             logging.info(f'Setting GPU memory limit to {GPU_memory} MB')
             self.set_gpu_memory(GPU_memory)
         
+    @staticmethod
+    def get_tfrecords(model_path):
+        tfrecords_path = os.path.join(model_path,'padim.tfrecords')
+        tfrecords_path_under_saved_model = os.path.join(model_path,'saved_model/padim.tfrecords')
+        if os.path.isfile(tfrecords_path):
+            return tfrecords_path
+        if os.path.isfile(tfrecords_path_under_saved_model):
+            return tfrecords_path_under_saved_model
+        return None
 
     def set_gpu_memory(self,mem_limit):
         '''
@@ -195,7 +204,6 @@ class PaDiM(object):
             name_l1=layer_defs.pop('layer1','stem_activation')
             name_l2=layer_defs.pop('layer2','block2a_activation')
             name_l3=layer_defs.pop('layer3','block4a_activation')
-
 
             # efficient net B7\
             if shape is None:
@@ -529,14 +537,20 @@ class PaDiM(object):
             dist_tensor: error distance tf.tensor (b,h,w,ch)
             fname_tensor: filename tf.tensor (b)
         '''
+        # unavailable on arm (Jetpack), import in the scope to minimize the impact.
+        tfa_available = False
+        try:
+            import tensorflow_addons as tfa
+            tfa_available = True
+        except:
+            print("tensorflow_addons package is unavailable on arm64")
+
         if isinstance(dataset,type('string')):
             predictdata=DataLoader(path_base=dataset, img_shape=self.img_shape, batch_size=1, shuffle=False)
             dataset=predictdata.dataset
         elif tf.is_tensor(dataset):
             fname=tf.constant(np.char.encode('Current Image Tensor.'))
             dataset=zip([dataset],[fname])
-        else:
-            pass
             
         proctime=[]
         image_list=[]
@@ -549,7 +563,6 @@ class PaDiM(object):
                 fname_decode=fname.numpy().decode('ascii')
             fname_list.append(fname_decode)
             # fname_str=' '.join(fname_decode)
-            logging.info(f'Processing images {fname_decode}')
             t0=time.time()
             if len(x.shape)<4:
                 x=tf.expand_dims(x,0)
@@ -564,12 +577,13 @@ class PaDiM(object):
             # Apply Gaussion Filtering
             dist_tensor_x=tf.expand_dims(dist_tensor_x,-1)
             dist_tensor_x=tf.image.resize(dist_tensor_x,self.img_shape)
-            dist_tensor_x=tfa.image.gaussian_filter2d(dist_tensor_x,filter_shape=(3,3))
+            if tfa_available:
+                dist_tensor_x=tfa.image.gaussian_filter2d(dist_tensor_x,filter_shape=(3,3))
             # Aggregate tensors in batch
             dist_list.append(dist_tensor_x)
             t1=time.time()
             tdel=(t1-t0)/B
-            logging.info(f'Proc Time: {tdel}')
+            logging.info(f"Proc Time: {fname_decode}\t{tdel}")
             proctime.append(tdel)
         
         image_tensor=tf.concat(image_list,axis=0)
@@ -579,6 +593,7 @@ class PaDiM(object):
         if len(proctime)>1:
             proctime=np.asarray(proctime)
             logging.info(f'Min Proc Time: {proctime.min()}')
+            logging.info(f'Median Proc Time: {np.median(proctime)}')
             logging.info(f'Max Proc Time: {proctime.max()}')
             logging.info(f'Avg Proc Time: {proctime.mean()}')
         else:
@@ -592,15 +607,22 @@ class PaDiM(object):
         raw_image_zeros=tf.zeros(image_shape,dtype=tf.dtypes.int8)
         return raw_image_zeros
 
-    def convert_tensorRT(self,saved_model_dir,trt_saved_model_dir,calibration_data_dir=None,gpu_mem_limit=2048,precision_mode='FP16'):
+    def load(self, model_path):
+        tfrecords_path = PaDiM.get_tfrecords(model_path)
+        assert(tfrecords_path)
+        saved_model_path = model_path if os.path.isfile(os.path.join(model_path,'saved_model.pb')) else os.path.join(model_path,'saved_model')
+        self.import_tfrecords(tfrecords_path)
+        self.net=tf.keras.models.load_model(saved_model_path)
+
+    def convert_tensorRT(self,baseline_saved_model_dir,trt_saved_model_dir,cal_data_dir=None,gpu_mem_limit=2048,precision_mode='FP16'):
         from tensorflow.python.compiler.tensorrt import trt_convert as trt
-        saved_model_path=os.path.join(saved_model_dir,'saved_model')
-        tfrecords_path=os.path.join(saved_model_dir,'padim.tfrecords')
+        saved_model_path=os.path.join(baseline_saved_model_dir,'saved_model')
+        tfrecords_path=os.path.join(baseline_saved_model_dir,'padim.tfrecords')
         self.import_tfrecords(tfrecords_path)
         # self.net=tf.keras.models.load_model(saved_model_path)
         # https://docs.nvidia.com/deeplearning/frameworks/tf-trt-user-guide/index.html
         params = copy.deepcopy(trt.DEFAULT_TRT_CONVERSION_PARAMS)
-        allow_build_at_runtime=True if calibration_data_dir is None else False
+        allow_build_at_runtime=True if cal_data_dir is None else False
         max_workspace_size_bytes=1073741824 # Default: 1e9. The maximum GPU temporary memory which the TensorRT engine can use at execution time
         minimum_segment_size=3 # Default: 3. This is the minimum number of nodes required for a subgraph to be replaced by TRTEngineOp.
         # Set precision
@@ -631,7 +653,7 @@ class PaDiM(object):
         # Build
         if not allow_build_at_runtime:
             try:    
-                predictdata=DataLoader(path_base=calibration_data_dir, img_shape=self.img_shape, batch_size=1, shuffle=False)
+                predictdata=DataLoader(path_base=cal_data_dir, img_shape=self.img_shape, batch_size=1, shuffle=False)
                 dataset=predictdata.dataset
                 cal_image_list=[]
                 for image,_ in dataset:
@@ -650,4 +672,45 @@ class PaDiM(object):
         if not os.path.exists(trt_saved_model_dir):
             os.makedirs(trt_saved_model_dir)
         converter.save(trt_saved_model_dir)
+        # tfrecords is required for trt padim saved model to work
+        shutil.copy(tfrecords_path, trt_saved_model_dir)
       
+
+def main(args):
+
+    # padim's input_dtype is always uint8? as hard-coded in padim.py
+
+    padim = PaDiM(GPU_memory=args['gpu_mem_limit'])
+    
+    baseline_saved_model_dir=args['baseline_saved_model_dir']
+    trt_model_dir=args['trt_saved_model_dir']
+    if args['generate_trt']:
+        padim.convert_tensorRT(
+        baseline_saved_model_dir=args['baseline_saved_model_dir'],
+        trt_saved_model_dir=args['trt_saved_model_dir'],
+        cal_data_dir=args['cal_data_dir'])
+        tf.keras.backend.clear_session()
+    if args['benchmark_baseline']:
+        padim.load(args['baseline_saved_model_dir'])
+        image_tensor,dist_tensor,fname_tensor=padim.predict(args['data_dir'])
+        err_dist_array=dist_tensor.numpy()
+        image_array=image_tensor.numpy()
+        fname_array=fname_tensor.numpy()
+
+        prediction_results=zip(image_array,err_dist_array,fname_array)
+        prediction_results_path=os.path.join(args['cal_data_dir'],'prediction_results_baseline')
+        if not os.path.isdir(prediction_results_path):
+            os.makedirs(prediction_results_path)
+        plot_fig(prediction_results,padim.training_mean_dist,padim.training_std_dist,prediction_results_path)
+    if args['benchmark_trt']:
+        padim.load(args['trt_saved_model_dir'])
+        image_tensor,dist_tensor,fname_tensor=padim.predict(args['data_dir'])
+        err_dist_array=dist_tensor.numpy()
+        image_array=image_tensor.numpy()
+        fname_array=fname_tensor.numpy()
+
+        prediction_results=zip(image_array,err_dist_array,fname_array)
+        prediction_results_path=os.path.join(args['cal_data_dir'],'prediction_results_trt')
+        if not os.path.isdir(prediction_results_path):
+            os.makedirs(prediction_results_path)
+        plot_fig(prediction_results,padim.training_mean_dist,padim.training_std_dist,prediction_results_path)

@@ -1,0 +1,19 @@
+ARG BASE_IMAGE=$BASE_IMAGE
+FROM --platform=linux/arm64/v8 ${BASE_IMAGE}
+RUN apt-get update -y
+RUN apt-get install pkg-config
+RUN apt-get install python3-tk -y
+WORKDIR /app
+COPY ./requirements.txt /app/requirements.txt
+RUN python3 -m pip install --upgrade pip setuptools
+RUN pip install --upgrade pip
+RUN pip3 install --global-option=build_ext --global-option="-I/usr/local/cuda/include" --global-option="-L/usr/local/cuda/lib64" pycuda
+RUN pip install -r /app/requirements.txt
+RUN git clone --recurse-submodules https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN git clone https://github.com/lmitechnologies/tensorrtx.git
+RUN git clone https://github.com/jbeder/yaml-cpp.git
+RUN cd /app/yaml-cpp && mkdir build && cd build && cmake -DBUILD_SHARED_LIBS=ON .. && make && make install
+
+
+
+    

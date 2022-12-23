@@ -9,6 +9,8 @@
 import os
 import glob
 
+import cv2
+
 # 2. Third-party modules
 import tensorflow as tf
 
@@ -133,7 +135,6 @@ class DataLoader(object):
 
 if __name__ == '__main__':
     import argparse as ap
-    import cv2
     import numpy as np
 
     parser = ap.ArgumentParser()
