@@ -11,7 +11,7 @@ import numpy as np
 NAN_INT=-999999
 
 #%% File paths
-def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all_labels,boundingbox_label,object_labels,scl_w,p2w,p2h,is_plot): 
+def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all_labels,boundingbox_label,object_labels,scl_w,scl_h,p2w,p2h,is_plot): 
     # def_width=False
     # try:
     #     scl_w=int(scl_w)
@@ -76,7 +76,7 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                         old_objects.append(pts)
                         object_labels.append(obj_class)
                 # extract new image and new objects
-                new_image,new_objects=crop_scale_labeled_image(old_image,bbox,old_objects,new_width=scl_w,p2h=p2h,p2w=p2w)
+                new_image,new_objects=crop_scale_labeled_image(old_image,bbox,old_objects,new_width=scl_w,new_height=scl_h,p2h=p2h,p2w=p2w)
                 hout,wout=new_image.shape[:2]         
                 fname=os.path.splitext(image_file)[0]+'_crop_h'+str(hout)+'w'+str(wout)+'.png'
                 fpath=os.path.join(output_data_dir,fname)
@@ -140,10 +140,13 @@ if __name__ == '__main__':
     ap.add_argument('--bb_label',default=None,help='Bounding box label for cropping. (If it exists.)')
     ap.add_argument('--object_labels',default=None,help='Comma separated list for all labels to keep.')
     # ap.add_argument('--split_bbw',type=int,default=1)
-    ap.add_argument('--scale_width',type=int,default=None,help='Width of new image.  Scaling will preserve aspect ratio.')
+    ap.add_argument('--scale_width',type=int,default=None,help='Width of new image.  Scaling will preserve aspect ratio if scale_height is not defined.')
+    ap.add_argument('--scale_height',type=int,default=None,help='Height of new image.  Scaling will preserve aspect ratio if scale_width is not defined.')
     ap.add_argument('--pad2width',type=int,default=None,help='Pad to width')
     ap.add_argument('--pad2height',type=int,default=None,help='Pad to height')
     ap.add_argument('--plot', action='store_true', help='plot the crop region')
+
+
     args=vars(ap.parse_args())
 
     idp=args['input_data_path']
@@ -154,6 +157,7 @@ if __name__ == '__main__':
     bblab=args['bb_label']
     objects=args['object_labels']
     scl_w=args['scale_width']
+    scl_h=args['scale_height']
     p2w=args['pad2width']
     p2h=args['pad2height']
     is_plot=args['plot']
@@ -165,4 +169,4 @@ if __name__ == '__main__':
     else:
         mlab=[]
 
-    crop_scale(idp,icsv,odp,ocsv,ldef,bblab,mlab,scl_w,p2w,p2h,is_plot)
+    crop_scale(idp,icsv,odp,ocsv,ldef,bblab,mlab,scl_w,scl_h,p2w,p2h,is_plot)

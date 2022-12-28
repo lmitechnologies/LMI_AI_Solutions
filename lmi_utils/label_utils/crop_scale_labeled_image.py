@@ -48,7 +48,7 @@ def make_border(img,p2h=None,p2w=None):
 
 
 # bounding box: ((ulx,uly),(lrx,lry))
-def crop_scale_labeled_image(image,boundingbox,masks=None,new_width=None,p2h=None,p2w=None):
+def crop_scale_labeled_image(image,boundingbox,masks=None,new_width=None,new_height=None,p2h=None,p2w=None):
     '''
     Crops ROI defined by bounding box.
     Then resizes the image and masks, keeping aspect ratio.
@@ -102,12 +102,12 @@ def crop_scale_labeled_image(image,boundingbox,masks=None,new_width=None,p2h=Non
     #     raise Exception('Mask regions are outside bounding box')
 
     # rescale image and masks    
-    if new_width is not None:
-        resized_image=resize(cropped_image,width=new_width)
+    if (new_width is not None) or (new_height is not None):
+        resized_image=resize(cropped_image,width=new_width, height=new_height)
         new_image=resized_image
         if masks is not None:
-            (x0,y0)=cropped_image.shape[0:2]
-            (x1,y1)=resized_image.shape[0:2]
+            (y0,x0)=cropped_image.shape[0:2]
+            (y1,x1)=resized_image.shape[0:2]
             sclx=x1/x0
             scly=y1/y0
             new_masks=[]
