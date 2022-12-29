@@ -257,7 +257,7 @@ class PointCloud():
 
         # set inf values to nan for consistency
         self.z[self.z == -np.inf] = np.nan
-        self.z[self.z <= -1.0e-100] =np.nan
+        self.z[self.z <= -1.0e100] =np.nan
         # filter all nan to determine dataset min/max
         try:
             ind=self.z[np.isnan(self.z)]
