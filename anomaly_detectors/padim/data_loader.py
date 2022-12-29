@@ -18,7 +18,7 @@ class DataLoader(object):
         loads images from directory and subdirectories into tf.data.Dataset iterable.
         Note: ONLY load 8 bits PNG images.
     """
-    def __init__(self, path_base, img_shape, batch_size, normalize=False, shuffle=True):
+    def __init__(self, path_base, img_shape, batch_size, normalize=False, shuffle=True, random_flip_h=False, random_flip_v=False):
         """
         DESCRIPTION:
             1. set the image shape
@@ -52,8 +52,10 @@ class DataLoader(object):
         if shuffle:
             dataset = dataset.shuffle(self.n_samples, reshuffle_each_iteration=True)
 
+        lambda_parse=lambda path_file, file_name: self._parse_function(path_file, file_name,random_flip_h, random_flip_v)
+
         #apply the parse function to each element in the dataset
-        dataset = dataset.map(self._parse_function, num_parallel_calls=tf.data.AUTOTUNE)
+        dataset = dataset.map(lambda_parse, num_parallel_calls=tf.data.AUTOTUNE)
 
         #set batch size
         dataset = dataset.batch(batch_size)
@@ -87,7 +89,7 @@ class DataLoader(object):
             file_names += fnames
         return file_list, file_names
 
-    def _parse_function(self, path_file, file_name):
+    def _parse_function(self, path_file, file_name, random_flip_h, random_flip_v):
         """
         DESCRIPTION:
             parse each element in the dataset
@@ -102,6 +104,9 @@ class DataLoader(object):
             image -> a 3D tf.Tensor for the image
             file_name -> a string of the image file name 
         """
+        print(f'[INFO] Loading data from: {path_file} for {file_name}')
+        
+
         raw = tf.io.read_file(path_file)
         #loads the image as a uint8 tensor
         image = tf.io.decode_image(raw, expand_animations=False)
@@ -117,6 +122,12 @@ class DataLoader(object):
 
         #resize image
         image = tf.image.resize(image, size=self.img_shape, method='bicubic')
+
+        if random_flip_h:
+            image=tf.image.random_flip_left_right(image)
+        if random_flip_v:
+            image=tf.image.random_flip_up_down(image)
+        
         return image, file_name
 
 
