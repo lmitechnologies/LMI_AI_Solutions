@@ -10,6 +10,7 @@ class NumpyUtils():
         for f in files:
             print(join(source_path, f))
             np_frame = cv2.imread(join(source_path, f))
+            np_frame=cv2.cvtColor(np_frame,cv2.COLOR_RGB2BGR)
             if rotate:
                 np_frame = np.rot90(np_frame)
             if rgb2bgr:
@@ -26,6 +27,7 @@ class NumpyUtils():
                 np_frame = np.rot90(np_frame)
             if rgb2bgr:
                 np_frame=cv2.cvtColor(np_frame,cv2.COLOR_RGB2BGR)
+            np_frame=cv2.cvtColor(np_frame,cv2.COLOR_RGB2BGR)
             cv2.imwrite(join(destination_path, f.replace('.npy', '.png')), np_frame)
     
     def png_to_png(self,source_path, destination_path, rotate=False, rgb2bgr=False):
@@ -38,6 +40,7 @@ class NumpyUtils():
                 np_frame = np.rot90(np_frame)
             if rgb2bgr:
                 np_frame=cv2.cvtColor(np_frame,cv2.COLOR_RGB2BGR)
+            np_frame=cv2.cvtColor(np_frame,cv2.COLOR_RGB2BGR)
             cv2.imwrite(join(destination_path, f), np_frame)
 
 if __name__=="__main__":
