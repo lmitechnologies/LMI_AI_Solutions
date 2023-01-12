@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 nvcr.io/nvidia/tensorflow:20.09-tf2-py3
+FROM --platform=linux/amd64 nvcr.io/nvidia/tensorflow:22.07-tf2-py3
 WORKDIR /app
 COPY ./requirements.txt /app/requirements.txt
 RUN git clone --recurse-submodules https://github.com/lmitechnologies/LMI_AI_Solutions.git
