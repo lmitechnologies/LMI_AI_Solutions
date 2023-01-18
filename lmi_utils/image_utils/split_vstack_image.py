@@ -5,7 +5,26 @@ import glob
 import numpy as np
 import warnings
 
-BLACK=(0,0,0)
+
+
+def split_vstack_image(im, num_split:int):
+    """split the images horizontally into segments, vstack these segments
+    Args:
+        im (np.ndarray): the input image
+        num_split (int): the num of segments after the split
+    """
+    h,w = im.shape[:2]
+    if w%num_split:
+        warnings.warn(f'the image width of {w} is not divisible by {num_split}')
+    w_seg = w//num_split
+    im_segs = []
+    for j in range(num_split):
+        s,e = j*w_seg,(j+1)*w_seg
+        im_segs.append(im[:,s:e,:])
+    im_out = np.vstack(im_segs)
+    return im_out
+
+
 
 def split_vstack_images(input_path:str, output_path:str, num_split:int):
     """
@@ -26,14 +45,7 @@ def split_vstack_images(input_path:str, output_path:str, num_split:int):
         print(f'Input file: {im_name} with size of [{w},{h}]')
 
         # split image
-        if w%num_split:
-            warnings.warn(f'the image width of {w} is not divisible by {num_split}')
-        w_seg = w//num_split
-        im_segs = []
-        for j in range(num_split):
-            s,e = j*w_seg,(j+1)*w_seg
-            im_segs.append(im[:,s:e,:])
-        im_out = np.vstack(im_segs)
+        im_out = split_vstack_image(im, num_split)
         nh,nw = im_out.shape[:2]
         print(f'The output image size: [{nw},{nh}]')
 
