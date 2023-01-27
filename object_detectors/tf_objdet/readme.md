@@ -112,19 +112,19 @@ python3 -m tf_objdet.lmi_utils.model_main_tf2 --model_dir=training --pipeline_co
 ``` bash
 tensorboard --logdir=training --bind_all
 ```
-If your browser is not connecting, try:
+### If your browser is not connecting, try:
 
-from local machine: 
+#### from local machine: 
 ``` bash
 ssh -L 16006:127.0.0.1:6006 my_user_id@my_server_ip
 ```
 
-from training machine:
+#### from training machine:
 ``` bash
 tensorboard --logdir=training --bind_all
 ```
 
-from local machine
+#### from local machine
 ``` bash
 localhost:16006
 ```
