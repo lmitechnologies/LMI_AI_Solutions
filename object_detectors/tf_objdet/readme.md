@@ -54,7 +54,7 @@ source ~/LMI_AI_Solutions/lmi_ai.env
 ## Generate .csv from .json
 
 ``` bash
-python3 -m label_utils.via_json_to_csv -d ./data --output_fname labels.csv --label_name=Name --render True --is_mask False --mask_to_bbox False
+python3 -m label_utils.via_json_to_csv -d ./data --output_fname labels.csv --label_name=Name --render True --mask_to_bbox False
 ```
 
 ## Set Training Parameters in config.py
