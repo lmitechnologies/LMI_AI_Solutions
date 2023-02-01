@@ -3,7 +3,7 @@ services:
   generate_trt:
     build:
       context: .
-      dockerfile: ./$DOCKER_FILE
+      dockerfile: ./dockerfile.$PLATFORM
     volumes:
       - $WEIGHT_PATH:/app/weight.pt
       - $CONFIG_PATH:/app/config.yaml
