@@ -14,6 +14,8 @@ make
 cd ..
 
 OUT_PREFIX=model
+WEIGHT_PATH=/app/weight.pt
+CONFIG_PATH=/app/config.yaml
 
 # generate weights
 python3 /app/LMI_AI_Solutions/object_detectors/yolov5/gen_wts.py -w "$WEIGHT_PATH" -o "$OUTPUT_PATH"/"$OUT_PREFIX".wts
