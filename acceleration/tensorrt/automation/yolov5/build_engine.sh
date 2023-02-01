@@ -1,7 +1,7 @@
 # Compile tensorrtx
 
 BUILD_PATH=/app/build_trt
-mkdir $BUILD_PATH
+mkdir -p $BUILD_PATH
 
 CONVERSION_NAME="$(date +'%Y-%m-%d-%H-%M')"
 
