@@ -18,6 +18,6 @@ services:
               - driver: nvidia
                 count: 1
                 capabilities: [gpu]
-    command: bash /app/build_engine.sh
+    command: bash /app/build_engine.sh && sleep 1000
     # stdin_open: true # docker run -i
     # tty: true        # docker run -t
