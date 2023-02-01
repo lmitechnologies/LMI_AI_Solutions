@@ -6,7 +6,7 @@ mkdir -p $BUILD_PATH
 CONVERSION_NAME="$(date +'%Y-%m-%d-%H-%M')"
 
 OUTPUT_PATH=/app/trt_engines/$CONVERSION_NAME
-mkdir -p $BUILD_PATH
+mkdir -p $OUTPUT_PATH
 
 cd "$BUILD_PATH"
 cmake /app/tensorrtx/yolov5
