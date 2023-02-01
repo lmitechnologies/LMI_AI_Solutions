@@ -13,12 +13,12 @@ cmake /app/tensorrtx/yolov5
 make
 cd ..
 
-# OUT_PREFIX=model
-# WEIGHT_PATH=/app/weight.pt
-# CONFIG_PATH=/app/config.yaml
+OUT_PREFIX=model
+WEIGHT_PATH=/app/weight.pt
+CONFIG_PATH=/app/config.yaml
 
-# # generate weights
-# python3 /app/LMI_AI_Solutions/object_detectors/yolov5/gen_wts.py -w "$WEIGHT_PATH" -o "$OUTPUT_PATH"/"$OUT_PREFIX".wts
+# generate weights
+python3 /app/LMI_AI_Solutions/object_detectors/yolov5/gen_wts.py -w "$WEIGHT_PATH" -o "$OUTPUT_PATH"/"$OUT_PREFIX".wts
 
 # # build engine
 # "$BUILD_PATH"/yolov5 -c "$CONFIG_PATH" -w "$OUTPUT_PATH"/$OUT_PREFIX.wts -o "$OUTPUT_PATH"/model.engine
