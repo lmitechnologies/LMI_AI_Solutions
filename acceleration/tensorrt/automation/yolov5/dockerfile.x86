@@ -34,3 +34,5 @@ RUN git clone --recurse-submodules https://github.com/lmitechnologies/LMI_AI_Sol
 RUN git clone https://github.com/lmitechnologies/tensorrtx.git
 RUN git clone https://github.com/jbeder/yaml-cpp.git
 RUN cd /app/yaml-cpp && mkdir build && cd build && cmake -DBUILD_SHARED_LIBS=ON .. && make && make install
+
+RUN mkdir -p /app/build_trt && cd /app/build_trt && cmake /app/tensorrtx/yolov5 && make
