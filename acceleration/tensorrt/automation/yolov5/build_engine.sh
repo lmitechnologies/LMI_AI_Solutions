@@ -24,8 +24,8 @@ echo WEIGHT_PATH $WEIGHT_PATH
 # generate weights
 python3 /app/LMI_AI_Solutions/object_detectors/yolov5/gen_wts.py -w "$WEIGHT_PATH" -o "$OUTPUT_PATH"/"$OUT_PREFIX".wts
 
-# # build engine
-# "$BUILD_PATH"/yolov5 -c "$CONFIG_PATH" -w "$OUTPUT_PATH"/$OUT_PREFIX.wts -o "$OUTPUT_PATH"/model.engine
-# # copy production shared object
-# cp $BUILD_PATH/libmyplugins.so $OUTPUT_PATH/libmyplugins.so
+# build engine
+"$BUILD_PATH"/yolov5 -c "$CONFIG_PATH" -w "$OUTPUT_PATH"/$OUT_PREFIX.wts -o "$OUTPUT_PATH"/model.engine
+# copy production shared object
+cp $BUILD_PATH/libmyplugins.so $OUTPUT_PATH/libmyplugins.so
 
