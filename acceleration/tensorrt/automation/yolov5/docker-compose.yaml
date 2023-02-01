@@ -12,13 +12,13 @@ services:
     env_file:
       - ./.env
     runtime: nvidia
-    # deploy:
-    #     resources:
-    #       reservations:
-    #         devices:
-    #           - driver: nvidia
-    #             count: 1
-    #             capabilities: [gpu]
+    deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
     command: bash /app/build_engine.sh
     # stdin_open: true # docker run -i
     # tty: true        # docker run -t
