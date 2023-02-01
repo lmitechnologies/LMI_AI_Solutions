@@ -1,0 +1,30 @@
+version: "3.9"
+services:
+  tftrt_converter:
+    image: tftrt
+    build:
+      context: .
+      dockerfile: ./tftrt.dockerfile
+      args:
+        BASE_IMAGE: ${BASE_IMAGE}
+    volumes:
+      - ${BASELINE_SAVED_MODEL_DIR}:/app/model
+      - ${DATA_DIR}:/app/images
+      - ./convert_trt.py:/app/convert_trt.py
+      - ${BASELINE_SAVED_MODEL_DIR}_out:/app/output
+    working_dir: /app
+    runtime: nvidia           # For jetpack 5.0.2
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      bash -c "export LD_LIBRARY_PATH=/usr/local/lib/python3.8/dist-packages/opencv_contrib_python.libs:/usr/lib/aarch64-linux-gnu:$LD_LIBRARY_PATH \
+              && python3 convert_trt.py --generate_trt --benchmark_baseline --benchmark_trt"
+
+
+
+# bash -c "echo $PWD && sleep 1000"

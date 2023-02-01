@@ -1,0 +1,24 @@
+version: "3.9"
+services:
+  generate_trt:
+    build:
+      context: .
+      dockerfile: ./dockerfile.arm
+    volumes:
+      - ../trained-inference-models/:/app/trained-inference-models/
+      - ./configs/:/app/configs/
+      - ./trt_engines/:/app/trt_engines/
+      - ./build_engine.sh:/app/build_engine.sh
+      - ./build_trt/:/app/build_trt/
+    env_file:
+      - ./.env
+    deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+    command: bash /app/build_engine.sh
+    # stdin_open: true # docker run -i
+    # tty: true        # docker run -t
