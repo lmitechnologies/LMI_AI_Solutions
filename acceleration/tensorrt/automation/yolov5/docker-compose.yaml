@@ -20,7 +20,7 @@ services:
                 count: 1
                 capabilities: [gpu]
     command: bash -c "export CUDA_CUDART_LIBRARY=/usr/local/cuda/lib64/stubs
-      && CUDA_CUDART_LIBRARY=/usr/local/cuda/lib64/stubs cmake /app/tensorrtx/yolov5 && CUDA_CUDART_LIBRARY=/usr/local/cuda/lib64/stubs make
-      && sleep 1000 && /app/build_engine.sh"
+            && cmake /app/tensorrtx/yolov5 && make
+            && sleep 1 && /app/build_engine.sh"
     # stdin_open: true # docker run -i
     # tty: true        # docker run -t
