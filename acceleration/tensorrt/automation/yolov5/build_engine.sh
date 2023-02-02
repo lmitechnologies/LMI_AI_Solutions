@@ -1,5 +1,10 @@
 # Compile tensorrtx
 
+
+export CUDA_CUDART_LIBRARY=/usr/local/cuda/lib64/stubs
+
+mkdir -p /app/build_trt && cd /app/build_trt && cmake /app/tensorrtx/yolov5 && make
+
 CONVERSION_NAME="$(date +'%Y-%m-%d-%H-%M')"
 OUTPUT_PATH=/app/trt_engines/$CONVERSION_NAME
 mkdir -p $OUTPUT_PATH
