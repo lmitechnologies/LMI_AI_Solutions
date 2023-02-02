@@ -13,6 +13,8 @@ RUN git clone https://github.com/lmitechnologies/tensorrtx.git
 RUN git clone https://github.com/jbeder/yaml-cpp.git
 RUN cd /app/yaml-cpp && mkdir build && cd build && cmake -DBUILD_SHARED_LIBS=ON .. && make && make install
 
+RUN echo $CUDA_CUDART_LIBRARY
+
 RUN ["/bin/bash", "-c", "mkdir -p /app/build_trt && cd /app/build_trt && echo $CUDA_CUDART_LIBRARY \
     && cmake /app/tensorrtx/yolov5 && make"]
 
