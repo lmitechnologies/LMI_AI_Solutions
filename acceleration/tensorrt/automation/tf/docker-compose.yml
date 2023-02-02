@@ -21,8 +21,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    command: >
-      bash -c "export LD_LIBRARY_PATH=/usr/local/lib/python3.8/dist-packages/opencv_contrib_python.libs:/usr/lib/aarch64-linux-gnu:$LD_LIBRARY_PATH \
+    command: bash -c "export LD_LIBRARY_PATH=/usr/local/lib/python3.8/dist-packages/opencv_contrib_python.libs:/usr/lib/aarch64-linux-gnu:$LD_LIBRARY_PATH \
               && python3 convert_trt.py --generate_trt --benchmark_baseline --benchmark_trt"
 
 
