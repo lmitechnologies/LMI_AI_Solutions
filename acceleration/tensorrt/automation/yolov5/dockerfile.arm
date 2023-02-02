@@ -16,7 +16,7 @@ RUN cd /app/yaml-cpp && mkdir build && cd build && cmake -DBUILD_SHARED_LIBS=ON 
 RUN echo $CUDA_CUDART_LIBRARY
 
 RUN ["/bin/bash", "-c", "mkdir -p /app/build_trt && cd /app/build_trt && echo $CUDA_CUDART_LIBRARY \
-    && cmake /app/tensorrtx/yolov5 && make"]
+    && cmake -DCUDA_CUDART_LIBRARY=/usr/local/cuda/lib64/stubs /app/tensorrtx/yolov5 && make"]
 
 
     
