@@ -10,9 +10,9 @@ tars_folder=$1
 
 if [ -z "$tars_folder" ]; then
     echo "Usage:"
-    echo './untar.sh "your/tar/or/tar.gz/dir"'
+    echo './untar_nst.sh "your/tar/or/tar.gz/dir"'
     echo 'for example:'
-    echo './untar.sh /home/my/Downloads/gocator_0'
+    echo './untar_nst.sh /home/my/Downloads/gocator_0'
     exit 1
 fi
 
