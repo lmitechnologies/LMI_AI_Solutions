@@ -20,8 +20,8 @@ def stretch(img,wh_stretch):
 
 if __name__=="__main__":
     ap=argparse.ArgumentParser()
-    ap.add_argument('-i','--input_path',default='/media/caden/external/data/huhtamaki/feasibility/Huhta_NOK/cloud/png/raw')
-    ap.add_argument('-o','--output_path',default='/media/caden/external/data/huhtamaki/feasibility/Huhta_NOK/cloud/png/stretch')
+    ap.add_argument('-i','--input_path',default='.')
+    ap.add_argument('-o','--output_path',default='./stretch')
     ap.add_argument('--wh_stretch',type=float,default=5)
     args=vars(ap.parse_args())
     input_path=args['input_path']
