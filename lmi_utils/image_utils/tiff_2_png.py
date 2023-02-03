@@ -10,7 +10,6 @@ if __name__=="__main__":
     args=vars(ap.parse_args())
     input_path=args['input_path']
     output_path=args['output_path']
-    wh_stretch=args['wh_stretch']
 
     if os.path.isdir(input_path):
         files=glob.glob(os.path.join(input_path,'*.tiff'))
@@ -25,6 +24,7 @@ if __name__=="__main__":
         os.mkdir(output_path)
 
     for file in files:
+        print(f'[INFO] Converting {file}')
         img=cv2.imread(file)
         outfile=os.path.split(file)[1]
         outfile=os.path.splitext(outfile)[0]+'.png'
