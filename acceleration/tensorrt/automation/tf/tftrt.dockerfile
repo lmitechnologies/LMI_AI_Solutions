@@ -15,5 +15,4 @@ RUN pip3 install opencv-contrib-python==4.5.5.64 matplotlib
 # https://stackoverflow.com/questions/55313610/importerror-libgl-so-1-cannot-open-shared-object-file-no-such-file-or-directo
 RUN apt-get install ffmpeg libsm6 libxext6 -y
 
-RUN sh -c "echo 112"
 RUN cd LMI_AI_Solutions && git fetch && git checkout wen_dev && git pull
