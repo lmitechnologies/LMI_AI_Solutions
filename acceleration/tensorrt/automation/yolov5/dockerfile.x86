@@ -19,6 +19,8 @@ RUN mkdir -p opencv/build && cd opencv/build && cmake -D CMAKE_BUILD_TYPE=RELEAS
     -D INSTALL_PYTHON_EXAMPLES=OFF \
     -D OPENCV_GENERATE_PKGCONFIG=ON \
     -D OPENCV_EXTRA_MODULES_PATH=/opencv_build/opencv_contrib/modules \
+    -D BUILD_TESTS=OFF \
+    -D BUILD_PERF_TESTS=OFF \
     -D BUILD_EXAMPLES=OFF ..
 RUN cd opencv/build && make -j16 && make install
 RUN ldconfig
