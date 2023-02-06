@@ -4,6 +4,8 @@ services:
     build:
       context: .
       dockerfile: ./dockerfile.$PLATFORM
+      args:
+        BASE_IMAGE: ${BASE_IMAGE}
     volumes:
       - $WEIGHT_PATH:/app/weight.pt
       - $CONFIG_PATH:/app/config.yaml

@@ -1,7 +1,7 @@
-FROM nvcr.io/nvidia/pytorch:22.11-py3
+ARG BASE_IMAGE=$BASE_IMAGE
+FROM $BASE_IMAGE
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update
-
 
 # install opencv 4.6.0
 WORKDIR /opencv_build
