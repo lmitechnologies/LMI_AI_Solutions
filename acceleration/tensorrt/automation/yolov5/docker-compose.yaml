@@ -9,7 +9,7 @@ services:
     volumes:
       - $WEIGHT_PATH:/app/weight.pt
       - $CONFIG_PATH:/app/config.yaml
-      - ./trt_engines/:/app/trt_engines/
+      - ${WEIGHT_PATH}_out/:/app/trt_engines/
       - ./build_engine.sh:/app/build_engine.sh
     env_file:
       - ./.env
