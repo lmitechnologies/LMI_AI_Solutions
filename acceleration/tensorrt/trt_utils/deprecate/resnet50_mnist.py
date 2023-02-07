@@ -201,13 +201,13 @@ def main(args):
         #save trained model
         model.save(os.path.join(TRAINED_MODEL_PATH,args['baseline_saved_model_dir']))
     
-    baseline_model_dir=os.path.join(TRAINED_MODEL_PATH,args['baseline_saved_model_dir'])
-    trt_model_dir=os.path.join(TRAINED_MODEL_PATH,args['tensorrt_saved_model_dir'])
+    baseline_saved_model_dir=os.path.join(TRAINED_MODEL_PATH,args['baseline_saved_model_dir'])
+    trt_model_dir=os.path.join(TRAINED_MODEL_PATH,args['trt_saved_model_dir'])
     if args['generate_trt']:    
-        convert_tensorRT(baseline_model_dir,trt_model_dir)
+        convert_tensorRT(baseline_saved_model_dir,trt_model_dir)
         tf.keras.backend.clear_session()
     if args['benchmark_baseline']:
-        loaded_model=tf.keras.models.load_model(baseline_model_dir)
+        loaded_model=tf.keras.models.load_model(baseline_saved_model_dir)
         run_benchmark(loaded_model,ds_test)
         tf.keras.backend.clear_session()
     if args['benchmark_trt']:
@@ -221,7 +221,7 @@ if __name__=='__main__':
     ap=argparse.ArgumentParser()
     ap.add_argument('--gpu_mem_limit',default=2048,help='GPU memory limit (MB)')
     ap.add_argument('--baseline_saved_model_dir',default='resnet_50_saved_model')
-    ap.add_argument('--tensorrt_saved_model_dir',default='resnet_50_saved_model_rt')
+    ap.add_argument('--trt_saved_model_dir',default='resnet_50_saved_model_rt')
     ap.add_argument('--design_baseline',dest='design_baseline',action='store_true')
     ap.add_argument('--generate_trt',dest='generate_trt',action='store_true')
     ap.add_argument('--benchmark_baseline',dest='benchmark_baseline',action='store_true')

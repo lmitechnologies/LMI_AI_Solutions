@@ -9,10 +9,12 @@ import time
 
 import argparse
 import numpy as np
-import tensorflow as tf
-from tensorflow.python.compiler.tensorrt import trt_convert as trt
+
+# import before tf to avoid "cannot allocate memory in static TLS block"
 import cv2
 
+import tensorflow as tf
+from tensorflow.python.compiler.tensorrt import trt_convert as trt
 
 #%% gpu configuration
 def set_gpu(gpu_mem_limit):
@@ -36,7 +38,7 @@ def set_gpu(gpu_mem_limit):
             # Virtual devices must be set before GPUs have been initialized
             print(e)
 
-def preprocess_image(image_path):
+def preprocess_image(image_path, dtype=None):
     '''
     DESCRIPTION: preprocess images
 
@@ -49,10 +51,10 @@ def preprocess_image(image_path):
     image=cv2.imread(image_path)
     image=cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
     image=np.expand_dims(image,axis=0)
-    image_tensor=tf.convert_to_tensor(image)
+    image_tensor=tf.convert_to_tensor(image, dtype=dtype)
     return image_tensor
 
-def run_benchmark(loaded_model,image_path_list):
+def run_benchmark(loaded_model,image_path_list,input_dtype):
     '''
     DESCRIPTION: Benchmarks processing time for batch size = 1
 
@@ -63,8 +65,7 @@ def run_benchmark(loaded_model,image_path_list):
     ptime=[]
     detect_fn=loaded_model.signatures['serving_default']
     for i,image_path in enumerate(image_path_list):
-        print(f'[INFO] Process image number {i}: {image_path}')
-        image_tensor=preprocess_image(image_path)
+        image_tensor=preprocess_image(image_path, input_dtype)
         t0=time.time()
         detections = detect_fn(image_tensor)
         t1=time.time()
@@ -74,19 +75,20 @@ def run_benchmark(loaded_model,image_path_list):
 
     print(f'*****************************************')
     print(f'[INFO] Average runtime: {np.mean(ptime)}')
+    print(f'[INFO] Median runtime: {np.median(ptime)}')
     print(f'[INFO] Min runtime: {np.min(ptime)}')
     print(f'[INFO] Max runtime: {np.max(ptime)}')
     print(f'*****************************************')
 
 
-def convert_tensorRT(saved_model_dir,trt_saved_model_dir,calibration_data_dir,precision_mode='FP16'):
+def convert_tensorRT(saved_model_dir,trt_saved_model_dir,cal_data_dir,input_dtype,precision_mode='FP16'):
     '''
     DESCRIPTION: Converts a saved_model to a tensorRT saved model.  Also builds the engine that gets loaded at runtime if calibration data directory is specified.
 
     ARGUMENTS:
         -saved_model_dir: path to input tensorflow saved_model
         -trt_saved_model_dir: path to output tensorflow saved_model  
-        -calibration_data_dir: path to calibration data directory used to prebuild executable
+        -cal_data_dir: path to calibration data directory used to prebuild executable
         -precision_mode: fixed point precision used by converter
     '''
     # Define key properties
@@ -108,17 +110,17 @@ def convert_tensorRT(saved_model_dir,trt_saved_model_dir,calibration_data_dir,pr
             raise RuntimeError("Unknown precision received: `{}`. Expected: "
                                 "FP32, FP16 or INT8")
 
-    print(f'[INFO] TRT Params: {params}')
-
     # Set key properties
     params = params._replace(
         allow_build_at_runtime=allow_build_at_runtime,
         max_workspace_size_bytes=max_workspace_size_bytes,
         minimum_segment_size=minimum_segment_size,
-        precision_mode=get_trt_precision()
+        precision_mode=get_trt_precision(),
+        use_calibration=False
     )
 
-    # Convert
+    print(f'[INFO] TRT Params: {params}')
+
     converter = trt.TrtGraphConverterV2(input_saved_model_dir=saved_model_dir,conversion_params=params)
     # Convert for FP16,FP32
     converter.convert()
@@ -126,60 +128,57 @@ def convert_tensorRT(saved_model_dir,trt_saved_model_dir,calibration_data_dir,pr
     
     # Build
     if not allow_build_at_runtime:
-        try: 
-            path_to_cal_images=calibration_data_dir
-            image_path_list=glob.glob(os.path.join(path_to_cal_images,'*.png'))
+        try:
+            image_path_list=glob.glob(os.path.join(cal_data_dir,'*.png'))
             cal_image_list=[]
             for image_path in image_path_list:
-                image_tensor=preprocess_image(image_path)
+                image_tensor=preprocess_image(image_path, input_dtype)
                 cal_image_list.append(image_tensor)
             def calibration_input_fn():
                 for x in cal_image_list:
                     print(f'Calibration image shape: {x.shape}')
                     yield [x]
             converter.build(input_fn=calibration_input_fn)
-        except:
-            print('Calibration data directory is not specified properly.')
+        except Exception as e:
+            print('Calibration data directory is not specified properly.', e)
 
+    converter.summary()
     # Save the converted model
-    # converter.save(trt_saved_model_dir)
+    converter.save(trt_saved_model_dir)
 
 def main(args):
 
     set_gpu(args['gpu_mem_limit'])
 
-    # TRAINED_MODEL_PATH='./trained-inference-models'
-    # if os.path.isdir(TRAINED_MODEL_PATH):
-    #     pass
-    # else:
-    #     os.makedir(TRAINED_MODEL_PATH)
+    input_dtype = INPUT_DTYPES[args['input_dtype']]
 
-    #%% load dataset from tensorflow datasets
-    #%% Load test images
-    path_to_test_images=args['data_dir']
-    image_path_list=glob.glob(os.path.join(path_to_test_images,'*.png'))
+    image_path_list = []
+    if 'data_dir' in args:
+        path_to_test_images=args['data_dir']
+        image_path_list=glob.glob(os.path.join(path_to_test_images,'*.png'))
 
-    # baseline_model_dir=os.path.join(TRAINED_MODEL_PATH,args['baseline_saved_model_dir'])
-    # trt_model_dir=os.path.join(TRAINED_MODEL_PATH,args['tensorrt_saved_model_dir'])
-    baseline_model_dir=args['baseline_saved_model_dir']
-    trt_model_dir=args['tensorrt_saved_model_dir']
+    baseline_saved_model_dir=args['baseline_saved_model_dir']
+    if os.path.isdir(os.path.join(baseline_saved_model_dir, "saved_model")):
+        baseline_saved_model_dir = os.path.join(baseline_saved_model_dir, "saved_model")
+    trt_model_dir=args['trt_saved_model_dir']
     if args['generate_trt']:    
-        convert_tensorRT(baseline_model_dir,trt_model_dir,calibration_data_dir=args['cal_data_dir'])
+        convert_tensorRT(baseline_saved_model_dir,trt_model_dir,args['cal_data_dir'],input_dtype)
         tf.keras.backend.clear_session()
     if args['benchmark_baseline']:
-        loaded_model=tf.saved_model.load(baseline_model_dir)
-        run_benchmark(loaded_model,image_path_list)
+        loaded_model=tf.saved_model.load(baseline_saved_model_dir)
+        run_benchmark(loaded_model,image_path_list,input_dtype)
     if args['benchmark_trt']:
         loaded_model=tf.saved_model.load(trt_model_dir)
-        run_benchmark(loaded_model,image_path_list)
+        run_benchmark(loaded_model,image_path_list,input_dtype)
 
 # %%
 if __name__=='__main__':
     ap=argparse.ArgumentParser()
     ap.add_argument('--gpu_mem_limit',default=3000,type=int,help='GPU memory limit (MB)')
     ap.add_argument('--baseline_saved_model_dir',default='/app/trained-inference-models/fasterrcnn_400x400/2021-12-08_400_rebuild_tf230/saved_model')
-    ap.add_argument('--tensorrt_saved_model_dir',default='/app/trained-inference-models/fasterrcnn_400x400/2021-12-08_400_rebuild_tf230/saved_model_rt')
+    ap.add_argument('--trt_saved_model_dir',default='/app/trained-inference-models/fasterrcnn_400x400/2021-12-08_400_rebuild_tf230/saved_model_rt')
     ap.add_argument('--data_dir',default='/app/data/testdata_400x400/training')
+    ap.add_argument('--input_dtype',default=None)
     ap.add_argument('--cal_data_dir',default='/app/data/testdata_400x400/trt_calibration')
     ap.add_argument('--generate_trt',dest='generate_trt',action='store_true')
     ap.add_argument('--benchmark_baseline',dest='benchmark_baseline',action='store_true')
