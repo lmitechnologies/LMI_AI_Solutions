@@ -78,7 +78,8 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                 # extract new image and new objects
                 new_image,new_objects=crop_scale_labeled_image(old_image,bbox,old_objects,new_width=scl_w,new_height=scl_h,p2h=p2h,p2w=p2w)
                 hout,wout=new_image.shape[:2]         
-                fname=os.path.splitext(image_file)[0]+'_crop_h'+str(hout)+'w'+str(wout)+'.png'
+                # fname=os.path.splitext(image_file)[0]+'_crop_h'+str(hout)+'w'+str(wout)+'.png'
+                fname = image_file
                 fpath=os.path.join(output_data_dir,fname)
                 if os.path.exists(fpath):
                     fname=os.path.splitext(image_file)[0]+'_crop_h'+str(hout)+'w'+str(wout)+'_v2.png'
