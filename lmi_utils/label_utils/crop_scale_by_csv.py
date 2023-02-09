@@ -87,36 +87,37 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
 
                 cv2.imwrite(fpath,new_image)
 
-                # step through object classes again, writing new objects
-                for obj_class in object_classes:
-                    # object_regions=object_labels.index(obj_class,current_labels)
-                    object_regions=[i for i,lab in enumerate(object_labels) if lab==obj_class]
-                    for j in object_regions:
-                        label_type=label_types[j]
-                        label=object_labels[j]
-                        xj=list(new_objects[j][:,0])
-                        yj=list(new_objects[j][:,1])
-                        if not (np.any(np.asarray(xj)<NAN_INT) or np.any(np.asarray(yj)<NAN_INT)):
-                            if label_type=='polygon':
-                                rowWriter.writerow([fname,label,'1.0','polygon','x values']+xj)
-                                rowWriter.writerow([fname,label,'1.0','polygon','y values']+yj)
-                            elif label_type=='rect':
-                                ul=[xj[0],yj[0]]
-                                lr=[xj[2],yj[2]]
-                                rowWriter.writerow([fname,label,'1.0','rect','upper left']+ul)
-                                rowWriter.writerow([fname,label,'1.0','rect','lower right']+lr)
-                            else:
-                                raise Exception('Unknown object shape.')
-                            # plot 
-                            pts=new_objects[j].astype(np.int32)
-                            cv2.polylines(new_image,[pts],True,(255,0,0),1)
-                            text_ind=pts.min(axis=0)
-                            cv2.putText(new_image,label,(text_ind[0],text_ind[1]-4),cv2.FONT_HERSHEY_SIMPLEX,0.8,(255,0,0),1,cv2.LINE_AA)
-                            if is_plot:    
-                                cv2.imshow('Validation Image',new_image)
-                                cv2.waitKey(100)
-                fpath=os.path.splitext(fpath)[0]+'_annot.png'
-                cv2.imwrite(fpath,new_image)
+                if object_classes:
+                    # step through object classes again, writing new objects
+                    for obj_class in object_classes:
+                        # object_regions=object_labels.index(obj_class,current_labels)
+                        object_regions=[i for i,lab in enumerate(object_labels) if lab==obj_class]
+                        for j in object_regions:
+                            label_type=label_types[j]
+                            label=object_labels[j]
+                            xj=list(new_objects[j][:,0])
+                            yj=list(new_objects[j][:,1])
+                            if not (np.any(np.asarray(xj)<NAN_INT) or np.any(np.asarray(yj)<NAN_INT)):
+                                if label_type=='polygon':
+                                    rowWriter.writerow([fname,label,'1.0','polygon','x values']+xj)
+                                    rowWriter.writerow([fname,label,'1.0','polygon','y values']+yj)
+                                elif label_type=='rect':
+                                    ul=[xj[0],yj[0]]
+                                    lr=[xj[2],yj[2]]
+                                    rowWriter.writerow([fname,label,'1.0','rect','upper left']+ul)
+                                    rowWriter.writerow([fname,label,'1.0','rect','lower right']+lr)
+                                else:
+                                    raise Exception('Unknown object shape.')
+                                # plot 
+                                pts=new_objects[j].astype(np.int32)
+                                cv2.polylines(new_image,[pts],True,(255,0,0),1)
+                                text_ind=pts.min(axis=0)
+                                cv2.putText(new_image,label,(text_ind[0],text_ind[1]-4),cv2.FONT_HERSHEY_SIMPLEX,0.8,(255,0,0),1,cv2.LINE_AA)
+                                if is_plot:    
+                                    cv2.imshow('Validation Image',new_image)
+                                    cv2.waitKey(100)
+                    fpath=os.path.splitext(fpath)[0]+'_annot.png'
+                    cv2.imwrite(fpath,new_image)
                 
 
 if __name__ == '__main__':
