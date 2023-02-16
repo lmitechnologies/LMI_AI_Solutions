@@ -54,7 +54,7 @@ source ~/LMI_AI_Solutions/lmi_ai.env
 ## Generate .csv from .json
 
 ``` bash
-python3 -m label_utils.via_json_to_csv -d ./data --output_fname labels.csv --label_name=Name --render True --is_mask False --mask_to_bbox False
+python3 -m label_utils.via_json_to_csv -d ./data --output_fname labels.csv --label_name=Name --render True --mask_to_bbox False
 ```
 
 ## Set Training Parameters in config.py
@@ -111,6 +111,22 @@ python3 -m tf_objdet.lmi_utils.model_main_tf2 --model_dir=training --pipeline_co
 
 ``` bash
 tensorboard --logdir=training --bind_all
+```
+### If your browser is not connecting, try:
+
+#### from local machine: 
+``` bash
+ssh -L 16006:127.0.0.1:6006 my_user_id@my_server_ip
+```
+
+#### from training machine:
+``` bash
+tensorboard --logdir=training --bind_all
+```
+
+#### from local machine
+``` bash
+localhost:16006
 ```
 
 ## Export Trained Model

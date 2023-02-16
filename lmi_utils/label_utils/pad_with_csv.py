@@ -29,9 +29,12 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
     output_shapes = {}
     img_paths = glob.glob(os.path.join(input_path, '*.png'))
     for path in img_paths:
-        im = cv2.imread(path)
-        h,w = im.shape[:2]
         im_name = os.path.basename(path)
+        im = cv2.imread(path)
+        if im is None:
+            warning(f'The file: {im_name} might be corrupted, skip!')
+            continue
+        h,w = im.shape[:2]
         print(f'[INFO] Input file: {im_name} with size of [{w},{h}]')
         
         if im_name not in fname_to_shape:
