@@ -545,12 +545,12 @@ class PaDiM(object):
         except:
             print("tensorflow_addons package is unavailable on arm64")
 
-        if isinstance(dataset,type('string')):
-            predictdata=DataLoader(path_base=dataset, img_shape=self.img_shape, batch_size=1, shuffle=False)
-            dataset=predictdata.dataset
-        elif tf.is_tensor(dataset):
+        if tf.is_tensor(dataset):
             fname=tf.constant(np.char.encode('Current Image Tensor.'))
             dataset=zip([dataset],[fname])
+        else:
+            predictdata=DataLoader(path_base=dataset, img_shape=self.img_shape, batch_size=1, shuffle=False)
+            dataset=predictdata.dataset
             
         proctime=[]
         image_list=[]
