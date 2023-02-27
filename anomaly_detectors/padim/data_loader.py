@@ -50,7 +50,7 @@ class DataLoader(object):
         self.file_list, self.file_names = [], []
         for p in path_base:
             #get image file list from path_base and its subfolders
-            file_list, file_names = self._get_file_list(path_base)
+            file_list, file_names = self._get_file_list(p)
             self.file_list.extend(file_list)
             self.file_names.extend(file_names)
 
