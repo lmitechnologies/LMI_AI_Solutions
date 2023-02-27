@@ -548,9 +548,11 @@ class PaDiM(object):
         if tf.is_tensor(dataset):
             fname=tf.constant(np.char.encode('Current Image Tensor.'))
             dataset=zip([dataset],[fname])
-        else:
+        elif isinstance(dataset, str) or isinstance(dataset, list(str)):
             predictdata=DataLoader(path_base=dataset, img_shape=self.img_shape, batch_size=1, shuffle=False)
             dataset=predictdata.dataset
+        else:
+            pass
             
         proctime=[]
         image_list=[]
