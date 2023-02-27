@@ -45,7 +45,6 @@ class DataLoader(object):
 
         if isinstance(path_base, str):
             path_base = [path_base]
-        assert(isinstance(path_base, list))
 
         self.file_list, self.file_names = [], []
         for p in path_base:
