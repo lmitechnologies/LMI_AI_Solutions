@@ -43,16 +43,23 @@ class DataLoader(object):
         self.img_shape = img_shape
         self.normalize = normalize
 
-        #get image file list from path_base and its subfolders
-        self.file_list, self.file_names = self._get_file_list(path_base)
-        self.n_samples = len(self.file_list)
+        if isinstance(path_base, str):
+            path_base = [path_base]
+        assert(isinstance(path_base, list))
+
+        self.file_list, self.file_names = [], []
+        for p in path_base:
+            #get image file list from path_base and its subfolders
+            file_list, file_names = self._get_file_list(path_base)
+            self.file_list.extend(file_list)
+            self.file_names.extend(file_names)
 
         #generate dataset from the file list
         dataset = tf.data.Dataset.from_tensor_slices((self.file_list, self.file_names))
 
         #shuffle the dataset
         if shuffle:
-            dataset = dataset.shuffle(self.n_samples, reshuffle_each_iteration=True)
+            dataset = dataset.shuffle(len(self.file_list), reshuffle_each_iteration=True)
 
         lambda_parse=lambda path_file, file_name: self._parse_function(path_file, file_name,random_flip_h, random_flip_v)
 
