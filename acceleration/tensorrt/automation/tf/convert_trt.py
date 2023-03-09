@@ -13,6 +13,7 @@ sys.path.append('/app/LMI_AI_Solutions/object_detectors/tf_objdet/models/researc
 sys.path.append('/app/LMI_AI_Solutions/classifiers')
 sys.path.append('/app/LMI_AI_Solutions/ocr_models')
 sys.path.append('/app/LMI_AI_Solutions/acceleration/tensorrt')
+sys.path.append('/app/LMI_AI_Solutions/acceleration/tensorrt/tftrt/benchmarking-python')
 
 from trt_utils.trt_objdet.savedmodel_withbuild import main as convert_trt
 from padim.padim import main as convert_trt_padim, PaDiM

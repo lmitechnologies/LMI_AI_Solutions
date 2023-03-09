@@ -8,11 +8,11 @@ services:
         BASE_IMAGE: ${BASE_IMAGE}
     volumes:
       - $WEIGHT_PATH:/app/weight.pt
-      - $CONFIG_PATH:/app/config.yaml
       - ${WEIGHT_PATH}_out/:/app/trt_engines/
       - ./build_engine.sh:/app/build_engine.sh
     env_file:
       - ./.env
+    shm_size: '2gb'
     runtime: nvidia
     deploy:
         resources:
@@ -21,6 +21,6 @@ services:
               - driver: nvidia
                 count: 1
                 capabilities: [gpu]
-    command: bash /app/build_engine.sh
+    command: bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && bash /app/build_engine.sh"
     # stdin_open: true # docker run -i
     # tty: true        # docker run -t

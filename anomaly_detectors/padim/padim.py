@@ -8,6 +8,9 @@ import copy
 import numpy as np
 import tensorflow as tf
 
+# unavailable on arm (Jetpack).
+import tensorflow_addons as tfa
+
 import matplotlib
 from matplotlib import pyplot as plt
 import shutil
@@ -533,20 +536,15 @@ class PaDiM(object):
             dist_tensor: error distance tf.tensor (b,h,w,ch)
             fname_tensor: filename tf.tensor (b)
         '''
-        # unavailable on arm (Jetpack), import in the scope to minimize the impact.
-        tfa_available = False
-        try:
-            import tensorflow_addons as tfa
-            tfa_available = True
-        except:
-            print("[Warning] tensorflow_addons package is unavailable")
-
+        
         if isinstance(dataset,type('string')):
             predictdata=DataLoader(path_base=dataset, img_shape=self.img_shape, batch_size=1, shuffle=False)
             dataset=predictdata.dataset
         elif tf.is_tensor(dataset):
             fname=tf.constant(np.char.encode('Current Image Tensor.'))
             dataset=zip([dataset],[fname])
+        else:
+            pass
             
         proctime=[]
         image_list=[]
@@ -573,8 +571,7 @@ class PaDiM(object):
             # Apply Gaussion Filtering
             dist_tensor_x=tf.expand_dims(dist_tensor_x,-1)
             dist_tensor_x=tf.image.resize(dist_tensor_x,self.img_shape)
-            if tfa_available:
-                dist_tensor_x=tfa.image.gaussian_filter2d(dist_tensor_x,filter_shape=(3,3))
+            dist_tensor_x=tfa.image.gaussian_filter2d(dist_tensor_x,filter_shape=(3,3))
             # Aggregate tensors in batch
             dist_list.append(dist_tensor_x)
             t1=time.time()
