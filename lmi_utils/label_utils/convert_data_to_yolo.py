@@ -73,7 +73,7 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
                     cx,cy = (x0+x2)/2, (y0+y2)/2
                     row = [class_id, cx/W, cy/H, w/W, h/H]
                     rows.append(row)
-        txt_name = fname.replace('.png','.txt')
+        txt_name = fname.replace('.png','.txt').replace('.jpg','.txt')
         fname_to_rows[txt_name] = rows
     return fname_to_rows
 
@@ -109,7 +109,7 @@ def copy_images_in_folder(path_img, path_out):
         path_out(str): the path of output folder
     """
     os.makedirs(path_out, exist_ok=True)
-    l = glob.glob(os.path.join(path_img, '*.png'))
+    l = glob.glob(os.path.join(path_img, '*.png')) + glob.glob(os.path.join(path_img, '*.jpg'))
     for f in l:
         shutil.copy(f, path_out)
 
