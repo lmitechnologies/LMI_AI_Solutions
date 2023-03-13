@@ -21,7 +21,7 @@ def resize_images(path_imgs, output_imsize, path_out):
     Return:
 
     """
-    file_list = glob.glob(os.path.join(path_imgs, '*.png'))
+    file_list = glob.glob(os.path.join(path_imgs, '*.png')) + glob.glob(os.path.join(path_imgs, '*.jpg'))
     W,H = output_imsize
     ratio_out = W/H
     for file in file_list:
