@@ -91,7 +91,7 @@ class DataLoader(object):
         # concatenate all the file lists from subfolders
         for subdir in subdirs:
             path = os.path.join(path_base,subdir)
-            cur_list = glob.glob(os.path.join(path, '*.png'))
+            cur_list = glob.glob(os.path.join(path, '*.png')) + glob.glob(os.path.join(path, '*.jpg'))
             fnames = [os.path.basename(l) for l in cur_list]
             file_list += cur_list
             file_names += fnames
