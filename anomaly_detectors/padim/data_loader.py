@@ -52,6 +52,8 @@ class DataLoader(object):
             file_list, file_names = self._get_file_list(p)
             self.file_list.extend(file_list)
             self.file_names.extend(file_names)
+        
+        print(f"[INFO] Showing file list size len(self.file_names): {len(self.file_names)}")
 
         #generate dataset from the file list
         dataset = tf.data.Dataset.from_tensor_slices((self.file_list, self.file_names))
