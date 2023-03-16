@@ -1,0 +1,21 @@
+version: "3.9"
+services:
+  train_padim:
+    build:
+      context: .
+      dockerfile: ./dockerfile
+    volumes:
+      - ./path/to/my/training/data/:/app/data/train/
+      - ./path/to/my/test/data/:/app/data/test/
+      - ./path/to/my/trained-inference-models/:/app/trained-inference-models/
+      - ./path/to/my/train_padim.py:/app/train_padim.py
+    deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+    command: python3 train_padim.py
+    # stdin_open: true # docker run -i
+    # tty: true        # docker run -t
