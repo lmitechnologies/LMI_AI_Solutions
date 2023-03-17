@@ -40,7 +40,7 @@ def move_files(dir,training,test,convert_to_png,rotate_png_90):
             print(f'[INFO] Converting {fname} to .png and moving to training directory')
             img=cv2.imread(file)
             if rotate_png_90:
-                img=cv2.rotate(img,cv2.ROATE_90_CLOCKWISE)
+                img=cv2.rotate(img,cv2.ROTATE_90_CLOCKWISE)
             ext=os.path.splitext(fname)[1]
             fname_out=fname.replace(ext,'.png')
             path_out=os.path.join(training_path,fname_out)
