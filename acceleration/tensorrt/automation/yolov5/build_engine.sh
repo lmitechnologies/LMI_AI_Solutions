@@ -4,9 +4,7 @@
 # export CUDA_CUDART_LIBRARY=/usr/local/cuda/lib64/stubs
 # mkdir -p /app/build_trt && cd /app/build_trt && cmake /app/tensorrtx/yolov5 && make
 
-OUT_PREFIX=model
 WEIGHT_PATH=/app/weight.pt
-CONFIG_PATH=/app/config.yaml
 
 python3 -m yolov5.export --weights $WEIGHT_PATH \
     --imgsz $IM_H $IM_W  --include engine --half --device 0
