@@ -6,8 +6,8 @@ import json
 import torch
 import logging
 
-
-logger = logging.getLogger().setLevel(logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger()
 
 
 def fit_array_to_size(im,W,H):
