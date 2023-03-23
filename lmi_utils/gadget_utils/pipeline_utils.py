@@ -4,6 +4,10 @@ import random
 import os
 import json
 import torch
+import logging
+
+
+logger = logging.getLogger().setLevel(logging.DEBUG)
 
 
 def fit_array_to_size(im,W,H):
@@ -228,7 +232,7 @@ def get_img_path_batches(batch_size, img_dir, fmt='png'):
                 batch = []
             batch.append(os.path.join(root, name))
             cnt_images += 1
-    print(f'loaded {cnt_images} files')
+    logger.info(f'loaded {cnt_images} files')
     if len(batch) > 0:
         ret.append(batch)
     return ret
