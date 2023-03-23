@@ -102,13 +102,20 @@ def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, labe
 
 
 def revert_mask_to_origin(mask, operations:list):
+    """
+    This func reverts the mask image according to the operations list IN ORDER.
+    The operations list contains items as dictionary. The items are listed as follows: 
+        1. <stretch: [stretch_ratio in w, stretch_ratio in h]>
+        2. <pad: [pad_left_pixels, pad_top_pixels]> 
+        3. <resize: [resize_ratio in w, resize_ratio in h]>
+    """
     h,w = mask.shape[:2]
     mask2 = mask.copy()
     for operator in reversed(operations):
         h,w = mask2.shape[:2]
         if 'resize' in operator:
             r = operator['resize']
-            nh,nw = int(h/r[0]), int(w/r[1])
+            nw,nh = int(w/r[0]), int(h/r[1])
             mask2 = cv2.resize(mask2,(nw,nh))
         if 'pad' in operator:
             pad = operator['pad']
@@ -120,14 +127,14 @@ def revert_mask_to_origin(mask, operations:list):
     return mask2
 
 
-def revert_to_origin(pts:np.ndarray, operations:list):
+def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
     """
     revert the points to original image coordinates
     This func reverts the operation in operations list IN ORDER.
     The operations list contains items as dictionary. The items are listed as follows: 
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left_pixels, pad_top_pixels]> 
-        3. <resize: [resize_ratio_x, resize_ratio_y]>
+        3. <resize: [resize_ratio in w, resize_ratio in h]>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
@@ -145,6 +152,8 @@ def revert_to_origin(pts:np.ndarray, operations:list):
             if 'stretch' in operator:
                 s = operator['stretch']
                 nx,ny = nx/s[0], ny/s[1]
+            if verbose:
+                logger.info(f'after {operator}, pt: {x:.2f},{y:.2f} -> {nx:.2f},{ny:.2f}')
         return [max(nx,0),max(ny,0)]
 
     pts2 = []
