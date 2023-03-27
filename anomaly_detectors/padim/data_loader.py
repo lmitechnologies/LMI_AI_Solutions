@@ -83,7 +83,7 @@ class DataLoader(object):
         for subdir in subdirs:
             path = os.path.join(path_base,subdir)
             cur_list = []
-            for img_ext in self.img_exts:
+            for img_ext in img_exts:
                 cur_list.extend(glob.glob(os.path.join(path, f'*.{img_ext}')))
             fnames = [os.path.basename(l) for l in cur_list]
             file_list += cur_list
