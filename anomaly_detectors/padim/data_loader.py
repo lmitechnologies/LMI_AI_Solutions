@@ -18,7 +18,7 @@ class DataLoader(object):
         loads images from directory and subdirectories into tf.data.Dataset iterable.
         Note: ONLY load 8 bits PNG images.
     """
-    def __init__(self, path_base, img_shape, batch_size, normalize=False, shuffle=True, random_flip_h=False, random_flip_v=False):
+    def __init__(self, path_base, img_shape, batch_size, normalize=False, shuffle=True, random_flip_h=False, random_flip_v=False, img_exts=['png']):
         """
         DESCRIPTION:
             1. set the image shape
@@ -44,6 +44,7 @@ class DataLoader(object):
         #get image file list from path_base and its subfolders
         self.file_list, self.file_names = self._get_file_list(path_base)
         self.n_samples = len(self.file_list)
+        self.img_exts = img_exts
 
         #generate dataset from the file list
         dataset = tf.data.Dataset.from_tensor_slices((self.file_list, self.file_names))
@@ -83,7 +84,9 @@ class DataLoader(object):
         # concatenate all the file lists from subfolders
         for subdir in subdirs:
             path = os.path.join(path_base,subdir)
-            cur_list = glob.glob(os.path.join(path, '*.png'))
+            cur_list = []
+            for img_ext in img_exts:
+                cur_list.extend(glob.glob(os.path.join(path, f'*.{img_ext}')))
             fnames = [os.path.basename(l) for l in cur_list]
             file_list += cur_list
             file_names += fnames
