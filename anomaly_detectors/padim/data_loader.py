@@ -48,8 +48,7 @@ class DataLoader(object):
 
         #generate dataset from the file list
         dataset = tf.data.Dataset.from_tensor_slices((self.file_list, self.file_names))
-
-        #shuffle the dataset
+sleep 100 && 
         if shuffle:
             dataset = dataset.shuffle(self.n_samples, reshuffle_each_iteration=True)
 
@@ -85,7 +84,7 @@ class DataLoader(object):
         for subdir in subdirs:
             path = os.path.join(path_base,subdir)
             cur_list = []
-            for img_ext in img_exts:
+            for img_ext in self.img_exts:
                 cur_list.extend(glob.glob(os.path.join(path, f'*.{img_ext}')))
             fnames = [os.path.basename(l) for l in cur_list]
             file_list += cur_list
