@@ -48,7 +48,7 @@ class DataLoader(object):
 
         #generate dataset from the file list
         dataset = tf.data.Dataset.from_tensor_slices((self.file_list, self.file_names))
-sleep 100 && 
+
         if shuffle:
             dataset = dataset.shuffle(self.n_samples, reshuffle_each_iteration=True)
 
