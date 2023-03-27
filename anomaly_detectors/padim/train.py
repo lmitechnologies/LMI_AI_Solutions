@@ -8,7 +8,7 @@ from padim.data_loader import DataLoader
 def train_padim(path_data:str, config:dict, path_out:str, imsz:tuple, cprime=200, batch_sz=32, gpu_mem=2048):
     
     padim=PaDiM(GPU_memory=gpu_mem)
-    dataloader=DataLoader(path_base=path_data,img_shape=imsz,batch_size=batch_sz)
+    dataloader=DataLoader(path_base=path_data,img_shape=imsz,batch_size=batch_sz, img_exts=['png','jpg'])
 
     layerconfig={'layer1':config['layer1'],'layer2':config['layer2'],'layer3':config['layer3']}
     padim.padim_train(dataloader,c=cprime,net_type=config['name'],layer_names=layerconfig,is_plot=False)      
