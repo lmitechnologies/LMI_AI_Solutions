@@ -194,8 +194,8 @@ class GadgetSurfaceUtils():
 
 
 if __name__=="__main__":
-    translate=GadgetSurfaceUtils()
-    translate.pkl_2_png("/home/trevor/github/LMI_AI_Solutions/lmi_utils/gadget_utils/src", "/home/trevor/github/LMI_AI_Solutions/lmi_utils/gadget_utils/dest", True)
+    # translate=GadgetSurfaceUtils()
+    # translate.pkl_2_png("/home/trevor/github/LMI_AI_Solutions/lmi_utils/gadget_utils/src", "/home/trevor/github/LMI_AI_Solutions/lmi_utils/gadget_utils/dest", True)
     import argparse
     ap=argparse.ArgumentParser()
     ap.add_argument('--option',required=True,help='pkl_2_npy, pkl_2_png, pkl_2_pcd, npy_2_pkl, png_2_pkl, or pcd_2_pkl')
