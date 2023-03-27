@@ -42,9 +42,8 @@ class DataLoader(object):
         self.normalize = normalize
 
         #get image file list from path_base and its subfolders
-        self.file_list, self.file_names = self._get_file_list(path_base)
+        self.file_list, self.file_names = self._get_file_list(path_base, img_exts=img_exts)
         self.n_samples = len(self.file_list)
-        self.img_exts = img_exts
 
         #generate dataset from the file list
         dataset = tf.data.Dataset.from_tensor_slices((self.file_list, self.file_names))
@@ -64,7 +63,7 @@ class DataLoader(object):
         self.dataset = dataset.prefetch(tf.data.AUTOTUNE)
         
     @staticmethod
-    def _get_file_list(path_base):
+    def _get_file_list(path_base, img_exts):
         """
         DESCRIPTION:
             get image file list from path_base and its subfolders
