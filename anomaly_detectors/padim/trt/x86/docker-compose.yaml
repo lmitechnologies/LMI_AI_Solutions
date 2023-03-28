@@ -9,7 +9,7 @@ services:
       - ./trained-inference-models/:/app/trained-inference-models/
     environment:
       - MODEL_PATH=/app/trained-inference-models/2023-02-27/saved_model
-      - TRT_PATH=/app/trained-inference-models/2023-02-27/saved_model_trt
+      - TRT_PATH=/app/trained-inference-models/2023-02-27/saved_model/saved_model_trt
       - CALIB_PATH=/app/calibration
     deploy:
         resources:
