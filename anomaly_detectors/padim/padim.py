@@ -640,6 +640,7 @@ class PaDiM(object):
                         # yield [x]
                     image = tf.zeros(self.img_shape,dtype=tf.uint8)
                     x = tf.expand_dims(image,0)
+                    print(f'Calibration image shape: {x.shape}')
                     yield [x]
                 converter.build(input_fn=calibration_input_fn)
             except:
