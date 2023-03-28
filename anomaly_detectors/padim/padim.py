@@ -153,7 +153,7 @@ class PaDiM(object):
                 logging.info(f'{len(gpus)} Physical GPUs, {len(logical_gpus)} Logical GPUs')
             except RuntimeError as e:
                 # Virtual devices must be set before GPUs have been initialized
-                print(e)
+                logging.exception('fail to set GPU mem')
 
     def embedding_net(self, net_type, shape=None, layer_defs={}):
         '''
@@ -627,25 +627,15 @@ class PaDiM(object):
         # Build
         if not allow_build_at_runtime:
             try:    
-                # predictdata=DataLoader(path_base=calibration_data_dir, img_shape=self.img_shape, batch_size=1, shuffle=False)
-                # dataset=predictdata.dataset
-                # cal_image_list=[]
-                # for image,_ in dataset:
-                #     if len(image.shape)<4:
-                #         image=tf.expand_dims(image,0)
-                #     cal_image_list.append(image)
                 def calibration_input_fn():
-                    # for x in cal_image_list:
-                        # print(f'Calibration image shape: {x.shape}')
-                        # yield [x]
                     h,w = self.img_shape
                     for _ in range(1):
                         x = tf.zeros([1,h,w,3],dtype=tf.float32)
-                        print(f'Calibration image shape: {x.shape}')
+                        logging.info(f'Calibration image shape: {x.shape}')
                         yield [x]
                 converter.build(input_fn=calibration_input_fn)
             except:
-                print('Calibration data directory is not specified properly.')
+                logging.exception('Calibration data directory is not specified properly.')
 
         # Save the converted model
         if not os.path.exists(trt_saved_model_dir):
