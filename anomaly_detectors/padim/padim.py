@@ -588,7 +588,7 @@ class PaDiM(object):
         raw_image_zeros=tf.zeros(image_shape,dtype=tf.dtypes.int8)
         return raw_image_zeros
 
-    def convert_tensorRT(self,saved_model_dir,trt_saved_model_dir,calibration_data_dir=None,gpu_mem_limit=2048,precision_mode='FP16'):
+    def convert_tensorRT(self,saved_model_dir,trt_saved_model_dir,allow_build_at_runtime=False,precision_mode='FP16'):
         from tensorflow.python.compiler.tensorrt import trt_convert as trt
         saved_model_path=os.path.join(saved_model_dir,'saved_model')
         tfrecords_path=os.path.join(saved_model_dir,'padim.tfrecords')
@@ -596,7 +596,7 @@ class PaDiM(object):
         # self.net=tf.keras.models.load_model(saved_model_path)
         # https://docs.nvidia.com/deeplearning/frameworks/tf-trt-user-guide/index.html
         params = copy.deepcopy(trt.DEFAULT_TRT_CONVERSION_PARAMS)
-        allow_build_at_runtime=True if calibration_data_dir is None else False
+        # allow_build_at_runtime=True if calibration_data_dir is None else False
         max_workspace_size_bytes=1073741824 # Default: 1e9. The maximum GPU temporary memory which the TensorRT engine can use at execution time
         minimum_segment_size=3 # Default: 3. This is the minimum number of nodes required for a subgraph to be replaced by TRTEngineOp.
         # Set precision
@@ -627,17 +627,20 @@ class PaDiM(object):
         # Build
         if not allow_build_at_runtime:
             try:    
-                predictdata=DataLoader(path_base=calibration_data_dir, img_shape=self.img_shape, batch_size=1, shuffle=False)
-                dataset=predictdata.dataset
-                cal_image_list=[]
-                for image,_ in dataset:
-                    if len(image.shape)<4:
-                        image=tf.expand_dims(image,0)
-                    cal_image_list.append(image)
+                # predictdata=DataLoader(path_base=calibration_data_dir, img_shape=self.img_shape, batch_size=1, shuffle=False)
+                # dataset=predictdata.dataset
+                # cal_image_list=[]
+                # for image,_ in dataset:
+                #     if len(image.shape)<4:
+                #         image=tf.expand_dims(image,0)
+                #     cal_image_list.append(image)
                 def calibration_input_fn():
-                    for x in cal_image_list:
-                        print(f'Calibration image shape: {x.shape}')
-                        yield [x]
+                    # for x in cal_image_list:
+                        # print(f'Calibration image shape: {x.shape}')
+                        # yield [x]
+                    image = tf.zeros(self.img_shape,dtype=tf.uint8)
+                    x = tf.expand_dims(image,0)
+                    yield [x]
                 converter.build(input_fn=calibration_input_fn)
             except:
                 print('Calibration data directory is not specified properly.')
