@@ -639,9 +639,10 @@ class PaDiM(object):
                         # print(f'Calibration image shape: {x.shape}')
                         # yield [x]
                     h,w = self.img_shape
-                    x = tf.zeros([h,w,3],dtype=tf.uint8)
-                    print(f'Calibration image shape: {x.shape}')
-                    yield [x]
+                    for _ in range(1):
+                        x = tf.zeros([h,w,3],dtype=tf.uint8)
+                        print(f'Calibration image shape: {x.shape}')
+                        yield [x]
                 converter.build(input_fn=calibration_input_fn)
             except:
                 print('Calibration data directory is not specified properly.')
