@@ -1,7 +1,7 @@
 [submodule "yolov5"]
 	path = object_detectors/yolov5
 	url = https://github.com/lmitechnologies/yolov5.git
-	branch = wen_dev
+	branch = ais
 [submodule "classifiers/efficientnet"]
 	path = classifiers/efficientnet
 	url = https://github.com/lmitechnologies/EfficientNet-PyTorch.git
