@@ -7,10 +7,9 @@ import copy
 # 2. Third-party modules
 import numpy as np
 import tensorflow as tf
-import tensorflow_addons as tfa
+from scipy.ndimage import gaussian_filter
 import matplotlib
 from matplotlib import pyplot as plt
-
 
 # 3. Own modules
 from padim.data_loader import DataLoader
@@ -134,6 +133,12 @@ class PaDiM(object):
         if GPU_memory is not None:
             logging.info(f'Setting GPU memory limit to {GPU_memory} MB')
             self.set_gpu_memory(GPU_memory)
+        try:
+            import tensorflow_addons as tfa
+            self.tfa_gaussian_filter2d = tfa.image.gaussian_filter2d
+        except:
+            logging.warning(f'Failed to import tensorflow_addons, will use scipy for gaussian filter but probably with performance penalty')
+            self.tfa_gaussian_filter2d = None
         
 
     def set_gpu_memory(self,mem_limit):
@@ -533,7 +538,7 @@ class PaDiM(object):
             dataset=zip([dataset],[fname])
         else:
             pass
-            
+
         proctime=[]
         image_list=[]
         dist_list=[]
@@ -560,12 +565,17 @@ class PaDiM(object):
             # Apply Gaussion Filtering
             dist_tensor_x=tf.expand_dims(dist_tensor_x,-1)
             dist_tensor_x=tf.image.resize(dist_tensor_x,self.img_shape)
-            dist_tensor_x=tfa.image.gaussian_filter2d(dist_tensor_x,filter_shape=(3,3))
+            tg0=time.time()
+            if self.tfa_gaussian_filter2d:
+                dist_tensor_x=self.tfa_gaussian_filter2d(dist_tensor_x,filter_shape=(3,3))
+            else:
+                dist_tensor_x=gaussian_filter(dist_tensor_x, sigma=1, radius=1) # the size of the kernel along each axis will be 2*radius + 1
+                dist_tensor_x = tf.convert_to_tensor(dist_tensor_x)
+            t1=time.time()
             # Aggregate tensors in batch
             dist_list.append(dist_tensor_x)
-            t1=time.time()
             tdel=(t1-t0)/B
-            logging.info(f'Proc Time: {tdel}')
+            logging.info(f'[ANOMDET] Proc Time: {tdel}, gaussian filter time: {(t1-tg0)/B}')
             proctime.append(tdel)
         
         image_tensor=tf.concat(image_list,axis=0)
