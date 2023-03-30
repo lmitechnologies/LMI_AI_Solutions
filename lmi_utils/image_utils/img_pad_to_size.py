@@ -33,7 +33,8 @@ def pad_array(im,W,H):
         im=cv2.copyMakeBorder(im,0,0,pad_L,pad_R,cv2.BORDER_CONSTANT,value=BLACK)
     elif W<w_im:
         rem_L=(w_im-W)//2
-        to_R=w_im-W-rem_L
+        rem_R=(w_im-W)-rem_L
+        to_R=w_im-rem_R
         im=im[:,rem_L:to_R]
 
     # pad height or crop from center
@@ -43,7 +44,8 @@ def pad_array(im,W,H):
         im=cv2.copyMakeBorder(im,pad_T,pad_B,0,0,cv2.BORDER_CONSTANT,value=BLACK)
     elif H<h_im:
         rem_T=(h_im-H)//2
-        to_B=h_im-H-rem_T
+        rem_B=(h_im-H)-rem_T
+        to_B=h_im-rem_B
         im=im[rem_T:to_B,:]
 
     return im
