@@ -1,11 +1,7 @@
 # 1. Built-in modules
 import os
-import argparse
-import random
-import cv2
 import logging
 import time
-import glob
 import copy
 
 # 2. Third-party modules
