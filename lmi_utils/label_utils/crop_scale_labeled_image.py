@@ -20,10 +20,12 @@ def make_border(img,p2h=None,p2w=None):
     if p2h is not None:
         if h0>p2h:
             crop_rows=h0-p2h
-            img=img[crop_rows:,:]
-            top_border=-crop_rows
-            bottom_border=top_border+p2h
-            print('[INFO] Scaled image is too tall.  Clipping top %2d rows'%(crop_rows))
+            crop_rows_top=crop_rows//2
+            crop_rows_bottom=crop_rows-crop_rows_top
+            img=img[crop_rows_top:h0-crop_rows_bottom,:]
+            top_border=-crop_rows_top
+            bottom_border=-crop_rows_bottom
+            print(f'[INFO] Scaled image is too tall.  Clipping top rows: {crop_rows_top} and bottom rows: {crop_rows_bottom}')
         else:
             top_border=(p2h-h0)//2
             bottom_border=p2h-h0-top_border
@@ -32,10 +34,12 @@ def make_border(img,p2h=None,p2w=None):
     if p2w is not None:
         if w0>p2w:
             crop_cols=w0-p2w
-            img=img[:,crop_cols:]
-            left_border=-crop_cols
-            right_border=left_border+p2w
-            print('[INFO] Scaled image is too wide.  Clipping left %2d rows'%(crop_cols))
+            crop_cols_left=crop_cols//2
+            crop_cols_right=crop_cols-crop_cols_left
+            img=img[:,crop_cols_left:w0-crop_cols_right]
+            left_border=-crop_cols_left
+            right_border=-crop_cols_right
+            print(f'[INFO] Scaled image is too wide.  Clipping left columns: {crop_cols_left} and right columns: {crop_cols_right}')
         else:
             left_border=(p2w-w0)//2
             right_border=p2w-w0-left_border
