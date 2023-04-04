@@ -31,6 +31,7 @@ def fit_array_to_size(im,W,H):
         else:
             im = im[:,pad_L:-pad_R]
         pad_L = -pad_L
+        pad_R=-pad_R
     # pad or chop height
     if H >= h_im:
         pad_T=(H-h_im)//2
@@ -47,7 +48,8 @@ def fit_array_to_size(im,W,H):
         else:
             im = im[pad_T:-pad_B]
         pad_T = -pad_T
-    return im, pad_L, pad_T
+        pad_B = -pad_B
+    return im, pad_L, pad_R, pad_T, pad_B
 
         
         
@@ -119,8 +121,9 @@ def revert_mask_to_origin(mask, operations:list):
             mask2 = cv2.resize(mask2,(nw,nh))
         if 'pad' in operator:
             pad = operator['pad']
-            nw,nh = w-pad[0]*2,h-pad[1]*2
-            mask2 = fit_array_to_size(mask2,nw,nh)
+            pad_L,pad_R,pad_T,pad_B=pad
+            nw,nh = w-pad_L-pad_R,h-pad_T-pad_B
+            mask2,_,_,_,_ = fit_array_to_size(mask2,nw,nh)
         # if 'stretch' in operator:
         #     s = operator['stretch']
         #     nx,ny = nx/s[0], ny/s[1]
@@ -148,7 +151,8 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
                 nx,ny = nx/r[0], ny/r[1]
             if 'pad' in operator:
                 pad = operator['pad']
-                nx,ny = nx-pad[0],ny-pad[1]
+                pad_L,pad_R,pad_T,pad_B=pad
+                nx,ny = nx-pad_L,ny-pad_T
             if 'stretch' in operator:
                 s = operator['stretch']
                 nx,ny = nx/s[0], ny/s[1]
@@ -194,7 +198,9 @@ def apply_operations(pts:np.ndarray, operations:list):
                 nx,ny = nx*r[0], ny*r[1]
             if 'pad' in operator:
                 pad = operator['pad']
-                nx,ny = nx+pad[0],ny+pad[1]
+                pad_L,pad_R,pad_T,pad_B=pad
+                nx,ny = nx+pad_L,ny+pad_T
+                # nx,ny = nx+pad[0],ny+pad[1]
             if 'stretch' in operator:
                 s = operator['stretch']
                 nx,ny = nx*s[0], ny*s[1]
