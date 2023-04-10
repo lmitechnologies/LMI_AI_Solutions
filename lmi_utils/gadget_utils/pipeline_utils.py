@@ -107,26 +107,21 @@ def revert_mask_to_origin(mask, operations:list):
     """
     This func reverts the mask image according to the operations list IN ORDER.
     The operations list contains items as dictionary. The items are listed as follows: 
-        1. <stretch: [stretch_ratio in w, stretch_ratio in h]>
-        2. <pad: [pad_left_pixels, pad_top_pixels]> 
-        3. <resize: [resize_ratio in w, resize_ratio in h]>
+        1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_top_pixels]> 
+        2. <resize: [current_w, current_h, target_w, target_h]>
     """
     h,w = mask.shape[:2]
     mask2 = mask.copy()
     for operator in reversed(operations):
         h,w = mask2.shape[:2]
         if 'resize' in operator:
-            r = operator['resize']
-            nw,nh = int(w/r[0]), int(h/r[1])
+            w,h,nw,nh = operator['resize']
             mask2 = cv2.resize(mask2,(nw,nh))
         if 'pad' in operator:
             pad = operator['pad']
             pad_L,pad_R,pad_T,pad_B=pad
             nw,nh = w-pad_L-pad_R,h-pad_T-pad_B
             mask2,_,_,_,_ = fit_array_to_size(mask2,nw,nh)
-        # if 'stretch' in operator:
-        #     s = operator['stretch']
-        #     nx,ny = nx/s[0], ny/s[1]
     return mask2
 
 
@@ -137,7 +132,7 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
     The operations list contains items as dictionary. The items are listed as follows: 
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left_pixels, pad_top_pixels]> 
-        3. <resize: [resize_ratio in w, resize_ratio in h]>
+        3. <resize: [current_w, current_h, target_w, target_h]>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
@@ -147,7 +142,8 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
         nx,ny = x,y
         for operator in reversed(operations):
             if 'resize' in operator:
-                r = operator['resize']
+                w,h,nw,nh = operator['resize']
+                r = [nw/w,nh/h]
                 nx,ny = nx/r[0], ny/r[1]
             if 'pad' in operator:
                 pad = operator['pad']
@@ -184,7 +180,7 @@ def apply_operations(pts:np.ndarray, operations:list):
     The operations list contains each item as a dictionary. The items are listed as follows: 
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left_pixels, pad_top_pixels]> 
-        3. <resize: [resize_ratio_x, resize_ratio_y]>
+        3. <resize: current_w, current_h, target_w, target_h>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
@@ -194,7 +190,8 @@ def apply_operations(pts:np.ndarray, operations:list):
         nx,ny = x,y
         for operator in operations:
             if 'resize' in operator:
-                r = operator['resize']
+                w,h,nw,nh = operator['resize']
+                r = [nw/w,nh/h]
                 nx,ny = nx*r[0], ny*r[1]
             if 'pad' in operator:
                 pad = operator['pad']
@@ -262,3 +259,14 @@ def load_pipeline_def(filepath):
         for dt in l:
             kwargs[dt['name']] = dt['default_value']
     return kwargs
+
+
+if __name__ == '__main__':
+    file = './data/WT10-MK1005-03746-1678197770571059.gadget2d.png'
+    im = cv2.imread(file)
+    h,w = im.shape[:2]
+    h2,w2 = 500,600
+    operators = [{'resize': [w,h,w2,h2]}]
+    im2 = revert_mask_to_origin(im,operators)
+    print(im2.shape)
+    
