@@ -107,7 +107,7 @@ def revert_mask_to_origin(mask, operations:list):
     """
     This func reverts the mask image according to the operations list IN ORDER.
     The operations list contains items as dictionary. The items are listed as follows: 
-        1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_top_pixels]> 
+        1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
         2. <resize: [current_w, current_h, target_w, target_h]>
     """
     h,w = mask.shape[:2]
