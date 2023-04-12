@@ -259,14 +259,3 @@ def load_pipeline_def(filepath):
         for dt in l:
             kwargs[dt['name']] = dt['default_value']
     return kwargs
-
-
-if __name__ == '__main__':
-    file = './data/WT10-MK1005-03746-1678197770571059.gadget2d.png'
-    im = cv2.imread(file)
-    h,w = im.shape[:2]
-    h2,w2 = 500,600
-    operators = [{'resize': [w,h,w2,h2]}]
-    im2 = revert_mask_to_origin(im,operators)
-    print(im2.shape)
-    
