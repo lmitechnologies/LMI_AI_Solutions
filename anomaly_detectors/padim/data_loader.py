@@ -18,7 +18,7 @@ class DataLoader(object):
         loads images from directory and subdirectories into tf.data.Dataset iterable.
         Note: ONLY load 8 bits PNG images.
     """
-    def __init__(self, path_base, img_shape, batch_size, normalize=False, shuffle=True, random_flip_h=False, random_flip_v=False, img_types=['png']):
+    def __init__(self, path_base, img_shape, batch_size, normalize=False, shuffle=True, random_flip_h=False, random_flip_v=False):
         """
         DESCRIPTION:
             1. set the image shape
@@ -42,12 +42,13 @@ class DataLoader(object):
         self.normalize = normalize
 
         #get image file list from path_base and its subfolders
-        self.file_list, self.file_names = self._get_file_list(path_base, img_types=img_types)
+        self.file_list, self.file_names = self._get_file_list(path_base)
         self.n_samples = len(self.file_list)
 
         #generate dataset from the file list
         dataset = tf.data.Dataset.from_tensor_slices((self.file_list, self.file_names))
 
+        #shuffle the dataset
         if shuffle:
             dataset = dataset.shuffle(self.n_samples, reshuffle_each_iteration=True)
 
@@ -63,7 +64,7 @@ class DataLoader(object):
         self.dataset = dataset.prefetch(tf.data.AUTOTUNE)
         
     @staticmethod
-    def _get_file_list(path_base, img_types):
+    def _get_file_list(path_base):
         """
         DESCRIPTION:
             get image file list from path_base and its subfolders
@@ -82,9 +83,7 @@ class DataLoader(object):
         # concatenate all the file lists from subfolders
         for subdir in subdirs:
             path = os.path.join(path_base,subdir)
-            cur_list = []
-            for img_type in img_types:
-                cur_list.extend(glob.glob(os.path.join(path, f'*.{img_type}')))
+            cur_list = glob.glob(os.path.join(path, '*.png'))
             fnames = [os.path.basename(l) for l in cur_list]
             file_list += cur_list
             file_names += fnames

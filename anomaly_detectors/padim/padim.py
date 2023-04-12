@@ -151,9 +151,9 @@ class PaDiM(object):
                     [tf.config.LogicalDeviceConfiguration(memory_limit=mem_limit)])
                 logical_gpus = tf.config.list_logical_devices('GPU')
                 logging.info(f'{len(gpus)} Physical GPUs, {len(logical_gpus)} Logical GPUs')
-            except RuntimeError as e:
+            except RuntimeError:
                 # Virtual devices must be set before GPUs have been initialized
-                print(e)
+                logging.exception('fail to set GPU mem')
 
     def embedding_net(self, net_type, shape=None, layer_defs={}):
         '''
@@ -588,7 +588,7 @@ class PaDiM(object):
         raw_image_zeros=tf.zeros(image_shape,dtype=tf.dtypes.int8)
         return raw_image_zeros
 
-    def convert_tensorRT(self,saved_model_dir,trt_saved_model_dir,calibration_data_dir=None,gpu_mem_limit=2048,precision_mode='FP16'):
+    def convert_tensorRT(self,saved_model_dir,trt_saved_model_dir,precision_mode='FP16'):
         from tensorflow.python.compiler.tensorrt import trt_convert as trt
         saved_model_path=os.path.join(saved_model_dir,'saved_model')
         tfrecords_path=os.path.join(saved_model_dir,'padim.tfrecords')
@@ -596,7 +596,6 @@ class PaDiM(object):
         # self.net=tf.keras.models.load_model(saved_model_path)
         # https://docs.nvidia.com/deeplearning/frameworks/tf-trt-user-guide/index.html
         params = copy.deepcopy(trt.DEFAULT_TRT_CONVERSION_PARAMS)
-        allow_build_at_runtime=True if calibration_data_dir is None else False
         max_workspace_size_bytes=1073741824 # Default: 1e9. The maximum GPU temporary memory which the TensorRT engine can use at execution time
         minimum_segment_size=3 # Default: 3. This is the minimum number of nodes required for a subgraph to be replaced by TRTEngineOp.
         # Set precision
@@ -612,7 +611,7 @@ class PaDiM(object):
                                     "FP32, FP16 or INT8")
         # Set key properties
         params = params._replace(
-            allow_build_at_runtime=allow_build_at_runtime,
+            allow_build_at_runtime=False,
             max_workspace_size_bytes=max_workspace_size_bytes,
             minimum_segment_size=minimum_segment_size,
             precision_mode=get_trt_precision()
@@ -625,22 +624,16 @@ class PaDiM(object):
         # TODO: add support for INT8: converter.convert(calibration_input_fn=calibration_input_fn)
         
         # Build
-        if not allow_build_at_runtime:
-            try:    
-                predictdata=DataLoader(path_base=calibration_data_dir, img_shape=self.img_shape, batch_size=1, shuffle=False)
-                dataset=predictdata.dataset
-                cal_image_list=[]
-                for image,_ in dataset:
-                    if len(image.shape)<4:
-                        image=tf.expand_dims(image,0)
-                    cal_image_list.append(image)
-                def calibration_input_fn():
-                    for x in cal_image_list:
-                        print(f'Calibration image shape: {x.shape}')
-                        yield [x]
-                converter.build(input_fn=calibration_input_fn)
-            except:
-                print('Calibration data directory is not specified properly.')
+        try:
+            def calibration_input_fn():
+                h,w = self.img_shape
+                for _ in range(1):
+                    x = tf.zeros([1,h,w,3],dtype=tf.float32)
+                    logging.info(f'Calibration image shape: {x.shape}')
+                    yield [x]
+            converter.build(input_fn=calibration_input_fn)
+        except Exception:
+            logging.exception('Calibration data directory is not specified properly.')
 
         # Save the converted model
         if not os.path.exists(trt_saved_model_dir):
