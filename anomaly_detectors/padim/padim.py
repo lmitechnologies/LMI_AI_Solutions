@@ -575,7 +575,7 @@ class PaDiM(object):
             # Aggregate tensors in batch
             dist_list.append(dist_tensor_x)
             tdel=(t1-t0)/B
-            logging.info(f'[ANOMDET] Proc Time: {tdel}, gaussian filter time: {(t1-tg0)/B}')
+            logging.info(f'[ANOMDET] Proc Time: {tdel}, B={B} gaussian filter time: {(t1-tg0)/B}')
             proctime.append(tdel)
         
         image_tensor=tf.concat(image_list,axis=0)
