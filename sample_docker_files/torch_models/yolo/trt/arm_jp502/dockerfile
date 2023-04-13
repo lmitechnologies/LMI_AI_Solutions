@@ -1,0 +1,11 @@
+# jetpack 5.0.2
+FROM --platform=linux/arm64/v8 nvcr.io/nvidia/l4t-ml:r35.1.0-py3
+ARG DEBIAN_FRONTEND=noninteractive
+ENV LANG C.UTF-8
+ENV LD_PRELOAD /lib/aarch64-linux-gnu/libGLdispatch.so.0
+
+WORKDIR /repos
+RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && cd LMI_AI_Solutions && git submodule update --init object_detectors/yolov5
+RUN python3 -m pip install --upgrade pip
+RUN pip install --upgrade setuptools wheel
+RUN pip3 install -r /repos/LMI_AI_Solutions/object_detectors/yolov5/trt/arm/requirements.txt

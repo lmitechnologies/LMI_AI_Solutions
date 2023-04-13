@@ -1,0 +1,21 @@
+version: "3.9"
+services:
+  generate_padim_trt_x86:
+    build:
+      context: .
+      dockerfile: dockerfile
+    volumes:
+      - ./path_to_calibration_data:/app/calibration
+      - ./trained-inference-models/:/app/trained-inference-models/
+    environment:
+      - CALIB_PATH=/app/calibration
+      - MODEL_PATH=/app/trained-inference-models/2023-04-11/saved_model
+      - TRT_PATH=/app/trained-inference-models/2023-04-11/saved_model/saved_model_trt
+    deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+    command: bash /repos/LMI_AI_Solutions/anomaly_detectors/padim/trt/build_engine.sh
