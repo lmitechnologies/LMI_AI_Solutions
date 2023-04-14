@@ -110,12 +110,11 @@ def revert_mask_to_origin(mask, operations:list):
         1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
         2. <resize: [current_w, current_h, target_w, target_h]>
     """
-    h,w = mask.shape[:2]
     mask2 = mask.copy()
     for operator in reversed(operations):
         h,w = mask2.shape[:2]
         if 'resize' in operator:
-            w,h,nw,nh = operator['resize']
+            _,_,nw,nh = operator['resize']
             mask2 = cv2.resize(mask2,(nw,nh))
         if 'pad' in operator:
             pad = operator['pad']
