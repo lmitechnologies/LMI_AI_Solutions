@@ -615,7 +615,8 @@ class PaDiM(object):
             elif precision_mode == "FP16":
                 return trt.TrtPrecisionMode.FP16
             elif precision_mode == "INT8":
-                return trt.TrtPrecisionMode.INT8
+                # return trt.TrtPrecisionMode.INT8
+                raise Exception('Have not support building trt engines for INT8')
             else:
                 raise RuntimeError("Unknown precision received: `{}`. Expected: "
                                     "FP32, FP16 or INT8")
@@ -633,7 +634,7 @@ class PaDiM(object):
         converter.convert()
         # TODO: add support for INT8: converter.convert(calibration_input_fn=calibration_input_fn)
         
-        # Build
+        # Build using dummy input for calibration
         try:
             def calibration_input_fn():
                 h,w = self.img_shape
