@@ -108,15 +108,15 @@ def revert_mask_to_origin(mask, operations:list):
     This func reverts the mask image according to the operations list IN ORDER.
     The operations list contains items as dictionary. The items are listed as follows: 
         1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
-        2. <resize: [current_w, current_h, target_w, target_h]>
+        2. <resize: [target_w, target_h, orig_w, orig_h]>
     """
     mask2 = mask.copy()
     for operator in reversed(operations):
-        h,w = mask2.shape[:2]
         if 'resize' in operator:
             _,_,nw,nh = operator['resize']
             mask2 = cv2.resize(mask2,(nw,nh))
         if 'pad' in operator:
+            h,w = mask2.shape[:2]
             pad_L,pad_R,pad_T,pad_B = operator['pad']
             nw,nh = w-pad_L-pad_R,h-pad_T-pad_B
             mask2,_,_,_,_ = fit_array_to_size(mask2,nw,nh)
@@ -130,7 +130,7 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
     The operations list contains items as dictionary. The items are listed as follows: 
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
-        3. <resize: [current_w, current_h, target_w, target_h]>
+        3. <resize: [target_w, target_h, orig_w, orig_h]>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
@@ -140,8 +140,8 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
         nx,ny = x,y
         for operator in reversed(operations):
             if 'resize' in operator:
-                w,h,nw,nh = operator['resize']
-                r = [nw/w,nh/h]
+                tw,th,orig_w,orig_h = operator['resize']
+                r = [tw/orig_w,th/orig_h]
                 nx,ny = nx/r[0], ny/r[1]
             if 'pad' in operator:
                 pad_L,pad_R,pad_T,pad_B = operator['pad']
@@ -177,7 +177,7 @@ def apply_operations(pts:np.ndarray, operations:list):
     The operations list contains each item as a dictionary. The items are listed as follows: 
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
-        3. <resize: current_w, current_h, target_w, target_h>
+        3. <resize: target_w, target_h, orig_w, orig_h>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
@@ -187,8 +187,8 @@ def apply_operations(pts:np.ndarray, operations:list):
         nx,ny = x,y
         for operator in operations:
             if 'resize' in operator:
-                w,h,nw,nh = operator['resize']
-                r = [nw/w,nh/h]
+                tw,th,orig_w,orig_h = operator['resize']
+                r = [tw/orig_w,th/orig_h]
                 nx,ny = nx*r[0], ny*r[1]
             if 'pad' in operator:
                 pad_L,pad_R,pad_T,pad_B = operator['pad']
