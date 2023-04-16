@@ -7,7 +7,7 @@ import copy
 # 2. Third-party modules
 import numpy as np
 import tensorflow as tf
-from scipy.ndimage import gaussian_filter
+
 import matplotlib
 from matplotlib import pyplot as plt
 
@@ -138,6 +138,7 @@ class PaDiM(object):
             self.tfa_gaussian_filter2d = tfa.image.gaussian_filter2d
         except:
             logging.warning(f'Failed to import tensorflow_addons, will use scipy for gaussian filter but probably with performance penalty')
+            from scipy.ndimage import gaussian_filter
             self.tfa_gaussian_filter2d = None
         
 
