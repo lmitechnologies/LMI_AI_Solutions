@@ -117,8 +117,8 @@ class Dataset(object):
                     continue
                 
                 dt = {}
-                vertex = [float(v) for pt in zip(x,y) for v in pt] #(x1,y1,x2,y2)
-                poly = Polygon([(float(xi),float(yi)) for xi,yi in zip(x,y)])
+                vertex = [int(v) for pt in zip(x,y) for v in pt] #(x1,y1,x2,y2)
+                poly = Polygon([(int(xi),int(yi)) for xi,yi in zip(x,y)])
 
                 if plot:
                     self.visualize(poly,fname)
@@ -128,7 +128,7 @@ class Dataset(object):
                 dt['area'] = poly.area
                 dt['iscrowd'] = iscrowd
                 dt['image_id'] = im_id
-                dt['bbox'] = [x_min,y_min,x_max-x_min+1,y_max-y_min+1]
+                dt['bbox'] = [x_min,y_min,x_max-x_min,y_max-y_min]
                 dt['category_id'] = dt_category[cat_str]
                 dt['id'] = self.anno_id
                 self.anno_id += 1
@@ -142,8 +142,8 @@ class Dataset(object):
                     continue
 
                 dt = {}
-                x1,y1,x2,y2 = [float(v) for v in bbox]
-                w,h = x2-x1+1, y2-y1+1
+                x1,y1,x2,y2 = [int(v) for v in bbox]
+                w,h = x2-x1, y2-y1
                 poly = Polygon([(x1,y1), (x2,y1), (x2,y2), (x1,y2)])
 
                 if plot:
@@ -192,7 +192,7 @@ class Dataset(object):
         #    mask = np.repeat(mask[:, :, np.newaxis], 3, axis=2)
         mask = mask.astype(np.bool)
         #plot
-        im = im.astype(np.float)
+        im = im.astype(float)
         im[~mask] *= 0.25
         cv2.imshow('plot',im.astype(np.uint8))
         cv2.waitKey(100)
@@ -205,7 +205,7 @@ if __name__ == '__main__':
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--classes', required=True, help='the class categories in the dataset using comma to separate each category')
     ap.add_argument('--output_json', required=True, help='the path to the output json file')
-    ap.add_argument('--plot', default=False, type=lambda x: x in ['True', 'true', '1'], help='plot the annotations')
+    ap.add_argument('--plot', action='store_true', help='plot the annotations')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
