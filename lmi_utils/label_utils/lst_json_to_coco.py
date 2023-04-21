@@ -1,10 +1,12 @@
 import os
 import argparse
-import cv2
-import numpy as np
 import logging
 import json
-from label_utils.COCO_dataset import COCO_Dataset, Annotation
+from label_utils.COCO_dataset import COCO_Dataset, Annotation, rotate
+
+logging.basicConfig()
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 def convert_from_ls(result):
@@ -44,7 +46,7 @@ def get_annotations_from_json(path_json, path_imgs, plot=False):
             # get rid of first '-'
             f = dt['file_upload'].split('-')[1:]
             fname = '-'.join(f)
-            print(fname)
+            logger.info(fname)
             path_img = os.path.join(path_imgs,fname)
             if not os.path.isfile(path_img):
                 raise Exception(f'Cannot find the file: {path_img}')
@@ -59,7 +61,8 @@ def get_annotations_from_json(path_json, path_imgs, plot=False):
                     x,y,w,h,angle = convert_from_ls(result)
                     # convert to int
                     x,y,w,h = list(map(int,[x,y,w,h]))
-                    annot = Annotation(path_img,label,bbox=[x,y,w,h],rotation=angle)
+                    pts = rotate(x,y,w,h,angle)
+                    annot = Annotation(path_img,label,bbox=[x,y,w,h],rotation=angle,segmentation=pts)
                     annots.append(annot)
     return annots,dt_category
 
@@ -73,6 +76,7 @@ if __name__ == '__main__':
     args = ap.parse_args()
     
     annots,dt_category = get_annotations_from_json(args.path_json, args.path_imgs, args.plot)
+    logger.info(f'found category: {dt_category}')
     
     dataset = COCO_Dataset(dt_category, args.path_imgs)
     dataset.add_annotations(annots, args.plot)

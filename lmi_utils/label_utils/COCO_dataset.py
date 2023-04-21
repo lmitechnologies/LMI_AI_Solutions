@@ -6,6 +6,10 @@ import os
 import glob
 import logging
 
+logging.basicConfig()
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
 
 def xyxy_to_xywh(x1,y1,x2,y2):
     return x1, y1, x2-x1, y2-y1
@@ -69,8 +73,12 @@ class Annotation:
         dt = {}
         dt['image_id'] = self.image_id
         dt['category_id'] = self.category_id
+        if isinstance(self.bbox, np.ndarray):
+            self.bbox = self.bbox.tolist()
         dt['bbox'] = self.bbox
-        if self.segmentation:
+        if len(self.segmentation):
+            if isinstance(self.segmentation, np.ndarray):
+                self.segmentation = self.segmentation.tolist()
             dt['segmentation'] = self.segmentation
         if self.rotation is not None:
             dt['bbox'] += [self.rotation]
@@ -79,7 +87,7 @@ class Annotation:
 
 
 class COCO_Dataset:
-    def __init__(self, dt_category:dict, path_imgs:str='') -> None:
+    def __init__(self, dt_category:dict, path_imgs:str) -> None:
         """create coco dataset which supports rotated bbox
 
         Args:
@@ -98,8 +106,8 @@ class COCO_Dataset:
         self.imgfile2id = {}
         self.im_id = 1
         
-        if path_imgs:
-            self.add_imgs(path_imgs)
+        self.add_categories()
+        self.add_imgs(path_imgs)
         
         
     def add_categories(self, super_category={}):
@@ -127,6 +135,7 @@ class COCO_Dataset:
         files = []
         for fmt in fmts:
             files += glob.glob(os.path.join(path_imgs,'*.'+fmt))
+        logger.info(f'found {len(files)} images in {path_imgs}')
         for f in files:
             dt = {}
             im = cv2.imread(f)
@@ -148,11 +157,12 @@ class COCO_Dataset:
             annots (list): a list of Annotation class objects
             plot (bool, optional): plot the annotations. Defaults to False.
         """
+        logger.info(f'adding {len(annots)} annotations to the coco dataset')
         for annot in annots:
-            self.add_annotation(annot,plot)
+            self.__add_annotation(annot,plot)
             
             
-    def add_annotation(self, annot:Annotation, plot=False):
+    def __add_annotation(self, annot:Annotation, plot=False):
         """
         add annotation
         arugments:
@@ -187,10 +197,12 @@ class COCO_Dataset:
             pts(list): a list of [x,y]
             fname(str): the file name
         """
-        pts = rotate(*annot.bbox)
-        #TODO: plot segments
         img = cv2.imread(annot.path)
+        pts = rotate(*annot.bbox)
         cv2.drawContours(img, [pts], 0, (0, 255, 0), 3, cv2.LINE_AA)
+        if len(annot.segmentation):
+            segs = np.array(annot.segmentation).astype(int)
+            cv2.drawContours(img, [segs], 0, (0, 255, 0), 3, cv2.LINE_AA)
         img2 = cv2.resize(img, (0,0), fx=ratio, fy=ratio)
         cv2.imshow('plot',img2)
         cv2.waitKey(100)
