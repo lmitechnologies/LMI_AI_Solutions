@@ -17,8 +17,22 @@ def xyxy_to_xywh(x1,y1,x2,y2):
 def xywh_to_xyxy(x,y,w,h):
     return x, y, x+w, y+h
 
-def rotate(x,y,w,h,angle=0):
-    ANGLE = np.deg2rad(angle)
+def rotate(x,y,w,h,angle=0.0,unit='degree'):
+    """rotate the bbox from [x,y,w,h] using the angle to a array of [4,2].
+    
+    Args:
+        angle(float): the rotation angle in current unit
+        unit(str): the current unit, either 'degree' or 'radian'. defalt unit is 'degree'.
+
+    Returns:
+        np.ndarray: 4x2
+    """
+    if unit=='degree':
+        ANGLE = np.deg2rad(angle)
+    elif unit=='radian':
+        ANGLE = angle
+    else:
+        raise Exception('Does not recognize the unit other than "degree" and "radian"')
     points = [[x,y],[x+w,y],[x+w,y+h],[x,y+h]]
     return np.array(
         [
