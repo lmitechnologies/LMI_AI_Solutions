@@ -63,12 +63,13 @@ def get_annotations_from_json(path_json, path_imgs, plot=False):
                     x,y,w,h = list(map(int,[x,y,w,h]))
                     pts = rotate(x,y,w,h,angle)
                     annot = Annotation(path_img,label,bbox=[x,y,w,h],rotation=angle,segmentation=pts)
+                    annot.area = w*h
                     annots.append(annot)
     return annots,dt_category
 
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser('Note: currently only loads the bboxes!')
     ap.add_argument('--path_imgs', required=True)
     ap.add_argument('--path_json', required=True)
     ap.add_argument('--out_json', required=True)

@@ -48,13 +48,14 @@ class Annotation:
         # assign later
         self.image_id = None
         self.category_id = None
+        self.id = None
+        self.iscrowd = None
+        self.area = None
         
         # optional
         self.segmentation = segmentation
         self.rotation = rotation
-        self.area = None
-        self.id = None
-        self.iscrowd = None
+        
         
     def __str__(self) -> str:
         return f'path: {self.path}\nbbox: {self.bbox}\nrotation: {self.rotation}\n'+\
@@ -71,11 +72,14 @@ class Annotation:
         if self.image_id is None or self.category_id is None:
             raise Exception('image id or cateogry id is None')
         dt = {}
+        dt['id'] = self.id
         dt['image_id'] = self.image_id
         dt['category_id'] = self.category_id
+        dt['iscrowd'] = self.iscrowd
         if isinstance(self.bbox, np.ndarray):
             self.bbox = self.bbox.tolist()
         dt['bbox'] = self.bbox
+        dt['area'] = self.area
         if len(self.segmentation):
             if isinstance(self.segmentation, np.ndarray):
                 self.segmentation = self.segmentation.tolist()
@@ -105,6 +109,7 @@ class COCO_Dataset:
         self.categories = []
         self.imgfile2id = {}
         self.im_id = 1
+        self.annot_id = 1
         
         self.add_categories()
         self.add_imgs(path_imgs)
@@ -188,6 +193,9 @@ class COCO_Dataset:
         img_id = self.imgfile2id[fname]
         annot.image_id = img_id
         annot.category_id = self.dt_category[annot.category]
+        annot.iscrowd = 0
+        annot.id = self.annot_id
+        self.annot_id += 1
     
             
     def visualize(self, annot:Annotation, ratio=0.25):
