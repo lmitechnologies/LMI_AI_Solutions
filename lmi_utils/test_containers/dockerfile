@@ -19,8 +19,10 @@ RUN cd opencv/build && cmake -D CMAKE_BUILD_TYPE=RELEASE \
        -D WITH_CUDNN=ON \
        -D OPENCV_DNN_CUDA=ON ..\
 && make -j16 install
+RUN ln -s /usr/local/lib/python3.8/site-packages/cv2 /usr/local/lib/python3.8/dist-packages/cv2
 RUN ldconfig
 
 WORKDIR /app
 
 RUN git clone --recurse-submodules https://github.com/lmitechnologies/LMI_AI_Solutions.git
+

@@ -47,7 +47,6 @@ def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
     if device=='gpu':
         src = cv2.cuda_GpuMat()
         src.upload(image)
-        cv2.cuda.resize()
         dest = cv2.cuda.resize(src, (width,height), interpolation=inter)
         resized=dest.download()      
     else:
