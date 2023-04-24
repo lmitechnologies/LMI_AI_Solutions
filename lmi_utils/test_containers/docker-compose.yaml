@@ -1,0 +1,18 @@
+version: "3.9"
+services:
+  debug-lmi:
+    build:
+      context: .
+      dockerfile: ./dockerfile
+    volumes:
+      - ./data/:/app/data/
+    deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+    ipc: host
+    stdin_open: true # docker run -i
+    tty: true        # docker run -i
