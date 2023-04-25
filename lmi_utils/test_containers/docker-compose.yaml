@@ -6,6 +6,7 @@ services:
       dockerfile: ./dockerfile
     volumes:
       - ./data/:/app/data/
+      - ./unit_test.py:/app/unit_test.py
     deploy:
         resources:
           reservations:
@@ -14,5 +15,8 @@ services:
                 count: 1
                 capabilities: [gpu]
     ipc: host
-    stdin_open: true # docker run -i
-    tty: true        # docker run -i
+    command: bash -c "
+      source LMI_AI_Solutions/lmi_ai.env
+      && python3 /app/unit_test.py"
+    # stdin_open: true # docker run -i
+    # tty: true        # docker run -i

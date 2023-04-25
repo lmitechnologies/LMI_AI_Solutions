@@ -24,9 +24,7 @@ def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
         width: desired width
         height: desired height
         inter: interpolation method
-
     '''
-
     (h, w) = image.shape[:2]
 
     if (height is None) and (width is None):

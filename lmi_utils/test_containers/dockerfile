@@ -24,5 +24,8 @@ RUN ldconfig
 
 WORKDIR /app
 
-RUN git clone --recurse-submodules https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN pip install --upgrade pip
+RUN pip3 install torchvision
 
+RUN git clone --recurse-submodules https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN cd LMI_AI_Solutions && git checkout cv2_gpu_resize 
