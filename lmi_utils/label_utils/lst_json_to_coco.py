@@ -64,7 +64,7 @@ def get_annotations_from_json(path_json, path_imgs, plot=False):
                     x,y,w,h = list(map(int,[x,y,w,h]))
                     pts = rotate(x,y,w,h,angle)
                     angle = np.deg2rad(angle)
-                    annot = Annotation(path_img,label,bbox=[x,y,w,h],rotation=angle,segmentation=pts)
+                    annot = Annotation(path_img,label,bbox=[x,y,w,h],rotation=angle,segmentation=[pts.flatten().tolist()])
                     annot.area = w*h
                     annots.append(annot)
     return annots,dt_category
