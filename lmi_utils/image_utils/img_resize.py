@@ -4,7 +4,18 @@ import os
 import glob
 import shutil
 
-def resize(image, width=None, height=None, inter=cv2.INTER_AREA):
+def is_cuda_cv(): # 1 == using cuda, 0 = not using cuda
+    try:
+        count = cv2.cuda.getCudaEnabledDeviceCount()
+        if count > 0:
+            return True
+        else:
+            return False
+    except:
+        return False
+
+
+def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
     '''
     DESCRIPTION: 
         resizes images, preserving aspect ratio along argument free dimension
@@ -13,7 +24,6 @@ def resize(image, width=None, height=None, inter=cv2.INTER_AREA):
         width: desired width
         height: desired height
         inter: interpolation method
-
     '''
     (h, w) = image.shape[:2]
 
@@ -28,8 +38,17 @@ def resize(image, width=None, height=None, inter=cv2.INTER_AREA):
     else:
         pass
 
-    resized = cv2.resize(image, (width,height), interpolation=inter)
+    if device=='gpu':
+        if not is_cuda_cv():
+            device='cpu'
 
+    if device=='gpu':
+        src = cv2.cuda_GpuMat()
+        src.upload(image)
+        dest = cv2.cuda.resize(src, (width,height), interpolation=inter)
+        resized=dest.download()      
+    else:
+        resized = cv2.resize(image, (width,height), interpolation=inter)
 
     return resized
 

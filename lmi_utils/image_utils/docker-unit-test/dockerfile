@@ -1,0 +1,31 @@
+FROM --platform=linux/amd64 nvcr.io/nvidia/tensorflow:23.03-tf2-py3
+WORKDIR /app/opencv_build
+RUN apt update
+RUN apt install git -y
+RUN git clone https://github.com/opencv/opencv
+RUN git clone https://github.com/opencv/opencv_contrib
+RUN cd opencv && mkdir build
+RUN cd opencv/build && cmake -D CMAKE_BUILD_TYPE=RELEASE \
+       -D CMAKE_INSTALL_PREFIX=/usr/local \
+       -D OPENCV_GENERATE_PKGCONFIG=ON \
+       -D OPENCV_EXTRA_MODULES_PATH=/app/opencv_build/opencv_contrib/modules  \
+       -D BUILD_SHARED_LIBS=OFF \
+       -D BUILD_TESTS=OFF \
+       -D BUILD_PERF_TESTS=OFF \
+       -D BUILD_EXAMPLES=OFF \
+       -D WITH_OPENEXR=OFF \
+       -D WITH_CUDA=ON \
+       -D WITH_CUBLAS=ON \
+       -D WITH_CUDNN=ON \
+       -D OPENCV_DNN_CUDA=ON ..\
+&& make -j16 install
+RUN ln -s /usr/local/lib/python3.8/site-packages/cv2 /usr/local/lib/python3.8/dist-packages/cv2
+RUN ldconfig
+
+WORKDIR /app
+
+RUN pip install --upgrade pip
+RUN pip3 install torchvision
+
+RUN git clone --recurse-submodules https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN cd LMI_AI_Solutions && git checkout cv2_gpu_resize 

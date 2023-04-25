@@ -1,0 +1,19 @@
+FROM --platform=linux/amd64 nvcr.io/nvidia/tensorflow:23.03-tf2-py3
+WORKDIR /app/opencv_build
+RUN apt update
+RUN apt install git -y
+RUN git clone https://github.com/opencv/opencv
+RUN git clone https://github.com/opencv/opencv_contrib
+#RUN mkdir build && cd build && cmake -DOPENCV_EXTRA_MODULES_PATH=/app/opencv_build/opencv_contrib/modules  \
+#       -DBUILD_SHARED_LIBS=OFF \
+#       -DBUILD_TESTS=OFF \
+#       -DBUILD_PERF_TESTS=OFF \
+#       -DBUILD_EXAMPLES=OFF \
+#       -DWITH_OPENEXR=OFF \
+#       -DWITH_CUDA=ON \
+#       -DWITH_CUBLAS=ON \
+#       -DWITH_CUDNN=ON \
+#       -DOPENCV_DNN_CUDA=ON \
+#&& make -j8 install
+
+RUN git clone --recurse-submodules https://github.com/lmitechnologies/LMI_AI_Solutions.git
