@@ -5,7 +5,7 @@ from os.path import isfile, join, isdir
 
 class NumpyUtils():
     def png_to_npy(self,source_path, destination_path, rotate=False, rgb2bgr=False):
-        files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".png" in f]
+        files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ( (".png" in f) or (".jpg" in f) )]
 
         for f in files:
             print(join(source_path, f))
