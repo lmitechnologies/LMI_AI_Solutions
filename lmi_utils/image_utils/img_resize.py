@@ -38,9 +38,9 @@ def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
     else:
         pass
 
-    if device=='gpu':
-        if not is_cuda_cv():
-            device='cpu'
+    # if device=='gpu':
+    #     if not is_cuda_cv():
+    #         device='cpu'
 
     if device=='gpu':
         src = cv2.cuda_GpuMat()
