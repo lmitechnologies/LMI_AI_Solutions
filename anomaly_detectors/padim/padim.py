@@ -599,7 +599,7 @@ class PaDiM(object):
         raw_image_zeros=tf.zeros(image_shape,dtype=tf.dtypes.int8)
         return raw_image_zeros
 
-    def convert_tensorRT(self,saved_model_dir,trt_saved_model_dir,precision_mode='FP16'):
+    def convert_tensorRT(self,saved_model_dir,trt_saved_model_dir,precision_mode='FP32'):
         from tensorflow.python.compiler.tensorrt import trt_convert as trt
         saved_model_path=os.path.join(saved_model_dir,'saved_model')
         tfrecords_path=os.path.join(saved_model_dir,'padim.tfrecords')
