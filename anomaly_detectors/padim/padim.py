@@ -139,7 +139,7 @@ class PaDiM(object):
         except:
             logging.warning(f'Failed to import tensorflow_addons, will use scipy for gaussian filter but probably with performance penalty')
             from scipy.ndimage import gaussian_filter
-            self.tfa_gaussian_filter2d = None
+            self.scipy_gaussian_filter = gaussian_filter
         
 
     def set_gpu_memory(self,mem_limit):
@@ -570,7 +570,7 @@ class PaDiM(object):
             if self.tfa_gaussian_filter2d:
                 dist_tensor_x=self.tfa_gaussian_filter2d(dist_tensor_x,filter_shape=(3,3))
             else:
-                dist_tensor_x=gaussian_filter(dist_tensor_x, sigma=1, radius=1) # the size of the kernel along each axis will be 2*radius + 1
+                dist_tensor_x=self.scipy_gaussian_filter(dist_tensor_x, sigma=1, radius=1) # the size of the kernel along each axis will be 2*radius + 1
                 dist_tensor_x = tf.convert_to_tensor(dist_tensor_x)
             t1=time.time()
             # Aggregate tensors in batch
@@ -599,7 +599,7 @@ class PaDiM(object):
         raw_image_zeros=tf.zeros(image_shape,dtype=tf.dtypes.int8)
         return raw_image_zeros
 
-    def convert_tensorRT(self,saved_model_dir,trt_saved_model_dir,precision_mode='FP16'):
+    def convert_tensorRT(self,saved_model_dir,trt_saved_model_dir,precision_mode='FP32'):
         from tensorflow.python.compiler.tensorrt import trt_convert as trt
         saved_model_path=os.path.join(saved_model_dir,'saved_model')
         tfrecords_path=os.path.join(saved_model_dir,'padim.tfrecords')
