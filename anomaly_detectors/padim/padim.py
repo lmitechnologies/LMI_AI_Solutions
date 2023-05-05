@@ -133,13 +133,15 @@ class PaDiM(object):
         if GPU_memory is not None:
             logging.info(f'Setting GPU memory limit to {GPU_memory} MB')
             self.set_gpu_memory(GPU_memory)
+        self.tfa_gaussian_filter2d = None
+        self.scipy_gaussian_filter = None
         try:
             import tensorflow_addons as tfa
             self.tfa_gaussian_filter2d = tfa.image.gaussian_filter2d
         except:
             logging.warning(f'Failed to import tensorflow_addons, will use scipy for gaussian filter but probably with performance penalty')
             from scipy.ndimage import gaussian_filter
-            self.tfa_gaussian_filter2d = None
+            self.scipy_gaussian_filter = gaussian_filter
         
 
     def set_gpu_memory(self,mem_limit):
@@ -570,13 +572,13 @@ class PaDiM(object):
             if self.tfa_gaussian_filter2d:
                 dist_tensor_x=self.tfa_gaussian_filter2d(dist_tensor_x,filter_shape=(3,3))
             else:
-                dist_tensor_x=gaussian_filter(dist_tensor_x, sigma=1, radius=1) # the size of the kernel along each axis will be 2*radius + 1
+                dist_tensor_x=self.scipy_gaussian_filter(dist_tensor_x, sigma=1, radius=1) # the size of the kernel along each axis will be 2*radius + 1
                 dist_tensor_x = tf.convert_to_tensor(dist_tensor_x)
             t1=time.time()
             # Aggregate tensors in batch
             dist_list.append(dist_tensor_x)
             tdel=(t1-t0)/B
-            logging.info(f'[ANOMDET] Proc Time: {tdel}, B={B} gaussian filter time: {(t1-tg0)/B}')
+            logging.debug(f'[ANOMDET] Proc Time: {tdel}, B={B} gaussian filter time: {(t1-tg0)/B}')
             proctime.append(tdel)
         
         image_tensor=tf.concat(image_list,axis=0)
