@@ -133,6 +133,8 @@ class PaDiM(object):
         if GPU_memory is not None:
             logging.info(f'Setting GPU memory limit to {GPU_memory} MB')
             self.set_gpu_memory(GPU_memory)
+        self.tfa_gaussian_filter2d = None
+        self.scipy_gaussian_filter = None
         try:
             import tensorflow_addons as tfa
             self.tfa_gaussian_filter2d = tfa.image.gaussian_filter2d
