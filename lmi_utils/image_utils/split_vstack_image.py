@@ -24,7 +24,22 @@ def split_vstack_image(im, num_split:int):
     im_out = np.vstack(im_segs)
     return im_out
 
-
+def split_hstack_image(im, num_split:int):
+    """split the images vertically into segments, hstack these segments
+    Args:
+        im (np.ndarray): the input image
+        num_split (int): the num of segments after the split
+    """
+    h,w = im.shape[:2]
+    if h%num_split:
+        warnings.warn(f'the image width {h} is not divisible by {num_split}')
+    h_seg = h//num_split
+    im_segs = []
+    for j in range(num_split):
+        s,e = j*h_seg,(j+1)*h_seg
+        im_segs.append(im[s:e,:,:])
+    im_out = np.hstack(im_segs)
+    return im_out
 
 def split_vstack_images(input_path:str, output_path:str, num_split:int):
     """
