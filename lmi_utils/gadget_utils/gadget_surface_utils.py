@@ -203,8 +203,8 @@ if __name__=="__main__":
     ap.add_argument('--src',required=True)
     ap.add_argument('--dest',required=True)
     ap.add_argument('--intensity', action='store_true',help='also save intensity image')
-    ap.add_argument('--zresolution', help='ZResolution for PCD to PKL')
-    ap.add_argument('--zoffset', help='ZOffset for PCD to PKL')
+    ap.add_argument('--zresolution', default=1, help='ZResolution for PCD to PKL')
+    ap.add_argument('--zoffset', default=0, help='ZOffset for PCD to PKL')
 
     
     args=vars(ap.parse_args())
