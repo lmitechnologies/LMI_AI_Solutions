@@ -35,7 +35,7 @@ def split_hstack_image(im, num_split:int):
         warnings.warn(f'the image width {h} is not divisible by {num_split}')
     h_seg = h//num_split
     im_segs = []
-    for j in range(num_split):
+    for j in range(num_split-1,-1,-1):
         s,e = j*h_seg,(j+1)*h_seg
         im_segs.append(im[s:e,:,:])
     im_out = np.hstack(im_segs)
