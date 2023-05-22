@@ -213,8 +213,8 @@ if __name__=="__main__":
     src=args['src']
     dest=args['dest']
     intensity = args['intensity']
-    ZResolution = args['zresolution']
-    ZOffset = args['zoffset']
+    ZResolution = float(args['zresolution'])
+    ZOffset = float(args['zoffset'])
 
     translate=GadgetSurfaceUtils()
 
