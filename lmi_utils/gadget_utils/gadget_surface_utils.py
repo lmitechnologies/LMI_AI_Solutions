@@ -174,8 +174,8 @@ class GadgetSurfaceUtils():
             i = 0
             for y in range(0, y_len):
                 for x in range(0, x_len):
-                    print(f"({np_arr[i][2]} - {ZOffset}) / {ZResolution}")
-                    print(f"({type(np_arr[i][2])} - {type(ZOffset)}) / {type(ZResolution)}")
+                    # print(f"({np_arr[i][2]} - {ZOffset}) / {ZResolution}")
+                    # print(f"({type(np_arr[i][2])} - {type(ZOffset)}) / {type(ZResolution)}")
                     np_z[x][y] = (np_arr[i][2] - ZOffset) / ZResolution
                     i += 1
                 
