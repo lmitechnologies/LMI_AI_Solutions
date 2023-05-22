@@ -211,8 +211,6 @@ if __name__=="__main__":
     src=args['src']
     dest=args['dest']
     intensity = args['intensity']
-    ZResolution = args['zresolution']
-    ZOffset = args['zoffset']
 
     translate=GadgetSurfaceUtils()
 
@@ -233,6 +231,8 @@ if __name__=="__main__":
     elif option=='png_2_pkl':
         translate.png_2_pkl(src,dest)
     elif option=='pcd_2_pkl':
+        ZResolution = float(args['zresolution'])
+        ZOffset = float(args['zoffset'])
         translate.pcd_2_pkl(src,dest,ZResolution,ZOffset)
     else:
         raise Exception('Input option must be pkl_2_npy, pkl_2_png, npy_2_pkl, or png_2_pkl')
