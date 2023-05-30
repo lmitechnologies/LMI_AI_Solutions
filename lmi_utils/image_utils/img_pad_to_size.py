@@ -16,9 +16,7 @@ def pad_image(input_path,output_path,W,H):
         print(f'Input file: {input_file}')
         im=cv2.imread(input_file)
         im_out=pad_array(im,W,H)
-        fname=os.path.split(input_file)[1]
-        fname=os.path.splitext(fname)[0]
-        # fname=fname+'_'+str(W)+'x'+str(H)+'.png'
+        fname=os.path.basename(input_file)
         output_file=os.path.join(output_path,fname)
         print(f'Output file: {output_file}') 
         cv2.imwrite(output_file,im_out)
