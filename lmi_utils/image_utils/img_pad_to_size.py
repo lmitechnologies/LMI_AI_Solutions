@@ -61,10 +61,7 @@ if __name__=="__main__":
     W=args['W']
     H=args['H']
 
-    output_dir=os.path.split(output_path)[0]
-    if os.path.exists(output_dir):
-        pass
-    else:
-        os.makedirs(output_dir)
+    if not os.path.isdir(output_path):
+        os.makedirs(output_path)
     
     pad_image(input_path,output_path,W,H)
