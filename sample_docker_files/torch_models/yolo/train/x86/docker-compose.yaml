@@ -4,6 +4,8 @@ services:
     build:
       context: .
       dockerfile: ./dockerfile
+    ports:
+      - 6606:6606 # Expose Tensorboard port on host port 6606. Launch Tensorboard from within running container.
     volumes:
       - ./my/data/path/:/app/data/
       - ./my/pretrained-models/path/:/app/pretrained-models/
@@ -25,6 +27,7 @@ services:
               - driver: nvidia
                 count: 1
                 capabilities: [gpu]
+    ipc: host # Allocates system GPU memory to training job
     command: /app/val_script.sh
     # stdin_open: true # docker run -i
     # tty: true        # docker run -t
