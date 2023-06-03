@@ -25,7 +25,7 @@ def resize_images(path_imgs, output_imsize, path_out):
     W,H = output_imsize
     ratio_out = W/H
     for file in file_list:
-        im = cv2.imread(file)
+        im = cv2.imread(file, cv2.IMREAD_UNCHANGED)
         im_name = os.path.basename(file)
         h,w = im.shape[:2]
         logger.info(f'input file: {im_name} with size of [{w},{h}]')
