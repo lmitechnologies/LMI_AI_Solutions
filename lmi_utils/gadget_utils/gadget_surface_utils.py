@@ -76,12 +76,13 @@ class GadgetSurfaceUtils():
             np_x = numpy.empty(shape[0]*shape[1])
             np_y = numpy.empty(shape[0]*shape[1])
             i = 0
-            for y in range(0, shape[1]):
-                for x in range(0, shape[0]):
-                    np_x[i] = offset[0] + x * resolution[0]
-                    np_y[i] = offset[1] + y * resolution[1]
-                    np_z[i] = offset[2] + profile[x][y] * resolution[2]
-                    i += 1
+            for y in range(0, shape[0]):
+                for x in range(0, shape[1]):
+                    if profile[y][x] != -32768:
+                        np_x[i] = offset[0] + x * resolution[0]
+                        np_y[i] = offset[1] + y * resolution[1]
+                        np_z[i] = offset[2] + profile[y][x] * resolution[2]
+                        i += 1
 
             np_points = numpy.empty((shape[0]*shape[1], 3))
             np_points[:, 0] = np_x
