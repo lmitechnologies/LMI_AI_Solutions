@@ -46,7 +46,7 @@ def csv_to_dictionary(csv_file: str,object_classes: str):
 
                 
         # search cells for image file
-        image_file=[x for x in row if re.search('.png',x)] 
+        image_file=[x for x in row if (re.search('.png',x) or re.search('.jpg',x))] 
         if len(image_file) != 1:
             raise Exception('csv format error. Image file not present.')
         else:
