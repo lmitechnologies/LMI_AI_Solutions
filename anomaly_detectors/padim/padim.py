@@ -31,7 +31,7 @@ def plot_histogram(xvec):
     plt.grid(axis='y', alpha=0.75)
     plt.xlabel('Value')
     plt.ylabel('Frequency')
-    plt.title('Error Histogram')
+    plt.title('Anomaly Histogram')
     plt.text(23, 45, f'$\mu={xvec.mean()}, $\sigma={xvec.std()}')
     maxfreq = n.max()
     # Set a clean upper y-axis limit.
@@ -87,11 +87,11 @@ def plot_fig(predict_results, err_mean, err_std, save_dir, err_thresh=None):
         ax_img[1].grid(axis='y', alpha=0.75)
         ax_img[1].xaxis.axis_name='Error'
         ax_img[1].yaxis.axis_name='Frequency'
-        ax_img[1].title.set_text('Error Histogram')
+        ax_img[1].title.set_text('Anomaly Histogram')
         ax_img[1].text(bins.mean(), n.mean(), f'\u03BC={err_mean:0.1f}, \u03C3={err_std:0.1f}')
         ax_img[2].imshow(img.astype(int), cmap='gray', interpolation='none')
         ax=ax_img[2].imshow(heat_map, cmap='jet', alpha=0.5, interpolation='none',vmin=err_thresh,vmax=err_max)
-        ax_img[2].title.set_text('Predicted Heat Map')
+        ax_img[2].title.set_text('Anomaly Heat Map')
         # ax_img[2].imshow(mask.astype(int), cmap='gray')
         # ax_img[2].title.set_text('Predicted Mask')
         left = 0.92
