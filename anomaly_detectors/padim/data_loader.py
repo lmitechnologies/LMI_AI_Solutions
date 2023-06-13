@@ -109,8 +109,10 @@ class DataLoader(object):
         
 
         raw = tf.io.read_file(path_file)
-        #loads the image as a uint8 tensor
-        image = tf.io.decode_image(raw, expand_animations=False)
+        #loads the image as a uint16 tensor. No losses when uint8 is converted to uint16 tensor
+        # works for both uint16 and uint8 images
+        image = tf.io.decode_image(raw, expand_animations=False, dtype=tf.dtypes.uint16)
+
         if tf.shape(image)[-1] == 1:
             image = tf.image.grayscale_to_rgb(image)
         
