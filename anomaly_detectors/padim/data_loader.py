@@ -109,17 +109,20 @@ class DataLoader(object):
         
 
         raw = tf.io.read_file(path_file)
-        #loads the image as a uint8 tensor
-        image = tf.io.decode_image(raw, expand_animations=False)
+        #loads the image as a uint16 tensor. No losses when uint8 is converted to uint16 tensor
+        # works for both uint16 and uint8 images
+        image = tf.io.decode_image(raw, expand_animations=False, dtype=tf.dtypes.uint16)
+        image = tf.image.convert_image_dtype(image, tf.float32)
+        image = tf.math.scalar_mul(255.0,image)
+
         if tf.shape(image)[-1] == 1:
             image = tf.image.grayscale_to_rgb(image)
         
         if self.normalize:
             #convert to float values in [0,1]
-            image = tf.image.convert_image_dtype(image, tf.float32)
-        else:
-            #convert to float
-            image = tf.cast(image, dtype=tf.float32)
+            max=tf.math.reduce_max(image)
+            image=tf.math.divide(image,max)
+            image=tf.math.scalar_mul(255.0,image)
 
         #resize image
         image = tf.image.resize(image, size=self.img_shape, method='bicubic')
