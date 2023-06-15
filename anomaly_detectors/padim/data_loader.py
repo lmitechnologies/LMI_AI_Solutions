@@ -16,7 +16,7 @@ class DataLoader(object):
     """
     DESCRIPTION:
         loads images from directory and subdirectories into tf.data.Dataset iterable.
-        Note: ONLY load 8 bits PNG images.
+        Note: Loads PNG images and converts to uint16.
     """
     def __init__(self, path_base, img_shape, batch_size, normalize=False, shuffle=True, random_flip_h=False, random_flip_v=False, img_types=['png']):
         """
