@@ -6,7 +6,6 @@ import logging
 #3rd party packages
 import cv2
 
-logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 

@@ -7,7 +7,6 @@ from image_utils.img_resize import resize
 from image_utils.pad_image import fit_array_to_size
 import logging
 
-logging.basicConfig(level=logging.INFO)
 #%%
 def gen_collage(input_path,output_path,colmax,width,rowmax=None):
 

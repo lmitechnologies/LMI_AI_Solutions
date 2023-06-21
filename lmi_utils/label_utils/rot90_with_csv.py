@@ -12,7 +12,6 @@ import cv2
 from label_utils import mask, rect, csv_utils
 
 
-logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 

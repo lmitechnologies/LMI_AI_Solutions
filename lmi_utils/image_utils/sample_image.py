@@ -7,7 +7,6 @@ import logging
 import shutil
 import random
 
-logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 

@@ -10,8 +10,6 @@ import cv2
 #LMI packages
 from label_utils import mask, rect, csv_utils
 
-
-logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
