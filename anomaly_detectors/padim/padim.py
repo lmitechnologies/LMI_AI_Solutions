@@ -14,6 +14,7 @@ from matplotlib import pyplot as plt
 # 3. Own modules
 from padim.data_loader import DataLoader
 
+
 def plot_histogram(xvec):
     '''
     DESCRIPTION: 

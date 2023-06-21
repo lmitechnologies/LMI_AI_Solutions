@@ -8,6 +8,7 @@ import numpy as np
 from label_utils.COCO_dataset import COCO_Dataset, rotate
 from label_utils.plot_utils import plot_one_polygon
 
+
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
