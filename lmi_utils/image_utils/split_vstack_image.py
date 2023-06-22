@@ -20,7 +20,7 @@ def split_vstack_image(im, num_split:int):
     im_segs = []
     for j in range(num_split):
         s,e = j*w_seg,(j+1)*w_seg
-        im_segs.append(im[:,s:e,:])
+        im_segs.append(im[:,s:e])
     im_out = np.vstack(im_segs)
     return im_out
 
@@ -37,7 +37,7 @@ def split_hstack_image(im, num_split:int):
     im_segs = []
     for j in range(num_split):
         s,e = j*h_seg,(j+1)*h_seg
-        im_segs.append(im[s:e,:,:])
+        im_segs.append(im[s:e,:])
     im_out = np.hstack(im_segs)
     return im_out
 
