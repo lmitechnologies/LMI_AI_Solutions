@@ -8,7 +8,7 @@ import logging
 
 BLACK=(0,0,0)
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.NOTSET)
 logger = logging.getLogger()
 
 
