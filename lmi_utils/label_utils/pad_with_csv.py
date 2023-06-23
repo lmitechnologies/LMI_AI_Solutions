@@ -8,8 +8,8 @@ import glob
 #LMI packages
 from label_utils import rect, mask
 from label_utils.csv_utils import load_csv, write_to_csv
+from gadget_utils.pipeline_utils import fit_array_to_size
 
-BLACK=(0,0,0)
 
 def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
     """
@@ -43,7 +43,7 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
             continue
 
         #pad image
-        im_out, pad_l, pad_t = fit_array_to_size(im,W,H)
+        im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,W,H)
 
         #create output fname and save it
         out_name = os.path.splitext(im_name)[0] + f'_padded_{W}x{H}' + '.png'
@@ -132,47 +132,6 @@ def fit_shapes_to_size(shapes, pad_l, pad_t):
             shape.X = [v+pad_l for v in shape.X]
             shape.Y = [v+pad_t for v in shape.Y]
     return shapes
-
-
-def fit_array_to_size(im,W,H):
-    """
-    description:
-        pad/chop the image to the size [W,H] with BLACK pixels
-        NOTE: the size [W,H] must be greater than the image size
-    arguments:
-        im(numpy array): the numpy array of a image
-        W(int): the target width
-        H(int): the target height
-    return:
-        im(numpy array): the padded image 
-    """
-    h_im,w_im=im.shape[:2]
-
-    # pad or chop width
-    if W >= w_im:
-        pad_L=(W-w_im)//2
-        pad_R=W-w_im-pad_L
-        im=cv2.copyMakeBorder(im,0,0,pad_L,pad_R,cv2.BORDER_CONSTANT,value=BLACK)
-    else:
-        pad_L = (w_im-W)//2
-        pad_R = w_im-W-pad_L
-        im = im[:,pad_L:-pad_R,:]
-        pad_L *= -1
-        pad_R *= -1
-
-    # pad or chop height
-    if H >= h_im:
-        pad_T=(H-h_im)//2
-        pad_B=H-h_im-pad_T
-        im=cv2.copyMakeBorder(im,pad_T,pad_B,0,0,cv2.BORDER_CONSTANT,value=BLACK)
-    else:
-        pad_T = (h_im-H)//2
-        pad_B = h_im-H-pad_T
-        im = im[pad_T:-pad_B,:,:]
-        pad_T *= -1
-        pad_B *= -1
-
-    return im, pad_L, pad_T
     
 
 

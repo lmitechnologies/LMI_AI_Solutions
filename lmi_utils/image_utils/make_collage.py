@@ -4,7 +4,7 @@ import cv2
 import os
 import numpy as np
 from image_utils.img_resize import resize
-from image_utils.pad_image import fit_array_to_size
+from gadget_utils.pipeline_utils import fit_array_to_size
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -52,7 +52,7 @@ def gen_collage(input_path,output_path,colmax,width,rowmax=None):
         collage=None
         #build rows
         for img in img_batch:
-            # img,_,_=fit_array_to_size(img,max_w,max_h)
+            # img,_,_,_,_=fit_array_to_size(img,max_w,max_h)
             h,w=img.shape[:2]
             pad_h = 0 if h==max_h else max_h-h
             pad_w = 0 if w==max_w else max_w-w

@@ -6,49 +6,50 @@ import json
 import torch
 import logging
 
+BLACK=(0,0,0)
+
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger()
 
 
 def fit_array_to_size(im,W,H):
-    is_rgb = 1
-    if len(im.shape)==2:
-        is_rgb = 0
+    """
+    description:
+        pad/crop the image to the size [W,H] with BLACK pixels
+    arguments:
+        im(np array): the numpy array of a image
+        W(int): the target width
+        H(int): the target height
+    return:
+        im(np array): the padded/cropped image 
+        pad_l(int): number of pixels padded to left
+        pad_r(int): number of pixels padded to right
+        pad_t(int): number of pixels padded to top
+        pad_b(int): number of pixels padded to bottom
+    """
     h_im,w_im=im.shape[:2]
-    # pad or chop width
+    # pad or crop width
     if W >= w_im:
         pad_L=(W-w_im)//2
         pad_R=W-w_im-pad_L
-        if is_rgb:
-            im = np.pad(im, pad_width=((0,0),(pad_L,pad_R),(0,0)), mode='constant')
-        else:
-            im = np.pad(im, pad_width=((0,0),(pad_L,pad_R)), mode='constant')
+        im=cv2.copyMakeBorder(im,0,0,pad_L,pad_R,cv2.BORDER_CONSTANT,value=BLACK)
     else:
         pad_L = (w_im-W)//2
         pad_R = w_im-W-pad_L
-        if is_rgb:
-            im = im[:,pad_L:-pad_R,:]
-        else:
-            im = im[:,pad_L:-pad_R]
-        pad_L = -pad_L
-        pad_R=-pad_R
-    # pad or chop height
+        im = im[:,pad_L:-pad_R]
+        pad_L *= -1
+        pad_R *= -1
+    # pad or crop height
     if H >= h_im:
         pad_T=(H-h_im)//2
         pad_B=H-h_im-pad_T
-        if is_rgb:
-            im = np.pad(im, pad_width=((pad_T,pad_B),(0,0),(0,0)), mode='constant')
-        else:
-            im = np.pad(im, pad_width=((pad_T,pad_B),(0,0)), mode='constant')
+        im=cv2.copyMakeBorder(im,pad_T,pad_B,0,0,cv2.BORDER_CONSTANT,value=BLACK)
     else:
         pad_T = (h_im-H)//2
         pad_B = h_im-H-pad_T
-        if is_rgb:
-            im = im[pad_T:-pad_B,:]
-        else:
-            im = im[pad_T:-pad_B]
-        pad_T = -pad_T
-        pad_B = -pad_B
+        im = im[pad_T:-pad_B,:]
+        pad_T *= -1
+        pad_B *= -1
     return im, pad_L, pad_R, pad_T, pad_B
 
         
