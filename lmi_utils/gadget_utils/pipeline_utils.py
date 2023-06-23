@@ -9,7 +9,8 @@ import logging
 BLACK=(0,0,0)
 
 logging.basicConfig(level=logging.NOTSET)
-logger = logging.getLogger()
+logger = logging.getLogger(os.path.basename(__file__))
+logger.setLevel(logging.INFO)
 
 
 def fit_array_to_size(im,W,H):
