@@ -139,7 +139,7 @@ class PaDiM(object):
             import tensorflow_addons as tfa
             self.tfa_gaussian_filter2d = tfa.image.gaussian_filter2d
         except:
-            logging.warning(f'Failed to import tensorflow_addons, will use scipy for gaussian filter but probably with performance penalty')
+            logging.warning(f'Failed to import tensorflow_addons, will use scipy for gaussian filter. You should expect a performance penalty.')
             from scipy.ndimage import gaussian_filter
             self.scipy_gaussian_filter = gaussian_filter
         
@@ -553,7 +553,7 @@ class PaDiM(object):
                 fname_decode=fname.numpy().decode('ascii')
             fname_list.append(fname_decode)
             # fname_str=' '.join(fname_decode)
-            logging.info(f'Processing images {fname_decode}')
+            logging.info(f'PaDiM processing image: {fname_decode}')
             t0=time.time()
             if len(x.shape)<4:
                 x=tf.expand_dims(x,0)
@@ -591,7 +591,7 @@ class PaDiM(object):
             logging.info(f'Max Proc Time: {proctime.max()}')
             logging.info(f'Avg Proc Time: {proctime.mean()}')
         else:
-            logging.info(f'Proc Time: {proctime}')
+            logging.info(f'PaDiM Proc Time: {proctime[0]}')
 
         return image_tensor,dist_tensor,fname_tensor
     
