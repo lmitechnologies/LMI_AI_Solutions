@@ -1,0 +1,25 @@
+version: "3.9"
+services:
+  patchcore_train:
+    build:
+      context: .
+      dockerfile: ./dockerfile.$PLATFORM
+    volumes:
+      - $DATA_PATH:/app/data
+      - ./main.sh:/app/main.sh
+      - ./anomaly_model.py:/app/anomaly_model.py
+      - ./configs:/app/configs
+      - ./untracked-data:/app/out
+    env_file:
+      - .env
+    shm_size: '2gb'
+    runtime: nvidia
+    deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+    command: bash main.sh
+
