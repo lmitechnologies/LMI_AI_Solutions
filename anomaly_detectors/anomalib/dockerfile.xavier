@@ -1,0 +1,26 @@
+FROM nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install git -y
+RUN pip install --upgrade pip
+
+RUN pip3 install --ignore-installed PyYAML>=5.3.1
+
+RUN pip3 install opencv-python==4.6.0.66 --user 
+
+# remove dependency on openvino package which is unavailable for aarch.
+RUN git clone https://github.com/openvinotoolkit/anomalib.git \
+    && sed -i 's/raise ImportError/print/g' anomalib/src/anomalib/deploy/inferencers/openvino_inferencer.py \
+    && cd anomalib \
+    && pip install -e .
+
+# trtexec
+ENV PATH=$PATH:/usr/src/tensorrt/bin/
+
+RUN pip3 install nvidia-pyindex
+RUN pip3 install onnx-graphsurgeon
+RUN pip3 install pycuda
+
+# downgrade from 1.24.x to 1.22 to fix "np.bool` was a deprecated alias for the builtin `bool`"
+RUN pip3 install numpy==1.22.2
