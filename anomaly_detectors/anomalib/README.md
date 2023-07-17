@@ -48,6 +48,10 @@ model
 |---- layers
 |---- coreset_sampling_ratio
 |---- num_neighbors
+
+# padim specific
+model
+|---- n_features
 ```
 3. Launch the docker-compose.yaml to run
 4. Find the trained model in untracked-data/results

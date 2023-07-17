@@ -9,6 +9,7 @@ import cv2
 import glob
 import shutil
 import time
+from datetime import datetime
 
 
 logger = logging.getLogger('AnomalyModel')
@@ -60,7 +61,6 @@ class AnomalyModel:
         logger.info(f"warmup ended - {time.time() - t0}")
 
     def predict(self, image, err_thresh, err_size=0, mask=None):
-        image = image.astype(np.uint8)
         input_batch = self.preprocess(image)
         self.binding_addrs['input'] = int(input_batch.data_ptr())
         self.context.execute_v2(list(self.binding_addrs.values()))
@@ -78,7 +78,8 @@ class AnomalyModel:
         anomaly_map = np.squeeze(anomaly_map.transpose((0,2,3,1)))
         if mask is not None:
             mask = cv2.resize(mask, self.bindings['input'].shape[-2:])
-            anomaly_map = cv2.bitwise_and(anomaly_map, anomaly_map, mask=mask)
+            anomaly_map_fp32 = anomaly_map.astype(np.float32)
+            anomaly_map = cv2.bitwise_and(anomaly_map_fp32, anomaly_map_fp32, mask=mask)
         ind = anomaly_map<err_thresh
         err_count = np.count_nonzero(ind==False)
         details = {'emax':round(anomaly_map.max(), 1), 'ecnt':err_count}
@@ -88,7 +89,7 @@ class AnomalyModel:
         else:
             decision=FAIL
             anomaly_map[ind] = 0
-            annot = AnomalyModel.annotate(orig_image, cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
+            annot = AnomalyModel.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
         cv2.putText(annot,
                     text=f'ad:{decision},'+ str(details).strip("{}").replace(" ","").replace("\'",""),
                     org=(4,h-20), fontFace=0, fontScale=1, color=[225, 255, 255],
@@ -109,6 +110,7 @@ class AnomalyModel:
                        ' --explicitBatch --inputIOFormats=fp16:chw --outputIOFormats=fp16:chw'
                        f' --workspace={workspace}') + (' --fp16' if fp16 else ' ')
         os.system(convert_cmd)
+        os.system(f"cp {os.path.dirname(onnx_path)}/metadata.json {os.path.dirname(out_engine_path)}")
 
     def from_numpy(self, x):
         return torch.from_numpy(x).to(self.device) if isinstance(x, np.ndarray) else x
@@ -128,9 +130,7 @@ class AnomalyModel:
     
     @staticmethod
     def normalize_anomaly_map(data, mi=None, ma=None):
-        """
-        normalize to [0,1)
-        """
+        """  normalize to [0,1) """
         data_min=mi or data.min()
         data_max=ma or data.max()
         return (data - data_min) / (data_max - data_min + 1e-16)
@@ -140,11 +140,12 @@ class AnomalyModel:
         residual_gray = (AnomalyModel.normalize_anomaly_map(heat_map_rsz)*255).astype(np.uint8)
         residual_bgr = cv2.applyColorMap(np.expand_dims(residual_gray,-1), cv2.COLORMAP_TURBO)
         residual_rgb = cv2.cvtColor(residual_bgr, cv2.COLOR_BGR2RGB)
-        annot_rgb = cv2.addWeighted(img_original, 0.5, residual_rgb, 0.5, 0)
-        return annot_rgb
+        annot = cv2.addWeighted(img_original, 0.5, residual_rgb, 0.5, 0)
+        ind = heat_map_rsz==0
+        annot[ind] = img_original[ind]
+        return annot
 
-
-def unittest(model, engine_name, images_path='/app/data/top/test/defects'):
+def unittest(model, engine_name, images_path='/app/data/test/defects'):
     import time
 
     logging.basicConfig(level=logging.INFO)
@@ -166,7 +167,7 @@ def unittest(model, engine_name, images_path='/app/data/top/test/defects'):
         for image_path in images:
             img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
             t0 = time.time()
-            decision, annotation, outputs = pc.predict(img, 56.07) # 16.5859 56.07148
+            decision, annotation, outputs = pc.predict(img, 10.591105461120605) # 16.5859 56.07148
             proctime.append(time.time() - t0)
             logger.info(f"decision {decision},\toutputs {outputs}")
             annotation = cv2.cvtColor(annotation, cv2.COLOR_RGB2BGR)
@@ -182,11 +183,13 @@ def unittest(model, engine_name, images_path='/app/data/top/test/defects'):
 
 if __name__ == '__main__':
     args = sys.argv[1:]
-    action = args[0]
-    model = args[1] # padim or patchcore
-    if action == 'convert':
+    action, model = args[:2]
+    if action in ('convert', 'all'):
         onnx_model=f'/app/out/results/{model}/model/run/weights/onnx/model.onnx'
         engine_name = os.path.basename(onnx_model).replace(".onnx", "")
-        AnomalyModel.convert_trt(onnx_model, f'/app/out/engines/{model}/{engine_name}.engine', fp16=True)
-    else:
-        unittest(model=model, engine_name='model', images_path='/app/data/top/test/defects')
+        engine_out_path = f'/app/out/engines/{model}/{datetime.now().strftime("%Y-%m-%d-%H-%M")}/{engine_name}.engine'
+        AnomalyModel.convert_trt(onnx_model, engine_out_path, fp16=True)
+    if action in ('unittest', 'all'):
+        test_images = os.getenv('TEST_IMAGES')
+        if test_images:
+            unittest(model=model, engine_name='model', images_path=f'/app/data/{test_images}')
