@@ -9,9 +9,7 @@ RUN pip3 install --ignore-installed PyYAML>=5.3.1
 
 RUN pip3 install opencv-python==4.6.0.66 --user 
 
-# remove dependency on openvino package which is unavailable for aarch.
 RUN git clone https://github.com/openvinotoolkit/anomalib.git \
-    && sed -i 's/raise ImportError/print/g' anomalib/src/anomalib/deploy/inferencers/openvino_inferencer.py \
     && cd anomalib \
     && pip install -e .
 

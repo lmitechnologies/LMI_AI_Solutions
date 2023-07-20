@@ -22,4 +22,5 @@ services:
                 count: 1
                 capabilities: [gpu]
     command: bash main.sh
+    # command: sleep 1000
 

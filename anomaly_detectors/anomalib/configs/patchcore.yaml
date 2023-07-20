@@ -1,12 +1,12 @@
 dataset:
   name: model
   format: folder
-  path: /app/data/top
-  normal_dir: train/good # name of the folder containing normal images.
-  normal_test_dir: test/good # name of the folder containing normal test images.
+  path: /app/data
+  normal_dir: good # name of the folder containing normal images.
+  normal_test_dir: null # name of the folder containing normal test images.
   task: segmentation # classification or segmentation
-  abnormal_dir: test/defects # name of the folder containing abnormal images.
-  mask: ground_truth/defects #optional
+  abnormal_dir: null # name of the folder containing abnormal images.
+  mask: null #optional
   extensions: null
   split_ratio: 0.2 # ratio of the normal images that will be used to create a test split
   train_batch_size: 16
