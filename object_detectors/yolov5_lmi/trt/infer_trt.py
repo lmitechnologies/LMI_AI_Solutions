@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from yolov5_lmi.trt.yolov5_trt import YoLov5TRT
-from lmi_utils.gadget_utils.pipeline_utils import get_img_path_batches
+from gadget_utils.pipeline_utils import get_img_path_batches
 
 BATCH_SIZE = 1
 
