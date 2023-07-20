@@ -3,7 +3,7 @@ services:
   generate_trt_arm:
     build:
       context: .
-      dockerfile: ./arm.dockerfile
+      dockerfile: ./dockerfile
     volumes:
       - ./data/images:/app/images # validation data (optional)
       - ./trained-inference-models/:/app/trained-inference-models/

@@ -3,15 +3,15 @@ services:
   generate_trt_x86:
     build:
       context: .
-      dockerfile: ./x86.dockerfile
+      dockerfile: ./dockerfile
     volumes:
-      - ./data/images:/app/images
-      - ./trained-inference-models/:/app/trained-inference-models/
-      - ./validation/:/app/validation/
+      - ../data/test_640x992:/app/images # validation data (optional)
+      - ../trained-inference-models/:/app/trained-inference-models/
+      - ../validation/:/app/validation/  # validation output
     environment:
-      - MODEL_PATH=/app/trained-inference-models/2022-12-16
+      - MODEL_PATH=/app/trained-inference-models/2023-07-11
       - IM_W=640
-      - IM_H=256
+      - IM_H=992
     deploy:
         resources:
           reservations:
