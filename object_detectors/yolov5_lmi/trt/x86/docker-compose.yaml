@@ -1,0 +1,22 @@
+version: "3.9"
+services:
+  generate_trt_x86:
+    build:
+      context: .
+      dockerfile: ./x86.dockerfile
+    volumes:
+      - ./data/images:/app/images
+      - ./trained-inference-models/:/app/trained-inference-models/
+      - ./validation/:/app/validation/
+    environment:
+      - MODEL_PATH=/app/trained-inference-models/2022-12-16
+      - IM_W=640
+      - IM_H=256
+    deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+    command: bash /repos/LMI_AI_Solutions/object_detectors/yolov5_lmi/trt/x86/build_engine.sh
