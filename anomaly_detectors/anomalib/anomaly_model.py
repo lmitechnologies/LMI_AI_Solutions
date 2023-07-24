@@ -185,7 +185,8 @@ if __name__ == '__main__':
     args = sys.argv[1:]
     action, model = args[:2]
     if action in ('convert', 'all'):
-        onnx_model=f'/app/out/results/{model}/model/run/weights/onnx/model.onnx'
+        onnx_model_dir = sorted([os.path.basename(x) for x in os.listdir('/app/out/results/padim/model/trained-models')])[-1]
+        onnx_model=f'{onnx_model_dir}/onnx/model.onnx'
         engine_name = os.path.basename(onnx_model).replace(".onnx", "")
         engine_out_path = f'/app/out/engines/{model}/{datetime.now().strftime("%Y-%m-%d-%H-%M")}/{engine_name}.engine'
         AnomalyModel.convert_trt(onnx_model, engine_out_path, fp16=True)
