@@ -82,7 +82,7 @@ class AnomalyModel:
             anomaly_map = cv2.bitwise_and(anomaly_map_fp32, anomaly_map_fp32, mask=mask)
         ind = anomaly_map<err_thresh
         err_count = np.count_nonzero(ind==False)
-        details = {'emax':round(anomaly_map.max(), 1), 'ecnt':err_count}
+        details = {'emax':round(anomaly_map.max().tolist(), 1), 'ecnt':err_count}
         if err_count<=err_size:
             decision=PASS
             annot=orig_image
