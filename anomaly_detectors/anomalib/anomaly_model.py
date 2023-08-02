@@ -93,7 +93,7 @@ class AnomalyModel:
         print(f'contours length: {len(contours)}')
 
         for contour in contours:
-            mask = np.zeros_like(heatmap_for_contour)
+            mask = np.zeros_like(heatmap_for_contour).astype(np.uint8)
             cv2.drawContours(mask, [contour], 0, 255, -1)
 
             masked_heatmap = cv2.bitwise_and(heatmap_for_contour, mask)
