@@ -73,6 +73,43 @@ class AnomalyModel:
         details.update({k:v for k,v in outputs.items() if k!='output'})
         return decision, annot, details
         
+    def processContours(self, heatMap, err_dist, image_threshold, ad_threshold):
+        # make copy of heat map image for drawContours()
+        uncontoured_img = np.copy(heatMap.astype(np.uint8))
+        heatmap_for_contour = np.copy(err_dist)
+
+        # preprocess original heatmap image
+        heatmap_gray = cv2.cvtColor(heatMap.astype(np.float32), cv2.COLOR_BGR2GRAY) # turn image into grayscale
+        heatmap_gray_invert = cv2.bitwise_not(heatmap_gray.astype(np.uint8)) # flip the colors
+        _, heat_map_binary = cv2.threshold(heatmap_gray_invert, 70, 255, 0) # turns the flipped grayscale into binary for easier fill
+
+        heat_map_binary_fill = np.copy(heat_map_binary)
+        # fill empty white spaces
+        floodMask = np.zeros((heat_map_binary.shape[0] + 2, heat_map_binary.shape[1] + 2), dtype=np.uint8)
+        cv2.floodFill(heat_map_binary_fill, floodMask, (0,0), 0, (50, 50, 50))
+
+        contours, _ = cv2.findContours(heat_map_binary_fill.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) # finds the contours
+
+        self.logger.info(f'contours length: {len(contours)}')
+
+        for contour in contours:
+            mask = np.zeros_like(heatmap_for_contour)
+            cv2.drawContours(mask, [contour], 0, 255, -1)
+
+            masked_heatmap = cv2.bitwise_and(heatmap_for_contour, mask)
+
+            anomaly_scores = masked_heatmap[mask > 0]
+
+            contour_area = cv2.contourArea(contour)
+
+            if contour_area > 20000:
+                continue
+            # self.logger.info(f'contour area: {contour_area}')
+            if contour_area > 500:
+                return 'fail by contour', contours
+
+        return 'pass by contour', contours
+    
     def postprocess(self, orig_image, anomaly_map, err_thresh, err_size, mask):
         h,w = orig_image.shape[:2]
         anomaly_map = np.squeeze(anomaly_map.transpose((0,2,3,1)))
@@ -83,13 +120,23 @@ class AnomalyModel:
         ind = anomaly_map<err_thresh
         err_count = np.count_nonzero(ind==False)
         details = {'emax':round(anomaly_map.max().tolist(), 1), 'ecnt':err_count}
-        if err_count<=err_size:
-            decision=PASS
-            annot=orig_image
-        else:
-            decision=FAIL
-            anomaly_map[ind] = 0
-            annot = AnomalyModel.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
+
+        heat_map_rsz = cv2.resize(anomaly_map.astype(np.uint8), (w, h))
+        residual_gray = (AnomalyModel.normalize_anomaly_map(heat_map_rsz)*255).astype(np.uint8)
+        residual_bgr = cv2.applyColorMap(np.expand_dims(residual_gray,-1), cv2.COLORMAP_TURBO)
+
+        decision, contours = self.processContours(residual_bgr, anomaly_map, 70, 20)
+        
+        # if err_count<=err_size:
+        #     decision=PASS
+        #     annot=orig_image
+        # else:
+        #     decision=FAIL
+        #     anomaly_map[ind] = 0
+
+        annot = AnomalyModel.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
+
+        cv2.drawContours(annot, contours, -1, (255, 255, 255), 2)
         cv2.putText(annot,
                     text=f'ad:{decision},'+ str(details).strip("{}").replace(" ","").replace("\'",""),
                     org=(4,h-20), fontFace=0, fontScale=1, color=[225, 255, 255],
