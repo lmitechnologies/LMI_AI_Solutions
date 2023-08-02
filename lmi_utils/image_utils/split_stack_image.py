@@ -3,8 +3,11 @@ import os
 import argparse
 import glob
 import numpy as np
-import warnings
+import logging
 
+logging.basicConfig()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def split_vstack_image(im, num_split:int):
@@ -15,7 +18,7 @@ def split_vstack_image(im, num_split:int):
     """
     h,w = im.shape[:2]
     if w%num_split:
-        warnings.warn(f'the image width of {w} is not divisible by {num_split}')
+        logging.warning(f'the image width of {w} is not divisible by {num_split}')
     w_seg = w//num_split
     im_segs = []
     for j in range(num_split):
@@ -23,6 +26,7 @@ def split_vstack_image(im, num_split:int):
         im_segs.append(im[:,s:e])
     im_out = np.vstack(im_segs)
     return im_out
+
 
 def split_hstack_image(im, num_split:int):
     """split the images vertically into segments, hstack these segments
@@ -32,7 +36,7 @@ def split_hstack_image(im, num_split:int):
     """
     h,w = im.shape[:2]
     if h%num_split:
-        warnings.warn(f'the image width {h} is not divisible by {num_split}')
+        logging.warning(f'the image height {h} is not divisible by {num_split}')
     h_seg = h//num_split
     im_segs = []
     for j in range(num_split):
@@ -41,7 +45,8 @@ def split_hstack_image(im, num_split:int):
     im_out = np.hstack(im_segs)
     return im_out
 
-def split_vstack_images(input_path:str, output_path:str, num_split:int):
+
+def split_stack_images(input_path:str, output_path:str, num_split:int, stack_direct:str):
     """
     split the images horizontally into segments, vstack these segments
     arguments:
@@ -57,19 +62,21 @@ def split_vstack_images(input_path:str, output_path:str, num_split:int):
         im = cv2.imread(path)
         h,w = im.shape[:2]
         im_name = os.path.basename(path)
-        print(f'Input file: {im_name} with size of [{w},{h}]')
+        logger.info(f'Input file: {im_name} with size of [{w},{h}]')
 
         # split image
-        im_out = split_vstack_image(im, num_split)
+        if stack_direct == 'v':
+            im_out = split_vstack_image(im, num_split)
+        else:
+            im_out = split_hstack_image(im, num_split)
         nh,nw = im_out.shape[:2]
-        print(f'The output image size: [{nw},{nh}]')
+        logger.info(f'The output image size: [{nw},{nh}]')
 
         #create output fname
         out_name = os.path.splitext(im_name)[0] + f'_split-{num_split}-vstack' + '.png'
         output_file=os.path.join(output_path, out_name)
-        print(f'Output file: {output_file}') 
+        logger.info(f'Output file: {output_file}\n') 
         cv2.imwrite(output_file,im_out)
-        print()
     
 
 
@@ -78,10 +85,11 @@ if __name__=="__main__":
     ap.add_argument('--path_imgs', required=True, help='the path to the images')
     ap.add_argument('--path_out', required=True, help='the output path')
     ap.add_argument('--num_split', required=True, type=int, help='the num of evenly splits horizontally')
+    ap.add_argument('--stack',choices=['h','v'], required=True, nargs=1, help='the direction of stack: "h" or "v"')
     args=vars(ap.parse_args())
 
     output_path=args['path_out']
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     
-    split_vstack_images(args['path_imgs'], output_path, args['num_split'])
+    split_stack_images(args['path_imgs'], output_path, args['num_split'], args['stack'])
