@@ -123,7 +123,7 @@ class AnomalyModel:
 
         heat_map_rsz = cv2.resize(anomaly_map.astype(np.uint8), (w, h))
         residual_gray = (AnomalyModel.normalize_anomaly_map(heat_map_rsz)*255).astype(np.uint8)
-        residual_bgr = cv2.applyColorMap(np.expand_dims(residual_gray,-1), cv2.COLORMAP_TURBO)
+        residual_bgr = cv2.applyColorMap(np.expand_dims(residual_gray,-1), cv2.COLORMAP_TURBO).astype(np.float32)
 
         decision, contours = self.processContours(residual_bgr, anomaly_map, 70, 20)
         
