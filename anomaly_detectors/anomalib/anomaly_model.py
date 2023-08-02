@@ -90,7 +90,7 @@ class AnomalyModel:
 
         contours, _ = cv2.findContours(heat_map_binary_fill.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) # finds the contours
 
-        self.logger.info(f'contours length: {len(contours)}')
+        print(f'contours length: {len(contours)}')
 
         for contour in contours:
             mask = np.zeros_like(heatmap_for_contour)
@@ -104,7 +104,7 @@ class AnomalyModel:
 
             if contour_area > 20000:
                 continue
-            # self.logger.info(f'contour area: {contour_area}')
+            # print(f'contour area: {contour_area}') 
             if contour_area > 500:
                 return 'fail by contour', contours
 
