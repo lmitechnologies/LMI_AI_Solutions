@@ -18,7 +18,7 @@ def split_vstack_image(im, num_split:int):
     """
     h,w = im.shape[:2]
     if w%num_split:
-        logging.warning(f'the image width of {w} is not divisible by {num_split}')
+        logger.warning(f'the image width of {w} is not divisible by {num_split}')
     w_seg = w//num_split
     im_segs = []
     for j in range(num_split):
@@ -36,7 +36,7 @@ def split_hstack_image(im, num_split:int):
     """
     h,w = im.shape[:2]
     if h%num_split:
-        logging.warning(f'the image height {h} is not divisible by {num_split}')
+        logger.warning(f'the image height {h} is not divisible by {num_split}')
     h_seg = h//num_split
     im_segs = []
     for j in range(num_split):
