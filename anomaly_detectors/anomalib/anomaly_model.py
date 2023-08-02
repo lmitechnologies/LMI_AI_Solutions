@@ -132,7 +132,7 @@ class AnomalyModel:
         #     annot=orig_image
         # else:
         #     decision=FAIL
-        #     anomaly_map[ind] = 0
+        anomaly_map[ind] = 0
 
         annot = AnomalyModel.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
 
