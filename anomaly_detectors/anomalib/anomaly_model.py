@@ -73,7 +73,7 @@ class AnomalyModel:
         details.update({k:v for k,v in outputs.items() if k!='output'})
         return decision, annot, details
         
-    def processContours(self, heatMap, err_dist, image_threshold, ad_threshold):
+    def processContours(self, heatMap, err_dist, color_threshold, ad_threshold):
         # make copy of heat map image for drawContours()
         uncontoured_img = np.copy(heatMap.astype(np.uint8))
         heatmap_for_contour = np.copy(err_dist)
@@ -81,7 +81,7 @@ class AnomalyModel:
         # preprocess original heatmap image
         heatmap_gray = cv2.cvtColor(heatMap.astype(np.float32), cv2.COLOR_BGR2GRAY) # turn image into grayscale
         heatmap_gray_invert = cv2.bitwise_not(heatmap_gray.astype(np.uint8)) # flip the colors
-        _, heat_map_binary = cv2.threshold(heatmap_gray_invert, 70, 255, 0) # turns the flipped grayscale into binary for easier fill
+        _, heat_map_binary = cv2.threshold(heatmap_gray_invert, color_threshold, 255, 0) # turns the flipped grayscale into binary for easier fill
 
         heat_map_binary_fill = np.copy(heat_map_binary)
         # fill empty white spaces
@@ -93,13 +93,6 @@ class AnomalyModel:
         print(f'contours length: {len(contours)}')
 
         for contour in contours:
-            mask = np.zeros_like(heatmap_for_contour).astype(np.uint8)
-            cv2.drawContours(mask, [contour], 0, 255, -1)
-
-            masked_heatmap = cv2.bitwise_and(heatmap_for_contour.astype(np.uint8), mask)
-
-            anomaly_scores = masked_heatmap[mask > 0]
-
             contour_area = cv2.contourArea(contour)
 
             if contour_area > 20000:
@@ -107,6 +100,13 @@ class AnomalyModel:
             # print(f'contour area: {contour_area}') 
             if contour_area > 500:
                 return 'fail by contour', contours
+            
+            mask = np.zeros_like(heatmap_for_contour).astype(np.uint8)
+            cv2.drawContours(mask, [contour], 0, 255, -1)
+
+            masked_heatmap = cv2.bitwise_and(heatmap_for_contour.astype(np.uint8), mask)
+
+            anomaly_scores = masked_heatmap[mask > 0]
 
         return 'pass by contour', contours
     
@@ -125,7 +125,7 @@ class AnomalyModel:
         residual_gray = (AnomalyModel.normalize_anomaly_map(heat_map_rsz)*255).astype(np.uint8)
         residual_bgr = cv2.applyColorMap(np.expand_dims(residual_gray,-1), cv2.COLORMAP_TURBO).astype(np.float32)
 
-        decision, contours = self.processContours(residual_bgr, anomaly_map, 70, 20)
+        decision, contours = self.processContours(residual_bgr, anomaly_map, 80, err_thresh)
         
         # if err_count<=err_size:
         #     decision=PASS
