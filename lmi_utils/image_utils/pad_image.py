@@ -8,7 +8,7 @@ from gadget_utils.pipeline_utils import fit_array_to_size
 
 BLACK=(0,0,0)
 
-def fit_image_to_size(input_path, output_path, output_imsize):
+def fit_image_to_size(input_path, output_path, output_imsize, keep_same_filename=False):
     """
     pad/crop the image to the size [W,H] and modify its annotations accordingly
     arguments:
@@ -30,7 +30,7 @@ def fit_image_to_size(input_path, output_path, output_imsize):
         im_out,_,_,_,_ = fit_array_to_size(im,W,H)
 
         #create output fname
-        out_name = os.path.splitext(im_name)[0] + f'_padded_{W}x{H}' + '.png'
+        out_name = im_name if keep_same_filename else os.path.splitext(im_name)[0] + f'_padded_{W}x{H}' + '.png'
         output_file=os.path.join(output_path, out_name)
         print(f'[INFO] Output file: {output_file}') 
         cv2.imwrite(output_file,im_out)
@@ -43,11 +43,13 @@ if __name__=="__main__":
     ap.add_argument('--path_imgs', required=True, help='the path to the images')
     ap.add_argument('--path_out', required=True, help='the output path')
     ap.add_argument('--out_imsz', required=True, help='the output image size [w,h], w and h are separated by a comma')
+    ap.add_argument('--keep_same_filename', action='store_true', help='whether use the original filename for the generated')
     args=vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
     output_path=args['path_out']
     output_imsize = list(map(int,args['out_imsz'].split(',')))
+    keep_same_filename=args['keep_same_filename']
 
     print(f'output image size: {output_imsize}')
     assert len(output_imsize)==2, 'the output image size must be two ints'
@@ -55,4 +57,4 @@ if __name__=="__main__":
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     
-    fit_image_to_size(path_imgs, output_path, output_imsize)
+    fit_image_to_size(path_imgs, output_path, output_imsize, keep_same_filename)

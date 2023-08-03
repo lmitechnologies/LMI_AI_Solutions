@@ -46,7 +46,7 @@ def split_hstack_image(im, num_split:int):
     return im_out
 
 
-def split_stack_images(input_path:str, output_path:str, num_split:int, stack_direct:str):
+def split_stack_images(input_path:str, output_path:str, num_split:int, stack_direct:str, keep_same_filename=False):
     """
     split the images horizontally into segments, vstack these segments
     arguments:
@@ -73,7 +73,7 @@ def split_stack_images(input_path:str, output_path:str, num_split:int, stack_dir
         logger.info(f'The output image size: [{nw},{nh}]')
 
         #create output fname
-        out_name = os.path.splitext(im_name)[0] + f'_split-{num_split}-vstack' + '.png'
+        out_name = im_name if keep_same_filename else os.path.splitext(im_name)[0] + f'_split-{num_split}-vstack' + '.png'
         output_file=os.path.join(output_path, out_name)
         logger.info(f'Output file: {output_file}\n') 
         cv2.imwrite(output_file,im_out)
@@ -86,10 +86,11 @@ if __name__=="__main__":
     ap.add_argument('--path_out', required=True, help='the output path')
     ap.add_argument('--num_split', required=True, type=int, help='the num of evenly splits horizontally')
     ap.add_argument('--stack',choices=['h','v'], required=True, nargs=1, help='the direction of stack: "h" or "v"')
+    ap.add_argument('--keep_same_filename', action='store_true', help='whether use the original filename for the generated')
     args=vars(ap.parse_args())
 
     output_path=args['path_out']
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     
-    split_stack_images(args['path_imgs'], output_path, args['num_split'], args['stack'])
+    split_stack_images(args['path_imgs'], output_path, args['num_split'], args['stack'], args['keep_same_filename'])
