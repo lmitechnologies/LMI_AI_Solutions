@@ -10,7 +10,7 @@ logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-def resize_images(path_imgs, output_imsize, path_out):
+def resize_images(path_imgs, output_imsize, path_out, keep_same_filename=False):
     """
     resize images, while keep the aspect ratio.
     if the aspect ratio changes, it will generate an error.
@@ -34,7 +34,7 @@ def resize_images(path_imgs, output_imsize, path_out):
         if ratio_in != ratio_out:
             logger.warning(f'file: {im_name}, asepect ratio changed from {ratio_in} to {ratio_out}')
         
-        out_name = os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
+        out_name = im_name if keep_same_filename else os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
         
         im2 = cv2.resize(im, dsize=tuple(output_imsize))
 
@@ -50,6 +50,7 @@ if __name__=='__main__':
     ap.add_argument('--path_imgs', required=True, help='the path to images')
     ap.add_argument('--out_imsz', required=True, help='the output image size [w,h], w and h are separated by a comma')
     ap.add_argument('--path_out', required=True, help='the path to resized images')
+    ap.add_argument('--keep_same_filename', action='store_true', help='whether use the original filename for the generated')
     args = vars(ap.parse_args())
 
     output_imsize = list(map(int,args['out_imsz'].split(',')))
@@ -58,6 +59,7 @@ if __name__=='__main__':
     
     path_imgs = args['path_imgs']
     path_out = args['path_out']
+    keep_same_filename = args['keep_same_filename']
 
     # create output path
     assert path_imgs!=path_out, 'input and output path must be different'
@@ -65,4 +67,4 @@ if __name__=='__main__':
         os.makedirs(path_out)
 
     #resize images with annotation csv file
-    resize_images(path_imgs, output_imsize, path_out)
+    resize_images(path_imgs, output_imsize, path_out, keep_same_filename)
