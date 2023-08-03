@@ -31,7 +31,8 @@ This folder contains the [Anomalib](https://github.com/openvinotoolkit/anomalib)
        pixel_F1Score         0.4874393045902252
 ```
 ## Train
-1. Update .env, with ACTION to train
+1. bash main.sh -a train -d /path/to/train/data -t /optionally/path/to/test/data -o /path/to/outdir
+2. for more detailed usage, execute bash main.sh -h
 2. Check the corresponding [config file](https://openvinotoolkit.github.io/anomalib/reference_guide/algorithms/patchcore.html), important fields:
 ```bash
 # general
@@ -53,20 +54,18 @@ model
 model
 |---- n_features
 ```
-3. Launch the docker-compose.yaml to run
-4. Find the trained model in untracked-data/results
-5. Find evaluation result in untracked-data/evaluations if test data given
+4. Find the trained model in outdir/results
+5. Find evaluation result in outdir/evaluations if test data given
 
 ## Generate TRT engine
-1. Update ACTION to convert in .env
-2. Launch the docker-compose.yaml to run
-3. Find the generated engine at untracked-data/engines
+1. bash main.sh -a convert -x /path/to/onnx  -o /path/to/outdir
+2. Find the generated engine at outdir/engines
+3. run without -x /path/to/onnx, it defaults to the latest onnx folder in the outdir/results/{modeltype}/trained-models
 
 ## Unit Test
-1. Update ACTION to unittest in .env
-2. Ensure the arguments of unit_test in anomaly_model.py reflect the truth for you
-3. Launch the docker-compose.yaml to run
-4. Find annotated prediction result at untracked-data/predictions
+1. bash main.sh -a test -e /path/to/trt/engine -t /path/to/test/data -o /path/to/outdir
+2. Find annotated prediction result at outdir/predictions
+3. run without -e /path/to/trt/engine, it defaults to the latest trt engine folder in the outdir/engines
 
 ## Code Example
 ```python
