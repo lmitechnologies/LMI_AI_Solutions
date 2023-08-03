@@ -11,7 +11,7 @@ import shutil
 import time
 from datetime import datetime
 
-
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('AnomalyModel')
 
 PASS = 'PASS'
@@ -21,13 +21,13 @@ Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
 
 class AnomalyModel:
     
-    def __init__(self, trt_engine):
+    def __init__(self, engine_path):
         if torch.cuda.is_available():
             self.device = torch.device('cuda:0')
         else:
             logger.warning('GPU device unavailable. Use CPU instead.')
             self.device = torch.device('cpu')
-        with open(trt_engine, "rb") as f, trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
+        with open(engine_path, "rb") as f, trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
             model = runtime.deserialize_cuda_engine(f.read())
         self.context = model.create_execution_context()
         self.bindings = OrderedDict()
@@ -102,6 +102,7 @@ class AnomalyModel:
         """
         convert an onnx to trt engine
         """
+        logger.info(f"converting {onnx_path}...")
         assert(out_engine_path.endswith(".engine")), f"trt engine file must end with '.engine'"
         target_dir = os.path.dirname(out_engine_path)
         if not os.path.isdir(target_dir):
@@ -145,13 +146,28 @@ class AnomalyModel:
         annot[ind] = img_original[ind]
         return annot
 
-def unittest(model, engine_name, images_path='/app/data/test/defects'):
+def test(engine_dir, images_path):
+    """test trt engine"""
+
     import time
 
-    logging.basicConfig(level=logging.INFO)
+    logger.info(f"input engine_dir is {engine_dir}")
 
-    trt_engine = f'/app/out/engines/{model}/{engine_name}.engine'
-    pc = AnomalyModel(trt_engine)
+    images = glob.glob(f"{images_path}/*.png")
+    logger.info(f"{len(images)} images from {images_path}")
+    if not images:
+        return
+
+    engine_path = os.path.join(engine_dir, "model.engine")
+    if not os.path.isfile(engine_path):
+        all = sorted([x for x in os.walk(engine_dir)][0][1])
+        if all:
+            engine_path = os.path.join(engine_dir, all[-1], "model.engine")
+    assert(os.path.isfile(engine_path)), f"onnx file does not exist - {engine_path}"
+
+    logger.info(f"testing engine_path {engine_path}...")
+
+    pc = AnomalyModel(engine_path)
 
     out_path = f"/app/out/predictions/{model}/{os.path.basename(images_path)}"
     if os.path.isdir(out_path):
@@ -160,8 +176,6 @@ def unittest(model, engine_name, images_path='/app/data/test/defects'):
 
     pc.warmup()
 
-    images = glob.glob(f"{images_path}/*.png")
-    logger.info(f"{len(images)} images from {images_path}")
     proctime = []
     for i in range(1):
         for image_path in images:
@@ -179,17 +193,22 @@ def unittest(model, engine_name, images_path='/app/data/test/defects'):
         logger.info(f'Max Proc Time: {proctime.max()}')
         logger.info(f'Avg Proc Time: {proctime.mean()}')
         logger.info(f'Median Proc Time: {np.median(proctime)}')
+    logger.info(f"Test results saved to {out_path}")
 
+def convert(onnx_dir, fp16=True):
+    onnx_path = os.path.join(onnx_dir, "model.onnx")
+    if not os.path.isfile(onnx_path):
+        all = sorted([x for x in os.walk(onnx_dir)][0][1])
+        if all:
+            onnx_path = os.path.join(onnx_dir, all[-1], "model.onnx")
+    assert(os.path.isfile(onnx_path)), f"onnx file does not exist - {onnx_path}"
+
+    engine_out_path = f'/app/out/engines/{model}/{datetime.now().strftime("%Y-%m-%d-%H-%M")}/model.engine'
+    AnomalyModel.convert_trt(onnx_path, engine_out_path, fp16=True)
 
 if __name__ == '__main__':
-    args = sys.argv[1:]
-    action, model = args[:2]
+    action, model, onnx_dir, engine_dir = sys.argv[1:5]
     if action in ('convert', 'all'):
-        onnx_model=f'/app/out/results/{model}/model/run/weights/onnx/model.onnx'
-        engine_name = os.path.basename(onnx_model).replace(".onnx", "")
-        engine_out_path = f'/app/out/engines/{model}/{datetime.now().strftime("%Y-%m-%d-%H-%M")}/{engine_name}.engine'
-        AnomalyModel.convert_trt(onnx_model, engine_out_path, fp16=True)
-    if action in ('unittest', 'all'):
-        test_images = os.getenv('TEST_IMAGES')
-        if test_images:
-            unittest(model=model, engine_name='model', images_path=f'/app/data/{test_images}')
+        convert(onnx_dir)
+    if action in ('test', 'all'):
+        test(engine_dir, images_path=f'/app/data/test')

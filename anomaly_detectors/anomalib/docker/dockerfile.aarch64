@@ -20,5 +20,5 @@ RUN pip3 install nvidia-pyindex
 RUN pip3 install onnx-graphsurgeon
 RUN pip3 install pycuda
 
-# downgrade from 1.24.x to 1.22 to fix "np.bool` was a deprecated alias for the builtin `bool`"
-RUN pip3 install numpy==1.22.2
+# downgrade from 1.24.x to 1.23.1 to fix "np.bool` was a deprecated alias for the builtin `bool`"
+RUN pip3 install numpy==1.23.1
