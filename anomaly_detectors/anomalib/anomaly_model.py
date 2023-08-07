@@ -121,9 +121,13 @@ class AnomalyModel:
         err_count = np.count_nonzero(ind==False)
         details = {'emax':round(anomaly_map.max().tolist(), 1), 'ecnt':err_count}
 
-        heat_map_rsz = cv2.resize(anomaly_map.astype(np.uint8), (w, h))
+        heat_map = anomaly_map.numpy()
+        ind_expected=heat_map<err_thresh
+        heat_map[ind_expected]=err_thresh
+        heat_map_rsz = cv2.resize(heat_map.astype(np.uint8), (w, h))
         residual_gray = (AnomalyModel.normalize_anomaly_map(heat_map_rsz)*255).astype(np.uint8)
         residual_bgr = cv2.applyColorMap(np.expand_dims(residual_gray,-1), cv2.COLORMAP_TURBO).astype(np.float32)
+        decision, contours = self.processContours(residual_bgr, anomaly_map, 70, err_thresh)
         #  make sure the residual_bgr is also affected by the ad_threshold
         
         # if err_count<=err_size:
@@ -133,7 +137,6 @@ class AnomalyModel:
         #     decision=FAIL
         anomaly_map[ind] = 0
 
-        decision, contours = self.processContours(anomaly_map, anomaly_map, 70, err_thresh)
         annot = AnomalyModel.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
 
         cv2.drawContours(annot, contours, -1, (255, 255, 255), 2)
