@@ -144,7 +144,7 @@ class AnomalyModel:
 
         annot = AnomalyModel.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
 
-        # cv2.drawContours(annot, contours, -1, (255, 255, 255), 1)
+        cv2.drawContours(annot, contours, -1, (255, 255, 255), 1)
         cv2.putText(annot,
                     text=f'ad:{decision},'+ str(details).strip("{}").replace(" ","").replace("\'",""),
                     org=(4,h-20), fontFace=0, fontScale=1, color=[225, 255, 255],
