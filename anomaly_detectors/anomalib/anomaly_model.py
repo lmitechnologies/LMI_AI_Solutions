@@ -74,7 +74,6 @@ class AnomalyModel:
         return decision, annot, details
         
     def processContours(self, heatMap, err_dist, color_threshold, size_threshold):
-        logging.basicConfig(level=logging.INFO)
         # make copy of heat map image for drawContours()
         heatmap_for_contour = np.copy(err_dist)
 
@@ -90,12 +89,12 @@ class AnomalyModel:
 
         contours, _ = cv2.findContours(heat_map_binary_fill.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) # finds the contours
 
-        logger.INFO(f'contours length: {len(contours)}')
+        logger.info(f'contours length: {len(contours)}')
 
         for contour in contours:
             contour_area = cv2.contourArea(contour)
 
-            logger.INFO(f'contour area: {contour_area}')
+            logger.info(f'contour area: {contour_area}')
             if contour_area > 20000:
                 continue
             # print(f'contour area: {contour_area}') 
