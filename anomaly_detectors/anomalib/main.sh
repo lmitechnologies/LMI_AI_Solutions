@@ -15,7 +15,7 @@ usage_and_exit() {
     echo -x the folder that contains model.onnx to be converted to trt engine, defaults to the latest in output/results/model/trained models
     echo examples:
     echo -------- train -----
-    echo bash main.sh -a train -d /path/to/train/data -t /optionally/path/to/test/data -o /path/to/outdir
+    echo bash main.sh -a train -d /path/to/train/data -o /path/to/outdir
     echo -------- convert -----
     echo bash main.sh -a convert -x /path/to/onnx -o /path/to/outdir 
     echo -------- test -----
@@ -75,7 +75,7 @@ if [[ $train_data ]]; then
   if [[ $train_data != /* ]]; then
     train_data=$(pwd)/$train_data
   fi
-  docker_run_cmd="${docker_run_cmd} -v $train_data:/app/data/good"
+  docker_run_cmd="${docker_run_cmd} -v $train_data:/app/data/train"
 fi
 if [[ $test_data ]]; then
   if [[ $test_data != /* ]]; then

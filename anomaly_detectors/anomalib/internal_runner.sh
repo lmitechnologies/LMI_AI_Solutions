@@ -16,23 +16,14 @@ if [[ ! -d $engine_dir ]]; then
 fi
 
 if [ "$action" = "train" ] || [ "$action" = "all" ]; then
-    # ensure generated model is named model.ckpt rather than model-N.ckpt
-    rm -rf /app/out/results/$MODEL/model/run/weights/
 
-    python3 anomalib/tools/train.py --config /app/ws/configs/$MODEL.yaml
+    # -O for disabling assert in the python script to workaround following error:
+    # https://github.com/openvinotoolkit/anomalib/issues/1238
+    python3 -O anomalib/tools/train.py --config /app/ws/configs/$MODEL.yaml
 
     build_name="$(date +'%Y-%m-%d-%H-%M')"
     mkdir -p $trained_models_dir && \
-    mv /app/out/results/$MODEL/model/run/weights/onnx $trained_models_dir/$build_name
-
-    test_data_dir=/app/data/test
-    if [[ -d $test_data_dir ]]; then
-        python3 anomalib/tools/inference/lightning_inference.py \
-            --config /app/ws/configs/$MODEL.yaml \
-            --weights /app/out/results/$MODEL/model/run/weights/lightning/model.ckpt \
-            --input $test_data_dir \
-            --output /app/out/evaluation/$MODEL/$build_name
-    fi
+    mv /app/out/results/$MODEL/model/train/run/weights/onnx $trained_models_dir/$build_name
 
     # tune hyp parameters
     # python anomalib/tools/hpo/sweep.py --model $MODEL --model_config /app/configs/config.yaml \
