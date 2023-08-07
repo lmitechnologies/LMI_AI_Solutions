@@ -121,7 +121,7 @@ class AnomalyModel:
         err_count = np.count_nonzero(ind==False)
         details = {'emax':round(anomaly_map.max().tolist(), 1), 'ecnt':err_count}
 
-        heat_map = anomaly_map.numpy()
+        heat_map = anomaly_map
         ind_expected=heat_map<err_thresh
         heat_map[ind_expected]=err_thresh
         heat_map_rsz = cv2.resize(heat_map.astype(np.uint8), (w, h))
