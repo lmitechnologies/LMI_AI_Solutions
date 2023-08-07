@@ -133,7 +133,7 @@ class AnomalyModel:
         #     decision=FAIL
         anomaly_map[ind] = 0
 
-        decision, contours = self.processContours(residual_bgr, anomaly_map, 70, err_thresh)
+        decision, contours = self.processContours(anomaly_map, anomaly_map, 70, err_thresh)
         annot = AnomalyModel.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
 
         cv2.drawContours(annot, contours, -1, (255, 255, 255), 2)
