@@ -91,12 +91,17 @@ class AnomalyModel:
 
         logger.info(f'contours length: {len(contours)}')
 
+        result = []
+
         for contour in contours:
             contour_area = cv2.contourArea(contour)
 
             logger.info(f'contour area: {contour_area}')
             if contour_area > 2000:
                 continue
+            
+            result.append(contour)
+
             # print(f'contour area: {contour_area}') 
             if contour_area > 500:
                 return 'fail by contour', contours
@@ -106,9 +111,9 @@ class AnomalyModel:
 
             masked_heatmap = cv2.bitwise_and(heatmap_for_contour.astype(np.uint8), mask)
 
-            anomaly_scores = masked_heatmap[mask > 0]
+            # anomaly_scores = masked_heatmap[mask > 0]
 
-        return 'pass by contour', contours
+        return 'pass by contour', result
     
     def postprocess(self, orig_image, anomaly_map, err_thresh, err_size, mask):
         h,w = orig_image.shape[:2]
