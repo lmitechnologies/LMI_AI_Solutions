@@ -73,9 +73,9 @@ class AnomalyModel:
         details.update({k:v for k,v in outputs.items() if k!='output'})
         return decision, annot, details
         
-    def processContours(self, heatMap, err_dist, color_threshold, ad_threshold):
+    def processContours(self, heatMap, err_dist, color_threshold, size_threshold):
+        logging.basicConfig(level=logging.INFO)
         # make copy of heat map image for drawContours()
-        uncontoured_img = np.copy(heatMap.astype(np.uint8))
         heatmap_for_contour = np.copy(err_dist)
 
         # preprocess original heatmap image
@@ -90,11 +90,12 @@ class AnomalyModel:
 
         contours, _ = cv2.findContours(heat_map_binary_fill.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) # finds the contours
 
-        print(f'contours length: {len(contours)}')
+        logger.INFO(f'contours length: {len(contours)}')
 
         for contour in contours:
             contour_area = cv2.contourArea(contour)
 
+            logger.INFO(f'contour area: {contour_area}')
             if contour_area > 20000:
                 continue
             # print(f'contour area: {contour_area}') 
@@ -139,7 +140,7 @@ class AnomalyModel:
 
         annot = AnomalyModel.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
 
-        cv2.drawContours(annot, contours, -1, (255, 255, 255), 2)
+        cv2.drawContours(annot, contours, -1, (255, 255, 255), 1)
         cv2.putText(annot,
                     text=f'ad:{decision},'+ str(details).strip("{}").replace(" ","").replace("\'",""),
                     org=(4,h-20), fontFace=0, fontScale=1, color=[225, 255, 255],
