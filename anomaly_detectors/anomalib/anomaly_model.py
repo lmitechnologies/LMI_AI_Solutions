@@ -60,18 +60,21 @@ class AnomalyModel:
         self.predict(np.zeros(shape), err_thresh=0)
         logger.info(f"warmup ended - {time.time() - t0}")
 
-    def predict(self, image, err_thresh, err_size=0, mask=None):
+    def predict(self, image, err_thresh=0, err_size=0, mask=None):
         input_batch = self.preprocess(image)
         self.binding_addrs['input'] = int(input_batch.data_ptr())
         self.context.execute_v2(list(self.binding_addrs.values()))
         outputs = {x:self.bindings[x].data.cpu().numpy() for x in self.output_names}
-        decision, annot, details = self.postprocess(orig_image=image, 
-                                                    anomaly_map=outputs['output'], 
-                                                    err_thresh=err_thresh,
-                                                    err_size=err_size,
-                                                    mask=mask)
-        details.update({k:v for k,v in outputs.items() if k!='output'})
-        return decision, annot, details
+        fname="Current Image Tensor."
+        # decision, annot, details = self.postprocess(orig_image=image, 
+        #                                             anomaly_map=outputs['output'], 
+        #                                             err_thresh=err_thresh,
+        #                                             err_size=err_size,
+        #                                             mask=mask)
+        # details.update({k:v for k,v in outputs.items() if k!='output'})
+        # return decision, annot, details
+        return image,outputs['output'],fname
+
         
     def postprocess(self, orig_image, anomaly_map, err_thresh, err_size, mask):
         h,w = orig_image.shape[:2]
