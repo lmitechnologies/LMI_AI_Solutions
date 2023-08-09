@@ -65,7 +65,6 @@ class AnomalyModel:
         self.binding_addrs['input'] = int(input_batch.data_ptr())
         self.context.execute_v2(list(self.binding_addrs.values()))
         outputs = {x:self.bindings[x].data.cpu().numpy() for x in self.output_names}
-        fname="Current Image Tensor."
         # decision, annot, details = self.postprocess(orig_image=image, 
         #                                             anomaly_map=outputs['output'], 
         #                                             err_thresh=err_thresh,
@@ -73,7 +72,7 @@ class AnomalyModel:
         #                                             mask=mask)
         # details.update({k:v for k,v in outputs.items() if k!='output'})
         # return decision, annot, details
-        return image,outputs['output'],fname
+        return image,outputs['output'],None
 
         
     def postprocess(self, orig_image, anomaly_map, err_thresh, err_size, mask):
