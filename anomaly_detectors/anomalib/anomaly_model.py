@@ -103,14 +103,14 @@ class AnomalyModel:
             result.append(contour)
 
             # print(f'contour area: {contour_area}') 
-            if contour_area > 500:
-                return 'fail by contour', contours
-            
             mask = np.zeros_like(heatmap_for_contour).astype(np.uint8)
             cv2.drawContours(mask, [contour], 0, 255, -1)
 
-            masked_heatmap = cv2.bitwise_and(heatmap_for_contour.astype(np.uint8), mask)
+            # masked_heatmap = cv2.bitwise_and(heatmap_for_contour.astype(np.uint8), mask)
 
+            if contour_area > 500:
+                return 'fail by contour', result
+            
             # anomaly_scores = masked_heatmap[mask > 0]
 
         return 'pass by contour', result
