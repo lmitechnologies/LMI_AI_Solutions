@@ -5,6 +5,7 @@ import os
 import json
 import torch
 import logging
+import glob
 
 BLACK=(0,0,0)
 
@@ -241,6 +242,28 @@ def get_img_path_batches(batch_size, img_dir, fmt='png'):
                 batch = []
             batch.append(os.path.join(root, name))
             cnt_images += 1
+    logger.info(f'loaded {cnt_images} files')
+    if len(batch) > 0:
+        ret.append(batch)
+    return ret
+
+
+def get_gadget_img_batches(batch_size, profile_dir, intensity_dir, fmt='png'):
+    profile_list = glob.glob(os.path.join(profile_dir,"*."+fmt))
+    intensity_list = glob.glob(os.path.join(intensity_dir,"*."+fmt))
+
+    profile_list.sort()
+    intensity_list.sort()
+
+    ret = []
+    batch = []
+    cnt_images = 0
+    for profile, intensity in zip(profile_list, intensity_list):
+        if len(batch) == batch_size:
+            ret.append(batch)
+            batch = []
+        batch.append({"profile":profile, "intensity":intensity})
+        cnt_images += 1
     logger.info(f'loaded {cnt_images} files')
     if len(batch) > 0:
         ret.append(batch)
