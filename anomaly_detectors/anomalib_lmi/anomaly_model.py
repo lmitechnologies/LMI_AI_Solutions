@@ -57,7 +57,7 @@ class AnomalyModel:
         logger.info("warmup started")
         t0 = time.time()
         shape = [i*2 for i in self.bindings['input'].shape[-2:]]+[3,]
-        self.predict(np.zeros(shape), err_thresh=0)
+        self.predict(np.zeros(shape))
         logger.info(f"warmup ended - {time.time() - t0}")
 
     def predict(self, image):
@@ -176,7 +176,7 @@ def test(engine_dir, images_path):
         for image_path in images:
             img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
             t0 = time.time()
-            decision, annotation, outputs = pc.predict(img, 10.591105461120605) # 16.5859 56.07148
+            decision, annotation, outputs = pc.predict(img) # 16.5859 56.07148
             proctime.append(time.time() - t0)
             logger.info(f"decision {decision},\toutputs {outputs}")
             annotation = cv2.cvtColor(annotation, cv2.COLOR_RGB2BGR)
