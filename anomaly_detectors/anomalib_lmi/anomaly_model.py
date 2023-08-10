@@ -155,12 +155,37 @@ class AnomalyModel:
             postprocess: used to get anomaly decision and resulting image
         ARGUMENTS:
             orig_image:
-                - uint16 image (profile image)
+                - float32 image
                 - used to get original image dimensions for resizing heatmap and/or annotation method
                 - height and width are extracted, then used to resize heatmap/annotated image if processContours or annotate is used 
-            
+            anomaly_map:
+                - np array
+                - used for masking, contouring, and/or annotation (if needed)
+            err_thresh:
+                - integer
+                - error threshold for anomaly scores
+            err_size:
+                - integer (number of pixels)
+                - for pass/fail condition when comparing aggregation of error scores
+                - if the aggregation of the error scores combined is greater than err_size, then the decision will be 'FAIL'
+            mask:
+                - list of binary images
+                - mask regions to ignore when determining anomaly score
+                - masks of the regions are applied to the anomaly_map to be ignored
+            useContours:
+                - boolean
+                - switch for turning on/off processContours logic
+                - passed into conditional, if useContours=True, then the decision is made using processContours (through contour analysis)
+
+                child variables:
+                    size_fail: threshold for failing contours based off of size (anomaly size in pixels)
+                    color_threshold: threshold for converting image to binary (used to pass into processContours, see @processContours)
+                    size_ignore [OPTIONAL]: minimum size to ignore in contours (if there will be no extra large anomalous regions)
+            useAnnotation:
+                - boolean
+                - switch for turning on/off annotation (returns original image if useAnnotation=False)
     """
-    def postprocess(self, orig_image, anomaly_map, err_thresh, err_size, mask=None, useContours=False, size_ignore=None, size_fail=None, contour_color_threshold=None, useAnnotation=True):
+    def postprocess(self, orig_image, anomaly_map, err_thresh, err_size, mask=None, useContours=False, size_fail=None, size_ignore=None, color_threshold=None, useAnnotation=True):
         h,w = orig_image.shape[:2]
         anomaly_map = np.squeeze(anomaly_map.transpose((0,2,3,1)))
         if mask is not None:
@@ -170,16 +195,16 @@ class AnomalyModel:
         ind = anomaly_map<err_thresh
         err_count = np.count_nonzero(ind==False)
         anomaly_map[ind] = err_thresh
-        total_error = {'emax':round(anomaly_map.max().tolist(), 1), 'ecnt':err_count}
+        max_error = {'emax':round(anomaly_map.max().tolist(), 1), 'ecnt':err_count}
 
         if useContours:
-            if size_ignore is None or size_fail is None or contour_color_threshold is None:
-                raise ValueError("Required parameters (size_fail & size_ignore) must be provided when useContours=True")
+            if size_fail is None or color_threshold is None:
+                raise ValueError("Required parameters (size_fail && contour_color_threshold) must be provided when useContours=True")
             heat_map = anomaly_map
             heat_map_rsz = cv2.resize(heat_map.astype(np.uint8), (w, h))
             residual_gray = (AnomalyModel.normalize_anomaly_map(heat_map_rsz)*255).astype(np.uint8)
             residual_bgr = cv2.applyColorMap(np.expand_dims(residual_gray,-1), cv2.COLORMAP_TURBO).astype(np.float32)
-            decision, contours = self.processContours(residual_bgr, anomaly_map, 70, err_thresh)
+            decision, contours = self.processContours(residual_bgr, anomaly_map, color_threshold, size_fail, size_ignore)
         else:
             if err_count<=err_size:
                 decision=PASS
@@ -190,7 +215,7 @@ class AnomalyModel:
         if useAnnotation:
             annot = AnomalyModel.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
             cv2.putText(annot,
-                        text=f'ad:{decision},'+ str(total_error).strip("{}").replace(" ","").replace("\'",""),
+                        text=f'ad:{decision},'+ str(max_error).strip("{}").replace(" ","").replace("\'",""),
                         org=(4,h-20), fontFace=0, fontScale=1, color=[225, 255, 255],
                         thickness=2,
                         lineType=cv2.LINE_AA)
@@ -198,7 +223,7 @@ class AnomalyModel:
                 cv2.drawContours(annot, contours, -1, (255, 255, 255), 1)
             final_image = annot
 
-        return decision, final_image, total_error
+        return decision, final_image, max_error
 
     @staticmethod
     def convert_trt(onnx_path, out_engine_path, fp16=True, workspace=4096):
