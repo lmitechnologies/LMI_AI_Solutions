@@ -4,7 +4,7 @@ import torch
 import tensorrt as trt
 import json
 import os
-from collections import OrderedDict,namedtuple
+from collections import OrderedDict,namedtuple,defaultdict
 import logging
 
 from ultralytics.utils import ops
@@ -79,6 +79,8 @@ class Yolov8_trt:
             batch = metadata['batch']
             imgsz = metadata['imgsz']
             names = metadata['names']
+            self.logger.info(f'engine class names: {names}')
+            self.logger.info(f'engine imgsz: {imgsz}')
             kpt_shape = metadata.get('kpt_shape')
         else:
             self.logger.warning(f"WARNING ⚠️ Metadata not found for 'model={path_engine}'")
@@ -151,7 +153,7 @@ class Yolov8_trt:
         im = torch.from_numpy(im)
 
         img = im.to(self.device)
-        img = img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
+        img = img.half() if self.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
         return img
     
@@ -195,25 +197,23 @@ class Yolov8_trt:
         else:
             raise TypeError(f'Prediction type {type(preds)} not supported')
         
-        preds = ops.non_max_suppression(preds[0] if predict_mask else preds,
+        proto = None
+        if predict_mask:
+            proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]
+        
+        preds2 = ops.non_max_suppression(preds[0] if predict_mask else preds,
                                         conf,
                                         iou,
                                         agnostic=agnostic,
                                         max_det=max_det,
-                                        nc=len(self.model.names),
+                                        nc=len(self.names),
                                         classes=classes)
-        
-        proto = None
-        if predict_mask:
-            proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]
             
         results = []
-        for i, pred in enumerate(preds): # pred: [x1, y1, x2, y2, conf, cls, mask1, mask2 ...]
+        for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, mask1, mask2 ...]
             orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
-            path = self.batch[0]
-            img_path = path[i] if isinstance(path, list) else path
             if not len(pred):  # save empty boxes
-                results.append(Results(orig_img=orig_img, path=img_path, names=self.model.names, boxes=pred[:, :6]))
+                results.append(Results(orig_img=orig_img, path='', names=self.names, boxes=pred[:, :6]))
                 continue
             
             masks = None
@@ -221,5 +221,5 @@ class Yolov8_trt:
                 masks = ops.process_mask(proto[i], pred[:, 6:], pred[:, :4], img.shape[2:], upsample=True)  # HWC
             pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
             
-            results.append(Results(orig_img=orig_img, path=img_path, names=self.model.names, boxes=pred[:, :6], masks=masks))
+            results.append(Results(orig_img=orig_img, path='', names=self.names, boxes=pred[:, :6], masks=masks))
         return results

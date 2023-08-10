@@ -6,7 +6,7 @@ import numpy as np
 from label_utils.COCO_dataset import COCO_Dataset, Annotation, rotate
 
 logging.basicConfig()
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 

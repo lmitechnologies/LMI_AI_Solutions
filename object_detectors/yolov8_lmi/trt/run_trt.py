@@ -27,7 +27,7 @@ if __name__ == '__main__':
     
     h,w = args.imsz
     engine = Yolov8_trt(args.engine)
-    logger = engine.logger
+    logger = logging.getLogger(__name__)
     logger.info(f'input imsz: {args.imsz}')
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
@@ -53,11 +53,19 @@ if __name__ == '__main__':
             save_path = os.path.join(args.path_out,fname)
             im_out = np.copy(im0)
             for i,det in enumerate(dets):
-                for j in range(len(det.boxes)-1,-1,-1):
-                    mask = det.masks[j] if det.masks is not None else None
-                    box = det.boxes[j]
-                    xyxy, conf, cls = box.xyxy, box.conf, box.cls
-                    plot_one_box(xyxy,im_out,mask,label=f'{int(cls)}: {conf:.2f}')
+                masks,segments = None,None
+                if det.masks:
+                    masks = det.masks.cpu().numpy()
+                    segments = det.masks.xy
+                
+                boxes = det.boxes.cpu().numpy()
+                xyxys, confs, classes = boxes.xyxy, boxes.conf, boxes.cls
+                for j in range(len(boxes)-1,-1,-1):
+                    mask = masks[j].data.squeeze() if masks is not None else None
+                    plot_one_box(xyxys[j],im_out,mask,label=f'{int(classes[j])}: {confs[j]:.2f}')
+                    if segments and len(segments[j]):
+                        seg = np.array(segments[j]).reshape((-1,1,2)).astype(np.int32)
+                        cv2.drawContours(im_out, [seg], -1, (0, 255, 0), 1)
                 
             # from RGB to BGR
             cv2.imwrite(save_path,im_out[:,:,::-1])
