@@ -1,0 +1,16 @@
+version: "3.9"
+services:
+  generate_trt_arm:
+    build:
+      context: .
+      dockerfile: ./dockerfile
+    volumes:
+      - ./data/images:/app/images # validation data (optional)
+      - ./trained-inference-models/:/app/trained-inference-models/
+      - ./validation/:/app/validation/ # model output
+    environment:
+      - MODEL_PATH=/app/trained-inference-models/2022-12-16
+      - IM_W=640
+      - IM_H=256
+    runtime: nvidia
+    command: bash /repos/LMI_AI_Solutions/object_detectors/yolov5_lmi/trt/arm/build_engine.sh

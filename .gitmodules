@@ -1,5 +1,5 @@
 [submodule "yolov5"]
-	path = object_detectors/yolov5
+	path = object_detectors/submodules/yolov5
 	url = https://github.com/lmitechnologies/yolov5.git
 	branch = ais
 [submodule "classifiers/efficientnet"]
