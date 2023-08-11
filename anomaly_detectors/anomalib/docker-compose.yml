@@ -1,0 +1,24 @@
+version: "3.9"
+services:
+  patchcore_train:
+    build:
+      context: .
+      dockerfile: docker/dockerfile.$platform
+    volumes:
+      - .:/app/ws
+      - $data_path:/app/data/train
+      - $test_path:/app/data/test
+      - $engine:/app/engine
+      - $onnx:/app/onnx
+      - $outdir:/app/out
+    shm_size: '2gb'
+    runtime: nvidia
+    deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+    command: bash ws/internal_runner.sh $action $model
+

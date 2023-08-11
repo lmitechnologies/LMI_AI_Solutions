@@ -8,11 +8,11 @@ usage_and_exit() {
     echo    test     test trained model
     echo    convert  convert trained model to trt engine
     echo -o output directory for action results
-    echo -d train data path, only required for train
-    echo -t test data path, only required for test
-    echo -e the folder that contains model.engine to test, defaults to latest folder in output/engines
-    echo -m the model type to train: padim as default or patchcore
-    echo -x the folder that contains model.onnx to be converted to trt engine, defaults to the latest in output/results/model/trained models
+    echo -d for train, train data path
+    echo -m for train, the model type, defaults to padim
+    echo -t for test, test data path
+    echo -e for test, the folder that contains model.engine to test, defaults to latest folder in output/engines
+    echo -x for convert, the folder that contains model.onnx to be converted to trt engine, defaults to the latest in output/results/model/trained models
     echo examples:
     echo -------- train -----
     echo bash main.sh -a train -d /path/to/train/data -o /path/to/outdir
@@ -87,13 +87,13 @@ if [[ $onnx_dir ]]; then
   if [[ $onnx_dir != /* ]]; then
     onnx_dir=$(pwd)/$onnx_dir
   fi
-  docker_run_cmd="${docker_run_cmd} -v $onnx_dir:/app/mounted/onnx"
+  docker_run_cmd="${docker_run_cmd} -v $onnx_dir:/app/onnx"
 fi
 if [[ $engine_dir ]]; then
   if [[ $engine_dir != /* ]]; then
     engine_dir=$(pwd)/$engine_dir
   fi
-  docker_run_cmd="${docker_run_cmd} -v $engine_dir:/app/mounted/engine"
+  docker_run_cmd="${docker_run_cmd} -v $engine_dir:/app/engine"
 fi
 
 docker_run_cmd="${docker_run_cmd} $image_name bash /app/ws/internal_runner.sh $action $model"
