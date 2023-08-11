@@ -8,7 +8,6 @@ from collections import OrderedDict,namedtuple,defaultdict
 import logging
 
 from ultralytics.utils import ops
-from ultralytics.engine.results import Results
 
 
 def check_class_names(names):
@@ -29,11 +28,10 @@ class Yolov8_trt:
     
     logger = logging.getLogger(__name__)
     
-    def __init__(self, path_engine:str) -> None:
-        device = torch.device('cuda:0')
-        if not torch.cuda.is_available():
-            self.logger.error('CUDA not available. Use cpu instead.')
-            device = torch.device('cpu')
+    def __init__(self, path_engine:str, device='gpu') -> None:
+        device = torch.device('cuda:0') if device=='gpu' else torch.device('cpu')
+        if device=='gpu' and not torch.cuda.is_available():
+            raise RuntimeError('CUDA not available.')
             
         stride = 32  # default stride
         model, metadata = None, None
@@ -124,16 +122,14 @@ class Yolov8_trt:
         return torch.tensor(x).to(self.device) if isinstance(x, np.ndarray) else x
     
     
-    def warmup(self, imgsz=(1, 3, 640, 640)):
+    def warmup(self):
         """
         Warm up the model by running one forward pass with a dummy input.
-
-        Args:
-            imgsz (tuple): The shape of the dummy input tensor in the format (batch_size, channels, height, width)
 
         Returns:
             (None): This method runs the forward pass and don't return any value
         """
+        imgsz = [1,3]+self.imgsz
         im = torch.empty(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
         self.forward(im)  # warmup
         
@@ -165,8 +161,8 @@ class Yolov8_trt:
             im_path (str): the path to the image, could be either .npy, .png, or other image formats
             
         Returns:
-            the preprocessed image (torch.Tensor),
-            the original image (np.ndarray)
+            (torch.Tensor): the preprocessed image.
+            (np.ndarray): the original image.
         """
         ext = os.path.splitext(im_path)[-1]
         if ext=='.npy':
@@ -188,6 +184,12 @@ class Yolov8_trt:
             iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
             classes (List[int]): A list of class indices to consider. If None, all classes will be considered.
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
+        
+        Rreturns:
+            (dict): the dictionary contains several keys: boxes, scores, classes, masks, and (masks, segments if use a segmentation model).
+                    the shape of boxes is (B, N, 4), where B is the batch size and N is the number of detected objects.
+                    the shape of classes and scores are both (B, N).
+                    the shape of masks: (B, H, W, 3), where H and W are the height and width of the input image.
         """
         
         if isinstance(preds, list):
@@ -209,17 +211,24 @@ class Yolov8_trt:
                                         nc=len(self.names),
                                         classes=classes)
             
-        results = []
+        results = defaultdict(list)
         for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, mask1, mask2 ...]
             orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
-            if not len(pred):  # save empty boxes
-                results.append(Results(orig_img=orig_img, path='', names=self.names, boxes=pred[:, :6]))
+            
+            if not len(pred):  # skip empty boxes
                 continue
             
-            masks = None
             if predict_mask:
                 masks = ops.process_mask(proto[i], pred[:, 6:], pred[:, :4], img.shape[2:], upsample=True)  # HWC
-            pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
+                segments = [ops.scale_coords(masks.shape[1:], x, orig_img.shape, normalize=False) 
+                            for x in ops.masks2segments(masks)]
+                results['masks'].append(masks.cpu().numpy())
+                results['segments'].append(segments)
             
-            results.append(Results(orig_img=orig_img, path='', names=self.names, boxes=pred[:, :6], masks=masks))
+            pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
+            xyxy,conf = pred[:, :4].cpu().numpy(),pred[:, 4].cpu().numpy()
+            classes = [self.names[c.item()] for c in pred[:, 5]]
+            results['boxes'].append(xyxy)
+            results['scores'].append(conf)
+            results['classes'].append(classes)
         return results
