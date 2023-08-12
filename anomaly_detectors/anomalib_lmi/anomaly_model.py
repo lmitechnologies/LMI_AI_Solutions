@@ -134,6 +134,8 @@ class AnomalyModel:
             """
             If you wish to extract more data from the contours (mean, max, etc.), uncomment code
             and add the variables.
+            
+            code below is commented out to save memory
 
             This code below adds a mask over the contour and extracts data strictly from the selected contour region:
 
