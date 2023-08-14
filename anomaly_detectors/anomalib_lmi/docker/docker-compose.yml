@@ -1,18 +1,20 @@
 version: "3.9"
 services:
-  patchcore_train:
+  anomalib_train:
     build:
       context: .
-      dockerfile: docker/dockerfile.$platform
+      dockerfile: ./dockerfile.x86_64
     volumes:
-      - .:/app/ws
-      - $data_path:/app/data/train
-      - $test_path:/app/data/test
-      - $engine:/app/engine
-      - $onnx:/app/onnx
-      - $outdir:/app/out
-    shm_size: '2gb'
-    runtime: nvidia
+      - ./path_to_my_data/train/:/app/data/train/
+      - ./path_to_my_config_files/:/app/configs/
+      - ./path_to_my_data/test/:/app/data/test
+      - ./path_to_my_engine_files/:/app/engine
+      - ./path_to_onnx_files/:/app/onnx
+      - ./path_to_my_output_files/:/app/out
+    environment:
+      - model=padim
+    shm_size: '20gb' 
+    # runtime: nvidia # For Jetson 
     deploy:
         resources:
           reservations:
@@ -20,5 +22,6 @@ services:
               - driver: nvidia
                 count: 1
                 capabilities: [gpu]
-    command: bash ws/internal_runner.sh $action $model
+    # command: python3 -O anomalib/tools/train.py --config /app/configs/$model.yaml
+    # command: /app/LMI_AI_SOLUTIONS/anomaly_detectors/anomalib_lmi/anomaly_model.py convert $model /app/onnx /app/engine
 
