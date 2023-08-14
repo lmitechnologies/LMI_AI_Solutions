@@ -8,11 +8,11 @@ WORKDIR /app
 RUN pip install pycuda
 RUN pip install opencv-python==4.6.0.66 --user 
 
-# Installing from src does Not work for x86
-RUN git clone https://github.com/openvinotoolkit/anomalib.git \
-    && cd anomalib
-#     && pip install -e .
-RUN pip install anomalib
-
 RUN pip install openvino-dev==2023.0.0 openvino-telemetry==2022.3.0 nncf==2.4.0
 RUN pip install nvidia-pyindex onnx-graphsurgeon
+
+# Installing from anomalib src requires latest pip 
+RUN python3 -m pip install --upgrade pip
+RUN git clone https://github.com/openvinotoolkit/anomalib.git \
+    && cd anomalib \
+    && pip install -e .
