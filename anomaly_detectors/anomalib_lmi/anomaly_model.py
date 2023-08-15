@@ -67,7 +67,9 @@ class AnomalyModel:
         outputs = {x:self.bindings[x].data.cpu().numpy() for x in self.output_names}
         return outputs['output']
 
-    """
+            
+    def processContours(self, heatMap, err_dist, color_threshold, size_fail, size_ignore=None):
+        """
         DESCRIPTION:
             processContours
                 - returns decision based off of pass/fail criteria on contour size or data extracted from specific contour regions
@@ -101,8 +103,8 @@ class AnomalyModel:
                 - a (PASS/FAIL) string used in the final decision of the ad model
             result:
                 - a list of all the contours accepted before FAIL (contains every contour if PASS)
-    """        
-    def processContours(self, heatMap, err_dist, color_threshold, size_fail, size_ignore=None):
+        """
+
         # preprocess original heatmap image
         heatmap_gray = cv2.cvtColor(heatMap.astype(np.float32), cv2.COLOR_BGR2GRAY) # turn image into grayscale
         heatmap_gray_invert = cv2.bitwise_not(heatmap_gray.astype(np.uint8)) # flip the colors
@@ -152,7 +154,9 @@ class AnomalyModel:
         return PASS, result
     
 
-    """
+    
+    def postprocess(self, orig_image, anomaly_map, err_thresh, err_size, mask=None, useContours=False, size_fail=None, size_ignore=None, color_threshold=None, useAnnotation=True):
+        """
         DESCRIPTION:
             postprocess: used to get anomaly decision and resulting image
         ARGUMENTS:
@@ -187,7 +191,7 @@ class AnomalyModel:
                 - boolean
                 - switch for turning on/off annotation (returns original image if useAnnotation=False)
     """
-    def postprocess(self, orig_image, anomaly_map, err_thresh, err_size, mask=None, useContours=False, size_fail=None, size_ignore=None, color_threshold=None, useAnnotation=True):
+        
         h,w = orig_image.shape[:2]
         anomaly_map = np.squeeze(anomaly_map.transpose((0,2,3,1)))
         if mask is not None:
@@ -276,9 +280,10 @@ class AnomalyModel:
         annot[ind] = img_original[ind]
         return annot
 
-def test(engine_dir, images_path):
+def test(engine_dir, images_path, annot_dir):
     """test trt engine"""
 
+    from ad_utils import plot_fig,plot_histogram
     import time
 
     logger.info(f"input engine_dir is {engine_dir}")
@@ -293,7 +298,7 @@ def test(engine_dir, images_path):
         all = sorted([x for x in os.walk(engine_dir)][0][1])
         if all:
             engine_path = os.path.join(engine_dir, all[-1], "model.engine")
-    assert(os.path.isfile(engine_path)), f"onnx file does not exist - {engine_path}"
+    assert(os.path.isfile(engine_path)), f"engine file does not exist - {engine_path}"
 
     logger.info(f"testing engine_path {engine_path}...")
 
@@ -325,20 +330,35 @@ def test(engine_dir, images_path):
         logger.info(f'Median Proc Time: {np.median(proctime)}')
     logger.info(f"Test results saved to {out_path}")
 
-def convert(onnx_dir, fp16=True):
-    onnx_path = os.path.join(onnx_dir, "model.onnx")
-    if not os.path.isfile(onnx_path):
-        all = sorted([x for x in os.walk(onnx_dir)][0][1])
-        if all:
-            onnx_path = os.path.join(onnx_dir, all[-1], "model.onnx")
-    assert(os.path.isfile(onnx_path)), f"onnx file does not exist - {onnx_path}"
-
-    engine_out_path = f'/app/out/engines/{model}/{datetime.now().strftime("%Y-%m-%d-%H-%M")}/model.engine'
-    AnomalyModel.convert_trt(onnx_path, engine_out_path, fp16=True)
+def convert(onnx_path, engine_dir, fp16=True):
+    engine_out_path = f'{engine_dir}/model.engine'
+    AnomalyModel.convert_trt(onnx_path, engine_out_path, fp16)
 
 if __name__ == '__main__':
-    action, model, onnx_dir, engine_dir = sys.argv[1:5]
-    if action in ('convert', 'all'):
-        convert(onnx_dir)
-    if action in ('test', 'all'):
-        test(engine_dir, images_path=f'/app/data/test')
+    import argparse
+    import os
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument('-a','--action', default=None, help='Action: convert, test')
+    ap.add_argument('-x','--onnx_file', default=None, help='Onnx file directory.')
+    ap.add_argument('-e','--engine_file', default=None, help='Engine file directory.')
+    ap.add_argument('-d','--data_dir', default=None, help='Data file directory.')
+    ap.add_argument('-o','--annot_dir', default=None, help='Annot file directory.')
+
+    args = vars(ap.parse_args())
+    action=args['action']
+    if action=='convert':
+        if not os.path.isfile(args['onnx_file']):
+            raise Exception('Need a valid onnx file to generate engine.')
+        if not os.path.exists(args['engine_dir']):
+            os.makedirs(args['engine_dir'])
+        convert(args['onnx_file'],args['engine_dir'],fp16=True)
+
+    if action=='test':
+        if not os.path.isfile(args['engine_file']):
+            raise Exception('Need a valid engine file to test model.')
+        if not os.path.exists(args['annot_dir']):
+            os.makedirs(args['annot_dir'])
+        test(args['engine_file'], args['data_dir'], args['annot_dir'])
+        
+    
