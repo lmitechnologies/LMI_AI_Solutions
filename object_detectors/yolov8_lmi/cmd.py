@@ -18,10 +18,14 @@ MODEL_PATH = '/app/trained-inference-models/best.pt'    # for predict and export
 SOURCE_PATH = '/app/data'   # for predict
 
 
+def check_file_exist(file_path):
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f'{file_path} not found')
+
+
 if __name__=='__main__':
     # check if files exist
-    if not os.path.isfile(HYP_YAML):
-        raise FileNotFoundError(f'{HYP_YAML} not found')
+    check_file_exist(HYP_YAML)
         
     # load hyp yaml file
     with open(HYP_YAML) as f:
@@ -31,8 +35,9 @@ if __name__=='__main__':
     
     # check if dataset yaml file exists in the train mode
     is_train = hyp['mode']=='train'
-    if is_train and not os.path.isfile(DATA_YAML):
-        raise FileNotFoundError(f'{DATA_YAML} not found in the train mode')
+    is_predict = hyp['mode']=='predict'
+    if is_train:
+        check_file_exist(DATA_YAML)
     
     # get the final cmd
     today = date.today().strftime("%Y-%m-%d")   # use today's date as the output folder name
@@ -44,6 +49,9 @@ if __name__=='__main__':
     if is_train:
         cmd += [f'data={DATA_YAML}']
     else:
+        check_file_exist(MODEL_PATH)
+        if is_predict:
+            check_file_exist(SOURCE_PATH)
         cmd += [f'model={MODEL_PATH}', f'source={SOURCE_PATH}']
     cmd += hyp_cmd
     
