@@ -13,9 +13,10 @@ logger.setLevel(logging.INFO)
 HYP_YAML = '/app/config/hyp.yaml'
 DATA_YAML = '/app/config/dataset.yaml'
 TRAIN_FOLDER = '/app/training'
+# for predict and export
 VAL_FOLDER = '/app/validation'
-MODEL_PATH = '/app/trained-inference-models/best.pt'    # for predict and export
-SOURCE_PATH = '/app/data'   # for predict
+MODEL_PATH = '/app/trained-inference-models/best.pt'    
+SOURCE_PATH = '/app/data'
 
 
 def check_file_exist(file_path):
@@ -41,16 +42,12 @@ if __name__=='__main__':
     
     # get the final cmd
     today = date.today().strftime("%Y-%m-%d")   # use today's date as the output folder name
-    cmd = [
-            'yolo',
-            f'project={TRAIN_FOLDER}' if is_train else f'project={VAL_FOLDER}', 
-            f'name={today}'
-           ]
+    cmd = ['yolo', f'name={today}']
     if is_train:
-        cmd += [f'data={DATA_YAML}']
+        cmd += [f'data={DATA_YAML}', f'project={TRAIN_FOLDER}']
     else:
         check_file_exist(MODEL_PATH)
-        cmd += [f'model={MODEL_PATH}', f'source={SOURCE_PATH}']
+        cmd += [f'model={MODEL_PATH}', f'source={SOURCE_PATH}', f'project={VAL_FOLDER}']
     cmd += hyp_cmd
     
     logger.info(f'cmd: {cmd}')

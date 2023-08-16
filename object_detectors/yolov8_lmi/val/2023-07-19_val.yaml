@@ -2,11 +2,11 @@ task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose
 mode: predict  # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
 
 # Prediction settings --------------------------------------------------------------------------------------------------
-name: 2023-07-19 # (str, optional) experiment name, results saved to 'project/name' directory
 imgsz: 320,640 # (list) input images size as list[h,w] for predict and export modes
 conf:  # (float, optional) object confidence threshold for detection (default 0.25 predict, 0.001 val)
 max_det: 300  # (int) maximum number of detections per image
 
+# less likely to be used ------------------------------------------------------------------------------------------------
 show: False  # (bool) show results if possible
 save_txt: False  # (bool) save results as .txt file
 save_conf: False  # (bool) save results with confidence scores
@@ -21,10 +21,5 @@ agnostic_nms: False  # (bool) class-agnostic NMS
 classes:  # (int | list[int], optional) filter results by class, i.e. classes=0, or classes=[0,2,3]
 retina_masks: False  # (bool) use high-resolution segmentation masks
 boxes: True  # (bool) Show boxes in segmentation predictions
-
-# do NOT modify the following settings ---------------------------------------------------------------------------------
-project: /app/validation
-source: /app/data 
-model: /app/trained-inferences-models/best.pt
 
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
