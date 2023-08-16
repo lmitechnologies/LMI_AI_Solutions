@@ -280,31 +280,25 @@ class AnomalyModel:
         annot[ind] = img_original[ind]
         return annot
 
-def test(engine_dir, images_path, annot_dir):
+def test(engine_path, images_path, annot_dir,err_thresh=None):
     """test trt engine"""
 
     from ad_utils import plot_fig,plot_histogram
+    from pathlib import Path
     import time
 
-    logger.info(f"input engine_dir is {engine_dir}")
-
-    images = glob.glob(f"{images_path}/*.png")
+    # images = glob.glob(f"{images_path}/*.png")
+    directory_path=Path(images_path)
+    images=list(directory_path.rglob('*.png'))
     logger.info(f"{len(images)} images from {images_path}")
     if not images:
         return
-
-    engine_path = os.path.join(engine_dir, "model.engine")
-    if not os.path.isfile(engine_path):
-        all = sorted([x for x in os.walk(engine_dir)][0][1])
-        if all:
-            engine_path = os.path.join(engine_dir, all[-1], "model.engine")
-    assert(os.path.isfile(engine_path)), f"engine file does not exist - {engine_path}"
-
-    logger.info(f"testing engine_path {engine_path}...")
+    
+    logger.info(f"Loading engine: {engine_path}.")
 
     pc = AnomalyModel(engine_path)
 
-    out_path = f"/app/out/predictions/{model}/{os.path.basename(images_path)}"
+    out_path = annot_dir
     if os.path.isdir(out_path):
         shutil.rmtree(out_path)
     os.makedirs(out_path)
@@ -312,15 +306,24 @@ def test(engine_dir, images_path, annot_dir):
     pc.warmup()
 
     proctime = []
-    for i in range(1):
-        for image_path in images:
-            img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
-            t0 = time.time()
-            decision, annotation, outputs = pc.predict(img) # 16.5859 56.07148
-            proctime.append(time.time() - t0)
-            logger.info(f"decision {decision},\toutputs {outputs}")
-            annotation = cv2.cvtColor(annotation, cv2.COLOR_RGB2BGR)
-            cv2.imwrite(f"{out_path}/{os.path.basename(image_path)}", annotation.astype(np.uint8))
+ 
+    img_all,anom_all,fname_all=[],[],[]
+    for image_path in images:
+        image_path=str(image_path)
+        img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
+        t0 = time.time()
+        anom_map = pc.predict(img).astype(np.float32)
+        proctime.append(time.time() - t0)
+        fname=os.path.split(image_path)[1]
+        img_preproc=cv2.resize(img, pc.bindings['input'].shape[-2:], interpolation=cv2.INTER_AREA)
+        img_all.append(img_preproc)
+        anom_all.append(anom_map)
+        fname_all.append(fname)
+    
+    results=zip(img_all,anom_all,fname_all)
+    anom_stats=np.array(anom_all)
+    plot_fig(results,annot_dir,err_thresh=err_thresh)
+            
         
     if proctime:
         proctime = np.asarray(proctime)
@@ -339,11 +342,11 @@ if __name__ == '__main__':
     import os
 
     ap = argparse.ArgumentParser()
-    ap.add_argument('-a','--action', default=None, help='Action: convert, test')
-    ap.add_argument('-x','--onnx_file', default=None, help='Onnx file directory.')
-    ap.add_argument('-e','--engine_file', default=None, help='Engine file directory.')
-    ap.add_argument('-d','--data_dir', default=None, help='Data file directory.')
-    ap.add_argument('-o','--annot_dir', default=None, help='Annot file directory.')
+    ap.add_argument('-a','--action', default="test", help='Action: convert, test')
+    ap.add_argument('-x','--onnx_file', default="/app/out/results/padim/model/run/weights/onnx/model.onnx", help='Onnx file directory.')
+    ap.add_argument('-e','--engine_dir', default="/app/out/results/padim/model/run/weights/engine", help='Engine file directory.')
+    ap.add_argument('-d','--data_dir', default="/app/data/train/good", help='Data file directory.')
+    ap.add_argument('-o','--annot_dir', default="/app/out/test", help='Annot file directory.')
 
     args = vars(ap.parse_args())
     action=args['action']
@@ -355,10 +358,9 @@ if __name__ == '__main__':
         convert(args['onnx_file'],args['engine_dir'],fp16=True)
 
     if action=='test':
-        if not os.path.isfile(args['engine_file']):
-            raise Exception('Need a valid engine file to test model.')
+        engine_file=os.path.join(args['engine_dir'],'model.engine')
+        if not os.path.isfile(engine_file):
+            raise Exception(f'Error finding {engine_file}. Need a valid engine file to test model.')
         if not os.path.exists(args['annot_dir']):
             os.makedirs(args['annot_dir'])
-        test(args['engine_file'], args['data_dir'], args['annot_dir'])
-        
-    
+        test(engine_file, args['data_dir'], args['annot_dir'],err_thresh=None)

@@ -4,6 +4,7 @@ import time
 import copy
 import matplotlib
 from matplotlib import pyplot as plt
+import numpy as np
 
 logging.basicConfig(level=logging.INFO)
 
@@ -31,7 +32,7 @@ def plot_histogram(xvec):
     figure.savefig('./test_hist.png')
 
 
-def plot_fig(predict_results, err_mean, err_std, save_dir, err_thresh=None):
+def plot_fig(predict_results, save_dir, err_thresh=None):
     '''
     DESCRIPTION: generate matplotlib figures for inspection results
 
@@ -53,7 +54,7 @@ def plot_fig(predict_results, err_mean, err_std, save_dir, err_thresh=None):
     ERR_FLOOR = 0
 
     for img,err_dist,fname in predict_results:
-        fname=fname.decode('ascii')
+        # fname=fname.decode('ascii')
         fname=os.path.splitext(fname)[0]
         err_dist=np.squeeze(err_dist)
         err_mean=err_dist.mean()
@@ -61,8 +62,8 @@ def plot_fig(predict_results, err_mean, err_std, save_dir, err_thresh=None):
         err_max=err_dist.max()
         if err_thresh is None:
             err_thresh=err_mean+3*err_std
-        if err_max<=1.1*err_thresh:
-            err_max=err_thresh*2
+        # if err_max<=1.1*err_thresh:
+        #     err_max=err_thresh*2
         heat_map=err_dist.copy()
         heat_map[heat_map<err_thresh]=err_thresh
         fig_img, ax_img = plt.subplots(1, 3, figsize=(12, 3))
