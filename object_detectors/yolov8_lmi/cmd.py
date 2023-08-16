@@ -31,17 +31,19 @@ if __name__=='__main__':
         raise FileNotFoundError(f'{DATA_YAML} not found in the train mode')
     
     # convert to list of paried strings, such as ['batch=64', 'epochs=100']
-    cmd2 = [f'{k}={v}' for k, v in hyp.items()]
+    hyp_cmd = [f'{k}={v}' for k, v in hyp.items()]
     
     # get the final cmd
     today = date.today().strftime("%Y-%m-%d")   # use today's date as the output folder name
     cmd = [
-            'yolo', 
-            f'data={DATA_YAML}' if is_train else '',
+            'yolo',
             f'project={TRAIN_FOLDER}' if is_train else f'project={VAL_FOLDER}', 
             f'name={today}'
            ]
-    cmd += cmd2
+    if is_train:
+        cmd += [f'data={DATA_YAML}']
+    cmd += hyp_cmd
+    
     logger.info(f'cmd: {cmd}')
     
     # run command
