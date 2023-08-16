@@ -283,7 +283,7 @@ class AnomalyModel:
 def test(engine_path, images_path, annot_dir,err_thresh=None):
     """test trt engine"""
 
-    from ad_utils import plot_fig,plot_histogram
+    from ad_utils import plot_fig
     from pathlib import Path
     import time
 
@@ -321,8 +321,12 @@ def test(engine_path, images_path, annot_dir,err_thresh=None):
         fname_all.append(fname)
     
     results=zip(img_all,anom_all,fname_all)
-    anom_stats=np.array(anom_all)
-    plot_fig(results,annot_dir,err_thresh=err_thresh)
+    anom_stats=np.squeeze(np.array(anom_all))
+    training_mean=anom_stats.mean()
+    training_std=anom_stats.std()
+    training_H0=[training_mean,training_std]
+    training_max=anom_stats.max()
+    plot_fig(results,annot_dir,err_thresh=None,H0=training_H0,err_max=training_max)
             
         
     if proctime:

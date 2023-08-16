@@ -4,6 +4,7 @@ import time
 import copy
 import matplotlib
 from matplotlib import pyplot as plt
+from scipy.stats import kstest
 import numpy as np
 
 logging.basicConfig(level=logging.INFO)
@@ -31,8 +32,19 @@ def plot_histogram(xvec):
     # plt.show()
     figure.savefig('./test_hist.png')
 
+def test_dist(H0,sample,alpha=0.05):
+    stat, p = kstest(sample, 'norm', args=(H0[0], H0[1]))
+    confirm_H0=True
+    if p > alpha:
+        logging.info(f'Sample could belong to the known normal distribution (fail to reject H0) with p={p}')
+    else:
+        logging.info(f'Sample does not belong to the known normal distribution (reject H0) with p={p}')
+        confirm_H0=False
 
-def plot_fig(predict_results, save_dir, err_thresh=None):
+    return confirm_H0
+
+
+def plot_fig(predict_results, save_dir, err_thresh=None, H0=[None,None], err_max=None):
     '''
     DESCRIPTION: generate matplotlib figures for inspection results
 
@@ -55,15 +67,26 @@ def plot_fig(predict_results, save_dir, err_thresh=None):
 
     for img,err_dist,fname in predict_results:
         # fname=fname.decode('ascii')
-        fname=os.path.splitext(fname)[0]
+        fname,fext=os.path.splitext(fname)
+        logging.info(f'Processing data for: {fname}')
         err_dist=np.squeeze(err_dist)
         err_mean=err_dist.mean()
         err_std=err_dist.std()
-        err_max=err_dist.max()
+        if err_max is None:
+            err_max=err_dist.max()
         if err_thresh is None:
-            err_thresh=err_mean+3*err_std
-        # if err_max<=1.1*err_thresh:
-        #     err_max=err_thresh*2
+            if all(H0):
+                err_thresh=H0[0]+3*H0[1]
+            else:
+                err_thresh=err_mean+3*err_std
+        # Test sample for H0
+        # if all(H0):
+        #     confirm_H0=test_dist(H0,err_dist.flatten(),alpha=0.05)
+        # if confirm_H0:
+        #     fname=fname+'_PASS_HO'
+        # else:
+        #     fname=fname+'_FAIL_HO'
+
         heat_map=err_dist.copy()
         heat_map[heat_map<err_thresh]=err_thresh
         fig_img, ax_img = plt.subplots(1, 3, figsize=(12, 3))
