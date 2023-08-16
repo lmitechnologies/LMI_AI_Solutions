@@ -50,8 +50,6 @@ if __name__=='__main__':
         cmd += [f'data={DATA_YAML}']
     else:
         check_file_exist(MODEL_PATH)
-        if is_predict:
-            check_file_exist(SOURCE_PATH)
         cmd += [f'model={MODEL_PATH}', f'source={SOURCE_PATH}']
     cmd += hyp_cmd
     
