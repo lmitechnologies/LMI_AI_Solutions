@@ -1,7 +1,18 @@
 # Train and test YOLOv8 models
 This is the tutorial how to train and test the YOLOv8 models. This tutorial assume that the training and testing happen in a x86 system.
 
+## System requirements
+### Model training
+- x86 system
+- CUDA 12.1
+- ubuntu 20.04
+
+### TensorRT engine generation if will be deployed on Nvidia Jetson 
+- arm system
+- JetPack 5.0.2
+
 ## Directory structure
+By convention, we use today's date (i.e. 2023-07-19) as the file name.
 ```
 ├── config
 │   ├── dockerfile
@@ -19,8 +30,7 @@ This is the tutorial how to train and test the YOLOv8 models. This tutorial assu
 
 
 ## Create a dockerfile
-Let's create a file named `dockerfile` in `config`.
-In the `dockerfile`, it installs the dependencies and clone LMI AI Solutions repository. 
+Let's create a file named `dockerfile` in `config`. It installs the dependencies and clone LMI AI Solutions repository. 
 ```docker
 # last version running on ubuntu 20.04, require CUDA 12.1 
 FROM nvcr.io/nvidia/pytorch:23.04-py3
@@ -38,15 +48,15 @@ RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 
 ```
 
-## Prepare the datasets
-Prepare the datasets by the followings:
-- resize images [optional]
+## Prepare the dataset
+Prepare the dataset by the followings:
+- resize images and labels in csv [optional]
 - convert labeling data to YOLO format
 
 **YOLO models require the dimensions of images to be dividable by 32**. The resizing is optional if the dimensions already meet this requirement. In this tutorial, we resize images to 640x320 as an example.
 
-### Create a bash script
-First, create a bash script named `./preprocess/2023-07-19.sh` to do the resize and data conversion to yolo format. We usually use today's date as the file name.
+### Create a bash script for data processing
+First, create a bash script named `./preprocess/2023-07-19.sh` to do the resize and data conversion to yolo format.
 ```bash
 # modify the width and height according to your data
 input_path=/app/data/allImages
@@ -83,7 +93,7 @@ services:
       - ../data:/app/data
       - ../preprocess/2023-07-19.sh:/app/preprocess/preprocess.sh
     command: >
-      python /app/preprocess/preprocess.sh
+      bash /app/preprocess/preprocess.sh
 ```
 
 ### Spin up the container
@@ -127,8 +137,8 @@ To train the model, we need to create a hyperparameter yaml file and modify the 
 ### Create a hyperparameter yaml file
  We need to crete another file `./config/2023-07-19_hyp.yaml`. Below shows you an example of training a **medium-size yolov8 instance segmentation model** with the image size of 640. To train object detection models, set `task` to `detect`. If the training images are square, set `rect` to `False`.
 ```yaml
-task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose
-mode: train  # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
+task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
+mode: train  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where val, track, benchmark are NOT tested
 
 # training settings
 epochs: 300  # (int) number of epochs
@@ -156,7 +166,7 @@ copy_paste: 0.0  # (float) segment copy-paste (probability)
 ```
 
 ### Modify the docker-compose file
-Let's modify the `docker-compose.yaml` file as below. It mount the host locations to the required directories in the container and run the script in the container: `/repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py`.
+Let's modify the `docker-compose.yaml` file as below. It mount the host locations to the required directories in the container and run the `cmd.py` script in the container.
 ```yaml
 version: "3.9"
 services:
@@ -183,7 +193,7 @@ services:
 
 ```
 
-Once, modification is done. Spin up the docker containers to train the model as shown in [spin-up-the-container](#spin-up-the-container).
+Spin up the docker containers to train the model as shown in [spin-up-the-container](#spin-up-the-container). By default, once the training is done, the cmd.py script will create a folder named by today's date in `training` folder.
 
 ## Monitor the training progress
 ```bash
@@ -193,11 +203,11 @@ While training process is running, open another terminal.
 Execuate the command above and go to http://localhost:6006 to monitor the training.
 
 
-# Testing
+# Validation
 Create another hyperparameter file `./config/2023-07-19_val.yaml`. The `imgsz` should be a list of [h,w].
 ```yaml
-task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose
-mode: predict  # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
+task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
+mode: predict  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where val, track, benchmark are NOT tested
 
 # Prediction settings 
 imgsz: 320,640 # (list) input images size as list[h,w] for predict and export modes
@@ -254,8 +264,8 @@ Spin up the container as shown in [spin-up-the-container](#spin-up-the-container
 # Generate TensorRT engines
 Similarly, create another hyperparamter yaml file named `2023-07-19_trt.yaml` as below:
 ```yaml
-task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose
-mode: export  # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
+task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
+mode: export  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where val, track, benchmark are NOT tested
 
 # Export settings 
 format: engine  # (str) format to export to, choices at https://docs.ultralytics.com/modes/export/#export-formats
