@@ -1,5 +1,5 @@
 # Train and test YOLOv5 object detection models
-This is the tutorial how to train and test the yolov5 object detection models. If you want to train the yolov5 instance segmentation models, please refer to [segment.md](https://github.com/lmitechnologies/yolov5_lmi/segment.md).
+This is the tutorial how to train and test the yolov5 object detection models. If you want to train the yolov5 instance segmentation models, please refer to [segment.md](https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/object_detectors/yolov5_lmi/segment.md).
 
 ## Activate the virtual environments
 The command below assumes that the virtual python environment is installed in `~/virtual_env`.
