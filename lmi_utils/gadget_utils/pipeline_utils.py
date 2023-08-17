@@ -10,7 +10,7 @@ import glob
 BLACK=(0,0,0)
 
 logging.basicConfig(level=logging.NOTSET)
-logger = logging.getLogger(os.path.basename(__file__))
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 

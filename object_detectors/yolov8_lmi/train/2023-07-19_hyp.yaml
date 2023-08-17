@@ -1,0 +1,26 @@
+task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose
+mode: train  # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
+
+# training settings
+epochs: 300  # (int) number of epochs
+batch: 16  # (int) number of images per batch (-1 for AutoBatch)
+model: yolov8m-seg.pt # (str) one of yolov8n.pt, yolov8m.pt, yolov8l.pt, yolov8x.pt, yolov8n-seg.pt, yolov8m-seg.pt, yolov8l-seg.pt, yolov8x-seg.pt
+imgsz: 640  # (int) input images size, use the larger dimension if h!=w
+patience: 50  # (int) epochs to wait for no observable improvement for early stopping of training
+rect: True  # (bool) use rectangular images for training if mode='train' or rectangular validation if mode='val'
+exist_ok: False  # (bool) whether to overwrite existing training folder
+resume: False  # (bool) resume training from last checkpoint
+
+# data augmentation hyperparameters
+degrees: 0.0  # (float) image rotation (+/- deg)
+translate: 0.1  # (float) image translation (+/- fraction)
+scale: 0.5  # (float) image scale (+/- gain)
+shear: 0.0  # (float) image shear (+/- deg)
+perspective: 0.0  # (float) image perspective (+/- fraction), range 0-0.001
+flipud: 0.0  # (float) image flip up-down (probability)
+fliplr: 0.5  # (float) image flip left-right (probability)
+mosaic: 1.0  # (float) image mosaic (probability)
+mixup: 0.0  # (float) image mixup (probability)
+copy_paste: 0.0  # (float) segment copy-paste (probability)
+
+# more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml

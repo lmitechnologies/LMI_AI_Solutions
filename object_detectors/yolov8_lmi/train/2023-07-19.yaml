@@ -1,0 +1,12 @@
+path: /app/data
+train: 
+  - images
+val: 
+  - images
+
+test:
+
+names:
+  0: knot
+  1: wane
+  2: rot

@@ -8,7 +8,7 @@ import shutil
 import random
 
 logging.basicConfig()
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 def sample_images(path_imgs, path_out, num_samples, is_random=False):

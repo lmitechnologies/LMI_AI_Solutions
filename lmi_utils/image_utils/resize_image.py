@@ -7,7 +7,7 @@ import logging
 import cv2
 
 logging.basicConfig()
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 def resize_images(path_imgs, output_imsize, path_out, keep_same_filename=False):

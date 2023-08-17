@@ -10,7 +10,7 @@ from label_utils.plot_utils import plot_one_polygon
 
 
 logging.basicConfig()
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 

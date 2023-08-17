@@ -10,7 +10,7 @@ import json
 import cv2
 
 logging.basicConfig()
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 def annotate(image, regions):
