@@ -71,16 +71,15 @@ class GadgetSurfaceUtils():
 
             shape = profile.shape
             
-            # np_z = profile.reshape((shape[0]* shape[1]))
             np_z = numpy.empty(shape[0]*shape[1])
             np_x = numpy.empty(shape[0]*shape[1])
             np_y = numpy.empty(shape[0]*shape[1])
             i = 0
-            for y in range(0, shape[1]):
-                for x in range(0, shape[0]):
+            for y in range(shape[0]):
+                for x in range(shape[1]):
                     np_x[i] = offset[0] + x * resolution[0]
                     np_y[i] = offset[1] + y * resolution[1]
-                    np_z[i] = offset[2] + profile[x][y] * resolution[2]
+                    np_z[i] = offset[2] + profile[y][x] * resolution[2]
                     i += 1
 
             np_points = numpy.empty((shape[0]*shape[1], 3))
@@ -211,8 +210,6 @@ if __name__=="__main__":
     src=args['src']
     dest=args['dest']
     intensity = args['intensity']
-    ZResolution = args['zresolution']
-    ZOffset = args['zoffset']
 
     translate=GadgetSurfaceUtils()
 
@@ -233,6 +230,8 @@ if __name__=="__main__":
     elif option=='png_2_pkl':
         translate.png_2_pkl(src,dest)
     elif option=='pcd_2_pkl':
+        ZResolution = args['zresolution']
+        ZOffset = args['zoffset']
         translate.pcd_2_pkl(src,dest,ZResolution,ZOffset)
     else:
         raise Exception('Input option must be pkl_2_npy, pkl_2_png, npy_2_pkl, or png_2_pkl')
