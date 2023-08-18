@@ -20,9 +20,9 @@ def stretch(img,wh_stretch):
 
 if __name__=="__main__":
     ap=argparse.ArgumentParser()
-    ap.add_argument('-i','--input_path',default='.')
+    ap.add_argument('-i','--input_path',default='/home/caden/projects/customer_deployments/presstran-sthomas-weld-models/data/raw-pickle-png/BLOWOUT_WELDS_8.14.2023/png/')
     ap.add_argument('-o','--output_path',default='./stretch')
-    ap.add_argument('--wh_stretch',type=float,default=5)
+    ap.add_argument('--wh_stretch',type=float,default=3)
     args=vars(ap.parse_args())
     input_path=args['input_path']
     output_path=args['output_path']
@@ -41,7 +41,7 @@ if __name__=="__main__":
         os.mkdir(output_path)
 
     for file in files:
-        img=cv2.imread(file)
+        img=cv2.imread(file,-1)
         img_stretch=stretch(img,wh_stretch)
         outfile=os.path.split(file)[1]
         outfile=os.path.splitext(outfile)[0]+'_stretch.png'
