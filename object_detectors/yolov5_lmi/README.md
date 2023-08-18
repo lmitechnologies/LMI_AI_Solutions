@@ -114,4 +114,4 @@ python -m yolov5.detect --source ./data/resized_yolo/images --weights ./trained-
 The output results are saved in `./validation/2023-07-19`.
 
 # Generate TensorRT Engine
-Refer to here: https://github.com/lmitechnologies/yolov5_lmi/trt.
+Refer to here: https://github.com/lmitechnologies/LMI_AI_Solutions/tree/ais/object_detectors/yolov5_lmi/trt.
