@@ -1,5 +1,5 @@
 # Train and test YOLOv8 models
-This is the tutorial how to train and test the YOLOv8 models. This tutorial assume that the training and testing happen in a x86 system.
+This is the tutorial how to train and test the YOLOv8 models. This tutorial assume that the training and testing happen in a x86 system. Check the arm dockerfile: https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/object_detectors/yolov8_lmi/arm.dockerfile.
 
 ## System requirements
 ### Model training
