@@ -40,7 +40,7 @@ def add_cmd(final_cmds:list, cmd:str):
     idx = cmd.find('=')
     key = cmd[:idx+1]
     for cmd in final_cmds:
-        if cmd.find(key):
+        if cmd.find(key)!=-1:
             logger.info(f'Found {key} in both hyp.yaml and default configs. Overwrite the default config')
             return
     final_cmds.append(cmd)
