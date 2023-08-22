@@ -1,5 +1,5 @@
 # Train and test YOLOv8 models
-This is the tutorial how to train and test the YOLOv8 models. This tutorial assume that the training and testing happen in a x86 system.
+This is the tutorial how to train and test the YOLOv8 models. This tutorial assume that the training and testing happen in a x86 system. However, the arm dockerfile is provided here: https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/object_detectors/yolov8_lmi/arm.dockerfile.
 
 ## System requirements
 ### Model training
@@ -185,7 +185,7 @@ services:
                 capabilities: [gpu]
     volumes:
       - ../training:/app/training   # training output
-      - ../data/640x256/yolo:/app/data  # training data
+      - ../data/640x320/yolo:/app/data  # training data
       - ./2023-07-19.yaml:/app/config/dataset.yaml  # dataset settings
       - ./2023-07-19_hyp.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
@@ -253,7 +253,7 @@ services:
     volumes:
       - ../validation:/app/validation  # validation output path
       - ../training/2023-07-19/weights:/app/trained-inference-models   # trained model path, where it has best.pt
-      - ../data/640x256/test:/app/data  # input data path
+      - ../data/640x320/test:/app/data  # input data path
       - ./2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py

@@ -16,7 +16,7 @@ services:
     volumes:
       - ../validation:/app/validation  # validation output path
       - ../training/2023-07-19/weights:/app/trained-inference-models   # trained model path, where it has best.pt
-      - ../data/640x256/test:/app/data  # input data path
+      - ../data/val:/app/data  # input data path
       - ./2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
