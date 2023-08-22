@@ -6,8 +6,23 @@ import json
 import os
 from collections import OrderedDict,namedtuple,defaultdict
 import logging
+from enum import Enum
 
 from ultralytics.utils import ops
+from ultralytics.nn.tasks import attempt_load_weights
+
+
+class FileType(str, Enum):
+    ENGINE = '.engine'
+    PT = '.pt'
+
+
+def get_file_type(path_ws):
+    _,ext = os.path.splitext(path_ws)
+    for mt in FileType:
+        if mt.value == ext:
+            return mt
+    raise TypeError(f'All supported weights files are ".engine" and ".pt". But found this file extension: {ext}')
 
 
 def check_class_names(names):
@@ -28,60 +43,78 @@ class Yolov8_trt:
     
     logger = logging.getLogger(__name__)
     
-    def __init__(self, path_engine:str, device='gpu') -> None:
+    def __init__(self, path_wts:str, device='gpu') -> None:
         device = torch.device('cuda:0') if device=='gpu' else torch.device('cpu')
         if device=='gpu' and not torch.cuda.is_available():
             raise RuntimeError('CUDA not available.')
             
         stride = 32  # default stride
+        fp16 = False  # default updated below
         model, metadata = None, None
         
         logger_trt = trt.Logger(trt.Logger.INFO)
         Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
         
-        # Read file
-        with open(path_engine, 'rb') as f, trt.Runtime(logger_trt) as runtime:
-            meta_len = int.from_bytes(f.read(4), byteorder='little')  # read metadata length
-            metadata = json.loads(f.read(meta_len).decode('utf-8'))  # read metadata
-            model = runtime.deserialize_cuda_engine(f.read())  # read engine
-        context = model.create_execution_context()
-        bindings = OrderedDict()
-        output_names = []
-        fp16 = False  # default updated below
-        dynamic = False
-        for i in range(model.num_bindings):
-            name = model.get_binding_name(i)
-            dtype = trt.nptype(model.get_binding_dtype(i))
-            if model.binding_is_input(i):
-                if -1 in tuple(model.get_binding_shape(i)):  # dynamic
-                    dynamic = True
-                    context.set_binding_shape(i, tuple(model.get_profile_shape(0, i)[2]))
-                if dtype == np.float16:
-                    fp16 = True
-            else:  # output
-                output_names.append(name)
-            shape = tuple(context.get_binding_shape(i))
-            im = torch.from_numpy(np.empty(shape, dtype=dtype)).to(device)
-            bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
-        binding_addrs = OrderedDict((n, d.ptr) for n, d in bindings.items())
-        batch_size = bindings['images'].shape[0]  # if dynamic, this is instead max batch size
-        
-        if metadata:
-            for k, v in metadata.items():
-                if k in ('stride', 'batch'):
-                    metadata[k] = int(v)
-                elif k in ('imgsz', 'names', 'kpt_shape') and isinstance(v, str):
-                    metadata[k] = eval(v)
-            stride = metadata['stride']
-            task = metadata['task']
-            batch = metadata['batch']
-            imgsz = metadata['imgsz']
-            names = metadata['names']
-            self.logger.info(f'engine class names: {names}')
-            self.logger.info(f'engine imgsz: {imgsz}')
-            kpt_shape = metadata.get('kpt_shape')
-        else:
-            self.logger.warning(f"WARNING ⚠️ Metadata not found for 'model={path_engine}'")
+        # get the type of file
+        file_type = get_file_type(path_wts)
+        self.logger.info(f'found weights file type: {file_type}')
+        self.logger.info(type(file_type))
+        if file_type == FileType.ENGINE:
+            # Read file
+            with open(path_wts, 'rb') as f, trt.Runtime(logger_trt) as runtime:
+                meta_len = int.from_bytes(f.read(4), byteorder='little')  # read metadata length
+                metadata = json.loads(f.read(meta_len).decode('utf-8'))  # read metadata
+                model = runtime.deserialize_cuda_engine(f.read())  # read engine
+            context = model.create_execution_context()
+            bindings = OrderedDict()
+            output_names = []
+            dynamic = False
+            for i in range(model.num_bindings):
+                name = model.get_binding_name(i)
+                dtype = trt.nptype(model.get_binding_dtype(i))
+                if model.binding_is_input(i):
+                    if -1 in tuple(model.get_binding_shape(i)):  # dynamic
+                        dynamic = True
+                        context.set_binding_shape(i, tuple(model.get_profile_shape(0, i)[2]))
+                    if dtype == np.float16:
+                        fp16 = True
+                else:  # output
+                    output_names.append(name)
+                shape = tuple(context.get_binding_shape(i))
+                im = torch.from_numpy(np.empty(shape, dtype=dtype)).to(device)
+                bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
+            binding_addrs = OrderedDict((n, d.ptr) for n, d in bindings.items())
+            batch_size = bindings['images'].shape[0]  # if dynamic, this is instead max batch size
+            
+            # load metadata
+            if metadata:
+                for k, v in metadata.items():
+                    if k in ('stride', 'batch'):
+                        metadata[k] = int(v)
+                    elif k in ('imgsz', 'names', 'kpt_shape') and isinstance(v, str):
+                        metadata[k] = eval(v)
+                stride = metadata['stride']
+                task = metadata['task']
+                batch = metadata['batch']
+                imgsz = metadata['imgsz']
+                names = metadata['names']
+                self.logger.info(f'engine class names: {names}')
+                self.logger.info(f'engine imgsz: {imgsz}')
+                kpt_shape = metadata.get('kpt_shape')
+            else:
+                self.logger.warning(f"WARNING ⚠️ Metadata not found for 'model={path_wts}'")
+        elif file_type == FileType.PT:
+            imgsz = []
+            model = attempt_load_weights(path_wts,
+                                         device=device,
+                                         inplace=True,
+                                         fuse=True)
+            if hasattr(model, 'kpt_shape'):
+                kpt_shape = model.kpt_shape  # pose-only
+            stride = max(int(model.stride.max()), stride)  # model stride
+            names = model.module.names if hasattr(model, 'module') else model.names  # get class names
+            self.logger.info(f'pt class names: {names}')
+            model.half() if fp16 else model.float()
             
         # Check names
         names = check_class_names(names)
@@ -89,19 +122,25 @@ class Yolov8_trt:
         
         
     def forward(self, im):
-        if self.dynamic and im.shape != self.bindings['images'].shape:
-            self.logger.warning('WARNING ⚠️ Input image size mismatch, attempting to resize')
-            i = self.model.get_binding_index('images')
-            self.context.set_binding_shape(i, im.shape)  # reshape if dynamic
-            self.bindings['images'] = self.bindings['images']._replace(shape=im.shape)
-            for name in self.output_names:
-                i = self.model.get_binding_index(name)
-                self.bindings[name].data.resize_(tuple(self.context.get_binding_shape(i)))
-        s = self.bindings['images'].shape
-        assert im.shape == s, f"input size {im.shape} {'>' if self.dynamic else 'not equal to'} max model size {s}"
-        self.binding_addrs['images'] = int(im.data_ptr())
-        self.context.execute_v2(list(self.binding_addrs.values()))
-        y = [self.bindings[x].data for x in sorted(self.output_names)]
+        if self.fp16 and im.dtype != torch.float16:
+            im = im.half()
+            
+        if self.file_type == FileType.ENGINE:
+            if self.dynamic and im.shape != self.bindings['images'].shape:
+                self.logger.warning('WARNING ⚠️ Input image size mismatch, attempting to resize')
+                i = self.model.get_binding_index('images')
+                self.context.set_binding_shape(i, im.shape)  # reshape if dynamic
+                self.bindings['images'] = self.bindings['images']._replace(shape=im.shape)
+                for name in self.output_names:
+                    i = self.model.get_binding_index(name)
+                    self.bindings[name].data.resize_(tuple(self.context.get_binding_shape(i)))
+            s = self.bindings['images'].shape
+            assert im.shape == s, f"input size {im.shape} {'>' if self.dynamic else 'not equal to'} max model size {s}"
+            self.binding_addrs['images'] = int(im.data_ptr())
+            self.context.execute_v2(list(self.binding_addrs.values()))
+            y = [self.bindings[x].data for x in sorted(self.output_names)]
+        if self.file_type == FileType.PT:
+            y = self.model(im)
         
         if isinstance(y, (list, tuple)):
             return self.from_numpy(y[0]) if len(y) == 1 else [self.from_numpy(x) for x in y]
@@ -122,14 +161,20 @@ class Yolov8_trt:
         return torch.tensor(x).to(self.device) if isinstance(x, np.ndarray) else x
     
     
-    def warmup(self):
+    def warmup(self, imgsz=[640, 640]):
         """
         Warm up the model by running one forward pass with a dummy input.
-
+        Args:
+            imgsz(list): list of [h,w], default to [640,640]
         Returns:
             (None): This method runs the forward pass and don't return any value
         """
-        imgsz = [1,3]+self.imgsz
+        if isinstance(imgsz, tuple):
+            imgsz = list(imgsz)
+        if self.imgsz and self.imgsz != imgsz:
+            self.logger.warning(f'The warmup imgsz of {imgsz} does not match with the size of the model: {self.imgsz}!')
+            
+        imgsz = [1,3]+imgsz
         im = torch.empty(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
         self.forward(im)  # warmup
         
