@@ -9,9 +9,11 @@ import logging
 
 logging.basicConfig(level=logging.INFO)
 #%%
-def gen_collage(input_path,output_path,colmax,width,rowmax=None):
+def gen_collage(input_path,output_path,colmax,width,rowmax=None,file_filter=None):
 
     files=glob.glob(os.path.join(input_path,'*.png'))
+    if file_filter is not None:
+        files = [s for s in files if file_filter in s]
     files=sorted(files)
     logging.debug(f'List of files: {files}')
 
@@ -92,6 +94,7 @@ if __name__=="__main__":
     ap.add_argument('--width',default=None)
     ap.add_argument('--max_columns',type=int,default=10)
     ap.add_argument('--max_rows_per_collage',default=None)
+    ap.add_argument('--fname_filter',default=None)
     
     args=vars(ap.parse_args())
     input_data_path=args['input_data_path']
@@ -115,5 +118,5 @@ if __name__=="__main__":
     else:
         os.mkdir(output_path)
 
-    gen_collage(input_data_path,output_image_path,max_cols,width,max_rows)
+    gen_collage(input_data_path,output_image_path,max_cols,width,max_rows,file_filter=args['fname_filter'])
     

@@ -35,7 +35,7 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
         for image_file in image_files:
             print('[INFO] converting file: ',image_file)
             current_labels=[item for item in label_dicts if item['image_file']==image_file]
-            old_image=cv2.imread(os.path.join(input_data_dir,current_labels[0]['image_file']))
+            old_image=cv2.imread(os.path.join(input_data_dir,current_labels[0]['image_file']),-1)
             if boundingbox_label is None:
                 ivec_bbox=[0]
             else:
