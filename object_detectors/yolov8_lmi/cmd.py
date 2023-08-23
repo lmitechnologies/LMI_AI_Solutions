@@ -29,8 +29,10 @@ def check_folder_exist(path):
     if not os.path.isdir(path):
         raise Exception(f'path not exist: {path}')
     
-def get_model_path(path):
-    for fname in MODEL_NAMES:
+def get_model_path(path, mode):
+    # if export mode, use 'best.pt'
+    names = MODEL_NAMES[1:] if mode=='export' else MODEL_NAMES
+    for fname in names:
         p = os.path.join(path, fname)
         if os.path.isfile(p):
             return p
