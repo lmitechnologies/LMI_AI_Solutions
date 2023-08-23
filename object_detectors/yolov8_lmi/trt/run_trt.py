@@ -16,24 +16,26 @@ if __name__ == '__main__':
     import argparse
     import time
     parser = argparse.ArgumentParser()
-    parser.add_argument('-e','--engine',help='the path to the tensorRT engine file')
-    parser.add_argument('-i','--path_imgs',help='the path to the images')
-    parser.add_argument('-o','--path_out',help='the path to the output folder')
+    parser.add_argument('-w','--wts_file', required=True, help='the path to the model weights file. The type of supported files are: ".pt" or ".engine"')
+    parser.add_argument('-i','--path_imgs', required=True, help='the path to the testing images')
+    parser.add_argument('-o','--path_out' , required=True, help='the path to the output folder')
+    parser.add_argument('--sz', required=True, nargs=2, type=int, help='the model input size, two numbers: h w')
     parser.add_argument('-c','--confidence',default=0.25,type=float,help='[optional] the confidence for all classes, default=0.25')
     args = parser.parse_args()
     
     logging.basicConfig(level=logging.NOTSET)
     
-    engine = Yolov8_trt(args.engine)
+    model = Yolov8_trt(args.wts_file)
     logger = logging.getLogger(__name__)
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
         
     # warm up
     t1 = time.time()
-    engine.warmup()
+    model.warmup(args.sz)
     t2 = time.time()
-    logger.info(f'warm up proc time -> {t2-t1:.4f}')
+    logger.info(f'warmup input shape: {args.sz}')
+    logger.info(f'warmup proc time -> {t2-t1:.4f}')
         
     batches = get_img_path_batches(batch_size=BATCH_SIZE, img_dir=args.path_imgs)
     logger.info(f'loaded {len(batches)} with a batch size of {BATCH_SIZE}')
@@ -42,9 +44,9 @@ if __name__ == '__main__':
             t1 = time.time()
             
             # inference
-            im,im0 = engine.load_with_preprocess(p)
-            preds = engine.forward(im)
-            results = engine.postprocess(preds,im,im0,args.confidence)
+            im,im0 = model.load_with_preprocess(p)
+            preds = model.forward(im)
+            results = model.postprocess(preds,im,im0,args.confidence)
 
             #annotation
             fname = os.path.basename(p)

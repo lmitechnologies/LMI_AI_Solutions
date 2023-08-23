@@ -29,10 +29,15 @@ def check_folder_exist(path):
     if not os.path.isdir(path):
         raise Exception(f'path not exist: {path}')
     
-def get_model_path(path):
-    for fname in MODEL_NAMES:
+def get_model_path(path, mode):
+    # if export mode, use 'best.pt'. 
+    # otherwise:
+    #   use 'best.engine' if it exists. use 'best.pt' if does not exist
+    names = MODEL_NAMES[1:] if mode=='export' else MODEL_NAMES
+    for fname in names:
         p = os.path.join(path, fname)
         if os.path.isfile(p):
+            logger.info(f'Use the model weights: {p}')
             return p
     raise FileNotFoundError(f'Not found "best.pt" or "best.engine" in {path}')
 
@@ -77,7 +82,7 @@ if __name__=='__main__':
         add_cmds(cmd,tmp_cmd)
     else:
         check_folder_exist(MODEL_PATH)
-        path = get_model_path(MODEL_PATH)
+        path = get_model_path(MODEL_PATH, hyp['mode'])
         tmp_cmd = [f'model={path}', f'source={SOURCE_PATH}', f'project={VAL_FOLDER}']
         add_cmds(cmd,tmp_cmd)
     
