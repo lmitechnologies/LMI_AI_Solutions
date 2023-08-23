@@ -16,16 +16,16 @@ if __name__ == '__main__':
     import argparse
     import time
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m','--model', required=True, help='the path to the model weights file, ".pt" or ".engine"')
+    parser.add_argument('-w','--wts_file', required=True, help='the path to the model weights file. The type of supported files are: ".pt" or ".engine"')
     parser.add_argument('-i','--path_imgs', required=True, help='the path to the testing images')
     parser.add_argument('-o','--path_out' , required=True, help='the path to the output folder')
-    parser.add_argument('--sz', required=True, nargs=2, type=int, help='the model input size, a list of [h,w]')
+    parser.add_argument('--sz', required=True, nargs=2, type=int, help='the model input size, two numbers: h w')
     parser.add_argument('-c','--confidence',default=0.25,type=float,help='[optional] the confidence for all classes, default=0.25')
     args = parser.parse_args()
     
     logging.basicConfig(level=logging.NOTSET)
     
-    model = Yolov8_trt(args.model)
+    model = Yolov8_trt(args.wts_file)
     logger = logging.getLogger(__name__)
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
