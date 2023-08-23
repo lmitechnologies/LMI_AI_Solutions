@@ -79,7 +79,7 @@ if __name__=='__main__':
         add_cmds(cmd,tmp_cmd)
     else:
         check_folder_exist(MODEL_PATH)
-        path = get_model_path(MODEL_PATH)
+        path = get_model_path(MODEL_PATH, hyp['mode'])
         tmp_cmd = [f'model={path}', f'source={SOURCE_PATH}', f'project={VAL_FOLDER}']
         add_cmds(cmd,tmp_cmd)
     
