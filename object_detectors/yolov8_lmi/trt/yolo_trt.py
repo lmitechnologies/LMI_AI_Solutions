@@ -58,7 +58,6 @@ class Yolov8_trt:
         # get the type of file
         file_type = get_file_type(path_wts)
         self.logger.info(f'found weights file type: {file_type}')
-        self.logger.info(type(file_type))
         if file_type == FileType.ENGINE:
             # Read file
             with open(path_wts, 'rb') as f, trt.Runtime(logger_trt) as runtime:
