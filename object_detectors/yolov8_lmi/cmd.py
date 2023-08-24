@@ -25,9 +25,9 @@ def check_file_exist(file_path):
     if not os.path.isfile(file_path):
         raise FileNotFoundError(f'{file_path} not found')
     
-def check_folder_exist(path):
-    if not os.path.isdir(path):
-        raise Exception(f'path not exist: {path}')
+def sanity_check(final_configs:dict, check_keys:list):
+    for k in check_keys:
+        check_file_exist(final_configs[k])
     
 def get_model_path(path, mode):
     # if export mode, use 'best.pt'. 
@@ -39,20 +39,13 @@ def get_model_path(path, mode):
         if os.path.isfile(p):
             logger.info(f'Use the model weights: {p}')
             return p
-    raise FileNotFoundError(f'Not found "best.pt" or "best.engine" in {path}')
+    return
 
-def add_cmd(final_cmds:list, cmd:str):
-    idx = cmd.find('=')
-    key = cmd[:idx+1]
-    for c in final_cmds:
-        if c.find(key)!=-1:
-            logger.info(f'Found {key} in both hyp.yaml and default configs. Overwrite the default config')
-            return
-    final_cmds.append(cmd)
-
-def add_cmds(final_cmds:list, cmds:list):
-    for cmd in cmds:
-        add_cmd(final_cmds, cmd)
+def add_configs(final_configs:dict, configs:dict):
+    for k,v in configs.items():
+        if k not in final_configs:
+            logger.info(f'Not found the config: {k}. Use the default: {v}')
+            final_configs[k] = v
 
 
 
@@ -63,31 +56,29 @@ if __name__=='__main__':
     # load hyp yaml file
     with open(HYP_YAML) as f:
         hyp = yaml.safe_load(f)
-    # convert to list of paried strings, such as ['batch=64', 'epochs=100']
-    hyp_cmd = [f'{k}={v}' for k, v in hyp.items()]
+       
+    # use today's date as the default output folder name
+    defaults = {'name':date.today().strftime("%Y-%m-%d")}
     
-    # check if dataset yaml file exists in the train mode
-    is_train = hyp['mode']=='train'
-    is_predict = hyp['mode']=='predict'
-    if is_train:
-        check_file_exist(DATA_YAML)
-    
-    # get the final cmd
-    today = date.today().strftime("%Y-%m-%d")   # use today's date as the output folder name
-    cmd = ['yolo', f'name={today}'] + hyp_cmd
-    
-    # add default cmds if NOT exist in hyp.yaml 
-    if is_train:
-        tmp_cmd = [f'data={DATA_YAML}', f'project={TRAIN_FOLDER}']
-        add_cmds(cmd,tmp_cmd)
+    # add other default configs
+    check_keys = []
+    if hyp['mode']=='train':
+        tmp = {'data':DATA_YAML, 'project':TRAIN_FOLDER}
+        check_keys += ['data']
     else:
-        check_folder_exist(MODEL_PATH)
-        path = get_model_path(MODEL_PATH, hyp['mode'])
-        tmp_cmd = [f'model={path}', f'source={SOURCE_PATH}', f'project={VAL_FOLDER}']
-        add_cmds(cmd,tmp_cmd)
+        path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
+        tmp = {'model':path, 'source':SOURCE_PATH, 'project':VAL_FOLDER}
+        check_keys += ['model', 'source'] if hyp['mode']=='predict' else ['model']
+    defaults.update(tmp)
+    add_configs(hyp, defaults)
     
-    logger.info(f'cmd: {cmd}')
+    # error checking
+    sanity_check(hyp, check_keys)
     
-    # run command
-    subprocess.run(cmd, check=True)
+    # get final command
+    final_cmd = ['yolo'] + [f'{k}={v}' for k, v in hyp.items()]
+    logger.info(f'cmd: {final_cmd}')
+    
+    # run final command
+    subprocess.run(final_cmd, check=True)
     
