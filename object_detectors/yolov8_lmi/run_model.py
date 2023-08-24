@@ -5,7 +5,7 @@ import random
 import numpy as np
 import torch
 
-from yolov8_lmi.trt.yolo_trt import Yolov8_trt
+from yolov8_lmi.model import Yolov8
 from gadget_utils.pipeline_utils import plot_one_box, get_img_path_batches
 
 
@@ -25,7 +25,7 @@ if __name__ == '__main__':
     
     logging.basicConfig(level=logging.NOTSET)
     
-    model = Yolov8_trt(args.wts_file)
+    model = Yolov8(args.wts_file)
     logger = logging.getLogger(__name__)
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)

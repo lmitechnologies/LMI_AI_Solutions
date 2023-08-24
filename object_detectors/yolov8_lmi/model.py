@@ -39,11 +39,13 @@ def check_class_names(names):
     return names
 
 
-class Yolov8_trt:
+class Yolov8:
     
     logger = logging.getLogger(__name__)
     
     def __init__(self, path_wts:str, device='gpu') -> None:
+        if not os.path.isfile(path_wts):
+            raise FileNotFoundError(f'File not found: {path_wts}')
         device = torch.device('cuda:0') if device=='gpu' else torch.device('cpu')
         if device=='gpu' and not torch.cuda.is_available():
             raise RuntimeError('CUDA not available.')

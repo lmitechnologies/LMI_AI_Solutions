@@ -1,5 +1,5 @@
 # Train and test YOLOv8 models
-This is the tutorial how to train and test the YOLOv8 models. This tutorial assume that the training and testing happen in a x86 system. However, the arm dockerfile is provided here: https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/object_detectors/yolov8_lmi/arm.dockerfile.
+This is the tutorial how to train and test the YOLOv8 models. This tutorial assume that the training and testing happen in a **x86** system. However, the arm dockerfile is provided here: https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/object_detectors/yolov8_lmi/docker/arm.dockerfile.
 
 ## System requirements
 ### Model training
@@ -7,18 +7,23 @@ This is the tutorial how to train and test the YOLOv8 models. This tutorial assu
 - CUDA 12.1
 - ubuntu 20.04
 
-### TensorRT engine generation if will be deployed on Nvidia Jetson 
+### TensorRT engine generation if the model needs to be deployed on Nvidia Jetson devices
 - arm system
 - JetPack 5.0.2
 
 ## Directory structure
-By convention, we use today's date (i.e. 2023-07-19) as the file name.
+The folder structure below will be created when we go through the tutorial. By convention, we use today's date (i.e. 2023-07-19) as the file name.
 ```
 ├── config
 │   ├── dockerfile
-│   ├── docker-compose.yaml
-│   ├── 2023-07-19.yaml
-│   ├── 2023-07-19_hyp.yaml
+│   ├── docker-compose_preprocess.yaml
+│   ├── docker-compose_train.yaml
+│   ├── docker-compose_val.yaml
+│   ├── docker-compose_trt.yaml
+│   ├── 2023-07-19_dataset.yaml
+│   ├── 2023-07-19_train.yaml
+│   ├── 2023-07-19_val.yaml
+│   ├── 2023-07-19_trt.yaml
 ├── preprocess
 │   ├── 2023-07-19.sh
 ├── data
@@ -30,7 +35,7 @@ By convention, we use today's date (i.e. 2023-07-19) as the file name.
 
 
 ## Create a dockerfile
-Let's create a file named `dockerfile` in `config`. It installs the dependencies and clone LMI AI Solutions repository. 
+Let's create a file `./config/dockerfile`. It installs the dependencies and clone LMI_AI_Solutions repository inside the docker container.
 ```docker
 # last version running on ubuntu 20.04, require CUDA 12.1 
 FROM nvcr.io/nvidia/pytorch:23.04-py3
@@ -50,34 +55,38 @@ RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 
 ## Prepare the dataset
 Prepare the dataset by the followings:
-- resize images and labels in csv [optional]
+- resize images and labels in csv (optional)
 - convert labeling data to YOLO format
 
 **YOLO models require the dimensions of images to be dividable by 32**. The resizing is optional if the dimensions already meet this requirement. In this tutorial, we resize images to 640x320 as an example.
 
 ### Create a bash script for data processing
-First, create a bash script named `./preprocess/2023-07-19.sh` to do the resize and data conversion to yolo format.
+First, create a bash script `./preprocess/2023-07-19.sh`, which resizes images and converts data to yolo format. In the end, it will generate a yolo-formatted dataset in `/app/data/resized_yolo`.
 ```bash
-# modify the width and height according to your data
+# modify to your data path
 input_path=/app/data/allImages
+# modify the width and height according to your data
 W=640
 H=320
 
+# import the repo paths
 source /repos/LMI_AI_Solutions/lmi_ai.env
 
+# resize images with labels
 python -m label_utils.resize_with_csv --path_imgs $input_path --out_imsz $W,$H --path_out /app/data/resized
 
-python -m label_utils.convert_data_to_yolo --path_imgs /app/data/resized --path_out /app/data/resized_yolo
+# convert to yolo format
+# remote the --seg flag if you want to train a object detection model
+python -m label_utils.convert_data_to_yolo --path_imgs /app/data/resized --path_out /app/data/resized_yolo --seg
 ```
 
-### Create a docker-compose.yaml file
-In order to run the bash script in the container, we need to create a `./config/docker-compose.yaml` file.
-Assume that the path to the original data in host is `../data/allImages`. Below, we mount the folder `../data` to `/app/data` in the docker container. Also, mount the bash script to `/app/preprocess/preprocess.sh`.
+### Create a docker-compose file
+To run the bash script in the container, we need to create a file `./config/docker-compose_preprocess.yaml`. We want to mount the location in host to a location in container so that the file/folder changes in container are picked up in host. Assume that the path to the original data in host is `../data/allImages`. Below, we mount `../data` to `/app/data` in the container. Also, mount the bash script to `/app/preprocess/preprocess.sh`. The bash command inside the command section will be executed.
 ```yaml
 version: "3.9"
 services:
-  yolov8_data:
-    container_name: yolov8_data
+  yolov8_preprocess:
+    container_name: yolov8_preprocess
     build:
       context: .
       dockerfile: ./dockerfile
@@ -90,25 +99,26 @@ services:
                 count: 1
                 capabilities: [gpu]
     volumes:
-      - ../data:/app/data
+      - ../data:/app/data # format is location_in_host:location_in_container
       - ../preprocess/2023-07-19.sh:/app/preprocess/preprocess.sh
     command: >
       bash /app/preprocess/preprocess.sh
 ```
 
 ### Spin up the container
-Go to `./config` and spin up the container with the following commands: 
+Go to `./config` and spin up the container using the following commands: 
 ```bash
 # build the container
-docker compose build
+# "-f" specifies which yaml file to load
+docker compose -f docker-compose_preprocess.yaml build
 
 # spin up the container
-docker compose up
+docker compose -f docker-compose_preprocess.yaml up
 ```
 Once it finishs executing, the yolo formatted dataset will be created in the host: `../data/resized_yolo`.
 
 
-## Create a yaml file indicating the location of the training dataset
+## Create a dataset yaml file indicating the location of the dataset and its classes
 After converting data to yolo format, a json file can be found in `../data/resized_yolo/class_map.json`. The order of class names in the yaml file **must match with** the order of names in the json file. 
 
 Below is what is in the class_map.json:
@@ -116,7 +126,7 @@ Below is what is in the class_map.json:
 {"peeling": 0, "scuff": 1, "white":2}
 ```
 
-Below is the yaml file that need to be created. Let's save it as `./config/2023-07-19.yaml`.
+Below is the yaml file that need to be created. Let's save it as `./config/2023-07-19_dataset.yaml`.
 ```yaml
 path: /app/data # dataset root dir (must use absolute path!)
 train: images  # train images (relative to 'path')
@@ -132,10 +142,10 @@ names: # class names must match with the names in class_map.json
 
 
 ## Train the model
-To train the model, we need to create a hyperparameter yaml file and modify the existing `docker-compose.yaml` file.
+To train the model, we need to create a hyperparameter yaml file and create a `docker-compose_train.yaml` file.
 
-### Create a hyperparameter yaml file
- We need to crete another file `./config/2023-07-19_hyp.yaml`. Below shows you an example of training a **medium-size yolov8 instance segmentation model** with the image size of 640. To train object detection models, set `task` to `detect`. If the training images are square, set `rect` to `False`.
+### Create a hyperparameter file
+ We need to crete a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **medium-size yolov8 instance segmentation model** with the image size of 640. To train object detection models, set `task` to `detect`. If the training images are square, set `rect` to `False`.
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
 mode: train  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where val, track, benchmark are NOT tested
@@ -144,7 +154,7 @@ mode: train  # (str) YOLO mode, i.e. train, predict, export, val, track, benchma
 epochs: 300  # (int) number of epochs
 batch: 16  # (int) number of images per batch (-1 for AutoBatch)
 model: yolov8m-seg.pt # (str) one of yolov8n.pt, yolov8m.pt, yolov8l.pt, yolov8x.pt, yolov8n-seg.pt, yolov8m-seg.pt, yolov8l-seg.pt, yolov8x-seg.pt
-imgsz: 640  # (int) input images size, use the larger dimension if h!=w
+imgsz: 640  # (int) input images size, use the larger dimension if rectangular image
 patience: 50  # (int) epochs to wait for no observable improvement for early stopping of training
 rect: True  # (bool) use rectangular images for training if mode='train' or rectangular validation if mode='val'
 exist_ok: False  # (bool) whether to overwrite existing training folder
@@ -165,8 +175,8 @@ copy_paste: 0.0  # (float) segment copy-paste (probability)
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
 
-### Modify the docker-compose file
-Let's modify the `docker-compose.yaml` file as below. It mount the host locations to the required directories in the container and run the `cmd.py` script in the container.
+### Create a docker-compose file
+Let's create a file `./config/docker-compose_train.yaml`. It mount the host locations to the required directories in the container and run the script `cmd.py`, which load the hyperparameters and do the task that was specified in the file `./config/2023-07-19_train.yaml`.
 ```yaml
 version: "3.9"
 services:
@@ -185,17 +195,17 @@ services:
                 capabilities: [gpu]
     volumes:
       - ../training:/app/training   # training output
-      - ../data/640x320/yolo:/app/data  # training data
-      - ./2023-07-19.yaml:/app/config/dataset.yaml  # dataset settings
-      - ./2023-07-19_hyp.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ../data/resized_yolo:/app/data  # training data
+      - ./2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset settings
+      - ./2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
 
 ```
 
-Spin up the docker containers to train the model as shown in [spin-up-the-container](#spin-up-the-container). By default, once the training is done, the cmd.py script will create a folder named by today's date in `training` folder.
+Spin up the docker containers to train the model as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_train.yaml` instead.** By default, once the training is done, the cmd.py script will create a folder named by today's date in `training` folder, i.e. `training/2023-07-19`.
 
-## Monitor the training progress
+## Monitor the training progress (optional)
 ```bash
 tensorboard --logdir ./training/2023-07-19
 ```
@@ -233,7 +243,7 @@ boxes: True  # (bool) Show boxes in segmentation predictions
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
 
-Modify the docker-compose file as below.
+Create a file `docker-compose_val.yaml` as below.
 ```yaml
 version: "3.9"
 services:
@@ -253,13 +263,13 @@ services:
     volumes:
       - ../validation:/app/validation  # validation output path
       - ../training/2023-07-19/weights:/app/trained-inference-models   # trained model path, where it has best.pt
-      - ../data/640x320/test:/app/data  # input data path
+      - ../data/resized_yolo/images:/app/data  # input data path
       - ./2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
 
 ```
-Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). Then, the output results are saved in `./validation/2023-07-19`.
+Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_val.yaml` instead.** Then, the output results are saved in `./validation/2023-07-19`.
 
 # Generate TensorRT engines
 Similarly, create another hyperparamter yaml file named `2023-07-19_trt.yaml` as below:
@@ -286,7 +296,7 @@ nms: False  # (bool) CoreML: add NMS
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
 
-Modify the docker-compose file:
+Create a docker-compose file `./config/docker-compose_trt.yaml`:
 ```yaml
 version: "3.9"
 services:
@@ -311,4 +321,4 @@ services:
 
 ```
 
-Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). Then, the output tensorRT engine is saved in `./training/2023-07-19/weights`.
+Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_trt.yaml` instead.** Then, the tensorRT engine is generated in `./training/2023-07-19/weights`.
