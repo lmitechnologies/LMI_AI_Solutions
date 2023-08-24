@@ -11,9 +11,9 @@ logger.setLevel(logging.INFO)
 
 # mounted locations in the docker container
 HYP_YAML = '/app/config/hyp.yaml'
-DATA_YAML = '/app/config/dataset.yaml'
 
 # default configs
+DATA_YAML = '/app/config/dataset.yaml'
 TRAIN_FOLDER = '/app/training'
 VAL_FOLDER = '/app/validation'
 MODEL_PATH = '/app/trained-inference-models'
