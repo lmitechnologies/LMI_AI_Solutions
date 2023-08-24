@@ -62,13 +62,15 @@ if __name__=='__main__':
     
     # add other default configs
     check_keys = []
-    if hyp['mode']=='train':
+    if hyp['mode'] == 'train':
         tmp = {'data':DATA_YAML, 'project':TRAIN_FOLDER}
         check_keys += ['data']
-    else:
+    elif hyp['mode'] in ['predict','export']:
         path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
         tmp = {'model':path, 'source':SOURCE_PATH, 'project':VAL_FOLDER}
         check_keys += ['model', 'source'] if hyp['mode']=='predict' else ['model']
+    else:
+        raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
     defaults.update(tmp)
     add_configs(hyp, defaults)
     
