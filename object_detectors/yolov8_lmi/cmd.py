@@ -28,7 +28,7 @@ def check_path_exist(path, is_file:bool):
         path (str): the input path
         is_file (bool): True if it's a file, False otherwise
     """
-    if is_file:
+    if is_file and not os.path.isfile(path):
         with open(path,'r'):
             pass
     if not is_file:
@@ -45,7 +45,8 @@ def sanity_check(final_configs:dict, check_keys:dict):
         try:
             check_path_exist(final_configs[k],v)
         except Exception:
-            logger.exception(f'file or path not found: {final_configs[k]}')
+            err_msg = f'file or path not found: {final_configs[k]}'
+            logger.exception(err_msg)
             exit(2)
     
 def get_model_path(path, mode):
