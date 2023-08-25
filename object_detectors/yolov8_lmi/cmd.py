@@ -42,7 +42,11 @@ def sanity_check(final_configs:dict, check_keys:dict):
         check_keys (dict): < key_to_be_checked : True if is_file else False >
     """
     for k,v in check_keys.items():
-        check_path_exist(final_configs[k],v)
+        try:
+            check_path_exist(final_configs[k],v)
+        except Exception:
+            logger.exception(f'file or path not found: {final_configs[k]}')
+            exit(2)
     
 def get_model_path(path, mode):
     # if export mode, use 'best.pt'. 
