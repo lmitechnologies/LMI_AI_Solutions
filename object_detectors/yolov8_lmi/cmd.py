@@ -47,7 +47,7 @@ def get_model_path(path, mode):
         if os.path.isfile(p):
             logger.info(f'Use the model weights: {p}')
             return p
-    return
+    return ''
 
 def add_configs(final_configs:dict, configs:dict):
     """add to configs only if the configs do NOT exist. Modify the final_configs in-place.
