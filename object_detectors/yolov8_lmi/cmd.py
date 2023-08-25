@@ -29,11 +29,9 @@ def check_path_exist(path, is_file:bool):
         is_file (bool): True if it's a file, False otherwise
     """
     if is_file and not os.path.isfile(path):
-        logger.exception(f'Not found file: {path}')
-        exit(1)
+        raise Exception(f'Not found file: {path}')
     if not is_file and not os.path.isdir(path):
-        logger.exception(f'Not found path: {path}')
-        exit(1)
+        raise Exception(f'Not found path: {path}')
     
 def sanity_check(final_configs:dict, check_keys:dict):
     """check if the value to the check_keys exists. If not, throw exception.
