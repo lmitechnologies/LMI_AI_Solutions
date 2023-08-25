@@ -21,19 +21,21 @@ MODEL_NAMES = ['best.engine','best.pt']
 SOURCE_PATH = '/app/data'
 
 
-def check_file_exist(file_path):
-    if not os.path.isfile(file_path):
-        raise FileNotFoundError(f'{file_path} not found')
+def check_path_exist(path, is_file):
+    if is_file and not os.path.isfile(path):
+        raise FileNotFoundError(f'{path} not found')
+    if not is_file and not os.path.isdir(path):
+        raise Exception(f'Path not exists: {path}')
     
-def sanity_check(final_configs:dict, check_keys:list):
+def sanity_check(final_configs:dict, check_keys:dict):
     """check if the value to the check_keys exists. If not, throw exception.
 
     Args:
         final_configs (dict): the input configs
-        check_keys (list): keys to be checked
+        check_keys (dict): < key_to_be_checked : True if is_file else False >
     """
-    for k in check_keys:
-        check_file_exist(final_configs[k])
+    for k,v in check_keys.items():
+        check_path_exist(final_configs[k],v)
     
 def get_model_path(path, mode):
     # if export mode, use 'best.pt'. 
@@ -63,7 +65,7 @@ def add_configs(final_configs:dict, configs:dict):
 
 if __name__=='__main__':
     # check if files exist
-    check_file_exist(HYP_YAML)
+    check_path_exist(HYP_YAML, True)
         
     # load hyp yaml file
     with open(HYP_YAML) as f:
@@ -73,14 +75,14 @@ if __name__=='__main__':
     defaults = {'name':date.today().strftime("%Y-%m-%d")}
     
     # add other default configs
-    check_keys = []
+    check_keys = {} # map < key : True if is_file else False >
     if hyp['mode'] == 'train':
         tmp = {'data':DATA_YAML, 'project':TRAIN_FOLDER}
-        check_keys += ['data']
+        check_keys['data'] = False
     elif hyp['mode'] in ['predict','export']:
         path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
         tmp = {'model':path, 'source':SOURCE_PATH, 'project':VAL_FOLDER}
-        check_keys += ['model', 'source'] if hyp['mode']=='predict' else ['model']
+        check_keys += {'model':True, 'source':False} if hyp['mode']=='predict' else {'model':True}
     else:
         raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
     defaults.update(tmp)
