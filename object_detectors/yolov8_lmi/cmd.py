@@ -11,9 +11,9 @@ logger.setLevel(logging.INFO)
 
 # mounted locations in the docker container
 HYP_YAML = '/app/config/hyp.yaml'
-DATA_YAML = '/app/config/dataset.yaml'
 
 # default configs
+DATA_YAML = '/app/config/dataset.yaml'
 TRAIN_FOLDER = '/app/training'
 VAL_FOLDER = '/app/validation'
 MODEL_PATH = '/app/trained-inference-models'
@@ -21,73 +21,91 @@ MODEL_NAMES = ['best.engine','best.pt']
 SOURCE_PATH = '/app/data'
 
 
-def check_file_exist(file_path):
-    if not os.path.isfile(file_path):
-        raise FileNotFoundError(f'{file_path} not found')
+def check_path_exist(path, is_file:bool):
+    """fail the program if the path does not exist
+
+    Args:
+        path (str): the input path
+        is_file (bool): True if it's a file, False otherwise
+    """
+    if is_file and not os.path.isfile(path):
+        raise Exception(f'Not found file: {path}')
+    if not is_file and not os.path.isdir(path):
+        raise Exception(f'Not found path: {path}')
     
-def check_folder_exist(path):
-    if not os.path.isdir(path):
-        raise Exception(f'path not exist: {path}')
+    
+def sanity_check(final_configs:dict, check_keys:dict):
+    """check if the value to the check_keys exists. If not, throw exception.
+
+    Args:
+        final_configs (dict): the input configs
+        check_keys (dict): < key_to_be_checked : True if is_file else False >
+    """
+    for k,v in check_keys.items():
+        check_path_exist(final_configs[k],v)
+    
     
 def get_model_path(path, mode):
     # if export mode, use 'best.pt'. 
     # otherwise:
-    #   use 'best.engine' if it exists. use 'best.pt' if does not exist
+    #   use 'best.engine' if it exists. otherwise use 'best.pt' 
     names = MODEL_NAMES[1:] if mode=='export' else MODEL_NAMES
     for fname in names:
         p = os.path.join(path, fname)
         if os.path.isfile(p):
             logger.info(f'Use the model weights: {p}')
             return p
-    raise FileNotFoundError(f'Not found "best.pt" or "best.engine" in {path}')
+    raise Exception(f'No found weights {MODEL_NAMES} in: {path}')
 
-def add_cmd(final_cmds:list, cmd:str):
-    idx = cmd.find('=')
-    key = cmd[:idx+1]
-    for c in final_cmds:
-        if c.find(key)!=-1:
-            logger.info(f'Found {key} in both hyp.yaml and default configs. Overwrite the default config')
-            return
-    final_cmds.append(cmd)
 
-def add_cmds(final_cmds:list, cmds:list):
-    for cmd in cmds:
-        add_cmd(final_cmds, cmd)
+def add_configs(final_configs:dict, configs:dict):
+    """add to configs only if the configs do NOT exist. Modify the final_configs in-place.
+
+    Args:
+        final_configs (dict): the output configs
+        configs (dict): the configs to be added
+    """
+    for k,v in configs.items():
+        if k not in final_configs:
+            logger.info(f'Not found the config: {k}. Use the default: {v}')
+            final_configs[k] = v
 
 
 
 if __name__=='__main__':
     # check if files exist
-    check_file_exist(HYP_YAML)
+    check_path_exist(HYP_YAML, True)
         
     # load hyp yaml file
     with open(HYP_YAML) as f:
         hyp = yaml.safe_load(f)
-    # convert to list of paried strings, such as ['batch=64', 'epochs=100']
-    hyp_cmd = [f'{k}={v}' for k, v in hyp.items()]
+       
+    # use today's date as the default output folder name
+    defaults = {'name':date.today().strftime("%Y-%m-%d")}
     
-    # check if dataset yaml file exists in the train mode
-    is_train = hyp['mode']=='train'
-    is_predict = hyp['mode']=='predict'
-    if is_train:
-        check_file_exist(DATA_YAML)
-    
-    # get the final cmd
-    today = date.today().strftime("%Y-%m-%d")   # use today's date as the output folder name
-    cmd = ['yolo', f'name={today}'] + hyp_cmd
-    
-    # add default cmds if NOT exist in hyp.yaml 
-    if is_train:
-        tmp_cmd = [f'data={DATA_YAML}', f'project={TRAIN_FOLDER}']
-        add_cmds(cmd,tmp_cmd)
+    # add other default configs
+    check_keys = {} # map < key : True if is_file else False >
+    if hyp['mode'] == 'train':
+        tmp = {'data':DATA_YAML, 'project':TRAIN_FOLDER}
+        check_keys['data'] = False
+    elif hyp['mode'] in ['predict','export']:
+        path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
+        tmp = {'model':path, 'source':SOURCE_PATH, 'project':VAL_FOLDER}
+        check_keys['model']=True
+        if hyp['mode']=='predict':
+            check_keys['source']=False 
     else:
-        check_folder_exist(MODEL_PATH)
-        path = get_model_path(MODEL_PATH, hyp['mode'])
-        tmp_cmd = [f'model={path}', f'source={SOURCE_PATH}', f'project={VAL_FOLDER}']
-        add_cmds(cmd,tmp_cmd)
+        raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
+    defaults.update(tmp)
+    add_configs(hyp, defaults)
     
-    logger.info(f'cmd: {cmd}')
+    # error checking
+    sanity_check(hyp, check_keys)
     
-    # run command
-    subprocess.run(cmd, check=True)
+    # get final command
+    final_cmd = ['yolo'] + [f'{k}={v}' for k, v in hyp.items()]
+    logger.info(f'cmd: {final_cmd}')
+    
+    # run final command
+    subprocess.run(final_cmd, check=True)
     

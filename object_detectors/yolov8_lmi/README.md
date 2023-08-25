@@ -199,7 +199,7 @@ services:
       - ./2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset settings
       - ./2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
 
 ```
 
@@ -266,7 +266,7 @@ services:
       - ../data/resized_yolo/images:/app/data  # input data path
       - ./2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
 
 ```
 Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_val.yaml` instead.** Then, the output results are saved in `./validation/2023-07-19`.
@@ -317,7 +317,7 @@ services:
       - ../training/2023-08-16/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
       - ./2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
 
 ```
 
