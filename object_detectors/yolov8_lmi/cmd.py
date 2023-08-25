@@ -23,9 +23,11 @@ SOURCE_PATH = '/app/data'
 
 def check_path_exist(path, is_file):
     if is_file and not os.path.isfile(path):
-        raise FileNotFoundError(path)
+        logger.exception(f'File not found: {path}')
+        exit(2)
     if not is_file and not os.path.isdir(path):
-        raise IsADirectoryError(path)
+        logger.exception(f'Path not found: {path}')
+        exit(2)
     
 def sanity_check(final_configs:dict, check_keys:dict):
     """check if the value to the check_keys exists. If not, throw exception.
