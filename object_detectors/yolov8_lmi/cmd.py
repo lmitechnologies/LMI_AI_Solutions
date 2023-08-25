@@ -33,6 +33,7 @@ def check_path_exist(path, is_file:bool):
     if not is_file and not os.path.isdir(path):
         raise Exception(f'Not found path: {path}')
     
+    
 def sanity_check(final_configs:dict, check_keys:dict):
     """check if the value to the check_keys exists. If not, throw exception.
 
@@ -42,6 +43,7 @@ def sanity_check(final_configs:dict, check_keys:dict):
     """
     for k,v in check_keys.items():
         check_path_exist(final_configs[k],v)
+    
     
 def get_model_path(path, mode):
     # if export mode, use 'best.pt'. 
@@ -54,6 +56,7 @@ def get_model_path(path, mode):
             logger.info(f'Use the model weights: {p}')
             return p
     raise Exception(f'No found weights {MODEL_NAMES} in: {path}')
+
 
 def add_configs(final_configs:dict, configs:dict):
     """add to configs only if the configs do NOT exist. Modify the final_configs in-place.
@@ -88,6 +91,7 @@ if __name__=='__main__':
     elif hyp['mode'] in ['predict','export']:
         path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
         tmp = {'model':path, 'source':SOURCE_PATH, 'project':VAL_FOLDER}
+        check_keys['model']=True
         if hyp['mode']=='predict':
             check_keys['source']=False 
     else:
