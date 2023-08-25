@@ -22,17 +22,18 @@ SOURCE_PATH = '/app/data'
 
 
 def check_path_exist(path, is_file:bool):
-    """fail the program by opening file or listing the directory
+    """fail the program if the path does not exist
 
     Args:
         path (str): the input path
         is_file (bool): True if it's a file, False otherwise
     """
     if is_file and not os.path.isfile(path):
-        with open(path,'r'):
-            pass
-    if not is_file:
-        os.listdir(path)
+        logger.exception(f'Not found file: {path}')
+        exit(1)
+    if not is_file and not os.path.isdir(path):
+        logger.exception(f'Not found path: {path}')
+        exit(1)
     
 def sanity_check(final_configs:dict, check_keys:dict):
     """check if the value to the check_keys exists. If not, throw exception.
@@ -42,12 +43,7 @@ def sanity_check(final_configs:dict, check_keys:dict):
         check_keys (dict): < key_to_be_checked : True if is_file else False >
     """
     for k,v in check_keys.items():
-        try:
-            check_path_exist(final_configs[k],v)
-        except Exception:
-            err_msg = f'file or path not found: {final_configs[k]}'
-            logger.exception(err_msg)
-            exit(2)
+        check_path_exist(final_configs[k],v)
     
 def get_model_path(path, mode):
     # if export mode, use 'best.pt'. 
