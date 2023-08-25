@@ -26,6 +26,12 @@ def check_file_exist(file_path):
         raise FileNotFoundError(f'{file_path} not found')
     
 def sanity_check(final_configs:dict, check_keys:list):
+    """check if the value to the check_keys exists. If not, throw exception.
+
+    Args:
+        final_configs (dict): the input configs
+        check_keys (list): keys to be checked
+    """
     for k in check_keys:
         check_file_exist(final_configs[k])
     
@@ -42,6 +48,12 @@ def get_model_path(path, mode):
     return
 
 def add_configs(final_configs:dict, configs:dict):
+    """add to configs only if the configs do NOT exist. Modify the final_configs in-place.
+
+    Args:
+        final_configs (dict): the output configs
+        configs (dict): the configs to be added
+    """
     for k,v in configs.items():
         if k not in final_configs:
             logger.info(f'Not found the config: {k}. Use the default: {v}')
