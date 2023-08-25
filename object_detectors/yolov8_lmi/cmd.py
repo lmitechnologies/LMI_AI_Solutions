@@ -46,14 +46,14 @@ def sanity_check(final_configs:dict, check_keys:dict):
 def get_model_path(path, mode):
     # if export mode, use 'best.pt'. 
     # otherwise:
-    #   use 'best.engine' if it exists. use 'best.pt' if does not exist
+    #   use 'best.engine' if it exists. otherwise use 'best.pt' 
     names = MODEL_NAMES[1:] if mode=='export' else MODEL_NAMES
     for fname in names:
         p = os.path.join(path, fname)
         if os.path.isfile(p):
             logger.info(f'Use the model weights: {p}')
             return p
-    return ''
+    raise Exception(f'No found weights {MODEL_NAMES} in: {path}')
 
 def add_configs(final_configs:dict, configs:dict):
     """add to configs only if the configs do NOT exist. Modify the final_configs in-place.
@@ -88,7 +88,8 @@ if __name__=='__main__':
     elif hyp['mode'] in ['predict','export']:
         path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
         tmp = {'model':path, 'source':SOURCE_PATH, 'project':VAL_FOLDER}
-        check_keys.update({'model':True, 'source':False}) if hyp['mode']=='predict' else check_keys.update({'model':True})
+        if hyp['mode']=='predict':
+            check_keys['source']=False 
     else:
         raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
     defaults.update(tmp)
