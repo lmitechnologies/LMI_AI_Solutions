@@ -82,7 +82,7 @@ if __name__=='__main__':
     elif hyp['mode'] in ['predict','export']:
         path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
         tmp = {'model':path, 'source':SOURCE_PATH, 'project':VAL_FOLDER}
-        check_keys += {'model':True, 'source':False} if hyp['mode']=='predict' else {'model':True}
+        check_keys.update({'model':True, 'source':False}) if hyp['mode']=='predict' else check_keys.update({'model':True})
     else:
         raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
     defaults.update(tmp)
