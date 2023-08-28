@@ -30,7 +30,82 @@ This folder contains the [Anomalib](https://github.com/openvinotoolkit/anomalib)
         pixel_AUROC          0.9906309843063354
        pixel_F1Score         0.4874393045902252
 ```
-## Train
+## Training Overview
+1. Initialize/modify dockerfile
+2. Initialize/modify docker-compose.yaml
+3. Train model
+4. Validate Model
+
+### 1. Initialize/modify dockerfile
+
+```Dockerfile
+FROM nvcr.io/nvidia/pytorch:22.12-py3
+
+RUN apt-get update
+RUN apt-get install python3 python3-pip -y
+RUN apt-get install git libgl1 -y
+WORKDIR /app
+
+RUN pip install pycuda
+RUN pip install opencv-python==4.6.0.66 --user 
+
+RUN pip install openvino-dev==2023.0.0 openvino-telemetry==2022.3.0 nncf==2.4.0
+RUN pip install nvidia-pyindex onnx-graphsurgeon
+
+# Installing from anomalib src requires latest pip 
+RUN python3 -m pip install --upgrade pip
+RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && cd LMI_AI_Solutions/anomaly_detectors && git submodule update --init submodules/anomalib
+```
+
+### 2. Initialize/modify docker-compose.yaml
+
+The following sample yaml file references training data at ./training/2023-08-16 and trains a PaDiM model.
+
+```yaml
+version: "3.9"
+services:
+  anomalib_train:
+    build:
+      context: .
+      dockerfile: ./dockerfile.x86_64
+    volumes:
+      - ../data/train/:/app/data/train/
+      - ./configs/:/app/configs/
+      - ./training/2023-08-16/:/app/out/
+    environment:
+      - model=padim
+    shm_size: '20gb' 
+    deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+    command: >
+      python3 /app/LMI_AI_Solutions/anomaly_detectors/submodules/anomalib/tools/train.py
+      --model padim
+      --config /app/configs/padim.yaml
+    # stdin_open: true # docker run -i
+    # tty: true        # docker run -t
+```
+### 3. Train
+
+1. Build the docker image: 
+```bash
+docker compose build --no-cache
+```
+2. Run the container:
+```bash
+docker compose up 
+```
+### 4. Validate the Model
+
+
+
+
+
+
 1. bash main.sh -a train -d /path/to/train/data/root_dir -o /path/to/outdir
 2. For more detailed usage, execute bash main.sh -h
 2. Check the corresponding [config file](https://openvinotoolkit.github.io/anomalib/reference_guide/algorithms/patchcore.html), important fields:
