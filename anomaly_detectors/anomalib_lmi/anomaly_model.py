@@ -287,14 +287,6 @@ def test(engine_path, images_path, annot_dir,err_thresh=None):
     from pathlib import Path
     import time
 
-    engine_type=os.path.splitext(engine_file)[1]
-    if engine_type=='ckpt':
-        inference_option='lightning'
-    elif engine_type=='engine':
-        inference_option='trt'
-    else:
-        raise Exception(f'Unknown engine format: {engine_type} ')
-
     # images = glob.glob(f"{images_path}/*.png")
     directory_path=Path(images_path)
     images=list(directory_path.rglob('*.png'))
@@ -356,7 +348,7 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('-a','--action', default="test", help='Action: convert, test')
     ap.add_argument('-x','--onnx_file', default="/app/out/results/padim/model/run/weights/onnx/model.onnx", help='Onnx file directory.')
-    ap.add_argument('-e','--engine_file', default="/app/out/results/padim/model/run/weights/engine", help='Engine file directory.')
+    ap.add_argument('-e','--engine_dir', default="/app/out/results/padim/model/run/weights/engine", help='Engine file directory.')
     ap.add_argument('-d','--data_dir', default="/app/data/train/good", help='Data file directory.')
     ap.add_argument('-o','--annot_dir', default="/app/out/test", help='Annot file directory.')
 
@@ -369,12 +361,10 @@ if __name__ == '__main__':
             os.makedirs(args['engine_dir'])
         convert(args['onnx_file'],args['engine_dir'],fp16=True)
 
-    engine_file=args['engine_file']
     if action=='test':
+        engine_file=os.path.join(args['engine_dir'],'model.engine')
         if not os.path.isfile(engine_file):
             raise Exception(f'Error finding {engine_file}. Need a valid engine file to test model.')
-        annot_dir=args['annot_dir']
-        if not os.path.exists(annot_dir):
+        if not os.path.exists(args['annot_dir']):
             os.makedirs(args['annot_dir'])
-        data_dir=args['data_dir']
-        test(engine_file, data_dir, annot_dir,err_thresh=None)
+        test(engine_file, args['data_dir'], args['annot_dir'],err_thresh=None)
