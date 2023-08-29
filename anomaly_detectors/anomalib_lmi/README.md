@@ -132,8 +132,8 @@ services:
       context: .
       dockerfile: ./dockerfile.x86_64
     volumes:
-      - ./model.onnx:/app/model.onnx
-      - ./model.engine/:/app/model.engine
+      - ./training/2023-08-29/results/padim/model/run/weights/onnx/:/app/onnx/
+      - ./training/2023-08-29/results/padim/model/run/weights/onnx/engine/:/app/onnx/engine/
     environment:
       - error_threshold=0
     shm_size: '20gb' 
@@ -145,7 +145,7 @@ services:
                 count: 1
                 capabilities: [gpu]
     command: >
-      python3 /app/LMI_AI_Solutions/anomaly_detectors/anomaly_model.py 
+      python3 /app/LMI_AI_Solutions/anomaly_detectors/anomalib_lmi/anomaly_model.py 
       --action convert
 ```
 ### 2. Convert model

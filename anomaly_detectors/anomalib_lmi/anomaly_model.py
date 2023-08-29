@@ -183,8 +183,8 @@ if __name__ == '__main__':
 
     ap = argparse.ArgumentParser()
     ap.add_argument('-a','--action', default="test", help='Action: convert, test')
-    ap.add_argument('-x','--onnx_file', default="/app/model.onnx", help='Onnx file path.')
-    ap.add_argument('-e','--engine_file', default="/app/engine/model.engine", help='Engine file path.')
+    ap.add_argument('-x','--onnx_file', default="/app/onnx/model.onnx", help='Onnx file path.')
+    ap.add_argument('-e','--engine_file', default="/app/onnx/engine/model.engine", help='Engine file path.')
     ap.add_argument('-d','--data_dir', default="/app/data", help='Data file directory.')
     ap.add_argument('-o','--annot_dir', default="/app/annotation_results", help='Annot file directory.')
 
