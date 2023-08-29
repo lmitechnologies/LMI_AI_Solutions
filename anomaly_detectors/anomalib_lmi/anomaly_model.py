@@ -135,9 +135,8 @@ def test(engine_path, images_path, annot_dir,err_thresh=None):
     pc = AnomalyModel(engine_path)
 
     out_path = annot_dir
-    if os.path.isdir(out_path):
-        shutil.rmtree(out_path)
-    os.makedirs(out_path)
+    if not os.path.exists(out_path):
+        os.makedirs(out_path)
 
     pc.warmup()
 
