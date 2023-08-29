@@ -71,7 +71,8 @@ RUN pip install nvidia-pyindex onnx-graphsurgeon
 
 # Installing from anomalib src requires latest pip 
 RUN python3 -m pip install --upgrade pip
-RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && cd LMI_AI_Solutions/anomaly_detectors && git submodule update --init submodules/anomalib
+RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git && cd LMI_AI_Solutions/anomaly_detectors && git submodule update --init submodules/anomalib
+RUN cd LMI_AI_Solutions/anomaly_detectors/submodules/anomalib && pip install -e .
 ```
 
 ### 2. Initialize/modify docker-compose.yaml
