@@ -6,9 +6,13 @@ import tarfile
 import logging
 import numpy as np
 
-logging.getLogger().setLevel(logging.INFO)
+logging.basicConfig()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 CAMERAS = ['avt','gocator'] 
+ARCHIVE_PREFIX = 'archive-'
+UNZIP_DIR = 'un_zipped'
 
 
 def load_zst_img(file_path):
@@ -16,53 +20,89 @@ def load_zst_img(file_path):
     cmds = ['unzstd', '-f', f'{file_path}', '-o', newpath]
     subprocess.run(' '.join(cmds), shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     img = cv2.imread(newpath, cv2.IMREAD_UNCHANGED)
-    # logging.info(f'load type: {img.dtype} with min and max: {img.min()}, {img.max()}')
+    # logger.info(f'load type: {img.dtype} with min and max: {img.min()}, {img.max()}')
     return img
 
 
-def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir='first_dir',last_dir='last_dir', task='anomdet' ,random_list=False, seed=777):
+def unzip_tarfile(file_path, output_path):
+    # unzip the tar file. Create output_path if it does not exist.
+    if not os.path.isdir(output_path):
+        os.makedirs(output_path)
+    with tarfile.open(file_path) as f:
+        f.extractall(output_path)
+
+
+def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir='first_dir',last_dir='last_dir', task='anomdet', random_list=False, seed=777):
     sku_path = os.path.expanduser(input_path)
     out_path = os.path.expanduser(out_path)
+    _,ext = os.path.splitext(sku_path)
 
-    idx1 = os.path.basename(sku_path).find('archive-')
-    idx2 = os.path.basename(sku_path).find('_')
+    # get sku
+    input_fname = os.path.basename(sku_path)
+    idx1 = input_fname.find(ARCHIVE_PREFIX)
+    if idx1 != -1:
+        # found sku
+        idx2 = input_fname.find('_')
+        sku = input_fname[idx1+len(ARCHIVE_PREFIX):idx2]
+    else:
+        # find time stamp instead
+        idx1 = input_fname.find('_')
+        idx2 = input_fname.find('.') if ext == '.tar' else len(input_fname)
+        sku = input_fname[idx1+1:idx2]
     if idx1==-1 or idx2==-1:
-        raise Exception('failed to match sku folder naming convention')
-    sku = os.path.basename(sku_path)[idx1+8:idx2]
-    logging.info(f'sku: {sku}')
+        raise Exception('archive folder naming convention is not expected')
+    
+    logger.info(f'sku path: {sku_path}')
+    logger.info(f'sku: {sku}')
+    
+    # unzip if it's a tar file
+    if ext == '.tar':
+        unzip_folder = os.path.join(os.path.dirname(sku_path), input_fname[:-4])
+        logger.info(f'found that the input path is a tar file. unzip it to {unzip_folder}')
+        unzip_tarfile(sku_path, unzip_folder)
+        sku_path = unzip_folder
 
     out_path = os.path.join(out_path, sku, 'data')
     for camera in CAMERAS:
-        tar_cam,tar_cam_id = target_cam.split('_')
-        logging.info(f'target camera: "{tar_cam}", target sensor id: "{tar_cam_id}"')
+        # get target camera name and ID
+        l_c = target_cam.split('_')
+        if len(l_c)==2:
+            tar_cam,tar_cam_id = l_c
+        elif len(l_c)==1:
+            tar_cam = l_c[0]
+            tar_cam_id = ''
+        else:
+            raise Exception(f'The target camera argument is not correct. Should be either "avt_1", "avt" or "all"')
+        logger.info(f'target camera: "{tar_cam}", target sensor id: "{tar_cam_id}"')
         tar_cam = tar_cam.lower()
         if tar_cam!='all' and camera != tar_cam:
-            logging.warning(f'found camera "{camera}" mismatch with target camera "{tar_cam}", skip')
+            logger.warning(f'found camera "{camera}" mismatch with target camera "{tar_cam}", skip')
             continue
         tar_path=os.path.join(sku_path, 'sensor', 'gadget-sensor-'+camera)
         for sensor_id in os.listdir(tar_path):
             sensor_path = os.path.join(tar_path, sensor_id)
             if not os.path.isdir(sensor_path):
-                logging.warning(f'cannot found the sensor path: {sensor_path}, skip')
+                logger.warning(f'cannot found the sensor path: {sensor_path}, skip')
                 continue
             if tar_cam_id!='' and tar_cam_id!=sensor_id:
-                logging.warning(f'sensor_id of "{sensor_id}" mismatch with target_id of "{tar_cam_id}", skip')
+                logger.warning(f'sensor_id of "{sensor_id}" mismatch with target_id of "{tar_cam_id}", skip')
                 continue
-            logging.info(sensor_path)
+            logger.info(sensor_path)
             
             cnt = 0
             output_path = os.path.join(out_path, camera+'_'+sensor_id, 'label-'+task)
-            files=os.listdir(sensor_path)
+            files=[f for f in os.listdir(sensor_path) if f!=UNZIP_DIR]
             if random_list:
                 random.seed(seed)
                 random.shuffle(files)
-            logging.info(f'working on {len(files)} images...')
+            logger.info(f'working on {len(files)} images...')
             
             for filename in files:
                 file_path = os.path.join(sensor_path,filename)
                 split_folder = first_dir if cnt<num_imgs else last_dir
                 
                 if os.path.isdir(file_path):
+                    logger.info(f'found folder: {file_path}, skip')
                     continue
                 
                 name,ext = os.path.splitext(filename)
@@ -82,13 +122,9 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
                     cv2.imwrite(os.path.join(final_out_path, name+'.png'), img)
                     cnt += 1
                 elif ext=='.tar':
-                    # create subfolder
-                    subfolder = os.path.join(sensor_path, name)
-                    os.makedirs(subfolder, exist_ok=True)
-                    
-                    # unzip the tar file
-                    with tarfile.open(file_path) as f:
-                        f.extractall(subfolder)
+                    # create subfolder and unzip
+                    subfolder = os.path.join(sensor_path, UNZIP_DIR , name)
+                    unzip_tarfile(file_path, subfolder)
                     
                     # save intensity and profile image
                     for tt in ['intensity','profile']:
@@ -102,7 +138,7 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
                             img_path = os.path.join(subfolder, tt+'.png')
                             img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
                         else:
-                            logging.exception(f'cannot find {tt} img after untar')
+                            raise Exception(f'cannot find {tt} img after untar')
                         final_out_path=os.path.join(output_path, tt, split_folder)
                         os.makedirs(final_out_path, exist_ok=True)
                         cv2.imwrite(os.path.join(final_out_path, name+'.'+tt+'.png'), img)
@@ -111,7 +147,7 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
                     # skip tiff
                     pass
                 else:
-                    logging.warning(f'cannot recognize the type: {ext}')
+                    logger.warning(f'cannot recognize the type: {ext}, skip file: {filename}')
 
 
 
@@ -120,12 +156,12 @@ if __name__=='__main__':
     ap = argparse.ArgumentParser(description='this script extracts raw sensor images from gofactory archived download data')
     ap.add_argument('--input_path', '-i', required=True, help='the input sku path. It must include the SKU name, such as: 2023-02-23/archive-WT10-HR1001-04929_63f7d4ac47411d08ebf31daa')
     ap.add_argument('--out_path', '-o', required=True, help='the output path')
+    ap.add_argument('--task',required=True,nargs='?',choices=['anomdet','objdet'],help='create the task subfolder inside the sensor path')
     ap.add_argument('--num_imgs', '-n', default=20, type=int, help='the number of images kept for training, the rest will be put in untracked-data subfolder')
-    ap.add_argument('--target_camera', '-t', default='all', help='the target sensor for parsing data. The format could be either "avt_1" or "avt".')
-    ap.add_argument('--first_dir','-f',default='label-objdet')
-    ap.add_argument('--last_dir','-l',default='untracked-data')
-    ap.add_argument('--random',action='store_true',help='Randomize the list')
-    ap.add_argument('--task',default='anomdet',nargs='?',choices=['anomdet','objdet'],help='create the task subfolder inside the sensor path')
+    ap.add_argument('--target_camera', '-t', default='all', help='the target sensor(s) for parsing data. The format could be either "avt_1" or "avt". default to "all"')
+    ap.add_argument('--first_dir','-f',default='label-objdet',help='the folder name of training images,')
+    ap.add_argument('--last_dir','-l',default='untracked-data',help='the folder name of images that are not used for training')
+    ap.add_argument('--random',action='store_true',help='randomly select training images')
     ap.add_argument('--seed',default=777,type=int,help='the random seed')
     args = ap.parse_args()
     
