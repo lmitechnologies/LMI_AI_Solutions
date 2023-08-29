@@ -157,7 +157,7 @@ docker compose build --no-cache
 docker compose up 
 ```
 
-## Validate Model
+## 4. Validate Model
 
 1. Initialize/modify docker-compose.yaml
 2. Validate model
