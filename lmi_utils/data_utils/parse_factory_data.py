@@ -153,14 +153,14 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
 
 if __name__=='__main__':
     import argparse
-    ap = argparse.ArgumentParser(description='this script extracts raw sensor images from gofactory archived download data')
-    ap.add_argument('--input_path', '-i', required=True, help='the input sku path. It must include the SKU name, such as: 2023-02-23/archive-WT10-HR1001-04929_63f7d4ac47411d08ebf31daa')
+    ap = argparse.ArgumentParser(description='this script extracts raw sensor images from gofactory archive data')
+    ap.add_argument('--input_path', '-i', required=True, help='the input sku path. It supports two naming convensions: PATH/archive-WT10-HR1001-04929_63f7d4ac47411d08ebf31daa or PATH/archive_63f7d4ac47411d08ebf31daa')
     ap.add_argument('--out_path', '-o', required=True, help='the output path')
-    ap.add_argument('--task',required=True,nargs='?',choices=['anomdet','objdet'],help='create the task subfolder inside the sensor path')
-    ap.add_argument('--num_imgs', '-n', default=20, type=int, help='the number of images kept for training, the rest will be put in untracked-data subfolder')
+    ap.add_argument('--task',required=True,nargs=1,choices=['anomdet','objdet'],help='choose the task: "anomdet" or "objdet"')
+    ap.add_argument('--num_imgs', '-n', default=20, type=int, help='the number of images kept for training')
     ap.add_argument('--target_camera', '-t', default='all', help='the target sensor(s) for parsing data. The format could be either "avt_1" or "avt". default to "all"')
-    ap.add_argument('--first_dir','-f',default='label-objdet',help='the folder name of training images,')
-    ap.add_argument('--last_dir','-l',default='untracked-data',help='the folder name of images that are not used for training')
+    ap.add_argument('--first_dir','-f',default='training-data',help='the folder name of training images. default to "training-data"')
+    ap.add_argument('--last_dir','-l',default='untracked-data',help='the folder name of images that are NOT used for training. default to "untracked-data"')
     ap.add_argument('--random',action='store_true',help='randomly select training images')
     ap.add_argument('--seed',default=777,type=int,help='the random seed')
     args = ap.parse_args()
