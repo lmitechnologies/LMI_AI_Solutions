@@ -62,7 +62,7 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
         unzip_tarfile(sku_path, unzip_folder)
         sku_path = unzip_folder
 
-    out_path = os.path.join(out_path, sku, 'data')
+    out_path = os.path.join(out_path, sku)
     for camera in CAMERAS:
         # get target camera name and ID
         l_c = target_cam.split('_')
