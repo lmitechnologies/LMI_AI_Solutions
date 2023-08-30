@@ -165,5 +165,5 @@ if __name__=='__main__':
     ap.add_argument('--seed',default=777,type=int,help='the random seed')
     args = ap.parse_args()
     
-    extract_imgs(args.input_path, args.out_path, args.target_camera, args.num_imgs, args.first_dir, args.last_dir, args.task, args.random, args.seed)
+    extract_imgs(args.input_path, args.out_path, args.target_camera, args.num_imgs, args.first_dir, args.last_dir, args.task[0], args.random, args.seed)
     
