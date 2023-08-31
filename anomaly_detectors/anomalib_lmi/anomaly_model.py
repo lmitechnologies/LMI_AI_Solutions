@@ -116,7 +116,7 @@ class AnomalyModel:
         annot[ind] = img_original[ind]
         return annot
 
-def test(engine_path, images_path, annot_dir,err_thresh=None):
+def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=False):
     """test trt engine"""
 
     from ad_utils import plot_fig
@@ -124,6 +124,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None):
     import time
     from scipy.stats import gamma
     import matplotlib.pyplot as plt
+    from tabulate import tabulate
 
     # images = glob.glob(f"{images_path}/*.png")
     directory_path=Path(images_path)
@@ -158,7 +159,6 @@ def test(engine_path, images_path, annot_dir,err_thresh=None):
         fname_all.append(fname)
     
     # Compute & Validate pdf
-    results=zip(img_all,anom_all,fname_all)
     anom_sq=np.squeeze(np.array(anom_all))
     data=np.ravel(anom_sq)
     alpha_hat, loc_hat, beta_hat = gamma.fit(data, floc=0)
@@ -174,6 +174,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None):
     # Calculate the theoretical CDF using the fitted gamma distribution
     cdf_theoretical = gamma.cdf(data_sorted, alpha_hat, loc=loc_hat, scale=beta_hat)
     # Plot the ECDF and theoretical CDF
+    plt.clf()
     plt.plot(data_sorted, yvals, label='ECDF', marker='.', linestyle='none')
     plt.plot(data_sorted, cdf_theoretical, label='Gamma CDF', color='r')
     plt.legend(loc='upper left')
@@ -182,16 +183,28 @@ def test(engine_path, images_path, annot_dir,err_thresh=None):
     plt.title('ECDF vs. Fitted Gamma CDF')
     plt.savefig(os.path.join(annot_dir,'gamma_cdf_fit.png'))
     # Compute possible thresholds
-    threshold = np.linspace(min(data), max(data), 20)
-    probability = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
-    tp=np.stack((threshold,probability))
-    logger.info(f'Threshold options: {tp}')
+    threshold = np.linspace(min(data), max(data), 10)
+    probability_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
+    probability_sample=[]
+    for t in threshold:
+        ind=np.where(anom_sq>t)
+        ind_u=np.unique(ind[0])
+        probability_sample.append(len(ind_u)/len(fname_all))
+        
+    tp=np.stack((threshold,probability_patch*100,np.array(probability_sample)*100))
+    np.set_printoptions(precision=3,suppress=True)
+    tp_print=tabulate(tp, tablefmt='grid')
+
+    logger.info('Threshold options:\n'+tp_print)
+
 
     # training_mean=anom_stats.mean()
     # training_std=anom_stats.std()
     # training_H0=[training_mean,training_std]
     # training_max=anom_stats.max()
-    plot_fig(results,annot_dir,err_thresh=None,H0=None,err_max=None)
+    if annotate_inputs:
+        results=zip(img_all,anom_all,fname_all)
+        plot_fig(results,annot_dir)
             
         
     if proctime:
