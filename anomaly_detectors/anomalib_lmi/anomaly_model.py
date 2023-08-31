@@ -136,7 +136,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None):
 
     out_path = annot_dir
     if not os.path.exists(out_path):
-        os.makedirs(out_path)
+        os.makedirs(out_path)git
 
     pc.warmup()
 
