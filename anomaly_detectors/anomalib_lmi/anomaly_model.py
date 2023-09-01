@@ -116,12 +116,15 @@ class AnomalyModel:
         annot[ind] = img_original[ind]
         return annot
 
-def test(engine_path, images_path, annot_dir,err_thresh=None):
+def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=False):
     """test trt engine"""
 
     from ad_utils import plot_fig
     from pathlib import Path
     import time
+    from scipy.stats import gamma
+    import matplotlib.pyplot as plt
+    from tabulate import tabulate
 
     # images = glob.glob(f"{images_path}/*.png")
     directory_path=Path(images_path)
@@ -155,13 +158,60 @@ def test(engine_path, images_path, annot_dir,err_thresh=None):
         anom_all.append(anom_map)
         fname_all.append(fname)
     
-    results=zip(img_all,anom_all,fname_all)
-    anom_stats=np.squeeze(np.array(anom_all))
-    training_mean=anom_stats.mean()
-    training_std=anom_stats.std()
-    training_H0=[training_mean,training_std]
-    training_max=anom_stats.max()
-    plot_fig(results,annot_dir,err_thresh=None,H0=training_H0,err_max=training_max)
+    # Compute & Validate pdf
+    anom_sq=np.squeeze(np.array(anom_all))
+    data=np.ravel(anom_sq)
+    alpha_hat, loc_hat, beta_hat = gamma.fit(data, floc=0)
+    x = np.linspace(min(data), max(data), 1000)
+    pdf_fitted = gamma.pdf(x, alpha_hat, loc=loc_hat, scale=beta_hat)
+    plt.hist(data, bins=100, density=True, alpha=0.7, label='Observed Data')
+    plt.plot(x, pdf_fitted, 'r-', label=f'Fitted Gamma')
+    plt.legend()
+    plt.savefig(os.path.join(annot_dir,'gamma_pdf_fit.png'))
+    # Compute and validate cdf
+    data_sorted = np.sort(data)
+    yvals = np.arange(1, len(data)+1) / len(data)
+    # Calculate the theoretical CDF using the fitted gamma distribution
+    cdf_theoretical = gamma.cdf(data_sorted, alpha_hat, loc=loc_hat, scale=beta_hat)
+    # Plot the ECDF and theoretical CDF
+    plt.clf()
+    plt.plot(data_sorted, yvals, label='ECDF', marker='.', linestyle='none')
+    plt.plot(data_sorted, cdf_theoretical, label='Gamma CDF', color='r')
+    plt.legend(loc='upper left')
+    plt.xlabel('Value')
+    plt.ylabel('Cumulative Probability')
+    plt.title('ECDF vs. Fitted Gamma CDF')
+    plt.savefig(os.path.join(annot_dir,'gamma_cdf_fit.png'))
+    # Compute possible thresholds   
+    threshold = np.linspace(min(data), max(data), 10)
+    probability_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
+    probability_patch=["{:.{}f}".format(item*100, 4) for item in np.squeeze(probability_patch).tolist()]
+    probability_patch=['Prob of Patch Defect']+probability_patch
+    probability_sample=['Prob of Sample Defect']
+    for t in threshold:
+        ind=np.where(anom_sq>t)
+        ind_u=np.unique(ind[0])
+        percent=len(ind_u)/len(fname_all)*100
+        probability_sample.append("{:.{}f}".format(percent, 4))
+
+    threshold=["{:.{}f}".format(item, 4) for item in np.squeeze(threshold).tolist()]
+    threshold=['Threshold']+threshold    
+    
+    tp=[threshold,probability_patch,probability_sample]
+    
+
+    tp_print=tabulate(tp, tablefmt='grid')
+
+    logger.info('Threshold options:\n'+tp_print)
+
+
+    # training_mean=anom_stats.mean()
+    # training_std=anom_stats.std()
+    # training_H0=[training_mean,training_std]
+    # training_max=anom_stats.max()
+    if annotate_inputs:
+        results=zip(img_all,anom_all,fname_all)
+        plot_fig(results,annot_dir)
             
         
     if proctime:
