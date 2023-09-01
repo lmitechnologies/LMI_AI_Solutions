@@ -174,9 +174,9 @@ services:
       context: .
       dockerfile: ./dockerfile.x86_64
     volumes:
-      - ./model.engine:/app/model.engine
-      - ../data/:/app/data/
-      - ./annotation_results/:/app/annotation_results/
+      - ./model.engine:/app/onnx/engine/model.engine
+      - ../data/train/good:/app/data/
+      - ../annotation_results/:/app/annotation_results/
     environment:
       - error_threshold=0
     shm_size: '20gb' 
@@ -188,8 +188,11 @@ services:
                 count: 1
                 capabilities: [gpu]
     command: >
-      python3 /app/LMI_AI_Solutions/anomaly_detectors/anomaly_model.py 
+      bash -c "
+      source /app/LMI_AI_Solutions/lmi_ai.env &&
+      python3 /app/LMI_AI_Solutions/anomaly_detectors/anomalib_lmi/anomaly_model.py 
       --action test
+      "
 ```
 ### 2. Validate model
 1. Build the docker image: 
