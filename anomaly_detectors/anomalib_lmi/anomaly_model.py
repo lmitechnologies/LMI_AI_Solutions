@@ -185,17 +185,19 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     # Compute possible thresholds   
     threshold = np.linspace(min(data), max(data), 10)
     probability_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
-    probability_patch=["{:.{}f}".format(item*100, 2) for item in np.squeeze(probability_patch).tolist()]
+    probability_patch=["{:.{}f}".format(item*100, 4) for item in np.squeeze(probability_patch).tolist()]
     probability_patch=['Prob of Patch Defect']+probability_patch
     probability_sample=['Prob of Sample Defect']
     for t in threshold:
         ind=np.where(anom_sq>t)
         ind_u=np.unique(ind[0])
         percent=len(ind_u)/len(fname_all)*100
-        probability_sample.append("{:.{}f}".format(percent, 2))
-        
+        probability_sample.append("{:.{}f}".format(percent, 4))
+
+    threshold=["{:.{}f}".format(item, 4) for item in np.squeeze(threshold).tolist()]
+    threshold=['Threshold']+threshold    
     
-    tp=[['Threshold']+threshold,probability_patch,probability_sample]
+    tp=[threshold,probability_patch,probability_sample]
     
 
     tp_print=tabulate(tp, tablefmt='grid')
