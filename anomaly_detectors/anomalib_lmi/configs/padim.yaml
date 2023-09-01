@@ -1,75 +1,77 @@
 dataset:
   name: model
-  format: mvtec
-  path: /app/data
-  category: train
+  format: folder
+  path: /app/data/
+  normal_dir: train/good
+  normal_test_dir: null
   task: segmentation
-  train_batch_size: 32
-  eval_batch_size: 32
-  num_workers: 8
-  image_size: 224 # dimensions to which images are resized (mandatory)
-  center_crop: null # dimensions to which images are center-cropped after resizing (optional)
-  normalization: imagenet # data distribution to which the images will be normalized: [none, imagenet]
+  abnormal_dir: null  # leave null if no ground_truth
+  mask: null    # leave null if no ground_truth
+  extensions: null
+  split_ratio: 0.2
+  train_batch_size: 16
+  test_batch_size: 16
+  num_workers: 16
+  image_size: 224
+  center_crop: null
+  normalization: imagenet
   transform_config:
     train: null
     eval: null
-  test_split_mode: from_dir # options: [from_dir, synthetic]
-  test_split_ratio: 0.2 # fraction of train images held out testing (usage depends on test_split_mode)
-  val_split_mode: same_as_test # options: [same_as_test, from_test, synthetic]
-  val_split_ratio: 0.5 # fraction of train/test images held out for validation (usage depends on val_split_mode)
+  test_split_mode: from_dir
+  test_split_ratio: 0.2
+  val_split_mode: same_as_test
+  val_split_ratio: 0.5
   tiling:
     apply: false
     tile_size: null
     stride: null
     remove_border_count: 0
-    use_random_tiling: False
+    use_random_tiling: false
     random_tile_count: 16
+  eval_batch_size: 1
 
 model:
   name: padim
+  # backbone: wide_resnet50_2
   backbone: resnet18
   pre_trained: true
   layers:
-    - layer1
-    - layer2
-    - layer3
-  normalization_method: min_max # options: [none, min_max, cdf]
-  n_features: 100
+  - layer1
+  - layer2
+  - layer3
+  normalization_method: min_max
+  n_features: 200
 
 metrics:
   image:
-    - F1Score
-    - AUROC
+  - F1Score
+  - AUROC
   pixel:
-    - F1Score
-    - AUROC
+  - F1Score
+  - AUROC
   threshold:
-    method: adaptive #options: [adaptive, manual]
+    method: adaptive
     manual_image: null
     manual_pixel: null
-
 visualization:
-  show_images: False # show images on the screen
-  save_images: True # save images to the file system
-  log_images: True # log images to the available loggers (if any)
-  image_save_path: null # path to which images will be saved
-  mode: full # options: ["full", "simple"]
-
+  show_images: false
+  save_images: true
+  log_images: true
+  image_save_path: /app/out
+  mode: full
 project:
   seed: 42
   path: /app/out/results
-
+  unique_dir: false
 logging:
-  logger: [] # options: [comet, tensorboard, wandb, csv] or combinations.
-  log_graph: false # Logs the model graph to respective logger.
-
+  logger: []
+  log_graph: false
 optimization:
-  export_mode: onnx # options: torch, onnx, openvino
-
-# PL Trainer Args. Don't add extra parameter here.
+  export_mode: onnx
 trainer:
   enable_checkpointing: true
-  default_root_dir: null
+  default_root_dir: /app/out/results/padim/model/run
   gradient_clip_val: 0
   gradient_clip_algorithm: norm
   num_nodes: 1
@@ -77,7 +79,7 @@ trainer:
   enable_progress_bar: true
   overfit_batches: 0.0
   track_grad_norm: -1
-  check_val_every_n_epoch: 1 # Don't validate before extracting features.
+  check_val_every_n_epoch: 1
   fast_dev_run: false
   accumulate_grad_batches: 1
   max_epochs: 1
@@ -89,9 +91,9 @@ trainer:
   limit_val_batches: 1.0
   limit_test_batches: 1.0
   limit_predict_batches: 1.0
-  val_check_interval: 1.0 # Don't validate before extracting features.
+  val_check_interval: 1.0
   log_every_n_steps: 50
-  accelerator: auto # <"cpu", "gpu", "tpu", "ipu", "hpu", "auto">
+  accelerator: auto
   strategy: null
   sync_batchnorm: false
   precision: 32
