@@ -182,17 +182,22 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     plt.ylabel('Cumulative Probability')
     plt.title('ECDF vs. Fitted Gamma CDF')
     plt.savefig(os.path.join(annot_dir,'gamma_cdf_fit.png'))
-    # Compute possible thresholds
+    # Compute possible thresholds   
     threshold = np.linspace(min(data), max(data), 10)
     probability_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
-    probability_sample=[]
+    np.set_printoptions(precision=2,suppress=True)
+    probability_patch=[str(item*100) for item in probability_patch.tolist()]
+    probability_patch=['Prob of Patch Defect']+probability_patch
+    probability_sample=['Prob of Sample Defect']
     for t in threshold:
         ind=np.where(anom_sq>t)
         ind_u=np.unique(ind[0])
-        probability_sample.append(len(ind_u)/len(fname_all))
+        probability_sample.append(len(ind_u)/len(fname_all)*100)
         
-    tp=np.stack((threshold,probability_patch*100,np.array(probability_sample)*100))
-    np.set_printoptions(precision=3,suppress=True)
+    
+    tp=[['Threshold']+threshold,probability_patch,probability_sample]
+    
+
     tp_print=tabulate(tp, tablefmt='grid')
 
     logger.info('Threshold options:\n'+tp_print)
