@@ -236,6 +236,7 @@ if __name__ == '__main__':
     ap.add_argument('-e','--engine_file', default="/app/onnx/engine/model.engine", help='Engine file path.')
     ap.add_argument('-d','--data_dir', default="/app/data", help='Data file directory.')
     ap.add_argument('-o','--annot_dir', default="/app/annotation_results", help='Annot file directory.')
+    ap.add_argument('-p','--plot',type='store_true', help='plot the annotated images')
 
     args = vars(ap.parse_args())
     action=args['action']
@@ -254,4 +255,4 @@ if __name__ == '__main__':
             raise Exception(f'Error finding {engine_file}. Need a valid engine file to test model.')
         if not os.path.exists(args['annot_dir']):
             os.makedirs(args['annot_dir'])
-        test(engine_file, args['data_dir'], args['annot_dir'],err_thresh=None)
+        test(engine_file, args['data_dir'], args['annot_dir'],err_thresh=None,annotate_inputs=args['plot'])
