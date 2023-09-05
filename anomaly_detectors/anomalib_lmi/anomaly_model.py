@@ -236,7 +236,7 @@ if __name__ == '__main__':
     ap.add_argument('-e','--engine_file', default="/app/onnx/engine/model.engine", help='Engine file path.')
     ap.add_argument('-d','--data_dir', default="/app/data", help='Data file directory.')
     ap.add_argument('-o','--annot_dir', default="/app/annotation_results", help='Annot file directory.')
-    ap.add_argument('-p','--plot',type='store_true', help='plot the annotated images')
+    ap.add_argument('-p','--plot',action='store_true', help='plot the annotated images')
 
     args = vars(ap.parse_args())
     action=args['action']
