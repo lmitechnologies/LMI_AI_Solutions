@@ -50,7 +50,7 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
         idx2 = input_fname.find('.') if ext == '.tar' else len(input_fname)
         sku = input_fname[idx1+1:idx2]
     if idx1==-1 or idx2==-1:
-        raise Exception('archive folder naming convention is not expected')
+        raise Exception('archive folder naming convention is not expected. Support two formats: PATH/archive-SKU_TIMESTAMP or PATH/archive_TIMESTAMP')
     
     logger.info(f'sku path: {sku_path}')
     logger.info(f'sku: {sku}')
@@ -154,10 +154,10 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
 if __name__=='__main__':
     import argparse
     ap = argparse.ArgumentParser(description='this script extracts raw sensor images from gofactory archive data')
-    ap.add_argument('--input_path', '-i', required=True, help='the input sku path. It supports two naming convensions: PATH/archive-WT10-HR1001-04929_63f7d4ac47411d08ebf31daa or PATH/archive_63f7d4ac47411d08ebf31daa')
+    ap.add_argument('--input_path', '-i', required=True, help='the input sku path. Could be a single SKU or a folder containing multiple SKUs')
     ap.add_argument('--out_path', '-o', required=True, help='the output path')
     ap.add_argument('--task',required=True,nargs=1,choices=['anomdet','objdet'],help='choose the task: "anomdet" or "objdet"')
-    ap.add_argument('--num_imgs', '-n', default=20, type=int, help='the number of images kept for training')
+    ap.add_argument('--num_imgs', '-n', default=20, type=int, help='the number of images kept for training. defaults to 20')
     ap.add_argument('--target_camera', '-t', default='all', help='the target sensor(s) for parsing data. The format could be either "avt_1" or "avt". default to "all"')
     ap.add_argument('--first_dir','-f',default='training-data',help='the folder name of training images. default to "training-data"')
     ap.add_argument('--last_dir','-l',default='untracked-data',help='the folder name of images that are NOT used for training. default to "untracked-data"')
@@ -165,5 +165,23 @@ if __name__=='__main__':
     ap.add_argument('--seed',default=777,type=int,help='the random seed')
     args = ap.parse_args()
     
-    extract_imgs(args.input_path, args.out_path, args.target_camera, args.num_imgs, args.first_dir, args.last_dir, args.task[0], args.random, args.seed)
+    if os.path.isfile(args.input_path):
+        extract_imgs(args.input_path, args.out_path, args.target_camera, args.num_imgs, args.first_dir, args.last_dir, args.task[0], args.random, args.seed)
     
+    if os.path.isdir(args.input_path):
+        visited = set()
+        for f in os.listdir(args.input_path):
+            if f.find('archive') != -1:
+                # incase parse the same SKU twice because there might exist the tarfile and the untar folder with same SKU
+                key = f
+                idx = f.find('.tar')
+                if idx != -1:
+                    key = f[:idx]
+                if key not in visited:
+                    extract_imgs(os.path.join(args.input_path, f), args.out_path, args.target_camera, args.num_imgs, args.first_dir, args.last_dir, args.task[0], args.random, args.seed)
+                    visited.add(key)
+                else:
+                    logger.info(f'Found parsed data: {f}, skip')
+            else:
+                logger.info(f'Not find keyword "archive": {f}, skip')
+        
