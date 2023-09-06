@@ -154,7 +154,7 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
 if __name__=='__main__':
     import argparse
     ap = argparse.ArgumentParser(description='this script extracts raw sensor images from gofactory archive data')
-    ap.add_argument('--input_path', '-i', required=True, help='the input sku path. Could be a single SKU or a folder containing multiple SKUs')
+    ap.add_argument('--input_path', '-i', required=True, help='the input sku path. Could be a single SKU tarfile/untar folder or a folder containing multiple SKUs')
     ap.add_argument('--out_path', '-o', required=True, help='the output path')
     ap.add_argument('--task',required=True,nargs=1,choices=['anomdet','objdet'],help='choose the task: "anomdet" or "objdet"')
     ap.add_argument('--num_imgs', '-n', default=20, type=int, help='the number of images kept for training. defaults to 20')
@@ -169,8 +169,14 @@ if __name__=='__main__':
         extract_imgs(args.input_path, args.out_path, args.target_camera, args.num_imgs, args.first_dir, args.last_dir, args.task[0], args.random, args.seed)
     
     if os.path.isdir(args.input_path):
+        subfs = os.listdir(args.input_path)
+        # single untar archive folder
+        if args.input_path.find('archive') != -1 and 'sensor' in subfs:
+            extract_imgs(args.input_path, args.out_path, args.target_camera, args.num_imgs, args.first_dir, args.last_dir, args.task[0], args.random, args.seed)
+            exit(0)
+        
         visited = set()
-        for f in os.listdir(args.input_path):
+        for f in subfs:
             if f.find('archive') != -1:
                 # incase parse the same SKU twice because there might exist the tarfile and the untar folder with same SKU
                 key = f
