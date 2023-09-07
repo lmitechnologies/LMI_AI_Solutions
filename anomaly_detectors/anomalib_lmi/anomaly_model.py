@@ -217,9 +217,9 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
         
     # get anom stats
     anom_all = np.array(anom_all)
-    means = anom_all.mean(axis=0)
-    maxs = anom_all.max(axis=0)
-    mins = anom_all.min(axis=0)
+    means = [anom.mean() for anom in anom_all]
+    maxs = [anom.max() for anom in anom_all]
+    mins = [anom.min() for anom in anom_all]
     
     # write to a csv file
     with open(os.path.join(annot_dir,'stats.csv'), 'w') as csvfile:
