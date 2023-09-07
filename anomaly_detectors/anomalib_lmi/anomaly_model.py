@@ -233,7 +233,8 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for data in zip(fname_all,means,maxs,mins):
-            data[0] += '_annot.png'
+            data = list(data)
+            data[0] += '_annot.png' 
             tmp_dict = {f:d for f,d in zip(fieldnames,data)}
             writer.writerow(tmp_dict)
         
