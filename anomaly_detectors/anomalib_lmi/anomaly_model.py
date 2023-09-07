@@ -145,7 +145,20 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     pc.warmup()
 
     proctime = []
- 
+
+    def find_p(thresh_array,p_patch_array,p_sample_array, p_sample_target):
+        
+        x1=p_sample_array
+        x2=thresh_array
+        x3=p_patch_array
+
+        thresh_target=np.interp(p_sample_target,x1,x2)
+
+        p_target=np.interp(thresh_target,x2,x3)
+
+        return p_target
+
+
     img_all,anom_all,fname_all,path_all=[],[],[],[]
     for image_path in images:
         image_path=str(image_path)
@@ -186,29 +199,35 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     plt.savefig(os.path.join(annot_dir,'gamma_cdf_fit.png'))
     # Compute possible thresholds   
     threshold = np.linspace(min(data), max(data), 10)
-    probability_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
-    probability_patch=["{:.{}f}".format(item*100, 4) for item in np.squeeze(probability_patch).tolist()]
-    probability_patch=['Prob of Patch Defect']+probability_patch
-    probability_sample=['Prob of Sample Defect']
+    quantile_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
+    quantile_patch_str=["{:.{}e}".format(item*100, 2) for item in np.squeeze(quantile_patch).tolist()]
+    quantile_patch_str=['Prob of Patch Defect']+quantile_patch_str
+    quantile_sample_str=['Prob of Sample Defect']
+    quantile_sample=[]
     for t in threshold:
         ind=np.where(anom_sq>t)
         ind_u=np.unique(ind[0])
-        percent=len(ind_u)/len(fname_all)*100
-        probability_sample.append("{:.{}f}".format(percent, 4))
+        percent=len(ind_u)/len(fname_all)
+        quantile_sample.append(percent)
+        quantile_sample_str.append("{:.{}2}".format(percent*100, 2))
 
-    threshold=["{:.{}f}".format(item, 4) for item in np.squeeze(threshold).tolist()]
-    threshold=['Threshold']+threshold    
+    quantile_sample=np.array(quantile_sample)
+
+    threshold_str=["{:.{}e}".format(item, 2) for item in np.squeeze(threshold).tolist()]
+    threshold_str=['Threshold']+threshold_str    
     
-    tp=[threshold,probability_patch,probability_sample]
+    tp=[threshold_str,quantile_patch_str,quantile_sample_str]
     
 
     tp_print=tabulate(tp, tablefmt='grid')
     logger.info('Threshold options:\n'+tp_print)
 
     if annotate_inputs:
+        p_sample_target=0.03
+        p_target=find_p(threshold,quantile_patch,quantile_sample, p_sample_target)
         anom_threshold=gamma.ppf(0.5,alpha_hat,loc=loc_hat,scale=beta_hat)
         logger.info(f'Anomaly patch threshold set to 50 percentile:{anom_threshold}')
-        anom_max = gamma.ppf(1-1e-5,alpha_hat,loc=loc_hat,scale=beta_hat)
+        anom_max = gamma.ppf(1-p_target,alpha_hat,loc=loc_hat,scale=beta_hat)
         logger.info(f'Anomaly patch max set to 95 percentile:{anom_max}')
         results=zip(img_all,anom_all,fname_all)
         plot_fig(results,annot_dir,err_thresh=anom_threshold,err_max=anom_max)
