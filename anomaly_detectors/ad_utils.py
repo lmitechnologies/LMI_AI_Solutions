@@ -46,7 +46,7 @@ def test_dist(H0,sample,alpha=0.05):
     return confirm_H0
 
 
-def plot_fig(predict_results, save_dir, err_thresh=None, H0=[None,None], err_max=None):
+def plot_fig(predict_results, save_dir, err_thresh=None, err_max=None):
     '''
     DESCRIPTION: generate matplotlib figures for inspection results
 
@@ -74,20 +74,10 @@ def plot_fig(predict_results, save_dir, err_thresh=None, H0=[None,None], err_max
         err_dist=np.squeeze(err_dist)
         err_mean=err_dist.mean()
         err_std=err_dist.std()
-        if err_max is None:
-            err_max=err_dist.max()
         if err_thresh is None:
-            if all(H0):
-                err_thresh=H0[0]+3*H0[1]
-            else:
-                err_thresh=err_mean+3*err_std
-        # Test sample for H0
-        # if all(H0):
-        #     confirm_H0=test_dist(H0,err_dist.flatten(),alpha=0.05)
-        # if confirm_H0:
-        #     fname=fname+'_PASS_HO'
-        # else:
-        #     fname=fname+'_FAIL_HO'
+            err_thresh=0
+        if err_max is None:
+            err_max=err_mean+3*err_std
 
         heat_map=err_dist.copy()
         heat_map[heat_map<err_thresh]=err_thresh
