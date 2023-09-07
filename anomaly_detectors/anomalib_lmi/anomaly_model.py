@@ -216,7 +216,6 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
         plot_fig(results,annot_dir)
         
     # get anom stats
-    anom_all = np.array(anom_all)
     means = [anom.mean() for anom in anom_all]
     maxs = [anom.max() for anom in anom_all]
     mins = [anom.min() for anom in anom_all]
