@@ -235,23 +235,21 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     # get anom stats
     means = np.array([anom.mean() for anom in anom_all])
     maxs = np.array([anom.max() for anom in anom_all])
-    mins = np.array([anom.min() for anom in anom_all])
+    stds = np.array([np.std(anom) for anom in anom_all])
     
     # sort based on anom maxs
     idx = np.argsort(maxs)[::-1]
     maxs = maxs[idx]
     means = means[idx]
-    mins = mins[idx]
+    stds = stds[idx]
     fname_all = np.array(fname_all)[idx]
     
     # write to a csv file
     with open(os.path.join(annot_dir,'stats.csv'), 'w') as csvfile:
-        fieldnames = ['fname', 'mean', 'max', 'min']
+        fieldnames = ['fname', 'mean', 'max', 'std']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
-        for data in zip(fname_all,means,maxs,mins):
-            data = list(data)
-            data[0] = os.path.splitext(data[0])[0] + '_annot.png' 
+        for data in zip(fname_all,means,maxs,stds):
             tmp_dict = {f:d for f,d in zip(fieldnames,data)}
             writer.writerow(tmp_dict)
         
