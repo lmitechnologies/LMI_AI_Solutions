@@ -122,7 +122,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     from ad_utils import plot_fig
     from pathlib import Path
     import time
-    from scipy.stats import gamma,invgamma
+    from scipy.stats import gamma, invgamma
     import matplotlib.pyplot as plt
     from tabulate import tabulate
     import csv
@@ -205,11 +205,6 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     tp_print=tabulate(tp, tablefmt='grid')
     logger.info('Threshold options:\n'+tp_print)
 
-
-    # training_mean=anom_stats.mean()
-    # training_std=anom_stats.std()
-    # training_H0=[training_mean,training_std]
-    # training_max=anom_stats.max()
     if annotate_inputs:
         inv_gamma_dist=invgamma(a=alpha_hat,scale=beta_hat,loc=loc_hat)
         anom_threshold=inv_gamma_dist.ppf(0.5)
