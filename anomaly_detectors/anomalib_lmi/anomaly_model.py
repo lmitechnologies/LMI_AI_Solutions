@@ -206,11 +206,10 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     logger.info('Threshold options:\n'+tp_print)
 
     if annotate_inputs:
-        inv_gamma_dist=invgamma(a=alpha_hat,scale=beta_hat,loc=loc_hat)
-        anom_threshold=inv_gamma_dist.ppf(0.5)
+        anom_threshold=gamma.ppf(0.5,alpha_hat,loc=loc_hat,scale=beta_hat)
         logger.info(f'Anomaly patch threshold set to 50 percentile:{anom_threshold}')
-        anom_max = inv_gamma_dist.ppf(0.95)
-        logger.info(f'Anomaly patch max set to 95 percentile:{anom_threshold}')
+        anom_max = gamma.ppf(1-1e-5,alpha_hat,loc=loc_hat,scale=beta_hat)
+        logger.info(f'Anomaly patch max set to 95 percentile:{anom_max}')
         results=zip(img_all,anom_all,fname_all)
         plot_fig(results,annot_dir,err_thresh=anom_threshold,err_max=anom_max)
         
