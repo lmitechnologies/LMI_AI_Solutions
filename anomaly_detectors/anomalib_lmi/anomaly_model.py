@@ -220,7 +220,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     mins = np.array([anom.min() for anom in anom_all])
     
     # sort based on anom maxs
-    idx = np.argsort(maxs)
+    idx = np.argsort(maxs)[::-1]
     maxs = maxs[idx]
     means = means[idx]
     mins = mins[idx]
