@@ -146,7 +146,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
 
     proctime = []
  
-    img_all,anom_all,fname_all=[],[],[]
+    img_all,anom_all,fname_all,path_all=[],[],[],[]
     for image_path in images:
         image_path=str(image_path)
         img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
@@ -158,6 +158,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
         img_all.append(img_preproc)
         anom_all.append(anom_map)
         fname_all.append(fname)
+        path_all.append(image_path)
     
     # Compute & Validate pdf
     anom_sq=np.squeeze(np.array(anom_all))
@@ -225,7 +226,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
         fieldnames = ['fname', 'mean', 'max', 'min']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
-        for data in zip(fname_all,means,maxs,mins):
+        for data in zip(path_all,means,maxs,mins):
             tmp_dict = {f:d for f,d in zip(fieldnames,data)}
             writer.writerow(tmp_dict)
         
