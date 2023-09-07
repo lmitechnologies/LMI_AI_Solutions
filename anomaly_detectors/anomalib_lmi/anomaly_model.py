@@ -125,6 +125,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     from scipy.stats import gamma
     import matplotlib.pyplot as plt
     from tabulate import tabulate
+    import csv
 
     # images = glob.glob(f"{images_path}/*.png")
     directory_path=Path(images_path)
@@ -212,7 +213,21 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     if annotate_inputs:
         results=zip(img_all,anom_all,fname_all)
         plot_fig(results,annot_dir)
-            
+        
+    # get anom stats
+    anom_all = np.array(anom_all)
+    means = anom_all.mean(axis=0)
+    maxs = anom_all.max(axis=0)
+    mins = anom_all.min(axis=0)
+    
+    # write to a csv file
+    with open(os.path.join(annot_dir,'stats.csv'), 'w') as csvfile:
+        fieldnames = ['fname', 'mean', 'max', 'min']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for data in zip(fname_all,means,maxs,mins):
+            tmp_dict = {f:d for f,d in zip(fieldnames,data)}
+            writer.writerow(tmp_dict)
         
     if proctime:
         proctime = np.asarray(proctime)
