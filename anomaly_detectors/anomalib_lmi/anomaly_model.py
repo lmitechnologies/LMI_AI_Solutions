@@ -219,7 +219,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     mins = np.array([anom.min() for anom in anom_all])
     
     # sort based on anom maxs
-    idx = np.argsort(maxs)
+    idx = np.argsort(maxs)[::-1]
     maxs = maxs[idx]
     means = means[idx]
     mins = mins[idx]
@@ -232,7 +232,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
         writer.writeheader()
         for data in zip(fname_all,means,maxs,mins):
             data = list(data)
-            data[0] += '_annot.png' 
+            data[0] = os.path.splitext(data[0])[0] + '_annot.png' 
             tmp_dict = {f:d for f,d in zip(fieldnames,data)}
             writer.writerow(tmp_dict)
         
