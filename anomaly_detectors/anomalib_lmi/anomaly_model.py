@@ -209,7 +209,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
         ind_u=np.unique(ind[0])
         percent=len(ind_u)/len(fname_all)
         quantile_sample.append(percent)
-        quantile_sample_str.append("{:.{}2}".format(percent*100, 2))
+        quantile_sample_str.append("{:.{}e}".format(percent*100, 2))
 
     quantile_sample=np.array(quantile_sample)
 
