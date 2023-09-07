@@ -12,7 +12,7 @@ logger.setLevel(logging.INFO)
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-s', '--src', required=True, help='path to source directory. This could be a parent directory of all images, such as each-sku')
-    parser.add_argument('-f', '--file', required=True, help='path to file with a list of images to be moved to test folder')
+    parser.add_argument('-f', '--file', required=True, help='path to file with a list of images to be moved')
     
     args = parser.parse_args()
     
@@ -32,6 +32,11 @@ if __name__ == '__main__':
                 dest = os.path.join(ppath, 'test')
                 if not os.path.exists(dest):
                     os.makedirs(dest)
+                
+                # skip if already exists
+                if os.path.exists(os.path.join(dest, file)):
+                    logger.info(f'{file} already exists in {dest}, skip')
+                    continue
                 
                 logger.info(f'move {path} to {dest}')
                 shutil.move(path, dest)
