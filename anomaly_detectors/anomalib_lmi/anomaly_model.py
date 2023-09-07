@@ -122,7 +122,7 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     from ad_utils import plot_fig
     from pathlib import Path
     import time
-    from scipy.stats import gamma
+    from scipy.stats import gamma,invgamma
     import matplotlib.pyplot as plt
     from tabulate import tabulate
     import csv
@@ -203,7 +203,6 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     
 
     tp_print=tabulate(tp, tablefmt='grid')
-
     logger.info('Threshold options:\n'+tp_print)
 
 
@@ -212,8 +211,13 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     # training_H0=[training_mean,training_std]
     # training_max=anom_stats.max()
     if annotate_inputs:
+        inv_gamma_dist=invgamma(a=alpha_hat,scale=beta_hat,loc=loc_hat)
+        anom_threshold=inv_gamma_dist.ppf(0.5)
+        logger.info(f'Anomaly patch threshold set to 50 percentile:{anom_threshold}')
+        anom_max = inv_gamma_dist.ppf(0.95)
+        logger.info(f'Anomaly patch max set to 95 percentile:{anom_threshold}')
         results=zip(img_all,anom_all,fname_all)
-        plot_fig(results,annot_dir)
+        plot_fig(results,annot_dir,err_thresh=anom_threshold,err_max=anom_max)
         
     # get anom stats
     means = [anom.mean() for anom in anom_all]
@@ -236,6 +240,9 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
         logger.info(f'Avg Proc Time: {proctime.mean()}')
         logger.info(f'Median Proc Time: {np.median(proctime)}')
     logger.info(f"Test results saved to {out_path}")
+    if annotate_inputs:
+        # Repeat error table
+        logger.info('Threshold options:\n'+tp_print)
 
 def convert(onnx_file, engine_file, fp16=True):
     # engine_out_path = f'{engine_dir}/model.engine'
