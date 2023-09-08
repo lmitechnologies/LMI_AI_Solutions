@@ -191,7 +191,7 @@ services:
       bash -c "
       source /app/LMI_AI_Solutions/lmi_ai.env &&
       python3 /app/LMI_AI_Solutions/anomaly_detectors/anomalib_lmi/anomaly_model.py 
-      --action test
+      --action test --plot --generate_stats
       "
 ```
 ### 2. Validate model
