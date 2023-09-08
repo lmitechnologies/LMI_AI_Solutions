@@ -227,12 +227,13 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
         logger.info('Threshold options:\n'+tp_print)
 
     if annotate_inputs:
-        p_sample_target=0.03
-        p_target=find_p(threshold,quantile_patch,quantile_sample, p_sample_target)
+        
         if anom_threshold is None and generate_stats: 
             anom_threshold=gamma.ppf(0.5,alpha_hat,loc=loc_hat,scale=beta_hat)
             logger.info(f'Anomaly patch threshold set to 50 percentile:{anom_threshold}')
-        if anom_max is None and generate_stats: 
+        if anom_max is None and generate_stats:
+            p_sample_target=0.03
+            p_target=find_p(threshold,quantile_patch,quantile_sample, p_sample_target) 
             anom_max = gamma.ppf(1-p_target,alpha_hat,loc=loc_hat,scale=beta_hat)
             logger.info(f'Anomaly patch max set to 95 percentile:{anom_max}')
         results=zip(img_all,anom_all,fname_all)
