@@ -287,8 +287,8 @@ if __name__ == '__main__':
     ap.add_argument('-o','--annot_dir', default="/app/annotation_results", help='Annot file directory.')
     ap.add_argument('-g','--generate_stats', action='store_true',help='generate the data stats')
     ap.add_argument('-p','--plot',action='store_true', help='plot the annotated images')
-    ap.add_argument('-t','--ad_threshold',default=None,help='AD patch threshold.')
-    ap.add_argument('-m','--ad_max',default=None,help='AD patch max anomaly.')
+    ap.add_argument('-t','--ad_threshold',type=float,default=None,help='AD patch threshold.')
+    ap.add_argument('-m','--ad_max',type=float,default=None,help='AD patch max anomaly.')
 
     args = vars(ap.parse_args())
     action=args['action']
