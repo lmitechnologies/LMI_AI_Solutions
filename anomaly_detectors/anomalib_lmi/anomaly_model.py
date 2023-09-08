@@ -116,7 +116,7 @@ class AnomalyModel:
         annot[ind] = img_original[ind]
         return annot
 
-def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=False):
+def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs=True,anom_threshold=None,anom_max=None):
     """test trt engine"""
 
     from ad_utils import plot_fig
@@ -176,62 +176,65 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
         fname_all.append(fname)
         path_all.append(image_path)
     
-    # Compute & Validate pdf
-    anom_sq=np.squeeze(np.array(anom_all))
-    data=np.ravel(anom_sq)
-    alpha_hat, loc_hat, beta_hat = gamma.fit(data, floc=0)
-    x = np.linspace(min(data), max(data), 1000)
-    pdf_fitted = gamma.pdf(x, alpha_hat, loc=loc_hat, scale=beta_hat)
-    plt.hist(data, bins=100, density=True, alpha=0.7, label='Observed Data')
-    plt.plot(x, pdf_fitted, 'r-', label=f'Fitted Gamma')
-    plt.legend()
-    plt.savefig(os.path.join(annot_dir,'gamma_pdf_fit.png'))
-    # Compute and validate cdf
-    data_sorted = np.sort(data)
-    yvals = np.arange(1, len(data)+1) / len(data)
-    # Calculate the theoretical CDF using the fitted gamma distribution
-    cdf_theoretical = gamma.cdf(data_sorted, alpha_hat, loc=loc_hat, scale=beta_hat)
-    # Plot the ECDF and theoretical CDF
-    plt.clf()
-    plt.plot(data_sorted, yvals, label='ECDF', marker='.', linestyle='none')
-    plt.plot(data_sorted, cdf_theoretical, label='Gamma CDF', color='r')
-    plt.legend(loc='upper left')
-    plt.xlabel('Value')
-    plt.ylabel('Cumulative Probability')
-    plt.title('ECDF vs. Fitted Gamma CDF')
-    plt.savefig(os.path.join(annot_dir,'gamma_cdf_fit.png'))
-    # Compute possible thresholds   
-    threshold = np.linspace(min(data), max(data), 10)
-    quantile_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
-    quantile_patch_str=["{:.{}e}".format(item*100, 2) for item in np.squeeze(quantile_patch).tolist()]
-    quantile_patch_str=['Prob of Patch Defect']+quantile_patch_str
-    quantile_sample_str=['Prob of Sample Defect']
-    quantile_sample=[]
-    for t in threshold:
-        ind=np.where(anom_sq>t)
-        ind_u=np.unique(ind[0])
-        percent=len(ind_u)/len(fname_all)
-        quantile_sample.append(percent)
-        quantile_sample_str.append("{:.{}e}".format(percent*100, 2))
+    if generate_stats:
+        # Compute & Validate pdf
+        anom_sq=np.squeeze(np.array(anom_all))
+        data=np.ravel(anom_sq)
+        alpha_hat, loc_hat, beta_hat = gamma.fit(data, floc=0)
+        x = np.linspace(min(data), max(data), 1000)
+        pdf_fitted = gamma.pdf(x, alpha_hat, loc=loc_hat, scale=beta_hat)
+        plt.hist(data, bins=100, density=True, alpha=0.7, label='Observed Data')
+        plt.plot(x, pdf_fitted, 'r-', label=f'Fitted Gamma')
+        plt.legend()
+        plt.savefig(os.path.join(annot_dir,'gamma_pdf_fit.png'))
+        # Compute and validate cdf
+        data_sorted = np.sort(data)
+        yvals = np.arange(1, len(data)+1) / len(data)
+        # Calculate the theoretical CDF using the fitted gamma distribution
+        cdf_theoretical = gamma.cdf(data_sorted, alpha_hat, loc=loc_hat, scale=beta_hat)
+        # Plot the ECDF and theoretical CDF
+        plt.clf()
+        plt.plot(data_sorted, yvals, label='ECDF', marker='.', linestyle='none')
+        plt.plot(data_sorted, cdf_theoretical, label='Gamma CDF', color='r')
+        plt.legend(loc='upper left')
+        plt.xlabel('Value')
+        plt.ylabel('Cumulative Probability')
+        plt.title('ECDF vs. Fitted Gamma CDF')
+        plt.savefig(os.path.join(annot_dir,'gamma_cdf_fit.png'))
+        # Compute possible thresholds   
+        threshold = np.linspace(min(data), max(data), 10)
+        quantile_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
+        quantile_patch_str=["{:.{}e}".format(item*100, 2) for item in np.squeeze(quantile_patch).tolist()]
+        quantile_patch_str=['Prob of Patch Defect']+quantile_patch_str
+        quantile_sample_str=['Prob of Sample Defect']
+        quantile_sample=[]
+        for t in threshold:
+            ind=np.where(anom_sq>t)
+            ind_u=np.unique(ind[0])
+            percent=len(ind_u)/len(fname_all)
+            quantile_sample.append(percent)
+            quantile_sample_str.append("{:.{}e}".format(percent*100, 2))
 
-    quantile_sample=np.array(quantile_sample)
+        quantile_sample=np.array(quantile_sample)
 
-    threshold_str=["{:.{}e}".format(item, 2) for item in np.squeeze(threshold).tolist()]
-    threshold_str=['Threshold']+threshold_str    
-    
-    tp=[threshold_str,quantile_patch_str,quantile_sample_str]
-    
+        threshold_str=["{:.{}e}".format(item, 2) for item in np.squeeze(threshold).tolist()]
+        threshold_str=['Threshold']+threshold_str    
+        
+        tp=[threshold_str,quantile_patch_str,quantile_sample_str]
+        
 
-    tp_print=tabulate(tp, tablefmt='grid')
-    logger.info('Threshold options:\n'+tp_print)
+        tp_print=tabulate(tp, tablefmt='grid')
+        logger.info('Threshold options:\n'+tp_print)
 
     if annotate_inputs:
         p_sample_target=0.03
         p_target=find_p(threshold,quantile_patch,quantile_sample, p_sample_target)
-        anom_threshold=gamma.ppf(0.5,alpha_hat,loc=loc_hat,scale=beta_hat)
-        logger.info(f'Anomaly patch threshold set to 50 percentile:{anom_threshold}')
-        anom_max = gamma.ppf(1-p_target,alpha_hat,loc=loc_hat,scale=beta_hat)
-        logger.info(f'Anomaly patch max set to 95 percentile:{anom_max}')
+        if anom_threshold is None and generate_stats: 
+            anom_threshold=gamma.ppf(0.5,alpha_hat,loc=loc_hat,scale=beta_hat)
+            logger.info(f'Anomaly patch threshold set to 50 percentile:{anom_threshold}')
+        if anom_max is None and generate_stats: 
+            anom_max = gamma.ppf(1-p_target,alpha_hat,loc=loc_hat,scale=beta_hat)
+            logger.info(f'Anomaly patch max set to 95 percentile:{anom_max}')
         results=zip(img_all,anom_all,fname_all)
         plot_fig(results,annot_dir,err_thresh=anom_threshold,err_max=anom_max)
         
@@ -281,7 +284,10 @@ if __name__ == '__main__':
     ap.add_argument('-e','--engine_file', default="/app/onnx/engine/model.engine", help='Engine file path.')
     ap.add_argument('-d','--data_dir', default="/app/data", help='Data file directory.')
     ap.add_argument('-o','--annot_dir', default="/app/annotation_results", help='Annot file directory.')
+    ap.add_argument('-g','--generate_stats', action='store_true',help='generate the data stats')
     ap.add_argument('-p','--plot',action='store_true', help='plot the annotated images')
+    ap.add_argument('-t','--ad_threshold',default=None,help='AD patch threshold.')
+    ap.add_argument('-m','--ad_max',default=None,help='AD patch max anomaly.')
 
     args = vars(ap.parse_args())
     action=args['action']
@@ -300,4 +306,9 @@ if __name__ == '__main__':
             raise Exception(f'Error finding {engine_file}. Need a valid engine file to test model.')
         if not os.path.exists(args['annot_dir']):
             os.makedirs(args['annot_dir'])
-        test(engine_file, args['data_dir'], args['annot_dir'],err_thresh=None,annotate_inputs=args['plot'])
+        test(engine_file, args['data_dir'], 
+             args['annot_dir'],
+             generate_stats=args['generate_stats'],
+             annotate_inputs=args['plot'],
+             anom_threshold=args['ad_threshold'],
+             anom_max=args['ad_max'])
