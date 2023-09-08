@@ -87,7 +87,7 @@ if __name__=='__main__':
     check_keys = {} # map < key : True if is_file else False >
     if hyp['mode'] == 'train':
         tmp = {'data':DATA_YAML, 'project':TRAIN_FOLDER}
-        check_keys['data'] = False
+        check_keys['data'] = True
     elif hyp['mode'] in ['predict','export']:
         path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
         tmp = {'model':path, 'source':SOURCE_PATH, 'project':VAL_FOLDER}
