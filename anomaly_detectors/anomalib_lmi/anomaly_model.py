@@ -122,7 +122,8 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
     from ad_utils import plot_fig
     from pathlib import Path
     import time
-    from scipy.stats import gamma, invgamma
+    from scipy.stats import gamma
+    from scipy import interpolate
     import matplotlib.pyplot as plt
     from tabulate import tabulate
     import csv
@@ -152,9 +153,11 @@ def test(engine_path, images_path, annot_dir,err_thresh=None,annotate_inputs=Fal
         x2=thresh_array
         x3=p_patch_array
 
-        thresh_target=np.interp(p_sample_target,x1,x2)
+        f1=interpolate.interp1d(x1,x2)
+        thresh_target=f1(p_sample_target)
 
-        p_target=np.interp(thresh_target,x2,x3)
+        f2=interpolate.interp1d(x2,x3)
+        p_target=f2(thresh_target)
 
         return p_target
 
