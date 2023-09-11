@@ -279,11 +279,11 @@ def postprocess(self, orig_image, anomaly_map, err_thresh, err_size, mask=None, 
     final_image = orig_image
     if useAnnotation:
         annot = AnomalyModel.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
-        cv2.putText(annot,
-                    text=f'ad:{decision},'+ str(max_error).strip("{}").replace(" ","").replace("\'",""),
-                    org=(4,h-20), fontFace=0, fontScale=1, color=[225, 255, 255],
-                    thickness=2,
-                    lineType=cv2.LINE_AA)
+        # cv2.putText(annot,
+        #             text=f'ad:{decision},'+ str(max_error).strip("{}").replace(" ","").replace("\'",""),
+        #             org=(4,h-20), fontFace=0, fontScale=1, color=[225, 255, 255],
+        #             thickness=2,
+        #             lineType=cv2.LINE_AA)
         if useContours:
             cv2.drawContours(annot, contours, -1, (255, 255, 255), 1)
         final_image = annot
