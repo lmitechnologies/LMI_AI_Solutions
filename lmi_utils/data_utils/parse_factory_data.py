@@ -42,11 +42,11 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
     idx1 = input_fname.find(ARCHIVE_PREFIX)
     if idx1 != -1:
         # found sku
-        idx2 = input_fname.find('_')
+        idx2 = input_fname.rfind('_')
         sku = input_fname[idx1+len(ARCHIVE_PREFIX):idx2]
     else:
         # find time stamp instead
-        idx1 = input_fname.find('_')
+        idx1 = input_fname.rfind('_')
         idx2 = input_fname.find('.') if ext == '.tar' else len(input_fname)
         sku = input_fname[idx1+1:idx2]
     if idx1==-1 or idx2==-1:
