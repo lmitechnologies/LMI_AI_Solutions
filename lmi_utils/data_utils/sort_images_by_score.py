@@ -33,7 +33,7 @@ if __name__ == '__main__':
                 row_id=row_id[0]
                 fname=df.iloc[row_id]['fname'].replace('.png','_annot.png')
                 ad_max=df.iloc[row_id]['max']
-                ad_max_str=f"{ad_max:.2f}"
+                ad_max_str=f"{ad_max:006.2f}"
                 fname_modified=ad_max_str+"-"+fname
                 path = os.path.join(root, fname)
                 # skip if already exists

@@ -128,6 +128,7 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
                     
                     # save intensity and profile image
                     for tt in ['intensity','profile']:
+                        write_file=True
                         if os.path.isfile(os.path.join(subfolder, tt+'.tiff.zst')):
                             img_path = os.path.join(subfolder, tt+'.tiff.zst')
                             img = load_zst_img(img_path)
@@ -138,10 +139,12 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
                             img_path = os.path.join(subfolder, tt+'.png')
                             img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
                         else:
-                            raise Exception(f'cannot find {tt} img after untar')
-                        final_out_path=os.path.join(output_path, tt, split_folder)
-                        os.makedirs(final_out_path, exist_ok=True)
-                        cv2.imwrite(os.path.join(final_out_path, name+'.'+tt+'.png'), img)
+                            print(f'cannot find {tt} img after untar')
+                            write_file=False
+                        if write_file: 
+                            final_out_path=os.path.join(output_path, tt, split_folder)
+                            os.makedirs(final_out_path, exist_ok=True)
+                            cv2.imwrite(os.path.join(final_out_path, name+'.'+tt+'.png'), img)
                     cnt += 1
                 elif ext=='.tiff':
                     # skip tiff
