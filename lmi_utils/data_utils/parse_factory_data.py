@@ -139,7 +139,7 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
                             img_path = os.path.join(subfolder, tt+'.png')
                             img = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
                         else:
-                            print(f'cannot find {tt} img after untar')
+                            logger.warning(f'cannot find {tt} img after untar')
                             write_file=False
                         if write_file: 
                             final_out_path=os.path.join(output_path, tt, split_folder)
