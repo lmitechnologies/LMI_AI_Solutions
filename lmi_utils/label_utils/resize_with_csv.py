@@ -18,8 +18,8 @@ logger.setLevel(logging.INFO)
 
 def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
     """
-    resize images and its annotations, while keep the aspect ratio.
-    if the aspect ratio changes, it will generate an error.
+    resize images and its annotations with a csv file
+    if the aspect ratio changes, it will generate warnings.
     Arguments:
         path_imgs(str): the image folder
         path_csv(str): the path of csv annotation file
@@ -44,18 +44,20 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
         
         out_name = os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
         
-        ratio = W/w
+        rx,ry = W/w, H/h
         im2 = cv2.resize(im, dsize=tuple(output_imsize))
         name_to_im[out_name] = im2
 
         for i in range(len(shapes[im_name])):
             if isinstance(shapes[im_name][i], rect.Rect):
-                shapes[im_name][i].up_left = [int(v*ratio) for v in shapes[im_name][i].up_left]
-                shapes[im_name][i].bottom_right = [int(v*ratio) for v in shapes[im_name][i].bottom_right]
+                x,y = shapes[im_name][i].up_left
+                shapes[im_name][i].up_left = [int(x*rx), int(y*ry)]
+                x,y = shapes[im_name][i].bottom_right
+                shapes[im_name][i].bottom_right = [int(x*rx), int(y*ry)]
                 shapes[im_name][i].im_name = out_name
             elif isinstance(shapes[im_name][i], mask.Mask):
-                shapes[im_name][i].X = [int(v*ratio) for v in shapes[im_name][i].X]
-                shapes[im_name][i].Y = [int(v*ratio) for v in shapes[im_name][i].Y]
+                shapes[im_name][i].X = [int(v*rx) for v in shapes[im_name][i].X]
+                shapes[im_name][i].Y = [int(v*ry) for v in shapes[im_name][i].Y]
                 shapes[im_name][i].im_name = out_name
             else:
                 raise Exception("Found unsupported classes. Supported classes are mask and rect")

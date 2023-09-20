@@ -96,8 +96,8 @@ def plot_fig(predict_results, save_dir, err_thresh=None, err_max=None):
         ax_img[1].yaxis.axis_name='Frequency'
         ax_img[1].title.set_text('Anomaly Histogram')
         ax_img[1].text(bins.mean(), n.mean(), f'\u03BC={err_mean:0.1f}, \u03C3={err_std:0.1f}')
-        ax_img[2].imshow(cv2.cvtColor(img.astype(int),cv2.COLOR_RGB2GRAY), cmap='gray', interpolation='none')
-        ax=ax_img[2].imshow(heat_map, cmap='jet', alpha=0.5, interpolation='none',vmin=err_thresh,vmax=err_max)
+        ax_img[2].imshow(cv2.cvtColor(img,cv2.COLOR_RGB2GRAY), cmap='gray', interpolation='none')
+        ax=ax_img[2].imshow(heat_map, cmap='jet', alpha=0.4, interpolation='none',vmin=err_thresh,vmax=err_max)
         ax_img[2].title.set_text('Anomaly Heat Map')
         # ax_img[2].imshow(mask.astype(int), cmap='gray')
         # ax_img[2].title.set_text('Predicted Mask')
