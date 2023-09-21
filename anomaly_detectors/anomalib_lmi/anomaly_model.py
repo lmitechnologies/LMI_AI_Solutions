@@ -58,7 +58,7 @@ class AnomalyModel:
         t0 = time.time()
         shape = [i*2 for i in self.bindings['input'].shape[-2:]]+[3,]
         self.predict(np.zeros(shape))
-        logger.info(f"warmup ended - {time.time() - t0}")
+        logger.info(f"warmup ended - {time.time()-t0:.4f}")
 
     def predict(self, image):
         input_batch = self.preprocess(image)
@@ -130,7 +130,7 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
 
     # images = glob.glob(f"{images_path}/*.png")
     directory_path=Path(images_path)
-    images=list(directory_path.rglob('*.png'))
+    images=list(directory_path.rglob('*.png')) + list(directory_path.rglob('*.jpg'))
     logger.info(f"{len(images)} images from {images_path}")
     if not images:
         return

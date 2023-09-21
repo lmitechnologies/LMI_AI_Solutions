@@ -73,7 +73,7 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
                     cx,cy = (x0+x2)/2, (y0+y2)/2
                     row = [class_id, cx/W, cy/H, w/W, h/H]
                     rows.append(row)
-        txt_name = fname.replace('.png','.txt')
+        txt_name = fname.replace('.png','.txt').replace('.jpg','.txt')
         fname_to_rows[txt_name] = rows
     return fname_to_rows
 
@@ -101,7 +101,7 @@ def write_txts(fname_to_rows, path_txts):
     print(f'[INFO] wrote {len(fname_to_rows)} txt files to {path_txts}')
     
 
-def copy_images_in_folder(path_img, path_out):
+def copy_images_in_folder(path_img, path_out, fnames=None):
     """
     copy the images from one folder to another
     Arguments:
@@ -109,7 +109,10 @@ def copy_images_in_folder(path_img, path_out):
         path_out(str): the path of output folder
     """
     os.makedirs(path_out, exist_ok=True)
-    l = glob.glob(os.path.join(path_img, '*.png'))
+    if not fnames:
+        l = glob.glob(os.path.join(path_img, '*.png')) + glob.glob(os.path.join(path_img, '*.jpg'))
+    else:
+        l = [f"{path_img}/{fname}" for fname in fnames]
     for f in l:
         shutil.copy(f, path_out)
 
@@ -179,4 +182,4 @@ if __name__ =='__main__':
 
     #write images
     path_img_out = os.path.join(args['path_out'], 'images')
-    copy_images_in_folder(path_imgs, path_img_out)
+    copy_images_in_folder(path_imgs, path_img_out, fname_to_shapes.keys())
