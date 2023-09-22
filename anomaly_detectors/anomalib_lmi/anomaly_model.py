@@ -267,7 +267,7 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
         logger.info(f'Avg Proc Time: {proctime.mean()}')
         logger.info(f'Median Proc Time: {np.median(proctime)}')
     logger.info(f"Test results saved to {out_path}")
-    if annotate_inputs:
+    if generate_stats:
         # Repeat error table
         logger.info('Threshold options:\n'+tp_print)
 
