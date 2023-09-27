@@ -109,10 +109,11 @@ services:
 Go to `./config` and spin up the container using the following commands: 
 ```bash
 # build the container
-# "-f" specifies which yaml file to load
+# "-f" specifies the yaml file to load
 docker compose -f docker-compose_preprocess.yaml build
 
 # spin up the container
+# "-f" specifies the yaml file to load
 docker compose -f docker-compose_preprocess.yaml up
 ```
 Once it finishs executing, the yolo formatted dataset will be created in the host: `../data/resized_yolo`.
@@ -193,6 +194,8 @@ services:
               - driver: nvidia
                 count: 1
                 capabilities: [gpu]
+    ports:
+      - 6008:6008 # tensorboard
     volumes:
       - ../training:/app/training   # training output
       - ../data/resized_yolo:/app/data  # training data
@@ -206,11 +209,16 @@ services:
 Spin up the docker containers to train the model as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_train.yaml` instead.** By default, once the training is done, the cmd.py script will create a folder named by today's date in `training` folder, i.e. `training/2023-07-19`.
 
 ## Monitor the training progress (optional)
+While training process is running, open another terminal. 
 ```bash
-tensorboard --logdir ./training/2023-07-19
+# Log in the container which hosts the training process
+docker exec -it CONTAINER_ID bash 
+
+# track the training progress using tensorboard
+tensorboard --logdir /app/training/2023-07-19 --port 6008
 ```
-While training process is running, open another terminal.
-Execuate the command above and go to http://localhost:6006 to monitor the training.
+
+Execuate the command above and go to http://localhost:6008 to monitor the training.
 
 
 # Validation
@@ -304,7 +312,7 @@ services:
     container_name: yolov8_trt
     build:
       context: .
-      dockerfile: x86.dockerfile
+      dockerfile: dockerfile
     ipc: host
     deploy:
         resources:
@@ -320,5 +328,9 @@ services:
       python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
 
 ```
+
+If the deployment platform is arm based. Use the arm dockerfile instead. Here is the dockerfile that works in Nvidia Jetson JP 5.0.2:
+https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/object_detectors/yolov8_lmi/docker/arm.dockerfile
+
 
 Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_trt.yaml` instead.** Then, the tensorRT engine is generated in `./training/2023-07-19/weights`.
