@@ -7,6 +7,7 @@ import os
 from collections import OrderedDict,namedtuple,defaultdict
 import logging
 from enum import Enum
+from typing import Union
 
 from ultralytics.utils import ops
 from ultralytics.nn.tasks import attempt_load_weights
@@ -219,14 +220,14 @@ class Yolov8:
         return self.preprocess(im0),im0
     
     
-    def postprocess(self, preds, img, orig_imgs, conf=0.25, iou=0.45, agnostic=False, max_det=1000, classes=None):
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=1000, classes=None):
         """Postprocesses predictions and returns a list of Results objects.
         
         Args:
             preds (torch.Tensor | list): Predictions from the model.
             img (torch.Tensor): Input image.
             orig_imgs (np.ndarray | list): Original image or list of original images.
-            conf_thres (float): The confidence threshold below which boxes will be filtered out.
+            conf_thres (float | dict): int or dictionary of <class: confidence level>.
             iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
             classes (List[int]): A list of class indices to consider. If None, all classes will be considered.
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
@@ -249,8 +250,14 @@ class Yolov8:
         if predict_mask:
             proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]
         
+        if isinstance(conf, float):
+            conf2 = conf
+        elif isinstance(conf, dict):
+            conf2 = min(conf.values())
+        else:
+            raise TypeError(f'Confidence type {type(conf)} not supported')
         preds2 = ops.non_max_suppression(preds[0] if predict_mask else preds,
-                                        conf,
+                                        conf2,
                                         iou,
                                         agnostic=agnostic,
                                         max_det=max_det,
@@ -272,9 +279,17 @@ class Yolov8:
                 results['segments'].append(segments)
             
             pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
-            xyxy,conf = pred[:, :4].cpu().numpy(),pred[:, 4].cpu().numpy()
-            classes = [self.names[c.item()] for c in pred[:, 5]]
-            results['boxes'].append(xyxy)
-            results['scores'].append(conf)
-            results['classes'].append(classes)
+            xyxy,confs,clss = pred[:, :4],pred[:, 4],pred[:, 5]
+            classes = np.array([self.names[c.item()] for c in clss])
+            
+            # filter based on conf
+            if isinstance(conf, float):
+                thres = np.array([conf]*len(clss))
+            if isinstance(conf, dict):
+                thres = np.array([conf[c] for c in classes])
+            M = confs > self.from_numpy(thres)
+            
+            results['boxes'].append(xyxy[M].cpu().numpy())
+            results['scores'].append(confs[M].cpu().numpy())
+            results['classes'].append(classes[M.cpu().numpy()])
         return results
