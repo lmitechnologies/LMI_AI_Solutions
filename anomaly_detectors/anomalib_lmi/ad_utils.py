@@ -72,12 +72,11 @@ def plot_fig(predict_results, save_dir, err_thresh=None, err_max=None):
         fname,fext=os.path.splitext(fname)
         logging.info(f'Processing data for: {fname}')
         err_dist=np.squeeze(err_dist)
-        err_mean=err_dist.mean()
-        err_std=err_dist.std()
+        
         if err_thresh is None:
-            err_thresh=0
+            err_thresh=err_dist.mean()
         if err_max is None:
-            err_max=err_mean+3*err_std
+            err_max=err_dist.max()
 
         heat_map=err_dist.copy()
         heat_map[heat_map<err_thresh]=err_thresh
