@@ -275,8 +275,8 @@ class Yolov8:
                 masks = ops.process_mask(proto[i], pred[:, 6:], pred[:, :4], img.shape[2:], upsample=True)  # HWC
                 segments = [ops.scale_coords(masks.shape[1:], x, orig_img.shape, normalize=False) 
                             for x in ops.masks2segments(masks)]
-                results['masks'].append(masks.cpu().numpy())
-                results['segments'].append(segments)
+                # results['masks'].append(masks.cpu().numpy())
+                # results['segments'].append(segments)
             
             pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
             xyxy,confs,clss = pred[:, :4],pred[:, 4],pred[:, 5]
@@ -292,4 +292,7 @@ class Yolov8:
             results['boxes'].append(xyxy[M].cpu().numpy())
             results['scores'].append(confs[M].cpu().numpy())
             results['classes'].append(classes[M.cpu().numpy()])
+            if predict_mask:
+                results['masks'].append(masks[M].cpu().numpy())
+                results['segments'].append(segments[M)
         return results
