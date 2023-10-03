@@ -31,11 +31,17 @@ if __name__ == '__main__':
                 if len(row_id)>1:
                     logger.info(f'Found multiple entries at row: {row_id}. Reducing to {row_id[0]}')
                 row_id=row_id[0]
-                fname=df.iloc[row_id]['fname'].replace('.png','_annot.png')
                 ad_max=df.iloc[row_id]['max']
                 ad_max_str=f"{ad_max:006.2f}"
-                fname_modified=ad_max_str+"-"+fname
+                
+                # support both the original and the annotated images
+                fname=df.iloc[row_id]['fname']
+                if not os.path.isfile(os.path.join(root, fname)):
+                    fname = fname.replace('.png','_annot.png')
+                    
                 path = os.path.join(root, fname)
+                fname_modified=ad_max_str+"-"+fname
+                
                 # skip if already exists
                 dest=os.path.join(args.dest, fname_modified)
                 if os.path.isfile(dest):
