@@ -14,6 +14,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--src', required=True, help='path to source directory. This could be a parent directory of all images, such as each-sku')
     parser.add_argument('-d', '--dest', required=True,  help='path to destination directory')
     parser.add_argument('-c', '--csv', required=True,  help='csv file with: fname,mean,max,std')
+    parser.add_argument('-t', '--threshold', type=float, default=0.0,  help='threshold for anomaly detection scores')
     
     args = parser.parse_args()
 
@@ -33,6 +34,10 @@ if __name__ == '__main__':
                 row_id=row_id[0]
                 ad_max=df.iloc[row_id]['max']
                 ad_max_str=f"{ad_max:006.2f}"
+                
+                # skip if below threshold
+                if ad_max<args.threshold:
+                    continue
                 
                 # support both the original and the annotated images
                 fname=df.iloc[row_id]['fname']
