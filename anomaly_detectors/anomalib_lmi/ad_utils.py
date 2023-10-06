@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 from scipy.stats import kstest
 import numpy as np
 import cv2
-from anomaly_model import AnomalyModel
+from anomalib_lmi.anomaly_model import AnomalyModel
 
 logging.basicConfig(level=logging.INFO)
 
