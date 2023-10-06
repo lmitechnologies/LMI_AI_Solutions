@@ -34,8 +34,11 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize):
     W,H = output_imsize
     ratio_out = W/H
     for file in file_list:
-        im = cv2.imread(file)
         im_name = os.path.basename(file)
+        if im_name not in shapes:
+            continue
+        
+        im = cv2.imread(file)
         h,w = im.shape[:2]
         
         ratio_in = w/h
