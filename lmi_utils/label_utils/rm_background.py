@@ -21,6 +21,9 @@ if __name__ == '__main__':
 
     if not os.path.exists(args.out_path):
         os.makedirs(args.out_path)
+        
+    if args.path_csv == 'labels.csv':
+        args.path_csv = os.path.join(args.path_imgs, args.path_csv)
 
     # read csv
     dt,_ = csv_utils.load_csv(args.path_csv, args.path_imgs)
