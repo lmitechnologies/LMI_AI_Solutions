@@ -73,7 +73,7 @@ def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=Tr
                     M.Y = list(map(int,coordinates))
                     shapes[im_name].append(M)
                 else:
-                    raise Exception("invalid keywords: {}".format(coord_type))
+                    raise Exception(f"invalid keywords: {coord_type}")
             elif shape_type=='rect':
                 if coord_type=='upper left':
                     R = rect.Rect(im_name=im_name, fullpath=fullpath, category=category, confidence=confidence)
@@ -83,7 +83,7 @@ def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=Tr
                     R.bottom_right = list(map(int,coordinates))
                     shapes[im_name].append(R)
                 else:
-                    raise Exception("invalid keywords: {}".format(coord_type))
+                    raise Exception(f"invalid keywords: {coord_type}")
     return shapes, class_map
 
 

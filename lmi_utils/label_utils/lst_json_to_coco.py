@@ -3,38 +3,12 @@ import argparse
 import logging
 import json
 import numpy as np
-from label_utils.COCO_dataset import COCO_Dataset, Annotation, rotate
+from label_utils.COCO_dataset import COCO_Dataset, Annotation
+from label_utils.bbox_utils import convert_from_ls, rotate
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
-
-def convert_from_ls(result):
-    """convert annotations from label studio format to image pixel coordinate system
-
-    Returns:
-        tuple: x,y,w,h,angle, where angle is counterclockwise rotation angle in degree
-    """
-    value = result['value']
-    w, h = result['original_width'], result['original_height']
-    
-    if not all([key in value for key in ['x', 'y', 'width', 'height']]):
-        raise Exception('missing "x", "y", "width", or "height" in json file')
-    
-    # angle in degree
-    angle = value['rotation'] if 'rotation' in value else 0
-    
-    # convert angle from anticlockwise to clockwise
-    if angle>180:
-        angle -= 360
-        
-    if angle>45 or angle<-45:
-        logging.warning(f'found angle of {angle} out of constrains')
-    
-    return w * value['x'] / 100.0, h * value['y'] / 100.0, \
-           w * value['width'] / 100.0, h * value['height'] / 100.0, \
-           angle
 
 
 def get_annotations_from_json(path_json, path_imgs, plot=False):

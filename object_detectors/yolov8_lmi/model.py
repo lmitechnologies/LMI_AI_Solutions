@@ -271,13 +271,6 @@ class Yolov8:
             if not len(pred):  # skip empty boxes
                 continue
             
-            if predict_mask:
-                masks = ops.process_mask(proto[i], pred[:, 6:], pred[:, :4], img.shape[2:], upsample=True)  # HWC
-                # segments = [ops.scale_coords(masks.shape[1:], x, orig_img.shape, normalize=False) 
-                #             for x in ops.masks2segments(masks)]
-                # results['masks'].append(masks.cpu().numpy())
-                # results['segments'].append(segments)
-            
             pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
             xyxy,confs,clss = pred[:, :4],pred[:, 4],pred[:, 5]
             classes = np.array([self.names[c.item()] for c in clss])
@@ -293,6 +286,7 @@ class Yolov8:
             results['scores'].append(confs[M].cpu().numpy())
             results['classes'].append(classes[M.cpu().numpy()])
             if predict_mask:
+                masks = ops.process_mask(proto[i], pred[:, 6:], pred[:, :4], img.shape[2:], upsample=True)  # HWC
                 masks = masks[M]
                 results['masks'].append(masks.cpu().numpy())
                 segments = [ops.scale_coords(masks.shape[1:], x, orig_img.shape, normalize=False) 
