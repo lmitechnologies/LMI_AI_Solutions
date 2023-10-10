@@ -48,7 +48,8 @@ class AnomalyModel:
         self.binding_addrs = OrderedDict((n, d.ptr) for n, d in self.bindings.items())
 
     def preprocess(self, image):
-        img = cv2.resize(AnomalyModel.normalize(image), self.bindings['input'].shape[-2:], interpolation=cv2.INTER_AREA)
+        h, w =  self.bindings['input'].shape[-2:]
+        img = cv2.resize(AnomalyModel.normalize(image), (w,h), interpolation=cv2.INTER_AREA)
         input_dtype = np.float16 if self.fp16 else np.float32
         input_batch = np.array(np.repeat(np.expand_dims(np.transpose(img, (2, 0, 1)), axis=0), 1, axis=0), dtype=input_dtype)
         return self.from_numpy(input_batch)
@@ -66,6 +67,35 @@ class AnomalyModel:
         self.context.execute_v2(list(self.binding_addrs.values()))
         outputs = {x:self.bindings[x].data.cpu().numpy() for x in self.output_names}
         return outputs['output']
+    
+    def postprocess(self,orig_image, anomaly_map, err_thresh, err_size, mask=None,info_on_annot=True):
+        h,w = orig_image.shape[:2]
+        anomaly_map = np.squeeze(anomaly_map.transpose((0,2,3,1)))
+        ind = anomaly_map<err_thresh
+        if mask is not None:
+            h_i,w_i = self.bindings['input'].shape[-2:]
+            mask = cv2.resize(mask, (w_i,h_i)).astype(np.uint8)
+            # set anamaly score to 0 based on the mask
+            np.putmask(anomaly_map, mask==0, 0)
+        ind = anomaly_map<err_thresh
+        err_count = np.count_nonzero(ind==False)
+        details = {'emax':round(anomaly_map.max().tolist(), 2), 'ecnt':err_count}
+        if err_count<=err_size:
+            decision=PASS
+            annot=orig_image
+        else:
+            decision=FAIL
+            anomaly_map[ind] = 0
+            annot = AnomalyModel.annotate(orig_image.astype(np.uint8), 
+                                          cv2.resize(anomaly_map.astype(np.float32), (w, h)))
+        if info_on_annot:
+            cv2.putText(annot,
+                text=f'ad:{decision},'+ str(details).strip("{}").replace(" ","").replace("\'",""),
+                org=(4,h-20), fontFace=0, fontScale=1, color=[225, 255, 255],
+                thickness=2,
+                lineType=cv2.LINE_AA)
+        
+        return decision, annot, details
 
     @staticmethod
     def convert_trt(onnx_path, out_engine_path, fp16=True, workspace=4096):
@@ -161,7 +191,6 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
 
         return p_target
 
-
     img_all,anom_all,fname_all,path_all=[],[],[],[]
     for image_path in images:
         image_path=str(image_path)
@@ -170,7 +199,8 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
         anom_map = pc.predict(img).astype(np.float32)
         proctime.append(time.time() - t0)
         fname=os.path.split(image_path)[1]
-        img_preproc=cv2.resize(img, pc.bindings['input'].shape[-2:], interpolation=cv2.INTER_AREA)
+        h,w = pc.bindings['input'].shape[-2:]
+        img_preproc=cv2.resize(img, (w,h), interpolation=cv2.INTER_AREA)
         img_all.append(img_preproc)
         anom_all.append(anom_map)
         fname_all.append(fname)
