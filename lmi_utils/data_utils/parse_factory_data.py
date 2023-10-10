@@ -79,6 +79,9 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
             logger.warning(f'found camera "{camera}" mismatch with target camera "{tar_cam}", skip')
             continue
         tar_path=os.path.join(sku_path, 'sensor', 'gadget-sensor-'+camera)
+        if not os.path.isdir(tar_path):
+            logger.warning(f'Not found sensor: {camera}, skip')
+            continue
         for sensor_id in os.listdir(tar_path):
             sensor_path = os.path.join(tar_path, sensor_id)
             if not os.path.isdir(sensor_path):
