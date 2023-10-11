@@ -72,6 +72,9 @@ H=320
 # import the repo paths
 source /repos/LMI_AI_Solutions/lmi_ai.env
 
+# extract labels from json
+python -m label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
+
 # resize images with labels
 python -m label_utils.resize_with_csv --path_imgs $input_path --out_imsz $W,$H --path_out /app/data/resized
 
