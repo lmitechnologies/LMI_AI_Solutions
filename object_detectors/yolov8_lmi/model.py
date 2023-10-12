@@ -220,7 +220,7 @@ class Yolov8:
         return self.preprocess(im0),im0
     
     
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=1000, classes=None):
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=1000, classes=None, return_segments=True):
         """Postprocesses predictions and returns a list of Results objects.
         
         Args:
@@ -231,7 +231,7 @@ class Yolov8:
             iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
             classes (List[int]): A list of class indices to consider. If None, all classes will be considered.
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
-        
+            return_segments(bool): If True, return the segments of the masks.
         Rreturns:
             (dict): the dictionary contains several keys: boxes, scores, classes, masks, and (masks, segments if use a segmentation model).
                     the shape of boxes is (B, N, 4), where B is the batch size and N is the number of detected objects.
@@ -289,7 +289,8 @@ class Yolov8:
                 masks = ops.process_mask(proto[i], pred[:, 6:], pred[:, :4], img.shape[2:], upsample=True)  # HWC
                 masks = masks[M]
                 results['masks'].append(masks.cpu().numpy())
-                segments = [ops.scale_coords(masks.shape[1:], x, orig_img.shape, normalize=False) 
-                            for x in ops.masks2segments(masks)]
-                results['segments'].append(segments)
+                if return_segments:
+                    segments = [ops.scale_coords(masks.shape[1:], x, orig_img.shape, normalize=False) 
+                                for x in ops.masks2segments(masks)]
+                    results['segments'].append(segments)
         return results
