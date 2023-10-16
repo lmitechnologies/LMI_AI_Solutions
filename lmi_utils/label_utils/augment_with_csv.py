@@ -60,11 +60,11 @@ def augment_imgs_with_csv(path_imgs:str, path_csv:str, path_out:str, pixel_mul:f
 if __name__=='__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_imgs', required=True, help='the path to images')
+    ap.add_argument('--path_imgs', '-i', required=True, help='the path to images')
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--pixel_multiplier', default=2, type=float, help='the max multiplier to each pixel in the image, default = 2')
     ap.add_argument('--data_size_multipler', default=5, type=int, help='the output sample size = data_size_multipler*length_of_input_data_size, default = 5')
-    ap.add_argument('--path_out', required=True, help='the path to augmented images')
+    ap.add_argument('--path_out', '-o', required=True, help='the path to augmented images')
     args = vars(ap.parse_args())
 
     pixel_mul = args['pixel_multiplier']    

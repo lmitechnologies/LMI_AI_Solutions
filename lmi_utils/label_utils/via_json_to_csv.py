@@ -147,7 +147,7 @@ def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name
 if __name__ == '__main__':
     ap=argparse.ArgumentParser()
     ap.add_argument('-d','--data_path',required=True)
-    ap.add_argument('--output_fname',required=True)
+    ap.add_argument('--output_fname',default='labels.csv')
     ap.add_argument('-r','--render',default="False")
     ap.add_argument('--mask_to_bbox',default="False")
     ap.add_argument('--target_classes',default='',help='comma separated target class names')

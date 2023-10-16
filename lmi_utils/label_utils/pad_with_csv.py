@@ -1,14 +1,17 @@
-from logging import warning
 import cv2
 import os
 import argparse
 import numpy as np
-import glob
+import logging
 
 #LMI packages
 from label_utils import rect, mask
 from label_utils.csv_utils import load_csv, write_to_csv
 from gadget_utils.pipeline_utils import fit_array_to_size
+
+logging.basicConfig()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
@@ -27,45 +30,45 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
     cnt = 0
     cnt_warnings = 0
     output_shapes = {}
-    img_paths = glob.glob(os.path.join(input_path, '*.png'))
-    for path in img_paths:
-        im_name = os.path.basename(path)
-        if im_name not in fname_to_shape:
-            cnt += 1
-            continue
-        
-        im = cv2.imread(path)
-        if im is None:
-            warning(f'The file: {im_name} might be corrupted, skip!')
-            continue
-        h,w = im.shape[:2]
-        print(f'[INFO] Input file: {im_name} with size of [{w},{h}]')
-        
-        #pad image
-        im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,W,H)
+    
+    for path, _, files in os.walk(input_path):
+        for im_name in files:
+            p = os.path.join(path, im_name)
+            if im_name not in fname_to_shape:
+                cnt += 1
+                continue
+            
+            im = cv2.imread(p)
+            if im is None:
+                logger.warning(f'The file: {im_name} might be corrupted, skip!')
+                continue
+            h,w = im.shape[:2]
+            logger.info(f'Input file: {im_name} with size of [{w},{h}]')
+            
+            #pad image
+            im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,W,H)
 
-        #create output fname and save it
-        out_name = os.path.splitext(im_name)[0] + f'_padded_{W}x{H}' + '.png'
-        output_file=os.path.join(output_path, out_name)
-        print(f'[INFO] Output file: {output_file}')
-        cv2.imwrite(output_file,im_out)
+            #create output fname and save it
+            out_name = os.path.splitext(im_name)[0] + f'_padded_{W}x{H}' + '.png'
+            output_file=os.path.join(output_path, out_name)
+            logger.info(f'Output file: {output_file}')
+            cv2.imwrite(output_file,im_out)
 
-        #pad shapes
-        shapes = fname_to_shape[im_name]
-        #print('[INFO] before: ',[s.up_left+s.bottom_right for s in shapes])
-        shapes = fit_shapes_to_size(shapes, pad_l, pad_t)
-        shapes,is_warning = chop_shapes(shapes, W, H)
-        #print('[INFO] after: ',[s.up_left+s.bottom_right for s in shapes])
-        if is_warning:
-            cnt_warnings += 1
-        print()
+            #pad shapes
+            shapes = fname_to_shape[im_name]
+            #logger.info('before: ',[s.up_left+s.bottom_right for s in shapes])
+            shapes = fit_shapes_to_size(shapes, pad_l, pad_t)
+            shapes,is_warning = chop_shapes(shapes, W, H)
+            #logger.info('after: ',[s.up_left+s.bottom_right for s in shapes])
+            if is_warning:
+                cnt_warnings += 1
+            logger.info('')
 
-        #modify the image name 
-        for shape in shapes:
-            shape.im_name = out_name
-        output_shapes[out_name] = shapes
-    print(f'[INFO] found {cnt} images with no labels')
-    print(f'[INFO] found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
+            #modify the image name 
+            for shape in shapes:
+                shape.im_name = out_name
+            output_shapes[out_name] = shapes
+    logger.info(f'found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
     output_csv = os.path.join(output_path, "labels.csv")
     write_to_csv(output_shapes, output_csv)
     
@@ -87,10 +90,10 @@ def chop_shapes(shapes, W, H):
             shapes[i].bottom_right = new_box[2:].tolist()
             if np.all(new_box==0) or new_box[0]==new_box[2] or new_box[1]==new_box[3]:
                 is_del = 1
-                warning(f'bbox {box} is outside of the size [{W},{H}]')
+                logger.warning(f'bbox {box} is outside of the size [{W},{H}]')
             elif (np.any(new_box==W) and np.all(box!=W)) or (np.any(new_box==H) and np.all(box!=H)) \
                     or (np.any(new_box==0) and np.all(box!=0)):
-                warning(f'bbox {box} is chopped to fit the size [{W}, {H}]')
+                logger.warning(f'bbox {box} is chopped to fit the size [{W}, {H}]')
                 is_warning = True
         elif isinstance(shape, mask.Mask):
             X,Y = np.array(shape.X), np.array(shape.Y)
@@ -99,10 +102,10 @@ def chop_shapes(shapes, W, H):
             shapes[i].X,shapes[i].Y = new_X.tolist(),new_Y.tolist()
             if np.all(new_X==W) or np.all(new_Y==H) or np.all(new_X==0) or np.all(new_Y==0):
                 is_del = 1
-                warning(f'polygon {[(x,y) for x,y in zip(new_X,new_Y)]} is outside of the size [{W},{H}]')
+                logger.warning(f'polygon {[(x,y) for x,y in zip(new_X,new_Y)]} is outside of the size [{W},{H}]')
             elif (np.any(new_X==W) and np.all(X!=W)) or (np.any(new_Y==H) and np.all(Y!=H)) \
                 or (np.any(new_X==0) and np.all(X!=0)) or (np.any(new_Y==0) and np.all(Y!=0)):
-                warning(f'polygon {[(x,y) for x,y in zip(new_X,new_Y)]} is chopped to fit the size [{W}, {H}]')
+                logger.warning(f'polygon {[(x,y) for x,y in zip(new_X,new_Y)]} is chopped to fit the size [{W}, {H}]')
                 is_warning = True
         if is_del:
             is_warning = True
@@ -136,9 +139,9 @@ def fit_shapes_to_size(shapes, pad_l, pad_t):
 
 if __name__=="__main__":
     ap=argparse.ArgumentParser(description='Pad or crop images with csv to output size.')
-    ap.add_argument('--path_imgs', required=True, help='the path to the images')
+    ap.add_argument('--path_imgs', '-i', required=True, help='the path to the images')
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
-    ap.add_argument('--path_out', required=True, help='the output path')
+    ap.add_argument('--path_out','-o', required=True, help='the output path')
     ap.add_argument('--out_imsz', required=True, help='the output image size [w,h], w and h are separated by a comma')
     args=vars(ap.parse_args())
 
@@ -149,7 +152,7 @@ if __name__=="__main__":
     output_path=args['path_out']
     output_imsize = list(map(int,args['out_imsz'].split(',')))
 
-    print(f'output image size: {output_imsize}')
+    logger.info(f'output image size: {output_imsize}')
     assert len(output_imsize)==2, 'the output image size must be two ints'
     
     if not os.path.isdir(output_path):
