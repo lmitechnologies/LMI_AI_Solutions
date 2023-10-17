@@ -4,6 +4,7 @@ import numpy as np
 from image_utils.rgb_converter import convert_array_to_rainbow
 
 BLACK=[0,0,0]
+TWO_TO_24_MINUS_ONE=np.power(2,24)-1
 
 def img_rgb_to_int_array(img):
     ''' DESC: Used for testing only.  Converts any rgb image into an array of integers that can be used to identify unique values.
@@ -25,7 +26,7 @@ def img_rgb_to_int_array(img):
     return arr_int
 
 # Process data
-def preprocess_UINT16(img,map_choice='rainbow-med'):
+def preprocess_hmap(img,map_choice='rainbow-med'):
     ''' DESC:   Converts a UINT16 array into an RGB height map.  Assumes 0 is an invalid xyz datapoint from a Gocator-like sensor.  
                 Normalizes the range used by the valid input array and applies a color map.
         ARGS: 
@@ -34,8 +35,14 @@ def preprocess_UINT16(img,map_choice='rainbow-med'):
         RETURNS: RGB heightmap
     
     '''
+    if img.dtype == np.int16:
+        img=img+TWO_TO_24_MINUS_ONE
+    elif img.dtype == np.uint16:
+        img=img
+    else:
+        raise Exception(f'Input datatype: {img.dtype} is not supported.  Please use int16 or uint16 data.')
 
-    TWO_TO_24_MINUS_ONE=np.power(2,24)-1
+    
     levels=np.unique(img)
     # Fetch first valid z height
     level_1=levels[1].astype(np.float32)
@@ -119,7 +126,7 @@ if __name__=='__main__':
         unique_input_value=len(np.unique(img_p))
         print(f'[INFO] Input image has {unique_input_value} unique values.')
         t0=time.time()
-        hmap=preprocess_UINT16(img_p,map_choice=map_choice)
+        hmap=preprocess_hmap(img_p,map_choice=map_choice)
         t1=time.time()
         img_bgr=cv2.cvtColor(hmap,cv2.COLOR_RGB2BGR)
         tdelta=t1-t0
