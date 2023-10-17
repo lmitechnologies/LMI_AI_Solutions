@@ -1,15 +1,15 @@
 #%%
 import cv2
-import glob
 import numpy as np
-import os
 from image_utils.rgb_converter import convert_array_to_rainbow
-import matplotlib.pyplot as plt
-import time
 
 BLACK=[0,0,0]
 
 def img_rgb_to_int_array(img):
+    ''' DESC: Used for testing only.  Converts any rgb image into an array of integers that can be used to identify unique values.
+        ARGS: RGB image
+        RETURNS: Array of integer values for each pixel  
+    '''
     if len(img.shape)>2:
         arr=img.reshape(-1,3)
         arr_int=[]
@@ -24,16 +24,16 @@ def img_rgb_to_int_array(img):
         arr_int=img
     return arr_int
 
-def blend(img_p, img_i):
-    # Blend the images
-    alpha = 0.3  # Weight for image1
-    beta = 0.7  # Weight for image2
-    gamma = 0  # Scalar added to each pixel
-    blended_image = cv2.addWeighted(img_p, alpha, img_i, beta, gamma)
-    return blended_image
-
 # Process data
-def preprocess_INT16(img,map_choice='rainbow-med'):
+def preprocess_UINT16(img,map_choice='rainbow-med'):
+    ''' DESC:   Converts a UINT16 array into an RGB height map.  Assumes 0 is an invalid xyz datapoint from a Gocator-like sensor.  
+                Normalizes the range used by the valid input array and applies a color map.
+        ARGS: 
+            img: uint16 image
+            map_choice: option for mapping
+        RETURNS: RGB heightmap
+    
+    '''
 
     TWO_TO_24_MINUS_ONE=np.power(2,24)-1
     levels=np.unique(img)
@@ -67,13 +67,14 @@ def preprocess_INT16(img,map_choice='rainbow-med'):
         img_fsr=(img_n*TWO_TO_24_MINUS_ONE).astype(np.uint32)
         hmap=convert_array_to_rainbow(img_fsr)
 
-    elif map_choice=='rainbow-high':
-        #TODO: This doesn't seem to improve quantization
-        colormap = plt.get_cmap('jet')
-        img_rgba = (colormap(img_n)*255.0).astype(np.uint8)
-        # hmap=colormap(img_n)
-        hmap=cv2.cvtColor(img_rgba,cv2.COLOR_RGBA2RGB)
-        hmap[empty_ind]=BLACK
+    # elif map_choice=='rainbow-high':
+    #     import matplotlib as plt
+    #     #TODO: This doesn't seem to improve quantization
+    #     colormap = plt.get_cmap('jet')
+    #     img_rgba = (colormap(img_n)*255.0).astype(np.uint8)
+    #     # hmap=colormap(img_n)
+    #     hmap=cv2.cvtColor(img_rgba,cv2.COLOR_RGBA2RGB)
+    #     hmap[empty_ind]=BLACK
 
     else:
         raise Exception(f'Unsupported colormapping option: {map_choice}')
@@ -83,11 +84,15 @@ def preprocess_INT16(img,map_choice='rainbow-med'):
 
 if __name__=='__main__':
     import argparse
+    import glob
+    import os
+    import time
+
     ap = argparse.ArgumentParser()
     ap.add_argument('-i','--input_path', default='./')
     ap.add_argument('-o','--output_path', default=None)
     mapping_options = ["gray", "rainbow-low", "rainbow-med","rainbow-high"]
-    ap.add_argument('--map_choice', choices=mapping_options,help="Mapping choices: gray, rainbow-low, rainbow-med, rainbow-high")
+    ap.add_argument('--map_choice', choices=mapping_options,help="Mapping choices: gray, rainbow-low, rainbow-med")
     ap.add_argument('--show_quant', action='store_true', help="Show quantization results (SLOW!).")
     filtering_options=[None]
     
@@ -114,7 +119,7 @@ if __name__=='__main__':
         unique_input_value=len(np.unique(img_p))
         print(f'[INFO] Input image has {unique_input_value} unique values.')
         t0=time.time()
-        hmap=preprocess_INT16(img_p,map_choice=map_choice)
+        hmap=preprocess_UINT16(img_p,map_choice=map_choice)
         t1=time.time()
         img_bgr=cv2.cvtColor(hmap,cv2.COLOR_RGB2BGR)
         tdelta=t1-t0
@@ -127,7 +132,6 @@ if __name__=='__main__':
         fname=os.path.split(file)[1]
         fname=fname.replace('.png','_hmap.png')
         cv2.imwrite(os.path.join(outpath,fname),img_bgr)
-        # plt.imsave(os.path.join(outpath,fname), img_rainbow)
 
     proc_time=np.array(proc_time)
     print(f'[INFO] Mean Processing Time = {proc_time.mean()}')
