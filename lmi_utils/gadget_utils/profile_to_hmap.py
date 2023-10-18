@@ -37,7 +37,9 @@ def preprocess_hmap(img,map_choice='rainbow-med'):
     
     '''
     if img.dtype == np.int16:
-        img=img+TWO_TO_FIFTEEN
+        #convert to uint16
+        img=img.astype(np.int32)+TWO_TO_FIFTEEN
+        img=img.astype(np.uint16)
     elif img.dtype == np.uint16:
         img=img
     else:
@@ -46,10 +48,9 @@ def preprocess_hmap(img,map_choice='rainbow-med'):
     
     levels=np.unique(img)
     # Fetch first valid z height
-    level_1=levels[1].astype(np.float32)
+    level_1=levels[1]
     # Fetch indices of invalid height values
     empty_ind=np.where(img==0)
-    img=img.astype(np.float32)
     # Shift imag 1 unit above the floor to maximize the full scale range
     img=img-(level_1-1)
     # Reset the floor to 0
@@ -72,7 +73,7 @@ def preprocess_hmap(img,map_choice='rainbow-med'):
 
     # %% Convert to Med precision Rainbow
     elif map_choice=='rainbow-med':
-        img_fsr=(img_n*TWO_TO_SIXTEEN_MINUS_ONE).astype(np.uint32)
+        img_fsr=(img_n*TWO_TO_SIXTEEN_MINUS_ONE).astype(np.uint16)
         hmap=convert_array_to_rainbow(img_fsr,full_scale_range=16)
 
     # elif map_choice=='rainbow-high':
@@ -97,7 +98,7 @@ if __name__=='__main__':
     import time
 
     ap = argparse.ArgumentParser()
-    ap.add_argument('-i','--input_path', default='./')
+    ap.add_argument('-i','--input_path', default='/home/caden/projects/customer_deployments/cavendish-newannan-tuber-models/data/2023-10-13/profile/sample')
     ap.add_argument('-o','--output_path', default=None)
     mapping_options = ["gray", "rainbow-low", "rainbow-med","rainbow-high"]
     ap.add_argument('--map_choice', choices=mapping_options,help="Mapping choices: gray, rainbow-low, rainbow-med")
