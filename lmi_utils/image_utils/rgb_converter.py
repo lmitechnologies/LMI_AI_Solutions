@@ -6,7 +6,7 @@ image converter: converts images
 import numpy as np
 
 TWO_TO_TWENTYFORUTH_MINUS_ONE = 16777215
-
+TWO_TO_SIXTEENTH_MINUS_ONE = 65535
 
 def convert_to_rgb(an_int):
     blue = an_int & 255
@@ -21,49 +21,55 @@ def convert_array_to_rgb(an_array_of_ints):
     rgb_image=np.dstack((red,green,blue)).astype(np.uint8)
     return rgb_image
 
-def convert_to_rainbow(an_int):
-    COLOR_BIN=TWO_TO_TWENTYFORUTH_MINUS_ONE//7
-    slope=255/COLOR_BIN
+def convert_to_rainbow(an_int,full_scale_range=24):
+    if full_scale_range==16:
+        color_bin=TWO_TO_SIXTEEN_MINUS_ONE//7
+    elif full_scale_range==24:
+        color_bin=TWO_TO_TWENTYFORUTH_MINUS_ONE//7
+    else:
+        raise Exception(f'Unsupported precision {full_scale_range}.  Choose 16 or 24 for unsigned 16 bit or 24 bit precision.')
+    
+    slope=255/color_bin
     try: 
         # from black...ramp-up blue in first bin
-        if an_int<COLOR_BIN:
+        if an_int<color_bin:
             x=an_int
             blue=x*slope
             green=0
             red=0
         # ramp-up green in second bin
-        elif an_int>=COLOR_BIN and an_int<COLOR_BIN*2:
-            x=an_int-COLOR_BIN
+        elif an_int>=color_bin and an_int<color_bin*2:
+            x=an_int-color_bin
             blue=255
             green=x*slope
             red=0
         # ramp-down blue in third bin
-        elif an_int>=COLOR_BIN*2 and an_int<COLOR_BIN*3:
-            x=an_int-2*COLOR_BIN
+        elif an_int>=color_bin*2 and an_int<color_bin*3:
+            x=an_int-2*color_bin
             blue=255-x*slope
             green=255
             red=0
         # ramp-up red in the fourth bin
-        elif an_int>=COLOR_BIN*3 and an_int<COLOR_BIN*4:
-            x=an_int-3*COLOR_BIN
+        elif an_int>=color_bin*3 and an_int<color_bin*4:
+            x=an_int-3*color_bin
             blue=0
             green=255
             red=x*slope
         #ramp-down green in 5th bin
-        elif an_int>=COLOR_BIN*4 and an_int<COLOR_BIN*5:
-            x=an_int-4*COLOR_BIN
+        elif an_int>=color_bin*4 and an_int<color_bin*5:
+            x=an_int-4*color_bin
             blue=0
             green=255-x*slope
             red=255
         #ramp-up blue in 6th bin
-        elif an_int>=COLOR_BIN*5 and an_int<COLOR_BIN*6:
-            x=an_int-5*COLOR_BIN
+        elif an_int>=color_bin*5 and an_int<color_bin*6:
+            x=an_int-5*color_bin
             blue=x*slope
             green=0
             red=255
         #ramp-up green (white=highest)
-        elif an_int>=COLOR_BIN*6 and an_int<COLOR_BIN*7:
-            x=an_int-6*COLOR_BIN
+        elif an_int>=color_bin*6 and an_int<color_bin*7:
+            x=an_int-6*color_bin
             blue=255
             green=x*slope
             red=255
@@ -72,44 +78,49 @@ def convert_to_rainbow(an_int):
 
     return np.uint8(red), np.uint8(green), np.uint8(blue)
 
-def convert_array_to_rainbow(an_array_of_ints):
-    COLOR_BIN=TWO_TO_TWENTYFORUTH_MINUS_ONE//7
-    slope=255/COLOR_BIN
+def convert_array_to_rainbow(an_array_of_ints,full_scale_range=24):
+    if full_scale_range==16:
+        color_bin=TWO_TO_SIXTEEN_MINUS_ONE//7
+    elif full_scale_range==24:
+        color_bin=TWO_TO_TWENTYFORUTH_MINUS_ONE//7
+    else:
+        raise Exception(f'Unsupported precision {full_scale_range}.  Choose 16 or 24 for unsigned 16 bit or 24 bit precision.')
+    slope=255/color_bin
     blue=np.zeros(an_array_of_ints.shape)
     green=np.zeros(an_array_of_ints.shape)
     red=np.zeros(an_array_of_ints.shape)
     try:
         # from black...ramp-up blue in first bin
-        bin1_index=an_array_of_ints<COLOR_BIN
+        bin1_index=an_array_of_ints<color_bin
         blue[bin1_index]=an_array_of_ints[bin1_index]*slope
         # ramp-up green in second bin
-        bin2_index=np.logical_and(an_array_of_ints>=COLOR_BIN,an_array_of_ints<COLOR_BIN*2)
+        bin2_index=np.logical_and(an_array_of_ints>=color_bin,an_array_of_ints<color_bin*2)
         blue[bin2_index]=255
-        green[bin2_index]=(an_array_of_ints[bin2_index]-COLOR_BIN)*slope
+        green[bin2_index]=(an_array_of_ints[bin2_index]-color_bin)*slope
         # ramp-down blue in third bin
-        bin3_index=np.logical_and(an_array_of_ints>=COLOR_BIN*2,an_array_of_ints<COLOR_BIN*3)
-        blue[bin3_index]=255-(an_array_of_ints[bin3_index]-2*COLOR_BIN)*slope
+        bin3_index=np.logical_and(an_array_of_ints>=color_bin*2,an_array_of_ints<color_bin*3)
+        blue[bin3_index]=255-(an_array_of_ints[bin3_index]-2*color_bin)*slope
         green[bin3_index]=255
         red[bin3_index]=0
         # ramp-up red in the fourth bin
-        bin4_index=np.logical_and(an_array_of_ints>=COLOR_BIN*3,an_array_of_ints<COLOR_BIN*4)
+        bin4_index=np.logical_and(an_array_of_ints>=color_bin*3,an_array_of_ints<color_bin*4)
         blue[bin4_index]=0
         green[bin4_index]=255
-        red[bin4_index]=(an_array_of_ints[bin4_index]-3*COLOR_BIN)*slope
+        red[bin4_index]=(an_array_of_ints[bin4_index]-3*color_bin)*slope
         #ramp-down green in 5th bin
-        bin5_index=np.logical_and( an_array_of_ints>=COLOR_BIN*4,an_array_of_ints<COLOR_BIN*5)
+        bin5_index=np.logical_and( an_array_of_ints>=color_bin*4,an_array_of_ints<color_bin*5)
         blue[bin5_index]=0
-        green[bin5_index]=255-(an_array_of_ints[bin5_index]-4*COLOR_BIN)*slope
+        green[bin5_index]=255-(an_array_of_ints[bin5_index]-4*color_bin)*slope
         red[bin5_index]=255
         #ramp-up blue in 6th bin
-        bin6_index=np.logical_and(an_array_of_ints>=COLOR_BIN*5,an_array_of_ints<COLOR_BIN*6)
-        blue[bin6_index]=(an_array_of_ints[bin6_index]-5*COLOR_BIN)*slope
+        bin6_index=np.logical_and(an_array_of_ints>=color_bin*5,an_array_of_ints<color_bin*6)
+        blue[bin6_index]=(an_array_of_ints[bin6_index]-5*color_bin)*slope
         green[bin6_index]=0
         red[bin6_index]=255
         #ramp-up green (white=highest)
-        bin7_index=np.logical_and(an_array_of_ints>=COLOR_BIN*6,an_array_of_ints<COLOR_BIN*7)
+        bin7_index=np.logical_and(an_array_of_ints>=color_bin*6,an_array_of_ints<color_bin*7)
         blue[bin7_index]=255
-        green[bin7_index]=(an_array_of_ints[bin7_index]-6*COLOR_BIN)*slope
+        green[bin7_index]=(an_array_of_ints[bin7_index]-6*color_bin)*slope
         red[bin7_index]=255
     except:
         raise Exception('Invald range.')

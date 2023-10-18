@@ -73,7 +73,7 @@ def preprocess_hmap(img,map_choice='rainbow-med'):
     # %% Convert to Med precision Rainbow
     elif map_choice=='rainbow-med':
         img_fsr=(img_n*TWO_TO_SIXTEEN_MINUS_ONE).astype(np.uint32)
-        hmap=convert_array_to_rainbow(img_fsr)
+        hmap=convert_array_to_rainbow(img_fsr,full_scale_range=16)
 
     # elif map_choice=='rainbow-high':
     #     import matplotlib as plt
