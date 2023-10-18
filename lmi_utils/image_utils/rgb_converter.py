@@ -23,7 +23,7 @@ def convert_array_to_rgb(an_array_of_ints):
 
 def convert_to_rainbow(an_int,full_scale_range=24):
     if full_scale_range==16:
-        color_bin=TWO_TO_SIXTEEN_MINUS_ONE//7
+        color_bin=TWO_TO_SIXTEENTH_MINUS_ONE//7
     elif full_scale_range==24:
         color_bin=TWO_TO_TWENTYFORUTH_MINUS_ONE//7
     else:
@@ -80,7 +80,7 @@ def convert_to_rainbow(an_int,full_scale_range=24):
 
 def convert_array_to_rainbow(an_array_of_ints,full_scale_range=24):
     if full_scale_range==16:
-        color_bin=TWO_TO_SIXTEEN_MINUS_ONE//7
+        color_bin=TWO_TO_SIXTEENTH_MINUS_ONE//7
     elif full_scale_range==24:
         color_bin=TWO_TO_TWENTYFORUTH_MINUS_ONE//7
     else:
