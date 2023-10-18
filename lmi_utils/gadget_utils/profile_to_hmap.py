@@ -4,8 +4,8 @@ import numpy as np
 from image_utils.rgb_converter import convert_array_to_rainbow
 
 BLACK=[0,0,0]
-TWO_TO_24_MINUS_ONE=np.power(2,24)-1
-TWO_TO_23=np.power(2,23)
+TWO_TO_SIXTEEN_MINUS_ONE=np.power(2,16)-1
+TWO_TO_FIFTEEN=np.power(2,15)
 
 def img_rgb_to_int_array(img):
     ''' DESC: Used for testing only.  Converts any rgb image into an array of integers that can be used to identify unique values.
@@ -37,7 +37,7 @@ def preprocess_hmap(img,map_choice='rainbow-med'):
     
     '''
     if img.dtype == np.int16:
-        img=img+TWO_TO_23
+        img=img+TWO_TO_FIFTEEN
     elif img.dtype == np.uint16:
         img=img
     else:
@@ -72,7 +72,7 @@ def preprocess_hmap(img,map_choice='rainbow-med'):
 
     # %% Convert to Med precision Rainbow
     elif map_choice=='rainbow-med':
-        img_fsr=(img_n*TWO_TO_24_MINUS_ONE).astype(np.uint32)
+        img_fsr=(img_n*TWO_TO_SIXTEEN_MINUS_ONE).astype(np.uint32)
         hmap=convert_array_to_rainbow(img_fsr)
 
     # elif map_choice=='rainbow-high':
