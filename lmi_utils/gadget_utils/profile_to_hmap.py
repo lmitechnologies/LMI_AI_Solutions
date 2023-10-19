@@ -28,7 +28,7 @@ def img_rgb_to_int_array(img):
 
 # Process data
 def preprocess_hmap(img,map_choice='rainbow-med'):
-    ''' DESC:   Converts a UINT16 array into an RGB height map.  Assumes 0 is an invalid xyz datapoint from a Gocator-like sensor.  
+    ''' DESC:   Converts a UINT16 array into an RGB height map.  Assumes a floor value of 0 is an invalid xyz datapoint from a Gocator-like sensor.  
                 Normalizes the range used by the valid input array and applies a color map.
         ARGS: 
             img: uint16 image
@@ -45,7 +45,7 @@ def preprocess_hmap(img,map_choice='rainbow-med'):
     else:
         raise Exception(f'Input datatype: {img.dtype} is not supported.  Please use int16 or uint16 data.')
 
-    
+    # Find all unique levels in the hmap
     levels=np.unique(img)
     # Fetch first valid z height
     level_1=levels[1]
@@ -98,7 +98,7 @@ if __name__=='__main__':
     import time
 
     ap = argparse.ArgumentParser()
-    ap.add_argument('-i','--input_path', default='/home/caden/projects/customer_deployments/cavendish-newannan-tuber-models/data/2023-10-13/profile/sample')
+    ap.add_argument('-i','--input_path', default='.')
     ap.add_argument('-o','--output_path', default=None)
     mapping_options = ["gray", "rainbow-low", "rainbow-med","rainbow-high"]
     ap.add_argument('--map_choice', choices=mapping_options,help="Mapping choices: gray, rainbow-low, rainbow-med")
