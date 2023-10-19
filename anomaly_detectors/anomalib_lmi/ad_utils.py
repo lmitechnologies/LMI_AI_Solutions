@@ -259,9 +259,10 @@ def postprocess(self, orig_image, anomaly_map, err_thresh, err_size, mask=None, 
         anomaly_map = cv2.bitwise_and(anomaly_map_fp32, anomaly_map_fp32, mask=mask)
     ind = anomaly_map<err_thresh
     err_count = np.count_nonzero(ind==False)
-    anomaly_map[ind] = 0
+    
     max_error = {'emax':round(anomaly_map.max().tolist(), 1), 'ecnt':err_count}
-
+    anomaly_map[ind] = 0
+    
     if useContours:
         if size_fail is None or color_threshold is None:
             raise ValueError("Required parameters (size_fail && contour_color_threshold) must be provided when useContours=True")
