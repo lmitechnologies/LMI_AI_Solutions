@@ -56,8 +56,8 @@ def csv_to_json(input_csv,output_json):
 
 if __name__ == '__main__':
     ap=argparse.ArgumentParser()
-    ap.add_argument('--input_csv',required=True)
-    ap.add_argument('--output_json',required=True)
+    ap.add_argument('-i','--input_csv',required=True)
+    ap.add_argument('-o','--output_json',required=True)
     args=vars(ap.parse_args())
 
     input_csv=args['input_csv']
