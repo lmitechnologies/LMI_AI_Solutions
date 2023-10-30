@@ -13,8 +13,8 @@ from label_utils.plot_utils import plot_one_box, plot_one_polygon
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_imgs', required=True, help='the path to the input image folder')
-    ap.add_argument('--path_out', required=True, help='the path to the output folder')
+    ap.add_argument('-i','--path_imgs', required=True, help='the path to the input image folder')
+    ap.add_argument('-o','--path_out', required=True, help='the path to the output folder')
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--class_map_json', default=None, help='[optinal] the path of a class map json file')
     args = vars(ap.parse_args())
