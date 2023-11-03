@@ -57,6 +57,8 @@ if __name__ == '__main__':
             if args.sz[0] != im0.shape[0] or args.sz[1] != im0.shape[1]:
                 rh,rw = args.sz[0]/im0.shape[0],args.sz[1]/im0.shape[1]
                 im1 = cv2.resize(im0,(args.sz[1],args.sz[0]))
+            else:
+                rh,rw =1.0,1.0
             
             # inference
             im = model.preprocess(im1)
