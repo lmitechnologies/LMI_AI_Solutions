@@ -55,6 +55,7 @@ if __name__ == '__main__':
             # warp image
             im1 = im0
             if args.sz[0] != im0.shape[0] or args.sz[1] != im0.shape[1]:
+                logger.warning(f'model input size: {args.sz} is different from image size: {im0.shape}, warping image')
                 rh,rw = args.sz[0]/im0.shape[0],args.sz[1]/im0.shape[1]
                 im1 = cv2.resize(im0,(args.sz[1],args.sz[0]))
             else:
