@@ -66,7 +66,7 @@ if __name__ == '__main__':
             
             fname = os.path.basename(p)
             save_path = os.path.join(args.path_out,fname)
-            im_out = np.copy(im1)
+            im_out = np.copy(im0)
             
             if len(results['boxes']):
                 # uppack results for a single image
@@ -76,30 +76,34 @@ if __name__ == '__main__':
                 
                 # loop through each box
                 for j in range(len(boxes)-1,-1,-1): 
-                    mask = masks[j] if masks is not None else None
+                    # convert box,mask to original image size
+                    mask = None
+                    if masks is not None:
+                        mask = masks[j]
+                        mask = cv2.resize(mask,(im_out.shape[1],im_out.shape[0]))
+                    box = boxes[j]
+                    box[[0,2]] /= rw
+                    box[[1,3]] /= rh
+                    box = box.astype(np.int32)
+                    
                     # annotation
-                    plot_one_box(boxes[j],im_out,mask,label=f'{classes[j]}: {scores[j]:.2f}')
+                    plot_one_box(box,im_out,mask,label=f'{classes[j]}: {scores[j]:.2f}')
                     if segments and len(segments[j]):
-                        seg = segments[j].reshape((-1,1,2)).astype(np.int32)
-                        cv2.drawContours(im_out, [seg], -1, (0, 255, 0), 1)
+                        seg = segments[j]
+                        # convert segments to original image size
+                        seg[:,0] /= rw
+                        seg[:,1] /= rh
+                        seg = seg.astype(np.int32)
+                        seg2 = segments[j].reshape((-1,1,2)).astype(np.int32)
+                        cv2.drawContours(im_out, [seg2], -1, (0, 255, 0), 1)
                         
                         # add masks to csv
                         if args.csv:
-                            seg = segments[j]
-                            # unwarp mask
-                            seg[:,0] /= rw
-                            seg[:,1] /= rh
-                            seg = seg.astype(np.int32)
                             M = Mask(im_name=fname, category=classes[j], x_vals=seg[:,0].tolist(), y_vals=seg[:,1].tolist(), confidence=scores[j])
                             fname_to_shapes[fname].append(M)
                     
                     # add rects to csv
                     if mask is None and args.csv:
-                        box = boxes[j]
-                        # unwarp box
-                        box[[0,2]] /= rw
-                        box[[1,3]] /= rh
-                        box = box.astype(np.int32)
                         R = Rect(im_name=fname, category=classes[j], up_left=box[:2].tolist(), bottom_right=box[2:].tolist(), confidence=scores[j])
                         fname_to_shapes[fname].append(R)
                         
