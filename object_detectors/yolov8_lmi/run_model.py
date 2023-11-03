@@ -48,51 +48,71 @@ if __name__ == '__main__':
     for batch in batches:
         for p in batch:
             t1 = time.time()
+            # load image
+            im0 = cv2.imread(p,cv2.IMREAD_UNCHANGED) #BGR format
+            im0 = im0[:,:,::-1] #BGR to RGB
+            
+            # warp image
+            im1 = im0
+            if args.sz[0] != im0.shape[0] or args.sz[1] != im0.shape[1]:
+                rh,rw = args.sz[0]/im0.shape[0],args.sz[1]/im0.shape[1]
+                im1 = cv2.resize(im0,(args.sz[1],args.sz[0]))
+            
             # inference
-            im,im0 = model.load_with_preprocess(p)
+            im = model.preprocess(im1)
             preds = model.forward(im)
-            results = model.postprocess(preds,im,im0,args.confidence)
+            results = model.postprocess(preds,im,im1,args.confidence)
             t2 = time.time()
             
             fname = os.path.basename(p)
             save_path = os.path.join(args.path_out,fname)
-            im_out = np.copy(im0)
+            im_out = np.copy(im1)
             
-            # uppack results for a single image
-            boxes,scores,classes = results['boxes'][0],results['scores'][0],results['classes'][0]
-            masks = results['masks'][0] if 'masks' in results else None
-            segments = results['segments'][0] if 'segments' in results else []
-            
-            # loop through each box
-            for j in range(len(boxes)-1,-1,-1): 
-                mask = masks[j] if masks is not None else None
-                # annotation
-                plot_one_box(boxes[j],im_out,mask,label=f'{classes[j]}: {scores[j]:.2f}')
-                if segments and len(segments[j]):
-                    seg = segments[j].reshape((-1,1,2)).astype(np.int32)
-                    cv2.drawContours(im_out, [seg], -1, (0, 255, 0), 1)
-                    
-                    # add masks to csv
-                    if args.csv:
-                        seg = segments[j].astype(np.int32)
-                        M = Mask(im_name=fname, category=classes[j], x_vals=seg[:,0].tolist(), y_vals=seg[:,1].tolist(), confidence=scores[j])
-                        fname_to_shapes[fname].append(M)
+            if len(results['boxes']):
+                # uppack results for a single image
+                boxes,scores,classes = results['boxes'][0],results['scores'][0],results['classes'][0]
+                masks = results['masks'][0] if 'masks' in results else None
+                segments = results['segments'][0] if 'segments' in results else []
                 
-                # add rects to csv
-                if mask is None and args.csv:
-                    box = boxes[j].astype(np.int32)
-                    R = Rect(im_name=fname, category=classes[j], up_left=box[:2].tolist(), bottom_right=box[2:].tolist(), confidence=scores[j])
-                    fname_to_shapes[fname].append(R)
+                # loop through each box
+                for j in range(len(boxes)-1,-1,-1): 
+                    mask = masks[j] if masks is not None else None
+                    # annotation
+                    plot_one_box(boxes[j],im_out,mask,label=f'{classes[j]}: {scores[j]:.2f}')
+                    if segments and len(segments[j]):
+                        seg = segments[j].reshape((-1,1,2)).astype(np.int32)
+                        cv2.drawContours(im_out, [seg], -1, (0, 255, 0), 1)
                         
+                        # add masks to csv
+                        if args.csv:
+                            seg = segments[j]
+                            # unwarp mask
+                            seg[:,0] /= rw
+                            seg[:,1] /= rh
+                            seg = seg.astype(np.int32)
+                            M = Mask(im_name=fname, category=classes[j], x_vals=seg[:,0].tolist(), y_vals=seg[:,1].tolist(), confidence=scores[j])
+                            fname_to_shapes[fname].append(M)
+                    
+                    # add rects to csv
+                    if mask is None and args.csv:
+                        box = boxes[j]
+                        # unwarp box
+                        box[[0,2]] /= rw
+                        box[[1,3]] /= rh
+                        box = box.astype(np.int32)
+                        R = Rect(im_name=fname, category=classes[j], up_left=box[:2].tolist(), bottom_right=box[2:].tolist(), confidence=scores[j])
+                        fname_to_shapes[fname].append(R)
+                        
+                # log
+                cnts = collections.Counter(classes)
+                logger.info(f'fname: {fname}')
+                for c in cnts:
+                    logger.info(f'found {cnts[c]} {c}')
+            else:
+                logger.info(f'fname: {fname} --- no object detected')  
             # save output image from RGB to BGR
             cv2.imwrite(save_path,im_out[:,:,::-1])
             t3 = time.time()
-            
-            # log
-            cnts = collections.Counter(classes)
-            logger.info(f'fname: {fname}')
-            for c in cnts:
-                logger.info(f'found {cnts[c]} {c}')
             logger.info(f'proc time: {t2-t1:.4f}, cycle time: {t3-t1:.4f}\n')
             
     # write to csv

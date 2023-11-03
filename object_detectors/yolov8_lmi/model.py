@@ -144,6 +144,15 @@ class Yolov8:
         if self.file_type == FileType.PT:
             y = self.model(im)
         
+        # debug shapes
+        # for i,x in enumerate(y):
+        #     if isinstance(x, (list, tuple)):
+        #         print(f'{i}: list')
+        #         for xx in x:
+        #             print(type(xx), xx.shape)
+        #     else:
+        #         print(f'{i}: ', type(x), x.shape)  
+        
         if isinstance(y, (list, tuple)):
             return self.from_numpy(y[0]) if len(y) == 1 else [self.from_numpy(x) for x in y]
         else:
@@ -239,13 +248,13 @@ class Yolov8:
                     the shape of masks: (B, H, W, 3), where H and W are the height and width of the input image.
         """
         
-        if isinstance(preds, list):
-            predict_mask = True
+        if isinstance(preds, (list,tuple)):
+            # select only inference output
+            predict_mask = True if preds[0].shape[1] != 4+len(self.names) else False
         elif isinstance(preds, torch.Tensor):
             predict_mask = False
         else:
             raise TypeError(f'Prediction type {type(preds)} not supported')
-        
         proto = None
         if predict_mask:
             proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]
