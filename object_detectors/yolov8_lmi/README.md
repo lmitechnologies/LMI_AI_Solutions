@@ -1,5 +1,5 @@
 # Train and test YOLOv8 models
-This is the tutorial how to train and test the YOLOv8 models. This tutorial assume that the training and testing happen in a **x86** system. However, the arm dockerfile is provided here: https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/object_detectors/yolov8_lmi/docker/arm.dockerfile.
+This is the tutorial walking through how to train and test YOLOv8 models. This tutorial assumes that the training and testing processes are running in a **x86** system.
 
 ## System requirements
 ### Model training
@@ -15,11 +15,6 @@ This is the tutorial how to train and test the YOLOv8 models. This tutorial assu
 The folder structure below will be created when we go through the tutorial. By convention, we use today's date (i.e. 2023-07-19) as the file name.
 ```
 ├── config
-│   ├── dockerfile
-│   ├── docker-compose_preprocess.yaml
-│   ├── docker-compose_train.yaml
-│   ├── docker-compose_val.yaml
-│   ├── docker-compose_trt.yaml
 │   ├── 2023-07-19_dataset.yaml
 │   ├── 2023-07-19_train.yaml
 │   ├── 2023-07-19_val.yaml
@@ -29,13 +24,19 @@ The folder structure below will be created when we go through the tutorial. By c
 ├── data
 │   ├── allImages
 │   │   ├── *.png
+│   │   ├── *.json
 ├── training
 ├── validation
+├── docker-compose_preprocess.yaml
+├── docker-compose_train.yaml
+├── docker-compose_val.yaml
+├── docker-compose_trt.yaml
+├── dockerfile
 ```
 
 
 ## Create a dockerfile
-Let's create a file `./config/dockerfile`. It installs the dependencies and clone LMI_AI_Solutions repository inside the docker container.
+Let's create a file `./dockerfile`. It installs the dependencies and clone LMI_AI_Solutions repository inside the docker container.
 ```docker
 # last version running on ubuntu 20.04, require CUDA 12.1 
 FROM nvcr.io/nvidia/pytorch:23.04-py3
@@ -84,7 +85,7 @@ python -m label_utils.convert_data_to_yolo --path_imgs /app/data/resized --path_
 ```
 
 ### Create a docker-compose file
-To run the bash script in the container, we need to create a file `./config/docker-compose_preprocess.yaml`. We want to mount the location in host to a location in container so that the file/folder changes in container are picked up in host. Assume that the path to the original data in host is `../data/allImages`. Below, we mount `../data` to `/app/data` in the container. Also, mount the bash script to `/app/preprocess/preprocess.sh`. The bash command inside the command section will be executed.
+To run the bash script in the container, we need to create a file `./docker-compose_preprocess.yaml`. We want to mount the location in host to a location in container so that the file/folder changes in container are picked up in host. Assume that the path to the original data in host is `./data/allImages`. Below, we mount `./data` in the host to `/app/data` in the container. Also, mount the bash script to `/app/preprocess/preprocess.sh`. Let's define the commands in the command section in the docker-compose file, where it runs the mounted preprocess script in the container.
 ```yaml
 version: "3.9"
 services:
@@ -102,14 +103,14 @@ services:
                 count: 1
                 capabilities: [gpu]
     volumes:
-      - ../data:/app/data # format is location_in_host:location_in_container
-      - ../preprocess/2023-07-19.sh:/app/preprocess/preprocess.sh
+      - ./data:/app/data # format is location_in_host:location_in_container
+      - ./preprocess/2023-07-19.sh:/app/preprocess/preprocess.sh
     command: >
       bash /app/preprocess/preprocess.sh
 ```
 
 ### Spin up the container
-Go to `./config` and spin up the container using the following commands: 
+Spin up the container using the following commands: 
 ```bash
 # build the container
 # "-f" specifies the yaml file to load
@@ -119,11 +120,11 @@ docker compose -f docker-compose_preprocess.yaml build
 # "-f" specifies the yaml file to load
 docker compose -f docker-compose_preprocess.yaml up
 ```
-Once it finishs executing, the yolo formatted dataset will be created in the host: `../data/resized_yolo`.
+Once it finishs executing, the yolo formatted dataset will be created in the host: `./data/resized_yolo`.
 
 
 ## Create a dataset yaml file indicating the location of the dataset and its classes
-After converting data to yolo format, a json file can be found in `../data/resized_yolo/class_map.json`. The order of class names in the yaml file **must match with** the order of names in the json file. 
+After converting data to yolo format, a json file can be found in `./data/resized_yolo/class_map.json`. The order of class names in the yaml file **must match with** the order of names in the json file. 
 
 Below is what is in the class_map.json:
 ```json
@@ -146,7 +147,7 @@ names: # class names must match with the names in class_map.json
 
 
 ## Train the model
-To train the model, we need to create a hyperparameter yaml file and create a `docker-compose_train.yaml` file.
+To train the model, we need to create a hyperparameter yaml file and create a `./docker-compose_train.yaml` file.
 
 ### Create a hyperparameter file
  We need to crete a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **medium-size yolov8 instance segmentation model** with the image size of 640. To train object detection models, set `task` to `detect`. If the training images are square, set `rect` to `False`.
@@ -180,7 +181,7 @@ copy_paste: 0.0  # (float) segment copy-paste (probability)
 ```
 
 ### Create a docker-compose file
-Let's create a file `./config/docker-compose_train.yaml`. It mount the host locations to the required directories in the container and run the script `cmd.py`, which load the hyperparameters and do the task that was specified in the file `./config/2023-07-19_train.yaml`.
+Let's create a file `./docker-compose_train.yaml`. It mount the host locations to the required directories in the container and run the script `cmd.py`, which load the hyperparameters and do the task that was specified in the file `./config/2023-07-19_train.yaml`.
 ```yaml
 version: "3.9"
 services:
@@ -200,10 +201,10 @@ services:
     ports:
       - 6008:6008 # tensorboard
     volumes:
-      - ../training:/app/training   # training output
-      - ../data/resized_yolo:/app/data  # training data
-      - ./2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset settings
-      - ./2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./training:/app/training   # training output
+      - ./data/resized_yolo:/app/data  # training data
+      - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset settings
+      - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
 
@@ -254,7 +255,7 @@ boxes: True  # (bool) Show boxes in segmentation predictions
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
 
-Create a file `docker-compose_val.yaml` as below.
+Create a file `./docker-compose_val.yaml` as below.
 ```yaml
 version: "3.9"
 services:
@@ -272,10 +273,10 @@ services:
                 count: 1
                 capabilities: [gpu]
     volumes:
-      - ../validation:/app/validation  # validation output path
-      - ../training/2023-07-19/weights:/app/trained-inference-models   # trained model path, where it has best.pt
-      - ../data/resized_yolo/images:/app/data  # input data path
-      - ./2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./validation:/app/validation  # validation output path
+      - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, where it has best.pt
+      - ./data/resized_yolo/images:/app/data  # input data path
+      - ./config/2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
 
@@ -283,7 +284,7 @@ services:
 Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_val.yaml` instead.** Then, the output results are saved in `./validation/2023-07-19`.
 
 # Generate TensorRT engines
-Similarly, create another hyperparamter yaml file named `2023-07-19_trt.yaml` as below:
+Similarly, create another hyperparamter yaml file named `./config/2023-07-19_trt.yaml` as below:
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
 mode: export  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where val, track, benchmark are NOT tested
@@ -307,7 +308,7 @@ nms: False  # (bool) CoreML: add NMS
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
 
-Create a docker-compose file `./config/docker-compose_trt.yaml`:
+Create a docker-compose file `./docker-compose_trt.yaml`:
 ```yaml
 version: "3.9"
 services:
@@ -325,14 +326,14 @@ services:
                 count: 1
                 capabilities: [gpu]
     volumes:
-      - ../training/2023-08-16/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
-      - ./2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./training/2023-08-16/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
+      - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
 
 ```
 
-If the deployment platform is arm based. Use the arm dockerfile instead. Here is the dockerfile that works in Nvidia Jetson JP 5.0.2:
+If the deployment platform is arm based, use the arm dockerfile instead. Here is the dockerfile that works in Nvidia Jetson JP 5.0.2:
 https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/object_detectors/yolov8_lmi/docker/arm.dockerfile
 
 
