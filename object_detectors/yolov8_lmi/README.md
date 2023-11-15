@@ -85,7 +85,7 @@ python -m label_utils.convert_data_to_yolo --path_imgs /app/data/resized --path_
 ```
 
 ### Create a docker-compose file
-To run the bash script in the container, we need to create a file `./docker-compose_preprocess.yaml`. We want to mount the location in host to a location in container so that the file/folder changes in container are picked up in host. Assume that the path to the original data in host is `./data/allImages`. Below, we mount `./data` in the host to `/app/data` in the container. Also, mount the bash script to `/app/preprocess/preprocess.sh`. Let's define the commands in the command section in the docker-compose file, where it runs the mounted preprocess script in the container.
+To run the bash script in the container, we need to create a file `./docker-compose_preprocess.yaml`. We want to mount the location in host to a location in container so that the file/folder changes in container are picked up in host. Assume that the path to the original data in host is `./data/allImages`. Below, we mount `./data` in the host to `/app/data` in the container. Also, mount the bash script to `/app/preprocess/preprocess.sh`. Let's run the mounted preprocess scripts in the container by specifying the command in the docker-compose file.
 ```yaml
 version: "3.9"
 services:
