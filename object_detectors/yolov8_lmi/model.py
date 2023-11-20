@@ -288,7 +288,8 @@ class Yolov8:
             if isinstance(conf, float):
                 thres = np.array([conf]*len(clss))
             if isinstance(conf, dict):
-                thres = np.array([conf[c] for c in classes])
+                # set to 1 if c is not in conf
+                thres = np.array([conf.get(c,1) for c in classes])
             M = confs > self.from_numpy(thres)
             
             results['boxes'].append(xyxy[M].cpu().numpy())
