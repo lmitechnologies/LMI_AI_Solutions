@@ -10,6 +10,8 @@ import glob
 import shutil
 import time
 from datetime import datetime
+import albumentations as A
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('AnomalyModel')
@@ -21,38 +23,60 @@ Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
 
 class AnomalyModel:
     
-    def __init__(self, engine_path):
+    def __init__(self, model_path):
         if torch.cuda.is_available():
             self.device = torch.device('cuda:0')
         else:
             logger.warning('GPU device unavailable. Use CPU instead.')
             self.device = torch.device('cpu')
-        with open(engine_path, "rb") as f, trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
-            model = runtime.deserialize_cuda_engine(f.read())
-        self.context = model.create_execution_context()
-        self.bindings = OrderedDict()
-        self.output_names = []
-        self.fp16 = False
-        for i in range(model.num_bindings):
-            name = model.get_tensor_name(i)
-            dtype = trt.nptype(model.get_tensor_dtype(name))
-            shape = tuple(self.context.get_tensor_shape(name))
-            logger.info(f'binding {name} ({dtype}) with shape {shape}')
-            if model.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
-                if dtype == np.float16:
-                    self.fp16 = True
-            else:
-                self.output_names.append(name)
-            im = self.from_numpy(np.empty(shape, dtype=dtype)).to(self.device)
-            self.bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
-        self.binding_addrs = OrderedDict((n, d.ptr) for n, d in self.bindings.items())
+        _,ext=os.path.splitext(model_path)
+        if ext=='.engine':
+            with open(model_path, "rb") as f, trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
+                model = runtime.deserialize_cuda_engine(f.read())
+            self.context = model.create_execution_context()
+            self.bindings = OrderedDict()
+            self.output_names = []
+            self.fp16 = False
+            for i in range(model.num_bindings):
+                name = model.get_tensor_name(i)
+                dtype = trt.nptype(model.get_tensor_dtype(name))
+                shape = tuple(self.context.get_tensor_shape(name))
+                logger.info(f'binding {name} ({dtype}) with shape {shape}')
+                if model.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
+                    if dtype == np.float16:
+                        self.fp16 = True
+                else:
+                    self.output_names.append(name)
+                im = self.from_numpy(np.empty(shape, dtype=dtype)).to(self.device)
+                self.bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
+            self.binding_addrs = OrderedDict((n, d.ptr) for n, d in self.bindings.items())
+            self.inference_mode='TRT'
+        elif ext=='.pt':     
+            model = torch.load(model_path,map_location=self.device)["model"]
+            model.eval()
+            self.pt_model=model.to(self.device)
+            self.pt_metadata = torch.load(model_path, map_location=self.device)["metadata"] if model_path else {}
+            self.pt_transform=A.from_dict(self.pt_metadata["transform"])
+            self.inference_mode='PT'
+                    
 
     def preprocess(self, image):
-        h, w =  self.bindings['input'].shape[-2:]
-        img = cv2.resize(AnomalyModel.normalize(image), (w,h), interpolation=cv2.INTER_AREA)
-        input_dtype = np.float16 if self.fp16 else np.float32
-        input_batch = np.array(np.repeat(np.expand_dims(np.transpose(img, (2, 0, 1)), axis=0), 1, axis=0), dtype=input_dtype)
-        return self.from_numpy(input_batch)
+        if self.inference_mode=='TRT':
+            h, w =  self.bindings['input'].shape[-2:]
+            img = cv2.resize(AnomalyModel.normalize(image), (w,h), interpolation=cv2.INTER_AREA)
+            input_dtype = np.float16 if self.fp16 else np.float32
+            input_batch = np.array(np.repeat(np.expand_dims(np.transpose(img, (2, 0, 1)), axis=0), 1, axis=0), dtype=input_dtype)
+            return self.from_numpy(input_batch)
+        elif self.inference_mode=='PT':
+            processed_image = self.transform(image=image)["image"]
+            if len(processed_image) == 3:
+                processed_image = processed_image.unsqueeze(0)
+            return processed_image.to(self.device)
+        else:
+            raise Exception(f'Unknown model format: {self.inference_mode}')
+            
+            
+            
 
     def warmup(self):
         logger.info("warmup started")
@@ -62,10 +86,14 @@ class AnomalyModel:
         logger.info(f"warmup ended - {time.time()-t0:.4f}")
 
     def predict(self, image):
-        input_batch = self.preprocess(image)
-        self.binding_addrs['input'] = int(input_batch.data_ptr())
-        self.context.execute_v2(list(self.binding_addrs.values()))
-        outputs = {x:self.bindings[x].data.cpu().numpy() for x in self.output_names}
+        if self.inference_mode=='TRT':
+            input_batch = self.preprocess(image)
+            self.binding_addrs['input'] = int(input_batch.data_ptr())
+            self.context.execute_v2(list(self.binding_addrs.values()))
+            outputs = {x:self.bindings[x].data.cpu().numpy() for x in self.output_names}
+        elif self.inference_mode=='PT':
+            preprocessed_image = self.preprocess(image)
+            outputs=self.model(preprocessed_image)
         return outputs['output']
     
     def postprocess(self,orig_image, anomaly_map, err_thresh, err_size, mask=None,info_on_annot=True):
