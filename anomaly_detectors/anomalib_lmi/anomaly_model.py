@@ -50,6 +50,7 @@ class AnomalyModel:
                 im = self.from_numpy(np.empty(shape, dtype=dtype)).to(self.device)
                 self.bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
             self.binding_addrs = OrderedDict((n, d.ptr) for n, d in self.bindings.items())
+            self.shape_inspection=shape=self.pt_model.input_shape
             self.inference_mode='TRT'
         elif ext=='.pt':     
             model = torch.load(model_path,map_location=self.device)["model"]
@@ -57,9 +58,9 @@ class AnomalyModel:
             self.pt_model=model.to(self.device)
             self.pt_metadata = torch.load(model_path, map_location=self.device)["metadata"] if model_path else {}
             self.pt_transform=A.from_dict(self.pt_metadata["transform"])
+            self.shape_inspection=self.pt_model.input_shape
             self.inference_mode='PT'
                     
-
     def preprocess(self, image):
         if self.inference_mode=='TRT':
             h, w =  self.bindings['input'].shape[-2:]
@@ -74,14 +75,11 @@ class AnomalyModel:
             return processed_image.to(self.device)
         else:
             raise Exception(f'Unknown model format: {self.inference_mode}')
-            
-            
-            
 
     def warmup(self):
         logger.info("warmup started")
         t0 = time.time()
-        shape = [i*2 for i in self.bindings['input'].shape[-2:]]+[3,]
+        shape=self.shape_inspection+[3,]
         self.predict(np.zeros(shape))
         logger.info(f"warmup ended - {time.time()-t0:.4f}")
 
@@ -91,17 +89,18 @@ class AnomalyModel:
             self.binding_addrs['input'] = int(input_batch.data_ptr())
             self.context.execute_v2(list(self.binding_addrs.values()))
             outputs = {x:self.bindings[x].data.cpu().numpy() for x in self.output_names}
+            output=outputs['output']
         elif self.inference_mode=='PT':
             preprocessed_image = self.preprocess(image)
-            outputs=self.model(preprocessed_image)
-        return outputs['output']
+            output=self.model(preprocessed_image)[0].cpu().numpy()
+        return output
     
     def postprocess(self,orig_image, anomaly_map, err_thresh, err_size, mask=None,info_on_annot=True):
         h,w = orig_image.shape[:2]
         anomaly_map = np.squeeze(anomaly_map.transpose((0,2,3,1)))
         ind = anomaly_map<err_thresh
         if mask is not None:
-            h_i,w_i = self.bindings['input'].shape[-2:]
+            h_i,w_i = self.shape_inspection
             mask = cv2.resize(mask, (w_i,h_i)).astype(np.uint8)
             # set anamaly score to 0 based on the mask
             np.putmask(anomaly_map, mask==0, 0)
