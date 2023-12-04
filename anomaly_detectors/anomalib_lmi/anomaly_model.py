@@ -50,7 +50,7 @@ class AnomalyModel:
                 im = self.from_numpy(np.empty(shape, dtype=dtype)).to(self.device)
                 self.bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
             self.binding_addrs = OrderedDict((n, d.ptr) for n, d in self.bindings.items())
-            self.shape_inspection=shape=self.pt_model.input_shape
+            self.shape_inspection=shape=self.pt_model.input_size
             self.inference_mode='TRT'
         elif ext=='.pt':     
             model = torch.load(model_path,map_location=self.device)["model"]
@@ -58,7 +58,7 @@ class AnomalyModel:
             self.pt_model=model.to(self.device)
             self.pt_metadata = torch.load(model_path, map_location=self.device)["metadata"] if model_path else {}
             self.pt_transform=A.from_dict(self.pt_metadata["transform"])
-            self.shape_inspection=self.pt_model.input_shape
+            self.shape_inspection=self.pt_model.input_size
             self.inference_mode='PT'
                     
     def preprocess(self, image):
