@@ -69,7 +69,7 @@ class AnomalyModel:
             input_batch = np.array(np.repeat(np.expand_dims(np.transpose(img, (2, 0, 1)), axis=0), 1, axis=0), dtype=input_dtype)
             return self.from_numpy(input_batch)
         elif self.inference_mode=='PT':
-            processed_image = self.transform(image=image)["image"]
+            processed_image = self.pt_transform(image=image)["image"]
             if len(processed_image) == 3:
                 processed_image = processed_image.unsqueeze(0)
             return processed_image.to(self.device)
@@ -92,7 +92,7 @@ class AnomalyModel:
             output=outputs['output']
         elif self.inference_mode=='PT':
             preprocessed_image = self.preprocess(image)
-            output=self.model(preprocessed_image)[0].cpu().numpy()
+            output=self.pt_model(preprocessed_image)[0].cpu().numpy()
         return output
     
     def postprocess(self,orig_image, anomaly_map, err_thresh, err_size, mask=None,info_on_annot=True):
