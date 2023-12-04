@@ -63,7 +63,7 @@ class AnomalyModel:
                     
     def preprocess(self, image):
         if self.inference_mode=='TRT':
-            h, w =  self.bindings['input'].shape[-2:]
+            h, w =  self.shape_inspection
             img = cv2.resize(AnomalyModel.normalize(image), (w,h), interpolation=cv2.INTER_AREA)
             input_dtype = np.float16 if self.fp16 else np.float32
             input_batch = np.array(np.repeat(np.expand_dims(np.transpose(img, (2, 0, 1)), axis=0), 1, axis=0), dtype=input_dtype)
@@ -226,7 +226,7 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
         anom_map = pc.predict(img).astype(np.float32)
         proctime.append(time.time() - t0)
         fname=os.path.split(image_path)[1]
-        h,w = pc.bindings['input'].shape[-2:]
+        h,w = pc.shape_inspection
         img_preproc=cv2.resize(img, (w,h), interpolation=cv2.INTER_AREA)
         img_all.append(img_preproc)
         anom_all.append(anom_map)
