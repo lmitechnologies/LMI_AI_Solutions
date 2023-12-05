@@ -58,7 +58,9 @@ class AnomalyModel:
             self.pt_model=model.to(self.device)
             self.pt_metadata = torch.load(model_path, map_location=self.device)["metadata"] if model_path else {}
             self.pt_transform=A.from_dict(self.pt_metadata["transform"])
-            self.shape_inspection=self.pt_model.input_size
+            for d in self.pt_metadata['transform']['transform']['transforms']:
+                if d['__class_fullname__']=='Resize':
+                    self.shape_inspection = [d['height'], d['width']]
             self.inference_mode='PT'
                     
     def preprocess(self, image):
