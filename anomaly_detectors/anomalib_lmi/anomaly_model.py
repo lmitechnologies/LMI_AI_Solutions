@@ -94,7 +94,7 @@ class AnomalyModel:
             output=outputs['output']
         elif self.inference_mode=='PT':
             preprocessed_image = self.preprocess(image)
-            output=self.pt_model(preprocessed_image).squeeze().cpu().numpy()
+            output=self.pt_model(preprocessed_image)[0].cpu().numpy()
         return output
     
     def postprocess(self,orig_image, anomaly_map, err_thresh, err_size, mask=None,info_on_annot=True):
