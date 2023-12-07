@@ -169,7 +169,7 @@ def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, skip_classe
             bbox_label = np.array([shape.up_left+shape.bottom_right for shape in label_dt[fname] if isinstance(shape, rect.Rect) ])
             class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, rect.Rect) ])
             # mask: [[x1,y1],[x2,y2] ...]
-            mask_pred = np.array(mask_to_np(pred_dt[fname]),np.object)
+            mask_pred = np.array(mask_to_np(pred_dt[fname]),object)
             class_pred = np.array([shape.category for shape in pred_dt[fname] if isinstance(shape, mask.Mask) ])
             if len(mask_pred):
                 # found masks
