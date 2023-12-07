@@ -32,7 +32,7 @@ if __name__ == '__main__':
                 if len(row_id)>1:
                     logger.info(f'Found multiple entries at row: {row_id}. Reducing to {row_id[0]}')
                 row_id=row_id[0]
-                ad_max=df.iloc[row_id]['max']
+                ad_max=df.iloc[row_id]['mean']
                 ad_max_str=f"{ad_max:006.2f}"
                 
                 # skip if below threshold

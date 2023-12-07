@@ -85,8 +85,8 @@ if __name__=="__main__":
     ap.add_argument('--option', required=True)
     ap.add_argument('--src', required=True)
     ap.add_argument('--dest', required=True)
-    ap.add_argument('--w', default=244)
-    ap.add_argument('--h', default=244)
+    ap.add_argument('--w', type=int, default=244)
+    ap.add_argument('--h', type=int, default=244)
     ap.add_argument('--type', default='png')
 
     args=vars(ap.parse_args())
