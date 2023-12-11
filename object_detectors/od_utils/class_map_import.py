@@ -18,7 +18,7 @@ def import_json(json_path,swap_kvp=False,training_script_init=None):
 if __name__=='__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('-i','--json_path', required=True, help='the path to images')
+    ap.add_argument('-i','--json_path', required=True, help='Class map path.')
     ap.add_argument('--swap_key_value_pairs', action='store_true', help='Swap key value pairs.')
     ap.add_argument('--training_script_path', default=None, help='Initial training script path.')
     args = vars(ap.parse_args())
