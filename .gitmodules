@@ -17,7 +17,7 @@
 [submodule "acceleration/tf/tensorrt"]
 	path = acceleration/tf/tensorrt
 	url = https://github.com/tensorflow/tensorrt.git
-	branch = master
+	branch = ais
 [submodule "anomaly_detectors/submodules/anomalib"]
 	path = anomaly_detectors/submodules/anomalib
 	url = https://github.com/lmitechnologies/anomalib
