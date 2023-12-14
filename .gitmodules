@@ -14,10 +14,6 @@
 	path = ocr_models/PaddleOCR
 	url = https://github.com/lmitechnologies/PaddleOCR.git
 	branch = ais
-[submodule "acceleration/tf/tensorrt"]
-	path = acceleration/tf/tensorrt
-	url = https://github.com/tensorflow/tensorrt.git
-	branch = ais
 [submodule "anomaly_detectors/submodules/anomalib"]
 	path = anomaly_detectors/submodules/anomalib
 	url = https://github.com/lmitechnologies/anomalib
