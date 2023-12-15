@@ -3,6 +3,7 @@ import json
 def import_json(json_path,swap_kvp=False,training_script_init=None):
     with open(json_path, 'r') as file:
         class_map = json.load(file)
+        class_map = {key: int(value) for key, value in class_map.items()}
     if swap_kvp:
         swapped_class_map = {value: key for key, value in class_map.items()}
         class_map=swapped_class_map
