@@ -10,7 +10,8 @@ import glob
 import shutil
 import time
 from datetime import datetime
-import albumentations as A
+# Required dependency for .pt file support:
+# import albumentations as A
 
 
 logging.basicConfig(level=logging.INFO)
@@ -53,15 +54,16 @@ class AnomalyModel:
             self.shape_inspection=list(shape)[-2:]
             self.inference_mode='TRT'
         elif ext=='.pt':     
-            model = torch.load(model_path,map_location=self.device)["model"]
-            model.eval()
-            self.pt_model=model.to(self.device)
-            self.pt_metadata = torch.load(model_path, map_location=self.device)["metadata"] if model_path else {}
-            self.pt_transform=A.from_dict(self.pt_metadata["transform"])
-            for d in self.pt_metadata['transform']['transform']['transforms']:
-                if d['__class_fullname__']=='Resize':
-                    self.shape_inspection = [d['height'], d['width']]
-            self.inference_mode='PT'
+            # model = torch.load(model_path,map_location=self.device)["model"]
+            # model.eval()
+            # self.pt_model=model.to(self.device)
+            # self.pt_metadata = torch.load(model_path, map_location=self.device)["metadata"] if model_path else {}
+            # self.pt_transform=A.from_dict(self.pt_metadata["transform"])
+            # for d in self.pt_metadata['transform']['transform']['transforms']:
+            #     if d['__class_fullname__']=='Resize':
+            #         self.shape_inspection = [d['height'], d['width']]
+            # self.inference_mode='PT'
+            raise Exception('.pt files not supported')
                     
     def preprocess(self, image):
         if self.inference_mode=='TRT':
@@ -71,10 +73,11 @@ class AnomalyModel:
             input_batch = np.array(np.repeat(np.expand_dims(np.transpose(img, (2, 0, 1)), axis=0), 1, axis=0), dtype=input_dtype)
             return self.from_numpy(input_batch)
         elif self.inference_mode=='PT':
-            processed_image = self.pt_transform(image=image)["image"]
-            if len(processed_image) == 3:
-                processed_image = processed_image.unsqueeze(0)
-            return processed_image.to(self.device)
+            # processed_image = self.pt_transform(image=image)["image"]
+            # if len(processed_image) == 3:
+            #     processed_image = processed_image.unsqueeze(0)
+            # return processed_image.to(self.device)
+            raise Exception('.pt files not supported')
         else:
             raise Exception(f'Unknown model format: {self.inference_mode}')
 
@@ -93,8 +96,9 @@ class AnomalyModel:
             outputs = {x:self.bindings[x].data.cpu().numpy() for x in self.output_names}
             output=outputs['output']
         elif self.inference_mode=='PT':
-            preprocessed_image = self.preprocess(image)
-            output=self.pt_model(preprocessed_image)[0].cpu().numpy()
+            # preprocessed_image = self.preprocess(image)
+            # output=self.pt_model(preprocessed_image)[0].cpu().numpy()
+            raise Exception('.pt files not supported')
         return output
     
     def postprocess(self,orig_image, anomaly_map, err_thresh, err_size, mask=None,info_on_annot=True):
