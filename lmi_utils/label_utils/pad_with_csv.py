@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
+def pad_image_with_csv(input_path, csv_path, output_path, output_imsize, save_bg_images):
     """
     pad/crop the image to the size [W,H] and modify its annotations accordingly
     arguments:
@@ -27,23 +27,28 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
     fname_to_shape, _ = load_csv(csv_path, input_path)
 
     W,H = output_imsize
-    cnt = 0
+    cnt_bg = 0
     cnt_warnings = 0
     output_shapes = {}
     
     for path, _, files in os.walk(input_path):
         for im_name in files:
             p = os.path.join(path, im_name)
-            if im_name not in fname_to_shape:
-                cnt += 1
-                continue
-            
             im = cv2.imread(p)
             if im is None:
-                logger.warning(f'The file: {im_name} might be corrupted, skip!')
+                logger.warning(f'The file: {im_name} might be not a image or corrupted, skip!')
                 continue
+            
             h,w = im.shape[:2]
-            logger.info(f'Input file: {im_name} with size of [{w},{h}]')
+            
+            if im_name not in fname_to_shape:
+                # found bg image
+                if not save_bg_images:
+                    continue
+                cnt_bg += 1
+                logger.info(f'Input file: {im_name} with size of [{w},{h}] has no labels')
+            else:
+                logger.info(f'Input file: {im_name} with size of [{w},{h}]')
             
             #pad image
             im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,W,H)
@@ -51,7 +56,7 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
             #create output fname and save it
             out_name = os.path.splitext(im_name)[0] + f'_padded_{W}x{H}' + '.png'
             output_file=os.path.join(output_path, out_name)
-            logger.info(f'Output file: {output_file}')
+            logger.info(f'write to: {output_file}')
             cv2.imwrite(output_file,im_out)
 
             #pad shapes
@@ -68,7 +73,10 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize):
             for shape in shapes:
                 shape.im_name = out_name
             output_shapes[out_name] = shapes
-    logger.info(f'found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
+    if cnt_bg:
+        logger.info(f'found {cnt_bg} images with no labels. These images will be used as background training data for YOLO.')
+    if cnt_warnings:
+        logger.warning(f'found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
     output_csv = os.path.join(output_path, "labels.csv")
     write_to_csv(output_shapes, output_csv)
     
@@ -143,6 +151,7 @@ if __name__=="__main__":
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--path_out','-o', required=True, help='the output path')
     ap.add_argument('--out_imsz', required=True, help='the output image size [w,h], w and h are separated by a comma')
+    ap.add_argument('--bg_images', action='store_true', help='save images with no labels')
     args=vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
@@ -158,4 +167,4 @@ if __name__=="__main__":
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     
-    pad_image_with_csv(path_imgs, path_csv, output_path, output_imsize)
+    pad_image_with_csv(path_imgs, path_csv, output_path, output_imsize, args['bg_images'])

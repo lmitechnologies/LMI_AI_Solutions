@@ -125,8 +125,9 @@ if __name__ =='__main__':
     ap.add_argument('--class_map_json', help='[optinal] the class map json file')
     ap.add_argument('--path_out', required=True, help='the output path')
     ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')
-    ap.add_argument('--seg', action='store_true', help='generate labels in instance segmentation format, otherwise object detection format')
-    ap.add_argument('--convert', action='store_true', help='perform conversions: bbox-to-mask or mask-to-bbox depends on "--seg", otherwise skip')
+    ap.add_argument('--seg', action='store_true', help='load labels in segmentation format')
+    ap.add_argument('--convert', action='store_true', help='convert label formats: bbox-to-mask if "--seg" is enabled, otherwise mask-to-bbox')
+    ap.add_argument('--bg_images', action='store_true', help='save images with no labels, where yolo models treat them as background')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
@@ -182,4 +183,9 @@ if __name__ =='__main__':
 
     #write images
     path_img_out = os.path.join(args['path_out'], 'images')
-    copy_images_in_folder(path_imgs, path_img_out, fname_to_shapes.keys())
+    if args['bg_images']:
+        print('save background images')
+        copy_images_in_folder(path_imgs, path_img_out)
+    else:
+        print('skip background images')
+        copy_images_in_folder(path_imgs, path_img_out, fname_to_shapes.keys())
