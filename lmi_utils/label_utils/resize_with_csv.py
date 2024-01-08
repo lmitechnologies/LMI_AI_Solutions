@@ -25,12 +25,10 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
         path_csv(str): the path of csv annotation file
         output_imsize(list): a list of output image size [w,h]
     Return:
-        name_to_im(dict): the map <output image name, im>
         shapes(dict): the map <original image name, a list of shape objects>, where shape objects are annotations
     """
     
     shapes,_ = csv_utils.load_csv(path_csv, path_img=path_imgs)
-    name_to_im = {}
     cnt_bg = 0
     W,H = output_imsize
     ratio_out = W/H
@@ -62,7 +60,6 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
             logger.info(f'write to {out_name}')
             cv2.imwrite(os.path.join(path_out,out_name), im2)
             
-            name_to_im[out_name] = im2
             for i in range(len(shapes[im_name])):
                 if isinstance(shapes[im_name][i], rect.Rect):
                     x,y = shapes[im_name][i].up_left
@@ -78,7 +75,7 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
                     raise Exception("Found unsupported classes. Supported classes are mask and rect")
     if cnt_bg:
         logger.info(f'found {cnt_bg} images with no labels. These images will be used as background training data in YOLO')
-    return name_to_im, shapes
+    return shapes
 
 
 
@@ -110,7 +107,7 @@ if __name__=='__main__':
         os.makedirs(path_out)
 
     #resize images with annotation csv file
-    name_to_im,shapes = resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, args['bg_images'])
+    shapes = resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, args['bg_images'])
 
     #write csv file
     csv_utils.write_to_csv(shapes, os.path.join(path_out,'labels.csv'))
