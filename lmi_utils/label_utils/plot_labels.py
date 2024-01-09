@@ -3,11 +3,16 @@ import random
 import cv2
 import os
 import json
+import logging
 
 #LMI packages
 from label_utils.csv_utils import load_csv
 from label_utils import rect, mask
 from label_utils.plot_utils import plot_one_box, plot_one_polygon
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 if __name__ == '__main__':
@@ -25,7 +30,7 @@ if __name__ == '__main__':
     if args['class_map_json']:
         with open(args['class_map_json']) as f:
             class_map = json.load(f)
-        print(f'loaded class map: {class_map}')
+        logger.info(f'loaded class map: {class_map}')
     else:
         class_map = None
 
@@ -51,9 +56,12 @@ if __name__ == '__main__':
             color_map[cls] = tuple([random.randint(0,255) for _ in range(3)])
 
     for im_name in fname_to_shape:
-        print(f'[FILE] {im_name}')
+        logger.info(f'[FILE] {im_name}')
         shapes = fname_to_shape[im_name]
         im = cv2.imread(shapes[0].fullpath)
+        if im is None:
+            logger.warning(f'cannot read image: {shapes[0].fullpath}')
+            continue
         for shape in shapes:
             if isinstance(shape, rect.Rect):
                 box = shape.up_left + shape.bottom_right
