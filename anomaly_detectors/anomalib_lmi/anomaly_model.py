@@ -18,6 +18,7 @@ logger = logging.getLogger('AnomalyModel')
 
 PASS = 'PASS'
 FAIL = 'FAIL'
+MINIMUM_QUANT=1e-15
 
 Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
 
@@ -50,7 +51,7 @@ class AnomalyModel:
                 im = self.from_numpy(np.empty(shape, dtype=dtype)).to(self.device)
                 self.bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
             self.binding_addrs = OrderedDict((n, d.ptr) for n, d in self.bindings.items())
-            self.shape_inspection=list(shape)[-2:]
+            self.shape_inspection=shape=self.pt_model.input_size
             self.inference_mode='TRT'
         elif ext=='.pt':     
             model = torch.load(model_path,map_location=self.device)["model"]
@@ -222,6 +223,7 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
 
     img_all,anom_all,fname_all,path_all=[],[],[],[]
     for image_path in images:
+        logger.info(f"Processing image: {image_path}.")
         image_path=str(image_path)
         img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
         t0 = time.time()
@@ -237,6 +239,7 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
     
     if generate_stats:
         # Compute & Validate pdf
+        logger.info(f"Computing anomaly score PDF for all data.")
         anom_sq=np.squeeze(np.array(anom_all))
         data=np.ravel(anom_sq)
         alpha_hat, loc_hat, beta_hat = gamma.fit(data, floc=0)
@@ -246,23 +249,31 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
         plt.plot(x, pdf_fitted, 'r-', label=f'Fitted Gamma')
         plt.legend()
         plt.savefig(os.path.join(annot_dir,'gamma_pdf_fit.png'))
-        # Compute and validate cdf
-        data_sorted = np.sort(data)
-        yvals = np.arange(1, len(data)+1) / len(data)
-        # Calculate the theoretical CDF using the fitted gamma distribution
-        cdf_theoretical = gamma.cdf(data_sorted, alpha_hat, loc=loc_hat, scale=beta_hat)
-        # Plot the ECDF and theoretical CDF
-        plt.clf()
-        plt.plot(data_sorted, yvals, label='ECDF', marker='.', linestyle='none')
-        plt.plot(data_sorted, cdf_theoretical, label='Gamma CDF', color='r')
-        plt.legend(loc='upper left')
-        plt.xlabel('Value')
-        plt.ylabel('Cumulative Probability')
-        plt.title('ECDF vs. Fitted Gamma CDF')
-        plt.savefig(os.path.join(annot_dir,'gamma_cdf_fit.png'))
-        # Compute possible thresholds   
-        threshold = np.linspace(min(data), max(data), 10)
+        # DEACTIVATE CDF BECAUSE IT TAKES A LONG TIME, AND VERY LITTLE BENEFIT
+        # logger.info(f"Computing anomaly score CDF for all data.")
+        # # Compute and validate cdf
+        # data_sorted = np.sort(data)
+        # yvals = np.arange(1, len(data)+1) / len(data)
+        # # Calculate the theoretical CDF using the fitted gamma distribution
+        # cdf_theoretical = gamma.cdf(data_sorted, alpha_hat, loc=loc_hat, scale=beta_hat)
+        # # Plot the ECDF and theoretical CDF
+        # plt.clf()
+        # plt.plot(data_sorted, yvals, label='ECDF', marker='.', linestyle='none')
+        # plt.plot(data_sorted, cdf_theoretical, label='Gamma CDF', color='r')
+        # plt.legend(loc='upper left')
+        # plt.xlabel('Value')
+        # plt.ylabel('Cumulative Probability')
+        # plt.title('ECDF vs. Fitted Gamma CDF')
+        # plt.savefig(os.path.join(annot_dir,'gamma_cdf_fit.png'))
+        # Compute possible thresholds
+        max_data=max(data)
+        threshold = np.linspace(min(data), max_data, 10)
         quantile_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
+        while quantile_patch.min()<MINIMUM_QUANT:
+            logger.warning(f'Patch quantile saturated with max anomaly score: {max_data}, reducing to {max_data/2}')
+            max_data=max_data/1.2
+            threshold = np.linspace(min(data), max_data, 10)
+            quantile_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
         quantile_patch_str=["{:.{}e}".format(item*100, 2) for item in np.squeeze(quantile_patch).tolist()]
         quantile_patch_str=['Prob of Patch Defect']+quantile_patch_str
         quantile_sample_str=['Prob of Sample Defect']
@@ -275,7 +286,6 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
             quantile_sample_str.append("{:.{}e}".format(percent*100, 2))
 
         quantile_sample=np.array(quantile_sample)
-
         threshold_str=["{:.{}e}".format(item, 2) for item in np.squeeze(threshold).tolist()]
         threshold_str=['Threshold']+threshold_str    
         
@@ -289,12 +299,17 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
         
         if anom_threshold is None and generate_stats: 
             anom_threshold=gamma.ppf(0.5,alpha_hat,loc=loc_hat,scale=beta_hat)
-            logger.info(f'Anomaly patch threshold set to 50 percentile:{anom_threshold}')
+            logger.info(f'Anomaly patch threshold for 50% patch failure rate:{anom_threshold}')
         if anom_max is None and generate_stats:
             p_sample_target=0.03
-            p_target=find_p(threshold,quantile_patch,quantile_sample, p_sample_target) 
-            anom_max = gamma.ppf(1-p_target,alpha_hat,loc=loc_hat,scale=beta_hat)
-            logger.info(f'Anomaly patch max set to 95 percentile:{anom_max}')
+            if p_sample_target > quantile_sample.min():
+                p_target=find_p(threshold,quantile_patch,quantile_sample, p_sample_target)    
+                anom_max = gamma.ppf(1-p_target,alpha_hat,loc=loc_hat,scale=beta_hat)
+                logger.info(f'Anomaly  max set to 95 percentile:{anom_max}')
+            else:
+                anom_max=threshold.max()
+                logger.warning(f'Anomaly patch max set to minimum discernable value: {anom_max} due to vanishing gradient in the patch quantile.  Sample failure rate: {quantile_sample.min()*100:.2e}')
+                
         results=zip(img_all,anom_all,fname_all)
         plot_fig(results,annot_dir,err_thresh=anom_threshold,err_max=anom_max)
         
@@ -341,11 +356,11 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('-a','--action', default="test", help='Action: convert, test')
     ap.add_argument('-x','--onnx_file', default="/app/onnx/model.onnx", help='Onnx file path.')
-    ap.add_argument('-e','--engine_file', default="/app/onnx/engine/model.engine", help='Engine file path.')
+    ap.add_argument('-e','--engine_file', default="/app/padim/model/run/weights/torch/model.pt", help='Engine file path.')
     ap.add_argument('-d','--data_dir', default="/app/data", help='Data file directory.')
     ap.add_argument('-o','--annot_dir', default="/app/annotation_results", help='Annot file directory.')
-    ap.add_argument('-g','--generate_stats', action='store_true',help='generate the data stats')
-    ap.add_argument('-p','--plot',action='store_true', help='plot the annotated images')
+    ap.add_argument('-g','--generate_stats', action='store_false',help='generate the data stats')
+    ap.add_argument('-p','--plot',action='store_false', help='plot the annotated images')
     ap.add_argument('-t','--ad_threshold',type=float,default=None,help='AD patch threshold.')
     ap.add_argument('-m','--ad_max',type=float,default=None,help='AD patch max anomaly.')
 
