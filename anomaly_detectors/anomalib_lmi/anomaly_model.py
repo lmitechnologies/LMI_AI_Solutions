@@ -51,7 +51,7 @@ class AnomalyModel:
                 im = self.from_numpy(np.empty(shape, dtype=dtype)).to(self.device)
                 self.bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
             self.binding_addrs = OrderedDict((n, d.ptr) for n, d in self.bindings.items())
-            self.shape_inspection=shape=self.pt_model.input_size
+            self.shape_inspection=shape
             self.inference_mode='TRT'
         elif ext=='.pt':     
             model = torch.load(model_path,map_location=self.device)["model"]
