@@ -18,7 +18,7 @@ logger = logging.getLogger('AnomalyModel')
 
 PASS = 'PASS'
 FAIL = 'FAIL'
-MINIMUM_QUANT=1e-15
+MINIMUM_QUANT=1e-12
 
 Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
 
