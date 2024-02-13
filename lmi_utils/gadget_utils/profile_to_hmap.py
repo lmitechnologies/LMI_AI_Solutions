@@ -27,7 +27,7 @@ def img_rgb_to_int_array(img):
     return arr_int
 
 # Process data
-def preprocess_hmap(img,map_choice='rainbow-med'):
+def preprocess_hmap(img,map_choice='rainbow-med',global_max=None,remove_outliers=False):
     ''' DESC:   Converts a UINT16 array into an RGB height map.  Assumes a floor value of 0 is an invalid xyz datapoint from a Gocator-like sensor.  
                 Normalizes the range used by the valid input array and applies a color map.
         ARGS: 
@@ -56,8 +56,21 @@ def preprocess_hmap(img,map_choice='rainbow-med'):
     # Reset the floor to 0
     img[empty_ind]=0
 
+    # Remove outliers
+    if remove_outliers:
+        ind_valid=np.where(img!=0)
+        img_mean=img[ind_valid].mean()
+        img_std=img[ind_valid].std()
+        int_outlier=np.where(img>img_mean+3*img_std)
+        img[int_outlier]=0
+
     # Normalize image
-    img_max=img.max()
+    if global_max==None:
+        img_max=img.max()
+    else:
+        img_max=global_max-(level_1-1)
+        img[img>img_max]=img_max
+        
     img_n=img/img_max
 
     # Convert to Grayscale

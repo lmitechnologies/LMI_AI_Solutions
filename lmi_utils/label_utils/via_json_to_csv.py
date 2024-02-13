@@ -90,7 +90,7 @@ def extract_ROI_from_JSON(data_folder_path,output_csv_file_name,label_name='Name
                             cx=regions[j]['shape_attributes']['cx']
                             cy=regions[j]['shape_attributes']['cy']
                             radius=regions[j]['shape_attributes']['r']
-                            phi = np.linspace(0,2*np.pi,8)[:-1]
+                            phi = np.linspace(0,2*np.pi,16)[:-1]
                             xj=(cx+radius*np.cos(phi)).astype(int)
                             yj=(cy-radius*np.sin(phi)).astype(int)
                             labelWriter.writerow([fname,label,'1.0','polygon','x values']+list(xj))
