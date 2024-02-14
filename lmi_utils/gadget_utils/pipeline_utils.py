@@ -108,10 +108,10 @@ def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, labe
 
 def revert_mask_to_origin(mask, operations:list):
     """
-    This func reverts the mask image according to the operations list IN ORDER.
+    This func reverts a single mask image according to the operations list IN ORDER.
     The operations list contains items as dictionary. The items are listed as follows: 
         1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
-        2. <resize: [target_w, target_h, orig_w, orig_h]>
+        2. <resize: [resized_w, resized_h, orig_w, orig_h]>
     """
     mask2 = mask.copy()
     for operator in reversed(operations):
@@ -126,6 +126,13 @@ def revert_mask_to_origin(mask, operations:list):
     return mask2
 
 
+def revert_masks_to_origin(masks, operations:list):
+    results = []
+    for m in masks:
+        results.append(revert_mask_to_origin(m, operations))
+    return results
+
+
 def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
     """
     revert the points to original image coordinates
@@ -133,7 +140,7 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
     The operations list contains items as dictionary. The items are listed as follows: 
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
-        3. <resize: [target_w, target_h, orig_w, orig_h]>
+        3. <resize: [resized_w, resized_h, orig_w, orig_h]>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
