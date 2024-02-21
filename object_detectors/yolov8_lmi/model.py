@@ -183,7 +183,7 @@ class Yolov8:
         if isinstance(imgsz, tuple):
             imgsz = list(imgsz)
         if self.imgsz and self.imgsz != imgsz:
-            self.logger.warning(f'The warmup imgsz of {imgsz} does not match with the size of the model: {self.imgsz}!')
+            raise Exception(f'The warmup imgsz of {imgsz} does not match with the size of the model: {self.imgsz}!')
             
         imgsz = [1,3]+imgsz
         im = torch.empty(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
@@ -202,9 +202,8 @@ class Yolov8:
         im = np.expand_dims(im,axis=0) # HWC -> BHWC
         im = im.transpose((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
         im = np.ascontiguousarray(im)  # contiguous
-        im = torch.from_numpy(im)
+        im = self.from_numpy(im)
 
-        img = im.to(self.device)
         img = img.half() if self.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
         return img
@@ -234,7 +233,7 @@ class Yolov8:
         
         Args:
             preds (torch.Tensor | list): Predictions from the model.
-            img (torch.Tensor): Input image.
+            img (torch.Tensor): the preprocessed image
             orig_imgs (np.ndarray | list): Original image or list of original images.
             conf_thres (float | dict): int or dictionary of <class: confidence level>.
             iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
@@ -296,7 +295,7 @@ class Yolov8:
             results['scores'].append(confs[M].cpu().numpy())
             results['classes'].append(classes[M.cpu().numpy()])
             if predict_mask:
-                masks = ops.process_mask(proto[i], pred[:, 6:], pred[:, :4], img.shape[2:], upsample=True)  # HWC
+                masks = ops.process_mask_native(proto[i], pred[:, 6:], pred[:, :4], orig_img.shape[2:])
                 masks = masks[M]
                 results['masks'].append(masks.cpu().numpy())
                 if return_segments:
