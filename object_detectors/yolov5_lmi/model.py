@@ -142,12 +142,12 @@ class Yolov5:
         return self.preprocess(im0),im0
     
     
-    def postprocess(self,preds,im,im0,conf: Union[float, dict],iou_thres=0.45,agnostic=False,max_det=100,return_segments=True):
+    def postprocess(self,preds,im,orig_imgs,conf: Union[float, dict],iou_thres=0.45,agnostic=False,max_det=100,return_segments=True):
         """
         Args:
             preds (list): a list of object detection predictions
             im (tensor): the preprocessed image
-            im0 (np.ndarray): the original image
+            orig_imgs (np.ndarray | list): the original images
             conf (dict): confidence threshold dict <class_id: confidence>.
             proto (tensor, optional): mask predictions. Defaults to None.
             iou_thres (float, optional): iou threshold. Defaults to 0.45.
@@ -155,7 +155,6 @@ class Yolov5:
             agnostic (bool, optional): perform class-agnostic NMS. Defaults to False.
         """
         if isinstance(preds, (list,tuple)):
-            # select only inference output
             predict_mask = True
         elif isinstance(preds, torch.Tensor):
             predict_mask = False
@@ -182,8 +181,9 @@ class Yolov5:
         for i,det in enumerate(pred):  # per image
             if len(det)==0:
                 continue
+            orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
             
-            det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()
+            det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], orig_img.shape).round()
             xyxy,confs,clss = det[:, :4],det[:, 4],det[:, 5]
             classes = np.array([self.names[c.item()] for c in clss])
             
@@ -199,11 +199,11 @@ class Yolov5:
             results['scores'].append(confs[M].cpu().numpy())
             results['classes'].append(classes[M.cpu().numpy()])
             if proto is not None:
-                masks = process_mask_native(proto[i], det[:, 6:], det[:, :4], im0.shape[2:])
+                masks = process_mask_native(proto[i], det[:, 6:], det[:, :4], orig_img.shape[:2])
                 masks = masks[M]
                 results['masks'].append(masks.cpu().numpy())
                 if return_segments:
-                    segs = [scale_segments(im.shape[2:], x, im0.shape, normalize=False)
+                    segs = [scale_segments(im.shape[2:], x, orig_img.shape, normalize=False)
                             for x in reversed(masks2segments(masks))]
                     results['segments'].append(segs)
         return results

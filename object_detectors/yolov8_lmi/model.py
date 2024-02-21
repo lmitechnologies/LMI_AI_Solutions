@@ -295,7 +295,7 @@ class Yolov8:
             results['scores'].append(confs[M].cpu().numpy())
             results['classes'].append(classes[M.cpu().numpy()])
             if predict_mask:
-                masks = ops.process_mask_native(proto[i], pred[:, 6:], pred[:, :4], orig_img.shape[2:])
+                masks = ops.process_mask_native(proto[i], pred[:, 6:], pred[:, :4], orig_img.shape[:2])
                 masks = masks[M]
                 results['masks'].append(masks.cpu().numpy())
                 if return_segments:
