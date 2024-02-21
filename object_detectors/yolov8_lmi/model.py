@@ -55,13 +55,12 @@ class Yolov8:
         fp16 = False  # default updated below
         model, metadata = None, None
         
-        logger_trt = trt.Logger(trt.Logger.INFO)
-        Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
-        
         # get the type of file
         file_type = get_file_type(path_wts)
         self.logger.info(f'found weights file type: {file_type}')
         if file_type == FileType.ENGINE:
+            logger_trt = trt.Logger(trt.Logger.INFO)
+            Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
             # Read file
             with open(path_wts, 'rb') as f, trt.Runtime(logger_trt) as runtime:
                 meta_len = int.from_bytes(f.read(4), byteorder='little')  # read metadata length
@@ -107,10 +106,7 @@ class Yolov8:
                 self.logger.warning(f"WARNING ⚠️ Metadata not found for 'model={path_wts}'")
         elif file_type == FileType.PT:
             imgsz = []
-            model = attempt_load_weights(path_wts,
-                                         device=device,
-                                         inplace=True,
-                                         fuse=True)
+            model = attempt_load_weights(path_wts,device=device,inplace=True,fuse=True)
             if hasattr(model, 'kpt_shape'):
                 kpt_shape = model.kpt_shape  # pose-only
             stride = max(int(model.stride.max()), stride)  # model stride
@@ -228,7 +224,7 @@ class Yolov8:
         return self.preprocess(im0),im0
     
     
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=1000, classes=None, return_segments=True):
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
         """Postprocesses predictions and returns a list of Results objects.
         
         Args:
@@ -237,7 +233,6 @@ class Yolov8:
             orig_imgs (np.ndarray | list): Original image or list of original images.
             conf_thres (float | dict): int or dictionary of <class: confidence level>.
             iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
-            classes (List[int]): A list of class indices to consider. If None, all classes will be considered.
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             return_segments(bool): If True, return the segments of the masks.
         Rreturns:
@@ -257,6 +252,7 @@ class Yolov8:
         proto = None
         if predict_mask:
             proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]
+            preds = preds[0]
         
         if isinstance(conf, float):
             conf2 = conf
@@ -264,13 +260,7 @@ class Yolov8:
             conf2 = min(conf.values())
         else:
             raise TypeError(f'Confidence type {type(conf)} not supported')
-        preds2 = ops.non_max_suppression(preds[0] if predict_mask else preds,
-                                        conf2,
-                                        iou,
-                                        agnostic=agnostic,
-                                        max_det=max_det,
-                                        nc=len(self.names),
-                                        classes=classes)
+        preds2 = ops.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.names))
             
         results = defaultdict(list)
         for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, mask1, mask2 ...]
