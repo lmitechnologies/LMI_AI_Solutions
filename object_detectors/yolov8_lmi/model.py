@@ -198,7 +198,7 @@ class Yolov8:
         im = np.expand_dims(im,axis=0) # HWC -> BHWC
         im = im.transpose((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
         im = np.ascontiguousarray(im)  # contiguous
-        im = self.from_numpy(im)
+        img = self.from_numpy(im)
 
         img = img.half() if self.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
