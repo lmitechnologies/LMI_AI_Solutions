@@ -55,13 +55,12 @@ class Yolov8:
         fp16 = False  # default updated below
         model, metadata = None, None
         
-        logger_trt = trt.Logger(trt.Logger.INFO)
-        Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
-        
         # get the type of file
         file_type = get_file_type(path_wts)
         self.logger.info(f'found weights file type: {file_type}')
         if file_type == FileType.ENGINE:
+            logger_trt = trt.Logger(trt.Logger.INFO)
+            Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
             # Read file
             with open(path_wts, 'rb') as f, trt.Runtime(logger_trt) as runtime:
                 meta_len = int.from_bytes(f.read(4), byteorder='little')  # read metadata length
@@ -107,10 +106,7 @@ class Yolov8:
                 self.logger.warning(f"WARNING ⚠️ Metadata not found for 'model={path_wts}'")
         elif file_type == FileType.PT:
             imgsz = []
-            model = attempt_load_weights(path_wts,
-                                         device=device,
-                                         inplace=True,
-                                         fuse=True)
+            model = attempt_load_weights(path_wts,device=device,inplace=True,fuse=True)
             if hasattr(model, 'kpt_shape'):
                 kpt_shape = model.kpt_shape  # pose-only
             stride = max(int(model.stride.max()), stride)  # model stride
@@ -183,7 +179,7 @@ class Yolov8:
         if isinstance(imgsz, tuple):
             imgsz = list(imgsz)
         if self.imgsz and self.imgsz != imgsz:
-            self.logger.warning(f'The warmup imgsz of {imgsz} does not match with the size of the model: {self.imgsz}!')
+            raise Exception(f'The warmup imgsz of {imgsz} does not match with the size of the model: {self.imgsz}!')
             
         imgsz = [1,3]+imgsz
         im = torch.empty(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
@@ -202,9 +198,8 @@ class Yolov8:
         im = np.expand_dims(im,axis=0) # HWC -> BHWC
         im = im.transpose((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
         im = np.ascontiguousarray(im)  # contiguous
-        im = torch.from_numpy(im)
+        im = self.from_numpy(im)
 
-        img = im.to(self.device)
         img = img.half() if self.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
         return img
@@ -229,16 +224,15 @@ class Yolov8:
         return self.preprocess(im0),im0
     
     
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=1000, classes=None, return_segments=True):
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
         """Postprocesses predictions and returns a list of Results objects.
         
         Args:
             preds (torch.Tensor | list): Predictions from the model.
-            img (torch.Tensor): Input image.
+            img (torch.Tensor): the preprocessed image
             orig_imgs (np.ndarray | list): Original image or list of original images.
             conf_thres (float | dict): int or dictionary of <class: confidence level>.
             iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
-            classes (List[int]): A list of class indices to consider. If None, all classes will be considered.
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             return_segments(bool): If True, return the segments of the masks.
         Rreturns:
@@ -258,6 +252,7 @@ class Yolov8:
         proto = None
         if predict_mask:
             proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]
+            preds = preds[0]
         
         if isinstance(conf, float):
             conf2 = conf
@@ -265,13 +260,7 @@ class Yolov8:
             conf2 = min(conf.values())
         else:
             raise TypeError(f'Confidence type {type(conf)} not supported')
-        preds2 = ops.non_max_suppression(preds[0] if predict_mask else preds,
-                                        conf2,
-                                        iou,
-                                        agnostic=agnostic,
-                                        max_det=max_det,
-                                        nc=len(self.names),
-                                        classes=classes)
+        preds2 = ops.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.names))
             
         results = defaultdict(list)
         for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, mask1, mask2 ...]
@@ -296,7 +285,7 @@ class Yolov8:
             results['scores'].append(confs[M].cpu().numpy())
             results['classes'].append(classes[M.cpu().numpy()])
             if predict_mask:
-                masks = ops.process_mask(proto[i], pred[:, 6:], pred[:, :4], img.shape[2:], upsample=True)  # HWC
+                masks = ops.process_mask_native(proto[i], pred[:, 6:], pred[:, :4], orig_img.shape[:2])
                 masks = masks[M]
                 results['masks'].append(masks.cpu().numpy())
                 if return_segments:
