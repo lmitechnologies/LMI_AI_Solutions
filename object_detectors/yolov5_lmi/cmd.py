@@ -3,6 +3,7 @@ from datetime import date
 import logging
 import yaml
 import os
+import subprocess
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -153,7 +154,12 @@ if __name__=='__main__':
                 hyp.pop(k)
             
     # get final command
-    final_cmd = ['python3', target_file] + [f'--{k} {v}' for k, v in hyp.items()]
+    l = []
+    for k,v in hyp.items():
+        l.append(f'--{k}')
+        l.append(f'{v}')
+    final_cmd = ['python3', target_file] + l
+
     logger.info(f'cmd: {final_cmd}')
     
     # run final command
