@@ -185,6 +185,13 @@ if __name__=='__main__':
                 l.append(f'--{k}')
             hyp.pop(k)
             
+    # special cases
+    if 'classes' in hyp:
+        if hyp['classes'] is not None:
+            hyp['classes'] = hyp['classes'].split(',')
+        else:
+            hyp.pop('classes')
+            
     # get final command
     for k,v in hyp.items():
         l.append(f'--{k}')
