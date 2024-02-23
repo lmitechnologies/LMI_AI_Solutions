@@ -130,7 +130,7 @@ if __name__=='__main__':
             check_keys['source']=False
         if 'imgsz' in hyp:
             logger.info(f'type of imgsz: {type(hyp["imgsz"])}')
-            hyp['imgsz'] = str(hyp['imgsz']).split(',')
+            hyp['imgsz'] = ' '.join(hyp['imgsz'].split(','))
     else:
         raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
     defaults.update(tmp)
