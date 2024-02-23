@@ -150,7 +150,7 @@ if __name__=='__main__':
     os.makedirs(os.path.dirname(AUG_YAML), exist_ok=True)
     with open(AUG_YAML, 'w') as f:
         hyp2 = {k:v for k,v in hyp.items() if k in HYP_KEYS}
-        yaml.dump(hyp2, f)
+        yaml.dump(hyp2, f, sort_keys=False)
         logger.info(f'created {AUG_YAML}: {hyp2}')
     hyp['hyp'] = AUG_YAML
             
