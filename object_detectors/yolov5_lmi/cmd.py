@@ -127,7 +127,10 @@ if __name__=='__main__':
         tmp = {'model':path, 'source':SOURCE_PATH, 'project':VAL_FOLDER}
         check_keys['model']=True
         if hyp['mode']=='predict':
-            check_keys['source']=False 
+            check_keys['source']=False
+        if 'imgsz' in hyp:
+            logger.info(f'type of imgsz: {type(hyp["imgsz"])}')
+            hyp['imgsz'] = str(hyp['imgsz']).split(',')
     else:
         raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
     defaults.update(tmp)
