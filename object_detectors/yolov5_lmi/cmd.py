@@ -12,12 +12,18 @@ logger.setLevel(logging.INFO)
 YOLO_REPO_HYP_URL = 'https://raw.githubusercontent.com/ultralytics/yolov5/master/data/hyps/hyp.scratch-low.yaml'
 YOLO_ROOT = '/repos/LMI_AI_Solutions/object_detectors/submodules/yolov5'
 YOLO_SEG_ROOT = YOLO_ROOT + '/segment'
-REPLACE_KEYS = {'model':'weights','batch':'batch-size','exist_ok':'exist-ok'}
+REPLACE_KEYS = {'model':'weights','batch':'batch-size','exist_ok':'exist-ok','conf':'conf-thres','iou':'iou-thres',
+                'show':'view-img','save_txt':'save-txt','save_conf':'save-conf','save_crop':'save-crop',
+                'vid_stride':'vid-stride','line_width':'line-thickness','agnostic_nms':'agnostic-nms',
+                }
+NEG_KEYS = {'show_labels':'hide-labels','show_conf':'hide-conf'}
+DEFAULT_KEYS = {'conf-thres':0.25,'line-thickness':2}
 HYP_KEYS = ['lr0','lrf','momentum','weight_decay','warmup_epochs','warmup_momentum','warmup_bias_lr','box',
             'cls','cls_pw','obj','obj_pw','iou_t','anchor_t','fl_gamma','hsv_h','hsv_s','hsv_v',
             'degrees','translate','scale','shear','perspective','flipud','fliplr','mosaic','mixup','copy_paste']
-REMOVE_KEYS = ['mode','task'] + HYP_KEYS
-NO_VAL_KEYS = ['rect','exist-ok', 'resume']
+REMOVE_KEYS = ['mode','task','retina_masks'] + HYP_KEYS
+NO_VAL_KEYS = ['rect','resume','nosave','noval','exist-ok','view-img','save-txt','save-csv','save-conf','save-crop',
+               'agnostic-nms','augment','visualize','update','hide-labels','hide-conf','half','dnn']
 
 # mounted locations in the docker container
 HYP_YAML = '/app/config/hyp.yaml'
@@ -134,6 +140,16 @@ if __name__=='__main__':
     for k,v in REPLACE_KEYS.items():
         if k in hyp:
             hyp[v] = hyp.pop(k)
+            
+    # negate keys
+    for k,v in NEG_KEYS.items():
+        if k in hyp:
+            hyp[v] = not hyp.pop(k)
+            
+    # assign default vals to keys if they are None
+    for k,v in DEFAULT_KEYS.items():
+        if k in hyp and hyp[k] is None:
+            hyp[k] = v
     
     # get the target file to run
     if hyp['mode'] == 'train':
@@ -151,7 +167,7 @@ if __name__=='__main__':
     with open(AUG_YAML, 'w') as f:
         hyp2 = {k:v for k,v in hyp.items() if k in HYP_KEYS}
         yaml.dump(hyp2, f, sort_keys=False)
-        logger.info(f'created {AUG_YAML}: {hyp2}')
+        logger.info(f'created hyp.yaml: {hyp2}')
     hyp['hyp'] = AUG_YAML
             
     # remove keys
