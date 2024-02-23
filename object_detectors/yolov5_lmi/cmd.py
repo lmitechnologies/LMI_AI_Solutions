@@ -13,7 +13,7 @@ YOLO_REPO_HYP_URL = 'https://raw.githubusercontent.com/ultralytics/yolov5/master
 YOLO_ROOT = '/repos/LMI_AI_Solutions/object_detectors/submodules/yolov5'
 YOLO_SEG_ROOT = YOLO_ROOT + '/segment'
 REPLACE_KEYS = {'model':'weights','batch':'batch-size','exist_ok':'exist-ok'}
-HYP_KEYS = ['lr0','lrf','momentum','weight_decay','warmup_epochs','warmup_momentum','warmup_bias','box',
+HYP_KEYS = ['lr0','lrf','momentum','weight_decay','warmup_epochs','warmup_momentum','warmup_bias_lr','box',
             'cls','cls_pw','obj','obj_pw','iou_t','anchor_t','fl_gamma','hsv_h','hsv_s','hsv_v',
             'degrees','translate','scale','shear','perspective','flipud','fliplr','mosaic','mixup','copy_paste']
 REMOVE_KEYS = ['mode','task'] + HYP_KEYS
