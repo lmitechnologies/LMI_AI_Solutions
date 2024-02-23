@@ -129,8 +129,7 @@ if __name__=='__main__':
         if hyp['mode']=='predict':
             check_keys['source']=False
         if 'imgsz' in hyp:
-            logger.info(f'type of imgsz: {type(hyp["imgsz"])}')
-            hyp['imgsz'] = ' '.join(hyp['imgsz'].split(','))
+            hyp['imgsz'] = hyp['imgsz'].split(',')
     else:
         raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
     defaults.update(tmp)
@@ -189,7 +188,11 @@ if __name__=='__main__':
     # get final command
     for k,v in hyp.items():
         l.append(f'--{k}')
-        l.append(f'{v}')
+        if isinstance(v, list) or isinstance(v, tuple):
+            for v2 in v:
+                l.append(v2)
+        else:
+            l.append(f'{v}')
     final_cmd = ['python3', target_file] + l
 
     logger.info(f'cmd: {final_cmd}')
