@@ -15,7 +15,7 @@ YOLO_SEG_ROOT = YOLO_ROOT + '/segment'
 REPLACE_KEYS = {'model':'weights','batch':'batch-size','exist_ok':'exist-ok'}
 HYP_KEYS = ['degrees','translate','scale','shear','perspective','flipud','fliplr','mosaic','mixup','copy_paste']
 REMOVE_KEYS = ['mode','task'] + HYP_KEYS
-NO_VAL_KEYS = ['rect','exist-ok']
+NO_VAL_KEYS = ['rect','exist-ok', 'resume']
 
 # mounted locations in the docker container
 HYP_YAML = '/app/config/hyp.yaml'
@@ -145,16 +145,15 @@ if __name__=='__main__':
         if k in hyp:
             hyp.pop(k)
             
+    l = []
     # modify keys with no values
     for k in NO_VAL_KEYS:
         if k in hyp:
             if hyp[k]==True:
-                hyp[k] = ''
-            else:
-                hyp.pop(k)
+                l.append(f'--{k}')
+            hyp.pop(k)
             
     # get final command
-    l = []
     for k,v in hyp.items():
         l.append(f'--{k}')
         l.append(f'{v}')
