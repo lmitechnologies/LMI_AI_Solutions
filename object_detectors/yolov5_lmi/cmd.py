@@ -9,7 +9,7 @@ logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-YOLO_REPO_HYP_LINK = 'https://github.com/ultralytics/yolov5/blob/master/data/hyps/hyp.scratch-low.yaml'
+YOLO_REPO_HYP_URL = 'https://raw.githubusercontent.com/ultralytics/yolov5/master/data/hyps/hyp.scratch-low.yaml'
 YOLO_ROOT = '/repos/LMI_AI_Solutions/object_detectors/submodules/yolov5'
 YOLO_SEG_ROOT = YOLO_ROOT + '/segment'
 REPLACE_KEYS = {'model':'weights','batch':'batch-size','exist_ok':'exist-ok'}
@@ -84,7 +84,7 @@ def add_configs(final_configs:dict, configs:dict):
 
 if __name__=='__main__':
     # download repo's yaml file
-    urlretrieve(YOLO_REPO_HYP_LINK, REPO_YAML)
+    urlretrieve(YOLO_REPO_HYP_URL, REPO_YAML)
     
     # check if paths exist
     check_path_exist(HYP_YAML, True)
