@@ -3,13 +3,13 @@ from datetime import date
 import logging
 import yaml
 import os
-import subprocess
+from urllib.request import urlretrieve
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-
+YOLO_REPO_HYP_LINK = 'https://github.com/ultralytics/yolov5/blob/master/data/hyps/hyp.scratch-low.yaml'
 YOLO_ROOT = '/repos/LMI_AI_Solutions/object_detectors/submodules/yolov5'
 YOLO_SEG_ROOT = YOLO_ROOT + '/segment'
 REPLACE_KEYS = {'model':'weights','batch':'batch-size','exist_ok':'exist-ok'}
@@ -20,6 +20,7 @@ NO_VAL_KEYS = ['rect','exist-ok', 'resume']
 # mounted locations in the docker container
 HYP_YAML = '/app/config/hyp.yaml'
 AUG_YAML = '/app/temp/augment.yaml'
+REPO_YAML = '/app/config/repo_hyp.yaml'
 
 # default configs
 DATA_YAML = '/app/config/dataset.yaml'
@@ -82,13 +83,24 @@ def add_configs(final_configs:dict, configs:dict):
 
 
 if __name__=='__main__':
+    # download repo's yaml file
+    urlretrieve(YOLO_REPO_HYP_LINK, REPO_YAML)
+    
     # check if paths exist
     check_path_exist(HYP_YAML, True)
+    check_path_exist(REPO_YAML, True)
     check_path_exist(YOLO_ROOT, False)
+    
+    # load repo hyp yaml file
+    with open(REPO_YAML) as f:
+        hyp = yaml.safe_load(f)
         
     # load hyp yaml file
     with open(HYP_YAML) as f:
-        hyp = yaml.safe_load(f)
+        temp_hyp = yaml.safe_load(f)
+        
+    # update hyp with temp_hyp
+    hyp.update(temp_hyp)
         
     if hyp['task'] not in ['detect','segment']:
         raise Exception(f"Not support the task: {hyp['task']}. All supported tasks are: detect, segment.")
@@ -163,4 +175,3 @@ if __name__=='__main__':
     
     # run final command
     subprocess.run(final_cmd, check=True)
-    
