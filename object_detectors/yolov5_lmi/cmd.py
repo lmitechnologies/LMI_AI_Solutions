@@ -21,9 +21,10 @@ DEFAULT_KEYS = {'conf-thres':0.25,'line-thickness':2}
 HYP_KEYS = ['lr0','lrf','momentum','weight_decay','warmup_epochs','warmup_momentum','warmup_bias_lr','box',
             'cls','cls_pw','obj','obj_pw','iou_t','anchor_t','fl_gamma','hsv_h','hsv_s','hsv_v',
             'degrees','translate','scale','shear','perspective','flipud','fliplr','mosaic','mixup','copy_paste']
-REMOVE_KEYS = ['mode','task','retina_masks'] + HYP_KEYS
+REMOVE_KEYS = ['mode','task','boxes'] + HYP_KEYS
 NO_VAL_KEYS = ['rect','resume','nosave','noval','exist-ok','view-img','save-txt','save-csv','save-conf','save-crop',
-               'agnostic-nms','augment','visualize','update','hide-labels','hide-conf','half','dnn']
+               'agnostic-nms','augment','visualize','update','hide-labels','hide-conf','half','dnn','retina_masks',
+               ]
 
 # mounted locations in the docker container
 HYP_YAML = '/app/config/hyp.yaml'
