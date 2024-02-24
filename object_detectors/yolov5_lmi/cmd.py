@@ -15,6 +15,7 @@ YOLO_SEG_ROOT = YOLO_ROOT + '/segment'
 REPLACE_KEYS = {'model':'weights','batch':'batch-size','exist_ok':'exist-ok','conf':'conf-thres','iou':'iou-thres',
                 'show':'view-img','save_txt':'save-txt','save_conf':'save-conf','save_crop':'save-crop',
                 'vid_stride':'vid-stride','line_width':'line-thickness','agnostic_nms':'agnostic-nms',
+                'max_det':'max-det',
                 }
 NEG_KEYS = {'show_labels':'hide-labels','show_conf':'hide-conf'}
 DEFAULT_KEYS = {'conf-thres':0.25,'line-thickness':2}
@@ -166,12 +167,13 @@ if __name__=='__main__':
             target_file = os.path.join(YOLO_ROOT, 'detect.py')
             
     # create a new hyp.yaml file for HYP_KEYS
-    os.makedirs(os.path.dirname(AUG_YAML), exist_ok=True)
-    with open(AUG_YAML, 'w') as f:
-        hyp2 = {k:v for k,v in hyp.items() if k in HYP_KEYS}
-        yaml.dump(hyp2, f, sort_keys=False)
-        logger.info(f'created hyp.yaml: {hyp2}')
-    hyp['hyp'] = AUG_YAML
+    if hyp['mode'] == 'train':
+        os.makedirs(os.path.dirname(AUG_YAML), exist_ok=True)
+        with open(AUG_YAML, 'w') as f:
+            hyp2 = {k:v for k,v in hyp.items() if k in HYP_KEYS}
+            yaml.dump(hyp2, f, sort_keys=False)
+            logger.info(f'created hyp.yaml: {hyp2}')
+        hyp['hyp'] = AUG_YAML
             
     # remove keys
     for k in REMOVE_KEYS:
