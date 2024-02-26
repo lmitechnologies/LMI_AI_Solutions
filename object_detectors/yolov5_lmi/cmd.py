@@ -9,23 +9,40 @@ logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+
 YOLO_REPO_HYP_URL = 'https://raw.githubusercontent.com/ultralytics/yolov5/master/data/hyps/hyp.scratch-low.yaml'
 YOLO_ROOT = '/repos/LMI_AI_Solutions/object_detectors/submodules/yolov5'
 YOLO_SEG_ROOT = YOLO_ROOT + '/segment'
+# replace yolov8 keys with yolov5 keys
 REPLACE_KEYS = {'model':'weights','batch':'batch-size','exist_ok':'exist-ok','conf':'conf-thres','iou':'iou-thres',
                 'show':'view-img','save_txt':'save-txt','save_conf':'save-conf','save_crop':'save-crop',
                 'vid_stride':'vid-stride','line_width':'line-thickness','agnostic_nms':'agnostic-nms',
-                'max_det':'max-det',
+                'max_det':'max-det','format':'include',
                 }
 NEG_KEYS = {'show_labels':'hide-labels','show_conf':'hide-conf'}
 DEFAULT_KEYS = {'conf-thres':0.25,'line-thickness':2}
-HYP_KEYS = ['lr0','lrf','momentum','weight_decay','warmup_epochs','warmup_momentum','warmup_bias_lr','box',
-            'cls','cls_pw','obj','obj_pw','iou_t','anchor_t','fl_gamma','hsv_h','hsv_s','hsv_v',
-            'degrees','translate','scale','shear','perspective','flipud','fliplr','mosaic','mixup','copy_paste']
+HYP_KEYS = [
+    'lr0','lrf','momentum','weight_decay','warmup_epochs','warmup_momentum','warmup_bias_lr','box',
+    'cls','cls_pw','obj','obj_pw','iou_t','anchor_t','fl_gamma','hsv_h','hsv_s','hsv_v',
+    'degrees','translate','scale','shear','perspective','flipud','fliplr','mosaic','mixup','copy_paste'
+    ]
 REMOVE_KEYS = ['mode','task','boxes'] + HYP_KEYS
-NO_VAL_KEYS = ['rect','resume','nosave','noval','exist-ok','view-img','save-txt','save-csv','save-conf','save-crop',
-               'agnostic-nms','augment','visualize','update','hide-labels','hide-conf','half','dnn','retina_masks',
-               ]
+# no value keys
+NO_VAL_TRAIN = [
+    'rect','resume','nosave','noval','noautoanchor','noplots','image-weights','multi-scale',
+    'single-cls','sync-bn','exist-ok','quad','cos-lr','ndjson-console','ndjson-file','no-overlap'
+    ]
+NO_VAL_TEST = [
+    'view-img','save-txt','save-csv','save-conf','save-crop','nosave','agnostic-nms','augment',
+    'visualize','update','exist-ok','hide-labels','hide-conf','half','dnn','retina_masks'
+    ]
+NO_VAL_EXPORT = [
+    'half','inplace','keras','optimize','int8','per-tensor','dynamic','simplify','verbose','nms','agnostic-nms'
+    ]
+
+
+# remove duplicate keys
+NO_VAL_KEYS = set(NO_VAL_TRAIN + NO_VAL_TEST + NO_VAL_EXPORT)
 
 # mounted locations in the docker container
 HYP_YAML = '/app/config/hyp.yaml'
@@ -124,11 +141,11 @@ if __name__=='__main__':
         tmp = {'data':DATA_YAML, 'project':TRAIN_FOLDER}
         check_keys['data'] = True
     elif hyp['mode'] in ['predict','export']:
-        file_path = os.path.join(YOLO_ROOT, f'{hyp["mode"]}.py')
         path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
-        tmp = {'model':path, 'source':SOURCE_PATH, 'project':VAL_FOLDER}
+        tmp = {'model':path}
         check_keys['model']=True
         if hyp['mode']=='predict':
+            tmp.update({'source':SOURCE_PATH, 'project':VAL_FOLDER})
             check_keys['source']=False
         if 'imgsz' in hyp:
             hyp['imgsz'] = hyp['imgsz'].split(',')
