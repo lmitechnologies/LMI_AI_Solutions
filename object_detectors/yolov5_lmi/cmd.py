@@ -138,18 +138,16 @@ if __name__=='__main__':
     # add default configs
     check_keys = {} # <key:True/False>. True: check if the hyp[key] as a file exists. False: check if the hyp[key] as a folder exists
     if hyp['mode'] == 'train':
-        tmp = {'name':date.today().strftime("%Y-%m-%d"),'data':DATA_YAML, 'project':TRAIN_FOLDER}
+        tmp = {'name':date.today().strftime("%Y-%m-%d"),'data':DATA_YAML,'project':TRAIN_FOLDER}
         check_keys['data'] = True
     elif hyp['mode'] in ['predict','export']:
         path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
         tmp = {'model':path}
         check_keys['model']=True
         if hyp['mode'] == 'predict':
-            tmp.update({'name':date.today().strftime("%Y-%m-%d"),'source':SOURCE_PATH, 'project':VAL_FOLDER})
+            tmp.update({'name':date.today().strftime("%Y-%m-%d"),'source':SOURCE_PATH,'project':VAL_FOLDER,'data':DATA_YAML})
             check_keys['source']=False
-        else:
             check_keys['data'] = True
-            tmp.update({'data':DATA_YAML})
     else:
         raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
     add_configs(hyp, tmp)
