@@ -131,28 +131,24 @@ if __name__=='__main__':
         
     if hyp['task'] not in ['detect','segment']:
         raise Exception(f"Not support the task: {hyp['task']}. All supported tasks are: detect, segment.")
-       
-    # use today's date as the default output folder name
-    defaults = {'name':date.today().strftime("%Y-%m-%d")}
     
-    # add other default configs
+    # add default configs
     check_keys = {} # <key:True/False>. True: check if the key as a file exists. False: check if the key as a folder exists
     if hyp['mode'] == 'train':
-        tmp = {'data':DATA_YAML, 'project':TRAIN_FOLDER}
+        tmp = {'name':date.today().strftime("%Y-%m-%d"),'data':DATA_YAML, 'project':TRAIN_FOLDER}
         check_keys['data'] = True
     elif hyp['mode'] in ['predict','export']:
         path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
         tmp = {'model':path}
         check_keys['model']=True
         if hyp['mode']=='predict':
-            tmp.update({'source':SOURCE_PATH, 'project':VAL_FOLDER})
+            tmp.update({'name':date.today().strftime("%Y-%m-%d"),'source':SOURCE_PATH, 'project':VAL_FOLDER})
             check_keys['source']=False
         if 'imgsz' in hyp:
             hyp['imgsz'] = hyp['imgsz'].split(',')
     else:
         raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
-    defaults.update(tmp)
-    add_configs(hyp, defaults)
+    add_configs(hyp, tmp)
     
     # error checking
     sanity_check(hyp, check_keys)
