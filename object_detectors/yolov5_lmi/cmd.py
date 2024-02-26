@@ -20,7 +20,7 @@ REPLACE_KEYS = {'model':'weights','batch':'batch-size','exist_ok':'exist-ok','co
                 'max_det':'max-det','format':'include',
                 }
 NEG_KEYS = {'show_labels':'hide-labels','show_conf':'hide-conf'}
-DEFAULT_KEYS = {'conf-thres':0.25,'line-thickness':2}
+DEFAULT_KEYS = {'conf-thres':0.25,'line-thickness':2,'opset':17}
 HYP_KEYS = [
     'lr0','lrf','momentum','weight_decay','warmup_epochs','warmup_momentum','warmup_bias_lr','box',
     'cls','cls_pw','obj','obj_pw','iou_t','anchor_t','fl_gamma','hsv_h','hsv_s','hsv_v',
