@@ -26,6 +26,7 @@ HYP_KEYS = [
     'cls','cls_pw','obj','obj_pw','iou_t','anchor_t','fl_gamma','hsv_h','hsv_s','hsv_v',
     'degrees','translate','scale','shear','perspective','flipud','fliplr','mosaic','mixup','copy_paste'
     ]
+# no longer used keys
 REMOVE_KEYS = ['mode','task','boxes'] + HYP_KEYS
 # no value keys
 NO_VAL_TRAIN = [
@@ -41,8 +42,10 @@ NO_VAL_EXPORT = [
     ]
 
 
-# remove duplicate keys
+# convert to set
 NO_VAL_KEYS = set(NO_VAL_TRAIN + NO_VAL_TEST + NO_VAL_EXPORT)
+HYP_KEYS = set(HYP_KEYS)
+REMOVE_KEYS = set(REMOVE_KEYS)
 
 # mounted locations in the docker container
 HYP_YAML = '/app/config/hyp.yaml'
@@ -133,7 +136,7 @@ if __name__=='__main__':
         raise Exception(f"Not support the task: {hyp['task']}. All supported tasks are: detect, segment.")
     
     # add default configs
-    check_keys = {} # <key:True/False>. True: check if the key as a file exists. False: check if the key as a folder exists
+    check_keys = {} # <key:True/False>. True: check if the hyp[key] as a file exists. False: check if the hyp[key] as a folder exists
     if hyp['mode'] == 'train':
         tmp = {'name':date.today().strftime("%Y-%m-%d"),'data':DATA_YAML, 'project':TRAIN_FOLDER}
         check_keys['data'] = True
@@ -141,11 +144,12 @@ if __name__=='__main__':
         path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
         tmp = {'model':path}
         check_keys['model']=True
-        if hyp['mode']=='predict':
+        if hyp['mode'] == 'predict':
             tmp.update({'name':date.today().strftime("%Y-%m-%d"),'source':SOURCE_PATH, 'project':VAL_FOLDER})
             check_keys['source']=False
-        if 'imgsz' in hyp:
-            hyp['imgsz'] = hyp['imgsz'].split(',')
+        else:
+            check_keys['data'] = True
+            tmp.update({'data':DATA_YAML})
     else:
         raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
     add_configs(hyp, tmp)
@@ -194,19 +198,21 @@ if __name__=='__main__':
             hyp.pop(k)
             
     l = []
-    # modify keys with no values
+    # keys with no values
     for k in NO_VAL_KEYS:
         if k in hyp:
             if hyp[k]==True:
                 l.append(f'--{k}')
             hyp.pop(k)
             
-    # special cases
+    # special keys
     if 'classes' in hyp:
         if hyp['classes'] is not None:
             hyp['classes'] = hyp['classes'].split(',')
         else:
             hyp.pop('classes')
+    if 'imgsz' in hyp:
+        hyp['imgsz'] = hyp['imgsz'].split(',')
             
     # get final command
     for k,v in hyp.items():
