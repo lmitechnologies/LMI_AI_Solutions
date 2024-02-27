@@ -210,7 +210,7 @@ if __name__=='__main__':
         else:
             hyp.pop('classes')
     if 'imgsz' in hyp:
-        hyp['imgsz'] = hyp['imgsz'].split(',')
+        hyp['imgsz'] = str(hyp['imgsz']).split(',')
             
     # get final command
     for k,v in hyp.items():
