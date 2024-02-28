@@ -35,8 +35,8 @@ Training Data Directory Structure
 ```
 Although test and the ground_truth are optional, it enables the training to generate insightful metrics
 > * Simply polygon label your test samples with [VGG](https://www.robots.ox.ac.uk/~vgg/software/via/via.html), 
-> * Convert the labels to ground_truth format with `lmi_utils/label_utils/json_to_ground_truth.py`
-> * Put the test images into root_dir/test, corresponding ground_truth into root_dir/ground_truth as #1
+> * Convert the labels to ground_truth format with [json_to_ground_truth.py](https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/lmi_utils/label_utils/json_to_ground_truth.py)
+> * Put the test images into `data/test`, corresponding ground_truth into `data/ground_truth`
 > * At the end of the training, it will generate metrics like this:
 ```bash
         image_AUROC          0.8500000238418579
