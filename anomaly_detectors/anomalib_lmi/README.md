@@ -3,7 +3,7 @@ This folder contains the [Anomalib](https://github.com/openvinotoolkit/anomalib)
 - [patchcore](https://arxiv.org/abs/2106.08265)
 - [padim](https://arxiv.org/abs/2011.08785)
 
-# Usage
+## Usage
 
 This repo is used to train, test, and run anomalib anomaly detector models.
 
@@ -20,9 +20,9 @@ Limitations includes:
 
 ## 1. Organize Data
 
-#### Training Data Directory Structure
+Training Data Directory Structure
 ```bash
-├── root_dir
+├── data
 │   ├── train
 │   ├── ├── good
 │   ├ - test [optional]
@@ -35,8 +35,8 @@ Limitations includes:
 ```
 Although test and the ground_truth are optional, it enables the training to generate insightful metrics
 > * Simply polygon label your test samples with [VGG](https://www.robots.ox.ac.uk/~vgg/software/via/via.html), 
-> * Convert the labels to ground_truth format with lmi_utils/label_utils/json_to_ground_truth.py
-> * Put the test images into root_dir/test, corresponding ground_truth into root_dir/ground_truth as #1
+> * Convert the labels to ground_truth format with [json_to_ground_truth.py](https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/lmi_utils/label_utils/json_to_ground_truth.py)
+> * Put the test images into `data/test`, corresponding ground_truth into `data/ground_truth`
 > * At the end of the training, it will generate metrics like this:
 ```bash
         image_AUROC          0.8500000238418579
@@ -53,10 +53,10 @@ Basic steps to train an Anomalib model:
 3. Train model
 4. Validate Model
 
-### 1. Initialize/modify dockerfile
+### 2.1 Initialize/modify dockerfile
 
 ```Dockerfile
-FROM nvcr.io/nvidia/pytorch:22.12-py3
+FROM nvcr.io/nvidia/pytorch:23.07-py3
 
 RUN apt-get update
 RUN apt-get install python3 python3-pip -y
@@ -64,10 +64,12 @@ RUN apt-get install git libgl1 -y
 WORKDIR /app
 
 RUN pip install pycuda
-RUN pip install opencv-python==4.6.0.66 --user 
+RUN pip install opencv-python -U --user 
 
 RUN pip install openvino-dev==2023.0.0 openvino-telemetry==2022.3.0 nncf==2.4.0
 RUN pip install nvidia-pyindex onnx-graphsurgeon
+RUN pip install tabulate
+RUN pip install albumentations
 
 # Installing from anomalib src requires latest pip 
 RUN python3 -m pip install --upgrade pip
@@ -75,9 +77,9 @@ RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git && 
 RUN cd LMI_AI_Solutions/anomaly_detectors/submodules/anomalib && pip install -e .
 ```
 
-### 2. Initialize/modify docker-compose.yaml
+### 2.2 Initialize/modify docker-compose.yaml
 
-The following sample yaml file references training data at ./training/2023-08-16 and trains a PaDiM model.
+The following sample yaml file references training data at `./training/2024-02-28` and trains a PaDiM model. The [padim.yaml](https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/anomaly_detectors/anomalib_lmi/configs/padim.yaml) should exist in `./configs`. 
 
 ```yaml
 version: "3.9"
@@ -85,29 +87,25 @@ services:
   anomalib_train:
     build:
       context: .
-      dockerfile: ./dockerfile.x86_64
+      dockerfile: ./dockerfile
     volumes:
-      - ../data/train/:/app/data/train/
+      - ./data/train/:/app/data/train/
       - ./configs/:/app/configs/
-      - ./training/2023-08-16/:/app/out/
-    environment:
-      - model=padim
+      - ./training/2024-02-28/:/app/out/
     shm_size: '20gb' 
     deploy:
-        resources:
-          reservations:
-            devices:
-              - driver: nvidia
-                count: 1
-                capabilities: [gpu]
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     command: >
       python3 /app/LMI_AI_Solutions/anomaly_detectors/submodules/anomalib/tools/train.py
       --model padim
       --config /app/configs/padim.yaml
-    # stdin_open: true # docker run -i
-    # tty: true        # docker run -t
 ```
-### 3. Train
+### 2.3 Train
 
 1. Build the docker image: 
 ```bash
@@ -117,12 +115,14 @@ docker compose build --no-cache
 ```bash
 docker compose up 
 ```
+
+
 ## 3. Generate TensorRT Engine
 
 1. Initialize/modify docker-compose.yaml
 2. Convert model
 
-### 1. Initialize/modify docker-compose.yaml
+### 3.1 Initialize/modify docker-compose.yaml
 
 ```yaml
 version: "3.9"
@@ -130,25 +130,24 @@ services:
   anomalib_convert:
     build:
       context: .
-      dockerfile: ./dockerfile.x86_64
+      dockerfile: ./dockerfile
     volumes:
-      - ./training/2023-08-29/results/padim/model/run/weights/onnx/:/app/onnx/
-      - ./training/2023-08-29/results/padim/model/run/weights/onnx/engine/:/app/onnx/engine/
-    environment:
-      - error_threshold=0
+      - ./training/2024-02-28/results/padim/model/run/weights/onnx/:/app/onnx/
+      - ./training/2024-02-28/results/padim/model/run/weights/engine/:/app/engine/
     shm_size: '20gb' 
     deploy:
-        resources:
-          reservations:
-            devices:
-              - driver: nvidia
-                count: 1
-                capabilities: [gpu]
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     command: >
       python3 /app/LMI_AI_Solutions/anomaly_detectors/anomalib_lmi/anomaly_model.py 
       --action convert
+      --engine_file /app/engine/model.engine
 ```
-### 2. Convert model
+### 3.2 Convert model
 1. Build the docker image: 
 ```bash
 docker compose build --no-cache
@@ -164,7 +163,7 @@ docker compose up
 2. Validate model
 3. Choose Threshold
 
-### 1. Initialize/modify docker-compose.yaml
+### 4.1 Initialize/modify docker-compose.yaml
 
 ```yaml
 version: "3.9"
@@ -172,29 +171,27 @@ services:
   anomalib_test:
     build:
       context: .
-      dockerfile: ./dockerfile.x86_64
+      dockerfile: ./dockerfile
     volumes:
-      - ./model.engine:/app/onnx/engine/model.engine
-      - ../data/train/good:/app/data/
-      - ../annotation_results/:/app/annotation_results/
-    environment:
-      - error_threshold=0
+      - ./training/2024-02-28/results/padim/model/run/weights/engine/model.engine:/app/model/model.engine
+      - ./data/train/good:/app/data/
+      - ./annotation_results/:/app/annotation_results/
     shm_size: '20gb' 
     deploy:
-        resources:
-          reservations:
-            devices:
-              - driver: nvidia
-                count: 1
-                capabilities: [gpu]
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     command: >
       bash -c "
       source /app/LMI_AI_Solutions/lmi_ai.env &&
       python3 /app/LMI_AI_Solutions/anomaly_detectors/anomalib_lmi/anomaly_model.py 
-      --action test --plot --generate_stats
+      --action test --plot --generate_stats -e /app/model/model.engine
       "
 ```
-### 2. Validate model
+### 4.2 Validate model
 1. Build the docker image: 
 ```bash
 docker compose build --no-cache
@@ -204,7 +201,7 @@ docker compose build --no-cache
 docker compose up 
 ```
 
-### 3. Determine Optimum Threshold
+### 4.3 Determine Optimum Threshold
 ![pdf](gamma_pdf_fit.png)
 ![cdf](gamma_cdf_fit.png)
 
