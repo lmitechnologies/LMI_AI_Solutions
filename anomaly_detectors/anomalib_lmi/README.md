@@ -56,7 +56,7 @@ Basic steps to train an Anomalib model:
 ### 1. Initialize/modify dockerfile
 
 ```Dockerfile
-FROM nvcr.io/nvidia/pytorch:22.12-py3
+FROM nvcr.io/nvidia/pytorch:23.07-py3
 
 RUN apt-get update
 RUN apt-get install python3 python3-pip -y
@@ -64,10 +64,12 @@ RUN apt-get install git libgl1 -y
 WORKDIR /app
 
 RUN pip install pycuda
-RUN pip install opencv-python==4.6.0.66 --user 
+RUN pip install opencv-python -U --user 
 
 RUN pip install openvino-dev==2023.0.0 openvino-telemetry==2022.3.0 nncf==2.4.0
 RUN pip install nvidia-pyindex onnx-graphsurgeon
+RUN pip install tabulate
+RUN pip install albumentations
 
 # Installing from anomalib src requires latest pip 
 RUN python3 -m pip install --upgrade pip
@@ -85,27 +87,23 @@ services:
   anomalib_train:
     build:
       context: .
-      dockerfile: ./dockerfile.x86_64
+      dockerfile: ./dockerfile
     volumes:
-      - ../data/train/:/app/data/train/
+      - ./data/train/:/app/data/train/
       - ./configs/:/app/configs/
-      - ./training/2023-08-16/:/app/out/
-    environment:
-      - model=padim
+      - ./training/2024-02-28/:/app/out/
     shm_size: '20gb' 
     deploy:
-        resources:
-          reservations:
-            devices:
-              - driver: nvidia
-                count: 1
-                capabilities: [gpu]
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     command: >
       python3 /app/LMI_AI_Solutions/anomaly_detectors/submodules/anomalib/tools/train.py
       --model padim
       --config /app/configs/padim.yaml
-    # stdin_open: true # docker run -i
-    # tty: true        # docker run -t
 ```
 ### 3. Train
 
@@ -117,7 +115,7 @@ docker compose build --no-cache
 ```bash
 docker compose up 
 ```
-## 3. Generate TensorRT Engine
+## 3. Generate TensorRT Engine [optional]
 
 1. Initialize/modify docker-compose.yaml
 2. Convert model
@@ -130,23 +128,22 @@ services:
   anomalib_convert:
     build:
       context: .
-      dockerfile: ./dockerfile.x86_64
+      dockerfile: ./dockerfile
     volumes:
-      - ./training/2023-08-29/results/padim/model/run/weights/onnx/:/app/onnx/
-      - ./training/2023-08-29/results/padim/model/run/weights/onnx/engine/:/app/onnx/engine/
-    environment:
-      - error_threshold=0
+      - ./training/2024-02-28/results/padim/model/run/weights/onnx/:/app/onnx/
+      - ./training/2024-02-28/results/padim/model/run/weights/engine/:/app/engine/
     shm_size: '20gb' 
     deploy:
-        resources:
-          reservations:
-            devices:
-              - driver: nvidia
-                count: 1
-                capabilities: [gpu]
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     command: >
       python3 /app/LMI_AI_Solutions/anomaly_detectors/anomalib_lmi/anomaly_model.py 
       --action convert
+      --engine_file /app/engine/model.engine
 ```
 ### 2. Convert model
 1. Build the docker image: 
@@ -172,26 +169,24 @@ services:
   anomalib_test:
     build:
       context: .
-      dockerfile: ./dockerfile.x86_64
+      dockerfile: ./dockerfile
     volumes:
-      - ./model.engine:/app/onnx/engine/model.engine
-      - ../data/train/good:/app/data/
-      - ../annotation_results/:/app/annotation_results/
-    environment:
-      - error_threshold=0
+      - ./training/2024-02-28/results/padim/model/run/weights/engine/model.engine:/app/model/model.engine
+      - ./data/train/good:/app/data/
+      - ./annotation_results/:/app/annotation_results/
     shm_size: '20gb' 
     deploy:
-        resources:
-          reservations:
-            devices:
-              - driver: nvidia
-                count: 1
-                capabilities: [gpu]
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     command: >
       bash -c "
       source /app/LMI_AI_Solutions/lmi_ai.env &&
       python3 /app/LMI_AI_Solutions/anomaly_detectors/anomalib_lmi/anomaly_model.py 
-      --action test --plot --generate_stats
+      --action test --plot --generate_stats -e /app/model/model.engine
       "
 ```
 ### 2. Validate model
