@@ -32,11 +32,13 @@ class Yolov5:
             path_wts(str): the path to the tensorRT engine file
             data (str, optional): the path to the yaml file containing class names. Defaults to None.
         """
-        device = torch.device('cuda:0') if device=='gpu' else torch.device('cpu')
+        if not os.path.isfile(path_wts):
+            raise FileNotFoundError(f'File not found: {path_wts}')
         if device=='gpu' and not torch.cuda.is_available():
             raise RuntimeError('CUDA not available.')
         
         # defaults
+        device = torch.device('cuda:0') if device=='gpu' else torch.device('cpu')
         fp16 = False
         stride = 32
         imgsz = []

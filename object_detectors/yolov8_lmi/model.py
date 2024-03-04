@@ -47,10 +47,10 @@ class Yolov8:
     def __init__(self, path_wts:str, device='gpu') -> None:
         if not os.path.isfile(path_wts):
             raise FileNotFoundError(f'File not found: {path_wts}')
-        device = torch.device('cuda:0') if device=='gpu' else torch.device('cpu')
         if device=='gpu' and not torch.cuda.is_available():
             raise RuntimeError('CUDA not available.')
-            
+
+        device = torch.device('cuda:0') if device=='gpu' else torch.device('cpu')
         stride = 32  # default stride
         fp16 = False  # default updated below
         model, metadata = None, None
