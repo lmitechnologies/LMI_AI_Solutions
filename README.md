@@ -1,12 +1,16 @@
 # LMI AI Solutions
 This repo contains the utils scripts, and several submodules for LMI Technologies Inc. AI modeling development.
-Currently, the following submodules are included in the repo:
-- [yolov5](https://github.com/lmitechnologies/yolov5)
-- [efficientnet](https://github.com/lmitechnologies/EfficientNet-PyTorch)
-- [tensorflow object detection API](https://github.com/lmitechnologies/models)
-- [paddleOCR](https://github.com/lmitechnologies/models)
-- [tf-trt](https://github.com/tensorflow/tensorrt.git)
-- [tensorrtx](https://github.com/lmitechnologies/tensorrtx.git)
+Currently, the following models are supported in the repo:
++ object detection
+    - [yolov8](https://github.com/ultralytics/ultralytics)
+    - [yolov5](https://github.com/lmitechnologies/yolov5)
+    - [efficientnet](https://github.com/lmitechnologies/EfficientNet-PyTorch)
+    - [detectron2](https://github.com/facebookresearch/detectron2)
+    - [tensorflow object detection API](https://github.com/lmitechnologies/models)
+- anomaly detection
+    - [anomalib](https://github.com/lmitechnologies/anomalib)
+- OCR
+    - [paddleOCR](https://github.com/lmitechnologies/models)
 
 ## Clone this master repo
 For users who haven't set up the ssh keys

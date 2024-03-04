@@ -2,6 +2,9 @@
 This is the tutorial how to train and test the yolov5 object detection models.
 
 ## System requirements
+ - [Docker Engine](https://docs.docker.com/engine/install)
+- [VGG Image Annotator](https://www.robots.ox.ac.uk/~vgg/software/via/)
+
 ### Model training
 - x86 CPU
 - CUDA >= 12.1
@@ -67,7 +70,7 @@ Prepare the dataset by the followings:
 **YOLO models require the dimensions of images to be dividable by 32**. In this tutorial, we resize images to 640x320.
 
 ### Create a script for data processing
-First, create a script `./preprocess/2023-07-19.sh`, which convert labels from json to csv, resizes images, and converts data to yolo format. 
+First, create a script `./preprocess/2023-07-19.sh`, which convert labels from VGG json to csv, resizes images, and converts data to yolo format. 
 ```bash
 # modify to your data path
 input_path=/app/data/allImages
@@ -78,7 +81,7 @@ H=320
 # import the repo paths
 source /repos/LMI_AI_Solutions/lmi_ai.env
 
-# convert labels from json to csv
+# convert labels from VGG json to csv
 python -m label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
 
 # resize images with labels
