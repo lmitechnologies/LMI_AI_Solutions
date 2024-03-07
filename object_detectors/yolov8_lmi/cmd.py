@@ -50,7 +50,7 @@ def get_model_path(path, mode):
     # otherwise:
     #   use 'best.engine' if it exists. otherwise use 'best.pt'
     # return None if not found any model weights
-    names = MODEL_NAMES[-1] if mode=='export' else MODEL_NAMES
+    names = MODEL_NAMES[1:] if mode=='export' else MODEL_NAMES
     for fname in names:
         p = os.path.join(path, fname)
         if os.path.isfile(p):
