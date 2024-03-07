@@ -143,7 +143,7 @@ path: /app/data # dataset root dir (must use absolute path!)
 train: images  # train images (relative to 'path')
 val: images  # val images (relative to 'path')
 test:  # test images (optional)
- 
+
 # Classes
 names: # class names must match with the names in class_map.json
   0: peeling
@@ -282,7 +282,7 @@ services:
               count: 1
               capabilities: [gpu]
     volumes:
-      - ./prediction:/app/validation  # output path
+      - ./prediction:/app/prediction  # output path
       - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, where it has best.pt
       - ./data/resized_yolo/images:/app/data  # input data path
       - ./config/2023-07-19_predict.yaml:/app/config/hyp.yaml  # customized hyperparameters
