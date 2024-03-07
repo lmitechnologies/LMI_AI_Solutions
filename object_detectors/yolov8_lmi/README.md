@@ -19,7 +19,7 @@ The folder structure below will be created when we go through the tutorial. By c
 ├── config
 │   ├── 2023-07-19_dataset.yaml
 │   ├── 2023-07-19_train.yaml
-│   ├── 2023-07-19_val.yaml
+│   ├── 2023-07-19_predict.yaml
 │   ├── 2023-07-19_trt.yaml
 ├── preprocess
 │   ├── 2023-07-19.sh
@@ -29,11 +29,11 @@ The folder structure below will be created when we go through the tutorial. By c
 │   │   ├── *.json
 ├── training
 │   ├── 2023-07-19
-├── validation
+├── prediction
 │   ├── 2023-07-19
 ├── docker-compose_preprocess.yaml
 ├── docker-compose_train.yaml
-├── docker-compose_val.yaml
+├── docker-compose_predict.yaml
 ├── docker-compose_trt.x86.yaml
 ├── dockerfile
 ├── docker-compose_trt.arm.yaml   # arm system
@@ -159,7 +159,7 @@ To train the model, we need to create a hyperparameter yaml file and create a `.
 Crete a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **medium-size yolov8 instance segmentation model** with the image size of 640. To train object detection models, set `task` to `detect`. If the training images are square, set `rect` to `False`.
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
-mode: train  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where val, track, benchmark are NOT tested
+mode: train  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where track, benchmark are NOT tested
 
 # training settings
 epochs: 300  # (int) number of epochs
@@ -234,11 +234,11 @@ tensorboard --logdir /app/training/2023-07-19 --port 6006
 Execuate the command above and go to http://localhost:6006 to monitor the training.
 
 
-## Validation
-Create a hyperparameter file `./config/2023-07-19_val.yaml`. The `imgsz` should be a list of [h,w].
+## Prediction
+Create a hyperparameter file `./config/2023-07-19_predict.yaml`. The `imgsz` should be a list of [h,w].
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
-mode: predict  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where val, track, benchmark are NOT tested
+mode: predict  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where track, benchmark are NOT tested
 
 # Prediction settings 
 imgsz: 320,640 # (list) input images size as list[h,w] for predict and export modes
@@ -264,12 +264,12 @@ show_boxes: True  # (bool) Show boxes in segmentation predictions
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
 
-Create a file `./docker-compose_val.yaml` as below.
+Create a file `./docker-compose_predict.yaml` as below.
 ```yaml
 version: "3.9"
 services:
-  yolov8_val:
-    container_name: yolov8_val
+  yolov8_predict:
+    container_name: yolov8_predict
     build:
       context: .
       dockerfile: dockerfile
@@ -282,17 +282,17 @@ services:
               count: 1
               capabilities: [gpu]
     volumes:
-      - ./validation:/app/validation  # validation output path
+      - ./prediction:/app/validation  # output path
       - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, where it has best.pt
       - ./data/resized_yolo/images:/app/data  # input data path
-      - ./config/2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./config/2023-07-19_predict.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
 
 ```
 
-### Start validating
-Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_val.yaml.`** Then, the output results are saved in `./validation/2023-07-19`.
+### Start prediction
+Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_predict.yaml.`** Then, the output results are saved in `./prediction/2023-07-19`.
 
 
 ## Generate TensorRT engines
@@ -302,7 +302,7 @@ The TensorRT egnines can be generated in two systems: x86 and arm. Both systems 
 Create a hyperparamter yaml file `./config/2023-07-19_trt.yaml` that works for both systems:
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
-mode: export  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where val, track, benchmark are NOT tested
+mode: export  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where track, benchmark are NOT tested
 
 # Export settings 
 format: engine  # (str) format to export to, choices at https://docs.ultralytics.com/modes/export/#export-formats
