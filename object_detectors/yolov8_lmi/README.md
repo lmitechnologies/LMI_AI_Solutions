@@ -259,7 +259,7 @@ augment: False  # (bool) apply image augmentation to prediction sources
 agnostic_nms: False  # (bool) class-agnostic NMS
 classes:  # (int | list[int], optional) filter results by class, i.e. classes=0, or classes=[0,2,3]
 retina_masks: False  # (bool) use high-resolution segmentation masks
-boxes: True  # (bool) Show boxes in segmentation predictions
+show_boxes: True  # (bool) Show boxes in segmentation predictions
 
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
