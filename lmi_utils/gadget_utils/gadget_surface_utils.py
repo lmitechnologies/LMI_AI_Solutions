@@ -91,13 +91,15 @@ class GadgetSurfaceUtils():
             pcd.points = open3d.utility.Vector3dVector(np_points)
             open3d.io.write_point_cloud(join(destination_path, file.replace(".gadget3d.pickle", ".pcd")), pcd)
 
-    def tar_2_pcd(self, source_path, destination_path):
+    def tar_2_pcd(self, source_path, destination_path, source_path_intensity=None):
         import open3d
         import tarfile
         import json
 
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".gadget3d.tar" in f]
 
+        use_intensity=True if source_path_intensity is not None else False
+        
         for file in files:
             print(join(source_path, file))
             
@@ -106,7 +108,18 @@ class GadgetSurfaceUtils():
                 tar.extractall(dest)
 
                 png = Image.open(join(dest, "profile.png"))
-
+                if use_intensity:
+                    try:
+                        fname_intensity=file.replace(".gadget3d.tar", ".gadget2d.jpg")
+                        path_intensity=join(source_path_intensity,fname_intensity)
+                        print(f'[INFO] Loading intensity image from:{path_intensity}')
+                        img_intensity=Image.open(path_intensity)
+                        img_intensity=img_intensity.convert('L') #convert to grayscale
+                        img_intensity=numpy.array(img_intensity).astype(numpy.float32)
+                    except:
+                        print(f'[WARNING] Failed to load intensity image.')
+                        use_intensity=False
+                        
                 metadata = None
                 with open(join(dest, "metadata.json"), "r") as f:
                     metadata = json.load(f)
@@ -120,12 +133,16 @@ class GadgetSurfaceUtils():
                 np_z = numpy.empty(shape[0]*shape[1])
                 np_x = numpy.empty(shape[0]*shape[1])
                 np_y = numpy.empty(shape[0]*shape[1])
+                intensity = numpy.empty(shape[0]*shape[1])
+                    
                 i = 0
                 for y in range(shape[0]):
                     for x in range(shape[1]):
                         np_x[i] = offset[0] + x * resolution[0]
                         np_y[i] = offset[1] + y * resolution[1]
                         np_z[i] = offset[2] + profile[y][x] * resolution[2]
+                        if use_intensity:
+                            intensity[i]=img_intensity[y][x]/255.0                            
                         i += 1
 
                 np_points = numpy.empty((shape[0]*shape[1], 3))
@@ -135,6 +152,8 @@ class GadgetSurfaceUtils():
 
                 pcd = open3d.geometry.PointCloud()
                 pcd.points = open3d.utility.Vector3dVector(np_points)
+                if use_intensity:
+                    pcd.colors = open3d.utility.Vector3dVector(numpy.vstack((intensity, intensity, intensity)).T)
                 open3d.io.write_point_cloud(join(dest, file.replace(".gadget3d.tar", ".pcd")), pcd)
 
 
@@ -245,6 +264,7 @@ if __name__=="__main__":
     ap.add_argument('--option',required=True,help='pkl_2_npy, pkl_2_png, pkl_2_pcd, npy_2_pkl, png_2_pkl, tar_2_pcd, or pcd_2_pkl')
     ap.add_argument('--src',required=True)
     ap.add_argument('--dest',required=True)
+    ap.add_argument('--src_intensity',default=None,help='Intensity image path if converting tar to pcd w/ intensity.')
     ap.add_argument('--intensity', action='store_true',help='also save intensity image')
     ap.add_argument('--zresolution', help='ZResolution for PCD to PKL')
     ap.add_argument('--zoffset', help='ZOffset for PCD to PKL')
@@ -254,6 +274,7 @@ if __name__=="__main__":
     option=args['option']
     src=args['src']
     dest=args['dest']
+    src_intensity=args['src_intensity']
     intensity = args['intensity']
 
     translate=GadgetSurfaceUtils()
@@ -275,7 +296,7 @@ if __name__=="__main__":
     elif option=='png_2_pkl':
         translate.png_2_pkl(src,dest)
     elif option=='tar_2_pcd':
-        translate.tar_2_pcd(src,dest)
+        translate.tar_2_pcd(src,dest,source_path_intensity=src_intensity)
     elif option=='pcd_2_pkl':
         ZResolution = args['zresolution']
         ZOffset = args['zoffset']
