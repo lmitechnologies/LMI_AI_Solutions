@@ -95,8 +95,9 @@ if __name__=='__main__':
             check_keys['source'] = False 
     elif hyp['mode'] == 'val':
         path = get_model_path(MODEL_PATH, hyp['mode'])
-        tmp = {'data':DATA_YAML, 'model':path}
+        tmp = {'data':DATA_YAML, 'model':path, 'project':VAL_FOLDER}
         check_keys['data'] = True
+        check_keys['model'] = True
     else:
         raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
     defaults.update(tmp)
