@@ -15,6 +15,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+COLORS = [(0,0,255),(255,0,0),(0,255,0),(102,51,153),(255,140,0),(105,105,105),(127,25,27),(9,200,100)]
+
+
 if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser()
@@ -44,14 +47,13 @@ if __name__ == '__main__':
 
     fname_to_shape, class_map = load_csv(path_csv, path_imgs, class_map)
     min_id = min(class_map.values())
-    colors = [(0,0,255),(255,0,0),(0,255,0),(102,51,153),(255,140,0),(105,105,105),(127,25,27),(9,200,100)]
     color_map = {}
-    for cls in class_map:
+    for cls in sorted(class_map.keys()):
         i = class_map[cls]
         if min_id != 0:
             i -= 1
-        if i < len(colors):
-            color_map[cls] = colors[i]
+        if i < len(COLORS):
+            color_map[cls] = COLORS[i]
         else:
             color_map[cls] = tuple([random.randint(0,255) for _ in range(3)])
 
