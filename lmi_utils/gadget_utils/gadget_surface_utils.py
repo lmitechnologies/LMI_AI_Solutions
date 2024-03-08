@@ -90,7 +90,8 @@ class GadgetSurfaceUtils():
             pcd = open3d.geometry.PointCloud()
             pcd.points = open3d.utility.Vector3dVector(np_points)
             open3d.io.write_point_cloud(join(destination_path, file.replace(".gadget3d.pickle", ".pcd")), pcd)
-
+    
+    staticmethod
     def tar_2_pcd(self, source_path, destination_path, source_path_intensity=None):
         import open3d
         import tarfile
@@ -114,7 +115,7 @@ class GadgetSurfaceUtils():
                         path_intensity=join(source_path_intensity,fname_intensity)
                         print(f'[INFO] Loading intensity image from:{path_intensity}')
                         img_intensity=Image.open(path_intensity)
-                        img_intensity=img_intensity.convert('L') #convert to grayscale
+                        img_intensity=img_intensity.convert('RGB') #convert to color
                         img_intensity=numpy.array(img_intensity).astype(numpy.float32)
                     except:
                         print(f'[WARNING] Failed to load intensity image.')
@@ -133,7 +134,7 @@ class GadgetSurfaceUtils():
                 np_z = numpy.empty(shape[0]*shape[1])
                 np_x = numpy.empty(shape[0]*shape[1])
                 np_y = numpy.empty(shape[0]*shape[1])
-                intensity = numpy.empty(shape[0]*shape[1])
+                intensity = numpy.empty((shape[0]*shape[1],3))
                     
                 i = 0
                 for y in range(shape[0]):
@@ -142,7 +143,7 @@ class GadgetSurfaceUtils():
                         np_y[i] = offset[1] + y * resolution[1]
                         np_z[i] = offset[2] + profile[y][x] * resolution[2]
                         if use_intensity:
-                            intensity[i]=img_intensity[y][x]/255.0                            
+                            intensity[i,:]=img_intensity[y][x]/255.0                            
                         i += 1
 
                 np_points = numpy.empty((shape[0]*shape[1], 3))
@@ -153,7 +154,8 @@ class GadgetSurfaceUtils():
                 pcd = open3d.geometry.PointCloud()
                 pcd.points = open3d.utility.Vector3dVector(np_points)
                 if use_intensity:
-                    pcd.colors = open3d.utility.Vector3dVector(numpy.vstack((intensity, intensity, intensity)).T)
+                    # pcd.colors = open3d.utility.Vector3dVector(numpy.vstack((intensity, intensity, intensity)).T)
+                    pcd.colors = open3d.utility.Vector3dVector(intensity)
                 open3d.io.write_point_cloud(join(dest, file.replace(".gadget3d.tar", ".pcd")), pcd)
 
 
