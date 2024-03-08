@@ -14,6 +14,7 @@ from label_utils.csv_utils import write_to_csv
 
 
 BATCH_SIZE = 1
+COLORS = [(0,0,255),(255,0,0),(0,255,0),(102,51,153),(255,140,0),(105,105,105),(127,25,27),(9,200,100)]
 
 
 if __name__ == '__main__':
@@ -34,6 +35,15 @@ if __name__ == '__main__':
     logger = logging.getLogger(__name__)
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
+        
+    # get color map
+    color_map = {}
+    for k in sorted(model.names.keys()):
+        v= model.names[k]
+        if len(color_map) < len(COLORS):
+            color_map[v] = COLORS[len(color_map)]
+        else:
+            color_map[v] = tuple([random.randint(0,255) for _ in range(3)])
         
     # warm up
     t1 = time.time()
@@ -92,7 +102,8 @@ if __name__ == '__main__':
                     box = box.astype(np.int32)
                     
                     # annotation
-                    plot_one_box(box,im_out,mask,label=f'{classes[j]}: {scores[j]:.2f}')
+                    color = color_map[classes[j]]
+                    plot_one_box(box,im_out,mask,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
                     if segments and len(segments[j]):
                         seg = segments[j]
                         # convert segments to original image size
@@ -100,7 +111,7 @@ if __name__ == '__main__':
                         seg[:,1] /= rh
                         seg = seg.astype(np.int32)
                         seg2 = segments[j].reshape((-1,1,2)).astype(np.int32)
-                        cv2.drawContours(im_out, [seg2], -1, (0, 255, 0), 1)
+                        cv2.drawContours(im_out, [seg2], -1, color, 1)
                         
                         # add masks to csv
                         if args.csv:
