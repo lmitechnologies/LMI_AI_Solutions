@@ -36,12 +36,13 @@ if __name__ == '__main__':
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
         
+    # get color map
     color_map = {}
-    # for cls in class_map:
-    #     if i < len(colors):
-    #         color_map[cls] = colors[i]
-    #     else:
-    #         color_map[cls] = tuple([random.randint(0,255) for _ in range(3)])
+    for name in model.names:
+        if len(color_map) < len(COLORS):
+            color_map[name] = COLORS[len(color_map)]
+        else:
+            color_map[name] = (random.randint(0,255),random.randint(0,255),random.randint(0,255))
         
     # warm up
     t1 = time.time()
@@ -100,14 +101,7 @@ if __name__ == '__main__':
                     box = box.astype(np.int32)
                     
                     # annotation
-                    if classes[j] in color_map:
-                        color = color_map[classes[j]]
-                    else:
-                        if len(color_map) < len(COLORS):
-                            color = COLORS[len(color_map)]
-                        else:
-                            color = tuple([random.randint(0,255) for _ in range(3)])
-                        color_map[classes[j]] = color
+                    color = color_map[classes[j]]
                     plot_one_box(box,im_out,mask,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
                     if segments and len(segments[j]):
                         seg = segments[j]
