@@ -94,7 +94,7 @@ def write_to_csv(shapes:dict, filename:str):
         shape(dict): a dictionary maps the filename to a list of Mask or Rect objects, i.e., <filename, list of Mask or Rect>
         filename(str): the output csv filename
     """
-    with open(filename, 'w') as f:
+    with open(filename, 'a+') as f:
         writer = csv.writer(f, delimiter=';')
         for im_name in shapes:
             for shape in shapes[im_name]:

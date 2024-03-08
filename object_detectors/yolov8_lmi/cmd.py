@@ -15,6 +15,7 @@ HYP_YAML = '/app/config/hyp.yaml'
 DATA_YAML = '/app/config/dataset.yaml'
 TRAIN_FOLDER = '/app/training'
 VAL_FOLDER = '/app/validation'
+PREDICT_FOLDER = '/app/prediction'
 MODEL_PATH = '/app/trained-inference-models'
 MODEL_NAMES = ['best.engine','best.pt']
 SOURCE_PATH = '/app/data'
@@ -47,14 +48,15 @@ def sanity_check(final_configs:dict, check_keys:dict):
 def get_model_path(path, mode):
     # if export mode, use 'best.pt'. 
     # otherwise:
-    #   use 'best.engine' if it exists. otherwise use 'best.pt' 
+    #   use 'best.engine' if it exists. otherwise use 'best.pt'
+    # return None if not found any model weights
     names = MODEL_NAMES[1:] if mode=='export' else MODEL_NAMES
     for fname in names:
         p = os.path.join(path, fname)
         if os.path.isfile(p):
             logger.info(f'Use the model weights: {p}')
             return p
-    raise Exception(f'No found weights {MODEL_NAMES} in: {path}')
+    return None
 
 
 def add_configs(final_configs:dict, configs:dict):
@@ -84,17 +86,23 @@ if __name__=='__main__':
     
     # add other default configs
     check_keys = {} # map < key : True if is_file else False >
+    path_wts = get_model_path(MODEL_PATH, hyp['mode'])
     if hyp['mode'] == 'train':
         tmp = {'data':DATA_YAML, 'project':TRAIN_FOLDER}
         check_keys['data'] = True
-    elif hyp['mode'] in ['predict','export']:
-        path = get_model_path(MODEL_PATH, hyp['mode']) # get the default model path
-        tmp = {'model':path, 'source':SOURCE_PATH, 'project':VAL_FOLDER}
-        check_keys['model']=True
-        if hyp['mode']=='predict':
-            check_keys['source']=False 
+    elif hyp['mode'] == 'export':
+        tmp = {'model':path_wts}
+        check_keys['model'] = True
+    elif hyp['mode'] == 'predict':
+        tmp = {'model':path_wts, 'source':SOURCE_PATH, 'project':PREDICT_FOLDER}
+        check_keys['source'] = False
+        check_keys['model'] = True
+    elif hyp['mode'] == 'val':
+        tmp = {'data':DATA_YAML, 'model':path_wts, 'project':VAL_FOLDER}
+        check_keys['data'] = True
+        check_keys['model'] = True
     else:
-        raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, predict, export")
+        raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, val, predict, export.")
     defaults.update(tmp)
     add_configs(hyp, defaults)
     
