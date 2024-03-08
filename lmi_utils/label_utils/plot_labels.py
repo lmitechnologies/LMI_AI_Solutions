@@ -46,15 +46,11 @@ if __name__ == '__main__':
         os.makedirs(output_path)
 
     fname_to_shape, class_map = load_csv(path_csv, path_imgs, class_map)
-    min_id = min(class_map.values())
     color_map = {}
     for cls in sorted(class_map.keys()):
         logger.info(f'CLASS: {cls}')
-        i = class_map[cls]
-        if min_id != 0:
-            i -= 1
-        if i < len(COLORS):
-            color_map[cls] = COLORS[i]
+        if len(color_map) < len(COLORS):
+            color_map[cls] = COLORS[len(color_map)]
         else:
             color_map[cls] = tuple([random.randint(0,255) for _ in range(3)])
 
