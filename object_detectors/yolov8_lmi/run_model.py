@@ -100,11 +100,15 @@ if __name__ == '__main__':
                     box = box.astype(np.int32)
                     
                     # annotation
-                    if classes[j] not in color_map and len(color_map) < len(COLORS):
-                        color_map[classes[j]] = COLORS[len(color_map)]
+                    if classes[j] in color_map:
+                        color = color_map[classes[j]]
                     else:
-                        color_map[classes[j]] = tuple([random.randint(0,255) for _ in range(3)])
-                    plot_one_box(box,im_out,mask,color=color_map[classes[j]],label=f'{classes[j]}: {scores[j]:.2f}')
+                        if len(color_map) < len(COLORS):
+                            color = COLORS[len(color_map)]
+                        else:
+                            color = tuple([random.randint(0,255) for _ in range(3)])
+                        color_map[classes[j]] = color
+                    plot_one_box(box,im_out,mask,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
                     if segments and len(segments[j]):
                         seg = segments[j]
                         # convert segments to original image size
@@ -112,7 +116,7 @@ if __name__ == '__main__':
                         seg[:,1] /= rh
                         seg = seg.astype(np.int32)
                         seg2 = segments[j].reshape((-1,1,2)).astype(np.int32)
-                        cv2.drawContours(im_out, [seg2], -1, color_map[classes[j]], 1)
+                        cv2.drawContours(im_out, [seg2], -1, color, 1)
                         
                         # add masks to csv
                         if args.csv:
