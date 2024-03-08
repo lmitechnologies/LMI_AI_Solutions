@@ -38,11 +38,11 @@ if __name__ == '__main__':
         
     # get color map
     color_map = {}
-    for name in model.names:
+    for k,v in model.names.items():
         if len(color_map) < len(COLORS):
-            color_map[name] = COLORS[len(color_map)]
+            color_map[v] = COLORS[len(color_map)]
         else:
-            color_map[name] = (random.randint(0,255),random.randint(0,255),random.randint(0,255))
+            color_map[v] = (random.randint(0,255),random.randint(0,255),random.randint(0,255))
         
     # warm up
     t1 = time.time()
