@@ -49,6 +49,7 @@ if __name__ == '__main__':
     min_id = min(class_map.values())
     color_map = {}
     for cls in sorted(class_map.keys()):
+        logger.info(f'CLASS: {cls}')
         i = class_map[cls]
         if min_id != 0:
             i -= 1
@@ -58,7 +59,7 @@ if __name__ == '__main__':
             color_map[cls] = tuple([random.randint(0,255) for _ in range(3)])
 
     for im_name in fname_to_shape:
-        logger.info(f'[FILE] {im_name}')
+        logger.info(f'FILE: {im_name}')
         shapes = fname_to_shape[im_name]
         im = cv2.imread(shapes[0].fullpath)
         if im is None:
