@@ -2,16 +2,16 @@
 This is the tutorial walking through how to train and test YOLOv8 models.
 
 ## System requirements
- - [Docker Engine](https://docs.docker.com/engine/install)
- - [VGG Image Annotator](https://www.robots.ox.ac.uk/~vgg/software/via/)
+- [Docker Engine](https://docs.docker.com/engine/install)
+- [VGG Image Annotator](https://www.robots.ox.ac.uk/~vgg/software/via/)
 
 ### Model training
 - x86 system
 - CUDA >= 12.1
-- ubuntu 20.04
+- ubuntu
 
 ### TensorRT on GoMax
-- JetPack 5.0.2
+- JetPack 5.1
 
 ## Directory structure
 The folder structure below will be created when we go through the tutorial. By convention, we use today's date (i.e. 2023-07-19) as the file name.
@@ -353,8 +353,8 @@ Spin up the container as shown in [spin-up-the-container](#spin-up-the-container
 ### Engine Generation on arm systems
 Create a file `./arm.dockerfile`.
 ```docker
-# jetpack 5.0.2
-FROM --platform=linux/arm64/v8 nvcr.io/nvidia/l4t-ml:r35.1.0-py3
+# jetpack 5.1
+FROM --platform=linux/arm64/v8 nvcr.io/nvidia/l4t-ml:r35.2.1-py3
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies

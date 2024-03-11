@@ -2,16 +2,16 @@
 This is the tutorial how to train and test the yolov5 object detection models.
 
 ## System requirements
- - [Docker Engine](https://docs.docker.com/engine/install)
+- [Docker Engine](https://docs.docker.com/engine/install)
 - [VGG Image Annotator](https://www.robots.ox.ac.uk/~vgg/software/via/)
 
 ### Model training
 - x86 CPU
 - CUDA >= 12.1
-- Linux
+- ubuntu
 
 ### TensorRT on GoMax
-- Nvidia JetPack 5.0.2
+- JetPack 5.1
 
 
 ## Directory structure
@@ -358,7 +358,7 @@ Spin up the container as shown in [spin-up-the-container](#spin-up-the-container
 Create a file `./arm.dockerfile`.
 ```docker
 # jetpack 5.0.2
-FROM --platform=linux/arm64/v8 nvcr.io/nvidia/l4t-ml:r35.1.0-py3
+FROM --platform=linux/arm64/v8 nvcr.io/nvidia/l4t-ml:r35.2.1-py3
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies
