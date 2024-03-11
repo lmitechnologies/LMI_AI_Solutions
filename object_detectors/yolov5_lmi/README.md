@@ -357,7 +357,7 @@ Spin up the container as shown in [spin-up-the-container](#spin-up-the-container
 ### Engine generation on arm systems
 Create a file `./arm.dockerfile`.
 ```docker
-# jetpack 5.0.2
+# jetpack 5.1
 FROM --platform=linux/arm64/v8 nvcr.io/nvidia/l4t-ml:r35.2.1-py3
 ARG DEBIAN_FRONTEND=noninteractive
 
