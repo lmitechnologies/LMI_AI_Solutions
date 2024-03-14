@@ -183,18 +183,16 @@ class Yolov5:
                     the shape of classes and scores are both (B, N).
                     the shape of masks: (B, H, W, 3), where H and W are the height and width of the input image.
         """
-        if isinstance(preds, (list,tuple)):
-            predict_mask = True
-        elif isinstance(preds, torch.Tensor):
-            predict_mask = False
-        else:
-            raise TypeError(f'Prediction type {type(preds)} not supported')
-        
         proto = None
         nm = 0
-        if predict_mask:
-            preds,proto = preds[0], preds[1]
-            nm = 32
+        if isinstance(preds, (list,tuple)):
+            if len(preds)>1 and preds[1].ndim==4:
+                preds,proto = preds[0], preds[1]
+                nm = 32
+            else:
+                preds = preds[0]
+        elif not isinstance(preds, torch.Tensor):
+            raise TypeError(f'Prediction type {type(preds)} not supported')
         
         # get lowest confidence
         if isinstance(conf, float):
