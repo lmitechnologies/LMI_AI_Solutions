@@ -172,7 +172,7 @@ class Yolov5:
             preds (list): a list of object detection predictions
             im (tensor): the preprocessed image
             orig_imgs (np.ndarray | list): the original images
-            conf (dict): confidence threshold dict <class_id: confidence>.
+            conf (dict): confidence threshold dict <class: confidence>.
             iou (float, optional): iou threshold. Defaults to 0.45.
             agnostic (bool, optional): perform class-agnostic NMS. Defaults to False.
             max_det (int, optional): the max number of detections. Defaults to 300.
@@ -183,18 +183,16 @@ class Yolov5:
                     the shape of classes and scores are both (B, N).
                     the shape of masks: (B, H, W, 3), where H and W are the height and width of the input image.
         """
-        if isinstance(preds, (list,tuple)):
-            predict_mask = True
-        elif isinstance(preds, torch.Tensor):
-            predict_mask = False
-        else:
-            raise TypeError(f'Prediction type {type(preds)} not supported')
-        
         proto = None
         nm = 0
-        if predict_mask:
-            preds,proto = preds[0], preds[1]
-            nm = 32
+        if isinstance(preds, (list,tuple)):
+            if len(preds)>1 and isinstance(preds[1],torch.Tensor) and preds[1].ndim==4:
+                preds,proto = preds[0], preds[1]
+                nm = 32
+            else:
+                preds = preds[0]
+        elif not isinstance(preds, torch.Tensor):
+            raise TypeError(f'Prediction type {type(preds)} not supported')
         
         # get lowest confidence
         if isinstance(conf, float):
