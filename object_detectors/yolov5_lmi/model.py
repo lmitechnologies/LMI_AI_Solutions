@@ -186,7 +186,7 @@ class Yolov5:
         proto = None
         nm = 0
         if isinstance(preds, (list,tuple)):
-            if len(preds)>1 and preds[1].ndim==4:
+            if len(preds)>1 and isinstance(preds[1],torch.Tensor) and preds[1].ndim==4:
                 preds,proto = preds[0], preds[1]
                 nm = 32
             else:
