@@ -172,7 +172,7 @@ class Yolov5:
             preds (list): a list of object detection predictions
             im (tensor): the preprocessed image
             orig_imgs (np.ndarray | list): the original images
-            conf (dict): confidence threshold dict <class_id: confidence>.
+            conf (dict): confidence threshold dict <class: confidence>.
             iou (float, optional): iou threshold. Defaults to 0.45.
             agnostic (bool, optional): perform class-agnostic NMS. Defaults to False.
             max_det (int, optional): the max number of detections. Defaults to 300.
