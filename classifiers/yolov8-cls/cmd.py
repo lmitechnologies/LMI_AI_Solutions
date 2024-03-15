@@ -89,7 +89,7 @@ if __name__=='__main__':
     path_wts = get_model_path(MODEL_PATH, hyp['mode'])
     if hyp['mode'] == 'train':
         tmp = {'data':DATASET_PATH, 'project':TRAIN_FOLDER}
-        check_keys['data'] = True
+        check_keys['data'] = False
     elif hyp['mode'] == 'export':
         tmp = {'model':path_wts}
         check_keys['model'] = True
@@ -99,7 +99,7 @@ if __name__=='__main__':
         check_keys['model'] = True
     elif hyp['mode'] == 'val':
         tmp = {'data':DATASET_PATH, 'model':path_wts, 'project':VAL_FOLDER}
-        check_keys['data'] = True
+        check_keys['data'] = False
         check_keys['model'] = True
     else:
         raise Exception(f"Not support the mode: {hyp['mode']}. All supported modes are: train, val, predict, export.")
