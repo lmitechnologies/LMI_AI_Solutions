@@ -1,9 +1,7 @@
 import cv2
 import logging
 import os
-import random
 import numpy as np
-import torch
 import collections
 
 from yolov8_cls.model import Yolov8_cls
@@ -21,7 +19,6 @@ if __name__ == '__main__':
     parser.add_argument('-i','--path_imgs', required=True, help='the path to the testing images')
     parser.add_argument('-o','--path_out' , required=True, help='the path to the output folder')
     parser.add_argument('--sz', required=True, nargs=2, type=int, help='the model input size, two numbers: h w')
-    # parser.add_argument('-c','--confidence',default=0.25,type=float,help='[optional] the confidence for all classes, default=0.25')
     # parser.add_argument('--csv', action='store_true', help='[optional] whether to save the results to csv file')
     args = parser.parse_args()
     
