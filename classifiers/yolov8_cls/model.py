@@ -90,7 +90,8 @@ class Yolov8_cls:
         https://github.com/ultralytics/ultralytics/blob/main/ultralytics/models/yolo/classify/predict.py#L36
         """
         if img.ndim == 2:
-            img = np.expand_dims(img, 0)
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        img = np.expand_dims(img, 0)
         if not isinstance(img, torch.Tensor):
             is_legacy_transform = any(
                 self._legacy_transform_name in str(transform) for transform in self.transforms.transforms
