@@ -64,7 +64,7 @@ if __name__ == '__main__':
             # inference
             im = model.preprocess(im1)
             preds = model.forward(im)
-            results = model.postprocess(preds,im,im1)
+            results = model.postprocess(preds)
             t2 = time.time()
             
             # TODO save images according to the classes
