@@ -17,7 +17,7 @@ class Yolov8_cls:
     
     logger = logging.getLogger(__name__)
     
-    def __init__(self, weights:str, device='gpu', data=None, crop_fraction=1) -> None:
+    def __init__(self, weights:str, device='gpu', data=None, imgsz=[224,224], crop_fraction=1) -> None:
         """init the model
 
         Args:
@@ -46,7 +46,7 @@ class Yolov8_cls:
             getattr(
                 self.model.model,
                 "transforms",
-                classify_transforms(self.model.imgsz[0], crop_fraction=crop_fraction),
+                classify_transforms(imgsz[0], crop_fraction=crop_fraction),
             )
         )
         self._legacy_transform_name = "ultralytics.yolo.data.augment.ToTensor"

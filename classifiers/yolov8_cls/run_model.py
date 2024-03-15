@@ -25,14 +25,10 @@ if __name__ == '__main__':
     # parser.add_argument('--csv', action='store_true', help='[optional] whether to save the results to csv file')
     args = parser.parse_args()
     
-    logging.basicConfig(level=logging.NOTSET)
-    
-    model = Yolov8_cls(args.wts_file)
-    attrs = vars(model)
+    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
     
-    for k in dir(model):
-        logger.info(f'{k}')
+    model = Yolov8_cls(args.wts_file)
     
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
