@@ -28,7 +28,12 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.NOTSET)
     
     model = Yolov8_cls(args.wts_file)
+    attrs = vars(model)
     logger = logging.getLogger(__name__)
+    
+    for k,v in attrs.items():
+        logger.info(f'{k}: {v}')
+    
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
         
