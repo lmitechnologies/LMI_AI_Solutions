@@ -47,6 +47,7 @@ if __name__ == '__main__':
         for p in batch:
             t1 = time.time()
             # load image
+            fname = os.path.basename(p)
             im0 = cv2.imread(p,cv2.IMREAD_UNCHANGED) #BGR format
             if len(im0.shape)==2:
                 im0=cv2.cvtColor(im0, cv2.COLOR_GRAY2BGR)
@@ -67,9 +68,14 @@ if __name__ == '__main__':
             results = model.postprocess(preds)
             t2 = time.time()
             
-            # TODO save images according to the classes
-            fname = os.path.basename(p)
-            save_path = os.path.join(args.path_out,fname)
+            cls,conf = results['classes'][0],results['scores'][0]
+            logger.info(f'file: {fname}')
+            logger.info(f'class: {cls}, conf: {conf:.4f}')
+            
+            # save images according to the classes
+            out_path = os.path.join(args.path_out,cls)
+            os.makedirs(out_path,exist_ok=True)
+            save_path = os.path.join(out_path,fname)
             im_out = np.copy(im0)
             
             # save output image from RGB to BGR

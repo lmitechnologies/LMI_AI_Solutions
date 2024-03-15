@@ -132,15 +132,10 @@ class Yolov8_cls:
             preds (torch.Tensor | list): Predictions from the model.
             
         """
-         
+        
         results = defaultdict(list)
         for pred in preds:
-            names = self.model.names
-            
-            self.logger.info(f'pred: {pred}, shape: {pred.shape}')
-            self.logger.info(f'names: {names}')
-            
-            results['scores'].append( pred.cpu().numpy())
-            results['classes'].append(names)
-            
+            idx = pred.argmax()
+            results['scores'].append( pred[idx].cpu().numpy())
+            results['classes'].append(self.model.names[idx])
         return results
