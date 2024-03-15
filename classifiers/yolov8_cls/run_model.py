@@ -31,8 +31,8 @@ if __name__ == '__main__':
     attrs = vars(model)
     logger = logging.getLogger(__name__)
     
-    for k,v in attrs.items():
-        logger.info(f'{k}: {v}')
+    for k in dir(model):
+        logger.info(f'{k}')
     
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
