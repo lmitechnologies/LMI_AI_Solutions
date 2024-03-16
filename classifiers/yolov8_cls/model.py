@@ -17,13 +17,14 @@ class Yolov8_cls:
     
     logger = logging.getLogger(__name__)
     
-    def __init__(self, weights:str, device='gpu', data=None, imgsz=[224,224], crop_fraction=1) -> None:
+    def __init__(self, weights:str, device='gpu', data=None, fp16=False, imgsz=[224,224], crop_fraction=1) -> None:
         """init the model
 
         Args:
             weights (str): the path to the weights file.
             device (str, optional): _description_. Defaults to 'gpu'.
-            data (str, optional): _description_. Defaults to None.
+            data (str, optional): the path to dataset yaml file. Defaults to None.
+            fp16 (bool, optional): use fp16 precision. Defaults to False.
 
         Raises:
             FileNotFoundError: _description_
@@ -40,7 +41,7 @@ class Yolov8_cls:
                 self.logger.warning('GPU not available, using CPU')
         
         # load model
-        self.model = AutoBackend(weights, self.device, data=data)
+        self.model = AutoBackend(weights, self.device, data=data, fp16=fp16)
         self.model.eval()
         self.transforms = (
             getattr(
