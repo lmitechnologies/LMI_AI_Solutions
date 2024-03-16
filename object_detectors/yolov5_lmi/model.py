@@ -19,7 +19,7 @@ sys.path.insert(0, YOLO_PATH)
 from utils.general import non_max_suppression, scale_boxes, scale_segments
 from utils.segment.general import masks2segments, process_mask, process_mask_native
 from models.common import DetectMultiBackend
-
+from utils.torch_utils import smart_inference_mode
 
 
 class Yolov5:
@@ -44,8 +44,10 @@ class Yolov5:
                 self.logger.warning('GPU not available, using CPU')
                 
         self.model = DetectMultiBackend(weights, self.device, data=data, fp16=fp16)
+        self.model.eval()
+        
 
-
+    @smart_inference_mode()
     def forward(self, im):
         return self.model(im)
         

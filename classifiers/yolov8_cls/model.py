@@ -11,6 +11,7 @@ from PIL import Image
 from ultralytics.utils import ops
 from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.data.augment import classify_transforms
+from ultralytics.utils.torch_utils import smart_inference_mode
 
 
 class Yolov8_cls:
@@ -43,6 +44,7 @@ class Yolov8_cls:
         # load model
         self.model = AutoBackend(weights, self.device, data=data, fp16=fp16)
         self.model.eval()
+        
         self.transforms = (
             getattr(
                 self.model.model,
@@ -53,6 +55,7 @@ class Yolov8_cls:
         self._legacy_transform_name = "ultralytics.yolo.data.augment.ToTensor"
         
         
+    @smart_inference_mode()
     def forward(self, im):
         return self.model(im)
         

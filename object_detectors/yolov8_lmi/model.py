@@ -8,6 +8,7 @@ from typing import Union
 
 from ultralytics.utils import ops
 from ultralytics.nn.autobackend import AutoBackend
+from ultralytics.utils.torch_utils import smart_inference_mode
 
 
 class Yolov8:
@@ -40,6 +41,7 @@ class Yolov8:
         self.model.eval()
         
         
+    @smart_inference_mode()
     def forward(self, im):
         return self.model(im)
         
