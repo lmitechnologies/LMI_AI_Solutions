@@ -55,15 +55,29 @@ class GadgetSurfaceUtils():
                 except KeyError:
                     continue
                 
-    def pkl_2_pcd(self, source_path, destination_path):
+    def pkl_2_pcd(self, source_path, destination_path,source_path_intensity=None):
         import open3d
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".gadget3d.pickle" in f]
+        
+        use_intensity=True if source_path_intensity is not None else False
 
         for file in files:
             print(join(source_path, file))
 
             with open(join(source_path, file), "rb") as f:
                 content = pickle.load(f)
+            
+            if use_intensity:
+                try:
+                    fname_intensity=file.replace(".gadget3d.pickle", ".gadget2d.jpg")
+                    path_intensity=join(source_path_intensity,fname_intensity)
+                    print(f'[INFO] Loading intensity image from:{path_intensity}')
+                    img_intensity=Image.open(path_intensity)
+                    img_intensity=img_intensity.convert('RGB') #convert to color
+                    img_intensity=numpy.array(img_intensity).astype(numpy.float32)
+                except:
+                    print(f'[WARNING] Failed to load intensity image.')
+                    use_intensity=False
 
             profile = content["profile_array"]
             resolution = content["metadata"]["resolution"]
@@ -74,12 +88,16 @@ class GadgetSurfaceUtils():
             np_z = numpy.empty(shape[0]*shape[1])
             np_x = numpy.empty(shape[0]*shape[1])
             np_y = numpy.empty(shape[0]*shape[1])
+            intensity = numpy.empty((shape[0]*shape[1],3))
+            
             i = 0
             for y in range(shape[0]):
                 for x in range(shape[1]):
                     np_x[i] = offset[0] + x * resolution[0]
                     np_y[i] = offset[1] + y * resolution[1]
                     np_z[i] = offset[2] + profile[y][x] * resolution[2]
+                    if use_intensity:
+                        intensity[i,:]=img_intensity[y][x]/255.0
                     i += 1
 
             np_points = numpy.empty((shape[0]*shape[1], 3))
@@ -89,6 +107,8 @@ class GadgetSurfaceUtils():
 
             pcd = open3d.geometry.PointCloud()
             pcd.points = open3d.utility.Vector3dVector(np_points)
+            if use_intensity:
+                pcd.colors = open3d.utility.Vector3dVector(intensity)
             open3d.io.write_point_cloud(join(destination_path, file.replace(".gadget3d.pickle", ".pcd")), pcd)
     
     staticmethod
@@ -154,7 +174,6 @@ class GadgetSurfaceUtils():
                 pcd = open3d.geometry.PointCloud()
                 pcd.points = open3d.utility.Vector3dVector(np_points)
                 if use_intensity:
-                    # pcd.colors = open3d.utility.Vector3dVector(numpy.vstack((intensity, intensity, intensity)).T)
                     pcd.colors = open3d.utility.Vector3dVector(intensity)
                 open3d.io.write_point_cloud(join(dest, file.replace(".gadget3d.tar", ".pcd")), pcd)
 
