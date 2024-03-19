@@ -4,11 +4,9 @@ import logging
 import os
 import numpy as np
 import torch
-import tensorrt as trt
 import sys
 from typing import Union
 import collections
-from enum import Enum
 
 # add yolov5 submodule to the path
 YOLO_PATH = os.path.join(os.path.dirname(__file__), '../submodules/yolov5')
