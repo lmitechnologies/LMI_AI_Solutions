@@ -4,7 +4,6 @@ import torch
 import os
 from collections import defaultdict
 import logging
-from enum import Enum
 from typing import Union
 from PIL import Image
 
@@ -53,6 +52,9 @@ class Yolov8_cls:
             )
         )
         self._legacy_transform_name = "ultralytics.yolo.data.augment.ToTensor"
+        
+        # class map < id: class name >
+        self.names = self.model.names
         
         
     @smart_inference_mode()

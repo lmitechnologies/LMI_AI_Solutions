@@ -44,6 +44,9 @@ class Yolov5:
         self.model = DetectMultiBackend(weights, self.device, data=data, fp16=fp16)
         self.model.eval()
         
+        # class map < id: class name >
+        self.names = self.model.names
+        
 
     @smart_inference_mode()
     def forward(self, im):
