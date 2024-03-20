@@ -141,8 +141,8 @@ class Yolov8_cls:
         
         results = defaultdict(list)
         for pred in preds:
-            pred = pred.cpu().numpy()
+            pred = pred.cpu()
             idx = pred.argmax()
-            results['scores'].append(pred[idx])
+            results['scores'].append(pred[idx].item())
             results['classes'].append(self.model.names[idx])
         return results
