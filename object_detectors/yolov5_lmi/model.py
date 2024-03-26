@@ -138,16 +138,23 @@ class Yolov5:
         elif not isinstance(preds, torch.Tensor):
             raise TypeError(f'Prediction type {type(preds)} not supported')
         
-        # get lowest confidence
+        # get min confidence for nms
+        class_names = set(self.model.names.values())
         if isinstance(conf, float):
             conf2 = conf
         elif isinstance(conf, dict):
-            conf2 = min(conf.values())
+            conf2 = 1
+            for k,v in conf.items():
+                if k in class_names:
+                    conf2 = min(conf2, v)
+            if conf2 == 1:
+                self.logger.warning('No class matches in confidence dict, set to 1.0 for all classes.')
         else:
             raise TypeError(f'Confidence type {type(conf)} not supported')
         
-        # Process predictions
         pred = non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nm=nm)
+        
+        # Process predictions
         results = collections.defaultdict(list)
         for i,det in enumerate(pred):  # per image
             if len(det)==0:

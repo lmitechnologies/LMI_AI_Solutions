@@ -144,17 +144,26 @@ class Yolov8:
             predict_mask = False
         else:
             raise TypeError(f'Prediction type {type(preds)} not supported')
+        
         proto = None
         if predict_mask:
             proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]
             preds = preds[0]
         
+        # get min confidence for nms
+        class_names = set(self.model.names.values())
         if isinstance(conf, float):
             conf2 = conf
         elif isinstance(conf, dict):
-            conf2 = min(conf.values())
+            conf2 = 1
+            for k,v in conf.items():
+                if k in class_names:
+                    conf2 = min(conf2, v)
+            if conf2 == 1:
+                self.logger.warning('No class matches in confidence dict, set to 1.0 for all classes.')
         else:
             raise TypeError(f'Confidence type {type(conf)} not supported')
+        
         preds2 = ops.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
             
         results = collections.defaultdict(list)
