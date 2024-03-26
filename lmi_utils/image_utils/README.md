@@ -1,5 +1,7 @@
 ## Documentation
 
+*@Rugved remove all TODO's and comments before merge*
+
 #### Scripts
 
 - `allignment_utils.py`: This file contains functions to get the contours of the image, get the bounding box of the contours, and align the image based on the bounding box.
@@ -18,8 +20,6 @@
 - `split_stack_image.py`: This script splits images horizontally or vertically and stacks them on the choice. Arguments for the script: --path_imgs [INPUT_FOLDER_PATH] --path_out [OUTPUT_FOLDER_PATH] --num_splits [NUMBER_OF_SPLITS] --stack ["h" or "v"] --keep_same_filename [True or False]
 - `tiff_2_png.py`: This script applies a color map to a provided tiff image and save it as a .png file. Arguments for the script: --input_path [INPUT_FOLDER_PATH] --output_path [OUTPUT_FOLDER_PATH] --cvt_hmap_jet [True or False] (applies a jet color map to the image)
 - `tile_image.py`: This script tiles an image or set of images, moreover also provides an option to reconstruct tiles to a single image. Arguments for the script: --option ["tile" or "reconstruct"] --src [INPUT_FOLDER_PATH] --dest [OUTPUT_FOLDER_PATH] --w [TILE_WIDTH] --h [TILE_HEIGHT] --stride_w [TILE_STRIDE_WIDTH] --stride_h [TILE_STRIDE_HEIGHT] --overlap_mode ["avg" or "max"] --type [IMAGE_FORMAT]
-
-*work in progress*
 
 #### Functions
 
