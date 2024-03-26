@@ -1,6 +1,6 @@
 ## Documentation
 
-This package contains a set of utilities for image processing and computer vision. The package is divided into several modules, each of which contains a set of functions for a specific task. The modules are:
+#### Scripts
 
 - `allignment_utils.py`: This file contains functions to get the contours of the image, get the bounding box of the contours, and align the image based on the bounding box.
 - `flip_image.py`: This script flips the image either horizontally or vertically given a path to the folder containing the images and saves them in a given folder. Arguments for the script: `--path_imgs [INPUT_FOLDER_PATH] --path_out [OUTPUT_FOLDER_PATH] --flip ["ud"(vertical) or "lr" (horizontal)]
@@ -21,7 +21,7 @@ This package contains a set of utilities for image processing and computer visio
 
 *work in progress*
 
-#### Functions (*Need to Complete*)
+#### Functions
 
 ##### allignment_utils.py
 
@@ -36,6 +36,82 @@ This package contains a set of utilities for image processing and computer visio
 - `align_and_crop`: This function takes an image_file_path and a output_dir_path as input and performs allignment, cropping based on the bounding box and saves the image in the provided output directory.
 - `tile_image`: This function takes an image_file_path, tile_dir_path, window_dimension, steps_per_window, performs tiling of the image and saves the tiles in the tile_dir_path.
 
+###### flip_image.py
+
+- `flip_images`: This function takes a list of image paths, flip type (ud, lr), and output directory path as input and saves the flipped images in the output directory.
+
+###### img_pad_to_size.py
+
+- `pad_image`: This function takes an image_file_path or image folder path, output_path, pad width, pad height, and saves the padded image in the provided output path.
+
+- `pad_array`: This function takes an image, pad width, pad height, and returns the padded image.
+
+###### img_resize.py
+
+- `is_cuda_cv`: This function checks whether the CUDA version of OpenCV is in use and returns True if it is, False otherwise.
+
+- `resize`: This function takes an image, resize width, resize height, device (optional 'cpu' or 'cuda') and returns the resized image.
+
 ###### image_rotate.py
 
 - `rotate`: This function takes an image, angle, center, and scale as parameters and returns the rotated image. Performs rotation of the image by determing the rotation matrix and applying the matrix to the image.
+
+###### image_stretch.py
+
+- `stretch`: This function takes an image and scale as input and returns the stretched image (applies scale based on which one is the biggest width or height).
+
+- `gen_collage`: This function takes the following inputs input_path (folder of images), output_path (location to store the collage image), colmax (max number of columns), width (resize width before stacking), rowmax (max number of rows), file_filter (file name filter as a string). It saves the colleges in the given output path.
+
+###### merge_pred_with_orig.py
+
+- `hstack_imgs`: This function takes folder of images, folder of predictions results, image format (fmt), and output path to store the merged image. Performs an horizontal stacking of the original image and the predicted image and saves it in the output path.
+
+###### numpy_utils.py
+
+*The following are methods of the class NumpyUtils*
+
+- `png_to_npy`: This function takes an image folder path, folder to save the images, rotate (rotate the image by 90 deg) and rgb2bgr (boolean to convert the image from RBG to BGR). It saves the images as .npy files in the provided folder path.
+
+- `npy_to_png`: This function takes an image folder path, folder to save the images, rotate (rotate the image by 90 deg) and rgb2bgr (boolean to convert the image from RBG to BGR). It reads in all the .npy files in the provided folder path and saves them as .png files in the provided folder path.
+
+- `png_to_png`: This function takes an image folder path, folder to save the images, rotate (rotate the image by 90 deg) and rgb2bgr (boolean to convert the image from RBG to BGR). It reads in all the .png files in the provided folder path and saves them as .png files in the output folder.
+
+###### pad_image.py
+
+- `fit_image_to_size`: This function takes a folder of images and an output path to store padded/cropped images, output image size, and whether to use the same filename (boolean to keep the same filename). It pads the images to the provided size and saves them in the output path.
+
+###### resize_image.py
+
+- `resize_images`: *maintains aspect ratio* This function takes a folder of images and an output path to store resized images, output image size, and whether to use the same filename (boolean to keep the same filename). It pads the images to the provided size and saves them in the output path.
+
+###### rgb_convert.py
+
+- `convert_to_rainbow`: This function converts an integer to full scale range based on the precision chosen. It converts the integer to the rgb space and returns the values.
+
+- `convert_array_to_rainbow`: This function converts an array of integers to full scale range based on the precision chosen. It converts the integers to the rgb space and returns the values.
+
+- `convert_from_rgb`: This function converts an rgb value to an integer. It converts the rgb value to an integer and returns the value.
+
+- `convert_greyscale_image_to_color`: This function takes a greyscale image and converts it to a color image. It converts the greyscale image to a color image and returns the image.
+
+- `convert_greyscale_to_color_simple` : This function converts the greyscale image by expaning the image to 3 channels. It converts the greyscale image to a color image and returns the image.
+
+###### sample_image.py
+
+- `sample_images`: This function takes a folder of images, output path to store sampled images, number of samples to be taken, and whether to sample randomly (boolean to sample randomly). It samples the images and saves them in the output path.
+
+###### split_stack_image.py
+
+- `split_stack_image`: This function a folder of images, output path to store split images, number of splits, stack type (horizontal or vertical), and whether to use the same filename (boolean to keep the same filename). It splits the images and stacks them based on the provided type and saves them in the output path.
+
+- `split_hstack_image`: This function takes an image, number of splits (vertically), and returns the stacked image. It horizontally stacks them and returns the stacked image.
+
+- `split_vstack_image`: This function takes an image, number of splits (horizontally), and returns the stacked image. It vertically stacks them and returns the stacked image.
+
+###### tile_image.py
+
+- `__tile_image`: This function takes an image path, output path, tile width, tile height, stride width, stride height, overlap mode and saves the tiled images. It tiles the image and saves the tiles in the output path.
+
+- `tile_image`: This function takes an image path, output path, tile width, tile height, stride width, stride height, overlap mode and saves the tiled images. It tiles the image and saves the tiles in the output path. (achieved by calling __tile_image)
+
+- `reconstruct_image`: This function takes in the folder with tiled images, output path, overlap mode (avg or max) and reconstructs the image, following saves the reconstructed image in the given destination folder.

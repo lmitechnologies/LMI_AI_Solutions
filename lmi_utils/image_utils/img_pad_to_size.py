@@ -47,7 +47,6 @@ def pad_array(im,W,H):
         rem_B=(h_im-H)-rem_T
         to_B=h_im-rem_B
         im=im[rem_T:to_B,:]
-
     return im
     
 

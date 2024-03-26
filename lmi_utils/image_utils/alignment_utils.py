@@ -7,12 +7,6 @@ import os
 
 from image_utils.img_rotate import rotate
 
-# %% convert intensity pcd to png
-
-
-def intensitypcd_2_png():
-    pass
-
 # %% get image contours
 
 
@@ -92,16 +86,8 @@ def rotateByMinBB(image, contour):
 
 def cropByBB(image, contour, delta=0):
     rect = cv2.minAreaRect(contour)
-    # print('rect='+str(rect))
     box = cv2.boxPoints(rect)
-    #print('box float='+str(box))
     box = np.int0(box)
-    #print('box int='+str(box))
-#    delx=box[3][0]-box[0][0]
-#    dely=box[3][1]-box[0][1]
-#    angle=np.arctan(dely/delx)*180/np.pi
-#    print('angle ={}'.format(angle))
-#    cv2.drawContours(image,[box],0,(0,0,255),2)
     (ymax, xmax) = image.shape[:2]
     xmin = 0
     ymin = 0
