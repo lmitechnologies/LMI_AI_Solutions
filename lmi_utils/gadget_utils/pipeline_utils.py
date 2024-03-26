@@ -187,7 +187,7 @@ def apply_operations(pts:np.ndarray, operations:list):
     The operations list contains each item as a dictionary. The items are listed as follows: 
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
-        3. <resize: target_w, target_h, orig_w, orig_h>
+        3. <resize: [resized_w, resized_h, orig_w, orig_h]>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict

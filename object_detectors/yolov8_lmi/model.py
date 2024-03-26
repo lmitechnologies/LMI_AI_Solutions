@@ -118,7 +118,7 @@ class Yolov8:
             im0 = im0[:,:,::-1] #BGR to RGB
         return self.preprocess(im0),im0
     
-    
+    @smart_inference_mode()
     def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
         """Postprocesses predictions and returns a list of Results objects.
         

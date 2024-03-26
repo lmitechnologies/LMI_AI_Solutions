@@ -109,7 +109,7 @@ class Yolov5:
             im0 = im0[:,:,::-1] #BGR to RGB
         return self.preprocess(im0),im0
     
-    
+    @smart_inference_mode()
     def postprocess(self,preds,im,orig_imgs,conf: Union[float, dict],iou=0.45,agnostic=False,max_det=300,return_segments=True):
         """
         Args:

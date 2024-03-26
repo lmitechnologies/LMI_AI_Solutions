@@ -130,7 +130,7 @@ class Yolov8_cls:
             im0 = im0[:,:,::-1] #BGR to RGB
         return self.preprocess(im0),im0
     
-    
+    @smart_inference_mode()
     def postprocess(self, preds):
         """Postprocesses predictions and returns a list of Results objects.
         
