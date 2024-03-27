@@ -49,6 +49,7 @@ class Yolov8:
         return self.model(im)
         
         
+    @smart_inference_mode()
     def from_numpy(self, x):
         """
          Convert a numpy array to a tensor.
@@ -62,6 +63,7 @@ class Yolov8:
         return torch.tensor(x).to(self.device) if isinstance(x, np.ndarray) else x
     
     
+    @smart_inference_mode()
     def warmup(self, imgsz=[640, 640]):
         """
         Warm up the model by running one forward pass with a dummy input.
@@ -78,6 +80,7 @@ class Yolov8:
         self.forward(im)  # warmup
         
         
+    @smart_inference_mode()
     def preprocess(self, im):
         """Prepares input image before inference.
 

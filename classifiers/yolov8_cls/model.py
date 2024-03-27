@@ -45,6 +45,7 @@ class Yolov8_cls(Yolov8):
         self._legacy_transform_name = "ultralytics.yolo.data.augment.ToTensor"
         
         
+    @smart_inference_mode()
     def preprocess(self, img):
         """Prepares input image before inference.
         https://github.com/ultralytics/ultralytics/blob/main/ultralytics/models/yolo/classify/predict.py#L36
