@@ -12,8 +12,10 @@ from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.data.augment import classify_transforms
 from ultralytics.utils.torch_utils import smart_inference_mode
 
+from yolov8_lmi.model import Yolov8
 
-class Yolov8_cls:
+
+class Yolov8_cls(Yolov8):
     
     logger = logging.getLogger(__name__)
     
@@ -25,24 +27,13 @@ class Yolov8_cls:
             device (str, optional): _description_. Defaults to 'gpu'.
             data (str, optional): the path to dataset yaml file. Defaults to None.
             fp16 (bool, optional): use fp16 precision. Defaults to False.
+            imgsz (list, optional): input image size [h,w]. Defaults to [224,224].
+            crop_fraction(float, optional): crop fraction. Defaults to 1.
 
         Raises:
             FileNotFoundError: _description_
         """
-        if not os.path.isfile(weights):
-            raise FileNotFoundError(f'File not found: {weights}')
-        
-        # set device
-        self.device = torch.device('cpu')
-        if device == 'gpu':
-            if torch.cuda.is_available():
-                self.device = torch.device('cuda:0')  
-            else:
-                self.logger.warning('GPU not available, using CPU')
-        
-        # load model
-        self.model = AutoBackend(weights, self.device, data=data, fp16=fp16)
-        self.model.eval()
+        super().__init__(weights, device, data, fp16)
         
         self.transforms = (
             getattr(
@@ -52,43 +43,6 @@ class Yolov8_cls:
             )
         )
         self._legacy_transform_name = "ultralytics.yolo.data.augment.ToTensor"
-        
-        # class map < id: class name >
-        self.names = self.model.names
-        
-        
-    @smart_inference_mode()
-    def forward(self, im):
-        return self.model(im)
-        
-        
-    def from_numpy(self, x):
-        """
-         Convert a numpy array to a tensor.
-
-         Args:
-             x (np.ndarray): The array to be converted.
-
-         Returns:
-             (torch.Tensor): The converted tensor
-         """
-        return torch.tensor(x).to(self.device) if isinstance(x, np.ndarray) else x
-    
-    
-    def warmup(self, imgsz=[640, 640]):
-        """
-        Warm up the model by running one forward pass with a dummy input.
-        Args:
-            imgsz(list): list of [h,w], default to [640,640]
-        Returns:
-            (None): This method runs the forward pass and don't return any value
-        """
-        if isinstance(imgsz, tuple):
-            imgsz = list(imgsz)
-            
-        imgsz = [1,3]+imgsz
-        im = torch.empty(*imgsz, dtype=torch.half if self.model.fp16 else torch.float, device=self.device)  # input
-        self.forward(im)  # warmup
         
         
     def preprocess(self, img):
@@ -111,24 +65,6 @@ class Yolov8_cls:
         img = (img if isinstance(img, torch.Tensor) else torch.from_numpy(img)).to(self.model.device)
         return img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
     
-    
-    def load_with_preprocess(self, im_path:str):
-        """load image and do im preprocess
-
-        Args:
-            im_path (str): the path to the image, could be either .npy, .png, or other image formats
-            
-        Returns:
-            (torch.Tensor): the preprocessed image.
-            (np.ndarray): the original image.
-        """
-        ext = os.path.splitext(im_path)[-1]
-        if ext=='.npy':
-            im0 = np.load(im_path)
-        else:
-            im0 = cv2.imread(im_path) #BGR format
-            im0 = im0[:,:,::-1] #BGR to RGB
-        return self.preprocess(im0),im0
     
     @smart_inference_mode()
     def postprocess(self, preds):
