@@ -4,7 +4,6 @@ import logging
 import os
 import numpy as np
 import torch
-import tensorrt as trt
 import sys
 from typing import Union
 import collections
@@ -15,101 +14,43 @@ if not os.path.exists(YOLO_PATH):
     raise FileNotFoundError(f'Cannot find yolov5 submodule at {YOLO_PATH}')
 sys.path.insert(0, YOLO_PATH)
 
-from utils.general import non_max_suppression, scale_boxes, scale_segments, yaml_load
+from utils.general import non_max_suppression, scale_boxes, scale_segments
 from utils.segment.general import masks2segments, process_mask, process_mask_native
-from models.experimental import attempt_load
-
-from yolov8_lmi.model import FileType,get_file_type
+from models.common import DetectMultiBackend
+from utils.torch_utils import smart_inference_mode
 
 
 class Yolov5:
     logger = logging.getLogger(__name__)
     
     
-    def __init__(self, path_wts:str, data=None, device='gpu') -> None:
+    def __init__(self, weights:str, device='gpu', data=None, fp16=False) -> None:
         """
         args:
-            path_wts(str): the path to the tensorRT engine file
+            weights(str): the path to the tensorRT engine file
             data (str, optional): the path to the yaml file containing class names. Defaults to None.
         """
-        if not os.path.isfile(path_wts):
-            raise FileNotFoundError(f'File not found: {path_wts}')
-        if device=='gpu' and not torch.cuda.is_available():
-            raise RuntimeError('CUDA not available.')
+        if not os.path.isfile(weights):
+            raise FileNotFoundError(f'File not found: {weights}')
         
-        # defaults
-        device = torch.device('cuda:0') if device=='gpu' else torch.device('cpu')
-        fp16 = False
-        stride = 32
-        imgsz = []
+        # set device
+        self.device = torch.device('cpu')
+        if device == 'gpu':
+            if torch.cuda.is_available():
+                self.device = torch.device('cuda:0')  
+            else:
+                self.logger.warning('GPU not available, using CPU')
+                
+        self.model = DetectMultiBackend(weights, self.device, data=data, fp16=fp16)
+        self.model.eval()
         
-        # get the type of file
-        file_type = get_file_type(path_wts)
-        self.logger.info(f'found weights file type: {file_type}')
-        if file_type == FileType.ENGINE:
-            Binding = namedtuple("Binding", ("name", "dtype", "shape", "data", "ptr"))
-            logger_trt = trt.Logger(trt.Logger.INFO)
-            with open(path_wts, "rb") as f, trt.Runtime(logger_trt) as runtime:
-                model = runtime.deserialize_cuda_engine(f.read())
-            context = model.create_execution_context()
-            bindings = OrderedDict()
-            output_names = []
-            dynamic = False
-            for i in range(model.num_bindings):
-                name = model.get_binding_name(i)
-                dtype = trt.nptype(model.get_binding_dtype(i))
-                if model.binding_is_input(i):
-                    if -1 in tuple(model.get_binding_shape(i)):  # dynamic
-                        dynamic = True
-                        context.set_binding_shape(i, tuple(model.get_profile_shape(0, i)[2]))
-                    if dtype == np.float16:
-                        fp16 = True
-                else:  # output
-                    output_names.append(name)
-                shape = tuple(context.get_binding_shape(i))
-                im = torch.from_numpy(np.empty(shape, dtype=dtype)).to(device)
-                bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
-            binding_addrs = OrderedDict((n, d.ptr) for n, d in bindings.items())
-            batch_size = bindings["images"].shape[0]  # if dynamic, this is instead max batch size
-            imgsz = list(bindings["images"].shape[2:])
-        elif file_type == FileType.PT:
-            model = attempt_load(path_wts, device=device, inplace=True, fuse=True)
-            stride = max(int(model.stride.max()), 32)  # model stride
-            names = model.module.names if hasattr(model, "module") else model.names  # get class names
-            self.logger.info(f'pt class names: {names}')
-            model.half() if fp16 else model.float()
-            
-        # class names
-        if "names" not in locals():
-            names = yaml_load(data)["names"] if data else {i: f"{i}" for i in range(999)}
+        # class map < id: class name >
+        self.names = self.model.names
+        
 
-        self.__dict__.update(locals())  # assign all variables to self
-
-
+    @smart_inference_mode()
     def forward(self, im):
-        if self.fp16 and im.dtype != torch.float16:
-            im = im.half()
-            
-        if self.file_type == FileType.PT:
-            y = self.model(im)
-        elif self.file_type == FileType.ENGINE:
-            if self.dynamic and im.shape != self.bindings['images'].shape:
-                i = self.model.get_binding_index('images')
-                self.context.set_binding_shape(i, im.shape)  # reshape if dynamic
-                self.bindings['images'] = self.bindings['images']._replace(shape=im.shape)
-                for name in self.output_names:
-                    i = self.model.get_binding_index(name)
-                    self.bindings[name].data.resize_(tuple(self.context.get_tensor_shape(i)))
-            s = self.bindings['images'].shape
-            assert im.shape == s, f"input size {im.shape} {'>' if self.dynamic else 'not equal to'} max model size {s}"
-            self.binding_addrs['images'] = int(im.data_ptr())
-            self.context.execute_v2(list(self.binding_addrs.values()))
-            y = [self.bindings[x].data for x in sorted(self.output_names)]
-            
-        if isinstance(y, (list, tuple)):
-            return self.from_numpy(y[0]) if len(y) == 1 else [self.from_numpy(x) for x in y]
-        else:
-            return self.from_numpy(y)
+        return self.model(im)
         
         
     def from_numpy(self, x):
@@ -124,11 +65,11 @@ class Yolov5:
         """
         if isinstance(imgsz, tuple):
             imgsz = list(imgsz)
-        if self.imgsz and self.imgsz != imgsz:
-            raise Exception(f'The warmup imgsz of {imgsz} does not match with the size of the model: {self.imgsz}!')
+        # if self.imgsz and self.imgsz != imgsz:
+        #     raise Exception(f'The warmup imgsz of {imgsz} does not match with the size of the model: {self.imgsz}!')
         
         imgsz = [1,3]+imgsz
-        im = torch.empty(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
+        im = torch.empty(*imgsz, dtype=torch.half if self.model.fp16 else torch.float, device=self.device)  # input
         self.forward(im)
     
     
@@ -140,6 +81,9 @@ class Yolov5:
         """
         if not isinstance(im, np.ndarray):
             raise TypeError(f'Image type {type(im)} not supported')
+        
+        if im.ndim == 2:
+            im = cv2.cvtColor(im, cv2.COLOR_GRAY2RGB)
         
         im = im.astype(np.float32)
         im /= 255 # normalize to [0,1]
@@ -166,6 +110,7 @@ class Yolov5:
         return self.preprocess(im0),im0
     
     
+    @smart_inference_mode()
     def postprocess(self,preds,im,orig_imgs,conf: Union[float, dict],iou=0.45,agnostic=False,max_det=300,return_segments=True):
         """
         Args:
@@ -194,16 +139,23 @@ class Yolov5:
         elif not isinstance(preds, torch.Tensor):
             raise TypeError(f'Prediction type {type(preds)} not supported')
         
-        # get lowest confidence
+        # get min confidence for nms
         if isinstance(conf, float):
             conf2 = conf
         elif isinstance(conf, dict):
-            conf2 = min(conf.values())
+            conf2 = 1
+            class_names = set(self.model.names.values())
+            for k,v in conf.items():
+                if k in class_names:
+                    conf2 = min(conf2, v)
+            if conf2 == 1:
+                self.logger.warning('No class matches in confidence dict, set to 1.0 for all classes.')
         else:
             raise TypeError(f'Confidence type {type(conf)} not supported')
         
-        # Process predictions
         pred = non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nm=nm)
+        
+        # Process predictions
         results = collections.defaultdict(list)
         for i,det in enumerate(pred):  # per image
             if len(det)==0:
@@ -212,7 +164,7 @@ class Yolov5:
             
             det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], orig_img.shape).round()
             xyxy,confs,clss = det[:, :4],det[:, 4],det[:, 5]
-            classes = np.array([self.names[c.item()] for c in clss])
+            classes = np.array([self.model.names[c.item()] for c in clss])
             
             # filter based on conf
             if isinstance(conf, float):
