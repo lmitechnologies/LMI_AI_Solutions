@@ -19,8 +19,10 @@ from utils.segment.general import masks2segments, process_mask, process_mask_nat
 from models.common import DetectMultiBackend
 from utils.torch_utils import smart_inference_mode
 
+from od_base import ODBase
 
-class Yolov5:
+
+class Yolov5(ODBase):
     logger = logging.getLogger(__name__)
     
     

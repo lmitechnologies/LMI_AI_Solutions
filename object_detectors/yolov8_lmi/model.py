@@ -10,8 +10,10 @@ from ultralytics.utils import ops
 from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.utils.torch_utils import smart_inference_mode
 
+from od_base import ODBase
 
-class Yolov8:
+
+class Yolov8(ODBase):
     
     logger = logging.getLogger(__name__)
     
