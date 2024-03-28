@@ -1,11 +1,10 @@
 import cv2
 import numpy as np
 import torch
-import os
 from collections import defaultdict
 import logging
-from typing import Union
 from PIL import Image
+import time
 
 from ultralytics.utils import ops
 from ultralytics.nn.autobackend import AutoBackend
@@ -83,3 +82,35 @@ class Yolov8_cls(Yolov8):
             results['scores'].append(pred[idx].item())
             results['classes'].append(self.model.names[idx])
         return results
+
+
+    @smart_inference_mode()
+    def predict(self, image):
+        """run yolov8 classifier inference. It runs the preprocess(), forward(), and postprocess() in sequence.
+
+        Args:
+            image (np.ndarray): the input image
+
+        Returns:
+            list of [results, time info]
+            results (dict): a dictionary of the results, e.g., {'classes':[], 'scores':[]}
+            time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
+        """
+        time_info = {}
+        
+        # preprocess
+        t0 = time.time()
+        im = self.preprocess(image)
+        time_info['preproc'] = time.time()-t0
+        
+        # infer
+        t0 = time.time()
+        pred = self.forward(im)
+        time_info['proc'] = time.time()-t0
+        
+        # postprocess
+        t0 = time.time()
+        results = self.postprocess(pred)
+        time_info['postproc'] = time.time()-t0
+        
+        return results, time_info

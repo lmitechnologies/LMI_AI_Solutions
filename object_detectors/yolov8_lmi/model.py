@@ -5,12 +5,15 @@ import os
 import collections
 import logging
 from typing import Union
+import time
 
 from ultralytics.utils import ops
 from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.utils.torch_utils import smart_inference_mode
 
+# import LMI AI Solutions modules
 from od_base import ODBase
+import gadget_utils.pipeline_utils as pipeline_utils
 
 
 class Yolov8(ODBase):
@@ -134,6 +137,7 @@ class Yolov8(ODBase):
             orig_imgs (np.ndarray | list): Original image or list of original images.
             conf_thres (float | dict): int or dictionary of <class: confidence level>.
             iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
+            max_det (int): The maximum number of detections to return. defaults to 300.
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             return_segments(bool): If True, return the segments of the masks.
         Rreturns:
@@ -203,3 +207,74 @@ class Yolov8(ODBase):
                                 for x in ops.masks2segments(masks)]
                     results['segments'].append(segments)
         return results
+
+
+    @smart_inference_mode()
+    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_segments=True):
+        """run yolov8 object detection inference. It runs the preprocess(), forward(), and postprocess() in sequence.
+        It converts the results to the original coordinates space if the operators are provided.
+        
+        Args:
+            model (Yolov8): the object detection model loaded memory
+            image (np.ndarry): the input image
+            configs (dict): a dictionary of the confidence thresholds for each class, e.g., {'classA':0.5, 'classB':0.6}
+            operators (list): a list of dictionaries of the image preprocess operators, such as {'resize':[resized_w, resized_h, orig_w, orig_h]}, {'pad':[pad_left, pad_right, pad_top, pad_bot]}
+            iou (float): the iou threshold for non-maximum suppression. defaults to 0.4
+            agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
+            max_det (int): The maximum number of detections to return. defaults to 300.
+            return_segments(bool): If True, return the segments of the masks.
+
+        Returns:
+            list of [results, time info]
+            results (dict): a dictionary of the results, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
+            time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
+        """
+        time_info = {}
+        
+        # preprocess
+        t0 = time.time()
+        im = self.preprocess(image)
+        time_info['preproc'] = time.time()-t0
+        
+        # infer
+        t0 = time.time()
+        pred = self.forward(im)
+        time_info['proc'] = time.time()-t0
+        
+        # postprocess
+        t0 = time.time()
+        conf_thres = {}
+        for k in configs:
+            conf_thres[k] = configs[k]
+        results = self.postprocess(pred,im,image,conf_thres,iou,agnostic,max_det,return_segments)
+        
+        # return empty results if no detection
+        results_dict = collections.defaultdict(list)
+        if not len(results['boxes']):
+            time_info['postproc'] = time.time()-t0
+            return results_dict, time_info
+        
+        # only one image, get first batch
+        boxes = results['boxes'][0]
+        scores = results['scores'][0].tolist()
+        classes = results['classes'][0].tolist()
+
+        # deal with segmentation results
+        if len(results['masks']):
+            masks = results['masks'][0]
+            segs = results['segments'][0]
+            # convert mask to sensor space
+            result_contours = [pipeline_utils.revert_to_origin(seg, operators) for seg in segs]
+            masks = pipeline_utils.revert_masks_to_origin(masks, operators)
+            results_dict['segments'] = result_contours
+            results_dict['masks'] = masks
+        
+        # convert box to sensor space
+        boxes = pipeline_utils.revert_to_origin(boxes, operators)
+        results_dict['boxes'] = boxes
+        results_dict['scores'] = scores
+        results_dict['classes'] = classes
+            
+        time_info['postproc'] = time.time()-t0
+        return results_dict, time_info
+    
