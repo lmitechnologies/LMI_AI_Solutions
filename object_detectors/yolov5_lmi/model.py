@@ -22,6 +22,7 @@ from utils.torch_utils import smart_inference_mode
 
 from od_base import ODBase
 import gadget_utils.pipeline_utils as pipeline_utils
+from yolov8_lmi import Yolov8
 
 
 class Yolov5(ODBase):
@@ -262,3 +263,19 @@ class Yolov5(ODBase):
             
         time_info['postproc'] = time.time()-t0
         return results_dict, time_info
+
+
+    @staticmethod
+    def annotate_image(results, image, colormap=None):
+        """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
+        TODO: text size, thickness, font
+
+        Args:
+            results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
+            image (np.ndarray): the input image
+            colors (list, optional): a dictionary of colormaps, e.g., {'class-A':(0,0,255), 'class-B':(0,255,0)}. Defaults to None.
+
+        Returns:
+            np.ndarray: the annotated image
+        """
+        return Yolov8.annotate_image(results, image, colormap)
