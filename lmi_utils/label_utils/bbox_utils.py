@@ -35,6 +35,31 @@ def convert_from_ls(result):
            w * value['width'] / 100.0, h * value['height'] / 100.0, \
            angle
 
+
+def rescale_oriented_bbox(result, original_size, new_size):
+    bbox = result['value']
+    scale_x = new_size[0] / original_size[0]
+    scale_y = new_size[1] / original_size[1]
+    new_x = bbox["x"] * scale_x
+    new_y = bbox["y"] * scale_y
+    new_width = bbox["width"] * scale_x
+    new_height = bbox["height"] * scale_y
+    return new_x, new_y, new_width, new_height
+def convert_ls_obb_to_yolo(result):
+    cx, cy = result["x"], result["y"]
+    width, height = result["width"], result["height"]
+    angle = np.deg2rad(result["rotation"])
+    half_width, half_height = width / 2, height / 2
+    cos_angle = math.cos(angle)
+    sin_angle = math.sin(angle)
+    corners = []
+    for dx, dy in [(-half_width, -half_height), (-half_width, half_height),
+                   (half_width, half_height), (half_width, -half_height)]:
+        x = cx + (dx * cos_angle - dy * sin_angle)
+        y = cy + (dx * sin_angle + dy * cos_angle)
+        corners += [int(x), int(y)]
+    return corners
+
 def rotate(x,y,w,h,angle=0.0,rot_center='up_left',unit='degree'):
     """rotate the bbox from [x,y,w,h] using the angle to a array of [4,2].
     

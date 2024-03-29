@@ -19,7 +19,10 @@ def fit_image_to_size(input_path, output_path, output_imsize, keep_same_filename
         raise Exception(f'input image folder does not exist: {input_path}')
     
     W,H = output_imsize
-    img_paths = glob.glob(os.path.join(input_path, '*.png'))
+    if os.path.isdir(input_path):
+        img_paths = glob.glob(os.path.join(input_path, '*.png'))
+    else:
+        img_paths = [input_path]
     for path in img_paths:
         im = cv2.imread(path)
         h,w = im.shape[:2]
@@ -34,8 +37,6 @@ def fit_image_to_size(input_path, output_path, output_imsize, keep_same_filename
         output_file=os.path.join(output_path, out_name)
         print(f'[INFO] Output file: {output_file}') 
         cv2.imwrite(output_file,im_out)
-        print()
-    
 
 
 if __name__=="__main__":

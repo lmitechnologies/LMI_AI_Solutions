@@ -4,12 +4,14 @@ import glob
 import logging
 
 #3rd party packages
+
 import cv2
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+                    
 def resize_images(path_imgs, output_imsize, path_out, keep_same_filename=False):
     """
     resize images, while keep the aspect ratio.
@@ -41,8 +43,6 @@ def resize_images(path_imgs, output_imsize, path_out, keep_same_filename=False):
         logger.info(f'writting to {out_name}\n')
         cv2.imwrite(os.path.join(path_out,out_name), im2)
     return
-
-
 
 if __name__=='__main__':
     import argparse
