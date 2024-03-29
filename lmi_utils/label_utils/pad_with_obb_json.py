@@ -3,6 +3,7 @@ import os
 import glob
 import shutil
 import logging
+import json
 
 #3rd party packages
 import cv2
@@ -18,15 +19,12 @@ logger.setLevel(logging.INFO)
 
 
 
-def pad_with_json(json_file_path, image_dir,output_dir, output_imsize, keep_same_filename=True):
+def pad_with_json(path_json, image_dir,output_dir, output_imsize, keep_same_filename=True):
     with open(path_json) as f:    
         l = json.load(f)
     for dt in l:
         # load file name
-        if 'data' not in dt:
-            raise Exception('missing "data" in json file. Ensure that the label studio export format is not JSON-MIN.')
-        f = dt['data']['image'] # image web path
-        fname = os.path.basename(f)
+        fname = dt['data']['image']
         input_path = os.path.join(image_dir,fname)
         
         # pad the image
@@ -37,9 +35,10 @@ def pad_with_json(json_file_path, image_dir,output_dir, output_imsize, keep_same
             num_bbox = len(annot['result'])
             if num_bbox>0:
                 logger.info(f'{num_bbox} annotation(s) in {fname}')
-                
             for result in annot['result']:
                 # rescale the bbox
+                original_size = (result['original_height'], result['original_width']) # h,w
+                new_size = (output_imsize[1], output_imsize[0])
                 new_x, new_y, new_width, new_height = rescale_oriented_bbox(result, original_size, new_size)
                 result["value"]['x'] = new_x
                 result["value"]['y'] = new_y
@@ -78,7 +77,7 @@ if __name__=='__main__':
         os.makedirs(path_out)
 
     #resize images with annotation csv file
-    updated_json = resize_imgs_with_csv(path_json, path_imgs,path_out,output_imsize)
+    updated_json = pad_with_json(path_json, path_imgs,path_out,output_imsize)
     with open(os.path.join(path_out, "labels.json"), 'w') as f:
         json.dump(updated_json, f, indent=4)
     logger.info(f'updated json file saved to: {path_json}')
