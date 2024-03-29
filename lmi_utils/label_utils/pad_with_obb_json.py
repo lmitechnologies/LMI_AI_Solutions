@@ -9,7 +9,7 @@ import json
 import cv2
 
 #LMI packages
-from label_utils.bbox_utils import rescale_oriented_bbox
+from label_utils.bbox_utils import rescale_oriented_bbox, convert_ls_obb_to_yolo, get_lst_bbox_to_xywh
 from image_utils.pad_image import fit_image_to_size
 
 
@@ -24,7 +24,8 @@ def pad_with_json(path_json, image_dir,output_dir, output_imsize, keep_same_file
         l = json.load(f)
     for dt in l:
         # load file name
-        fname = dt['data']['image']
+        fname = dt['data']['image'].split("=")[-1]
+        fname = os.path.basename(fname)
         input_path = os.path.join(image_dir,fname)
         
         # pad the image
@@ -37,15 +38,15 @@ def pad_with_json(path_json, image_dir,output_dir, output_imsize, keep_same_file
                 logger.info(f'{num_bbox} annotation(s) in {fname}')
             for result in annot['result']:
                 # rescale the bbox
-                original_size = (result['original_height'], result['original_width']) # h,w
-                new_size = (output_imsize[1], output_imsize[0])
-                new_x, new_y, new_width, new_height = rescale_oriented_bbox(result, original_size, new_size)
-                result["value"]['x'] = new_x
-                result["value"]['y'] = new_y
-                result["value"]['width'] = new_width
-                result["value"]['height'] = new_height
-            annot['original_width'] = output_imsize[0]
-            annot['original_height'] = output_imsize[1]
+                bbox = result['value']
+                pixel_x, pixel_y, pixel_width, pixel_height = get_lst_bbox_to_xywh(bbox['x'],bbox['y'], bbox['width'],bbox['height'],result['original_width'], result['original_height'])
+                result["value"]['x'] = pixel_x
+                result["value"]['y'] = pixel_y
+                result["value"]['width'] = pixel_width
+                result["value"]['height'] = pixel_height
+                result['original_width'] = output_imsize[0]
+                result['original_height'] = output_imsize[1]
+                result['value']['yolo_obb'] = convert_ls_obb_to_yolo(result)# added yolo obb bbox into the json
     return l
                     
 
@@ -65,7 +66,7 @@ if __name__=='__main__':
     
     path_imgs = args['path_imgs']
     path_out = args['path_out']
-    path_json = args['path_json'] if args['path_json'] !='labels.json' else os.path.join(path_imgs, args['path_json'])
+    path_json = os.path.join(path_imgs, args['path_json'])
     
     #check if annotation exists
     if not os.path.isfile(path_json):

@@ -15,7 +15,7 @@ def fit_image_to_size(input_path, output_path, output_imsize, keep_same_filename
         input_path(str): the input image path
         output_imsize(list): the width and height of the output image
     """
-    if not os.path.isdir(input_path):
+    if not os.path.isdir(input_path) and not os.path.isfile(input_path):
         raise Exception(f'input image folder does not exist: {input_path}')
     
     W,H = output_imsize
