@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+import math
 
 logging.basicConfig()
 
@@ -42,33 +43,33 @@ def get_lst_bbox_to_xywh(x, y, w, h, img_width, img_height):
     pixel_height = h / 100.0 * img_height
     return pixel_x, pixel_y, pixel_width, pixel_height
 
+def lst_to_yolo(original_height, original_width, x,y,width, height, rotation):
+                            
+    base_y = original_height
+    base_x = original_width
 
-def rescale_oriented_bbox(result, original_size, new_size):
-    bbox = result['value']
-    pixel_x, pixel_y, pixel_width, pixel_height = get_lst_bbox_to_xywh(bbox['x'],bbox['y'], bbox['width'],bbox['height'],result['original_width'], result['original_height'])
-    scale_x = new_size[0] / original_size[0]
-    scale_y = new_size[1] / original_size[1]
-    new_x = pixel_x * scale_x
-    new_y = pixel_y * scale_y
-    new_width = pixel_width * scale_x
-    new_height = pixel_height * scale_y
-    return new_x, new_y, new_width, new_height
+    x1=x*base_x
+    y1=y*base_y
+    w=width*base_x
+    h=height*base_y
+    beta = math.pi * (
+        rotation / 180
+    ) if rotation != 0.0 else 0.0
+    # Compute the vectors between points
+    v12 = (w * math.cos(beta), w * math.sin(beta))
+    v23 = (- h*math.sin(beta), h * math.cos(beta))
 
-def convert_ls_obb_to_yolo(result):
-    bbox = result['value']
-    cx, cy = bbox["x"], bbox["y"]
-    width, height = bbox["width"], bbox["height"]
-    angle = np.deg2rad(bbox["rotation"])
-    half_width, half_height = width / 2, height / 2
-    cos_angle = np.cos(angle)
-    sin_angle = np.sin(angle)
-    corners = []
-    for dx, dy in [(-half_width, -half_height), (-half_width, half_height),
-                   (half_width, half_height), (half_width, -half_height)]:
-        x = cx + (dx * cos_angle - dy * sin_angle)
-        y = cy + (dx * sin_angle + dy * cos_angle)
-        corners += [int(x) / result['original_width'], int(y)/ result['original_height']]
-    return corners
+    X = [
+        (x1, y1),
+        (x1 + v12[0], y1 + v12[1]),
+        (x1 + v12[0] + v23[0], y1 + v12[1] + v23[1]),
+        (x1 + v23[0], y1 + v23[1])
+    ]
+
+    X= [
+        (P[0]/base_x/100,  P[1]/base_y/100,) for P in X
+    ]
+    return list(sum(X, ()))
 
 def rotate(x,y,w,h,angle=0.0,rot_center='up_left',unit='degree'):
     """rotate the bbox from [x,y,w,h] using the angle to a array of [4,2].
