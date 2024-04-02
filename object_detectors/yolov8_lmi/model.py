@@ -313,3 +313,91 @@ class Yolov8(ODBase):
                 color=colormap[classes[i]] if colormap is not None else None,
             )
         return image2
+
+
+
+class Yolov8Obb(Yolov8):
+    def __init__(self, weights:str, device='gpu', data=None, fp16=False) -> None:
+        super().__init__(weights, device, data, fp16)
+        self.logger = logging.getLogger(__name__)
+        
+    @smart_inference_mode()
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
+        """Postprocesses predictions and returns a list of Results objects.
+        
+        Args:
+            preds (torch.Tensor | list): Predictions from the model.
+            img (torch.Tensor): the preprocessed image
+            orig_imgs (np.ndarray | list): Original image or list of original images.
+            conf_thres (float | dict): int or dictionary of <class: confidence level>.
+            iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
+            max_det (int): The maximum number of detections to return. defaults to 300.
+            agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
+            return_segments(bool): If True, return the segments of the masks.
+        Rreturns:
+            (dict): the dictionary contains several keys: boxes, scores, classes, masks, and (masks, segments if use a segmentation model).
+                    the shape of boxes is (B, N, 4), where B is the batch size and N is the number of detected objects.
+                    the shape of classes and scores are both (B, N).
+                    the shape of masks: (B, H, W, 3), where H and W are the height and width of the input image.
+        """
+        
+        # check the datatype of the predictions
+        if isinstance(preds, torch.Tensor) != True:
+            self.logger.error(f'Prediction type {type(preds)} not supported')
+            raise TypeError(f'Prediction type {type(preds)} not supported')
+
+        # get min confidence for nms
+        if isinstance(conf, float):
+            conf2 = conf
+        
+        elif isinstance(conf, dict):
+            conf2 = 1
+            class_names = set(self.model.names.values())
+            for k,v in conf.items():
+                if k in class_names:
+                    conf2 = min(conf2, v)
+            if conf2 == 1:
+                self.logger.warning('No class matches in confidence dict, set to 1.0 for all classes.')
+        else:
+            self.logger.error(f'Confidence type {type(conf)} not supported')
+            raise TypeError(f'Confidence type {type(conf)} not supported')
+        
+        # run non-max suppression in xywhr format
+        preds2 = ops.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names), rotated=True)
+        
+        # create a collections dictionary to store the results
+        results = collections.defaultdict(list)
+        
+        for i, pred in enumerate(preds2):
+            orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
+            
+            if not len(pred):  # skip empty boxes
+                continue
+
+            # convert from xywhr to xyxyxyxy
+            bboxs = ops.xywhr2xyxyxyxy(pred[:, :5])
+
+            # get the confidence, class
+            confs, clss = pred[:, -2],pred[:, -1]
+
+            # scaled bounding boxes to original image size
+            bboxs = ops.scale_boxes(img.shape[2:], bboxs, orig_img.shape)
+
+            # get the class names
+            classes = np.array([self.model.names[c.item()] for c in clss])
+            
+            # filter based on conf
+            if isinstance(conf, float):
+                thres = np.array([conf]*len(clss))
+            if isinstance(conf, dict):
+                # set to 1 if c is not in conf
+                thres = np.array([conf.get(c,1) for c in classes])
+            
+            # filter based on confidence
+            M = confs > self.from_numpy(thres)
+            
+            # append the results
+            results['boxes'].append(bboxs[M].cpu().numpy())
+            results['scores'].append(confs[M].cpu().numpy())
+            results['classes'].append(classes[M.cpu().numpy()])
+        return results
