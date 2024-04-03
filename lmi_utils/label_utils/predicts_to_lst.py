@@ -196,8 +196,7 @@ if __name__=="__main__":
     ap.add_argument('--dest', '-o', required=True, help='location results should be put')
     args=ap.parse_args()
 
-    # download_data_from_bucket(args.src)
+    download_data_from_bucket(args.src)
     data_path = Path("./data") / Path(args.src).stem
     files = get_files(data_path)
     convert_to_ls(files, args.dest, args.src)
-    # delete_data()
