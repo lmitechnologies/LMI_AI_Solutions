@@ -4,6 +4,8 @@ import numpy
 from os import listdir, makedirs
 from os.path import isfile, join, isdir
 
+TWO_TO_FIFTEEN=32768
+
 class GadgetSurfaceUtils():
 
     SCHEMA_ID: str = "gadget3d"
@@ -85,33 +87,39 @@ class GadgetSurfaceUtils():
 
             shape = profile.shape
             
-            np_z = numpy.empty(shape[0]*shape[1])
-            np_x = numpy.empty(shape[0]*shape[1])
-            np_y = numpy.empty(shape[0]*shape[1])
-            intensity = numpy.empty((shape[0]*shape[1],3))
-            
+            # np_z = numpy.empty(shape[0]*shape[1])
+            # np_x = numpy.empty(shape[0]*shape[1])
+            # np_y = numpy.empty(shape[0]*shape[1])
+            # intensity = numpy.empty((shape[0]*shape[1],3))
+            np_z=[]
+            np_x=[]
+            np_y=[]
+            intensity=[]
             i = 0
+
             for y in range(shape[0]):
                 for x in range(shape[1]):
-                    np_x[i] = offset[0] + x * resolution[0]
-                    np_y[i] = offset[1] + y * resolution[1]
-                    np_z[i] = offset[2] + profile[y][x] * resolution[2]
-                    if use_intensity:
-                        intensity[i,:]=img_intensity[y][x]/255.0
-                    i += 1
-
-            np_points = numpy.empty((shape[0]*shape[1], 3))
-            np_points[:, 0] = np_x
-            np_points[:, 1] = np_y
-            np_points[:, 2] = np_z
-
+                    if profile[y][x] != -1*TWO_TO_FIFTEEN:
+                        np_x.append(offset[0] + x * resolution[0])
+                        np_y.append(offset[1] + y * resolution[1])
+                        np_z.append(offset[2] + profile[y][x] * resolution[2])
+                        if use_intensity:
+                            intensity.append(img_intensity[y][x]/255.0)
+                        i += 1
+            
+            
+            np_points = numpy.empty((i, 3))
+            np_points[:, 0] = numpy.array(np_x)
+            np_points[:, 1] = numpy.array(np_y)
+            np_points[:, 2] = numpy.array(np_z)
+            np_intensity=numpy.array(intensity)
+            
             pcd = open3d.geometry.PointCloud()
             pcd.points = open3d.utility.Vector3dVector(np_points)
             if use_intensity:
-                pcd.colors = open3d.utility.Vector3dVector(intensity)
+                pcd.colors = open3d.utility.Vector3dVector(np_intensity)
             open3d.io.write_point_cloud(join(destination_path, file.replace(".gadget3d.pickle", ".pcd")), pcd)
     
-    staticmethod
     def tar_2_pcd(self, source_path, destination_path, source_path_intensity=None):
         import open3d
         import tarfile
@@ -151,31 +159,33 @@ class GadgetSurfaceUtils():
 
                 shape = profile.shape
                 
-                np_z = numpy.empty(shape[0]*shape[1])
-                np_x = numpy.empty(shape[0]*shape[1])
-                np_y = numpy.empty(shape[0]*shape[1])
-                intensity = numpy.empty((shape[0]*shape[1],3))
+                np_z=[]
+                np_x=[]
+                np_y=[]
+                intensity=[]
                     
                 i = 0
                 for y in range(shape[0]):
                     for x in range(shape[1]):
-                        np_x[i] = offset[0] + x * resolution[0]
-                        np_y[i] = offset[1] + y * resolution[1]
-                        np_z[i] = offset[2] + profile[y][x] * resolution[2]
-                        if use_intensity:
-                            intensity[i,:]=img_intensity[y][x]/255.0                            
-                        i += 1
+                        if profile[y][x] != -1*TWO_TO_FIFTEEN:
+                            np_x.append(offset[0] + x * resolution[0])
+                            np_y.append(offset[1] + y * resolution[1])
+                            np_z.append(offset[2] + profile[y][x] * resolution[2])
+                            if use_intensity:
+                                intensity.append(img_intensity[y][x]/255.0)
+                            i += 1
 
-                np_points = numpy.empty((shape[0]*shape[1], 3))
-                np_points[:, 0] = np_x
-                np_points[:, 1] = np_y
-                np_points[:, 2] = np_z
-
+                np_points = numpy.empty((i, 3))
+                np_points[:, 0] = numpy.array(np_x)
+                np_points[:, 1] = numpy.array(np_y)
+                np_points[:, 2] = numpy.array(np_z)
+                np_intensity=numpy.array(intensity)
+                
                 pcd = open3d.geometry.PointCloud()
                 pcd.points = open3d.utility.Vector3dVector(np_points)
                 if use_intensity:
-                    pcd.colors = open3d.utility.Vector3dVector(intensity)
-                open3d.io.write_point_cloud(join(dest, file.replace(".gadget3d.tar", ".pcd")), pcd)
+                    pcd.colors = open3d.utility.Vector3dVector(np_intensity)
+                open3d.io.write_point_cloud(join(destination_path, file.replace(".gadget3d.tar", ".pcd")), pcd)
 
 
     def npy_2_pkl(self, source_path, destination_path):
