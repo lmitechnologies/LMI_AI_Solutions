@@ -342,7 +342,7 @@ class Yolov8Obb(Yolov8):
         """
         
         # check the datatype of the predictions
-        if isinstance(preds, torch.Tensor) != True:
+        if isinstance(preds, torch.Tensor) != True and isinstance(preds, list) != True:
             self.logger.error(f'Prediction type {type(preds)} not supported')
             raise TypeError(f'Prediction type {type(preds)} not supported')
 
@@ -380,13 +380,13 @@ class Yolov8Obb(Yolov8):
             # get the confidence, class
             confs, clss = pred[:, -2],pred[:, -1]
 
-            # scaled bounding boxes to original image size
+            # scale the bounding boxes to original image size
             bboxs = ops.scale_boxes(img.shape[2:], bboxs, orig_img.shape)
 
-            # get the class names
+            # get the class names for the predictions
             classes = np.array([self.model.names[c.item()] for c in clss])
             
-            # filter based on conf
+            # filter based on confidence
             if isinstance(conf, float):
                 thres = np.array([conf]*len(clss))
             if isinstance(conf, dict):
@@ -396,7 +396,7 @@ class Yolov8Obb(Yolov8):
             # filter based on confidence
             M = confs > self.from_numpy(thres)
             
-            # append the results
+            # append the results boxes, scores, classes
             results['boxes'].append(bboxs[M].cpu().numpy())
             results['scores'].append(confs[M].cpu().numpy())
             results['classes'].append(classes[M.cpu().numpy()])
