@@ -79,7 +79,8 @@ def copy_files(dir,training,test,convert_to_png,rotate_png_90,make_test):
     if make_test:
         test_path=os.path.join(dir,'test/') 
         os.makedirs(test_path,exist_ok=True)
-
+        
+    print(f'[INFO] Copying {len(training)} files from {dir} to {training_path}')   
     for file in training:
         fname=os.path.split(file)[1]
         if convert_to_png:
