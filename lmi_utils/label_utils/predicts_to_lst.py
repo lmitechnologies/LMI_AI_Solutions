@@ -78,13 +78,15 @@ def get_files(source):
 
 def convert_to_ls(files, destination, bucket):
     """
-    Output: A label.json file and labeling_interface.html file
-    User copies the contents of labeling_interface.html into the Labeling Interface code editor
-    then import label.json
+    Output: A label.json file to be imported in Label Studio
     """
     labels = []
     box_types = set()
     polygon_types = set()
+    found_boxes = False
+    found_polygons = False
+    box_name = 'label'  # label studio tag name for boxes
+    polygon_name = 'label'
     for key in files:
         if 'image' in files[key].keys() and 'labels' in files[key].keys():
             img = Image.open(files[key]['image'])
@@ -106,6 +108,7 @@ def convert_to_ls(files, destination, bucket):
 
                 if 'boxes' in label_json:
                     for boxes in label_json['boxes']:
+                        found_boxes = True
                         box_types.add(boxes['object'])
                         box = {
                             "original_width": width,
@@ -120,7 +123,7 @@ def convert_to_ls(files, destination, bucket):
                                 'rotation': 0,
                                 'rectanglelabels': [boxes['object']]
                             },
-                            'from_name': 'rectangle',
+                            'from_name': box_name,
                             'to_name': 'image',
                             'type': 'rectanglelabels'
                         }
@@ -128,6 +131,10 @@ def convert_to_ls(files, destination, bucket):
                 
                 if 'polygons' in label_json:
                     for polygons in label_json['polygons']:
+                        # found both boxes and polygons, set a different name for the label studio tag
+                        found_polygons = True
+                        if found_boxes:
+                            polygon_name = 'polygon'
                         polygon_types.add(polygons['object'])
                         polygon = {
                             "original_width": width,
@@ -140,7 +147,7 @@ def convert_to_ls(files, destination, bucket):
                                 ],
                                 #'score': 0.5,   #TODO - load score form pipeline
                             },
-                            'from_name': 'polygon',
+                            'from_name': polygon_name,
                             'to_name': 'image',
                             'type': 'polygonlabels'
                         }
@@ -164,14 +171,16 @@ def convert_to_ls(files, destination, bucket):
     labeling_interface = "<View>\n"
     labeling_interface += "  <Header value=\"Select label and click the image to start\"/>\n"
     labeling_interface += "  <Image name=\"image\" value=\"$image\" zoom=\"true\"/>\n"
-    labeling_interface += "  <RectangleLabels name=\"rectangle\" toName=\"image\">\n"
-    for name in box_types:
-        labeling_interface += f"    <Label value=\"{name}\" background=\"green\"/>\n"
-    labeling_interface += "  </RectangleLabels>"
-    labeling_interface += "  <PolygonLabels name=\"polygon\" toName=\"image\" strokeWidth=\"3\" pointSize=\"small\" opacity=\"0.9\">\n"
-    for name in polygon_types:
-        labeling_interface += f"    <Label value=\"{name}\" background=\"blue\"/>\n"
-    labeling_interface += "  </PolygonLabels>\n"
+    if found_boxes:
+        labeling_interface += f"  <RectangleLabels name=\"{box_name}\" toName=\"image\">\n"
+        for name in box_types:
+            labeling_interface += f"    <Label value=\"{name}\" background=\"green\"/>\n"
+        labeling_interface += "  </RectangleLabels>\n"
+    if found_polygons:
+        labeling_interface += f"  <PolygonLabels name=\"{polygon_name}\" toName=\"image\" strokeWidth=\"3\" pointSize=\"small\" opacity=\"0.9\">\n"
+        for name in polygon_types:
+            labeling_interface += f"    <Label value=\"{name}\" background=\"blue\"/>\n"
+        labeling_interface += "  </PolygonLabels>\n"
     labeling_interface += "</View>"
 
     html_path = Path(f"{destination}/labeling_interface.html")
