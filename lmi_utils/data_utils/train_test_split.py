@@ -132,8 +132,3 @@ if __name__=="__main__":
         move_files(args.data_dir,training_list,test_list,args.convert_to_png,args.rotate_png_90,args.make_test_dir)
     else:
         copy_files(args.data_dir,training_list,test_list,args.convert_to_png,args.rotate_png_90,args.make_test_dir)
-
-
-
-
-
