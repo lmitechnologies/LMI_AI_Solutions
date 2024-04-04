@@ -373,19 +373,19 @@ class Yolov8Obb(Yolov8):
             
             if not len(pred):  # skip empty boxes
                 continue
-
-            # convert from xywhr to xyxyxyxy
-            bboxs = ops.xywhr2xyxyxyxy(pred[:, :5])
+            
+            # makes sure to regularize the bounding boxes to xywhr format (range [0, pi/2])
+            bboxs = ops.regularize_rboxes(torch.cat([pred[:, :4], pred[:, -1:]], dim=-1))
+            # scale the bounding boxes to original image size
+            bboxs[:,:4] = ops.scale_boxes(img.shape[2:], bboxs[:, :4], orig_img.shape, xywh=True)
 
             # get the confidence, class
-            confs, clss = pred[:, -2],pred[:, -1]
-
-            # scale the bounding boxes to original image size
-            bboxs = ops.scale_boxes(img.shape[2:], bboxs, orig_img.shape)
-
+            confs, clss = pred[:, 4], pred[:, 5]
             # get the class names for the predictions
             classes = np.array([self.model.names[c.item()] for c in clss])
-            
+        
+            # covert the boxes from xywhr xyxyxyxy format
+            bboxs = ops.xywhr2xyxyxyxy(bboxs)
             # filter based on confidence
             if isinstance(conf, float):
                 thres = np.array([conf]*len(clss))
@@ -401,3 +401,35 @@ class Yolov8Obb(Yolov8):
             results['scores'].append(confs[M].cpu().numpy())
             results['classes'].append(classes[M.cpu().numpy()])
         return results
+    
+    @staticmethod
+    def annotate_image(results, image, colormap=None):
+        """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
+        TODO: text size, thickness, font
+
+        Args:
+            results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
+            image (np.ndarray): the input image
+            colors (list, optional): a dictionary of colormaps, e.g., {'class-A':(0,0,255), 'class-B':(0,255,0)}. Defaults to None.
+
+        Returns:
+            np.ndarray: the annotated image
+        """
+        boxes = results['boxes']
+        classes = results['classes']
+        scores = results['scores']
+
+        image2 = image.copy()
+        if not len(boxes):
+            return image2
+        
+        for i in range(len(boxes)):
+            pipeline_utils.plot_one_rbox(
+                boxes[i],
+                image2,
+                label="{}: {:.2f}".format(
+                    classes[i], scores[i]
+                ),
+                color=colormap[classes[i]] if colormap is not None else None,
+            )
+        return image2

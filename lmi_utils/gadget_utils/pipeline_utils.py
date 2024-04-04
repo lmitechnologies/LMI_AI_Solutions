@@ -105,6 +105,50 @@ def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, labe
         )
 
 
+def plot_one_rbox(box, img, color=None, label=None, line_thickness=None):
+    """
+    description: Plots one bounding rotated bbox on image img
+    param: 
+        box:    a box likes [[x,y],[x,y],[x,y],[x,y]]
+        img:    a opencv image object in BGR format
+        mask:   a binary mask for the box
+        color:  color to draw polygon, such as (0,255,0)
+        label:  str
+        line_thickness: int
+    return:
+        no return
+    """
+    tl = (
+        line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1
+    )  # line/font thickness
+    color = color or [random.randint(0, 255) for _ in range(3)]
+    
+    if isinstance(box, list):
+        box = np.array([x for x in box])
+    
+    cv2.polylines(img, [box], isClosed=True, color=color, thickness=tl)
+
+
+        
+    if label:
+        highest_point = min(box, key=lambda point: point[1])
+        text_position = (highest_point[0], highest_point[1] - 10)
+        
+        if text_position[1] < 0:  # If the text would be outside the image, move it below the lowest point instead
+            lowest_point = max(box, key=lambda point: point[1])
+            text_position = (lowest_point[0], lowest_point[1] + 20)
+        cv2.putText(
+            img,
+            label,
+            text_position,
+            0,
+            tl / 4,
+            [225, 255, 255],
+            thickness=int(tl / 4),
+            lineType=cv2.LINE_AA,
+        )
+
+
 
 def revert_mask_to_origin(mask, operations:list):
     """

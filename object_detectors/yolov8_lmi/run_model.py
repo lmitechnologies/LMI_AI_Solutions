@@ -7,7 +7,7 @@ import torch
 import collections
 
 from yolov8_lmi.model import Yolov8, Yolov8Obb
-from gadget_utils.pipeline_utils import plot_one_box, get_img_path_batches
+from gadget_utils.pipeline_utils import plot_one_rbox, get_img_path_batches
 from label_utils.rect import Rect
 from label_utils.mask import Mask
 from label_utils.csv_utils import write_to_csv
@@ -107,7 +107,10 @@ if __name__ == '__main__':
                     
                     # annotation
                     color = color_map[classes[j]]
-                    plot_one_box(box,im_out,mask,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
+                    if not args.obb:
+                        plot_one_box(box,im_out,mask,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
+                    else:
+                        plot_one_rbox(box,im_out,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
                     if segments and len(segments[j]):
                         seg = segments[j]
                         # convert segments to original image size
