@@ -137,6 +137,9 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None):
         if text_position[1] < 0:  # If the text would be outside the image, move it below the lowest point instead
             lowest_point = max(box, key=lambda point: point[1])
             text_position = (lowest_point[0], lowest_point[1] + 20)
+        tf = max(tl - 1, 1)  # font thickness
+        t_size = cv2.getTextSize(label, 0, fontScale=tl / 4, thickness=tf)[0]
+        cv2.rectangle(img, text_position, (text_position[0] + t_size[0], text_position[1] - t_size[1] - 3), color, -1, cv2.LINE_AA)  # filled
         cv2.putText(
             img,
             label,
@@ -144,10 +147,9 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None):
             0,
             tl / 4,
             [225, 255, 255],
-            thickness=int(tl / 4),
+            thickness=tf,
             lineType=cv2.LINE_AA,
         )
-
 
 
 def revert_mask_to_origin(mask, operations:list):
