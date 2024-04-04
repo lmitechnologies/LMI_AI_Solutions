@@ -27,7 +27,7 @@ if __name__ == '__main__':
     parser.add_argument('--sz', required=True, nargs=2, type=int, help='the model input size, two numbers: h w')
     parser.add_argument('-c','--confidence',default=0.25,type=float,help='[optional] the confidence for all classes, default=0.25')
     parser.add_argument('--csv', action='store_true', help='[optional] whether to save the results to csv file')
-    parse.add_arggument('--obb', action='store_true', help='[optional] whether to run Oriented Bounding Box model')
+    parser.add_argument('--obb', action='store_true', help='[optional] whether to run Oriented Bounding Box model')
     args = parser.parse_args()
     
     logging.basicConfig(level=logging.NOTSET)
