@@ -123,12 +123,13 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None):
     )  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
     
+    if len(box) != 4:
+        raise Exception(f'box should be a list of 4 points, got {len(box)} points')
     if isinstance(box, list):
-        box = np.array([x for x in box])
+        box = np.array(box).astype(np.int32)
+    
     
     cv2.polylines(img, [box], isClosed=True, color=color, thickness=tl)
-
-
         
     if label:
         highest_point = min(box, key=lambda point: point[1])
@@ -137,6 +138,7 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None):
         if text_position[1] < 0:  # If the text would be outside the image, move it below the lowest point instead
             lowest_point = max(box, key=lambda point: point[1])
             text_position = (lowest_point[0], lowest_point[1] + 20)
+        
         tf = max(tl - 1, 1)  # font thickness
         t_size = cv2.getTextSize(label, 0, fontScale=tl / 4, thickness=tf)[0]
         cv2.rectangle(img, text_position, (text_position[0] + t_size[0], text_position[1] - t_size[1] - 3), color, -1, cv2.LINE_AA)  # filled
@@ -218,9 +220,12 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
         if len(pt)==2:
             x,y = pt
             pts2.append(revert(x,y,operations))
-        elif len(pt)==4:
+        elif len(pt)==4 and isinstance(pt, np.ndarray) != True:
             x1,y1,x2,y2 = pt
             pts2.append(revert(x1,y1,operations)+revert(x2,y2,operations))
+        elif len(pt)==4 and isinstance(pt, np.ndarray):
+            for p in pt:
+                pts2.append(revert(p[0],p[1],operations))
         else:
             raise Exception(f'does not support pts neither Nx2 nor Nx4. Got shape: {pt.shape} with val: {pt}')
     return pts2

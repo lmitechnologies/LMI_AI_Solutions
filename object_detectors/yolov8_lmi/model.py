@@ -16,6 +16,7 @@ from od_base import ODBase
 import gadget_utils.pipeline_utils as pipeline_utils
 
 
+
 class Yolov8(ODBase):
     
     logger = logging.getLogger(__name__)
@@ -258,7 +259,7 @@ class Yolov8(ODBase):
         boxes = results['boxes'][0]
         scores = results['scores'][0].tolist()
         classes = results['classes'][0].tolist()
-
+        
         # deal with segmentation results
         if len(results['masks']):
             masks = results['masks'][0]
@@ -296,6 +297,7 @@ class Yolov8(ODBase):
         classes = results['classes']
         scores = results['scores']
         masks = results['masks']
+        
         
         image2 = image.copy()
         if not len(boxes):
@@ -402,6 +404,64 @@ class Yolov8Obb(Yolov8):
             results['classes'].append(classes[M.cpu().numpy()])
         return results
     
+    @smart_inference_mode()
+    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_segments=True):
+        """run yolov8 object detection inference. It runs the preprocess(), forward(), and postprocess() in sequence.
+        It converts the results to the original coordinates space if the operators are provided.
+        
+        Args:
+            model (Yolov8): the object detection model loaded memory
+            image (np.ndarry): the input image
+            configs (dict): a dictionary of the confidence thresholds for each class, e.g., {'classA':0.5, 'classB':0.6}
+            operators (list): a list of dictionaries of the image preprocess operators, such as {'resize':[resized_w, resized_h, orig_w, orig_h]}, {'pad':[pad_left, pad_right, pad_top, pad_bot]}
+            iou (float): the iou threshold for non-maximum suppression. defaults to 0.4
+            agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
+            max_det (int): The maximum number of detections to return. defaults to 300.
+            return_segments(bool): If True, return the segments of the masks.
+
+        Returns:
+            list of [results, time info]
+            results (dict): a dictionary of the results, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
+            time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
+        """
+        time_info = {}
+        
+        # preprocess
+        t0 = time.time()
+        im = self.preprocess(image)
+        time_info['preproc'] = time.time()-t0
+        
+        # infer
+        t0 = time.time()
+        pred = self.forward(im)
+        time_info['proc'] = time.time()-t0
+        
+        # postprocess
+        t0 = time.time()
+        conf_thres = {}
+        for k in configs:
+            conf_thres[k] = configs[k]
+        results = self.postprocess(pred,im,image,conf_thres,iou,agnostic,max_det,return_segments)
+        
+        # return empty results if no detection
+        results_dict = collections.defaultdict(list)
+        if not len(results['boxes']):
+            time_info['postproc'] = time.time()-t0
+            return results_dict, time_info
+        
+        boxes = results['boxes']
+        scores = results['scores'][0].tolist()
+        classes = results['classes'][0].tolist()
+        
+        # convert box to sensor space
+        boxes = [pipeline_utils.revert_to_origin(box, operators) for box in boxes]
+        results_dict['boxes'] = boxes
+        results_dict['scores'] = scores
+        results_dict['classes'] = classes
+            
+        time_info['postproc'] = time.time()-t0
+        return results_dict, time_info
+    
     @staticmethod
     def annotate_image(results, image, colormap=None):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
@@ -423,13 +483,14 @@ class Yolov8Obb(Yolov8):
         if not len(boxes):
             return image2
         
+
+        
         for i in range(len(boxes)):
+            label = "{}: {:.2f}".format(classes[i], scores[i])
             pipeline_utils.plot_one_rbox(
                 boxes[i],
                 image2,
-                label="{}: {:.2f}".format(
-                    classes[i], scores[i]
-                ),
+                label=label,
                 color=colormap[classes[i]] if colormap is not None else None,
             )
         return image2
