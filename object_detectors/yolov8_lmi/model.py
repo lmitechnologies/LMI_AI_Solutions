@@ -345,8 +345,8 @@ class Yolov8Obb(Yolov8):
         
         # check the datatype of the predictions
         if isinstance(preds, torch.Tensor) != True and isinstance(preds, list) != True:
-            self.logger.error(f'Prediction type {type(preds)} not supported')
-            raise TypeError(f'Prediction type {type(preds)} not supported')
+            self.logger.error(f'Prediction type {type(preds)} not supported expected torch.Tensor or list')
+            raise TypeError(f'Prediction type {type(preds)} not supported expected torch.Tensor or list')
 
         # get min confidence for nms
         if isinstance(conf, float):
@@ -449,6 +449,7 @@ class Yolov8Obb(Yolov8):
             time_info['postproc'] = time.time()-t0
             return results_dict, time_info
         
+        # handling only one batch
         boxes = results['boxes']
         scores = results['scores'][0].tolist()
         classes = results['classes'][0].tolist()
@@ -482,8 +483,6 @@ class Yolov8Obb(Yolov8):
         image2 = image.copy()
         if not len(boxes):
             return image2
-        
-
         
         for i in range(len(boxes)):
             label = "{}: {:.2f}".format(classes[i], scores[i])
