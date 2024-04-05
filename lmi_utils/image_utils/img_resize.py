@@ -72,7 +72,7 @@ if __name__=='__main__':
         files=[inpath]
     
     if not os.path.exists(outpath):
-        os.path.makedirs(outpath)
+        os.makedirs(outpath)
     
     for file in files:
         image=cv2.imread(file)
