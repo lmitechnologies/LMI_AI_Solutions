@@ -20,6 +20,7 @@ def fit_image_to_size(input_path, output_path, output_imsize, keep_same_filename
     
     W,H = output_imsize
     img_paths = glob.glob(os.path.join(input_path, '*.png'))
+    img_paths += glob.glob(os.path.join(input_path, '*.jpg'))
     for path in img_paths:
         im = cv2.imread(path)
         h,w = im.shape[:2]
@@ -40,15 +41,15 @@ def fit_image_to_size(input_path, output_path, output_imsize, keep_same_filename
 
 if __name__=="__main__":
     ap=argparse.ArgumentParser(description='Pad or crop images to output size.')
-    ap.add_argument('--path_imgs', required=True, help='the path to the images')
-    ap.add_argument('--path_out', required=True, help='the output path')
-    ap.add_argument('--out_imsz', required=True, help='the output image size [w,h], w and h are separated by a comma')
+    ap.add_argument('--path_imgs', '-i', required=True, help='the path to the images')
+    ap.add_argument('--path_out', '-o', required=True, help='the output path')
+    ap.add_argument('--wh', required=True, help='the output image size [w,h], w and h are separated by a comma')
     ap.add_argument('--keep_same_filename', action='store_true', help='whether use the original filename for the generated')
     args=vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
     output_path=args['path_out']
-    output_imsize = list(map(int,args['out_imsz'].split(',')))
+    output_imsize = list(map(int,args['wh'].split(',')))
     keep_same_filename=args['keep_same_filename']
 
     print(f'output image size: {output_imsize}')

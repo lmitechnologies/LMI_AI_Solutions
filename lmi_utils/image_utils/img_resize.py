@@ -68,14 +68,20 @@ if __name__=='__main__':
 
     if os.path.isdir(inpath):
         files=glob.glob(os.path.join(inpath,'*.png'))
+        files+=glob.glob(os.path.join(inpath,'*.jpg'))
     else:
         files=[inpath]
     
     if not os.path.exists(outpath):
         os.makedirs(outpath)
     
+    out_w = width if width else 'w'
+    out_h = height if height else 'h'
     for file in files:
         image=cv2.imread(file)
         resized=resize(image,width,height)
-        outname=os.path.split(file)[1].replace('.png',f'w{height}xh{width}.png')
+        _,ext = os.path.splitext(file)
+        fname = os.path.basename(file)
+        outname = fname.replace(ext,'.png')
+        outname = outname.replace('.png',f'_resize_{out_w}x{out_h}.png')
         cv2.imwrite(os.path.join(outpath,outname),resized)
