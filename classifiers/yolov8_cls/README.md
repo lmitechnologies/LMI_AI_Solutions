@@ -34,6 +34,7 @@ The folder structure below will be created when we go through the tutorial. By c
 ├── docker-compose_preprocess.yaml
 ├── docker-compose_train.yaml
 ├── docker-compose_val.yaml
+├── docker-compose_predict.yaml
 ├── docker-compose_trt.x86.yaml
 ├── dockerfile
 ├── docker-compose_trt.arm.yaml   # arm system
@@ -61,36 +62,35 @@ RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 ```
 
 ## Prepare the dataset
-In this section, we organize the dataset and prperocess the images.
 ### Dataset Structure
-Organize the dataset directory as follows:
 ```
 ├── data
-│   ├── train
-│   |   ├── class_1
-│   |   ├── class_2
-│   |   ├── ...
-│   |   ├── class_N
-│   ├── val
-│   |   ├── class_1
-│   |   ├── class_2
-│   |   ├── ...
-│   |   ├── class_N
-│   ├── test (optional)
-│   |   ├── class_1
-│   |   ├── class_2
-│   |   ├── ...
-│   |   ├── class_N
+│   ├── raw
+│   │   ├── train
+│   │   |   ├── class_1
+│   │   |   ├── class_2
+│   │   |   ├── ...
+│   │   |   ├── class_N
+│   │   ├── val
+│   │   |   ├── class_1
+│   │   |   ├── class_2
+│   │   |   ├── ...
+│   │   |   ├── class_N
+│   │   ├── test (optional)
+│   │   |   ├── class_1
+│   │   |   ├── class_2
+│   │   |   ├── ...
+│   │   |   ├── class_N
 ```
-Yolo classification models use the subfolder names as the class names. Replace `class_1`, `class_2`, `class_N` with the real class names. 
+Yolo classification models use the subfolder names as the class names. Replace `class_1`, `class_2`, `class_N` with real class names.
 
 ### Create a script for image processing
 Since **YOLO models require the dimensions of images to be dividable by 32**, in this tutorial, we prepare the dataset by the followings:
-- resize images to 224 in height
+- resize images to 224 in height while keep the aspect ratio
 - pad images to 224 in width
 
 
-Create a script `./preprocess/2023-07-19.sh`.
+Create a script `./preprocess/2023-07-19.sh` as follows:
 ```bash
 # import the repo paths
 source /repos/LMI_AI_Solutions/lmi_ai.env
@@ -105,7 +105,7 @@ python -m image_utils.img_pad -i /temp -o /app/out/val --wh 224,224
 ```
 
 ### Create a docker-compose file
-To run the bash script in the container, we need to create a file `./docker-compose_preprocess.yaml`. We mount the location in host to a location in container so that the file/folder changes in container are reflected in host. Below, we mount `./data` in the host to `/app/data` in the container. Also, mount the bash script to `/app/preprocess/preprocess.sh`. 
+To run the script in the container, we need to create a file `./docker-compose_preprocess.yaml`. We mount the location in host to a location in container so that the files/folders changes in container are reflected in host. Below, we mount `./data/raw` in the host to `/app/data` in the container. Also, mount the bash script to `/app/preprocess/preprocess.sh`. 
 ```yaml
 version: "3.9"
 services:
@@ -123,7 +123,7 @@ services:
               count: 1
               capabilities: [gpu]
     volumes:
-      - ./data:/app/data
+      - ./data/raw:/app/data
       - ./data/out:/app/out
       - ./preprocess/2023-07-19.sh:/app/preprocess/preprocess.sh
     command: >
@@ -144,7 +144,7 @@ Once it finishs, the train and val datasets will be created in `./data/out`.
 
 
 ## Train the model
-To train the model, we need to create a hyperparameter yaml file and a docker-compose file.
+To train the model, we need to create a hyperparameter file and a docker-compose file.
 
 ### Create a hyperparameter file
 Crete a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **small-size yolov8 classification model** with the image size of 224x224. If the training images are square, set `rect` to `False`.
@@ -191,7 +191,7 @@ erasing: 0.4 # (float) probability of random erasing during classification train
 ```
 
 ### Create a docker-compose file
-Create a file `./docker-compose_train.yaml`. It mounts the host locations to the required directories in the container and run the script `cmd.py`, which load the hyperparameters and do the task that was specified in the file `./config/2023-07-19_train.yaml`.
+Create a file `./docker-compose_train.yaml`. It mounts the host locations to the required directories in the container and run the script `cmd.py`, which load the hyperparameters and run the task that was specified in the file `./config/2023-07-19_train.yaml`.
 ```yaml
 version: "3.9"
 services:
@@ -326,7 +326,7 @@ Spin up the container as shown in [spin-up-the-container](#spin-up-the-container
 
 
 ## Generate TensorRT engines
-The TensorRT egnines can be generated in two systems: x86 and arm. Both systems share the same hyperparameter file, while the dockerfile and docker-compose file are different.
+The TensorRT egnines can be generated in two systems: x86 and ARM. Both systems share the same hyperparameter file, while the dockerfile and docker-compose file are different.
 
 ### Create a hyperparameter file
 Create a hyperparamter yaml file `./config/2023-07-19_trt.yaml` that works for both systems:
@@ -379,7 +379,7 @@ services:
 Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_trt.x86.yaml`.** Then, the tensorRT engine is generated in `./training/2023-07-19/weights`.
 
 
-### Engine Generation on arm systems
+### Engine Generation on ARM systems
 Create a file `./arm.dockerfile`.
 ```docker
 # jetpack 5.1
