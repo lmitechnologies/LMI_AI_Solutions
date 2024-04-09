@@ -36,7 +36,7 @@ def fit_image_to_size(input_path, output_path, out_wh):
         im_out,_,_,_,_ = fit_array_to_size(im,W,H)
 
         #create output fname
-        out_name = os.path.splitext(im_name)[0] + f'_padded_{W}x{H}.png'
+        out_name = os.path.splitext(im_name)[0] + f'_pad_{W}x{H}.png'
         outp = os.path.join(output_path, os.path.dirname(path))
         if not os.path.isdir(outp):
             os.makedirs(outp)
