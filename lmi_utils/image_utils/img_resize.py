@@ -1,8 +1,15 @@
 import numpy as np
 import cv2
 import os
-import glob
-import shutil
+import logging
+
+from image_utils.classifier_utils import get_im_relative_path
+
+logging.basicConfig()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+
 
 def is_cuda_cv(): # 1 == using cuda, 0 = not using cuda
     try:
@@ -65,12 +72,11 @@ if __name__=='__main__':
     outpath=args['output_path']
     height=args['height']
     width=args['width']
+    
+    if not os.path.isdir(inpath):
+        raise Exception('Input path is not a directory')
 
-    if os.path.isdir(inpath):
-        files=glob.glob(os.path.join(inpath,'*.png'))
-        files+=glob.glob(os.path.join(inpath,'*.jpg'))
-    else:
-        files=[inpath]
+    files = get_im_relative_path(inpath)
     
     if not os.path.exists(outpath):
         os.makedirs(outpath)
@@ -78,10 +84,13 @@ if __name__=='__main__':
     out_w = width if width else 'w'
     out_h = height if height else 'h'
     for file in files:
-        image=cv2.imread(file)
+        image=cv2.imread(os.path.join(inpath,file))
         resized=resize(image,width,height)
-        _,ext = os.path.splitext(file)
+        # change file name
         fname = os.path.basename(file)
-        outname = fname.replace(ext,'.png')
+        outname = fname.replace(os.path.splitext(file)[1],'.png')
         outname = outname.replace('.png',f'_resize_{out_w}x{out_h}.png')
-        cv2.imwrite(os.path.join(outpath,outname),resized)
+        outp = os.path.join(outpath,os.path.dirname(file))
+        if not os.path.exists(outp):
+            os.makedirs(outp)
+        cv2.imwrite(os.path.join(outp,outname),resized)
