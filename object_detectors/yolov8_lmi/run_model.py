@@ -6,8 +6,8 @@ import numpy as np
 import torch
 import collections
 
-from yolov8_lmi.model import Yolov8
-from gadget_utils.pipeline_utils import plot_one_box, get_img_path_batches
+from yolov8_lmi.model import Yolov8, Yolov8Obb
+from gadget_utils.pipeline_utils import plot_one_rbox, get_img_path_batches
 from label_utils.rect import Rect
 from label_utils.mask import Mask
 from label_utils.csv_utils import write_to_csv
@@ -27,11 +27,15 @@ if __name__ == '__main__':
     parser.add_argument('--sz', required=True, nargs=2, type=int, help='the model input size, two numbers: h w')
     parser.add_argument('-c','--confidence',default=0.25,type=float,help='[optional] the confidence for all classes, default=0.25')
     parser.add_argument('--csv', action='store_true', help='[optional] whether to save the results to csv file')
+    parser.add_argument('--obb', action='store_true', help='[optional] whether to run Oriented Bounding Box model')
     args = parser.parse_args()
     
     logging.basicConfig(level=logging.NOTSET)
-    
-    model = Yolov8(args.wts_file)
+    model = None
+    if not args.obb:
+        model = Yolov8(args.wts_file)
+    else:
+        model = Yolov8Obb(args.wts_file)
     logger = logging.getLogger(__name__)
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
@@ -103,7 +107,10 @@ if __name__ == '__main__':
                     
                     # annotation
                     color = color_map[classes[j]]
-                    plot_one_box(box,im_out,mask,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
+                    if not args.obb:
+                        plot_one_box(box,im_out,mask,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
+                    else:
+                        plot_one_rbox(box,im_out,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
                     if segments and len(segments[j]):
                         seg = segments[j]
                         # convert segments to original image size

@@ -16,6 +16,7 @@ from od_base import ODBase
 import gadget_utils.pipeline_utils as pipeline_utils
 
 
+
 class Yolov8(ODBase):
     
     logger = logging.getLogger(__name__)
@@ -258,7 +259,7 @@ class Yolov8(ODBase):
         boxes = results['boxes'][0]
         scores = results['scores'][0].tolist()
         classes = results['classes'][0].tolist()
-
+        
         # deal with segmentation results
         if len(results['masks']):
             masks = results['masks'][0]
@@ -297,6 +298,7 @@ class Yolov8(ODBase):
         scores = results['scores']
         masks = results['masks']
         
+        
         image2 = image.copy()
         if not len(boxes):
             return image2
@@ -310,6 +312,184 @@ class Yolov8(ODBase):
                 label="{}: {:.2f}".format(
                     classes[i], scores[i]
                 ),
+                color=colormap[classes[i]] if colormap is not None else None,
+            )
+        return image2
+
+
+
+class Yolov8Obb(Yolov8):
+    def __init__(self, weights:str, device='gpu', data=None, fp16=False) -> None:
+        super().__init__(weights, device, data, fp16)
+        self.logger = logging.getLogger(__name__)
+        
+    @smart_inference_mode()
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
+        """Postprocesses predictions and returns a list of Results objects.
+        
+        Args:
+            preds (torch.Tensor | list): Predictions from the model.
+            img (torch.Tensor): the preprocessed image
+            orig_imgs (np.ndarray | list): Original image or list of original images.
+            conf_thres (float | dict): int or dictionary of <class: confidence level>.
+            iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
+            max_det (int): The maximum number of detections to return. defaults to 300.
+            agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
+            return_segments(bool): If True, return the segments of the masks.
+        Rreturns:
+            (dict): the dictionary contains several keys: boxes, scores, classes, masks, and (masks, segments if use a segmentation model).
+                    the shape of boxes is (B, N, 4), where B is the batch size and N is the number of detected objects.
+                    the shape of classes and scores are both (B, N).
+                    the shape of masks: (B, H, W, 3), where H and W are the height and width of the input image.
+        """
+        
+        # check the datatype of the predictions
+        if isinstance(preds, torch.Tensor) != True and isinstance(preds, list) != True:
+            self.logger.error(f'Prediction type {type(preds)} not supported expected torch.Tensor or list')
+            raise TypeError(f'Prediction type {type(preds)} not supported expected torch.Tensor or list')
+
+        # get min confidence for nms
+        if isinstance(conf, float):
+            conf2 = conf
+        
+        elif isinstance(conf, dict):
+            conf2 = 1
+            class_names = set(self.model.names.values())
+            for k,v in conf.items():
+                if k in class_names:
+                    conf2 = min(conf2, v)
+            if conf2 == 1:
+                self.logger.warning('No class matches in confidence dict, set to 1.0 for all classes.')
+        else:
+            self.logger.error(f'Confidence type {type(conf)} not supported')
+            raise TypeError(f'Confidence type {type(conf)} not supported')
+        
+        # run non-max suppression in xywhr format
+        preds2 = ops.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names), rotated=True)
+        
+        # create a collections dictionary to store the results
+        results = collections.defaultdict(list)
+        
+        for i, pred in enumerate(preds2):
+            orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
+            
+            if not len(pred):  # skip empty boxes
+                continue
+            
+            # makes sure to regularize the bounding boxes to xywhr format (range [0, pi/2])
+            bboxs = ops.regularize_rboxes(torch.cat([pred[:, :4], pred[:, -1:]], dim=-1))
+            # scale the bounding boxes to original image size
+            bboxs[:,:4] = ops.scale_boxes(img.shape[2:], bboxs[:, :4], orig_img.shape, xywh=True)
+
+            # get the confidence, class
+            confs, clss = pred[:, 4], pred[:, 5]
+            # get the class names for the predictions
+            classes = np.array([self.model.names[c.item()] for c in clss])
+        
+            # covert the boxes from xywhr xyxyxyxy format
+            bboxs = ops.xywhr2xyxyxyxy(bboxs)
+            # filter based on confidence
+            if isinstance(conf, float):
+                thres = np.array([conf]*len(clss))
+            if isinstance(conf, dict):
+                # set to 1 if c is not in conf
+                thres = np.array([conf.get(c,1) for c in classes])
+            
+            # filter based on confidence
+            M = confs > self.from_numpy(thres)
+            
+            # append the results boxes, scores, classes
+            results['boxes'].append(bboxs[M].cpu().numpy())
+            results['scores'].append(confs[M].cpu().numpy())
+            results['classes'].append(classes[M.cpu().numpy()])
+        return results
+    
+    @smart_inference_mode()
+    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_segments=True):
+        """run yolov8 object detection inference. It runs the preprocess(), forward(), and postprocess() in sequence.
+        It converts the results to the original coordinates space if the operators are provided.
+        
+        Args:
+            model (Yolov8): the object detection model loaded memory
+            image (np.ndarry): the input image
+            configs (dict): a dictionary of the confidence thresholds for each class, e.g., {'classA':0.5, 'classB':0.6}
+            operators (list): a list of dictionaries of the image preprocess operators, such as {'resize':[resized_w, resized_h, orig_w, orig_h]}, {'pad':[pad_left, pad_right, pad_top, pad_bot]}
+            iou (float): the iou threshold for non-maximum suppression. defaults to 0.4
+            agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
+            max_det (int): The maximum number of detections to return. defaults to 300.
+            return_segments(bool): If True, return the segments of the masks.
+
+        Returns:
+            list of [results, time info]
+            results (dict): a dictionary of the results, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
+            time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
+        """
+        time_info = {}
+        
+        # preprocess
+        t0 = time.time()
+        im = self.preprocess(image)
+        time_info['preproc'] = time.time()-t0
+        
+        # infer
+        t0 = time.time()
+        pred = self.forward(im)
+        time_info['proc'] = time.time()-t0
+        
+        # postprocess
+        t0 = time.time()
+        conf_thres = {}
+        for k in configs:
+            conf_thres[k] = configs[k]
+        results = self.postprocess(pred,im,image,conf_thres,iou,agnostic,max_det,return_segments)
+        
+        # return empty results if no detection
+        results_dict = collections.defaultdict(list)
+        if not len(results['boxes']):
+            time_info['postproc'] = time.time()-t0
+            return results_dict, time_info
+        
+        # handling only one batch
+        boxes = results['boxes']
+        scores = results['scores'][0].tolist()
+        classes = results['classes'][0].tolist()
+        
+        # convert box to sensor space
+        boxes = [pipeline_utils.revert_to_origin(box, operators) for box in boxes]
+        results_dict['boxes'] = boxes
+        results_dict['scores'] = scores
+        results_dict['classes'] = classes
+            
+        time_info['postproc'] = time.time()-t0
+        return results_dict, time_info
+    
+    @staticmethod
+    def annotate_image(results, image, colormap=None):
+        """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
+        TODO: text size, thickness, font
+
+        Args:
+            results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
+            image (np.ndarray): the input image
+            colors (list, optional): a dictionary of colormaps, e.g., {'class-A':(0,0,255), 'class-B':(0,255,0)}. Defaults to None.
+
+        Returns:
+            np.ndarray: the annotated image
+        """
+        boxes = results['boxes']
+        classes = results['classes']
+        scores = results['scores']
+
+        image2 = image.copy()
+        if not len(boxes):
+            return image2
+        
+        for i in range(len(boxes)):
+            label = "{}: {:.2f}".format(classes[i], scores[i])
+            pipeline_utils.plot_one_rbox(
+                boxes[i],
+                image2,
+                label=label,
                 color=colormap[classes[i]] if colormap is not None else None,
             )
         return image2
