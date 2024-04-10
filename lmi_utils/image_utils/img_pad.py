@@ -14,7 +14,7 @@ logger.setLevel(logging.INFO)
 
 
 
-def fit_image_to_size(input_path, output_path, out_wh):
+def fit_image_to_size(input_path, output_path, out_wh, recursive):
     """
     pad/crop the image to the size [W,H] and modify its annotations accordingly
     arguments:
@@ -25,7 +25,7 @@ def fit_image_to_size(input_path, output_path, out_wh):
         raise Exception(f'input image folder does not exist: {input_path}')
     
     W,H = out_wh
-    img_paths = get_im_relative_path(input_path)
+    img_paths = get_im_relative_path(input_path, recursive)
     for path in img_paths:
         im = cv2.imread(os.path.join(input_path,path))
         h,w = im.shape[:2]
@@ -51,11 +51,13 @@ if __name__=="__main__":
     ap.add_argument('--path_imgs', '-i', required=True, help='the path to the images')
     ap.add_argument('--path_out', '-o', required=True, help='the output path')
     ap.add_argument('--wh', required=True, help='the output image size [w,h], w and h are separated by a comma')
+    ap.add_argument('--recursive', '-r', action='store_true', help='process images recursively')
     args=vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
     out_path = args['path_out']
     out_wh = list(map(int,args['wh'].split(',')))
+    recursive = args['recursive']
 
     logger.info(f'output image size: {out_wh}')
     assert len(out_wh)==2, 'the output image size must be two ints'
@@ -63,4 +65,4 @@ if __name__=="__main__":
     if not os.path.isdir(out_path):
         os.makedirs(out_path)
     
-    fit_image_to_size(path_imgs, out_path, out_wh)
+    fit_image_to_size(path_imgs, out_path, out_wh, recursive)

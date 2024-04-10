@@ -66,17 +66,19 @@ if __name__=='__main__':
     ap.add_argument('-o','--output_path', default='./')
     ap.add_argument('--width', type=int, default=None)
     ap.add_argument('--height',type=int, default=None)
+    ap.add_argument('--recursive', action='store_true', help='process images recursively')
     args = vars(ap.parse_args())
 
     inpath=args['input_path']
     outpath=args['output_path']
     height=args['height']
     width=args['width']
+    recursive=args['recursive']
     
     if not os.path.isdir(inpath):
         raise Exception('Input path is not a directory')
 
-    files = get_im_relative_path(inpath)
+    files = get_im_relative_path(inpath,recursive)
     
     if not os.path.exists(outpath):
         os.makedirs(outpath)
