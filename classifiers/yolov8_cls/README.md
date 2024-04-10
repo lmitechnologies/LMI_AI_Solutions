@@ -96,12 +96,12 @@ Create a script `./preprocess/2023-07-19.sh` as follows:
 source /repos/LMI_AI_Solutions/lmi_ai.env
 
 # preprocess training dataset
-python -m image_utils.img_resize -i /app/data/train -o /temp --height 224
-python -m image_utils.img_pad -i /temp -o /app/out/train --wh 224,224
+python -m image_utils.img_resize -i /app/data/train -o /temp --height 224 --recursive
+python -m image_utils.img_pad -i /temp -o /app/out/train --wh 224,224 --recursive
 
 # preprocess validation dataset
-python -m image_utils.img_resize -i /app/data/val -o /temp --height 224
-python -m image_utils.img_pad -i /temp -o /app/out/val --wh 224,224
+python -m image_utils.img_resize -i /app/data/val -o /temp --height 224 --recursive
+python -m image_utils.img_pad -i /temp -o /app/out/val --wh 224,224 --recursive
 ```
 
 ### Create a docker-compose file

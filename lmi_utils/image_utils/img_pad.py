@@ -51,7 +51,7 @@ if __name__=="__main__":
     ap.add_argument('--path_imgs', '-i', required=True, help='the path to the images')
     ap.add_argument('--path_out', '-o', required=True, help='the output path')
     ap.add_argument('--wh', required=True, help='the output image size [w,h], w and h are separated by a comma')
-    ap.add_argument('--recursive', '-r', action='store_true', help='process images recursively')
+    ap.add_argument('--recursive', action='store_true', help='process images recursively')
     args=vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
