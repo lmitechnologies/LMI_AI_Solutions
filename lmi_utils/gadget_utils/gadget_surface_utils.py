@@ -119,10 +119,7 @@ class GadgetSurfaceUtils():
             offset = content["metadata"]["offset"]
 
             # convert to 3d points
-            if use_intensity:
-                np_points,np_intensity = self.convert_to_xyz(profile, resolution, offset, img_intensity)
-            else:
-                np_points = self.convert_to_xyz(profile, resolution, offset)
+            np_points,np_intensity = self.convert_to_xyz(profile, resolution, offset, img_intensity if use_intensity else None)
             
             pcd = open3d.geometry.PointCloud()
             pcd.points = open3d.utility.Vector3dVector(np_points)
@@ -168,10 +165,7 @@ class GadgetSurfaceUtils():
                 offset = metadata["offset"]
 
                 # convert to 3d points
-                if use_intensity:
-                    np_points,np_intensity = self.convert_to_xyz(profile, resolution, offset, img_intensity)
-                else:
-                    np_points = self.convert_to_xyz(profile, resolution, offset)
+                np_points,np_intensity = self.convert_to_xyz(profile, resolution, offset, img_intensity if use_intensity else None)
                 
                 pcd = open3d.geometry.PointCloud()
                 pcd.points = open3d.utility.Vector3dVector(np_points)
