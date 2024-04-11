@@ -57,6 +57,39 @@ class GadgetSurfaceUtils():
                 except KeyError:
                     continue
                 
+           
+    @staticmethod     
+    def convert_to_xyz(profile, resolution, offset, img_intensity=None):
+        np_z=[]
+        np_x=[]
+        np_y=[]
+        intensity=[]
+        i = 0
+        
+        # convert to int16
+        # the metadata only works with int16
+        if profile.dtype == numpy.uint16:
+            profile = profile.view(numpy.int16) + numpy.int16(-TWO_TO_FIFTEEN)
+
+        shape = profile.shape
+        for y in range(shape[0]):
+            for x in range(shape[1]):
+                if profile[y][x] != -1*TWO_TO_FIFTEEN:
+                    np_x.append(offset[0] + x * resolution[0])
+                    np_y.append(offset[1] + y * resolution[1])
+                    np_z.append(offset[2] + profile[y][x] * resolution[2])
+                    if img_intensity is not None:
+                        intensity.append(img_intensity[y][x]/255.0)
+                    i += 1
+        
+        np_points = numpy.empty((i, 3))
+        np_points[:, 0] = numpy.array(np_x)
+        np_points[:, 1] = numpy.array(np_y)
+        np_points[:, 2] = numpy.array(np_z)
+        np_intensity=numpy.array(intensity)
+        return np_points,np_intensity
+        
+                
     def pkl_2_pcd(self, source_path, destination_path,source_path_intensity=None):
         import open3d
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".gadget3d.pickle" in f]
@@ -85,34 +118,11 @@ class GadgetSurfaceUtils():
             resolution = content["metadata"]["resolution"]
             offset = content["metadata"]["offset"]
 
-            shape = profile.shape
-            
-            # np_z = numpy.empty(shape[0]*shape[1])
-            # np_x = numpy.empty(shape[0]*shape[1])
-            # np_y = numpy.empty(shape[0]*shape[1])
-            # intensity = numpy.empty((shape[0]*shape[1],3))
-            np_z=[]
-            np_x=[]
-            np_y=[]
-            intensity=[]
-            i = 0
-
-            for y in range(shape[0]):
-                for x in range(shape[1]):
-                    if profile[y][x] != -1*TWO_TO_FIFTEEN:
-                        np_x.append(offset[0] + x * resolution[0])
-                        np_y.append(offset[1] + y * resolution[1])
-                        np_z.append(offset[2] + profile[y][x] * resolution[2])
-                        if use_intensity:
-                            intensity.append(img_intensity[y][x]/255.0)
-                        i += 1
-            
-            
-            np_points = numpy.empty((i, 3))
-            np_points[:, 0] = numpy.array(np_x)
-            np_points[:, 1] = numpy.array(np_y)
-            np_points[:, 2] = numpy.array(np_z)
-            np_intensity=numpy.array(intensity)
+            # convert to 3d points
+            if use_intensity:
+                np_points,np_intensity = self.convert_to_xyz(profile, resolution, offset, img_intensity)
+            else:
+                np_points = self.convert_to_xyz(profile, resolution, offset)
             
             pcd = open3d.geometry.PointCloud()
             pcd.points = open3d.utility.Vector3dVector(np_points)
@@ -157,29 +167,11 @@ class GadgetSurfaceUtils():
                 resolution = metadata["resolution"]
                 offset = metadata["offset"]
 
-                shape = profile.shape
-                
-                np_z=[]
-                np_x=[]
-                np_y=[]
-                intensity=[]
-                    
-                i = 0
-                for y in range(shape[0]):
-                    for x in range(shape[1]):
-                        if profile[y][x] != -1*TWO_TO_FIFTEEN:
-                            np_x.append(offset[0] + x * resolution[0])
-                            np_y.append(offset[1] + y * resolution[1])
-                            np_z.append(offset[2] + profile[y][x] * resolution[2])
-                            if use_intensity:
-                                intensity.append(img_intensity[y][x]/255.0)
-                            i += 1
-
-                np_points = numpy.empty((i, 3))
-                np_points[:, 0] = numpy.array(np_x)
-                np_points[:, 1] = numpy.array(np_y)
-                np_points[:, 2] = numpy.array(np_z)
-                np_intensity=numpy.array(intensity)
+                # convert to 3d points
+                if use_intensity:
+                    np_points,np_intensity = self.convert_to_xyz(profile, resolution, offset, img_intensity)
+                else:
+                    np_points = self.convert_to_xyz(profile, resolution, offset)
                 
                 pcd = open3d.geometry.PointCloud()
                 pcd.points = open3d.utility.Vector3dVector(np_points)
