@@ -8,6 +8,7 @@ import glob
 
 from label_utils.csv_utils import write_to_csv
 from label_utils.rect import Rect
+from label_utils.mask import Mask
 from label_utils.bbox_utils import convert_from_ls
 
 logging.basicConfig()
@@ -26,7 +27,7 @@ def get_annotations_from_json(path_json):
     Returns:
         dict: a map <image name, a list of Rect objects>
     """
-    if os.path.splitext(path_json)=='.json':
+    if os.path.splitext(path_json)[1]=='.json':
         json_files=[path_json]
     else:
         json_files=glob.glob(os.path.join(path_json,'*.json'))
@@ -45,23 +46,31 @@ def get_annotations_from_json(path_json):
                 fname = os.path.basename(f)
                 
                 for annot in dt['annotations']:
-                    num_bbox = len(annot['result'])
-                    if num_bbox>0:
+                    
+                    num_labels = len(annot['result'])
+                    if num_labels>0:
                         cnt_image += 1
-                        logger.info(f'{num_bbox} annotation(s) in {fname}')
+                        logger.info(f'{num_labels} annotation(s) in {fname}')       
                     for result in annot['result']:
                         # get label
-                        if len(result['value']['rectanglelabels']) > 1:
-                            raise Exception('each bbox should have one label, but found more than one')
-                        label = result['value']['rectanglelabels'][0]
-                        
-                        # get bbox
-                        x,y,w,h,angle = convert_from_ls(result)
-                        x1,y1,w,h = list(map(int,[x,y,w,h]))
-                        x2,y2 = x1+w-1, y1+h-1
-                        
-                        rect = Rect(im_name=fname, category=label, up_left=[x1,y1], bottom_right=[x2,y2])
-                        annots[fname].append(rect)
+                        result_type=result['type']
+                        if len(result['value'][result_type]) > 1:
+                            raise Exception('Each result should have one label, but found more than one.')
+                        label = result['value'][result_type][0]
+                        if result_type=='rectanglelabels':   
+                            # get bbox
+                            x,y,w,h,angle = convert_from_ls(result)
+                            x1,y1,w,h = list(map(int,[x,y,w,h]))
+                            x2,y2 = x1+w-1, y1+h-1
+                            rect = Rect(im_name=fname, category=label, up_left=[x1,y1], bottom_right=[x2,y2])
+                            annots[fname].append(rect)
+                        if result_type=='polygonlabels':
+                            points=result['value']['points']
+                            points_np=np.array(points)
+                            x_coordinates = (points_np[:, 0]/100*result['original_width']).astype(np.int32)
+                            y_coordinates = (points_np[:, 1]/100*result['original_height']).astype(np.int32)
+                            mask=Mask(im_name=fname,category=label,x_vals=list(x_coordinates),y_vals=list(y_coordinates))
+                            annots[fname].append(mask)
                         cnt += 1
         logger.info(f'{cnt_image} out of {len(l)} images with annotations')
         logger.info(f'total {cnt} annotations')
