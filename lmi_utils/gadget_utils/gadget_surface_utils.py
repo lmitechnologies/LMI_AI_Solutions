@@ -3,6 +3,7 @@ import pickle
 import numpy
 from os import listdir, makedirs
 from os.path import isfile, join, isdir
+import cv2
 
 TWO_TO_FIFTEEN=32768
 
@@ -74,7 +75,7 @@ class GadgetSurfaceUtils():
         shape = profile.shape
         for y in range(shape[0]):
             for x in range(shape[1]):
-                if profile[y][x] != -1*TWO_TO_FIFTEEN:
+                if profile[y][x] != -TWO_TO_FIFTEEN:
                     np_x.append(offset[0] + x * resolution[0])
                     np_y.append(offset[1] + y * resolution[1])
                     np_z.append(offset[2] + profile[y][x] * resolution[2])
@@ -143,7 +144,7 @@ class GadgetSurfaceUtils():
                 dest = join(destination_path  , file.replace(".gadget3d.tar", ""))
                 tar.extractall(dest)
 
-                png = Image.open(join(dest, "profile.png"))
+                png = cv2.imread(join(dest, "profile.png"), cv2.IMREAD_UNCHANGED)
                 if use_intensity:
                     try:
                         fname_intensity=file.replace(".gadget3d.tar", ".gadget2d.jpg")
