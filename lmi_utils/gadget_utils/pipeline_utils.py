@@ -220,13 +220,9 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
         if len(pt)==2:
             x,y = pt
             pts2.append(revert(x,y,operations))
-        elif len(pt)==4 and isinstance(pt, np.ndarray) != True:
+        elif len(pt)==4:
             x1,y1,x2,y2 = pt
             pts2.append(revert(x1,y1,operations)+revert(x2,y2,operations))
-        # handle rotated box format
-        elif len(pt)==4 and isinstance(pt, np.ndarray):
-            for p in pt:
-                pts2.append(revert(p[0],p[1],operations))
         else:
             raise Exception(f'does not support pts neither Nx2 nor Nx4. Got shape: {pt.shape} with val: {pt}')
     return pts2
