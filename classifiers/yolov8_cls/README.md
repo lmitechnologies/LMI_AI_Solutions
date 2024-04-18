@@ -372,7 +372,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/cmd.py
 ```
 
 #### Start generation
@@ -412,7 +412,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # contains a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/cmd.py
 ```
 
 #### Start generation
