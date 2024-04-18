@@ -3,7 +3,7 @@ import cv2
 import os
 import logging
 
-from image_utils.classifier_utils import get_im_relative_path
+from image_utils.classifier_utils import get_relative_paths
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ if __name__=='__main__':
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument('-i','--input_path', required=True, help='the path to images')
-    ap.add_argument('-o','--output_path', default='./')
+    ap.add_argument('-o','--output_path', required=True)
     ap.add_argument('--width', type=int, default=None)
     ap.add_argument('--height',type=int, default=None)
     ap.add_argument('--recursive', action='store_true', help='process images recursively')
@@ -78,7 +78,7 @@ if __name__=='__main__':
     if not os.path.isdir(inpath):
         raise Exception('Input path is not a directory')
 
-    files = get_im_relative_path(inpath,recursive)
+    files = get_relative_paths(inpath,recursive)
     
     if not os.path.exists(outpath):
         os.makedirs(outpath)
@@ -96,3 +96,4 @@ if __name__=='__main__':
         if not os.path.exists(outp):
             os.makedirs(outp)
         cv2.imwrite(os.path.join(outp,outname),resized)
+    logger.info('Done resizing images.')
