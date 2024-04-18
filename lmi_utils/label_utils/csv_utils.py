@@ -87,14 +87,15 @@ def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=Tr
     return shapes, class_map
 
 
-def write_to_csv(shapes:dict, filename:str):
+def write_to_csv(shapes:dict, filename:str, overwrite=True):
     """
     write a dictionary of list of shapes into a csv file
     Arguments:
         shape(dict): a dictionary maps the filename to a list of Mask or Rect objects, i.e., <filename, list of Mask or Rect>
         filename(str): the output csv filename
+        overwrite(bool): whether to overwrite the file if it exists, default is True
     """
-    with open(filename, 'a+') as f:
+    with open(filename, 'a+' if not overwrite else 'w') as f:
         writer = csv.writer(f, delimiter=';')
         for im_name in shapes:
             for shape in shapes[im_name]:

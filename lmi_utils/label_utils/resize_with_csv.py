@@ -87,6 +87,7 @@ if __name__=='__main__':
     ap.add_argument('--out_imsz', required=True, help='the output image size [w,h], w and h are separated by a comma')
     ap.add_argument('--path_out', '-o', required=True, help='the path to resized images')
     ap.add_argument('--bg_images', action='store_true', help='save images with no labels')
+    ap.add_argument('--append', action='store_true', help='append to the existing output csv file')
     args = vars(ap.parse_args())
 
     output_imsize = list(map(int,args['out_imsz'].split(',')))
@@ -110,4 +111,4 @@ if __name__=='__main__':
     shapes = resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, args['bg_images'])
 
     #write csv file
-    csv_utils.write_to_csv(shapes, os.path.join(path_out,'labels.csv'))
+    csv_utils.write_to_csv(shapes, os.path.join(path_out,'labels.csv'), overwrite=not args['append'])
