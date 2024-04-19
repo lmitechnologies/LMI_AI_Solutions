@@ -56,12 +56,15 @@ def get_annotations_from_json(path_json):
                         result_type=result['type']
                         if len(result['value'][result_type]) > 1:
                             raise Exception('Each result should have one label, but found more than one.')
+                        if len(result['value'][result_type]) == 0:
+                            logger.warning(f'found empty class label of a bbox in {fname}, skip')
+                            continue
                         label = result['value'][result_type][0]
                         if result_type=='rectanglelabels':   
                             # get bbox
                             x,y,w,h,angle = convert_from_ls(result)
                             x1,y1,w,h = list(map(int,[x,y,w,h]))
-                            x2,y2 = x1+w-1, y1+h-1
+                            x2,y2 = x1+w, y1+h
                             rect = Rect(im_name=fname, category=label, up_left=[x1,y1], bottom_right=[x2,y2])
                             annots[fname].append(rect)
                         if result_type=='polygonlabels':

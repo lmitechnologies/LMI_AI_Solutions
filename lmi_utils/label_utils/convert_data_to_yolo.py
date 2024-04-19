@@ -43,8 +43,8 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
                 x0,y0 = shape.up_left
                 x2,y2 = shape.bottom_right
                 if not is_seg:
-                    w = x2 - x0 + 1
-                    h = y2 - y0 + 1
+                    w = x2 - x0
+                    h = y2 - y0
                     #get bbox center
                     cx,cy = (x0+x2)/2, (y0+y2)/2
                     # normalize to [0-1]
@@ -68,8 +68,8 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
                     # mask-to-bbox
                     x0,y0 = min(shape.X),min(shape.Y)
                     x2,y2 = max(shape.X),max(shape.Y)
-                    w = x2 - x0 + 1
-                    h = y2 - y0 + 1
+                    w = x2 - x0
+                    h = y2 - y0
                     cx,cy = (x0+x2)/2, (y0+y2)/2
                     row = [class_id, cx/W, cy/H, w/W, h/H]
                     rows.append(row)
