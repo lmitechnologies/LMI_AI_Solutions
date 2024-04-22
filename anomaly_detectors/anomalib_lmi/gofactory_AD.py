@@ -9,6 +9,7 @@ from anomalib_lmi.anomaly_model import AnomalyModel
 
 MAX_UINT16 = 65535
 IMG_FORMATS = ['.png', '.jpg']
+NUM_BINS = 100
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,12 +38,8 @@ def predict(model_path, images_path, out_path, recursive=True):
         return
     
     logger.info(f"Loading engine: {model_path}.")
-    pc = AnomalyModel(model_path)
-    
-    if not os.path.exists(out_path):
-        os.makedirs(out_path)
-
-    pc.warmup()
+    model = AnomalyModel(model_path)
+    model.warmup()
 
     proctime = []
     anom_all,path_all = [],[]
@@ -53,7 +50,7 @@ def predict(model_path, images_path, out_path, recursive=True):
         
         # inference
         t0 = time.time()
-        anom_map = pc.predict(img).astype(np.float32)
+        anom_map = model.predict(img).astype(np.float32)
         proctime.append(time.time() - t0)
         
         anom_all.append(anom_map)
@@ -64,8 +61,7 @@ def predict(model_path, images_path, out_path, recursive=True):
     anom_sq=np.squeeze(np.array(anom_all))
     data=np.ravel(anom_sq)
     global_min,global_max = data.min().item(),data.max().item()
-    bins = [i for i in range(int(global_min),int(global_max)+1)]
-    hist,bin_edges = np.histogram(data, bins=bins, density=True)
+    hist,bin_edges = np.histogram(data, bins=NUM_BINS, density=True)
     logger.info(f"Anomaly score histogram: {hist}")
     logger.info(f"Anomaly score bins: {bin_edges}")
     
@@ -86,10 +82,17 @@ def predict(model_path, images_path, out_path, recursive=True):
         cur_max = anom.max()
         anom = (anom-global_min)/(global_max-global_min)*MAX_UINT16
         anom = anom.astype(np.uint16)
-        fname,_ = os.path.splitext(os.path.basename(path_src))
-        path_anom = os.path.join(out_path,fname+'_anom.png')
+        
+        # write anomaly map
+        ext = os.path.splitext(path_src)[1]
+        relpath = os.path.relpath(path_src, images_path)
+        path_anom = os.path.join(out_path, relpath.replace(ext,'_anom.png'))
+        if not os.path.exists(os.path.dirname(path_anom)):
+            os.makedirs(os.path.dirname(path_anom))
         logger.info(f'write anomaly map to {path_anom}')
         cv2.imwrite(path_anom,anom)
+        
+        # append to out_dict
         cur = {
             'source_image_path': os.path.relpath(path_src, images_path),
             'anomaly_image_path': os.path.relpath(path_anom, out_path),
