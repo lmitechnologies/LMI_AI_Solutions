@@ -159,6 +159,7 @@ class AnomalyModel:
         if not os.path.isdir(target_dir):
             os.makedirs(target_dir)
         convert_cmd = (f'trtexec --onnx={onnx_path} --saveEngine={out_engine_path}'
+                       ' --explicitBatch --inputIOFormats=fp16:chw --outputIOFormats=fp16:chw'
                        f' --workspace={workspace}') + (' --fp16' if fp16 else ' ')
         os.system(convert_cmd)
         os.system(f"cp {os.path.dirname(onnx_path)}/metadata.json {os.path.dirname(out_engine_path)}")
