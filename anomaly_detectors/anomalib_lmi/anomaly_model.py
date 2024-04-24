@@ -158,7 +158,6 @@ class AnomalyModel:
         target_dir = os.path.dirname(out_engine_path)
         if not os.path.isdir(target_dir):
             os.makedirs(target_dir)
-        # ' --explicitBatch --inputIOFormats=fp16:chw --outputIOFormats=fp16:chw'
         convert_cmd = (f'trtexec --onnx={onnx_path} --saveEngine={out_engine_path}'
                        f' --workspace={workspace}') + (' --fp16' if fp16 else ' ')
         os.system(convert_cmd)
@@ -423,7 +422,7 @@ if __name__ == '__main__':
             raise Exception('Cannot find the model file. Need a valid model file to convert.')
         if not os.path.exists(export_dir):
             os.makedirs(export_dir)
-        convert(model_path,export_dir,fp16=False)
+        convert(model_path,export_dir,fp16=True)
 
     if action=='test':
         if not os.path.isfile(model_path):
