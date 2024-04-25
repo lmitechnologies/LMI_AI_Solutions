@@ -90,6 +90,7 @@ if __name__=='__main__':
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     # ap.add_argument('--degree', type=int, default=90, help='the rotation degree, default=90')
     ap.add_argument('--path_out', required=True, help='the path to resized images')
+    ap.add_argument('--append', action='store_true', help='append to the existing output csv file')
     args = vars(ap.parse_args())
 
 
@@ -113,4 +114,4 @@ if __name__=='__main__':
     for im_name in name_to_im:
         logger.info(f'writting to {im_name}')
         cv2.imwrite(os.path.join(path_out,im_name), name_to_im[im_name])
-    csv_utils.write_to_csv(shapes, os.path.join(path_out,'labels.csv'))
+    csv_utils.write_to_csv(shapes, os.path.join(path_out,'labels.csv'), overwrite=not args['append'])

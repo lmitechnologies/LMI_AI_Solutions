@@ -6,6 +6,8 @@ import os
 import glob
 import logging
 
+from label_utils.bbox_utils import rotate
+
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

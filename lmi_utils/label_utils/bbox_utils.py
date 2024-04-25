@@ -2,13 +2,15 @@ import numpy as np
 import logging
 
 logging.basicConfig()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def xyxy_to_xywh(x1,y1,x2,y2):
-    return x1, y1, x2-x1+1, y2-y1+1
+    return x1, y1, x2-x1, y2-y1
     
 def xywh_to_xyxy(x,y,w,h):
-    return x, y, x+w-1, y+h-1
+    return x, y, x+w, y+h
 
 def convert_from_ls(result):
     """convert annotations from label studio format to image pixel coordinate system
@@ -30,7 +32,7 @@ def convert_from_ls(result):
         angle -= 360
         
     if angle>45 or angle<-45:
-        logging.warning(f'found angle of {angle} out of constrains')
+        logger.warning(f'found angle of {angle} out of constrains')
     return w * value['x'] / 100.0, h * value['y'] / 100.0, \
            w * value['width'] / 100.0, h * value['height'] / 100.0, \
            angle

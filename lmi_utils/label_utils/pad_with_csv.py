@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def pad_image_with_csv(input_path, csv_path, output_path, output_imsize, save_bg_images):
+def pad_image_with_csv(input_path, csv_path, output_path, output_imsize, save_bg_images, append_to_csv):
     """
     pad/crop the image to the size [W,H] and modify its annotations accordingly
     arguments:
@@ -78,7 +78,7 @@ def pad_image_with_csv(input_path, csv_path, output_path, output_imsize, save_bg
     if cnt_warnings:
         logger.warning(f'found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
     output_csv = os.path.join(output_path, "labels.csv")
-    write_to_csv(output_shapes, output_csv)
+    write_to_csv(output_shapes, output_csv, overwrite=not append_to_csv)
     
 
 def chop_shapes(shapes, W, H):
@@ -152,6 +152,7 @@ if __name__=="__main__":
     ap.add_argument('--path_out','-o', required=True, help='the output path')
     ap.add_argument('--out_imsz', required=True, help='the output image size [w,h], w and h are separated by a comma')
     ap.add_argument('--bg_images', action='store_true', help='save images with no labels')
+    ap.add_argument('--append', action='store_true', help='append to the existing output csv file')
     args=vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
@@ -167,4 +168,4 @@ if __name__=="__main__":
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     
-    pad_image_with_csv(path_imgs, path_csv, output_path, output_imsize, args['bg_images'])
+    pad_image_with_csv(path_imgs, path_csv, output_path, output_imsize, args['bg_images'], args['append'])
