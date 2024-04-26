@@ -97,7 +97,7 @@ class Yolov8(ODBase):
             raise TypeError(f'Image type {type(im)} not supported')
         
         if im.ndim == 2:
-            im = np.cvtColor(im, cv2.COLOR_GRAY2RGB)
+            im = cv2.cvtColor(im, cv2.COLOR_GRAY2RGB)
 
         im = np.expand_dims(im,axis=0) # HWC -> BHWC
         im = im.transpose((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
