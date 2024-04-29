@@ -20,20 +20,29 @@ def get_relative_paths(inpath, recursive=True, formats=IMG_FORMATS):
     """
     if not isinstance(formats, list):
         raise Exception(f'formats must be a list of strings. But got the type: {type(formats)}')
-    logger.info(f'Search images with these extensions: {formats}')
-    logger.info(f'Search recursively?: {recursive}')
+    
+    logger.info(f'Search files with the following extensions:\n {formats}')
     files = []
     for root, dirs, fs in os.walk(inpath):
-        # break if the root is not the input path
-        if not recursive and os.path.abspath(root) != os.path.abspath(inpath):
-            break
-        
-        relative_path = os.path.relpath(root, inpath)
         cnt = 0
         for file in fs:
             if os.path.splitext(file)[1] in formats:
-                files.append(os.path.join(relative_path, file))
+                files.append(os.path.relpath(os.path.join(root, file), inpath))
                 cnt += 1
-        logger.info(f'Load {cnt} images in {root}')
+        logger.info(f'Load {cnt} files in {root}')
+        
+        if not recursive:
+            break
     return files
     
+    
+if __name__ == '__main__':
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument('-i','--input_path', required=True, help='the path to images')
+    ap.add_argument('--recursive', action='store_true', help='process images recursively')
+    args = ap.parse_args()
+    
+    paths = get_relative_paths(args.input_path,args.recursive)
+    for p in paths:
+        logger.info(f'output path: {p}')

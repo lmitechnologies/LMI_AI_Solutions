@@ -3,7 +3,7 @@ import cv2
 import os
 import logging
 
-from image_utils.classifier_utils import get_relative_paths
+from image_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -59,6 +59,8 @@ def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
 
     return resized
 
+
+
 if __name__=='__main__':
     import argparse
     ap = argparse.ArgumentParser()
@@ -92,8 +94,8 @@ if __name__=='__main__':
         fname = os.path.basename(file)
         outname = fname.replace(os.path.splitext(file)[1],'.png')
         outname = outname.replace('.png',f'_resize_{out_w}x{out_h}.png')
+        logger.info(f'Writing {outname}')
         outp = os.path.join(outpath,os.path.dirname(file))
         if not os.path.exists(outp):
             os.makedirs(outp)
         cv2.imwrite(os.path.join(outp,outname),resized)
-    logger.info('Done resizing images.')
