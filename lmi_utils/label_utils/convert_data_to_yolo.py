@@ -120,10 +120,10 @@ def copy_images_in_folder(path_img, path_out, fnames=None):
 if __name__ =='__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_imgs', required=True, help='the path of a image folder')
+    ap.add_argument('--path_imgs', '-i', required=True, help='the path of a image folder')
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--class_map_json', help='[optinal] the class map json file')
-    ap.add_argument('--path_out', required=True, help='the output path')
+    ap.add_argument('--path_out', '-o', required=True, help='the output path')
     ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')
     ap.add_argument('--seg', action='store_true', help='load labels in segmentation format')
     ap.add_argument('--convert', action='store_true', help='convert label formats: bbox-to-mask if "--seg" is enabled, otherwise mask-to-bbox')
