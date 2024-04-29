@@ -8,6 +8,7 @@ import shutil
 import glob
 import json
 import os
+import yaml
 
 #LMI packages
 from label_utils.csv_utils import load_csv
@@ -176,6 +177,17 @@ if __name__ =='__main__':
     fname = os.path.join(args['path_out'], 'class_map.json')
     with open(fname, 'w') as outfile:
         json.dump(class_to_id, outfile)
+        
+    # write class map yolo yaml
+    with open(os.path.join(args['path_out'], 'dataset.yaml'), 'w') as f:
+        dt = {
+            'path': '/app/data',
+            'train': 'images',
+            'val': 'images',
+            'test': None,
+            'names':{v:k for k,v in class_to_id.items()},
+        }
+        yaml.dump(dt, f, sort_keys=False)
 
     #write labels/annotations
     path_txts = os.path.join(args['path_out'], 'labels')
