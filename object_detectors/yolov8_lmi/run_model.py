@@ -7,7 +7,7 @@ import torch
 import collections
 
 from yolov8_lmi.model import Yolov8, Yolov8Obb
-from gadget_utils.pipeline_utils import plot_one_rbox, get_img_path_batches
+from gadget_utils.pipeline_utils import plot_one_rbox, get_img_path_batches, plot_one_box
 from label_utils.rect import Rect
 from label_utils.mask import Mask
 from label_utils.csv_utils import write_to_csv
