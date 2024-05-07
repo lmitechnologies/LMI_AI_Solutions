@@ -22,7 +22,7 @@ from utils.torch_utils import smart_inference_mode
 
 from od_base import ODBase
 import gadget_utils.pipeline_utils as pipeline_utils
-from yolov8_lmi import Yolov8
+from yolov8_lmi.model import Yolov8
 
 
 class Yolov5(ODBase):
