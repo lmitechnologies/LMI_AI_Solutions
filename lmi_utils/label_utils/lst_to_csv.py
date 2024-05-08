@@ -19,16 +19,18 @@ LABEL_NAME = 'labels.csv'
 PRED_NAME = 'preds.csv'
 
 
-def parse_result(result:dict, fname:str, load_confidence=False):
+
+def lst_to_shape(result:dict, fname:str, load_confidence=False):
     """parse the result from label studio result dict, return a Rect/Mask object
     """
     result_type=result['type']
-    if len(result['value'][result_type]) > 1:
-        raise Exception('Each result should have one label, but found more than one.')
-    if len(result['value'][result_type]) == 0:
-        logger.warning(f'found empty label of a bbox in {fname}, skip')
+    labels = result['value'][result_type]
+    if len(labels) > 1:
+        raise Exception('Not support more than one labels in a bbox/polygon')
+    if len(labels) == 0:
+        logger.warning(f'found empty label in {fname}, skip')
         return
-    label = result['value'][result_type][0]
+    label = labels[0]
     if result_type=='rectanglelabels':   
         # get bbox
         x,y,w,h,angle = convert_from_ls(result)
@@ -54,7 +56,7 @@ def parse_result(result:dict, fname:str, load_confidence=False):
 
 
 def get_annotations_from_json(path_json):
-    """read annotation from label studio json file. Right now, it only supports bounding box annotations
+    """read annotation from label studio json file.
 
     Args:
         path_json (str): the path to a directory of label studio json files
@@ -91,7 +93,7 @@ def get_annotations_from_json(path_json):
                         cnt_image += 1
                         logger.info(f'{num_labels} annotation(s) in {fname}')       
                     for result in annot['result']:
-                        shape = parse_result(result,fname)
+                        shape = lst_to_shape(result,fname)
                         if shape is not None:
                             annots[fname].append(shape)
                             cnt_anno += 1
@@ -102,7 +104,7 @@ def get_annotations_from_json(path_json):
                     if num_labels>0:
                         logger.info(f'{num_labels} prediction(s) in {fname}')       
                     for result in pred['result']:
-                        shape = parse_result(result,fname,load_confidence=True)
+                        shape = lst_to_shape(result,fname,load_confidence=True)
                         if shape is not None:
                             preds[fname].append(shape)
                             cnt_pred += 1
@@ -114,7 +116,7 @@ def get_annotations_from_json(path_json):
 
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser('Note: currently only loads the bboxes!')
+    ap = argparse.ArgumentParser('Convert label studio json file to csv format')
     ap.add_argument('-i', '--path_json', required=True, help='path to the label-studio json file')
     ap.add_argument('-o', '--path_out', required=True, help='output directory')
     args = ap.parse_args()
