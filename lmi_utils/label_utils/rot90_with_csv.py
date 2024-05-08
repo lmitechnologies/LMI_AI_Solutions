@@ -10,6 +10,7 @@ import cv2
 
 #LMI packages
 from label_utils import mask, rect, csv_utils
+from image_utils.path_utils import get_relative_paths
 
 
 logging.basicConfig()
@@ -53,7 +54,7 @@ def rot90_shape(shape,h,w):
         raise Exception("Found unsupported classes. Supported classes are mask and rect")
 
 
-def rot90_imgs_with_csv(path_imgs, path_csv):
+def rot90_imgs_with_csv(path_imgs, path_csv, recursive):
     """
     rotate images and its annotations counterclock 90 degrees.
     Arguments:
@@ -63,13 +64,17 @@ def rot90_imgs_with_csv(path_imgs, path_csv):
         name_to_im(dict): the map <output image name, im>
         shapes(dict): the map <original image name, a list of shape objects>, where shape objects are annotations
     """
-    file_list = glob.glob(os.path.join(path_imgs, '*.png'))
+    paths = get_relative_paths(path_imgs,recursive)
     shapes,_ = csv_utils.load_csv(path_csv, path_img=path_imgs)
     name_to_im = {}
-    for file in file_list:
-        im = cv2.imread(file)
+    for p in paths:
+        im_name = os.path.basename(p)
+        if im_name not in shapes:
+            continue
+
+        p = os.path.join(path_imgs,p)
+        im = cv2.imread(p)
         h,w = im.shape[:2]
-        im_name = os.path.basename(file)
         out_name = os.path.splitext(im_name)[0] + f'_rot90' + '.png'
         
         im2 = np.rot90(im)
@@ -86,24 +91,25 @@ def rot90_imgs_with_csv(path_imgs, path_csv):
 if __name__=='__main__':
     import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_imgs', required=True, help='the path to images')
+    ap.add_argument('--path_imgs', '-i', required=True, help='the path to images')
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
-    # ap.add_argument('--degree', type=int, default=90, help='the rotation degree, default=90')
-    ap.add_argument('--path_out', required=True, help='the path to resized images')
+    ap.add_argument('--path_out', '-o', required=True, help='the path to resized images')
     ap.add_argument('--append', action='store_true', help='append to the existing output csv file')
+    ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = vars(ap.parse_args())
 
 
     path_imgs = args['path_imgs']
     path_out = args['path_out']
     path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
+    recursive = args['recursive']
     
     #check if annotation exists
     if not os.path.isfile(path_csv):
         raise Exception(f'cannot find file: {path_csv}')
 
     #resize images with annotation csv file
-    name_to_im,shapes = rot90_imgs_with_csv(path_imgs, path_csv)
+    name_to_im,shapes = rot90_imgs_with_csv(path_imgs, path_csv, recursive)
 
     # create output path
     assert path_imgs!=path_out, 'input and output path must be different'
