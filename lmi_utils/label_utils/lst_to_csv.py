@@ -79,6 +79,7 @@ def get_annotations_from_json(path_json):
         cnt_anno = 0
         cnt_image = 0
         cnt_pred = 0
+        cnt_wrong = 0
         for dt in l:
             # load file name
             if 'data' not in dt:
@@ -87,16 +88,21 @@ def get_annotations_from_json(path_json):
             fname = os.path.basename(f)
             
             if 'annotations' in dt:
+                cnt = 0
                 for annot in dt['annotations']:
                     num_labels = len(annot['result'])
                     if num_labels>0:
-                        cnt_image += 1
-                        logger.info(f'{num_labels} annotation(s) in {fname}')       
+                        cnt += 1
                     for result in annot['result']:
                         shape = lst_to_shape(result,fname)
                         if shape is not None:
                             annots[fname].append(shape)
                             cnt_anno += 1
+                if cnt>0:
+                    cnt_image += 1
+                if cnt==0 and dt['total_annotations']>0:
+                    cnt_wrong += 1
+                    logger.warning(f'no annotation in {fname}, but total_annotations = {dt["total_annotations"]}')
 
             if 'predictions' in dt:
                 for pred in dt['predictions']:
@@ -109,7 +115,8 @@ def get_annotations_from_json(path_json):
                             preds[fname].append(shape)
                             cnt_pred += 1
 
-        logger.info(f'{cnt_image} out of {len(l)} images with annotations')
+        logger.info(f'{cnt_image} out of {len(l)} images have annotations')
+        logger.info(f'{cnt_wrong} images with total_annotations > 0, but no annotations')
         logger.info(f'total {cnt_anno} annotations')
         logger.info(f'total {cnt_pred} predictions')
     return annots, preds
