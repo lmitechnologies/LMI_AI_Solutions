@@ -95,8 +95,8 @@ def write_to_csv(shapes:dict, filename:str, overwrite=True):
         for im_name in shapes:
             for shape in shapes[im_name]:
                 if isinstance(shape, rect.Rect):
-                    writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'rect', 'upper left'] + shape.up_left + ['angle', f'{shape.angle:.4f}'])
-                    writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'rect', 'lower right'] + shape.bottom_right+ ['angle', f'{shape.angle:.4f}'])
+                    writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'rect', 'upper left'] + shape.up_left + ['angle', f'{shape.angle:.2f}'])
+                    writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'rect', 'lower right'] + shape.bottom_right+ ['angle', f'{shape.angle:.2f}'])
                 elif isinstance(shape, mask.Mask):
                     writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'polygon', 'x values'] + shape.X)
                     writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'polygon', 'y values'] + shape.Y)

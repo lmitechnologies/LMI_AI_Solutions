@@ -98,6 +98,13 @@ def get_annotations_from_json(path_json):
                         if shape is not None:
                             annots[fname].append(shape)
                             cnt_anno += 1
+                            
+                    if 'prediction' in annot:
+                        for result in annot['prediction']['result']:
+                            shape = lst_to_shape(result,fname,load_confidence=True)
+                            if shape is not None:
+                                preds[fname].append(shape)
+                                cnt_pred += 1
                 if cnt>0:
                     cnt_image += 1
                 if cnt==0 and dt['total_annotations']>0:
@@ -106,14 +113,15 @@ def get_annotations_from_json(path_json):
 
             if 'predictions' in dt:
                 for pred in dt['predictions']:
-                    num_labels = len(pred['result'])
-                    if num_labels>0:
-                        logger.info(f'{num_labels} prediction(s) in {fname}')       
-                    for result in pred['result']:
-                        shape = lst_to_shape(result,fname,load_confidence=True)
-                        if shape is not None:
-                            preds[fname].append(shape)
-                            cnt_pred += 1
+                    if isinstance(pred, dict):
+                        num_labels = len(pred['result'])
+                        if num_labels>0:
+                            logger.info(f'{num_labels} prediction(s) in {fname}')       
+                        for result in pred['result']:
+                            shape = lst_to_shape(result,fname,load_confidence=True)
+                            if shape is not None:
+                                preds[fname].append(shape)
+                                cnt_pred += 1
 
         logger.info(f'{cnt_image} out of {len(l)} images have annotations')
         logger.info(f'{cnt_wrong} images with total_annotations > 0, but no annotations')
