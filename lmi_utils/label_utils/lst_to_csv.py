@@ -124,7 +124,7 @@ def get_annotations_from_json(path_json):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser('Convert label studio json file to csv format')
-    ap.add_argument('-i', '--path_json', required=True, help='path to the label-studio json file')
+    ap.add_argument('-i', '--path_json', required=True, help='the directory of label-studio json files')
     ap.add_argument('-o', '--path_out', required=True, help='output directory')
     args = ap.parse_args()
     
