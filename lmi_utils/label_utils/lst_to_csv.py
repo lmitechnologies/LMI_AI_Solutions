@@ -49,7 +49,7 @@ def lst_to_shape(result:dict, fname:str, load_confidence=False):
         conf = 1.0
         if load_confidence:
             conf = result['value']['score']
-        mask=Mask(im_name=fname,category=label,x_vals=list(x_coordinates),y_vals=list(y_coordinates))
+        mask = Mask(im_name=fname,category=label,x_vals=list(x_coordinates),y_vals=list(y_coordinates),confidence=conf)
         return mask
     else:
         logger.warning(f'unsupported result type: {result_type}, skip')
