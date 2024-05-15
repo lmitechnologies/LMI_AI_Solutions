@@ -13,9 +13,10 @@ import os
 from label_utils.csv_utils import load_csv
 from label_utils.mask import Mask
 from label_utils.rect import Rect
+from label_utils.bbox_utils import rotate
 
 
-def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=False, is_convert=False):
+def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=False, is_convert=False, obb=False):
     """
     convert the map <fname, list of shape objects> to YOLO format
     Arguments:
@@ -42,13 +43,24 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
                 #get bbox w,h
                 x0,y0 = shape.up_left
                 x2,y2 = shape.bottom_right
-                if not is_seg:
+                if not is_seg and not obb:
                     w = x2 - x0
                     h = y2 - y0
                     #get bbox center
                     cx,cy = (x0+x2)/2, (y0+y2)/2
                     # normalize to [0-1]
                     row = [class_id, cx/W, cy/H, w/W, h/H]
+                    rows.append(row)
+                elif obb:
+                    # bbox-to-obb
+                    angle = shape.angle
+                    w = x2 - x0
+                    h = y2 - y0
+                    rotated_coords = rotate(x0, y0, w, h, angle, rot_center='up_left', unit='degree')
+                    xyxy = [class_id]
+                    for pt in rotated_coords:
+                        xyxy += [pt[0]/W, pt[1]/H]
+                    row = xyxy
                     rows.append(row)
                 elif is_convert:
                     # bbox-to-mask
@@ -128,6 +140,7 @@ if __name__ =='__main__':
     ap.add_argument('--seg', action='store_true', help='load labels in segmentation format')
     ap.add_argument('--convert', action='store_true', help='convert label formats: bbox-to-mask if "--seg" is enabled, otherwise mask-to-bbox')
     ap.add_argument('--bg_images', action='store_true', help='save images with no labels, where yolo models treat them as background')
+    ap.add_argument('--obb', action='store_true', help='support for oriented bounding box support')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
@@ -166,7 +179,7 @@ if __name__ =='__main__':
         class_to_id[cls] = id
         id += 1
     
-    fname_to_rows = convert_to_txt(fname_to_shapes, class_to_id, target_classes, is_seg, is_convert)
+    fname_to_rows = convert_to_txt(fname_to_shapes, class_to_id, target_classes, is_seg, is_convert, args['obb'])
 
     #generate output yolo dataset
     if not os.path.isdir(args['path_out']):

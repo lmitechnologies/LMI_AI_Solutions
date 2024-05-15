@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+import cv2
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -64,3 +65,30 @@ def rotate(x,y,w,h,angle=0.0,rot_center='up_left',unit='degree'):
             for px, py in points
         ]
     ).astype(int)
+
+def get_rotated_bbox(pts):
+    """get the rotated bbox from the polygon points
+
+    Args:
+        pts(np.ndarray): the polygon points in shape [N,2]
+
+    Returns:
+        array: x,y,w,h,angle
+    """
+    # get the rotated bbox
+    bbox = np.array(pts)
+    c,dim,angle=cv2.minAreaRect(bbox)
+    idx = np.argmin(bbox[:,1])
+    m = np.abs(bbox[:,1]-bbox[idx,1])<=1
+
+    if sum(m)>1:
+        if angle<80:
+            idx2 = np.argmin(bbox[m,0])
+        else:
+            idx2 = np.argmax(bbox[m,0])
+        idx = np.where(m)[0][idx2]
+    bbox2 = np.roll(bbox, -idx, axis=0)
+    x,y = bbox2[0][0], bbox2[0][1]
+    w = dim[0]
+    h = dim[1]
+    return [x,y,w,h,angle]
