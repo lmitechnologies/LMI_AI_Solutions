@@ -187,6 +187,7 @@ if __name__ == '__main__':
 
     if args.path_imgs is None and args.wh is None:
         raise Exception('Provide the path to the images. Or if the images are the same size, provide the width and height')
+    width,height = None,None
     if args.wh is not None:
         wh = args.wh.split(',')
         width = int(wh[0])
