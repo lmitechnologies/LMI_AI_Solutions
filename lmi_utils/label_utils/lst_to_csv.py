@@ -121,7 +121,8 @@ def get_annotations_from_json(path_json):
                                 cnt_pred += 1
 
         logger.info(f'{cnt_image} out of {len(l)} images have annotations')
-        logger.info(f'{cnt_wrong} images with total_annotations > 0, but found 0 annotation')
+        if cnt_wrong>0:
+            logger.info(f'{cnt_wrong} images with total_annotations > 0, but found 0 annotation')
         logger.info(f'total {cnt_anno} annotations')
         logger.info(f'total {cnt_pred} predictions')
     return annots, preds
