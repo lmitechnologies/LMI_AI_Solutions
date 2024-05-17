@@ -187,7 +187,7 @@ copy_paste: 0.0  # (float) segment copy-paste (probability)
 ```
 
 ### Create a docker-compose file
-Create a file `./docker-compose_train.yaml`. It mount the host locations to the required directories in the container and run the script `cmd.py`, which load the hyperparameters and do the task that was specified in the file `./config/2023-07-19_train.yaml`.
+Create a file `./docker-compose_train.yaml`. It mount the host locations to the required directories in the container and run the script `run_cmd.py`, which load the hyperparameters and do the task that was specified in the file `./config/2023-07-19_train.yaml`.
 ```yaml
 version: "3.9"
 services:
@@ -212,14 +212,14 @@ services:
       - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset settings
       - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/run_cmd.py
 
 ```
 Note: Do **NOT** modify the required locations in the container, such as `/app/training`, `/app/data`, `/app/config/dataset.yaml`, `/app/config/hyp.yaml`.
 
 
 ### Start training
-Spin up the docker containers to train the model as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_train.yaml`.** By default, once the training is done, the cmd.py script will create a folder named by today's date in `training` folder, i.e. `training/2023-07-19`.
+Spin up the docker containers to train the model as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_train.yaml`.** By default, once the training is done, the run_cmd.py script will create a folder named by today's date in `training` folder, i.e. `training/2023-07-19`.
 
 ### Monitor the training progress (optional)
 While the training process is running, open another terminal. 
@@ -287,7 +287,7 @@ services:
       - ./data/resized_yolo/images:/app/data  # input data path
       - ./config/2023-07-19_predict.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/run_cmd.py
 
 ```
 
@@ -342,7 +342,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/run_cmd.py
 
 ```
 
@@ -383,7 +383,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # contains a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/run_cmd.py
 ```
 
 #### Start generation
