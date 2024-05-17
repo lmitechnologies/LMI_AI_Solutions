@@ -5,6 +5,8 @@ import yaml
 import os
 from urllib.request import urlretrieve
 
+from yolov8_lmi.run_cmd import check_path_exist, sanity_check, get_model_path, add_configs
+
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -59,56 +61,6 @@ VAL_FOLDER = '/app/validation'
 MODEL_PATH = '/app/trained-inference-models'
 MODEL_NAMES = ['best.engine','best.pt']
 SOURCE_PATH = '/app/data'
-
-
-def check_path_exist(path, is_file:bool):
-    """fail the program if the path does not exist
-
-    Args:
-        path (str): the input path
-        is_file (bool): True if it's a file, False otherwise
-    """
-    if is_file and not os.path.isfile(path):
-        raise Exception(f'Not found file: {path}')
-    if not is_file and not os.path.isdir(path):
-        raise Exception(f'Not found path: {path}')
-    
-    
-def sanity_check(final_configs:dict, check_keys:dict):
-    """check if the value to the check_keys exists. If not, throw exception.
-
-    Args:
-        final_configs (dict): the input configs
-        check_keys (dict): < key_to_be_checked : True if is_file else False >
-    """
-    for k,v in check_keys.items():
-        check_path_exist(final_configs[k],v)
-    
-    
-def get_model_path(path, mode):
-    # if export mode, use 'best.pt'. 
-    # otherwise:
-    #   use 'best.engine' if it exists. otherwise use 'best.pt' 
-    names = MODEL_NAMES[1:] if mode=='export' else MODEL_NAMES
-    for fname in names:
-        p = os.path.join(path, fname)
-        if os.path.isfile(p):
-            logger.info(f'Use the model weights: {p}')
-            return p
-    raise Exception(f'No found weights {MODEL_NAMES} in: {path}')
-
-
-def add_configs(final_configs:dict, configs:dict):
-    """add to configs only if the configs do NOT exist. Modify the final_configs in-place.
-
-    Args:
-        final_configs (dict): the output configs
-        configs (dict): the configs to be added
-    """
-    for k,v in configs.items():
-        if k not in final_configs:
-            logger.info(f'Not found the config: {k}. Use the default: {v}')
-            final_configs[k] = v
 
 
 
