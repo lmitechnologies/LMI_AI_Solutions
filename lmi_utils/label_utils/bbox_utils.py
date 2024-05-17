@@ -27,12 +27,6 @@ def convert_from_ls(result):
     # angle in degree
     angle = value['rotation'] if 'rotation' in value else 0
     
-    # convert angle from anticlockwise to clockwise
-    if angle>180:
-        angle -= 360
-        
-    if angle>45 or angle<-45:
-        logger.warning(f'found angle of {angle} out of constrains')
     return w * value['x'] / 100.0, h * value['y'] / 100.0, \
            w * value['width'] / 100.0, h * value['height'] / 100.0, \
            angle
