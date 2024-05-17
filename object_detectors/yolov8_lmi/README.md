@@ -83,7 +83,7 @@ source /repos/LMI_AI_Solutions/lmi_ai.env
 python -m label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
 
 # resize images with labels
-python -m label_utils.resize_with_csv --path_imgs $input_path --wh $W,$H --path_out /app/data/resized
+python -m label_utils.resize_with_csv --path_imgs $input_path --width $W --height $H --path_out /app/data/resized
 
 # convert to yolo format
 # remote the --seg flag if you want to train a object detection model

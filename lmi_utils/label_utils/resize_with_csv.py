@@ -10,6 +10,7 @@ import cv2
 #LMI packages
 from label_utils import mask, rect, csv_utils
 from image_utils.path_utils import get_relative_paths
+from image_utils.img_resize import resize
 
 
 logging.basicConfig()
@@ -31,8 +32,6 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
     
     shapes,_ = csv_utils.load_csv(path_csv, path_img=path_imgs)
     cnt_bg = 0
-    W,H = output_imsize
-    ratio_out = W/H
     files = get_relative_paths(path_imgs, recursive)
     for f in files:
         im_name = os.path.basename(f)
@@ -48,14 +47,23 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
         else:
             logger.info(f'Input file: {im_name} with size of [{w},{h}]')
         
-        ratio_in = w/h
-        if ratio_in != ratio_out:
-            logger.warning(f'file: {im_name}, asepect ratio changed from {ratio_in} to {ratio_out}')
+        # resize image
+        tw,th = output_imsize
+        if tw is None and th is None:
+            raise Exception('Both width and height cannot be None')
+        elif tw is None:
+            tw = 'w'
+            rx = ry = th/h
+            im2 = resize(im, height=th)
+        elif th is None:
+            th = 'h'
+            rx = ry = tw/w
+            im2 = resize(im, width=tw)
+        else:
+            rx,ry = tw/w, th/h
+            im2 = resize(im, width=tw, height=th)
         
-        rx,ry = W/w, H/h
-        im2 = cv2.resize(im, dsize=tuple(output_imsize))
-        
-        out_name = os.path.splitext(im_name)[0] + f'_resized_{W}x{H}' + '.png'
+        out_name = os.path.splitext(im_name)[0] + f'_resized_{tw}x{th}' + '.png'
         logger.info(f'write to {out_name}')
         cv2.imwrite(os.path.join(path_out,out_name), im2)
         
@@ -83,15 +91,15 @@ if __name__=='__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--path_imgs', '-i', required=True, help='the path to images')
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
-    ap.add_argument('--wh', required=True, help='the output image size [w,h], w and h are separated by a comma')
+    ap.add_argument('--width', type=int, default=None, help='the output image width, default=None')
+    ap.add_argument('--height', type=int, default=None, help='the output image height, default=None')
     ap.add_argument('--path_out', '-o', required=True, help='the path to resized images')
     ap.add_argument('--bg_images', action='store_true', help='save images with no labels')
     ap.add_argument('--append', action='store_true', help='append to the existing output csv file')
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = vars(ap.parse_args())
 
-    output_imsize = list(map(int,args['wh'].split(',')))
-    assert len(output_imsize)==2, 'the output image size must be two ints'
+    output_imsize = [args['width'], args['height']]
     logger.info(f'output image size: {output_imsize}')
     
     path_imgs = args['path_imgs']
