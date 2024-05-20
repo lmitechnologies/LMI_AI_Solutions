@@ -3,6 +3,18 @@ This folder contains the [Anomalib](https://github.com/openvinotoolkit/anomalib)
 - [patchcore](https://arxiv.org/abs/2106.08265)
 - [padim](https://arxiv.org/abs/2011.08785)
 
+## Requirements
+- Nvidia Drivers
+- [Docker Engine](https://docs.docker.com/engine/install/ubuntu/)
+- [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+
+#### Model training
+- X86 system
+- ubuntu OS
+
+#### TensorRT on GoMax
+- JetPack 5.0 or 5.1
+
 ## Usage
 
 This repo is used to train, test, and run anomalib anomaly detector models.
@@ -15,8 +27,6 @@ The current implementation requires the following workflow:
 4. Test tensorRT engine using the histogram method for anomaly threshold selection
 5. Deploy tensorRT engine
 
-Limitations includes:
-1. The current model does not support native torch testing and deployment.  Therefor, there is no easy way to perform the histogram testing for threshold selection.
 
 ## 1. Organize Data
 
@@ -44,7 +54,7 @@ Although test and the ground_truth are optional, it enables the training to gene
         pixel_AUROC          0.9906309843063354
        pixel_F1Score         0.4874393045902252
 ```
-## 2. Train Model
+## 2. Train Model on X86
 
 Basic steps to train an Anomalib model:
 
@@ -53,7 +63,7 @@ Basic steps to train an Anomalib model:
 3. Train model
 4. Validate Model
 
-### 2.1 Initialize/modify dockerfile
+### 2.1 Initialize/modify dockerfile for X86
 
 ```Dockerfile
 FROM nvcr.io/nvidia/pytorch:23.07-py3
@@ -78,7 +88,7 @@ RUN cd LMI_AI_Solutions/anomaly_detectors/submodules/anomalib && pip install -e 
 ```
 
 ### 2.2 Initialize/modify docker-compose.yaml
-
+Install the [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).   
 The following sample yaml file references training data at `./training/2024-02-28` and trains a PaDiM model. The [padim.yaml](https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/anomaly_detectors/anomalib_lmi/configs/padim.yaml) should exist in `./configs`. 
 
 ```yaml
@@ -93,16 +103,9 @@ services:
       - ./configs/:/app/configs/
       - ./training/2024-02-28/:/app/out/
     shm_size: '20gb' 
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     command: >
       python3 /app/LMI_AI_Solutions/anomaly_detectors/submodules/anomalib/tools/train.py
-      --model padim
       --config /app/configs/padim.yaml
 ```
 ### 2.3 Train
@@ -119,11 +122,42 @@ docker compose up
 
 ## 3. Generate TensorRT Engine
 
-1. Initialize/modify docker-compose.yaml
-2. Convert model
+1. Initialize/modify docker file
+   1. dockerfile for X86
+   2. dockferfile for ARM
+2. Initialize/modify docker-compose.yaml
+3. Convert model
 
-### 3.1 Initialize/modify docker-compose.yaml
+### 3.1.1 Initialize/modify docker file for X86
+The same docker file as defined in [2.1 Initialize/modify dockerfile](#21-initializemodify-dockerfile-for-x86).
 
+### 3.1.2 Initialize/modify docker file for ARM
+```dockerfile
+# this works for JetPack 5.0 and 5.1
+FROM nvcr.io/nvidia/l4t-pytorch:r35.2.1-pth2.0-py3
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install git -y
+RUN pip install --upgrade pip
+RUN pip3 install --ignore-installed PyYAML>=5.3.1
+RUN pip3 install opencv-python --user
+
+RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git && cd LMI_AI_Solutions/anomaly_detectors && git submodule update --init submodules/anomalib
+RUN cd LMI_AI_Solutions/anomaly_detectors/submodules/anomalib && pip install -e .
+
+# trtexec
+ENV PATH=$PATH:/usr/src/tensorrt/bin/
+
+RUN pip3 install nvidia-pyindex
+RUN pip3 install onnx-graphsurgeon
+RUN pip3 install pycuda
+
+# downgrade from 1.24.x to 1.23.1 to fix "np.bool` was a deprecated alias for the builtin `bool`"
+RUN pip3 install numpy==1.23.1
+```
+
+### 3.2 Initialize/modify docker-compose file
 ```yaml
 version: "3.9"
 services:
@@ -135,19 +169,12 @@ services:
       - ./training/2024-02-28/results/padim/model/run/weights/onnx/:/app/onnx/
       - ./training/2024-02-28/results/padim/model/run/weights/engine/:/app/engine/
     shm_size: '20gb' 
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    runtime: nvidia
     command: >
       python3 /app/LMI_AI_Solutions/anomaly_detectors/anomalib_lmi/anomaly_model.py 
-      --action convert
-      --engine_file /app/engine/model.engine
+      --action convert -i /app/onnx -e /app/engine
 ```
-### 3.2 Convert model
+### 3.3 Convert model
 1. Build the docker image: 
 ```bash
 docker compose build --no-cache
@@ -177,18 +204,12 @@ services:
       - ./data/train/good:/app/data/
       - ./annotation_results/:/app/annotation_results/
     shm_size: '20gb' 
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    runtime: nvidia
     command: >
       bash -c "
       source /app/LMI_AI_Solutions/lmi_ai.env &&
       python3 /app/LMI_AI_Solutions/anomaly_detectors/anomalib_lmi/anomaly_model.py 
-      --action test --plot --generate_stats -e /app/model/model.engine
+      --action test -i /app/model/model.engine --plot --generate_stats
       "
 ```
 ### 4.2 Validate model

@@ -2,16 +2,16 @@
 This is the tutorial walking through how to train and test YOLOv8 models.
 
 ## System requirements
-- [Docker Engine](https://docs.docker.com/engine/install)
-- [VGG Image Annotator](https://www.robots.ox.ac.uk/~vgg/software/via/)
+- Nvidia Drivers
+- [Docker Engine](https://docs.docker.com/engine/install/ubuntu/)
+- [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 
 ### Model training
-- x86 system
-- CUDA >= 12.1
-- ubuntu
+- X86 system
+- ubuntu OS
 
 ### TensorRT on GoMax
-- JetPack 5.1
+- JetPack 5.0 or 5.1
 
 ## Directory structure
 The folder structure below will be created when we go through the tutorial. By convention, we use today's date (i.e. 2023-07-19) as the file name.

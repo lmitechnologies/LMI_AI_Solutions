@@ -2,12 +2,12 @@
 This is the tutorial how to train and test the yolov5 object detection models.
 
 ## System requirements
+- Nvidia Drivers
 - [Docker Engine](https://docs.docker.com/engine/install)
 - [VGG Image Annotator](https://www.robots.ox.ac.uk/~vgg/software/via/)
 
 ### Model training
-- x86 CPU
-- CUDA >= 12.1
+- x86
 - ubuntu
 
 ### TensorRT on GoMax
