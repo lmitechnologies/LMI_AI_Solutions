@@ -171,8 +171,9 @@ services:
     shm_size: '20gb' 
     runtime: nvidia
     command: >
-      python3 /app/LMI_AI_Solutions/anomaly_detectors/anomalib_lmi/anomaly_model.py 
-      --action convert -i /app/onnx -e /app/engine
+      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
+      python3 -m anomalib_lmi.anomaly_model
+      --action convert -i /app/onnx -e /app/engine"
 ```
 ### 3.3 Convert model
 1. Build the docker image: 
@@ -206,9 +207,8 @@ services:
     shm_size: '20gb' 
     runtime: nvidia
     command: >
-      bash -c "
-      source /app/LMI_AI_Solutions/lmi_ai.env &&
-      python3 /app/LMI_AI_Solutions/anomaly_detectors/anomalib_lmi/anomaly_model.py 
+      bash -c "bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
+      python3 -m anomalib_lmi.anomaly_model
       --action test -i /app/model/model.engine --plot --generate_stats
       "
 ```
