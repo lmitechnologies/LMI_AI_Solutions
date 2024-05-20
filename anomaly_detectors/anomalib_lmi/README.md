@@ -207,10 +207,9 @@ services:
     shm_size: '20gb' 
     runtime: nvidia
     command: >
-      bash -c "bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
+      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
       python3 -m anomalib_lmi.anomaly_model
-      --action test -i /app/model/model.engine --plot --generate_stats
-      "
+      --action test -i /app/model/model.engine --plot --generate_stats"
 ```
 ### 4.2 Validate model
 1. Build the docker image: 
