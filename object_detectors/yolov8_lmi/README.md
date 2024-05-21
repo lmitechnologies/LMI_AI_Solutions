@@ -101,15 +101,10 @@ services:
       context: .
       dockerfile: ./dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     volumes:
-      - ./data:/app/data # format is location_in_host:location_in_container
+      # mount location_in_host:location_in_container
+      - ./data:/app/data
       - ./preprocess/2023-07-19.sh:/app/preprocess/preprocess.sh
     command: >
       bash /app/preprocess/preprocess.sh
@@ -197,13 +192,7 @@ services:
       context: .
       dockerfile: dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    runtime: nvidia
     ports:
       - 6006:6006 # tensorboard
     volumes:
@@ -212,7 +201,8 @@ services:
       - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset settings
       - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/run_cmd.py
+      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env &&
+      python3 -m yolov8_lmi.run_cmd"
 
 ```
 Note: Do **NOT** modify the required locations in the container, such as `/app/training`, `/app/data`, `/app/config/dataset.yaml`, `/app/config/hyp.yaml`.
@@ -274,20 +264,15 @@ services:
       context: .
       dockerfile: dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    runtime: nvidia
     volumes:
       - ./prediction:/app/prediction  # output path
       - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, where it has best.pt
       - ./data/resized_yolo/images:/app/data  # input data path
       - ./config/2023-07-19_predict.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/run_cmd.py
+      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env &&
+      python3 -m yolov8_lmi.run_cmd"
 
 ```
 
@@ -296,10 +281,9 @@ Spin up the container as shown in [spin-up-the-container](#spin-up-the-container
 
 
 ## Generate TensorRT engines
-The TensorRT egnines can be generated in two systems: x86 and arm. Both systems share the same hyperparameter file, while the dockerfile and docker-compose file are different.
+The TensorRT egnines can be generated in two systems: x86 and arm. Both systems share the same hyperparameter file, while the dockerfile and docker-compose files are different.
 
-### Create a hyperparameter file
-Create a hyperparamter yaml file `./config/2023-07-19_trt.yaml` that works for both systems:
+Create a hyperparamter yaml file `./config/2023-07-19_trt.yaml`:
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
 mode: export  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where track, benchmark are NOT tested
@@ -319,9 +303,7 @@ workspace: 4  # (int) TensorRT: workspace size (GB)
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
 
-### Engine Generation on x86 systems
-
-Create a docker-compose file `./docker-compose_trt.x86.yaml`:
+Create a docker-compose file `./docker-compose_trt.yaml`:
 ```yaml
 version: "3.9"
 services:
@@ -331,23 +313,18 @@ services:
       context: .
       dockerfile: dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    runtime: nvidia
     volumes:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/run_cmd.py
-
+      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env &&
+      python3 -m yolov8_lmi.run_cmd"
 ```
 
+### Engine Generation on x86 systems
 #### Start generation
-Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_trt.x86.yaml`.** Then, the tensorRT engine is generated in `./training/2023-07-19/weights`.
+Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_trt.yaml`.** Then, the tensorRT engine is generated in `./training/2023-07-19/weights`.
 
 
 ### Engine Generation on arm systems
@@ -368,23 +345,7 @@ WORKDIR /repos
 RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 ```
 
-Create a file `./docker-compose_trt.arm.yaml`,
-```yaml
-version: "3.9"
-services:
-  yolov8_trt:
-    container_name: yolov8_trt
-    build:
-      context: .
-      dockerfile: arm.dockerfile
-    ipc: host
-    runtime: nvidia
-    volumes:
-      - ./training/2023-07-19/weights:/app/trained-inference-models   # contains a best.pt
-      - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
-    command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov8_lmi/run_cmd.py
-```
+Replace the line `dockerfile: dockerfile` in `./docker-compose_trt.yaml` with `dockerfile: arm.dockerfile`.
 
 #### Start generation
 Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). Ensure to load the `./docker-compose_trt.arm.yaml`. The output engines are saved in `./training/2023-07-19/weights`.

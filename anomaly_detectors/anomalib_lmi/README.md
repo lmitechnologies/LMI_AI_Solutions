@@ -99,6 +99,7 @@ services:
       context: .
       dockerfile: ./dockerfile
     volumes:
+      # mount location_in_host:location_in_container
       - ./data/train/:/app/data/train/
       - ./configs/:/app/configs/
       - ./training/2024-02-28/:/app/out/
@@ -173,7 +174,7 @@ services:
     command: >
       bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
       python3 -m anomalib_lmi.anomaly_model
-      --action convert -i /app/onnx -e /app/engine"
+      --action convert -i /app/onnx/model.onnx -e /app/engine"
 ```
 ### 3.3 Convert model
 1. Build the docker image: 
