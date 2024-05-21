@@ -2,6 +2,7 @@ import os
 import json
 import cv2
 import logging
+import lxml.etree as ET
 
 from label_utils.csv_utils import load_csv
 from label_utils import rect
@@ -88,27 +89,37 @@ def init_label_obj(path_img, is_pred):
 
 
 def write_xml(out_path, box_class, polygon_class):
-    labeling_interface = "<View>\n"
-    labeling_interface += "  <Header value=\"Select label and click the image to start\"/>\n"
-    labeling_interface += "  <Image name=\"image\" value=\"$image\" zoom=\"true\"/>\n"
+    root = ET.Element("View")
+    image = ET.SubElement(root, "Image")
+    image.set("name", "image")
+    image.set("value", "$image")
+    image.set("zoom", "true")
     
     if len(box_class) > 0:
-        labeling_interface += f"  <RectangleLabels name=\"{RECT_NAME}\" toName=\"image\">\n"
+        rect = ET.SubElement(root, "RectangleLabels")
+        rect.set("name", RECT_NAME)
+        rect.set("toName", "image")
         for name in box_class:
-            labeling_interface += f"    <Label value=\"{name}\" background=\"green\"/>\n"
-        labeling_interface += "  </RectangleLabels>"
+            label = ET.SubElement(rect, "Label")
+            label.set("value", name)
+            # label.set("background", "green")
     
     if len(polygon_class) > 0:
-        labeling_interface += f"  <PolygonLabels name=\"{POLYGON_NAME}\" toName=\"image\" strokeWidth=\"3\" pointSize=\"small\" opacity=\"0.9\">\n"
+        polygon = ET.SubElement(root, "PolygonLabels")
+        polygon.set("name", POLYGON_NAME)
+        polygon.set("toName", "image")
+        polygon.set("strokeWidth", "3")
+        polygon.set("pointSize", "small")
+        polygon.set("opacity", "0.9")
         for name in polygon_class:
-            labeling_interface += f"    <Label value=\"{name}\" background=\"blue\"/>\n"
-        labeling_interface += "  </PolygonLabels>\n"
+            label = ET.SubElement(polygon, "Label")
+            label.set("value", name)
+            # label.set("background", "blue")
     
-    labeling_interface += "</View>"
-
+    str = ET.tostring(root, pretty_print=True, encoding='unicode')
     html_path = f"{out_path}/labeling_interface.xml"
     with open(html_path, 'w') as file:
-        file.write(labeling_interface)
+        file.write(str)
 
 
 def write_to_lst(shapes, out_path, images_path, gs_path, width, height, is_pred):
@@ -176,6 +187,7 @@ if __name__ == '__main__':
 
     if args.path_imgs is None and args.wh is None:
         raise Exception('Provide the path to the images. Or if the images are the same size, provide the width and height')
+    width,height = None,None
     if args.wh is not None:
         wh = args.wh.split(',')
         width = int(wh[0])

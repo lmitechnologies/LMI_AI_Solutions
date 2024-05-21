@@ -49,7 +49,7 @@ def lst_to_shape(result:dict, fname:str, load_confidence=False):
         conf = 1.0
         if load_confidence:
             conf = result['value']['score']
-        mask=Mask(im_name=fname,category=label,x_vals=list(x_coordinates),y_vals=list(y_coordinates))
+        mask = Mask(im_name=fname,category=label,x_vals=list(x_coordinates),y_vals=list(y_coordinates),confidence=conf)
         return mask
     else:
         logger.warning(f'unsupported result type: {result_type}, skip')
@@ -98,25 +98,31 @@ def get_annotations_from_json(path_json):
                         if shape is not None:
                             annots[fname].append(shape)
                             cnt_anno += 1
+                            
+                    if 'prediction' in annot:
+                        for result in annot['prediction']['result']:
+                            shape = lst_to_shape(result,fname,load_confidence=True)
+                            if shape is not None:
+                                preds[fname].append(shape)
+                                cnt_pred += 1
                 if cnt>0:
                     cnt_image += 1
                 if cnt==0 and dt['total_annotations']>0:
                     cnt_wrong += 1
-                    logger.warning(f'no annotation in {fname}, but total_annotations = {dt["total_annotations"]}')
+                    logger.warning(f'found 0 annotation in {fname}, but lst claims total_annotations = {dt["total_annotations"]}')
 
             if 'predictions' in dt:
                 for pred in dt['predictions']:
-                    num_labels = len(pred['result'])
-                    if num_labels>0:
-                        logger.info(f'{num_labels} prediction(s) in {fname}')       
-                    for result in pred['result']:
-                        shape = lst_to_shape(result,fname,load_confidence=True)
-                        if shape is not None:
-                            preds[fname].append(shape)
-                            cnt_pred += 1
+                    if isinstance(pred, dict):
+                        for result in pred['result']:
+                            shape = lst_to_shape(result,fname,load_confidence=True)
+                            if shape is not None:
+                                preds[fname].append(shape)
+                                cnt_pred += 1
 
         logger.info(f'{cnt_image} out of {len(l)} images have annotations')
-        logger.info(f'{cnt_wrong} images with total_annotations > 0, but no annotations')
+        if cnt_wrong>0:
+            logger.info(f'{cnt_wrong} images with total_annotations > 0, but found 0 annotation')
         logger.info(f'total {cnt_anno} annotations')
         logger.info(f'total {cnt_pred} predictions')
     return annots, preds
@@ -124,7 +130,7 @@ def get_annotations_from_json(path_json):
 
 if __name__ == '__main__':
     ap = argparse.ArgumentParser('Convert label studio json file to csv format')
-    ap.add_argument('-i', '--path_json', required=True, help='path to the label-studio json file')
+    ap.add_argument('-i', '--path_json', required=True, help='the directory of label-studio json files')
     ap.add_argument('-o', '--path_out', required=True, help='output directory')
     args = ap.parse_args()
     

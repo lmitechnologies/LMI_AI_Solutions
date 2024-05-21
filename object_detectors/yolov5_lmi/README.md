@@ -85,7 +85,7 @@ source /repos/LMI_AI_Solutions/lmi_ai.env
 python -m label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
 
 # resize images with labels
-python -m label_utils.resize_with_csv --path_imgs $input_path --wh $W,$H --path_out /app/data/resized
+python -m label_utils.resize_with_csv --path_imgs $input_path --width $W --height $H --path_out /app/data/resized
 
 # convert to yolo format
 # remote the --seg flag if you want to train a object detection model
@@ -194,7 +194,7 @@ copy_paste: 0.0  # (float) segment copy-paste (probability)
 
 
 ### Create a docker-compose file
-Create a file `./docker-compose_train.yaml`. It mounts the host locations to the required locations in the container and run the script `cmd.py`, which load the hyperparameters and perform the specified task. 
+Create a file `./docker-compose_train.yaml`. It mounts the host locations to the required locations in the container and run the script `run_cmd.py`, which load the hyperparameters and perform the specified task. 
 
 ```yaml
 version: "3.9"
@@ -220,7 +220,7 @@ services:
       - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset info
       - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov5_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/object_detectors/yolov5_lmi/run_cmd.py
 ```
 Note: Do **NOT** modify the required locations in the container, such as `/app/training`, `/app/data`, `/app/config/dataset.yaml`, `/app/config/hyp.yaml`.
 
@@ -294,7 +294,7 @@ services:
       - ./config/2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
       - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # contains class names
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov5_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/object_detectors/yolov5_lmi/run_cmd.py
 ```
 
 
@@ -347,7 +347,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # contains a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov5_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/object_detectors/yolov5_lmi/run_cmd.py
 ```
 
 #### Start Generation
@@ -388,7 +388,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # contains a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/object_detectors/yolov5_lmi/cmd.py
+      python3 /repos/LMI_AI_Solutions/object_detectors/yolov5_lmi/run_cmd.py
 ```
 
 #### Start Generation

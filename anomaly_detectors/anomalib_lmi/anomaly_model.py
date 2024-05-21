@@ -11,6 +11,7 @@ import shutil
 import time
 from datetime import datetime
 import albumentations as A
+import json
 
 
 logging.basicConfig(level=logging.INFO)
@@ -126,7 +127,27 @@ class AnomalyModel:
                 lineType=cv2.LINE_AA)
         
         return decision, annot, details
-
+    
+    
+    def convert_to_onnx(self, export_path, opset_version=11):
+        if self.inference_mode!='PT':
+            raise Exception('Not a pytorch model. Cannot convert to onnx.')
+        
+        # write metadata to export path
+        with open(os.path.join(os.path.dirname(export_path), "metadata.json"), "w", encoding="utf-8") as metadata_file:
+            json.dump(self.pt_metadata, metadata_file, ensure_ascii=False, indent=4)
+        
+        h,w = self.shape_inspection
+        torch.onnx.export(
+            self.pt_model,
+            torch.zeros((1, 3, h, w)).to(self.device),
+            export_path,
+            opset_version=opset_version,
+            input_names=["input"],
+            output_names=["output"],
+        )
+    
+    
     @staticmethod
     def convert_trt(onnx_path, out_engine_path, fp16=True, workspace=4096):
         """
@@ -179,7 +200,7 @@ class AnomalyModel:
 def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs=True,anom_threshold=None,anom_max=None):
     """test trt engine"""
 
-    from ad_utils import plot_fig
+    from anomalib_lmi.ad_utils import plot_fig
     from pathlib import Path
     import time
     from scipy.stats import gamma
@@ -345,9 +366,38 @@ def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs
         # Repeat error table
         logger.info('Threshold options:\n'+tp_print)
 
-def convert(onnx_file, engine_file, fp16=True):
-    # engine_out_path = f'{engine_dir}/model.engine'
-    AnomalyModel.convert_trt(onnx_file, engine_file, fp16)
+
+def convert(model_path, export_path, fp16=True):
+    if os.path.isfile(export_path):
+        raise Exception('Export path should be a directory.')
+    ext = os.path.splitext(model_path)[1]
+    if ext == '.onnx':
+        logger.info('Converting onnx to trt...')
+        trt_path = os.path.join(export_path, 'model.engine')
+        AnomalyModel.convert_trt(model_path, trt_path, fp16)
+    elif ext == '.pt':
+        model = AnomalyModel(model_path)
+        # convert to onnx
+        logger.info('Converting pt to onnx...')
+        onnx_path = os.path.join(export_path, 'model.onnx')
+        model.convert_to_onnx(onnx_path)
+        logger.info(f'the onnx model is saved at {onnx_path}')
+        # # convert to trt
+        logger.info('Converting onnx to trt engine...')
+        trt_path = os.path.join(export_path, 'model.engine')
+        AnomalyModel.convert_trt(onnx_path, trt_path, fp16)
+        
+        # test
+        # import onnxruntime
+        # torch_input = torch.randn(1, 3, model.shape_inspection[0], model.shape_inspection[1]).to(model.device)
+        # onnx_input = torch_input.detach().cpu().numpy()
+        # onnx_sess = onnxruntime.InferenceSession(onnx_path)
+        # onnx_output = onnx_sess.run(None, {'input': onnx_input})[0]
+        # with torch.no_grad():
+        #     pt_output = model.pt_model(torch_input).cpu().numpy()
+        # np.testing.assert_allclose(pt_output, onnx_output, rtol=1e-03, atol=1e-05)
+        # logger.info(f'all good!')
+
 
 if __name__ == '__main__':
     import argparse
@@ -355,8 +405,8 @@ if __name__ == '__main__':
 
     ap = argparse.ArgumentParser()
     ap.add_argument('-a','--action', default="test", help='Action: convert, test')
-    ap.add_argument('-x','--onnx_file', default="/app/onnx/model.onnx", help='Onnx file path.')
-    ap.add_argument('-e','--engine_file', default="/app/padim/model/run/weights/torch/model.pt", help='Engine file path.')
+    ap.add_argument('-i','--model_path', default="/app/model/model.pt", help='Input model file path.')
+    ap.add_argument('-e','--export_dir', default="/app/export")
     ap.add_argument('-d','--data_dir', default="/app/data", help='Data file directory.')
     ap.add_argument('-o','--annot_dir', default="/app/annotation_results", help='Annot file directory.')
     ap.add_argument('-g','--generate_stats', action='store_true',help='generate the data stats')
@@ -366,22 +416,21 @@ if __name__ == '__main__':
 
     args = vars(ap.parse_args())
     action=args['action']
-    onnx_file=args['onnx_file']
-    engine_file=args['engine_file']
+    model_path = args['model_path']
+    export_dir = args['export_dir']
     if action=='convert':
-        if not os.path.isfile(onnx_file):
-            raise Exception('Need a valid onnx file to generate engine.')
-        engine_dir,engine_fname=os.path.split(engine_file)
-        if not os.path.exists(engine_dir):
-            os.makedirs(engine_dir)
-        convert(onnx_file,engine_file,fp16=True)
+        if not os.path.isfile(model_path):
+            raise Exception('Cannot find the model file. Need a valid model file to convert.')
+        if not os.path.exists(export_dir):
+            os.makedirs(export_dir)
+        convert(model_path,export_dir,fp16=True)
 
     if action=='test':
-        if not os.path.isfile(engine_file):
-            raise Exception(f'Error finding {engine_file}. Need a valid engine file to test model.')
+        if not os.path.isfile(model_path):
+            raise Exception(f'Error finding {model_path}. Need a valid model file to test model.')
         if not os.path.exists(args['annot_dir']):
             os.makedirs(args['annot_dir'])
-        test(engine_file, args['data_dir'], 
+        test(model_path, args['data_dir'],
              args['annot_dir'],
              generate_stats=args['generate_stats'],
              annotate_inputs=args['plot'],

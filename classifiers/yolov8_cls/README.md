@@ -191,7 +191,7 @@ erasing: 0.4 # (float) probability of random erasing during classification train
 ```
 
 ### Create a docker-compose file
-Create a file `./docker-compose_train.yaml`. It mounts the host locations to the required directories in the container and run the script `cmd.py`, which load the hyperparameters and run the task that was specified in the file `./config/2023-07-19_train.yaml`.
+Create a file `./docker-compose_train.yaml`. It mounts the host locations to the required directories in the container and run the script `run_cmd.py`, which load the hyperparameters and run the task that was specified in the file `./config/2023-07-19_train.yaml`.
 ```yaml
 version: "3.9"
 services:
@@ -215,7 +215,7 @@ services:
       - ./data/out:/app/dataset  # training data, which should include a "train" subfolder and a "val"/"test" subbfolder
       - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/cmd.py
+      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/run_cmd.py
 
 ```
 Note: Do **NOT** modify the required locations in the container, such as `/app/training`, `/app/data`, `/app/config/dataset.yaml`, `/app/config/hyp.yaml`.
@@ -276,7 +276,7 @@ services:
       - ./data/out:/app/dataset  # input data path
       - ./config/2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/cmd.py
+      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/run_cmd.py
 
 ```
 
@@ -318,7 +318,7 @@ services:
       - ./data/out/test/distil:/app/data  # input data path
       - ./config/2023-07-19_test.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/cmd.py
+      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/run_cmd.py
 ```
 
 ### Start prediction
@@ -372,7 +372,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/cmd.py
+      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/run_cmd.py
 ```
 
 #### Start generation
@@ -412,7 +412,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # contains a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/cmd.py
+      python3 /repos/LMI_AI_Solutions/classifiers/yolov8_cls/run_cmd.py
 ```
 
 #### Start generation
