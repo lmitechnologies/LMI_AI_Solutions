@@ -9,6 +9,7 @@ import glob
 from label_utils.csv_utils import write_to_csv
 from label_utils.rect import Rect
 from label_utils.mask import Mask
+from label_utils.keypoint import Keypoint
 from label_utils.bbox_utils import convert_from_ls
 
 logging.basicConfig()
@@ -51,6 +52,14 @@ def lst_to_shape(result:dict, fname:str, load_confidence=False):
             conf = result['value']['score']
         mask = Mask(im_name=fname,category=label,x_vals=list(x_coordinates),y_vals=list(y_coordinates),confidence=conf)
         return mask
+    elif result_type=='keypointlabels':
+        dt = result['value']
+        x,y = dt['x']/100*result['original_width'],dt['y']/100*result['original_height']
+        conf = 1.0
+        if load_confidence:
+            conf = dt['score']
+        kp = Keypoint(im_name=fname,category=label,x=x,y=y,confidence=conf)
+        return kp
     else:
         logger.warning(f'unsupported result type: {result_type}, skip')
 
@@ -99,7 +108,7 @@ def get_annotations_from_json(path_json):
                             annots[fname].append(shape)
                             cnt_anno += 1
                             
-                    if 'prediction' in annot:
+                    if 'prediction' in annot and 'result' in annot['prediction']:
                         for result in annot['prediction']['result']:
                             shape = lst_to_shape(result,fname,load_confidence=True)
                             if shape is not None:

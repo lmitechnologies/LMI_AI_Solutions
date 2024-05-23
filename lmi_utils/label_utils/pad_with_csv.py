@@ -5,7 +5,7 @@ import numpy as np
 import logging
 
 #LMI packages
-from label_utils import rect, mask
+from label_utils import rect, mask, keypoint
 from label_utils.csv_utils import load_csv, write_to_csv
 from gadget_utils.pipeline_utils import fit_array_to_size
 from image_utils.path_utils import get_relative_paths
@@ -90,8 +90,8 @@ def chop_shapes(shapes, W, H):
         if isinstance(shape, rect.Rect):
             box = np.array(shape.up_left+shape.bottom_right)
             new_box = np.clip(box, a_min=0, a_max=[W,H,W,H])
-            shapes[i].up_left = new_box[:2].tolist()
-            shapes[i].bottom_right = new_box[2:].tolist()
+            shapes[i].up_left = new_box[:2]
+            shapes[i].bottom_right = new_box[2:]
             if np.all(new_box==0) or new_box[0]==new_box[2] or new_box[1]==new_box[3]:
                 is_del = 1
                 logger.warning(f'bbox {box} is outside of the size [{W},{H}]')
@@ -103,7 +103,7 @@ def chop_shapes(shapes, W, H):
             X,Y = np.array(shape.X), np.array(shape.Y)
             new_X = np.clip(X, a_min=0, a_max=W)
             new_Y = np.clip(Y, a_min=0, a_max=H)
-            shapes[i].X,shapes[i].Y = new_X.tolist(),new_Y.tolist()
+            shapes[i].X,shapes[i].Y = new_X,new_Y
             if np.all(new_X==W) or np.all(new_Y==H) or np.all(new_X==0) or np.all(new_Y==0):
                 is_del = 1
                 logger.warning(f'polygon {[(x,y) for x,y in zip(new_X,new_Y)]} is outside of the size [{W},{H}]')
@@ -111,6 +111,11 @@ def chop_shapes(shapes, W, H):
                 or (np.any(new_X==0) and np.all(X!=0)) or (np.any(new_Y==0) and np.all(Y!=0)):
                 logger.warning(f'polygon {[(x,y) for x,y in zip(new_X,new_Y)]} is chopped to fit the size [{W}, {H}]')
                 is_warning = True
+        elif isinstance(shape, keypoint.Keypoint):
+            x,y = shape.x, shape.y
+            if x<0 or x>W or y<0 or y>H:
+                is_del = 1
+                logger.warning(f'keypoint ({x},{y}) is outside of the size [{W},{H}]')
         if is_del:
             is_warning = True
             to_del.append(i)
@@ -137,6 +142,9 @@ def fit_shapes_to_size(shapes, pad_l, pad_t):
         elif isinstance(shape, mask.Mask):
             shape.X = [v+pad_l for v in shape.X]
             shape.Y = [v+pad_t for v in shape.Y]
+        elif isinstance(shape, keypoint.Keypoint):
+            shape.x += pad_l
+            shape.y += pad_t
     return shapes
     
 

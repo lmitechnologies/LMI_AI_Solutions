@@ -9,12 +9,19 @@ import glob
 import json
 import os
 import yaml
+import logging
 
 #LMI packages
 from label_utils.csv_utils import load_csv
 from label_utils.mask import Mask
 from label_utils.rect import Rect
+from label_utils.keypoint import Keypoint
 from label_utils.bbox_utils import rotate
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=False, is_convert=False, obb=False):
@@ -32,7 +39,9 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
     for fname in fname_to_shapes:
         shapes = fname_to_shapes[fname]
         rows = []
+        kps = []
         for shape in shapes:
+            logger.info(f'{shape.im_name}')
             #get class ID
             if shape.category not in target_classes:
                 continue
@@ -86,8 +95,27 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
                     cx,cy = (x0+x2)/2, (y0+y2)/2
                     row = [class_id, cx/W, cy/H, w/W, h/H]
                     rows.append(row)
+            elif isinstance(shape, Keypoint):
+                x,y = shape.x, shape.y
+                row = [x/W, y/H]
+                kps.append(row)
+                
+        # assign keypoint to bbox
+        new_rows = []
+        for kp in kps:
+            x,y = kp
+            for i,row in enumerate(rows):
+                if len(row)!=5:
+                    logging.warning(f'key point can only be assign to a bbox, but got {len(row)} values in a row. Skip it.')
+                    continue
+                xc,yc,w,h = row[1:]
+                x1,y1 = xc-w/2, yc-h/2
+                x2,y2 = xc+w/2, yc+h/2
+                if x1<=x<=x2 and y1<=y<=y2:
+                    new_rows += [row+kp]
+                    
         txt_name = fname.replace('.png','.txt').replace('.jpg','.txt')
-        fname_to_rows[txt_name] = rows
+        fname_to_rows[txt_name] = new_rows if len(kps) else rows
     return fname_to_rows
 
 
@@ -101,7 +129,6 @@ def write_txts(fname_to_rows, path_txts):
     os.makedirs(path_txts, exist_ok=True)
     for fname in fname_to_rows:
         txt_file = os.path.join(path_txts, fname)
-        print('writting to {}'.format(fname))
         with open(txt_file, 'w') as f:
             for shape in fname_to_rows[fname]:
                 class_id = shape[0]
@@ -111,7 +138,7 @@ def write_txts(fname_to_rows, path_txts):
                     row2 += f'{pt:.4f} '
                 row2 += '\n'
                 f.write(row2)
-    print(f'[INFO] wrote {len(fname_to_rows)} txt files to {path_txts}')
+    logger.info(f' wrote {len(fname_to_rows)} txt files to {path_txts}')
     
 
 def copy_images_in_folder(path_img, path_out, fnames=None):
@@ -167,7 +194,7 @@ if __name__ =='__main__':
     for cls in target_classes:
         if cls not in class_to_id:
             raise Exception(f'Not found target class: {cls}')
-    print(f'target_classes: {target_classes}')
+    logger.info(f'target_classes: {target_classes}')
     
     # modify the map class to id
     keys = class_to_id.keys()
@@ -209,8 +236,8 @@ if __name__ =='__main__':
     #write images
     path_img_out = os.path.join(args['path_out'], 'images')
     if args['bg_images']:
-        print('save background images')
+        logger.info('save background images')
         copy_images_in_folder(path_imgs, path_img_out)
     else:
-        print('skip background images')
+        logger.info('skip background images')
         copy_images_in_folder(path_imgs, path_img_out, fname_to_shapes.keys())

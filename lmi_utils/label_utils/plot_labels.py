@@ -7,8 +7,8 @@ import logging
 
 #LMI packages
 from label_utils.csv_utils import load_csv
-from label_utils import rect, mask
-from label_utils.plot_utils import plot_one_box, plot_one_polygon
+from label_utils import rect, mask, keypoint
+from label_utils.plot_utils import plot_one_box, plot_one_polygon, plot_one_pt
 
 
 logging.basicConfig(level=logging.INFO)
@@ -69,5 +69,8 @@ if __name__ == '__main__':
                 pts = np.array([[x,y] for x,y in zip(shape.X,shape.Y)])
                 pts = pts.reshape((-1, 1, 2))
                 plot_one_polygon(pts, im, label=shape.category, color=color_map[shape.category])
+            elif isinstance(shape, keypoint.Keypoint):
+                pt = shape.x, shape.y
+                plot_one_pt(pt, im, label=shape.category, color=color_map[shape.category])
         outname = os.path.join(output_path, im_name)
         cv2.imwrite(outname, im)
