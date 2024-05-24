@@ -34,8 +34,10 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
         is_convert: whether to perform conversion: the bbox-to-mask if is_seg is true, or mask-to-bbox if is_seg is false
     Return:
         fname_to_rows: the map <file name, list of row>, where each row is [class_ID, x, y, w, h]
+        kps_cls: a set of keypoint classes
     """
     fname_to_rows = {}
+    kps_cls = set()
     for fname in fname_to_shapes:
         shapes = fname_to_shapes[fname]
         rows = []
@@ -98,6 +100,7 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
             elif isinstance(shape, Keypoint):
                 x,y = shape.x, shape.y
                 row = [x/W, y/H]
+                kps_cls.add(shape.category)
                 kps.append(row)
                 
         # assign keypoint to bbox
@@ -116,7 +119,7 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
                     
         txt_name = fname.replace('.png','.txt').replace('.jpg','.txt')
         fname_to_rows[txt_name] = new_rows if len(kps) else rows
-    return fname_to_rows
+    return fname_to_rows, kps_cls
 
 
 def write_txts(fname_to_rows, path_txts):
@@ -207,7 +210,7 @@ if __name__ =='__main__':
         class_to_id[cls] = id
         id += 1
     
-    fname_to_rows = convert_to_txt(fname_to_shapes, class_to_id, target_classes, is_seg, is_convert, args['obb'])
+    fname_to_rows,kps_cls = convert_to_txt(fname_to_shapes, class_to_id, target_classes, is_seg, is_convert, args['obb'])
 
     #generate output yolo dataset
     if not os.path.isdir(args['path_out']):
@@ -215,8 +218,9 @@ if __name__ =='__main__':
 
     #write class map file
     fname = os.path.join(args['path_out'], 'class_map.json')
+    new_class = {k:v for k,v in class_to_id.items() if k not in kps_cls}
     with open(fname, 'w') as outfile:
-        json.dump(class_to_id, outfile)
+        json.dump(new_class, outfile)
         
     # write class map yolo yaml
     with open(os.path.join(args['path_out'], 'dataset.yaml'), 'w') as f:
@@ -225,7 +229,7 @@ if __name__ =='__main__':
             'train': 'images',
             'val': 'images',
             'test': None,
-            'names':{v:k for k,v in class_to_id.items()},
+            'names':{v:k for k,v in new_class.items()},
         }
         yaml.dump(dt, f, sort_keys=False)
 
