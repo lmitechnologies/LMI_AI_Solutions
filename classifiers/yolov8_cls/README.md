@@ -106,7 +106,7 @@ python -m image_utils.img_pad -i /temp -o /app/out/val --wh 224,224 --recursive
 ```
 
 ### Create a docker-compose file
-To run the script in the container, we need to create a file `./docker-compose_preprocess.yaml`. We mount the location in host to a location in container so that the files/folders changes in container are reflected in host. Below, we mount `./data/raw` in the host to `/app/data` in the container. Also, mount the bash script to `/app/preprocess/preprocess.sh`. 
+To run the script in the container, we need to create a file `./docker-compose_preprocess.yaml`.
 ```yaml
 version: "3.9"
 services:
@@ -205,7 +205,7 @@ services:
       - ./data/out:/app/dataset  # training data, which should include a "train" subfolder and a "val"/"test" subbfolder
       - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env &&
+      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env &&
       python3 -m yolov8_cls.run_cmd"
 
 ```
@@ -261,7 +261,7 @@ services:
       - ./data/out:/app/dataset  # input data path
       - ./config/2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env &&
+      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env &&
       python3 -m yolov8_cls.run_cmd"
 
 ```
@@ -298,7 +298,7 @@ services:
       - ./data/out/test/distil:/app/data  # input data path
       - ./config/2023-07-19_test.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env &&
+      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env &&
       python3 -m yolov8_cls.run_cmd"
 ```
 
@@ -345,7 +345,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env &&
+      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env &&
       python3 -m yolov8_cls.run_cmd"
 ```
 
