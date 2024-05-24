@@ -202,7 +202,7 @@ services:
       - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset settings
       - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env &&
+      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env &&
       python3 -m yolov8_lmi.run_cmd"
 
 ```
@@ -272,7 +272,7 @@ services:
       - ./data/resized_yolo/images:/app/data  # input data path
       - ./config/2023-07-19_predict.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env &&
+      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env &&
       python3 -m yolov8_lmi.run_cmd"
 
 ```
@@ -319,7 +319,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env &&
+      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env &&
       python3 -m yolov8_lmi.run_cmd"
 ```
 

@@ -208,7 +208,7 @@ services:
       - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset info
       - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
+      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env && 
       python3 -m yolov5_lmi.run_cmd"
 ```
 Note: Do **NOT** modify the required locations in the container, such as `/app/training`, `/app/data`, `/app/config/dataset.yaml`, `/app/config/hyp.yaml`.
@@ -278,7 +278,7 @@ services:
       - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # contains class names
     command: >
       
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
+      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env && 
       python3 -m yolov5_lmi.run_cmd"
 ```
 
@@ -324,7 +324,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # contains a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
+      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env && 
       python3 -m yolov5_lmi.run_cmd"
 ```
 
