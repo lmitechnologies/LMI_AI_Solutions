@@ -127,6 +127,27 @@ class Yolov8(ODBase):
             im0 = im0[:,:,::-1] #BGR to RGB
         return self.preprocess(im0),im0
     
+
+    def get_min_conf(self, conf:Union[float, dict]):
+        """Get the minimum confidence level for non-maximum suppression.
+
+        Args:
+            conf (float | dict): int or dictionary of <class: confidence level>.
+        """
+        if isinstance(conf, float):
+            conf2 = conf
+        elif isinstance(conf, dict):
+            conf2 = 1
+            class_names = set(self.model.names.values())
+            for k,v in conf.items():
+                if k in class_names:
+                    conf2 = min(conf2, v)
+            if conf2 == 1:
+                self.logger.warning('No class matches in confidence dict, set to 1.0 for all classes.')
+        else:
+            raise TypeError(f'Confidence type {type(conf)} not supported')
+        return conf2
+    
     
     @smart_inference_mode()
     def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
@@ -136,8 +157,8 @@ class Yolov8(ODBase):
             preds (torch.Tensor | list): Predictions from the model.
             img (torch.Tensor): the preprocessed image
             orig_imgs (np.ndarray | list): Original image or list of original images.
-            conf_thres (float | dict): int or dictionary of <class: confidence level>.
-            iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
+            conf (float | dict): int or dictionary of <class: confidence level>.
+            iou (float): The IoU threshold below which boxes will be filtered out during NMS.
             max_det (int): The maximum number of detections to return. defaults to 300.
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             return_segments(bool): If True, return the segments of the masks.
@@ -161,20 +182,7 @@ class Yolov8(ODBase):
             proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]
             preds = preds[0]
         
-        # get min confidence for nms
-        if isinstance(conf, float):
-            conf2 = conf
-        elif isinstance(conf, dict):
-            conf2 = 1
-            class_names = set(self.model.names.values())
-            for k,v in conf.items():
-                if k in class_names:
-                    conf2 = min(conf2, v)
-            if conf2 == 1:
-                self.logger.warning('No class matches in confidence dict, set to 1.0 for all classes.')
-        else:
-            raise TypeError(f'Confidence type {type(conf)} not supported')
-        
+        conf2 = self.get_min_conf(conf)
         preds2 = ops.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
             
         results = collections.defaultdict(list)
@@ -347,24 +355,9 @@ class Yolov8Obb(Yolov8):
         if isinstance(preds, torch.Tensor) != True and isinstance(preds, list) != True:
             self.logger.error(f'Prediction type {type(preds)} not supported expected torch.Tensor or list')
             raise TypeError(f'Prediction type {type(preds)} not supported expected torch.Tensor or list')
-
-        # get min confidence for nms
-        if isinstance(conf, float):
-            conf2 = conf
-        
-        elif isinstance(conf, dict):
-            conf2 = 1
-            class_names = set(self.model.names.values())
-            for k,v in conf.items():
-                if k in class_names:
-                    conf2 = min(conf2, v)
-            if conf2 == 1:
-                self.logger.warning('No class matches in confidence dict, set to 1.0 for all classes.')
-        else:
-            self.logger.error(f'Confidence type {type(conf)} not supported')
-            raise TypeError(f'Confidence type {type(conf)} not supported')
         
         # run non-max suppression in xywhr format
+        conf2 = self.get_min_conf(conf)
         preds2 = ops.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names), rotated=True)
         
         # create a collections dictionary to store the results
@@ -501,3 +494,52 @@ class Yolov8Obb(Yolov8):
                 color=colormap[classes[i]] if colormap is not None else None,
             )
         return image2
+    
+
+
+class Yolov8Pose(Yolov8):
+    def __init__(self, weights:str, device='gpu', data=None, fp16=False) -> None:
+        super().__init__(weights, device, data, fp16)
+        
+    @smart_inference_mode()
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300):
+        """Postprocesses predictions and returns a list of Results objects.
+        
+        Args:
+            preds (torch.Tensor | list): Predictions from the model.
+            img (torch.Tensor): the preprocessed image
+            orig_imgs (np.ndarray | list): Original image or list of original images.
+            conf_thres (float | dict): int or dictionary of <class: confidence>
+            iou (float): The IoU threshold below which boxes will be filtered out during NMS.
+            max_det (int): The maximum number of detections to return. defaults to 300.
+        """
+        
+        conf2 = self.get_min_conf(conf)
+        preds2 = ops.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
+            
+        results = collections.defaultdict(list)
+        for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, ...]
+            orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
+            
+            if not len(pred):  # skip empty boxes
+                continue
+            
+            pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
+            xyxy,confs,clss = pred[:, :4],pred[:, 4],pred[:, 5]
+            classes = np.array([self.model.names[c.item()] for c in clss])
+            pred_kpts = pred[:, 6:].view(len(pred), *self.model.kpt_shape) if len(pred) else pred[:, 6:]
+            pred_kpts = ops.scale_coords(img.shape[2:], pred_kpts, orig_img.shape)
+
+            # filter based on conf
+            if isinstance(conf, float):
+                thres = np.array([conf]*len(clss))
+            if isinstance(conf, dict):
+                # set to 1 if c is not in conf
+                thres = np.array([conf.get(c,1) for c in classes])
+            M = confs > self.from_numpy(thres)
+            
+            results['boxes'].append(xyxy[M].cpu().numpy())
+            results['scores'].append(confs[M].cpu().numpy())
+            results['classes'].append(classes[M.cpu().numpy()])
+            results['points'].append(pred_kpts[M].cpu().numpy()) # [n_obj,n_kp,2]
+        return results
