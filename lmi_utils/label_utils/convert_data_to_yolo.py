@@ -24,30 +24,48 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=False, is_convert=False, obb=False):
+def del_classes(class_to_id, classes=[]):
+    """
+    delete the classes from the class_to_id map and re-assign the class ID
+
+    Arguments:
+        class_to_id(dict): the map <class_name, class id>
+        classes(list): classe names to de deleted
+    """
+    if not len(classes):
+        return
+    del_keys = set(classes)
+    for key in del_keys:
+        del class_to_id[key]
+    # re-assign id
+    id = 0
+    for cls in class_to_id:
+        class_to_id[cls] = id
+        id += 1
+
+
+def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_convert=False, obb=False):
     """
     convert the map <fname, list of shape objects> to YOLO format
     Arguments:
         fname_to_shapes(dict): the map <fname, list of shape objects>
-        class_to_id(dict): the map <class_name, class_ID>
         is_seg: whether to load as segmentation labels
         is_convert: whether to perform conversion: the bbox-to-mask if is_seg is true, or mask-to-bbox if is_seg is false
     Return:
-        fname_to_rows: the map <file name, list of row>, where each row is [class_ID, x, y, w, h]
+        fname_to_rows: the map <file name, list of row>, where each row is [class_name, x, y, w, h]
         kps_cls: a set of keypoint classes
     """
     fname_to_rows = {}
     kps_cls = set()
     for fname in fname_to_shapes:
-        shapes = fname_to_shapes[fname]
         rows = []
         kps = []
-        for shape in shapes:
+        for shape in fname_to_shapes[fname]:
             logger.info(f'{shape.im_name}')
             #get class ID
             if shape.category not in target_classes:
                 continue
-            class_id = class_to_id[shape.category]
+            class_name = shape.category
             #get the image H,W
             I = cv2.imread(shape.fullpath)
             H,W = I.shape[:2]
@@ -61,7 +79,7 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
                     #get bbox center
                     cx,cy = (x0+x2)/2, (y0+y2)/2
                     # normalize to [0-1]
-                    row = [class_id, cx/W, cy/H, w/W, h/H]
+                    row = [class_name, cx/W, cy/H, w/W, h/H]
                     rows.append(row)
                 elif obb:
                     # bbox-to-obb
@@ -69,7 +87,7 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
                     w = x2 - x0
                     h = y2 - y0
                     rotated_coords = rotate(x0, y0, w, h, angle, rot_center='up_left', unit='degree')
-                    xyxy = [class_id]
+                    xyxy = [class_name]
                     for pt in rotated_coords:
                         xyxy += [pt[0]/W, pt[1]/H]
                     row = xyxy
@@ -79,14 +97,14 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
                     x1,y1 = x2,y0
                     x3,y3 = x0,y2
                     xyxy = [x0/W, y0/H, x1/W, y1/H, x2/W, y2/H, x3/W, y3/H]
-                    row = [class_id]+xyxy
+                    row = [class_name]+xyxy
                     rows.append(row)
             elif isinstance(shape, Mask):
                 if is_seg:
                     xyxy = []
                     for x,y in zip(shape.X,shape.Y):
                         xyxy += [x/W,y/H]
-                    row = [class_id]+xyxy
+                    row = [class_name]+xyxy
                     rows.append(row)
                 elif is_convert:
                     # mask-to-bbox
@@ -95,7 +113,7 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
                     w = x2 - x0
                     h = y2 - y0
                     cx,cy = (x0+x2)/2, (y0+y2)/2
-                    row = [class_id, cx/W, cy/H, w/W, h/H]
+                    row = [class_name, cx/W, cy/H, w/W, h/H]
                     rows.append(row)
             elif isinstance(shape, Keypoint):
                 x,y = shape.x, shape.y
@@ -120,6 +138,18 @@ def convert_to_txt(fname_to_shapes, class_to_id, target_classes:list, is_seg=Fal
         txt_name = fname.replace('.png','.txt').replace('.jpg','.txt')
         fname_to_rows[txt_name] = new_rows if len(kps) else rows
     return fname_to_rows, kps_cls
+
+
+def assign_class_id(fname_to_rows, class_to_id):
+    """
+    assign class ID to the class name
+    Arguments:
+        fname_to_rows(dict): the map <file name, list of row>, where each row is [class_name, x, y, w, h]
+        class_to_id(dict): the map <class_name, class id>
+    """
+    for fname in fname_to_rows:
+        for row in fname_to_rows[fname]:
+            row[0] = class_to_id[row[0]]
 
 
 def write_txts(fname_to_rows, path_txts):
@@ -194,23 +224,27 @@ if __name__ =='__main__':
     
     if len(target_classes)==1 and target_classes[0]=='all':
         target_classes = [cls for cls in class_to_id]
+    elif class_map_file:
+        raise Exception('target_classes must be "all" when class_map_file is provided')
     for cls in target_classes:
         if cls not in class_to_id:
             raise Exception(f'Not found target class: {cls}')
-    logger.info(f'target_classes: {target_classes}')
     
-    # modify the map class to id
+    fname_to_rows,kps_cls = convert_to_txt(fname_to_shapes, target_classes, is_seg, is_convert, args['obb'])
+
+    # modify class_to_id
     keys = class_to_id.keys()
     del_keys = set(keys)-set(target_classes)
-    for key in del_keys:
-        del class_to_id[key]
-    # re-assign id 
-    id = 0
-    for cls in class_to_id:
-        class_to_id[cls] = id
-        id += 1
-    
-    fname_to_rows,kps_cls = convert_to_txt(fname_to_shapes, class_to_id, target_classes, is_seg, is_convert, args['obb'])
+    del_keys = del_keys.union(kps_cls)
+    del_classes(class_to_id, del_keys)
+
+    if target_classes[0]!='all':
+        logger.info(f'target_classes: {target_classes}')
+    logger.info(f'key point classes: {kps_cls}')
+    logger.info(f'deleted classes: {del_keys}')
+    logger.info(f'final classes: {class_to_id}')
+
+    assign_class_id(fname_to_rows, class_to_id)
 
     #generate output yolo dataset
     if not os.path.isdir(args['path_out']):
@@ -218,9 +252,8 @@ if __name__ =='__main__':
 
     #write class map file
     fname = os.path.join(args['path_out'], 'class_map.json')
-    new_class = {k:v for k,v in class_to_id.items() if k not in kps_cls}
     with open(fname, 'w') as outfile:
-        json.dump(new_class, outfile)
+        json.dump(class_to_id, outfile)
         
     # write class map yolo yaml
     with open(os.path.join(args['path_out'], 'dataset.yaml'), 'w') as f:
@@ -229,7 +262,7 @@ if __name__ =='__main__':
             'train': 'images',
             'val': 'images',
             'test': None,
-            'names':{v:k for k,v in new_class.items()},
+            'names':{v:k for k,v in class_to_id.items()},
         }
         yaml.dump(dt, f, sort_keys=False)
 
