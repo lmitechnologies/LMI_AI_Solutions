@@ -83,11 +83,11 @@ source /repos/LMI_AI_Solutions/lmi_ai.env
 python -m label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
 
 # resize images with labels
-python -m label_utils.resize_with_csv --path_imgs $input_path --width $W --height $H --path_out /app/data/resized
+python -m label_utils.resize_with_csv -i $input_path -o /app/data/resized --width $W --height $H
 
 # convert to yolo format
 # remote the --seg flag if you want to train a object detection model
-python -m label_utils.convert_data_to_yolo --path_imgs /app/data/resized --path_out /app/data/resized_yolo --seg
+python -m label_utils.convert_data_to_yolo -i /app/data/resized -o /app/data/resized_yolo --seg
 ```
 
 ### Create a docker-compose file
@@ -125,14 +125,7 @@ Once it finishs, the yolo format dataset will be created: `./data/resized_yolo`.
 
 
 ## Create a dataset file indicating the location of the dataset and classes
-After converting data to yolo format, a json file can be found in `./data/resized_yolo/class_map.json`. The order of class names in the yaml file **must match with** the order of names in the json file. 
-
-Below is what is in the class_map.json:
-```json
-{"peeling": 0, "scuff": 1, "white":2}
-```
-
-Below is the yaml file that need to be created. Save it as `./config/2023-07-19_dataset.yaml`.
+After converting to yolo format, a dataset yaml file will be created in `./data/resized_yolo/dataset.yaml`.
 ```yaml
 path: /app/data # dataset root dir (must use absolute path!)
 train: images  # train images (relative to 'path')
@@ -145,13 +138,14 @@ names: # class names must match with the names in class_map.json
   1: scuff
   2: white
 ```
+Save it as `./config/2023-07-19_dataset.yaml`.
 
 
 ## Train the model
 To train the model, we need to create a hyperparameter yaml file and create a `./docker-compose_train.yaml` file.
 
 ### Create a hyperparameter file
-Crete a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **medium-size yolov8 instance segmentation model** with the image size of 640. To train object detection models, set `task` to `detect`. If the training images are square, set `rect` to `False`.
+Crete a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **medium-size yolov8 instance segmentation model** with the image size of 640. To train object detection models, set `task` to `detect`.
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
 mode: train  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where track, benchmark are NOT tested

@@ -85,11 +85,11 @@ source /repos/LMI_AI_Solutions/lmi_ai.env
 python -m label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
 
 # resize images with labels
-python -m label_utils.resize_with_csv --path_imgs $input_path --width $W --height $H --path_out /app/data/resized
+python -m label_utils.resize_with_csv -i $input_path -o /app/data/resized --width $W --height $H
 
 # convert to yolo format
 # remote the --seg flag if you want to train a object detection model
-python -m label_utils.convert_data_to_yolo --path_imgs /app/data/resized --path_out /app/data/resized_yolo --seg
+python -m label_utils.convert_data_to_yolo -i /app/data/resized -o /app/data/resized_yolo --seg
 ```
 
 ### Create a docker-compose file
@@ -131,14 +131,8 @@ To train the model, we need to create the following files: a dataset file, a hyp
 
 
 ### Create a dataset file
-Create a dataset file to tell the model where is the dataset and what are the classes. The classes information can be found in `./data/resized_yolo/class_map.json`. 
-
-Below is what is in the class_map.json:
-```json
-{"peeling": 0, "scuff": 1, "white":2}
-```
-
-Below is the yaml file that need to be created. Save it as `./config/2023-07-19_dataset.yaml`.
+After converting to yolo format, a dataset yaml file will be created in `./data/resized_yolo/dataset.yaml`. 
+Below is the yaml file. Save it as `./config/2023-07-19_dataset.yaml`.
 ```yaml
 path: /app/data  # dataset root dir (must use absolute path!)
 train: images  # train images (relative to 'path')
@@ -151,7 +145,6 @@ names: # class names must match with the names in class_map.json
   1: scuff
   2: white
 ```
-The order of class names in the yaml file **must match with** the order of names in the json file. 
 
 
 ### Create a hyperparameter file
