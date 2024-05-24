@@ -34,9 +34,8 @@ The folder structure below will be created when we go through the tutorial. By c
 ├── docker-compose_preprocess.yaml
 ├── docker-compose_train.yaml
 ├── docker-compose_predict.yaml
-├── docker-compose_trt.x86.yaml
+├── docker-compose_trt.yaml
 ├── dockerfile
-├── docker-compose_trt.arm.yaml   # arm system
 ├── arm.dockerfile                # arm system
 ```
 
@@ -125,7 +124,7 @@ Once it finishs, the yolo format dataset will be created: `./data/resized_yolo`.
 
 
 ## Create a dataset file indicating the location of the dataset and classes
-After converting to yolo format, a dataset yaml file will be created in `./data/resized_yolo/dataset.yaml`.
+After converting to yolo format, a dataset yaml file will be created in `./data/resized_yolo/dataset.yaml`. Below is the yaml file.
 ```yaml
 path: /app/data # dataset root dir (must use absolute path!)
 train: images  # train images (relative to 'path')

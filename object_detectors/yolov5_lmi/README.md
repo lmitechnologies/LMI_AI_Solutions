@@ -35,9 +35,8 @@ The folder structure below will be created when we go through the tutorial. By c
 ├── docker-compose_preprocess.yaml
 ├── docker-compose_train.yaml
 ├── docker-compose_val.yaml
-├── docker-compose_trt.x86.yaml
+├── docker-compose_trt.yaml
 ├── dockerfile
-├── docker-compose_trt.arm.yaml   # arm system
 ├── arm.dockerfile                # arm system
 ```
 
@@ -132,7 +131,7 @@ To train the model, we need to create the following files: a dataset file, a hyp
 
 ### Create a dataset file
 After converting to yolo format, a dataset yaml file will be created in `./data/resized_yolo/dataset.yaml`. 
-Below is the yaml file. Save it as `./config/2023-07-19_dataset.yaml`.
+Below is the yaml file.
 ```yaml
 path: /app/data  # dataset root dir (must use absolute path!)
 train: images  # train images (relative to 'path')
@@ -145,6 +144,7 @@ names: # class names must match with the names in class_map.json
   1: scuff
   2: white
 ```
+Save it as `./config/2023-07-19_dataset.yaml`.
 
 
 ### Create a hyperparameter file
