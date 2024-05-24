@@ -7,11 +7,15 @@ This is the tutorial walking through how to train and test YOLOv8 models.
 - [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 
 ### Model training
-- X86 system
+- X86
 - ubuntu OS
+- labeling tool
+  - [VGG Image Annotator](https://www.robots.ox.ac.uk/~vgg/software/via/)
+  - [Label Studio](https://labelstud.io/)
 
 ### TensorRT on GoMax
 - JetPack 5.0 or 5.1
+
 
 ## Directory structure
 The folder structure below will be created when we go through the tutorial. By convention, we use today's date (i.e. 2023-07-19) as the file name.
@@ -61,13 +65,14 @@ RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 
 ## Prepare the dataset
 Prepare the dataset by the followings:
-- resize images and labels in csv (optional)
+- convert json to csv
+- resize images and labels in csv
 - convert labeling data to YOLO format
 
 **YOLO models require the dimensions of images to be dividable by 32**. In this tutorial, we resize images to 640x320.
 
 ### Create a script for data processing
-First, create a script `./preprocess/2023-07-19.sh`, which converts labels from VGG json to csv, resizes images, and converts data to yolo format. In the end, it will generate a yolo-formatted dataset in `/app/data/resized_yolo`.
+First, create a script `./preprocess/2023-07-19.sh`, which converts labels from label studio json to csv, resizes images, and converts data to yolo format. In the end, it will generate a yolo-formatted dataset in `/app/data/resized_yolo`.
 ```bash
 # modify to your data path
 input_path=/app/data/allImages
@@ -79,7 +84,10 @@ H=320
 source /repos/LMI_AI_Solutions/lmi_ai.env
 
 # convert labels from VGG json to csv
-python -m label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
+# python -m label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
+
+# convert labels from label studio to csv
+python -m label_utils.lst_to_csv -i $input_path -o $input_path
 
 # resize images with labels
 python -m label_utils.resize_with_csv -i $input_path -o /app/data/resized --width $W --height $H
@@ -90,7 +98,7 @@ python -m label_utils.convert_data_to_yolo -i /app/data/resized -o /app/data/res
 ```
 
 ### Create a docker-compose file
-To run the bash script in the container, we need to create a file `./docker-compose_preprocess.yaml`. We mount the location in host to a location in container so that the file/folder changes in container are reflected in host. Assume that the path to the original data in host is `./data/allImages`. Below, we mount `./data` in the host to `/app/data` in the container. Also, mount the bash script to `/app/preprocess/preprocess.sh`. 
+To run the bash script in the container, we need to create a file `./docker-compose_preprocess.yaml`.
 ```yaml
 version: "3.9"
 services:

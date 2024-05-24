@@ -8,10 +8,13 @@ This is the tutorial how to train and test the yolov5 object detection models.
 
 ### Model training
 - x86
-- ubuntu
+- ubuntu OS
+- labeling tool
+  - [VGG Image Annotator](https://www.robots.ox.ac.uk/~vgg/software/via/)
+  - [Label Studio](https://labelstud.io/)
 
 ### TensorRT on GoMax
-- JetPack 5.1
+- JetPack 5.0 or 5.1
 
 
 ## Directory structure
@@ -63,13 +66,14 @@ RUN cd LMI_AI_Solutions && git submodule update --init object_detectors/submodul
 
 ## Prepare the dataset
 Prepare the dataset by the followings:
-- resize images and labels in csv (optional)
+- convert json to csv
+- resize images and labels in csv
 - convert labeling data to YOLO format
 
 **YOLO models require the dimensions of images to be dividable by 32**. In this tutorial, we resize images to 640x320.
 
 ### Create a script for data processing
-First, create a script `./preprocess/2023-07-19.sh`, which convert labels from VGG json to csv, resizes images, and converts data to yolo format. 
+First, create a script `./preprocess/2023-07-19.sh`, which convert labels from label studio json to csv, resizes images, and converts data to yolo format. 
 ```bash
 # modify to your data path
 input_path=/app/data/allImages
@@ -81,7 +85,10 @@ H=320
 source /repos/LMI_AI_Solutions/lmi_ai.env
 
 # convert labels from VGG json to csv
-python -m label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
+# python -m label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
+
+# convert labels from label studio to csv
+python -m label_utils.lst_to_csv -i $input_path -o $input_path
 
 # resize images with labels
 python -m label_utils.resize_with_csv -i $input_path -o /app/data/resized --width $W --height $H
@@ -92,7 +99,7 @@ python -m label_utils.convert_data_to_yolo -i /app/data/resized -o /app/data/res
 ```
 
 ### Create a docker-compose file
-To run the bash script in the container, we need to create a file `./docker-compose_preprocess.yaml`. We mount the location in host to a location in container so that the file/folder changes in container are reflected in host. Assume that the path to the original data in host is `./data/allImages`. Below, mount `./data` in the host to `/app/data` in the container. Also, mount the bash script to `/app/preprocess/preprocess.sh`.
+To run the bash script in the container, we need to create a file `./docker-compose_preprocess.yaml`.
 ```yaml
 version: "3.9"
 services:
@@ -148,7 +155,7 @@ Save it as `./config/2023-07-19_dataset.yaml`.
 
 
 ### Create a hyperparameter file
-Create a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **medium-size yolov5 instance segmentation model** with the image size of 640. To train object detection models, set `task` to `detect`. If the training images are square, set `rect` to `False`.
+Create a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **medium-size yolov5 instance segmentation model** with the image size of 640. To train object detection models, set `task` to `detect`.
 
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment
