@@ -53,10 +53,11 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
         is_convert: whether to perform conversion: the bbox-to-mask if is_seg is true, or mask-to-bbox if is_seg is false
     Return:
         fname_to_rows: the map <file name, list of row>, where each row is [class_name, x, y, w, h]
-        kps_cls: a set of keypoint classes
+        ignore_cls: a set of keypoint classes and not-loaded classes 
     """
     fname_to_rows = {}
-    kps_cls = set()
+    ignore_cls = set()
+    kpt_shape = []
     for fname in fname_to_shapes:
         rows = []
         kps = []
@@ -99,6 +100,8 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
                     xyxy = [x0/W, y0/H, x1/W, y1/H, x2/W, y2/H, x3/W, y3/H]
                     row = [class_name]+xyxy
                     rows.append(row)
+                else:
+                    ignore_cls.add(class_name)
             elif isinstance(shape, Mask):
                 if is_seg:
                     xyxy = []
@@ -115,17 +118,19 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
                     cx,cy = (x0+x2)/2, (y0+y2)/2
                     row = [class_name, cx/W, cy/H, w/W, h/H]
                     rows.append(row)
+                else:
+                    ignore_cls.add(class_name)
             elif isinstance(shape, Keypoint):
                 x,y = shape.x, shape.y
                 row = [x/W, y/H]
-                kps_cls.add(shape.category)
+                ignore_cls.add(shape.category)
                 kps.append(row)
                 
         # assign keypoint to bbox
-        new_rows = []
+        new_rows = {}
         for kp in kps:
             x,y = kp
-            for i,row in enumerate(rows):
+            for row in rows:
                 if len(row)!=5:
                     logging.warning(f'key point can only be assign to a bbox, but got {len(row)} values in a row. Skip it.')
                     continue
@@ -133,11 +138,19 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
                 x1,y1 = xc-w/2, yc-h/2
                 x2,y2 = xc+w/2, yc+h/2
                 if x1<=x<=x2 and y1<=y<=y2:
-                    new_rows += [row+kp]
+                    key = ','.join(str(v) for v in row)
+                    if key not in new_rows:
+                        new_rows[key] = row[:]
+                    new_rows[key].extend(kp)
                     
         txt_name = fname.replace('.png','.txt').replace('.jpg','.txt')
-        fname_to_rows[txt_name] = new_rows if len(kps) else rows
-    return fname_to_rows, kps_cls
+        fname_to_rows[txt_name] = new_rows.values() if len(kps) else rows
+        n_pts = 0
+        if len(kps):
+            r = list(new_rows.values())[0]
+            n_pts = (len(r)-5)/2
+            n_pts = int(n_pts)
+    return fname_to_rows, ignore_cls, n_pts
 
 
 def assign_class_id(fname_to_rows, class_to_id):
@@ -230,18 +243,17 @@ if __name__ =='__main__':
         if cls not in class_to_id:
             raise Exception(f'Not found target class: {cls}')
     
-    fname_to_rows,kps_cls = convert_to_txt(fname_to_shapes, target_classes, is_seg, is_convert, args['obb'])
+    fname_to_rows,ignore_cls,n_pts = convert_to_txt(fname_to_shapes, target_classes, is_seg, is_convert, args['obb'])
 
     # modify class_to_id
     keys = class_to_id.keys()
     del_keys = set(keys)-set(target_classes)
-    del_keys = del_keys.union(kps_cls)
+    del_keys = del_keys.union(ignore_cls)
     del_classes(class_to_id, del_keys)
 
     if target_classes[0]!='all':
         logger.info(f'target_classes: {target_classes}')
-    logger.info(f'key point classes: {kps_cls}')
-    logger.info(f'deleted classes: {del_keys}')
+    logger.info(f'delete classes: {del_keys}')
     logger.info(f'final classes: {class_to_id}')
 
     assign_class_id(fname_to_rows, class_to_id)
@@ -262,8 +274,10 @@ if __name__ =='__main__':
             'train': 'images',
             'val': 'images',
             'test': None,
-            'names':{v:k for k,v in class_to_id.items()},
         }
+        if n_pts:
+            dt['kpt_shape'] = [n_pts,2]
+        dt['names'] = {v:k for k,v in class_to_id.items()}
         yaml.dump(dt, f, sort_keys=False)
 
     #write labels/annotations
