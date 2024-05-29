@@ -209,6 +209,8 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
                 nx,ny = nx/s[0], ny/s[1]
             if verbose:
                 logger.info(f'after {operator}, pt: {x:.2f},{y:.2f} -> {nx:.2f},{ny:.2f}')
+        nx = round(nx)
+        ny = round(ny)
         return [max(nx,0),max(ny,0)]
 
     pts2 = []
