@@ -599,7 +599,7 @@ class Yolov8Pose(Yolov8):
     
     
     @staticmethod
-    def annotate_image(results, image, colormap=None):
+    def annotate_image(results, image, colormap=None, kp_color=(255,255,255)):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
         TODO: text size, thickness, font
 
@@ -633,5 +633,5 @@ class Yolov8Pose(Yolov8):
             
         for i in range(len(points)):
             for j in range(len(points[i])):
-                cv2.circle(image2, (int(points[i][j][0]), int(points[i][j][1])), 4, (255,255,255), -1)
+                cv2.circle(image2, (int(points[i][j][0]), int(points[i][j][1])), 4, kp_color, -1)
         return image2
