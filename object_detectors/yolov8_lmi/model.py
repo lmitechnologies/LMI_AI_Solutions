@@ -589,7 +589,6 @@ class Yolov8Pose(Yolov8):
         
         # convert box to sensor space
         points = [pipeline_utils.revert_to_origin(p, operators) for p in points] # each iter: [n_kp,2]
-        self.logger.info(f"points: {points}")
         boxes = pipeline_utils.revert_to_origin(boxes, operators)
         results_dict['points'] = points
         results_dict['boxes'] = boxes
@@ -634,5 +633,5 @@ class Yolov8Pose(Yolov8):
             )
             color = colormap[classes[i]] if colormap is not None else (255,255,255)
             for j in range(len(points[i])):
-                cv2.circle(image2, (int(points[i][j][0]), int(points[i][j][1])), 3, color, 2)
+                cv2.circle(image2, (int(points[i][j][0]), int(points[i][j][1])), 4, color, -1)
         return image2
