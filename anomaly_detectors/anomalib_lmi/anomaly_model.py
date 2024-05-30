@@ -84,8 +84,8 @@ class AnomalyModel:
             h, w =  self.shape_inspection
             img = cv2.resize(self.normalize(image), (w,h), interpolation=cv2.INTER_AREA)
             input_dtype = np.float16 if self.fp16 else np.float32
-            input_batch_size_1 = np.array(np.expand_dims(np.transpose(img, (2, 0, 1)), axis=0), dtype=input_dtype)
-            return self.from_numpy(input_batch_size_1)
+            input_batch = np.array(np.repeat(np.expand_dims(np.transpose(img, (2, 0, 1)), axis=0), 1, axis=0), dtype=input_dtype)
+            return self.from_numpy(input_batch)
         elif self.inference_mode=='PT':
             processed_image = self.pt_transform(image=image)["image"]
             if len(processed_image) == 3:
