@@ -121,6 +121,7 @@ class AnomalyModel:
         elif self.inference_mode=='PT':
             preprocessed_image = self.preprocess(image)
             output=self.pt_model(preprocessed_image)[0].cpu().numpy()
+        output=np.squeeze(output).astype(np.float32)
         return output
 
 
@@ -182,10 +183,6 @@ class AnomalyModel:
         
     @staticmethod
     def annotate(img, ad_scores, ad_threshold, ad_max):
-        # Re-arrange pytorch tensor to [batch,row,col,ch]
-        ad_scores = np.squeeze(ad_scores.transpose((0,2,3,1))).astype(np.float32)
-        # Find max anomaly score - will be used to determine pass/fail
-        ad_score_max=ad_scores.max()
         # Resize AD score to match input image
         h_img,w_img=img.shape[:2]
         ad_scores=resize(ad_scores,height=h_img,width=w_img,inter=cv2.INTER_NEAREST)
@@ -200,7 +197,7 @@ class AnomalyModel:
         ad_bgr = cv2.applyColorMap(np.expand_dims(ad_gray,-1), cv2.COLORMAP_TURBO)
         residual_rgb = cv2.cvtColor(ad_bgr, cv2.COLOR_BGR2RGB)
         # Overlay anomaly heat map with input image
-        annot = cv2.addWeighted(img, 0.6, residual_rgb, 0.4, 0)
+        annot = cv2.addWeighted(img.astype(np.uint8), 0.6, residual_rgb, 0.4, 0)
         indices=np.where(ad_gray==0)
         # replace all below-threshold pixels with input image indicating no anomaly
         annot[indices]=img[indices]
