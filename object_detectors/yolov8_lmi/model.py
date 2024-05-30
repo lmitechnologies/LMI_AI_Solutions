@@ -447,7 +447,6 @@ class Yolov8Obb(Yolov8):
         for box in boxes:
             b = []
             for i in range(len(box)):
-                logger.info(f"box: {box[i]}")
                 b.append(pipeline_utils.revert_to_origin(box[i], operators))
             boxes.append(b)
         
@@ -631,8 +630,8 @@ class Yolov8Pose(Yolov8):
                 ),
                 color=colormap[classes[i]] if colormap is not None else None,
             )
-            color = colormap[classes[i]] if colormap is not None else (255,255,255)
+            
         for i in range(len(points)):
             for j in range(len(points[i])):
-                cv2.circle(image2, (int(points[i][j][0]), int(points[i][j][1])), 4, color, -1)
+                cv2.circle(image2, (int(points[i][j][0]), int(points[i][j][1])), 4, (255,255,255), -1)
         return image2
