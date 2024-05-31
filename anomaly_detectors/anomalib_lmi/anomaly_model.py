@@ -72,7 +72,22 @@ class AnomalyModel:
                 if d['__class_fullname__']=='Resize':
                     self.shape_inspection = [d['height'], d['width']]
             self.inference_mode='PT'
-                    
+
+    def from_numpy(self, x):
+        return torch.from_numpy(x).to(self.device) if isinstance(x, np.ndarray) else x
+    
+    def normalize(self,image: np.ndarray) -> np.ndarray:
+        """
+        Desc: Normalize the image to the given mean and standard deviation for consistency with pytorch backbone
+        """
+        image = image.astype(np.float32)
+        mean = (0.485, 0.456, 0.406)
+        std = (0.229, 0.224, 0.225)
+        image /= 255.0
+        image -= mean
+        image /= std
+        return image
+
     def preprocess(self, image):
         '''
         Desc: Preprocess input image.
@@ -236,21 +251,6 @@ class AnomalyModel:
                        f' --workspace={workspace}') + (' --fp16' if fp16 else ' ')
         os.system(convert_cmd)
         os.system(f"cp {os.path.dirname(onnx_path)}/metadata.json {os.path.dirname(out_engine_path)}")
-
-    def from_numpy(self, x):
-        return torch.from_numpy(x).to(self.device) if isinstance(x, np.ndarray) else x
-    
-    def normalize(self,image: np.ndarray) -> np.ndarray:
-        """
-        Desc: Normalize the image to the given mean and standard deviation for consistency with pytorch backbone
-        """
-        image = image.astype(np.float32)
-        mean = (0.485, 0.456, 0.406)
-        std = (0.229, 0.224, 0.225)
-        image /= 255.0
-        image -= mean
-        image /= std
-        return image
     
     @staticmethod
     def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs=True,anom_threshold=None,anom_max=None):
@@ -262,7 +262,8 @@ class AnomalyModel:
             - annot_dir: Path to annotation data dir
             - generate_stats: Fit gamma distribution to all data in dataset.  Propose resonable thresholds for different failure rates. 
             - annotate_inputs: option to show anomaly score histogram and heat map for each image in thd dataset (def: True)
-            - anom_threshold: 
+            - anom_threshold: user defined anomaly threshold (sets beginning of heat map)
+            - anom_max: user defined anomaly max (sets end of the heat map)
         """
 
         from pathlib import Path
@@ -273,37 +274,45 @@ class AnomalyModel:
         from tabulate import tabulate
         import csv
 
-        # images = glob.glob(f"{images_path}/*.png")
+        # Input data
         directory_path=Path(images_path)
         images=list(directory_path.rglob('*.png')) + list(directory_path.rglob('*.jpg'))
         logger.info(f"{len(images)} images from {images_path}")
         if not images:
             return
         
-        logger.info(f"Loading engine: {engine_path}.")
-
-        pc = AnomalyModel(engine_path)
-
+        # Output overhead
         out_path = annot_dir
         if not os.path.exists(out_path):
             os.makedirs(out_path)
 
+        # Load model from .pt or .engine
+        logger.info(f"Loading engine: {engine_path}.")
+        pc = AnomalyModel(engine_path)
         pc.warmup()
 
         proctime = []
-
         def find_p(thresh_array,p_patch_array,p_sample_array, p_sample_target):
+            '''
+            Desc: Find the p-value that acheives the desired sample failure rate.  We start by estimating the threshold from the empiracal p_sample_array.  Then we use that threshold to estimate the corresponding p_patch.
             
+            Args: 
+                - thresh_array: input threshold array 
+                - p_patch_array: corresponding p-value at the patch level (generated using gamma dist model)
+                - p_sample_array: corresponding p-value at the sample level (generated empirically)
+                - p_sample_target: desired sample level p-value 
+            '''
             x1=p_sample_array
             x2=thresh_array
             x3=p_patch_array
-
+            # interpolation function to find threshold for a specified p_sample
             f1=interpolate.interp1d(x1,x2)
+            # estimate the threshold for p_sample_target 
             thresh_target=f1(p_sample_target)
-
+            # interpolation function to find p_patch for a specified threshold
             f2=interpolate.interp1d(x2,x3)
+            # find the threshold for the p_patch that corresponds to p_sample_target
             p_target=f2(thresh_target)
-
             return p_target
 
         img_all,anom_all,fname_all,path_all=[],[],[],[]
@@ -327,7 +336,9 @@ class AnomalyModel:
             logger.info(f"Computing anomaly score PDF for all data.")
             anom_sq=np.squeeze(np.array(anom_all))
             data=np.ravel(anom_sq)
+            # Fit gamma distribution to anomaly data across entire data set
             alpha_hat, loc_hat, beta_hat = gamma.fit(data, floc=0)
+            # Plot histogram and gamma dist fit
             x = np.linspace(min(data), max(data), 1000)
             pdf_fitted = gamma.pdf(x, alpha_hat, loc=loc_hat, scale=beta_hat)
             plt.hist(data, bins=100, density=True, alpha=0.7, label='Observed Data')
@@ -335,13 +346,17 @@ class AnomalyModel:
             plt.legend()
             plt.savefig(os.path.join(annot_dir,'gamma_pdf_fit.png'))
             max_data=max(data)
+            # Generate uniform anomaly threshold samples across available anomaly score range
             threshold = np.linspace(min(data), max_data, 10)
+            # Determine percentage of failed parts for each threshold
             quantile_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
+            # Reduce threshold range when threshold values are too far into the tail of the gamma distribution (quantile goes to zero)
             while quantile_patch.min()<MINIMUM_QUANT:
                 logger.warning(f'Patch quantile saturated with max anomaly score: {max_data}, reducing to {max_data/2}')
                 max_data=max_data/1.2
                 threshold = np.linspace(min(data), max_data, 10)
                 quantile_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
+            # Extract patch level distribution table data
             quantile_patch_str=["{:.{}e}".format(item*100, 2) for item in np.squeeze(quantile_patch).tolist()]
             quantile_patch_str=['Prob of Patch Defect']+quantile_patch_str
             quantile_sample_str=['Prob of Sample Defect']
@@ -358,22 +373,23 @@ class AnomalyModel:
             threshold_str=['Threshold']+threshold_str    
             
             tp=[threshold_str,quantile_patch_str,quantile_sample_str]
-            
-
+            # Print statistics
             tp_print=tabulate(tp, tablefmt='grid')
             logger.info('Threshold options:\n'+tp_print)
 
-        if annotate_inputs:
-            
+        if annotate_inputs:     
             if anom_threshold is None and generate_stats: 
                 anom_threshold=gamma.ppf(0.5,alpha_hat,loc=loc_hat,scale=beta_hat)
                 logger.info(f'Anomaly patch threshold for 50% patch failure rate:{anom_threshold}')
             if anom_max is None and generate_stats:
+                # Sample target hard coded for 3% failure rate
                 p_sample_target=0.03
                 if p_sample_target > quantile_sample.min():
-                    p_target=find_p(threshold,quantile_patch,quantile_sample, p_sample_target)    
+                    # estimate p_patch from target p_sample_target
+                    p_target=find_p(threshold,quantile_patch,quantile_sample, p_sample_target)
+                    # find the anomaly score coresponding to that p_patch    
                     anom_max = gamma.ppf(1-p_target,alpha_hat,loc=loc_hat,scale=beta_hat)
-                    logger.info(f'Anomaly  max set to 95 percentile:{anom_max}')
+                    logger.info(f'Anomaly max set to 97 percentile:{anom_max}')
                 else:
                     anom_max=threshold.max()
                     logger.warning(f'Anomaly patch max set to minimum discernable value: {anom_max} due to vanishing gradient in the patch quantile.  Sample failure rate: {quantile_sample.min()*100:.2e}')
