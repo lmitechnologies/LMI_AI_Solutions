@@ -97,7 +97,7 @@ def pts_to_xyz(pts, profile, resolution, offset):
     """
     convert list of 2d pts to 3d sensor space
     args:
-        pts(list): list of points, each point is a tuple (x,y)
+        pts(list): list of (x,y) points, with shape of Nx2
         profile(np array): the profile image
         resolution(tuple): (x_resolution, y_resolution, z_resolution)
         offset(tuple): (x_offset, y_offset, z_offset)
@@ -107,6 +107,8 @@ def pts_to_xyz(pts, profile, resolution, offset):
     
     xyz = []
     for pt in pts:
+        if len(pt)!=2:
+            raise Exception(f'pts should be a list of (x,y) points, got {pt}')
         x,y = map(int,pt)
         nx = offset[0] + x * resolution[0]
         ny = offset[1] + y * resolution[1]
