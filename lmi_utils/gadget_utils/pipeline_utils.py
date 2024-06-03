@@ -8,6 +8,7 @@ import logging
 import glob
 
 BLACK=(0,0,0)
+TWO_TO_FIFTEEN = 2**15
 
 logging.basicConfig(level=logging.NOTSET)
 logger = logging.getLogger(__name__)
@@ -54,8 +55,66 @@ def fit_array_to_size(im,W,H):
         pad_B *= -1
     return im, pad_L, pad_R, pad_T, pad_B
 
-        
-        
+
+def uint16_to_int16(profile):
+    """
+    convert uint16 profile image to int16
+    """
+    if profile.dtype != np.uint16:
+        raise Exception(f'dtype should be uint16, got {profile.dtype}')
+    return profile.view(np.int16) + np.int16(-TWO_TO_FIFTEEN)
+
+
+def profile_to_xyz(profile, resolution, offset):
+    """
+    convert profile image to 3d sensor space
+    args:
+        profile(np array): the profile image
+        resolution(tuple): (x_resolution, y_resolution, z_resolution)
+        offset(tuple): (x_offset, y_offset, z_offset)
+    return:
+        X(np array): the x coordinates in 3d space, same shape as profile
+        Y(np array): the y coordinates in 3d space, same shape as profile
+        Z(np array): the z coordinates in 3d space, same shape as profile
+        mask(np array): the mask of the profile image to remove background
+    """
+    if profile.dtype != np.int16:
+        raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
+    
+    h,w = profile.shape[:2]
+    x1,y1 = 0,0
+    x2,y2 = w,h
+    mask = profile != -TWO_TO_FIFTEEN
+    xx,yy = np.meshgrid(np.arange(x1,x2), np.arange(y1,y2))
+    X = offset[0] + xx * resolution[0]
+    Y = offset[1] + yy * resolution[1]
+    Z = offset[2] + profile*resolution[2]
+    # xyz = np.stack((X[mask],Y[mask],Z[mask]), axis=-1)
+    return X,Y,Z,mask
+
+
+def pts_to_xyz(pts, profile, resolution, offset):
+    """
+    convert list of 2d pts to 3d sensor space
+    args:
+        pts(list): list of points, each point is a tuple (x,y)
+        profile(np array): the profile image
+        resolution(tuple): (x_resolution, y_resolution, z_resolution)
+        offset(tuple): (x_offset, y_offset, z_offset)
+    """
+    if profile.dtype != np.int16:
+        raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
+    
+    xyz = []
+    for pt in pts:
+        x,y = map(int,pt)
+        nx = offset[0] + x * resolution[0]
+        ny = offset[1] + y * resolution[1]
+        nz = offset[2] + profile[y][x]*resolution[2]
+        xyz += [[nx,ny,nz]]
+    return np.array(xyz)
+
+
 def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, label=None, line_thickness=None):
     """
     description: Plots one bounding box and mask (optinal) on image img,
@@ -228,7 +287,6 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
         else:
             raise Exception(f'does not support pts neither Nx2 nor Nx4. Got shape: {pt.shape} with val: {pt}')
     return pts2
-
 
 
 def apply_operations(pts:np.ndarray, operations:list):
