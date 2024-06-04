@@ -130,6 +130,7 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
         new_rows = {}
         for kp in kps:
             x,y = kp
+            hit = 0
             for row in rows:
                 if len(row)!=5:
                     logging.warning(f'key point can only be assign to a bbox, but got {len(row)} values in a row. Skip it.')
@@ -138,10 +139,13 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
                 x1,y1 = xc-w/2, yc-h/2
                 x2,y2 = xc+w/2, yc+h/2
                 if x1<=x<=x2 and y1<=y<=y2:
+                    hit = 1
                     key = ','.join(str(v) for v in row)
                     if key not in new_rows:
                         new_rows[key] = row[:]
                     new_rows[key].extend(kp)
+            if not hit:
+                raise Exception(f'key point ({x},{y}) is not in any bbox. Fix it.')
                     
         txt_name = fname.replace('.png','.txt').replace('.jpg','.txt')
         fname_to_rows[txt_name] = new_rows.values() if len(kps) else rows
