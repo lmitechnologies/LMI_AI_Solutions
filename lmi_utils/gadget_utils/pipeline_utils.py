@@ -6,6 +6,8 @@ import json
 import torch
 import logging
 import glob
+from torch.nn import functional as F
+
 
 BLACK=(0,0,0)
 TWO_TO_FIFTEEN = 2**15
@@ -13,6 +15,97 @@ TWO_TO_FIFTEEN = 2**15
 logging.basicConfig(level=logging.NOTSET)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+@torch.no_grad()
+def resize_image(im, W=None, H=None, mode='bilinear'):
+    """
+    args: 
+        im(np array | torch.tensor): the image of the shape (H,W) or (H,W,C)
+        W(int): width
+        H:(int): Height
+        mode(str): 'nearest' | 'linear' | 'bilinear' | 'bicubic' | 'trilinear' | 'area' | 'nearest-exact'. Default: 'bilinear'
+    """
+    if W is None and H is None:
+        return im
+    
+    # get the target width and height
+    h,w = im.shape[:2]
+    if W is None:
+        W = int(w*H/h)
+    elif H is None:
+        H = int(h*W/w)
+    
+    # convert to tensor
+    is_numpy = isinstance(im, np.ndarray)
+    if is_numpy:
+        im = torch.from_numpy(im)
+    
+    # deal with 1 channel image 
+    if im.ndim==2:
+        im = im.unsqueeze(-1)
+        
+    im2 = F.interpolate(im.permute(2,0,1).unsqueeze(0).float(), size=(H,W), mode=mode)
+    im2 = im2.squeeze(0).permute(1,2,0).to(torch.uint8)
+    
+    return im2.numpy() if is_numpy else im2
+
+
+@torch.no_grad()
+def fit_im_to_size(im, W, H, value=0):
+    """
+    description:
+        pad/crop the image to the size [W,H] with BLACK pixels
+    arguments:
+        im(np.array or torch.Tensor): the image of the shape (H,W) or (H,W,C)
+        W(int): the target width
+        H(int): the target height
+        value(int): the value to pad
+    return:
+        im(torch.Tensor): the padded/cropped image 
+        pad_l(int): number of pixels padded to left
+        pad_r(int): number of pixels padded to right
+        pad_t(int): number of pixels padded to top
+        pad_b(int): number of pixels padded to bottom
+    """
+    is_numpy = isinstance(im, np.ndarray)
+    if is_numpy:
+        im = torch.from_numpy(im)
+
+    # deal with 1 channel image
+    if im.ndim == 2:
+        im = im.unsqueeze(-1)
+
+    # convert to CHW format    
+    im = im.permute(2, 0, 1)
+    h,w = im.shape[-2:]
+
+    # pad/crop width
+    if W >= w:
+        pad_L = (W - w) // 2
+        pad_R = W - w - pad_L
+        im = F.pad(im, (pad_L, pad_R, 0, 0), value=value)  
+    else:
+        pad_L = (w - W) // 2
+        pad_R = w - W - pad_L
+        im = im[:, :, pad_L:-pad_R]
+
+    # pad/crop height
+    if H >= h:
+        pad_T = (H - h) // 2
+        pad_B = H - h - pad_T
+        im = F.pad(im, (0, 0, pad_T, pad_B), value=value)
+    else:
+        pad_T = (h - H) // 2
+        pad_B = h - H - pad_T
+        im = im[:, :, pad_T:-pad_B]
+
+    # convert back to HWC format
+    im = im.permute(1, 2, 0).squeeze(-1)
+
+    if is_numpy:
+        im = im.numpy()
+    return im, pad_L, pad_R, pad_T, pad_B
 
 
 def fit_array_to_size(im,W,H):
