@@ -7,7 +7,7 @@ import torch
 import collections
 from tqdm import tqdm
 
-from yolov8_lmi.model import Yolov8, Yolov8Obb
+from yolov8_lmi.model import Yolov8, Yolov8Obb, Yolov8Pose
 from gadget_utils.pipeline_utils import plot_one_rbox, get_img_path_batches, plot_one_box
 from label_utils.rect import Rect
 from label_utils.mask import Mask
@@ -30,8 +30,8 @@ if __name__ == '__main__':
     parser.add_argument('-c','--confidence',default=0.25,type=float,help='[optional] the confidence for all classes, default=0.25')
     parser.add_argument('--csv', action='store_true', help='[optional] whether to save the results to csv file')
     parser.add_argument('--obb', action='store_true', help='[optional] whether to run Oriented Bounding Box model')
+    parser.add_argument('--pose', action='store_true', help='[optional] whether to run Pose model')
     parser.add_argument('--el', action='store_false', help='[optional] log level default is ERROR', default=False)
-    # parser.add_argument('--lv', default=logging.ERROR, help='[optional] log level default is ERROR')
     args = parser.parse_args()
     
     logging.basicConfig(level=logging.NOTSET)
@@ -39,13 +39,13 @@ if __name__ == '__main__':
     if args.el:
         logger.propagate = False
 
-
-
     model = None
-    if not args.obb:
-        model = Yolov8(args.wts_file)
-    else:
+    if args.pose:
+        model = Yolov8Pose(args.wts_file)
+    elif args.obb:
         model = Yolov8Obb(args.wts_file)
+    else:
+        model = Yolov8(args.wts_file)
     
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
@@ -103,6 +103,7 @@ if __name__ == '__main__':
                 boxes,scores,classes = results['boxes'][0],results['scores'][0],results['classes'][0]
                 masks = results['masks'][0] if 'masks' in results else None
                 segments = results['segments'][0] if 'segments' in results else []
+                points = results['points'][0] if 'points' in results else []
                 
                 # loop through each box
                 for j in range(len(boxes)-1,-1,-1): 
@@ -121,10 +122,11 @@ if __name__ == '__main__':
                     box = box.astype(np.int32)
                     # annotation
                     color = color_map[classes[j]]
-                    if not args.obb:
-                        plot_one_box(box,im_out,mask,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
-                    else:
+                    if args.obb:
                         plot_one_rbox(box,im_out,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
+                    else:
+                        plot_one_box(box,im_out,mask,color=color,label=f'{classes[j]}: {scores[j]:.2f}')
+                        
                     
                     if segments and len(segments[j]):
                         seg = segments[j]
@@ -139,6 +141,15 @@ if __name__ == '__main__':
                         if args.csv:
                             M = Mask(im_name=fname, category=classes[j], x_vals=seg[:,0].tolist(), y_vals=seg[:,1].tolist(), confidence=scores[j])
                             fname_to_shapes[fname].append(M)
+
+                    if len(points):
+                        pts = points[j]
+                        # convert points to original image size
+                        pts[:,0] /= rw
+                        pts[:,1] /= rh
+                        pts = pts.astype(np.int32)
+                        for pt in pts:
+                            cv2.circle(im_out, tuple(pt), 4, color, -1)
                     
                     # add rects to csv
                     if mask is None and args.csv:

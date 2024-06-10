@@ -1,14 +1,10 @@
 #built-in packages
 import os
-import glob
-import shutil
 import logging
-
-#3rd party packages
 import cv2
 
 #LMI packages
-from label_utils import mask, rect, csv_utils
+from label_utils import mask, rect, keypoint, csv_utils
 from image_utils.path_utils import get_relative_paths
 from image_utils.img_resize import resize
 
@@ -43,9 +39,9 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
             if not save_bg_images:
                 continue
             cnt_bg += 1
-            logger.info(f'Input file: {im_name} with size of [{w},{h}] has no labels')
+            logger.info(f'{im_name}: wh of [{w},{h}] has no labels')
         else:
-            logger.info(f'Input file: {im_name} with size of [{w},{h}]')
+            logger.info(f'{im_name}: wh of [{w},{h}]')
         
         # resize image
         tw,th = output_imsize
@@ -68,18 +64,18 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
         cv2.imwrite(os.path.join(path_out,out_name), im2)
         
         for i in range(len(shapes[im_name])):
+            shapes[im_name][i].im_name = out_name
             if isinstance(shapes[im_name][i], rect.Rect):
                 x,y = shapes[im_name][i].up_left
-                shapes[im_name][i].up_left = [int(x*rx), int(y*ry)]
+                shapes[im_name][i].up_left = [x*rx, y*ry]
                 x,y = shapes[im_name][i].bottom_right
-                shapes[im_name][i].bottom_right = [int(x*rx), int(y*ry)]
-                shapes[im_name][i].im_name = out_name
+                shapes[im_name][i].bottom_right = [x*rx, y*ry]
             elif isinstance(shapes[im_name][i], mask.Mask):
-                shapes[im_name][i].X = [int(v*rx) for v in shapes[im_name][i].X]
-                shapes[im_name][i].Y = [int(v*ry) for v in shapes[im_name][i].Y]
-                shapes[im_name][i].im_name = out_name
-            else:
-                raise Exception("Found unsupported classes. Supported classes are mask and rect")
+                shapes[im_name][i].X = [v*rx for v in shapes[im_name][i].X]
+                shapes[im_name][i].Y = [v*ry for v in shapes[im_name][i].Y]
+            elif isinstance(shapes[im_name][i], keypoint.Keypoint):
+                shapes[im_name][i].x = shapes[im_name][i].x*rx
+                shapes[im_name][i].y = shapes[im_name][i].y*ry
     if cnt_bg:
         logger.info(f'found {cnt_bg} images with no labels. These images will be used as background training data in YOLO')
     return shapes

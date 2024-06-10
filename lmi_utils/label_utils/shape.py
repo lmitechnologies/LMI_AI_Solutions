@@ -1,5 +1,6 @@
 class Shape:
-    def __init__(self, im_name='', full_path='', category=''):
+    def __init__(self, im_name='', fullpath='', category='', confidence=1.0):
         self.im_name = im_name
-        self.fullpath = full_path
+        self.fullpath = fullpath
         self.category = category
+        self.confidence = confidence
