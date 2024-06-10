@@ -91,18 +91,20 @@ class Yolov8(ODBase):
         """Prepares input image before inference.
 
         Args:
-            im (np.ndarray): BCHW for tensor, [(HWC) x B] for list.
+            im (np.ndarray | tensor): BCHW for tensor, [(HWC) x B] for list.
         """
-        if not isinstance(im, np.ndarray):
-            raise TypeError(f'Image type {type(im)} not supported')
+        if isinstance(im, np.ndarray):
+            im = np.ascontiguousarray(im)  # contiguous
+            im = self.from_numpy(im)
         
+        # convert to HWC
         if im.ndim == 2:
-            im = cv2.cvtColor(im, cv2.COLOR_GRAY2RGB)
-
-        im = np.expand_dims(im,axis=0) # HWC -> BHWC
-        im = im.transpose((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
-        im = np.ascontiguousarray(im)  # contiguous
-        img = self.from_numpy(im)
+            im = im.unsqueeze(-1)
+        if im.shape[-1] ==1:
+            im = im.expand(-1,-1,3)
+            
+        im = im.unsqueeze(0) # HWC -> BHWC
+        img = im.permute((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
 
         img = img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
@@ -460,7 +462,6 @@ class Yolov8Obb(Yolov8):
         for box in boxes:
             b = []
             for i in range(len(box)):
-                logger.info(f"box: {box[i]}")
                 b.append(pipeline_utils.revert_to_origin(box[i], operators))
             boxes.append(b)
         
