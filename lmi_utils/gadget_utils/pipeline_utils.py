@@ -42,11 +42,16 @@ def resize_image(im, W=None, H=None, mode='bilinear'):
         im = torch.from_numpy(im)
     
     # deal with 1 channel image 
-    if im.ndim==2:
+    one_channel = im.ndim==2
+    if one_channel:
         im = im.unsqueeze(-1)
         
     im2 = F.interpolate(im.permute(2,0,1).unsqueeze(0).float(), size=(H,W), mode=mode)
     im2 = im2.squeeze(0).permute(1,2,0).to(torch.uint8)
+    
+    # back to 1 channel
+    if one_channel:
+        im2 = im2.squeeze(-1)
     
     return im2.numpy() if is_numpy else im2
 
@@ -82,7 +87,8 @@ def fit_im_to_size(im, W=None, H=None, value=0):
         im = torch.from_numpy(im)
 
     # deal with 1 channel image
-    if im.ndim == 2:
+    one_channel = im.ndim==2
+    if one_channel:
         im = im.unsqueeze(-1)
 
     # convert to CHW format    
@@ -113,7 +119,11 @@ def fit_im_to_size(im, W=None, H=None, value=0):
         pad_B *= -1
 
     # convert back to HWC format
-    im = im.permute(1, 2, 0).squeeze(-1)
+    im = im.permute(1, 2, 0)
+    
+    # back to 1 channel
+    if one_channel:
+        im = im.squeeze(-1)
 
     if is_numpy:
         im = im.numpy()

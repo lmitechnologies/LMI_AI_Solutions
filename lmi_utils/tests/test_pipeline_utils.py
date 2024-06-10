@@ -29,6 +29,10 @@ class Test_resize_image:
     def test_gray_image(self):
         im = torch.rand(150, 100).numpy()
         im2 = pipeline_utils.resize_image(im, W=50)
+        assert im2.shape == (75, 50)
+        
+        im = torch.rand(150, 100, 1).numpy()
+        im2 = pipeline_utils.resize_image(im, W=50)
         assert im2.shape == (75, 50, 1)
         assert type(im2) == np.ndarray
     
@@ -41,7 +45,7 @@ class Test_resize_image:
     def test_tensor_gpu(self):
         if torch.cuda.is_available():
             im  = torch.rand(100, 100, 3).cuda()
-            im2 = pipeline_utils.resize_image(im, 150)
+            im2 = pipeline_utils.resize_image(im, W=150)
             assert im2.shape == (150, 150, 3)
             assert type(im2) == torch.Tensor
             assert im2.is_cuda
@@ -91,6 +95,11 @@ class Test_fit_im_to_size:
         im2,l,r,t,b = pipeline_utils.fit_im_to_size(im, W=89)
         assert l==-5 and r==-6 and t==0 and b==0
         assert im2.shape == (100, 89)
+        
+        im = torch.rand(100, 100, 1).numpy()
+        im2,l,r,t,b = pipeline_utils.fit_im_to_size(im, W=89)
+        assert l==-5 and r==-6 and t==0 and b==0
+        assert im2.shape == (100, 89, 1)
         assert type(im2) == np.ndarray
         
     def test_tensor_cpu(self):
