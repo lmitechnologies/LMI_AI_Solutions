@@ -52,14 +52,14 @@ def resize_image(im, W=None, H=None, mode='bilinear'):
 
 
 @torch.no_grad()
-def fit_im_to_size(im, W, H, value=0):
+def fit_im_to_size(im, W=None, H=None, value=0):
     """
     description:
         pad/crop the image to the size [W,H] with BLACK pixels
     arguments:
         im(np.array or torch.Tensor): the image of the shape (H,W) or (H,W,C)
-        W(int): the target width
-        H(int): the target height
+        W(int): the target width. If None, the width will not be changed
+        H(int): the target height. If None, the height will not be changed
         value(int): the value to pad
     return:
         im(torch.Tensor): the padded/cropped image 
@@ -68,6 +68,15 @@ def fit_im_to_size(im, W, H, value=0):
         pad_t(int): number of pixels padded to top
         pad_b(int): number of pixels padded to bottom
     """
+    
+    if W is None and H is None:
+        return im, 0, 0, 0, 0
+    h,w = im.shape[:2]
+    if W is None:
+        W = w
+    elif H is None:
+        H = h
+    
     is_numpy = isinstance(im, np.ndarray)
     if is_numpy:
         im = torch.from_numpy(im)
@@ -78,7 +87,6 @@ def fit_im_to_size(im, W, H, value=0):
 
     # convert to CHW format    
     im = im.permute(2, 0, 1)
-    h,w = im.shape[-2:]
 
     # pad/crop width
     if W >= w:
@@ -89,6 +97,8 @@ def fit_im_to_size(im, W, H, value=0):
         pad_L = (w - W) // 2
         pad_R = w - W - pad_L
         im = im[:, :, pad_L:-pad_R]
+        pad_L *= -1
+        pad_R *= -1
 
     # pad/crop height
     if H >= h:
@@ -98,7 +108,9 @@ def fit_im_to_size(im, W, H, value=0):
     else:
         pad_T = (h - H) // 2
         pad_B = h - H - pad_T
-        im = im[:, :, pad_T:-pad_B]
+        im = im[:, pad_T:-pad_B, :]
+        pad_T *= -1
+        pad_B *= -1
 
     # convert back to HWC format
     im = im.permute(1, 2, 0).squeeze(-1)
