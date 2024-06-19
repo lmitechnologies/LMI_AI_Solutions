@@ -9,6 +9,7 @@ import logging
 from label_utils.csv_utils import load_csv
 from label_utils import rect, mask, keypoint
 from label_utils.plot_utils import plot_one_box, plot_one_polygon, plot_one_pt
+from label_utils.bbox_utils import rotate
 
 
 logging.basicConfig(level=logging.INFO)
@@ -63,8 +64,20 @@ if __name__ == '__main__':
             continue
         for shape in shapes:
             if isinstance(shape, rect.Rect):
-                box = shape.up_left + shape.bottom_right
-                plot_one_box(box, im, label=shape.category, color=color_map[shape.category])
+                if shape.angle > 0.0:
+                    x1 , y1 = shape.up_left
+                    x2 , y2 = shape.bottom_right
+                    angle = shape.angle
+                    width = x2 - x1
+                    height = y2 - y1
+                    # rotated rectangle
+
+                    rotated_rect = rotate(x1, y1, width, height, angle)
+                    # draw the rotated rectangle
+                    plot_one_polygon(np.array([rotated_rect]), im, label=shape.category, color=color_map[shape.category])
+                else:
+                    box = shape.up_left + shape.bottom_right
+                    plot_one_box(box, im, label=shape.category, color=color_map[shape.category])
             elif isinstance(shape, mask.Mask):
                 pts = np.array([[x,y] for x,y in zip(shape.X,shape.Y)])
                 pts = pts.reshape((-1, 1, 2))
