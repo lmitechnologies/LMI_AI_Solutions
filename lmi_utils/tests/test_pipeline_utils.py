@@ -1,10 +1,14 @@
 import pytest
-import gadget_utils.pipeline_utils as pipeline_utils
 import torch
 import numpy as np
-import cv2
 import logging
+import sys
+import os
 
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.join(ROOT, 'lmi_utils'))
+
+import gadget_utils.pipeline_utils as pipeline_utils
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -117,3 +121,11 @@ class Test_fit_im_to_size:
             assert im2.shape == (100, 89, 3)
             assert type(im2) == torch.Tensor
             assert im2.is_cuda
+            
+    def test_eqaul_with_old_func(self):
+        im = torch.rand(100,100,3).numpy()
+        im2,l,r,t,b = pipeline_utils.fit_im_to_size(im, W=89, H=78)
+        im3, l2, r2, t2, b2 = pipeline_utils.fit_array_to_size(im, W=89, H=78)
+        assert np.array_equal(im2, im3)
+        assert l == l2 and r == r2 and t == t2 and b == b2
+        
