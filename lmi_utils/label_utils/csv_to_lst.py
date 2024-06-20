@@ -138,6 +138,8 @@ def write_to_lst(shapes, out_path, images_path, gs_path, width, height, is_pred)
     cnt_box = 0
     cnt_polygon = 0
     cnt_img = len(shapes)
+    # sort the shapes by filename
+    shapes = {k: v for k, v in sorted(shapes.items(), key=lambda item: item[0])}
     for fname in shapes:
         if images_path is not None:
             im = cv2.imread(os.path.join(images_path, fname))

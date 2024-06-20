@@ -270,12 +270,12 @@ class Yolov8(ODBase):
         # deal with segmentation results
         if len(results['masks']):
             masks = results['masks'][0]
-            segs = results['segments'][0]
-            # convert mask to sensor space
-            result_contours = [pipeline_utils.revert_to_origin(seg, operators) for seg in segs]
             masks = pipeline_utils.revert_masks_to_origin(masks, operators)
-            results_dict['segments'] = result_contours
             results_dict['masks'] = masks
+        if return_segments and len(results['segments']):
+            segs = results['segments'][0]
+            result_contours = [pipeline_utils.revert_to_origin(seg, operators) for seg in segs]
+            results_dict['segments'] = result_contours
         
         # convert box to sensor space
         boxes = pipeline_utils.revert_to_origin(boxes, operators)
@@ -553,7 +553,6 @@ class Yolov8Pose(Yolov8):
             iou (float): the iou threshold for non-maximum suppression. defaults to 0.4
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             max_det (int): The maximum number of detections to return. defaults to 300.
-            return_segments(bool): If True, return the segments of the masks.
 
         Returns:
             list of [results, time info]
