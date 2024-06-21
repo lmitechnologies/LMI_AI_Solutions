@@ -330,6 +330,7 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None):
         )
 
 
+@torch.no_grad()
 def revert_mask_to_origin(mask, operations:list):
     """
     This func reverts a single mask image according to the operations list IN ORDER.
@@ -337,16 +338,18 @@ def revert_mask_to_origin(mask, operations:list):
         1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
         2. <resize: [resized_w, resized_h, orig_w, orig_h]>
     """
-    mask2 = mask.copy()
+    is_numpy = isinstance(mask, np.ndarray)
+    if is_numpy:
+        mask2 = torch.from_numpy(mask)
     for operator in reversed(operations):
         if 'resize' in operator:
             _,_,nw,nh = operator['resize']
-            mask2 = cv2.resize(mask2,(nw,nh))
+            mask2 = resize_image(mask2,nw,nh)
         if 'pad' in operator:
             h,w = mask2.shape[:2]
             pad_L,pad_R,pad_T,pad_B = operator['pad']
             nw,nh = w-pad_L-pad_R,h-pad_T-pad_B
-            mask2,_,_,_,_ = fit_array_to_size(mask2,nw,nh)
+            mask2,_,_,_,_ = fit_im_to_size(mask2,nw,nh)
     return mask2
 
 
