@@ -445,14 +445,14 @@ class Yolov8Obb(Yolov8):
         
         # convert box to sensor space
         # boxes = [pipeline_utils.revert_to_origin(box, operators) for box in boxes]
-        boxes = []
+        converted_boxes = []
         for box in boxes:
             b = []
             for i in range(len(box)):
                 b.append(pipeline_utils.revert_to_origin(box[i], operators))
-            boxes.append(b)
+            converted_boxes.append(b)
         
-        results_dict['boxes'] = boxes
+        results_dict['boxes'] = converted_boxes
         results_dict['scores'] = scores
         results_dict['classes'] = classes
             
