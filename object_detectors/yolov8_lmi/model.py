@@ -439,7 +439,7 @@ class Yolov8Obb(Yolov8):
             return results_dict, time_info
         
         # handling only one batch
-        boxes = results['boxes']
+        boxes = results['boxes'][0].tolist()
         scores = results['scores'][0].tolist()
         classes = results['classes'][0].tolist()
         
@@ -449,13 +449,12 @@ class Yolov8Obb(Yolov8):
         for box in boxes:
             b = []
             for i in range(len(box)):
-                b.append(pipeline_utils.revert_to_origin(box[i], operators))
-            converted_boxes.append(b)
+                b.append(pipeline_utils.revert_to_origin([box[i]], operators))
+            converted_boxes.append(np.squeeze(b))
         
         results_dict['boxes'] = converted_boxes
         results_dict['scores'] = scores
         results_dict['classes'] = classes
-            
         time_info['postproc'] = time.time()-t0
         return results_dict, time_info
     
