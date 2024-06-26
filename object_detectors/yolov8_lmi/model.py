@@ -91,20 +91,18 @@ class Yolov8(ODBase):
         """Prepares input image before inference.
 
         Args:
-            im (np.ndarray | tensor): BCHW for tensor, [(HWC) x B] for list.
+            im (np.ndarray): BCHW for tensor, [(HWC) x B] for list.
         """
-        if isinstance(im, np.ndarray):
-            im = np.ascontiguousarray(im)  # contiguous
-            im = self.from_numpy(im)
+        if not isinstance(im, np.ndarray):
+            raise TypeError(f'Image type {type(im)} not supported')
         
-        # convert to HWC
         if im.ndim == 2:
-            im = im.unsqueeze(-1)
-        if im.shape[-1] ==1:
-            im = im.expand(-1,-1,3)
-            
-        im = im.unsqueeze(0) # HWC -> BHWC
-        img = im.permute((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
+            im = cv2.cvtColor(im, cv2.COLOR_GRAY2RGB)
+
+        im = np.expand_dims(im,axis=0) # HWC -> BHWC
+        im = im.transpose((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
+        im = np.ascontiguousarray(im)  # contiguous
+        img = self.from_numpy(im)
 
         img = img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
