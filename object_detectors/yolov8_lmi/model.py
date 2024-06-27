@@ -94,7 +94,6 @@ class Yolov8(ODBase):
             im (np.ndarray | tensor): BCHW for tensor, [(HWC) x B] for list.
         """
         if isinstance(im, np.ndarray):
-            im = np.ascontiguousarray(im)  # contiguous
             im = self.from_numpy(im)
         
         # convert to HWC
@@ -105,6 +104,7 @@ class Yolov8(ODBase):
             
         im = im.unsqueeze(0) # HWC -> BHWC
         img = im.permute((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
+        img = img.contiguous()
 
         img = img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
