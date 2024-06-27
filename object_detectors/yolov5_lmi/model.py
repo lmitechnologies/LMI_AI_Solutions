@@ -88,6 +88,7 @@ class Yolov5(ODBase):
             im (np.ndarray | tensor): BCHW for tensor, [(HWC) x B] for list.
         """
         if isinstance(im, np.ndarray):
+            self.logger.info(f'image shape: {im.shape}')
             im = self.from_numpy(im)
         
         # convert to HWC
@@ -105,6 +106,7 @@ class Yolov5(ODBase):
         return img
     
     
+    @smart_inference_mode()
     def load_with_preprocess(self, im_path:str):
         """im preprocess
 
@@ -118,7 +120,7 @@ class Yolov5(ODBase):
         else:
             im0 = cv2.imread(im_path) #BGR format
             im0 = im0[:,:,::-1] #BGR to RGB
-        return self.preprocess(im0),im0
+        return self.preprocess(im0.copy()),im0
     
     
     @smart_inference_mode()

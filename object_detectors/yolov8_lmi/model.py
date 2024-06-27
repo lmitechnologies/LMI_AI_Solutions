@@ -127,7 +127,7 @@ class Yolov8(ODBase):
         else:
             im0 = cv2.imread(im_path) #BGR format
             im0 = im0[:,:,::-1] #BGR to RGB
-        return self.preprocess(im0),im0
+        return self.preprocess(im0.copy()),im0
     
 
     def get_min_conf(self, conf:Union[float, dict]):
