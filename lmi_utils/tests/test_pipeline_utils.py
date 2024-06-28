@@ -128,4 +128,40 @@ class Test_fit_im_to_size:
         im3, l2, r2, t2, b2 = pipeline_utils.fit_array_to_size(im, W=89, H=78)
         assert np.array_equal(im2, im3)
         assert l == l2 and r == r2 and t == t2 and b == b2
+
+
+class Test_revert_to_origin:
+    def test_1(self):
+        pts = [[10,20],[30,40],[50,60],[70,80]]
+        operations = [{'resize':[100,100,200,300]},{'pad':[8,9,10,11]},{'stretch':[1.5,2]}]
+        pts2 = pipeline_utils.revert_to_origin(pts, operations)
+        ans = np.array([[-2.66, 0.0], [24.0, 30.0], [50.66, 60.0], [77.34, 90.0]])
+        assert np.array_equal(pts2, ans.round().clip(0))
+    
+    def test_2(self):
+        pts = np.array([[15,25],[35,45],[55,65],[75,85]])
+        operations = [{'resize':[200,300,100,100]},{'pad':[8,9,10,11]},{'stretch':[1.5,2]}]
+        pts2 = pipeline_utils.revert_to_origin(pts, operations)
+        ans = np.array([[1.0, 0.83], [7.67, 4.17], [14.34, 7.5], [21.0, 10.83]])
+        assert np.array_equal(pts2, ans.round())
+
+    def test_3(self):
+        pts = [[15, 25, 35, 45], [55, 65, 75, 85]]
+        operations = [{'resize':[200,300,100,100]},{'pad':[8,9,10,11]},{'stretch':[1.5,2]}]
+        pts2 = pipeline_utils.revert_to_origin(pts, operations)
+        ans = np.array([[1.0, 0.83, 7.67, 4.17], [14.34, 7.5, 21.0, 10.83]])
+        assert np.array_equal(pts2, ans.round())
+        
+    def test_types(self):
+        pts = np.array([[15, 25, 35, 45], [55, 65, 75, 85]])
+        operations = [{'resize':[200,300,100,100]},{'pad':[8,9,10,11]},{'stretch':[1.5,2]}]
+        pts2 = pipeline_utils.revert_to_origin(pts, operations)
+        assert type(pts2) == list
+        
+        pts3 = pipeline_utils.revert_to_origin(torch.tensor(pts), operations)
+        assert type(pts3) == torch.Tensor
+        
+        pts4 = pipeline_utils.revert_to_origin(torch.tensor(pts).cuda(), operations)
+        assert type(pts4) == torch.Tensor
+        assert pts4.is_cuda
         

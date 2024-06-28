@@ -338,9 +338,6 @@ def revert_mask_to_origin(mask, operations:list):
         1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
         2. <resize: [resized_w, resized_h, orig_w, orig_h]>
     """
-    is_numpy = isinstance(mask, np.ndarray)
-    if is_numpy:
-        mask2 = torch.from_numpy(mask)
     for operator in reversed(operations):
         if 'resize' in operator:
             _,_,nw,nh = operator['resize']
@@ -360,7 +357,8 @@ def revert_masks_to_origin(masks, operations:list):
     return results
 
 
-def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
+@torch.no_grad()
+def revert_to_origin(pts:np.ndarray, operations:list):
     """
     revert the points to original image coordinates
     This func reverts the operation in operations list IN ORDER.
@@ -372,41 +370,35 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
     """
-
-    def revert(x,y, operations):
-        nx,ny = x,y
-        for operator in reversed(operations):
-            if 'resize' in operator:
-                tw,th,orig_w,orig_h = operator['resize']
-                r = [tw/orig_w,th/orig_h]
-                nx,ny = nx/r[0], ny/r[1]
-            if 'pad' in operator:
-                pad_L,pad_R,pad_T,pad_B = operator['pad']
-                nx,ny = nx-pad_L,ny-pad_T
-            if 'stretch' in operator:
-                s = operator['stretch']
-                nx,ny = nx/s[0], ny/s[1]
-            if verbose:
-                logger.info(f'after {operator}, pt: {x:.2f},{y:.2f} -> {nx:.2f},{ny:.2f}')
-        nx = round(nx)
-        ny = round(ny)
-        return [max(nx,0),max(ny,0)]
-
-    pts2 = []
-    if isinstance(pts, list):
-        pts = np.array(pts)
-    for pt in pts:
-        if len(pt)==0:
-            continue
-        if len(pt)==2:
-            x,y = pt
-            pts2.append(revert(x,y,operations))
-        elif len(pt)==4:
-            x1,y1,x2,y2 = pt
-            pts2.append(revert(x1,y1,operations)+revert(x2,y2,operations))
-        else:
-            raise Exception(f'does not support pts neither Nx2 nor Nx4. Got shape: {pt.shape} with val: {pt}')
-    return pts2
+    is_tensor = isinstance(pts, torch.Tensor)
+    if not is_tensor:
+        pts = torch.tensor(pts)
+    
+    device = pts.device    
+    r,c = pts.shape
+    if c!=2 and c!=4:
+        raise Exception(f'does not support pts neither Nx2 nor Nx4. Got shape: {pts.shape}')
+    for op in reversed(operations):
+        if 'resize' in op:
+            tw,th,orig_w,orig_h = op['resize']
+            r = torch.tensor([tw/orig_w,th/orig_h])
+            if c==4:
+                r = r.repeat(2).unsqueeze(0)
+            pts = pts/r.to(device)
+        if 'pad' in op:
+            pad_L,pad_R,pad_T,pad_B = op['pad']
+            d = torch.tensor([pad_L,pad_T])
+            if c==4:
+                d = d.repeat(2).unsqueeze(0)
+            pts = pts - d.to(device)
+        if 'stretch' in op:
+            s = torch.tensor(op['stretch'])
+            if c==4:
+                s = s.repeat(2).unsqueeze(0)
+            pts = pts/s.to(device)
+            
+    pts = pts.round().clamp(min=0)
+    return pts if is_tensor else pts.tolist()
 
 
 def apply_operations(pts:np.ndarray, operations:list):
