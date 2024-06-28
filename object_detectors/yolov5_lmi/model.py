@@ -88,7 +88,6 @@ class Yolov5(ODBase):
             im (np.ndarray | tensor): BCHW for tensor, [(HWC) x B] for list.
         """
         if isinstance(im, np.ndarray):
-            self.logger.info(f'image shape: {im.shape}')
             im = self.from_numpy(im)
         
         # convert to HWC
