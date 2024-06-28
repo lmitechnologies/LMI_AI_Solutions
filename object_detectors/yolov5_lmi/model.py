@@ -105,7 +105,6 @@ class Yolov5(ODBase):
         return img
     
     
-    @smart_inference_mode()
     def load_with_preprocess(self, im_path:str):
         """im preprocess
 
