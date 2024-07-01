@@ -132,6 +132,7 @@ def fit_im_to_size(im, W=None, H=None, value=0):
 
 def fit_array_to_size(im,W,H):
     """
+    DEPRECATED
     description:
         pad/crop the image to the size [W,H] with BLACK pixels
     arguments:
@@ -360,11 +361,11 @@ def revert_masks_to_origin(masks, operations:list):
 @torch.no_grad()
 def revert_to_origin(pts, operations:list):
     """
-    revert the points to original image coordinates
-    This func reverts the operation in operations list IN ORDER.
-    The operations list contains items as dictionary. The items are listed as follows: 
+    revert the points to original image space.
+    This func executes operations in the REVERSED order.
+    The operations list contains items as dictionary. The supported items are listed following: 
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
-        2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
+        2. <pad: [pad_left, pad_right, pad_top, pad_bottom]> 
         3. <resize: [resized_w, resized_h, orig_w, orig_h]>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
@@ -372,30 +373,29 @@ def revert_to_origin(pts, operations:list):
     """
     is_tensor = isinstance(pts, torch.Tensor)
     if not is_tensor:
-        pts = torch.tensor(pts)
+        pts = torch.as_tensor(pts)
     
-    device = pts.device    
     r,c = pts.shape
     if c!=2 and c!=4:
         raise Exception(f'does not support pts neither Nx2 nor Nx4. Got shape: {pts.shape}')
     for op in reversed(operations):
         if 'resize' in op:
             tw,th,orig_w,orig_h = op['resize']
-            r = torch.tensor([tw/orig_w,th/orig_h])
+            r = torch.tensor([tw/orig_w,th/orig_h],device=pts.device)
             if c==4:
                 r = r.repeat(2).unsqueeze(0)
-            pts = pts/r.to(device)
+            pts = pts/r
         if 'pad' in op:
             pad_L,pad_R,pad_T,pad_B = op['pad']
-            d = torch.tensor([pad_L,pad_T])
+            p = torch.tensor([pad_L,pad_T],device=pts.device)
             if c==4:
-                d = d.repeat(2).unsqueeze(0)
-            pts = pts - d.to(device)
+                p = p.repeat(2).unsqueeze(0)
+            pts = pts - p
         if 'stretch' in op:
-            s = torch.tensor(op['stretch'])
+            s = torch.tensor(op['stretch'],device=pts.device)
             if c==4:
                 s = s.repeat(2).unsqueeze(0)
-            pts = pts/s.to(device)
+            pts = pts/s
             
     pts = pts.round().clamp(min=0)
     return pts if is_tensor else pts.tolist()
