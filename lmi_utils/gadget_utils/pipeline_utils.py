@@ -358,7 +358,7 @@ def revert_masks_to_origin(masks, operations:list):
 
 
 @torch.no_grad()
-def revert_to_origin(pts:np.ndarray, operations:list):
+def revert_to_origin(pts, operations:list):
     """
     revert the points to original image coordinates
     This func reverts the operation in operations list IN ORDER.
