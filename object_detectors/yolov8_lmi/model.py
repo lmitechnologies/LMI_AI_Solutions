@@ -1,11 +1,13 @@
 import cv2
 import numpy as np
 import torch
+import torchvision
 import os
 import collections
 import logging
 from typing import Union
 import time
+import matplotlib.font_manager as fm
 
 from ultralytics.utils import ops
 from ultralytics.nn.autobackend import AutoBackend
@@ -97,6 +99,7 @@ class Yolov8(ODBase):
             im = np.ascontiguousarray(im)  # contiguous
             im = self.from_numpy(im)
         
+        im = im.to(self.device)
         # convert to HWC
         if im.ndim == 2:
             im = im.unsqueeze(-1)
@@ -152,7 +155,7 @@ class Yolov8(ODBase):
     
     
     @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True, return_tensor=False):
         """Postprocesses predictions and returns a list of Results objects.
         
         Args:
@@ -164,6 +167,7 @@ class Yolov8(ODBase):
             max_det (int): The maximum number of detections to return. defaults to 300.
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             return_segments(bool): If True, return the segments of the masks.
+            return_tensor(bool): If True, return results as tensor. Defaults to False.
         Rreturns:
             (dict): the dictionary contains several keys: boxes, scores, classes, masks, and (masks, segments if use a segmentation model).
                     the shape of boxes is (B, N, 4), where B is the batch size and N is the number of detected objects.
@@ -206,22 +210,27 @@ class Yolov8(ODBase):
                 thres = np.array([conf.get(c,1) for c in classes])
             M = confs > self.from_numpy(thres)
             
-            results['boxes'].append(xyxy[M].cpu().numpy())
-            results['scores'].append(confs[M].cpu().numpy())
-            results['classes'].append(classes[M.cpu().numpy()])
             if predict_mask:
                 masks = ops.process_mask_native(proto[i], pred[:, 6:], pred[:, :4], orig_img.shape[:2])
                 masks = masks[M]
-                results['masks'].append(masks.cpu().numpy())
+                results['masks'].append(masks if return_tensor else masks.cpu().numpy())
                 if return_segments:
                     segments = [ops.scale_coords(masks.shape[1:], x, orig_img.shape, normalize=False) 
                                 for x in ops.masks2segments(masks)]
                     results['segments'].append(segments)
+                    
+            if return_tensor:
+                results['boxes'].append(xyxy[M])
+                results['scores'].append(confs[M])
+            else:
+                results['boxes'].append(xyxy[M].cpu().numpy())
+                results['scores'].append(confs[M].cpu().numpy())
+            results['classes'].append(classes[M.cpu().numpy()].tolist())
         return results
 
 
     @smart_inference_mode()
-    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_segments=True):
+    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_segments=True, return_tensor=False):
         """run yolov8 object detection inference. It runs the preprocess(), forward(), and postprocess() in sequence.
         It converts the results to the original coordinates space if the operators are provided.
         
@@ -233,8 +242,8 @@ class Yolov8(ODBase):
             iou (float): the iou threshold for non-maximum suppression. defaults to 0.4
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             max_det (int): The maximum number of detections to return. defaults to 300.
-            return_segments(bool): If True, return the segments of the masks.
-
+            return_segments(bool): If True, return the segments of the masks. Defaults to True.
+            return_tensor(bool): If True, return results as tensor. Defaults to False.
         Returns:
             list of [results, time info]
             results (dict): a dictionary of the results, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
@@ -254,7 +263,7 @@ class Yolov8(ODBase):
         
         # postprocess
         t0 = time.time()
-        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det,return_segments)
+        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det,return_segments,return_tensor)
         
         # return empty results if no detection
         results_dict = collections.defaultdict(list)
@@ -264,8 +273,8 @@ class Yolov8(ODBase):
         
         # only one image, get first batch
         boxes = results['boxes'][0]
-        scores = results['scores'][0].tolist()
-        classes = results['classes'][0].tolist()
+        scores = results['scores'][0]
+        classes = results['classes'][0]
         
         # deal with segmentation results
         if len(results['masks']):
@@ -288,6 +297,7 @@ class Yolov8(ODBase):
     
     
     @staticmethod
+    @torch.no_grad()
     def annotate_image(results, image, colormap=None):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
         TODO: text size, thickness, font
@@ -300,29 +310,36 @@ class Yolov8(ODBase):
         Returns:
             np.ndarray: the annotated image
         """
+        font_path = fm.findSystemFonts(fontpaths=None, fontext='ttf')[0]
+        
         boxes = results['boxes']
         classes = results['classes']
         scores = results['scores']
         masks = results['masks']
+        classes_with_scores = [f"{c}: {s:.2f}" for c,s in zip(classes, scores)]
         
-        
-        image2 = image.copy()
         if not len(boxes):
-            return image2
+            return image
         
-        for i in range(len(boxes)):
-            mask = masks[i] if len(masks) else None
-            pipeline_utils.plot_one_box(
-                boxes[i],
-                image2,
-                mask,
-                label="{}: {:.2f}".format(
-                    classes[i], scores[i]
-                ),
-                color=colormap[classes[i]] if colormap is not None else None,
-            )
-        return image2
-
+        is_tensor = isinstance(image, torch.Tensor)
+        if not is_tensor:
+            image = torch.from_numpy(image)
+        
+        # HWC to CHW
+        image2 = image.permute(2, 0, 1)
+        
+        if colormap is not None:
+            colors = [colormap[c] for c in classes]
+        else:
+            colors = None
+        
+        # draw the masks
+        if len(masks):
+            image2 = torchvision.utils.draw_segmentation_masks(image2, masks, colors=colors)
+        
+        image2 = torchvision.utils.draw_bounding_boxes(image2, boxes, classes_with_scores, colors=colors, width=4, font=font_path, font_size=50)
+        image2 = image2.permute(1, 2, 0).numpy()
+        return image2 if is_tensor else image2.numpy()
 
 
 class Yolov8Obb(Yolov8):

@@ -342,13 +342,13 @@ def revert_mask_to_origin(mask, operations:list):
     for operator in reversed(operations):
         if 'resize' in operator:
             _,_,nw,nh = operator['resize']
-            mask2 = resize_image(mask2,nw,nh)
+            mask = resize_image(mask,nw,nh)
         if 'pad' in operator:
-            h,w = mask2.shape[:2]
+            h,w = mask.shape[:2]
             pad_L,pad_R,pad_T,pad_B = operator['pad']
             nw,nh = w-pad_L-pad_R,h-pad_T-pad_B
-            mask2,_,_,_,_ = fit_im_to_size(mask2,nw,nh)
-    return mask2
+            mask,_,_,_,_ = fit_im_to_size(mask,nw,nh)
+    return mask
 
 
 def revert_masks_to_origin(masks, operations:list):
