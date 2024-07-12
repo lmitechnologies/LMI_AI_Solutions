@@ -127,11 +127,15 @@ class Test_fit_im_to_size:
             assert im2.is_cuda
             
     def test_eqaul_with_old_func(self):
-        im = torch.rand(100,100,3).numpy()
-        im2,l,r,t,b = pipeline_utils.fit_im_to_size(im, W=89, H=78)
-        im3, l2, r2, t2, b2 = pipeline_utils.fit_array_to_size(im, W=89, H=78)
-        assert np.array_equal(im2, im3)
-        assert l == l2 and r == r2 and t == t2 and b == b2
+        im = torch.rand(150,100,3).numpy()
+        Ws = [89, 131, 10, 201]
+        Hs = [78, 120, 11, 202]
+        for w,h in zip(Ws, Hs):
+            im2,l,r,t,b = pipeline_utils.fit_im_to_size(im, W=w, H=h)
+            im3, l2, r2, t2, b2 = pipeline_utils.fit_array_to_size(im, W=w, H=h)
+            assert np.array_equal(im2, im3)
+            assert l == l2 and r == r2 and t == t2 and b == b2
+        
 
 
 class Test_revert_to_origin:
