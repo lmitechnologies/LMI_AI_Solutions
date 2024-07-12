@@ -5,13 +5,17 @@ import logging
 import sys
 import os
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# add path to the repo
+PATH = os.path.abspath(__file__)
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(PATH))))
 sys.path.append(os.path.join(ROOT, 'lmi_utils'))
 
 import gadget_utils.pipeline_utils as pipeline_utils
 
-logging.basicConfig(level=logging.DEBUG)
+
+logging.basicConfig()
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
 class Test_resize_image:

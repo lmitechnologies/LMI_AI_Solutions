@@ -57,7 +57,7 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
     """
     fname_to_rows = {}
     ignore_cls = set()
-    kpt_shape = []
+    n_pts = 0
     for fname in fname_to_shapes:
         rows = []
         kps = []
@@ -149,11 +149,13 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
                     
         txt_name = fname.replace('.png','.txt').replace('.jpg','.txt')
         fname_to_rows[txt_name] = new_rows.values() if len(kps) else rows
-        n_pts = 0
         if len(kps):
             r = list(new_rows.values())[0]
-            n_pts = (len(r)-5)/2
-            n_pts = int(n_pts)
+            if n_pts==0:
+                n_pts = (len(r)-5)/2
+                n_pts = int(n_pts)
+            elif n_pts!=(len(r)-5)/2:
+                raise Exception(f'Inconsistent number of key points: {n_pts} and {(len(r)-5)/2}')
     return fname_to_rows, ignore_cls, n_pts
 
 
@@ -255,7 +257,7 @@ if __name__ =='__main__':
     del_keys = del_keys.union(ignore_cls)
     del_classes(class_to_id, del_keys)
 
-    if target_classes[0]!='all':
+    if len(target_classes) and target_classes[0]!='all':
         logger.info(f'target_classes: {target_classes}')
     logger.info(f'delete classes: {del_keys}')
     logger.info(f'final classes: {class_to_id}')
