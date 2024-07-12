@@ -250,7 +250,14 @@ class AnomalyModel:
                        ' --explicitBatch --inputIOFormats=fp16:chw --outputIOFormats=fp16:chw'
                        f' --workspace={workspace}') + (' --fp16' if fp16 else ' ')
         os.system(convert_cmd)
-        os.system(f"cp {os.path.dirname(onnx_path)}/metadata.json {os.path.dirname(out_engine_path)}")
+        # check if metadata.json exists in the same directory as onnx_path
+        if os.path.isfile(f"{os.path.dirname(onnx_path)}/metadata.json"):
+            os.system(f"cp {os.path.dirname(onnx_path)}/metadata.json {os.path.dirname(out_engine_path)}")
+        else:
+            logger.warning(f"metadata.json not found in {os.path.dirname(onnx_path)}")
+
+    def from_numpy(self, x):
+        return torch.from_numpy(x).to(self.device) if isinstance(x, np.ndarray) else x
     
     @staticmethod
     def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs=True,anom_threshold=None,anom_max=None):
