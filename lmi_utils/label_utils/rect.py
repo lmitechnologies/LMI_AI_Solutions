@@ -14,8 +14,12 @@ class Rect(Shape):
             bottom_right(list): the bottom right point [x2,y2] of the bbox
             confidence(double): the confidence level between [0.0, 1.0] 
         """
-        super().__init__(im_name,fullpath,category)
+        super().__init__(im_name,fullpath,category,confidence)
         self.up_left = up_left
         self.bottom_right = bottom_right
-        self.confidence = confidence
         self.angle = angle
+        
+    def round(self):
+        self.up_left = list(map(round,self.up_left))
+        self.bottom_right = list(map(round,self.bottom_right))
+        

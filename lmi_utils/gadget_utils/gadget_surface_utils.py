@@ -202,19 +202,33 @@ class GadgetSurfaceUtils():
             with open(join(destination_path, file.replace(".png", ".gadget3d.pickle")), "wb") as f:
                 pickle.dump(content, f, protocol=4)
 
-    def png_2_pkl(self, source_path, destination_path):
-        files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".png" in f]
-
-        for file in files:
-            print(join(source_path, file))
-
-            img = Image.open(join(source_path, file))
-            npy_arr = numpy.array(img)
+    def png_2_pkl(self, source_path, destination_path,source_path_intensity=None):
+        files_p = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".png" in f]
+        files_p.sort()
+        if source_path_intensity is not None:
+            files_i = [f for f in listdir(source_path_intensity) if isfile(join(source_path_intensity, f)) and ".png" in f]
+            files_i.sort()
+            files=zip(files_p,files_i)
+        else:
+            files=zip(files_p)
+        
+        for file_tuple in files:
+            file_p=file_tuple[0]
+            print(join(source_path, file_p))
+            img = Image.open(join(source_path, file_p))
+            npy_arr_p = numpy.array(img)
+            if npy_arr_p.dtype == numpy.uint16:
+                npy_arr_p = npy_arr_p.view(numpy.int16) + numpy.int16(-32768) 
+            elif npy_arr_p.dtype == numpy.int32:
+                npy_arr_p = (npy_arr_p - 32768).astype(numpy.int16) 
             
-            if npy_arr.dtype == numpy.uint16:
-                npy_arr = npy_arr.view(numpy.int16) + numpy.int16(-32768) 
-            elif npy_arr.dtype == numpy.int32:
-                npy_arr = (npy_arr - 32768).astype(numpy.int16) 
+            if len(file_tuple)==2:
+                file_i=file_tuple[1]
+                print(join(source_path, file_i))
+                img = Image.open(join(source_path_intensity, file_i))
+                npy_arr_i = numpy.array(img)
+            else:
+                npy_arr_i=None
 
             content = { 
                 "metadata": {
@@ -223,11 +237,11 @@ class GadgetSurfaceUtils():
                     "resolution": 1, 
                     "offset": 0, 
                 }, 
-                "profile_array": npy_arr,
-                "intensity_array": None,
+                "profile_array": npy_arr_p,
+                "intensity_array": npy_arr_i,
             }
-
-            with open(join(destination_path, file.replace(".png", ".gadget3d.pickle")), "wb") as f:
+               
+            with open(join(destination_path, file_p.replace(".png", ".gadget3d.pickle")), "wb") as f:
                 pickle.dump(content, f, protocol=4)
 
     def pcd_2_pkl(self, source_path, destination_path, ZResolution = 1, ZOffset = 0):
@@ -312,7 +326,7 @@ if __name__=="__main__":
     elif option=='npy_2_pkl':
         translate.npy_2_pkl(src,dest)
     elif option=='png_2_pkl':
-        translate.png_2_pkl(src,dest)
+        translate.png_2_pkl(src,dest,source_path_intensity=src_intensity)
     elif option=='tar_2_pcd':
         translate.tar_2_pcd(src,dest,source_path_intensity=src_intensity)
     elif option=='pcd_2_pkl':

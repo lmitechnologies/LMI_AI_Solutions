@@ -3,6 +3,38 @@ import random
 import numpy as np
 
 
+def plot_one_pt(pt, img, color=None, label=None, radius=3, line_thickness=None):
+    """
+    description: Plots one point on image img,
+                 this function comes from YoLov5 project.
+    arguments:
+        pt(list):
+        img(np array):    a opencv image object in BGR format
+        color(tuple):  color to draw rectangle, such as (0,255,0)
+        label(str):  the class name
+        line_thickness(int): the thickness of the line
+    """
+    color = color or [random.randint(0, 255) for _ in range(3)]
+    x,y = pt
+    cv2.circle(img, (int(x), int(y)), radius, color, -1)
+    if label:
+        tl = (
+        line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1
+        )  # line/font thickness
+        tf = max(tl - 1, 1)
+        cv2.putText(
+            img,
+            label,
+            (int(x), int(y) - 2),
+            0,
+            tl / 3,
+            [225, 255, 255],
+            thickness=tf,
+            lineType=cv2.LINE_AA,
+        )
+    
+
+
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     """
     description: Plots one bounding box on image img,

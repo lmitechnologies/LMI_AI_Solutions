@@ -14,7 +14,11 @@ class Mask(Shape):
             y_vals(list): the y values [y1, y2, ..., yn] of the polygon
             confidence(double): the confidence level between [0.0, 1.0] 
         """
-        super().__init__(im_name,fullpath,category)
+        super().__init__(im_name,fullpath,category,confidence)
         self.X = x_vals
         self.Y = y_vals
-        self.confidence = confidence
+
+    def round(self):
+        self.X = list(map(round,self.X))
+        self.Y = list(map(round,self.Y))
+        

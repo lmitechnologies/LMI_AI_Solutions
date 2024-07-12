@@ -82,24 +82,27 @@ class Yolov5(ODBase):
     
     @smart_inference_mode()
     def preprocess(self, im):
-        """im preprocess
-            normalization -> CHW -> contiguous -> BCHW
+        """Prepares input image before inference.
+
         Args:
-            im0 (numpy.ndarray): the input numpy array, HWC format
+            im (np.ndarray | tensor): BCHW for tensor, [(HWC) x B] for list.
         """
-        if not isinstance(im, np.ndarray):
-            raise TypeError(f'Image type {type(im)} not supported')
+        if isinstance(im, np.ndarray):
+            im = self.from_numpy(im)
         
+        # convert to HWC
         if im.ndim == 2:
-            im = cv2.cvtColor(im, cv2.COLOR_GRAY2RGB)
-        
-        im = im.astype(np.float32)
-        im /= 255 # normalize to [0,1]
-        im = im.transpose((2, 0, 1)) # HWC to CHW
-        im = np.ascontiguousarray(im)  # contiguous
-        if len(im.shape) == 3:
-            im = im[None] # expand for batch dim
-        return self.from_numpy(im)
+            im = im.unsqueeze(-1)
+        if im.shape[-1] ==1:
+            im = im.expand(-1,-1,3)
+            
+        im = im.unsqueeze(0) # HWC -> BHWC
+        img = im.permute((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
+        img = img.contiguous()
+
+        img = img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
+        img /= 255  # 0 - 255 to 0.0 - 1.0
+        return img
     
     
     def load_with_preprocess(self, im_path:str):
@@ -115,7 +118,7 @@ class Yolov5(ODBase):
         else:
             im0 = cv2.imread(im_path) #BGR format
             im0 = im0[:,:,::-1] #BGR to RGB
-        return self.preprocess(im0),im0
+        return self.preprocess(im0.copy()),im0
     
     
     @smart_inference_mode()

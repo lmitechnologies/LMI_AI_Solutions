@@ -5,7 +5,7 @@ from logging import warning
 import os
 
 #LMI packages
-from label_utils import rect,mask
+from label_utils import rect,mask,keypoint
 
 
 def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=True):
@@ -59,24 +59,34 @@ def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=Tr
             if shape_type=='polygon':
                 if coord_type=='x values':
                     M = mask.Mask(im_name=im_name, fullpath=fullpath, category=category, confidence=confidence)
-                    M.X = list(map(int,coordinates))
+                    M.X = list(map(float,coordinates))
                 elif coord_type=='y values':
                     assert(im_name==M.im_name)
-                    M.Y = list(map(int,coordinates))
+                    M.Y = list(map(float,coordinates))
                     shapes[im_name].append(M)
                 else:
                     raise Exception(f"invalid keywords: {coord_type}")
             elif shape_type=='rect':
                 if coord_type=='upper left':
                     R = rect.Rect(im_name=im_name, fullpath=fullpath, category=category, confidence=confidence)
-                    R.up_left = list(map(int,coordinates[:2]))
+                    R.up_left = list(map(float,coordinates[:2]))
                     # handle angle if it exists
                     if len(coordinates)==4:
                         R.angle = float(coordinates[-1])
                 elif coord_type=='lower right':
                     assert(im_name==R.im_name)
-                    R.bottom_right = list(map(int,coordinates[:2]))
+                    R.bottom_right = list(map(float,coordinates[:2]))
                     shapes[im_name].append(R)
+                else:
+                    raise Exception(f"invalid keywords: {coord_type}")
+            elif shape_type=='keypoint':
+                if coord_type=='x value':
+                    K = keypoint.Keypoint(im_name=im_name, fullpath=fullpath, category=category, confidence=confidence)
+                    K.x = float(coordinates[0])
+                elif coord_type=='y value':
+                    assert(im_name==K.im_name)
+                    K.y = float(coordinates[0])
+                    shapes[im_name].append(K)
                 else:
                     raise Exception(f"invalid keywords: {coord_type}")
     return shapes, class_map
@@ -94,14 +104,19 @@ def write_to_csv(shapes:dict, filename:str, overwrite=True):
         writer = csv.writer(f, delimiter=';')
         for im_name in shapes:
             for shape in shapes[im_name]:
+                if not isinstance(shape, (rect.Rect, mask.Mask, keypoint.Keypoint)):
+                    raise Exception(f"Found not supported class: {type(shape)}. Supported classes are Mask, Rect, Keypoint")
+                # round the coordinates and convert to list
+                shape.round()
                 if isinstance(shape, rect.Rect):
                     writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'rect', 'upper left'] + shape.up_left + ['angle', f'{shape.angle:.2f}'])
                     writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'rect', 'lower right'] + shape.bottom_right+ ['angle', f'{shape.angle:.2f}'])
                 elif isinstance(shape, mask.Mask):
                     writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'polygon', 'x values'] + shape.X)
                     writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'polygon', 'y values'] + shape.Y)
-                else:
-                    raise Exception("Found unsupported classes. Supported classes are mask and rect")
+                elif isinstance(shape, keypoint.Keypoint):
+                    writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'keypoint', 'x value', f'{shape.x}'])
+                    writer.writerow([shape.im_name, shape.category, f'{shape.confidence:.4f}', 'keypoint', 'y value', f'{shape.y}'])
                     
 
 if __name__ == '__main__':
