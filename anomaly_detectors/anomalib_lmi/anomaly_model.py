@@ -163,7 +163,7 @@ class AnomalyModel:
                        f' --workspace={workspace}') + (' --fp16' if fp16 else ' ')
         os.system(convert_cmd)
         # check if metadata.json exists in the same directory as onnx_path
-        if os.path.exists(f"{os.path.dirname(onnx_path)}/metadata.json"):
+        if os.path.isfile(f"{os.path.dirname(onnx_path)}/metadata.json"):
             os.system(f"cp {os.path.dirname(onnx_path)}/metadata.json {os.path.dirname(out_engine_path)}")
         else:
             logger.warning(f"metadata.json not found in {os.path.dirname(onnx_path)}")
