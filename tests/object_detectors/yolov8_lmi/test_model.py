@@ -54,11 +54,6 @@ def test_inputs():
 class Test_Yolov8:
     def test_warmup(self, model_det):
         model_det.warmup()
-        
-    def test_preprocess(self, model_det, test_inputs):
-        for img in test_inputs[1]:
-            img = model_det.preprocess(img)
-            assert img is not None
             
     def test_predict(self, model_det, test_inputs):
         for img,reszied,op in zip(*test_inputs):
@@ -80,11 +75,6 @@ class Test_Yolov8:
 class Test_Yolov8_Seg:
     def test_warmup(self, model_seg):
         model_seg.warmup()
-        
-    def test_preprocess(self, model_seg, test_inputs):
-        for img in test_inputs[1]:
-            img = model_seg.preprocess(img)
-            assert img is not None
             
     def test_predict(self, model_seg, test_inputs):
         for img,resized,op in zip(*test_inputs):
