@@ -59,9 +59,7 @@ class Test_resize_image:
             assert im2.is_cuda
 
             
-            
 class Test_fit_im_to_size:
-
     def test_pad_w(self):
         im = torch.rand(100, 100, 3).numpy()
         im2,l,r,t,b = pipeline_utils.fit_im_to_size(im, W=121)
@@ -137,7 +135,6 @@ class Test_fit_im_to_size:
             assert l == l2 and r == r2 and t == t2 and b == b2
         
 
-
 class Test_revert_to_origin:
     def test_1(self):
         pts = [[10,20],[30,40],[50,60],[70,80]]
@@ -164,12 +161,15 @@ class Test_revert_to_origin:
         pts = np.array([[15, 25, 35, 45], [55, 65, 75, 85]])
         operations = [{'resize':[200,300,100,100]},{'pad':[8,9,10,11]},{'stretch':[1.5,2]}]
         pts2 = pipeline_utils.revert_to_origin(pts, operations)
+        assert type(pts2) == np.ndarray
+        
+        pts2 = pipeline_utils.revert_to_origin(pts.tolist(), operations)
         assert type(pts2) == list
         
-        pts3 = pipeline_utils.revert_to_origin(torch.tensor(pts), operations)
-        assert type(pts3) == torch.Tensor
+        pts2 = pipeline_utils.revert_to_origin(torch.tensor(pts), operations)
+        assert type(pts2) == torch.Tensor
         
-        pts4 = pipeline_utils.revert_to_origin(torch.tensor(pts).cuda(), operations)
-        assert type(pts4) == torch.Tensor
-        assert pts4.is_cuda
+        pts2 = pipeline_utils.revert_to_origin(torch.tensor(pts).cuda(), operations)
+        assert type(pts2) == torch.Tensor
+        assert pts2.is_cuda
         

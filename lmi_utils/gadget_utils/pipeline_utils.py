@@ -353,9 +353,15 @@ def revert_mask_to_origin(mask, operations:list):
 
 def revert_masks_to_origin(masks, operations:list):
     results = []
+    if len(masks)==0:
+        return results
+    is_tensor = isinstance(masks[0], torch.Tensor)
+    is_numpy = isinstance(masks, np.ndarray)
     for m in masks:
         results.append(revert_mask_to_origin(m, operations))
-    return results
+    if is_tensor:
+        return torch.stack(results)
+    return np.stack(results) if is_numpy else results
 
 
 @torch.no_grad()
@@ -372,8 +378,9 @@ def revert_to_origin(pts, operations:list):
         operations : list of dict
     """
     is_tensor = isinstance(pts, torch.Tensor)
+    is_numpy = isinstance(pts, np.ndarray)
     if not is_tensor:
-        pts = torch.as_tensor(pts)
+        pts = torch.from_numpy(pts) if is_numpy else torch.as_tensor(pts)
     
     r,c = pts.shape
     if c!=2 and c!=4:
@@ -398,7 +405,9 @@ def revert_to_origin(pts, operations:list):
             pts = pts/s
             
     pts = pts.round().clamp(min=0)
-    return pts if is_tensor else pts.tolist()
+    if is_tensor:
+        return pts
+    return pts.numpy() if is_numpy else pts.tolist()
 
 
 def apply_operations(pts:np.ndarray, operations:list):
