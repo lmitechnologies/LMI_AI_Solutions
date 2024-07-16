@@ -362,7 +362,7 @@ class Yolov8Obb(Yolov8):
         self.logger = logging.getLogger(__name__)
         
     @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_tensor=False):
         """Postprocesses predictions and returns a list of Results objects.
         
         Args:
@@ -422,13 +422,17 @@ class Yolov8Obb(Yolov8):
             M = confs > self.from_numpy(thres)
             
             # append the results boxes, scores, classes
-            results['boxes'].append(bboxs[M].cpu().numpy())
-            results['scores'].append(confs[M].cpu().numpy())
-            results['classes'].append(classes[M.cpu().numpy()])
+            if return_tensor:
+                results['boxes'].append(bboxs[M])
+                results['scores'].append(confs[M])
+            else:
+                results['boxes'].append(bboxs[M].cpu().numpy())
+                results['scores'].append(confs[M].cpu().numpy())
+            results['classes'].append(classes[M.cpu().numpy()].tolist())
         return results
     
     @smart_inference_mode()
-    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_segments=True):
+    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_tensor=False):
         """run yolov8 object detection inference. It runs the preprocess(), forward(), and postprocess() in sequence.
         It converts the results to the original coordinates space if the operators are provided.
         
@@ -461,7 +465,7 @@ class Yolov8Obb(Yolov8):
         
         # postprocess
         t0 = time.time()
-        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det,return_segments)
+        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det,return_tensor)
         
         # return empty results if no detection
         results_dict = collections.defaultdict(list)
@@ -470,18 +474,16 @@ class Yolov8Obb(Yolov8):
             return results_dict, time_info
         
         # handling only one batch
-        boxes = results['boxes']
-        scores = results['scores'][0].tolist()
-        classes = results['classes'][0].tolist()
+        boxes = results['boxes'][0]
+        scores = results['scores'][0]
+        classes = results['classes'][0]
         
         # convert box to sensor space
-        # boxes = [pipeline_utils.revert_to_origin(box, operators) for box in boxes]
         converted_boxes = []
         for box in boxes:
-            b = []
-            for i in range(len(box)):
-                b.append(pipeline_utils.revert_to_origin(box[i], operators))
+            b = pipeline_utils.revert_to_origin(box, operators)
             converted_boxes.append(b)
+        converted_boxes = torch.stack(converted_boxes) if return_tensor else np.array(converted_boxes)
         
         results_dict['boxes'] = converted_boxes
         results_dict['scores'] = scores
@@ -507,19 +509,27 @@ class Yolov8Obb(Yolov8):
         classes = results['classes']
         scores = results['scores']
 
-        image2 = image.copy()
         if not len(boxes):
-            return image2
+            return image
+        
+        if isinstance(image, torch.Tensor):
+            if image.is_cuda:
+                image = image.cpu()
+                boxes = boxes.cpu()
+                scores = scores.cpu()
+            image = image.numpy()
+            boxes = boxes.numpy()
+            scores = scores.numpy()
         
         for i in range(len(boxes)):
             label = "{}: {:.2f}".format(classes[i], scores[i])
             pipeline_utils.plot_one_rbox(
                 boxes[i],
-                image2,
+                image,
                 label=label,
                 color=colormap[classes[i]] if colormap is not None else None,
             )
-        return image2
+        return image
     
 
 
