@@ -298,7 +298,7 @@ class Yolov8(ODBase):
     
     @staticmethod
     @torch.no_grad()
-    def annotate_image(results, image, colormap=None, mask_threshold=0.5):
+    def annotate_image(results, image, colormap=None, mask_threshold=0.5, text_size=None, line_width=None):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
         TODO: text size, thickness, font
 
@@ -311,6 +311,12 @@ class Yolov8(ODBase):
             np.ndarray: the annotated image
         """
         font_path = fm.findSystemFonts(fontpaths=None, fontext='ttf')[0]
+        line_width = (
+            line_width or round(0.002 * (image.shape[0] + image.shape[1]) / 2) + 1
+        )
+        font_size = (
+            text_size or round(0.05 * (image.shape[0] + image.shape[1]) / 2) + 1
+        )
         
         boxes = results['boxes']
         classes = results['classes']
@@ -328,6 +334,9 @@ class Yolov8(ODBase):
             if len(masks):
                 masks = torch.from_numpy(masks)
         
+        if image.ndim == 2:
+            image = image.unsqueeze(-1).expand(-1,-1,3)
+        
         # HWC to CHW
         image2 = image.permute(2, 0, 1)
         
@@ -340,11 +349,11 @@ class Yolov8(ODBase):
         if len(masks):
             masks = masks > mask_threshold
             image2 = torchvision.utils.draw_segmentation_masks(image2, masks, colors=colors)
-        image2 = torchvision.utils.draw_bounding_boxes(image2, boxes, classes_with_scores, colors=colors, width=4, font=font_path, font_size=50)
+        image2 = torchvision.utils.draw_bounding_boxes(image2, boxes, classes_with_scores, colors=colors, width=line_width, font=font_path, font_size=font_size)
         
         # CHW to HWC
         image2 = image2.permute(1, 2, 0)
-        return image2 if is_tensor else image2.numpy()
+        return image2.numpy()
 
 
 class Yolov8Obb(Yolov8):

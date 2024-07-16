@@ -25,6 +25,8 @@ logger.setLevel(logging.DEBUG)
 IMG_DIR = 'tests/assets/images'
 MODEL_DET = 'tests/assets/models/yolov8n.pt'
 MODEL_SEG = 'tests/assets/models/yolov8n-seg.pt'
+OUT_DIR = 'tests/assets/validation'
+
 
 @pytest.fixture
 def model_det():
@@ -45,7 +47,7 @@ def test_inputs():
         h,w = im.shape[:2]
         rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         im2 = cv2.resize(rgb, (640, 640))
-        images.append(im)
+        images.append(rgb)
         resized_images.append(im2)
         ops.append([{'resize': (640,640,w,h)}])
     return images, resized_images, ops
@@ -56,6 +58,7 @@ class Test_Yolov8:
         model_det.warmup()
             
     def test_predict(self, model_det, test_inputs):
+        i = 0
         for img,reszied,op in zip(*test_inputs):
             out,time_info = model_det.predict(reszied,configs=0.5,operators=op,return_tensor=False)
             assert len(out['boxes'])>0
@@ -70,6 +73,10 @@ class Test_Yolov8:
                     assert sc.is_cuda
                 img = torch.from_numpy(img).cuda()
                 im_out = model_det.annotate_image(out, img)
+                os.makedirs(OUT_DIR, exist_ok=True)
+                im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
+                cv2.imwrite(os.path.join(OUT_DIR, f'det-{i}.png'), im_out)
+            i += 1
                 
                 
 class Test_Yolov8_Seg:
@@ -77,6 +84,7 @@ class Test_Yolov8_Seg:
         model_seg.warmup()
             
     def test_predict(self, model_seg, test_inputs):
+        i = 0
         for img,resized,op in zip(*test_inputs):
             out,time_info = model_seg.predict(resized,configs=0.5,operators=op,return_tensor=False)
             assert len(out['masks'])>0
@@ -92,3 +100,7 @@ class Test_Yolov8_Seg:
                     assert sc.is_cuda
                 img = torch.from_numpy(img).cuda()
                 im_out = model_seg.annotate_image(out, img)
+                im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
+                os.makedirs(OUT_DIR, exist_ok=True)
+                cv2.imwrite(os.path.join(OUT_DIR, f'seg-{i}.png'), im_out)
+            i += 1
