@@ -1,13 +1,11 @@
 import cv2
 import numpy as np
 import torch
-import torchvision
 import os
 import collections
 import logging
 from typing import Union
 import time
-import matplotlib.font_manager as fm
 
 from ultralytics.utils import ops
 from ultralytics.nn.autobackend import AutoBackend
