@@ -149,16 +149,16 @@ class Test_Yolov8_obb:
                 assert sc>=0.5
             im_out = model_obb.annotate_image(out, img)
                 
-            # if torch.cuda.is_available():
-            #     out,time_info = model_obb.predict(resized,configs=0.5,operators=op,return_tensor=True)
-            #     for b,sc in zip(out['boxes'], out['scores']):
-            #         assert b.is_cuda
-            #         assert sc.is_cuda
-            #     img = torch.from_numpy(img).cuda()
-            #     im_out = model_obb.annotate_image(out, img)
-            #     im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
-            #     os.makedirs(OUT_DIR, exist_ok=True)
-            #     cv2.imwrite(os.path.join(OUT_DIR, f'obb-{i}.png'), im_out)
+            if torch.cuda.is_available():
+                out,time_info = model_obb.predict(resized,configs=0.5,operators=op,return_tensor=True)
+                for b,sc in zip(out['boxes'], out['scores']):
+                    assert b.is_cuda
+                    assert sc.is_cuda
+                img = torch.from_numpy(img).cuda()
+                im_out = model_obb.annotate_image(out, img)
+                im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
+                os.makedirs(OUT_DIR, exist_ok=True)
+                cv2.imwrite(os.path.join(OUT_DIR, f'obb-{i}.png'), im_out)
             i += 1
             
 

@@ -303,8 +303,8 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None):
     if len(box) != 4:
         raise Exception(f'box should be a list of 4 points, got {len(box)} points')
     if isinstance(box, list):
-        box = np.array(box).astype(np.int32)
-    
+        box = np.array(box)
+    box = box.astype(int)
     
     cv2.polylines(img, [box], isClosed=True, color=color, thickness=tl)
         

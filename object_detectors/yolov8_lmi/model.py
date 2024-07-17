@@ -556,7 +556,6 @@ class Yolov8Pose(Yolov8):
                 thres = np.array([conf.get(c,1) for c in classes])
             M = confs > self.from_numpy(thres)
             
-            self.logger.info(f'pred_kpts: {pred_kpts[M].shape}')
             if return_tensor:
                 results['boxes'].append(xyxy[M])
                 results['scores'].append(confs[M])
@@ -615,8 +614,7 @@ class Yolov8Pose(Yolov8):
         scores = results['scores'][0]
         classes = results['classes'][0]
         points = results['points'][0]
-        # TODO: might need visiblity in the future, i.e., points[:,-1]
-        self.logger.info(f'points: {points.shape}')
+        # TODO: add visibility if needed which is points[:,-1]
         if len(points) and points.shape[-1] == 3:
             points = points[:,:,:-1]
         
