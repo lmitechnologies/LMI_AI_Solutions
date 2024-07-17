@@ -19,6 +19,27 @@ import gadget_utils.pipeline_utils as pipeline_utils
 
 
 
+@torch.no_grad()
+def to_numpy(data):
+    """Converts a tensor or a list to numpy arrays.
+
+    Args:
+        data (torch.Tensor | list): The input tensor or list of tensors.
+
+    Returns:
+        (np.ndarray): The converted numpy array.
+    """
+    if isinstance(data, torch.Tensor):
+        return data.cpu().numpy()
+    elif isinstance(data, list):
+        return np.array(data)
+    elif isinstance(data, np.ndarray):
+        return data
+    else:
+        raise TypeError(f'Data type {type(data)} not supported')
+
+
+
 class Yolov8(ODBase):
     
     logger = logging.getLogger(__name__)
@@ -318,11 +339,10 @@ class Yolov8(ODBase):
             return image
         
         # convert to numpy
-        if isinstance(image, torch.Tensor):
-            image = image.cpu().numpy()
-            boxes = boxes.cpu().numpy()
-            if len(masks):
-                masks = masks.cpu().numpy()
+        image = to_numpy(image)
+        boxes = to_numpy(boxes)
+        if len(masks):
+            masks = to_numpy(masks)
         
         if image.ndim == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
@@ -498,10 +518,9 @@ class Yolov8Obb(Yolov8):
         if not len(boxes):
             return image
         
-        if isinstance(image, torch.Tensor):
-            image = image.cpu().numpy()
-            boxes = boxes.cpu().numpy()
-            scores = scores.cpu().numpy()
+        image = to_numpy(image)
+        boxes = to_numpy(boxes)
+        scores = to_numpy(scores)
         
         for i in range(len(boxes)):
             label = "{}: {:.2f}".format(classes[i], scores[i])
@@ -653,11 +672,10 @@ class Yolov8Pose(Yolov8):
             return image
         
         # convert to numpy
-        if isinstance(image, torch.Tensor):
-            image = image.cpu().numpy()
-            boxes = boxes.cpu().numpy()
-            scores = scores.cpu().numpy()
-            points = points.cpu().numpy()
+        image = to_numpy(image)
+        boxes = to_numpy(boxes)
+        scores = to_numpy(scores)
+        points = to_numpy(points)
         
         for i in range(len(boxes)):
             pipeline_utils.plot_one_box(
