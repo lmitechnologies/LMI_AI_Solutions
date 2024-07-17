@@ -298,62 +298,48 @@ class Yolov8(ODBase):
     
     @staticmethod
     @torch.no_grad()
-    def annotate_image(results, image, colormap=None, mask_threshold=0.5, text_size=None, line_width=None):
+    def annotate_image(results, image, colormap=None, line_thickness=None):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
-        TODO: text size, thickness, font
 
         Args:
             results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
             image (np.ndarray): the input image
             colors (list, optional): a dictionary of colormaps, e.g., {'class-A':(0,0,255), 'class-B':(0,255,0)}. Defaults to None.
-
+            line_thickness (int, optional): the thickness of the bounding box. Defaults to None.
         Returns:
             np.ndarray: the annotated image
         """
-        font_path = fm.findSystemFonts(fontpaths=None, fontext='ttf')[0]
-        line_width = (
-            line_width or round(0.002 * (image.shape[0] + image.shape[1]) / 2) + 1
-        )
-        font_size = (
-            text_size or round(0.05 * (image.shape[0] + image.shape[1]) / 2) + 1
-        )
-        
         boxes = results['boxes']
         classes = results['classes']
         scores = results['scores']
         masks = results['masks']
-        classes_with_scores = [f"{c}: {s:.2f}" for c,s in zip(classes, scores)]
         
         if not len(boxes):
             return image
         
-        is_tensor = isinstance(image, torch.Tensor)
-        if not is_tensor:
-            image = torch.from_numpy(image)
-            boxes = torch.from_numpy(boxes)
+        # convert to numpy
+        if isinstance(image, torch.Tensor):
+            image = image.cpu().numpy()
+            boxes = boxes.cpu().numpy()
             if len(masks):
-                masks = torch.from_numpy(masks)
+                masks = masks.cpu().numpy()
         
         if image.ndim == 2:
-            image = image.unsqueeze(-1).expand(-1,-1,3)
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         
-        # HWC to CHW
-        image2 = image.permute(2, 0, 1)
-        
-        if colormap is not None:
-            colors = [colormap[c] for c in classes]
-        else:
-            colors = None
-        
-        # draw the masks
-        if len(masks):
-            masks = masks > mask_threshold
-            image2 = torchvision.utils.draw_segmentation_masks(image2, masks, colors=colors)
-        image2 = torchvision.utils.draw_bounding_boxes(image2, boxes, classes_with_scores, colors=colors, width=line_width, font=font_path, font_size=font_size)
-        
-        # CHW to HWC
-        image2 = image2.permute(1, 2, 0)
-        return image2.numpy()
+        for i in range(len(boxes)):
+            mask = masks[i] if len(masks) else None
+            pipeline_utils.plot_one_box(
+                boxes[i],
+                image,
+                mask,
+                label="{}: {:.2f}".format(
+                    classes[i], scores[i]
+                ),
+                color=colormap[classes[i]] if colormap is not None else None,
+                line_thickness=line_thickness,
+            )
+        return image
 
 
 class Yolov8Obb(Yolov8):
@@ -513,13 +499,9 @@ class Yolov8Obb(Yolov8):
             return image
         
         if isinstance(image, torch.Tensor):
-            if image.is_cuda:
-                image = image.cpu()
-                boxes = boxes.cpu()
-                scores = scores.cpu()
-            image = image.numpy()
-            boxes = boxes.numpy()
-            scores = scores.numpy()
+            image = image.cpu().numpy()
+            boxes = boxes.cpu().numpy()
+            scores = scores.cpu().numpy()
         
         for i in range(len(boxes)):
             label = "{}: {:.2f}".format(classes[i], scores[i])
