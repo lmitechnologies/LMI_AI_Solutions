@@ -384,7 +384,7 @@ def revert_to_origin(pts, operations:list):
     
     r,c = pts.shape
     if c!=2 and c!=4:
-        raise Exception(f'does not support pts neither Nx2 nor Nx4. Got shape: {pts.shape}')
+        raise Exception(f'supports pts Nx2 or Nx4. Got shape: {pts.shape}')
     for op in reversed(operations):
         if 'resize' in op:
             tw,th,orig_w,orig_h = op['resize']

@@ -14,7 +14,7 @@ sys.path.append(os.path.join(ROOT, 'object_detectors'))
 
 
 import gadget_utils.pipeline_utils as pipeline_utils
-from yolov8_lmi.model import Yolov8, Yolov8Obb
+from yolov8_lmi.model import Yolov8, Yolov8Obb, Yolov8Pose
 
 
 logging.basicConfig()
@@ -27,6 +27,7 @@ DOTA_DIR = 'tests/assets/images/dota'
 MODEL_DET = 'tests/assets/models/yolov8n.pt'
 MODEL_SEG = 'tests/assets/models/yolov8n-seg.pt'
 MODEL_OBB = 'tests/assets/models/yolov8n-obb.pt'
+MODEL_POSE = 'tests/assets/models/yolov8n-pose.pt'
 OUT_DIR = 'tests/assets/validation'
 
 
@@ -41,6 +42,10 @@ def model_seg():
 @pytest.fixture
 def model_obb():
     return Yolov8Obb(MODEL_OBB)
+
+@pytest.fixture
+def model_pose():
+    return Yolov8Pose(MODEL_POSE)
 
 def load_image(path):
     im = cv2.imread(path)
@@ -122,9 +127,7 @@ class Test_Yolov8_Seg:
             if torch.cuda.is_available():
                 out,time_info = model_seg.predict(resized,configs=0.5,operators=op,return_tensor=True)
                 for m,b,sc in zip(out['masks'], out['boxes'], out['scores']):
-                    assert m.is_cuda
-                    assert b.is_cuda
-                    assert sc.is_cuda
+                    assert m.is_cuda and b.is_cuda and sc.is_cuda
                 img = torch.from_numpy(img).cuda()
                 im_out = model_seg.annotate_image(out, img)
                 im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
@@ -156,4 +159,29 @@ class Test_Yolov8_obb:
             #     im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
             #     os.makedirs(OUT_DIR, exist_ok=True)
             #     cv2.imwrite(os.path.join(OUT_DIR, f'obb-{i}.png'), im_out)
+            i += 1
+            
+
+class Test_Yolov8_pose:
+    def test_warmup(self, model_pose):
+        model_pose.warmup()
+        
+    def test_predict(self, model_pose, imgs_coco):
+        i = 0
+        for img,resized,op in zip(*imgs_coco):
+            out,time_info = model_pose.predict(resized,configs=0.5,operators=op,return_tensor=False)
+            assert len(out['boxes'])>0
+            for sc in out['scores']:
+                assert sc>=0.5
+            im_out = model_pose.annotate_image(out, img)
+                
+            if torch.cuda.is_available():
+                out,time_info = model_pose.predict(resized,configs=0.5,operators=op,return_tensor=True)
+                for b,sc,kp in zip(out['boxes'], out['scores'], out['points']):
+                    assert b.is_cuda and sc.is_cuda and kp.is_cuda
+                img = torch.from_numpy(img).cuda()
+                im_out = model_pose.annotate_image(out, img)
+                im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
+                os.makedirs(OUT_DIR, exist_ok=True)
+                cv2.imwrite(os.path.join(OUT_DIR, f'pose-{i}.png'), im_out)
             i += 1
