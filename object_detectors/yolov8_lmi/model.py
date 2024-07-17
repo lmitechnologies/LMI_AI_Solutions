@@ -520,7 +520,7 @@ class Yolov8Pose(Yolov8):
         super().__init__(weights, device, data, fp16)
         
     @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300):
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_tensor=False):
         """Postprocesses predictions and returns a list of Results objects.
         
         Args:
@@ -556,15 +556,20 @@ class Yolov8Pose(Yolov8):
                 thres = np.array([conf.get(c,1) for c in classes])
             M = confs > self.from_numpy(thres)
             
-            results['boxes'].append(xyxy[M].cpu().numpy())
-            results['scores'].append(confs[M].cpu().numpy())
-            results['classes'].append(classes[M.cpu().numpy()])
-            results['points'].append(pred_kpts[M].cpu().numpy()) # [n_obj,n_kp,2]
+            if return_tensor:
+                results['boxes'].append(xyxy[M])
+                results['scores'].append(confs[M])
+                results['points'].append(pred_kpts[M])
+            else:
+                results['boxes'].append(xyxy[M].cpu().numpy())
+                results['scores'].append(confs[M].cpu().numpy())
+                results['points'].append(pred_kpts[M].cpu().numpy()) # [n_obj,n_kp,2]
+            results['classes'].append(classes[M.cpu().numpy()].tolist())
         return results
     
     
     @smart_inference_mode()
-    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300):
+    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_tensor=False):
         """run yolov8 object detection inference. It runs the preprocess(), forward(), and postprocess() in sequence.
         It converts the results to the original coordinates space if the operators are provided.
         
@@ -596,7 +601,7 @@ class Yolov8Pose(Yolov8):
         
         # postprocess
         t0 = time.time()
-        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det)
+        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det,return_tensor)
         
         # return empty results if no detection
         results_dict = collections.defaultdict(list)
@@ -606,9 +611,9 @@ class Yolov8Pose(Yolov8):
         
         # only one image, get first batch
         boxes = results['boxes'][0]
-        scores = results['scores'][0].tolist()
-        classes = results['classes'][0].tolist()
-        points = results['points'][0].tolist()
+        scores = results['scores'][0]
+        classes = results['classes'][0]
+        points = results['points'][0]
         
         # convert box to sensor space
         points = [pipeline_utils.revert_to_origin(p, operators) for p in points] # each iter: [n_kp,2]
@@ -640,15 +645,20 @@ class Yolov8Pose(Yolov8):
         scores = results['scores']
         points = results['points']
         
-        
-        image2 = image.copy()
         if not len(boxes):
-            return image2
+            return image
+        
+        # convert to numpy
+        if isinstance(image, torch.Tensor):
+            image = image.cpu().numpy()
+            boxes = boxes.cpu().numpy()
+            scores = scores.cpu().numpy()
+            points = points.cpu().numpy()
         
         for i in range(len(boxes)):
             pipeline_utils.plot_one_box(
                 boxes[i],
-                image2,
+                image,
                 label="{}: {:.2f}".format(
                     classes[i], scores[i]
                 ),
@@ -657,5 +667,5 @@ class Yolov8Pose(Yolov8):
             
         for i in range(len(points)):
             for j in range(len(points[i])):
-                cv2.circle(image2, (int(points[i][j][0]), int(points[i][j][1])), 4, kp_color, -1)
-        return image2
+                cv2.circle(image, (int(points[i][j][0]), int(points[i][j][1])), 4, kp_color, -1)
+        return image
