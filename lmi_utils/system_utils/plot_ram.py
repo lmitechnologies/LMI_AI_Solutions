@@ -7,9 +7,8 @@ def read_data(file_path):
     data = []
     with open(file_path, 'r') as file:
         lines = file.readlines()
-        headers = lines[0].split()
-        for line in lines[1:]:
-            if line.strip() == "" or line.startswith("TOTAL") or line.startswith("Container") or line.startswith("numbers"):
+        for line in lines:
+            if line.strip() == "" or line.startswith("TOTAL") or line.startswith("Container") or line.startswith("numbers") or line.startswith("Time"):
                 continue
             parts = line.split()
             print(parts)
