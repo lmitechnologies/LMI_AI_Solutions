@@ -50,3 +50,6 @@ done
 
 # Print the total in a formatted row
 printf "%-15s %-35s %-15s %-15s %-15s %-15s %-15s\n" "TOTAL" "" "$total_total" "$total_cache" "$total_kernel" "$total_rss" "$total_swap"
+
+current_time=$(date +"%D %T")
+echo Time: $current_time
