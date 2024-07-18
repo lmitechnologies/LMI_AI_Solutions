@@ -497,15 +497,14 @@ class Yolov8Obb(Yolov8):
         return results_dict, time_info
     
     @staticmethod
-    def annotate_image(results, image, colormap=None):
+    def annotate_image(results, image, colormap=None, line_thickness=None):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
-        TODO: text size, thickness, font
 
         Args:
             results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
             image (np.ndarray): the input image
             colors (list, optional): a dictionary of colormaps, e.g., {'class-A':(0,0,255), 'class-B':(0,255,0)}. Defaults to None.
-
+            line_thickness (int, optional): the thickness of the bounding box. Defaults to None.
         Returns:
             np.ndarray: the annotated image
         """
@@ -527,6 +526,7 @@ class Yolov8Obb(Yolov8):
                 image,
                 label=label,
                 color=colormap[classes[i]] if colormap is not None else None,
+                line_thickness = line_thickness,
             )
         return image
     
@@ -649,15 +649,14 @@ class Yolov8Pose(Yolov8):
     
     
     @staticmethod
-    def annotate_image(results, image, colormap=None, kp_color=(255,255,255)):
+    def annotate_image(results, image, colormap=None, kp_color=(255,255,255), line_thickness=None):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
-        TODO: text size, thickness, font
 
         Args:
             results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
             image (np.ndarray): the input image
             colors (list, optional): a dictionary of colormaps, e.g., {'class_A':(0,0,255), 'class_B':(0,255,0)}. Defaults to None.
-
+            line_thickness (int, optional): the thickness of the bounding box. Defaults to None.
         Returns:
             np.ndarray: the annotated image
         """
@@ -683,6 +682,7 @@ class Yolov8Pose(Yolov8):
                     classes[i], scores[i]
                 ),
                 color=colormap[classes[i]] if colormap is not None else None,
+                line_thickness=line_thickness,
             )
             
         for i in range(len(points)):
