@@ -334,7 +334,7 @@ class Yolov8(ODBase):
         masks = results['masks']
         
         if not len(boxes):
-            return image
+            return to_numpy(image)
         
         # convert to numpy
         image = to_numpy(image)
@@ -514,7 +514,7 @@ class Yolov8Obb(Yolov8):
         scores = results['scores']
 
         if not len(boxes):
-            return image
+            return to_numpy(image)
         
         image = to_numpy(image)
         boxes = to_numpy(boxes)
@@ -667,7 +667,7 @@ class Yolov8Pose(Yolov8):
         points = results['points']
         
         if not len(boxes):
-            return image
+            return to_numpy(image)
         
         # convert to numpy
         image = to_numpy(image)
