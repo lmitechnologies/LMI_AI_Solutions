@@ -336,6 +336,7 @@ def revert_mask_to_origin(mask, operations:list):
     The operations list contains items as dictionary. The items are listed as follows: 
         1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
         2. <resize: [resized_w, resized_h, orig_w, orig_h]>
+        3. <flip: [flip left right, flip up down, im width, im height]>
     """
     mask2 = mask.copy()
     for operator in reversed(operations):
@@ -347,6 +348,12 @@ def revert_mask_to_origin(mask, operations:list):
             pad_L,pad_R,pad_T,pad_B = operator['pad']
             nw,nh = w-pad_L-pad_R,h-pad_T-pad_B
             mask2,_,_,_,_ = fit_array_to_size(mask2,nw,nh)
+        if 'flip' in operator:
+            lr,ud,im_w,im_h = operator['flip']
+            if lr:
+                mask2 = cv2.flip(mask2,1)
+            if ud:
+                mask2 = cv2.flip(mask2,0)
     return mask2
 
 
@@ -385,7 +392,7 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
                 s = operator['stretch']
                 nx,ny = nx/s[0], ny/s[1]
             if 'flip' in operator:
-                [lr,ud,im_w,im_h] = operator['flip']
+                lr,ud,im_w,im_h = operator['flip']
                 if lr:
                     nx = im_w-nx
                 if ud:
