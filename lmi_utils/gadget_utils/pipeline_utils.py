@@ -365,6 +365,7 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
         3. <resize: [resized_w, resized_h, orig_w, orig_h]>
+        4. <flip>: [flip left-right (True/False), flip up-down (True/False), image width, image height]
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
@@ -383,6 +384,12 @@ def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
             if 'stretch' in operator:
                 s = operator['stretch']
                 nx,ny = nx/s[0], ny/s[1]
+            if 'flip' in operator:
+                [lr,ud,im_w,im_h] = operator['flip']
+                if lr:
+                    nx = im_w-nx
+                if ud:
+                    ny = im_h-ny
             if verbose:
                 logger.info(f'after {operator}, pt: {x:.2f},{y:.2f} -> {nx:.2f},{ny:.2f}')
         nx = round(nx)
