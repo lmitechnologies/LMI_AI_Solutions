@@ -80,7 +80,7 @@ if __name__ == '__main__':
                     plot_one_box(box, im, label=shape.category, color=color_map[shape.category])
             elif isinstance(shape, mask.Mask):
                 pts = np.array([[x,y] for x,y in zip(shape.X,shape.Y)])
-                pts = pts.reshape((-1, 1, 2))
+                pts = pts.reshape((-1, 1, 2)).astype(int)
                 plot_one_polygon(pts, im, label=shape.category, color=color_map[shape.category])
             elif isinstance(shape, keypoint.Keypoint):
                 pt = shape.x, shape.y
