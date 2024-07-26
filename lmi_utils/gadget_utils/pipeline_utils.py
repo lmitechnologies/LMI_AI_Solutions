@@ -130,48 +130,6 @@ def fit_im_to_size(im, W=None, H=None, value=0):
     return im, pad_L, pad_R, pad_T, pad_B
 
 
-def fit_array_to_size(im,W,H):
-    """
-    DEPRECATED
-    description:
-        pad/crop the image to the size [W,H] with BLACK pixels
-    arguments:
-        im(np array): the numpy array of a image
-        W(int): the target width
-        H(int): the target height
-    return:
-        im(np array): the padded/cropped image 
-        pad_l(int): number of pixels padded to left
-        pad_r(int): number of pixels padded to right
-        pad_t(int): number of pixels padded to top
-        pad_b(int): number of pixels padded to bottom
-    """
-    h_im,w_im=im.shape[:2]
-    # pad or crop width
-    if W >= w_im:
-        pad_L=(W-w_im)//2
-        pad_R=W-w_im-pad_L
-        im=cv2.copyMakeBorder(im,0,0,pad_L,pad_R,cv2.BORDER_CONSTANT,value=BLACK)
-    else:
-        pad_L = (w_im-W)//2
-        pad_R = w_im-W-pad_L
-        im = im[:,pad_L:-pad_R]
-        pad_L *= -1
-        pad_R *= -1
-    # pad or crop height
-    if H >= h_im:
-        pad_T=(H-h_im)//2
-        pad_B=H-h_im-pad_T
-        im=cv2.copyMakeBorder(im,pad_T,pad_B,0,0,cv2.BORDER_CONSTANT,value=BLACK)
-    else:
-        pad_T = (h_im-H)//2
-        pad_B = h_im-H-pad_T
-        im = im[pad_T:-pad_B,:]
-        pad_T *= -1
-        pad_B *= -1
-    return im, pad_L, pad_R, pad_T, pad_B
-
-
 def uint16_to_int16(profile):
     """
     convert uint16 profile image to int16
@@ -181,7 +139,8 @@ def uint16_to_int16(profile):
     return profile.view(np.int16) + np.int16(-TWO_TO_FIFTEEN)
 
 
-def profile_to_xyz(profile, resolution, offset):
+@torch.no_grad()
+def profile_to_3d(profile, resolution, offset):
     """
     convert profile image to 3d sensor space
     args:
@@ -194,24 +153,37 @@ def profile_to_xyz(profile, resolution, offset):
         Z(np array): the z coordinates in 3d space, same shape as profile
         mask(np array): the mask of the profile image to remove background
     """
-    if profile.dtype != np.int16:
+    is_numpy = isinstance(profile, np.ndarray)
+    if is_numpy:
+        profile = torch.from_numpy(profile)
+        resolution = torch.from_numpy(np.array(resolution))
+        offset = torch.from_numpy(np.array(offset))
+        
+    if profile.dtype != torch.int16:
         raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
     
     h,w = profile.shape[:2]
     x1,y1 = 0,0
     x2,y2 = w,h
     mask = profile != -TWO_TO_FIFTEEN
-    xx,yy = np.meshgrid(np.arange(x1,x2), np.arange(y1,y2))
+    x_range = torch.arange(x1,x2,device=profile.device)
+    y_range = torch.arange(y1,y2,device=profile.device)
+    xx, yy = torch.meshgrid(x_range, y_range, indexing='xy')
     X = offset[0] + xx * resolution[0]
     Y = offset[1] + yy * resolution[1]
     Z = offset[2] + profile*resolution[2]
-    # xyz = np.stack((X[mask],Y[mask],Z[mask]), axis=-1)
+    
+    if is_numpy:
+        X = X.numpy()
+        Y = Y.numpy()
+        Z = Z.numpy()
+        mask = mask.numpy()
     return X,Y,Z,mask
 
 
-def pts_to_xyz(pts, profile, resolution, offset):
+def pixel_to_3d(pts, profile, resolution, offset):
     """
-    convert list of 2d pts to 3d sensor space
+    convert list of 2d pixel locations to 3d sensor space
     args:
         pts(list): list of (x,y) points, with shape of Nx2
         profile(np array): the profile image

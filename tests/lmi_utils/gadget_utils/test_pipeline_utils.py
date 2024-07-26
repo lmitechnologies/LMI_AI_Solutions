@@ -86,15 +86,6 @@ class Test_fit_im_to_size:
             assert type(im2) == torch.Tensor
             assert im2.is_cuda
             
-    def test_eqaul_with_old_func(self):
-        im = torch.rand(150,100,3).numpy()
-        Ws = [89, 131, 10, 201]
-        Hs = [78, 120, 11, 202]
-        for w,h in zip(Ws, Hs):
-            im2,l,r,t,b = pipeline_utils.fit_im_to_size(im, W=w, H=h)
-            im3, l2, r2, t2, b2 = pipeline_utils.fit_array_to_size(im, W=w, H=h)
-            assert np.array_equal(im2, im3)
-            assert l == l2 and r == r2 and t == t2 and b == b2
         
 
 class Test_revert_to_origin:        
@@ -137,4 +128,41 @@ class Test_revert_to_origin:
         pts2 = pipeline_utils.revert_to_origin(torch.tensor(pts).cuda(), operations)
         assert type(pts2) == torch.Tensor
         assert pts2.is_cuda
+        
+        
+class Test_profile_to_3d:
+    
+    def old_func(self, profile, resolution, offset):
+        if profile.dtype != np.int16:
+            raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
+        TWO_TO_FIFTEEN = 2 ** 15
+        h,w = profile.shape[:2]
+        x1,y1 = 0,0
+        x2,y2 = w,h
+        mask = profile != -TWO_TO_FIFTEEN
+        xx,yy = np.meshgrid(np.arange(x1,x2), np.arange(y1,y2))
+        X = offset[0] + xx * resolution[0]
+        Y = offset[1] + yy * resolution[1]
+        Z = offset[2] + profile*resolution[2]
+        return X,Y,Z,mask
+    
+    @pytest.mark.parametrize(
+        "profile, resolution, offset",
+        [
+            (torch.randint(-32768, 32767, (100,100), dtype=torch.int16), [0.7, 0.96, 0.9], [0.1, 0.1, 0.1]),  # Test 2D
+        ]
+    )
+    def test_cases(self, profile, resolution, offset):
+        x1,y1,z1,m1 = pipeline_utils.profile_to_3d(profile.numpy(), resolution, offset)
+        x2,y2,z2,m2 = pipeline_utils.profile_to_3d(profile, resolution, offset)
+        x2,y2,z2,m2 = x2.numpy(), y2.numpy(), z2.numpy(), m2.numpy()
+        assert np.allclose(x1, x2)
+        assert np.allclose(y1, y2)
+        assert np.allclose(z1, z2)
+        assert np.allclose(m1, m2)
+        x3,y3,z3,m3 = self.old_func(profile.numpy(), resolution, offset)
+        assert np.array_equal(x1, x3)
+        assert np.array_equal(y1, y3)
+        assert np.array_equal(z1, z3)
+        assert np.array_equal(m1, m3)
         
