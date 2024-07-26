@@ -91,18 +91,18 @@ class Test_Yolov8:
             
     def test_predict(self, model_det, imgs_coco):
         i = 0
-        for img,reszied,op in zip(*imgs_coco):
-            out,time_info = model_det.predict(reszied,configs=0.5,operators=op,return_tensor=False)
+        for img,resized,op in zip(*imgs_coco):
+            out,time_info = model_det.predict(resized,configs=0.5,operators=op)
             assert len(out['boxes'])>0
             for sc in out['scores']:
                 assert sc>=0.5
             im_out = model_det.annotate_image(out, img)
                 
             if torch.cuda.is_available():
-                out,time_info = model_det.predict(reszied,configs=0.5,operators=op,return_tensor=True)
+                resized = torch.from_numpy(resized).cuda()
+                out,time_info = model_det.predict(resized,configs=0.5,operators=op)
                 for b,sc in zip(out['boxes'], out['scores']):
-                    assert b.is_cuda
-                    assert sc.is_cuda
+                    assert b.is_cuda and sc.is_cuda
                 img = torch.from_numpy(img).cuda()
                 im_out = model_det.annotate_image(out, img)
                 os.makedirs(OUT_DIR, exist_ok=True)
@@ -118,16 +118,17 @@ class Test_Yolov8_Seg:
     def test_predict(self, model_seg, imgs_coco):
         i = 0
         for img,resized,op in zip(*imgs_coco):
-            out,time_info = model_seg.predict(resized,configs=0.5,operators=op,return_tensor=False)
-            assert len(out['masks'])>0
+            out,time_info = model_seg.predict(resized,configs=0.5,operators=op)
+            assert len(out['masks'])>0 and len(out['segments'])>0
             for sc in out['scores']:
                 assert sc>=0.5
             im_out = model_seg.annotate_image(out, img)
                 
             if torch.cuda.is_available():
-                out,time_info = model_seg.predict(resized,configs=0.5,operators=op,return_tensor=True)
-                for m,b,sc in zip(out['masks'], out['boxes'], out['scores']):
-                    assert m.is_cuda and b.is_cuda and sc.is_cuda
+                resized = torch.from_numpy(resized).cuda()
+                out,time_info = model_seg.predict(resized,configs=0.5,operators=op)
+                for seg,m,b,sc in zip(out['segments'], out['masks'], out['boxes'], out['scores']):
+                    assert seg.is_cuda and m.is_cuda and b.is_cuda and sc.is_cuda
                 img = torch.from_numpy(img).cuda()
                 im_out = model_seg.annotate_image(out, img)
                 im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
@@ -143,17 +144,17 @@ class Test_Yolov8_obb:
     def test_predict(self, model_obb, imgs_dota):
         i = 0
         for img,resized,op in zip(*imgs_dota):
-            out,time_info = model_obb.predict(resized,configs=0.5,operators=op,return_tensor=False)
+            out,time_info = model_obb.predict(resized,configs=0.5,operators=op)
             assert len(out['boxes'])>0
             for sc in out['scores']:
                 assert sc>=0.5
             im_out = model_obb.annotate_image(out, img)
                 
             if torch.cuda.is_available():
-                out,time_info = model_obb.predict(resized,configs=0.5,operators=op,return_tensor=True)
+                resized = torch.from_numpy(resized).cuda()
+                out,time_info = model_obb.predict(resized,configs=0.5,operators=op)
                 for b,sc in zip(out['boxes'], out['scores']):
-                    assert b.is_cuda
-                    assert sc.is_cuda
+                    assert b.is_cuda and sc.is_cuda
                 img = torch.from_numpy(img).cuda()
                 im_out = model_obb.annotate_image(out, img)
                 im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
@@ -169,14 +170,15 @@ class Test_Yolov8_pose:
     def test_predict(self, model_pose, imgs_coco):
         i = 0
         for img,resized,op in zip(*imgs_coco):
-            out,time_info = model_pose.predict(resized,configs=0.5,operators=op,return_tensor=False)
+            out,time_info = model_pose.predict(resized,configs=0.5,operators=op)
             assert len(out['boxes'])>0
             for sc in out['scores']:
                 assert sc>=0.5
             im_out = model_pose.annotate_image(out, img)
                 
             if torch.cuda.is_available():
-                out,time_info = model_pose.predict(resized,configs=0.5,operators=op,return_tensor=True)
+                resized = torch.from_numpy(resized).cuda()
+                out,time_info = model_pose.predict(resized,configs=0.5,operators=op)
                 for b,sc,kp in zip(out['boxes'], out['scores'], out['points']):
                     assert b.is_cuda and sc.is_cuda and kp.is_cuda
                 img = torch.from_numpy(img).cuda()

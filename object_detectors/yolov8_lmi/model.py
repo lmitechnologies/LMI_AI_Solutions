@@ -174,24 +174,24 @@ class Yolov8(ODBase):
     
     
     @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True, return_tensor=False):
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
         """Postprocesses predictions and returns a list of Results objects.
         
         Args:
             preds (torch.Tensor | list): Predictions from the model.
             img (torch.Tensor): the preprocessed image
-            orig_imgs (np.ndarray | list): Original image or list of original images.
+            orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images. If this is a tensor or a list of tensors, this function will return tensor results.
             conf (float | dict): int or dictionary of <class: confidence level>.
             iou (float): The IoU threshold below which boxes will be filtered out during NMS.
             max_det (int): The maximum number of detections to return. defaults to 300.
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             return_segments(bool): If True, return the segments of the masks.
-            return_tensor(bool): If True, return results as tensor. Defaults to False.
         Rreturns:
             (dict): the dictionary contains several keys: boxes, scores, classes, masks, and (masks, segments if use a segmentation model).
                     the shape of boxes is (B, N, 4), where B is the batch size and N is the number of detected objects.
                     the shape of classes and scores are both (B, N).
                     the shape of masks: (B, H, W, 3), where H and W are the height and width of the input image.
+                    the shape of segments: [ (n1,2), (n2,2), ...]
         """
         
         if isinstance(preds, (list,tuple)):
@@ -213,6 +213,7 @@ class Yolov8(ODBase):
         results = collections.defaultdict(list)
         for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, mask1, mask2 ...]
             orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
+            return_tensor = isinstance(orig_img, torch.Tensor)
             
             if not len(pred):  # skip empty boxes
                 continue
@@ -236,7 +237,9 @@ class Yolov8(ODBase):
                 if return_segments:
                     segments = [ops.scale_coords(masks.shape[1:], x, orig_img.shape, normalize=False) 
                                 for x in ops.masks2segments(masks)]
-                    results['segments'].append(segments)
+                    if return_tensor:
+                        segments = [self.from_numpy(x) for x in segments]   # list of [ (n1,2), (n2,2), ... ]
+                    results['segments'].append(segments) 
                     
             if return_tensor:
                 results['boxes'].append(xyxy[M])
@@ -249,23 +252,28 @@ class Yolov8(ODBase):
 
 
     @smart_inference_mode()
-    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_segments=True, return_tensor=False):
+    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_segments=True):
         """run yolov8 object detection inference. It runs the preprocess(), forward(), and postprocess() in sequence.
         It converts the results to the original coordinates space if the operators are provided.
         
         Args:
             model (Yolov8): the object detection model loaded memory
-            image (np.ndarry): the input image
+            image (np.ndarry | tensor): the input image
             configs (dict | float): a float or a dictionary of the confidence thresholds for each class, e.g., {'classA':0.5, 'classB':0.6}
             operators (list): a list of dictionaries of the image preprocess operators, such as {'resize':[resized_w, resized_h, orig_w, orig_h]}, {'pad':[pad_left, pad_right, pad_top, pad_bot]}
             iou (float): the iou threshold for non-maximum suppression. defaults to 0.4
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             max_det (int): The maximum number of detections to return. defaults to 300.
             return_segments(bool): If True, return the segments of the masks. Defaults to True.
-            return_tensor(bool): If True, return results as tensor. Defaults to False.
         Returns:
             list of [results, time info]
-            results (dict): a dictionary of the results, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
+            results (dict): a dictionary of the results, e.g., {
+                'boxes': numpy or tensor
+                'classes': a list of strings (NOT tensor)
+                'scores': numpy or tensor
+                'masks': numpy or tensor
+                'segments': numpy or tensor
+            }
             time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
         """
         time_info = {}
@@ -282,7 +290,7 @@ class Yolov8(ODBase):
         
         # postprocess
         t0 = time.time()
-        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det,return_segments,return_tensor)
+        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det,return_segments)
         
         # return empty results if no detection
         results_dict = collections.defaultdict(list)
@@ -366,18 +374,17 @@ class Yolov8Obb(Yolov8):
         self.logger = logging.getLogger(__name__)
         
     @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_tensor=False):
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300):
         """Postprocesses predictions and returns a list of Results objects.
         
         Args:
             preds (torch.Tensor | list): Predictions from the model.
             img (torch.Tensor): the preprocessed image
-            orig_imgs (np.ndarray | list): Original image or list of original images.
+            orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images. If this is a tensor or a list of tensors, this function will return tensor results.
             conf_thres (float | dict): int or dictionary of <class: confidence level>.
             iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
             max_det (int): The maximum number of detections to return. defaults to 300.
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
-            return_segments(bool): If True, return the segments of the masks.
         Rreturns:
             (dict): the dictionary contains several keys: boxes, scores, classes, masks, and (masks, segments if use a segmentation model).
                     the shape of boxes is (B, N, 4), where B is the batch size and N is the number of detected objects.
@@ -399,6 +406,7 @@ class Yolov8Obb(Yolov8):
         
         for i, pred in enumerate(preds2):
             orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
+            return_tensor = isinstance(orig_img, torch.Tensor)
             
             if not len(pred):  # skip empty boxes
                 continue
@@ -435,8 +443,9 @@ class Yolov8Obb(Yolov8):
             results['classes'].append(classes[M.cpu().numpy()].tolist())
         return results
     
+    
     @smart_inference_mode()
-    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_tensor=False):
+    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300):
         """run yolov8 object detection inference. It runs the preprocess(), forward(), and postprocess() in sequence.
         It converts the results to the original coordinates space if the operators are provided.
         
@@ -452,7 +461,11 @@ class Yolov8Obb(Yolov8):
 
         Returns:
             list of [results, time info]
-            results (dict): a dictionary of the results, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
+            results (dict): a dictionary of the results, e.g., {
+                'boxes': numpy or tensor 
+                'classes': a list of strings (NOT tensor)
+                'scores': numpy or tensor
+                }
             time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
         """
         time_info = {}
@@ -469,7 +482,7 @@ class Yolov8Obb(Yolov8):
         
         # postprocess
         t0 = time.time()
-        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det,return_tensor)
+        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det)
         
         # return empty results if no detection
         results_dict = collections.defaultdict(list)
@@ -478,7 +491,7 @@ class Yolov8Obb(Yolov8):
             return results_dict, time_info
         
         # handling only one batch
-        boxes = results['boxes'][0]
+        boxes = results['boxes'][0]     # [n_obj, 4, 2]
         scores = results['scores'][0]
         classes = results['classes'][0]
         
@@ -487,7 +500,7 @@ class Yolov8Obb(Yolov8):
         for box in boxes:
             b = pipeline_utils.revert_to_origin(box, operators)
             converted_boxes.append(b)
-        converted_boxes = torch.stack(converted_boxes) if return_tensor else np.array(converted_boxes)
+        converted_boxes = torch.stack(converted_boxes) if isinstance(image, torch.Tensor) else np.array(converted_boxes)
         
         results_dict['boxes'] = converted_boxes
         results_dict['scores'] = scores
@@ -536,14 +549,15 @@ class Yolov8Pose(Yolov8):
     def __init__(self, weights:str, device='gpu', data=None, fp16=False) -> None:
         super().__init__(weights, device, data, fp16)
         
+        
     @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_tensor=False):
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300):
         """Postprocesses predictions and returns a list of Results objects.
         
         Args:
             preds (torch.Tensor | list): Predictions from the model.
             img (torch.Tensor): the preprocessed image
-            orig_imgs (np.ndarray | list): Original image or list of original images.
+            orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images. If this is a tensor or a list of tensors, this function will return tensor results.
             conf_thres (float | dict): int or dictionary of <class: confidence>
             iou (float): The IoU threshold below which boxes will be filtered out during NMS.
             max_det (int): The maximum number of detections to return. defaults to 300.
@@ -555,6 +569,7 @@ class Yolov8Pose(Yolov8):
         results = collections.defaultdict(list)
         for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, ...]
             orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
+            return_tensor = isinstance(orig_img, torch.Tensor)
             
             if not len(pred):  # skip empty boxes
                 continue
@@ -586,7 +601,7 @@ class Yolov8Pose(Yolov8):
     
     
     @smart_inference_mode()
-    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_tensor=False):
+    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300):
         """run yolov8 object detection inference. It runs the preprocess(), forward(), and postprocess() in sequence.
         It converts the results to the original coordinates space if the operators are provided.
         
@@ -601,7 +616,13 @@ class Yolov8Pose(Yolov8):
 
         Returns:
             list of [results, time info]
-            results (dict): a dictionary of the results, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
+            results (dict): a dictionary of the results, e.g., 
+            {
+                'boxes': numpy or tensor
+                'classes': a list of strings (NOT tensor)
+                'scores': numpy or tensor
+                'points': numpy or tensor
+            }
             time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
         """
         time_info = {}
@@ -618,7 +639,7 @@ class Yolov8Pose(Yolov8):
         
         # postprocess
         t0 = time.time()
-        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det,return_tensor)
+        results = self.postprocess(pred,im,image,configs,iou,agnostic,max_det)
         
         # return empty results if no detection
         results_dict = collections.defaultdict(list)
@@ -631,13 +652,13 @@ class Yolov8Pose(Yolov8):
         scores = results['scores'][0]
         classes = results['classes'][0]
         points = results['points'][0]
-        # TODO: add visibility if needed which is points[:,-1]
+        # TODO: add visibility if needed, which is points[:,-1]
         if len(points) and points.shape[-1] == 3:
             points = points[:,:,:-1]
         
         # convert box to sensor space
         points = [pipeline_utils.revert_to_origin(p, operators) for p in points] # each iter: [n_kp,2]
-        points = torch.stack(points) if return_tensor else np.array(points)
+        points = torch.stack(points) if isinstance(image, torch.Tensor) else np.array(points)
         boxes = pipeline_utils.revert_to_origin(boxes, operators)
         results_dict['points'] = points
         results_dict['boxes'] = boxes
