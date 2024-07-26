@@ -25,6 +25,30 @@ def read_data(file_path):
     return data
 
 
+def plot_and_save(totals, color_marker_combinations, wanted=[], not_wanted=[], outname=None):
+    # Plotting the data
+    plt.figure(figsize=(10, 6))
+    occurrences = []
+    for k in totals:
+        if any(pattern in k for pattern in not_wanted):
+            continue
+        if wanted and not any(pattern in k for pattern in wanted):
+            continue
+        if not occurrences:
+            occurrences = list(range(1, len(totals[k]) + 1))
+        color,marker = color_marker_combinations.pop(0)
+        plt.plot(occurrences, totals[k], marker=marker, color=color, linestyle='-', label=k)
+    plt.xlabel('Occurrence')
+    plt.ylabel('RSS + Swap (MB)')
+    plt.title('RSS + Swap every 30 minutes')
+    plt.legend()
+    plt.grid(True)
+    
+    # write plot as png
+    if outname:
+        plt.savefig(outname)
+    plt.close()
+
 
 if __name__ == '__main__':
     import argparse
@@ -47,21 +71,7 @@ if __name__ == '__main__':
     markers = ['o', 's', '^', 'D', 'v', 'P', '*']
     color_marker_combinations = list(itertools.product(colors, markers))
 
-    # Plotting the data
-    plt.figure(figsize=(10, 6))
-    occurrences = []
-    for k in totals:
-        # if 'pipeline' in k or 'sensor' in k or 'data-manager' in k:
-        #     continue
-        # if 'sensor' not in k:
-        #     continue
-        if not occurrences:
-            occurrences = list(range(1, len(totals[k]) + 1))
-        color,marker = color_marker_combinations.pop(0)
-        plt.plot(occurrences, totals[k], marker=marker, color=color, linestyle='-', label=k)
-    plt.xlabel('Occurrence')
-    plt.ylabel('RSS + Swap (MB)')
-    plt.title('RSS + Swap every 30 minutes')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
+    plot_and_save(totals, color_marker_combinations, ['pipeline'], outname="ram_pipeline.png")
+    plot_and_save(totals, color_marker_combinations, ['sensor'], outname="ram_sensor.png")
+    plot_and_save(totals, color_marker_combinations, not_wanted=['pipeline', 'sensor'], outname="ram_gadget.png")
+    
