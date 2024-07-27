@@ -155,10 +155,10 @@ def profile_to_3d(profile, resolution, offset):
         resolution(tuple): (x_resolution, y_resolution, z_resolution)
         offset(tuple): (x_offset, y_offset, z_offset)
     return:
-        X(np array): the x coordinates in 3d space, same shape as profile
-        Y(np array): the y coordinates in 3d space, same shape as profile
-        Z(np array): the z coordinates in 3d space, same shape as profile
-        mask(np array): the mask of the profile image to remove background
+        X: the x coordinates in 3d space, same shape as profile
+        Y: the y coordinates in 3d space, same shape as profile
+        Z: the z coordinates in 3d space, same shape as profile
+        mask: the mask of the profile image to remove background
     """
     is_numpy = isinstance(profile, np.ndarray)
     
