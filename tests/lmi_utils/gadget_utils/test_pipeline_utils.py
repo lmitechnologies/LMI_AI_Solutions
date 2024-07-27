@@ -51,7 +51,7 @@ class Test_resize_image:
 
             
 class Test_fit_im_to_size:
-    def old_func(self, im,W=None,H=None):
+    def np_func(self, im,W=None,H=None):
         BLACK = (0,0,0)
         h_im,w_im=im.shape[:2]
         if W is None:
@@ -98,7 +98,7 @@ class Test_fit_im_to_size:
     def test_cases(self, im, wh, expected_pad, expected_shape):
         W,H = wh
         im2, l, r, t, b = pipeline_utils.fit_im_to_size(im, W=W, H=H)
-        im3, l3, r3, t3, b3 = self.old_func(im, W, H)
+        im3, l3, r3, t3, b3 = self.np_func(im, W, H)
         assert np.array_equal([l,r,t,b], expected_pad)
         assert im2.shape == expected_shape
         assert isinstance(im2, np.ndarray)
@@ -167,7 +167,7 @@ class Test_revert_to_origin:
         
 class Test_profile_to_3d:
     
-    def old_func(self, profile, resolution, offset):
+    def np_func(self, profile, resolution, offset):
         if profile.dtype != np.int16:
             raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
         TWO_TO_FIFTEEN = 2 ** 15
@@ -184,7 +184,8 @@ class Test_profile_to_3d:
     @pytest.mark.parametrize(
         "profile, resolution, offset",
         [
-            (torch.randint(-32768, 32767, (100,100), dtype=torch.int16), [0.7, 0.96, 0.9], [0.1, 0.1, 0.1]),  # Test 2D
+            (torch.randint(-32768, 32767, (100,100), dtype=torch.int16), [0.7, 0.96, 0.9], [0.1, 0.1, 0.1]),
+            (torch.randint(-32768, 32767, (90,100), dtype=torch.int16), [1, 1, 1], [0, 0, 0]),
         ]
     )
     def test_cases(self, profile, resolution, offset):
@@ -195,9 +196,117 @@ class Test_profile_to_3d:
         assert np.allclose(y1, y2)
         assert np.allclose(z1, z2)
         assert np.allclose(m1, m2)
-        x3,y3,z3,m3 = self.old_func(profile.numpy(), resolution, offset)
+        x3,y3,z3,m3 = self.np_func(profile.numpy(), resolution, offset)
         assert np.array_equal(x1, x3)
         assert np.array_equal(y1, y3)
         assert np.array_equal(z1, z3)
         assert np.array_equal(m1, m3)
+        
+        
+    @pytest.mark.parametrize(
+        "profile, resolution, offset",
+        [
+            (torch.randint(-32768, 32767, (100,100), dtype=torch.int16), [0.7, 0.96, 0.9], [0.1, 0.1, 0.1]),
+            (torch.randint(-32768, 32767, (90,100), dtype=torch.int16), [1, 1, 1], [0, 0, 0]),
+        ]
+    )
+    def test_types(self, profile, resolution, offset):
+        if torch.cuda.is_available():
+            profile = profile.cuda()
+            x,y,z,m = pipeline_utils.profile_to_3d(profile, resolution, offset)
+            assert x.is_cuda
+            assert y.is_cuda
+            assert z.is_cuda
+            assert m.is_cuda
+        
+        with pytest.raises(Exception) as info:
+            x,y,z,m = pipeline_utils.profile_to_3d(profile.to(torch.uint16), resolution, offset)
+        logger.debug(info.value)
+        
+            
+class Test_uint16_to_int16:
+    
+    def np_func(self, profile):
+        if profile.dtype != np.uint16:
+            raise Exception(f'dtype should be uint16, got {profile.dtype}')
+        TWO_TO_FIFTEEN = 2 ** 15
+        return profile.view(np.int16) + np.int16(-TWO_TO_FIFTEEN)
+    
+    
+    @pytest.mark.parametrize(
+        "profile",
+        [
+            (torch.randint(0, 65535, (100,100), dtype=torch.uint16)),
+            (torch.randint(0, 65535, (220,210), dtype=torch.uint16)),
+        ]
+    )
+    def test_cases(self, profile):
+        p1 = pipeline_utils.uint16_to_int16(profile)
+        p2 = self.np_func(profile.numpy())
+        p1 = p1.numpy()
+        assert np.array_equal(p1, p2)
+        
+        if torch.cuda.is_available():
+            profile = profile.cuda()
+            p3 = pipeline_utils.uint16_to_int16(profile)
+            assert p3.is_cuda
+            assert np.array_equal(p3.cpu().numpy(), p2)
+        
+        with pytest.raises(Exception) as info:
+            pipeline_utils.uint16_to_int16(profile.to(torch.int16))
+        logger.debug(info.value)
+            
+class Test_pts_to_3d:
+    
+    def np_func(self, pts, profile, resolution, offset):
+        if profile.dtype != np.int16:
+            raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
+        xyz = []
+        for pt in pts:
+            if len(pt)!=2:
+                raise Exception(f'pts should be a list of (x,y) points, got {pt}')
+            x,y = map(int,pt)
+            nx = offset[0] + x * resolution[0]
+            ny = offset[1] + y * resolution[1]
+            nz = offset[2] + profile[y][x]*resolution[2]
+            xyz += [[nx,ny,nz]]
+        return np.array(xyz)
+    
+    @pytest.mark.parametrize(
+        "pts, profile, resolution, offset",
+        [
+            (np.array([[10, 20], [30, 40], [50, 60], [70, 80]]), torch.randint(-32768, 32767, (100,100), dtype=torch.int16).numpy(), [0.7, 0.96, 0.9], [0.1, 0.1, 0.1]),
+            (torch.tensor([[15, 25], [35, 45], [55, 65], [75, 85]]), torch.randint(-32768, 32767, (90,100), dtype=torch.int16), [1, 1, 1], [0, 0, 0]),
+        ]
+    )
+    def test_cases(self, pts, profile, resolution, offset):
+        xyz1 = pipeline_utils.pts_to_3d(pts, profile, resolution, offset)
+        if isinstance(pts, torch.Tensor):
+            pts = pts.numpy()
+            profile = profile.numpy()
+        xyz2 = self.np_func(pts, profile, resolution, offset)
+        assert np.array_equal(xyz1, xyz2)
+        
+        if torch.cuda.is_available():
+            if not isinstance(pts, torch.Tensor):
+                pts = torch.from_numpy(pts).cuda()
+                profile = torch.from_numpy(profile).cuda()
+            xyz3 = pipeline_utils.pts_to_3d(pts, profile, resolution, offset)
+            assert xyz3.is_cuda
+            assert np.array_equal(xyz3.cpu().numpy(), xyz2)
+            
+    def test_types(self):
+        pts = np.array([[15, 25], [35, 45], [55, 65], [75, 85]])
+        profile = torch.randint(-32768, 32767, (90,100), dtype=torch.int16)
+        resolution = [1, 1, 1]
+        offset = [0, 0, 0]
+        with pytest.raises(Exception) as info:
+            pipeline_utils.pts_to_3d(pts, profile.to(torch.uint16), resolution, offset)
+        logger.debug(info.value)
+        
+        pts2 = np.expand_dims(pts, axis=0)
+        with pytest.raises(Exception) as info:
+            pipeline_utils.pts_to_3d(pts2, profile.numpy(), resolution, offset)
+        logger.debug(info.value)
+            
         

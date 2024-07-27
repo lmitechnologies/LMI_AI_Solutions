@@ -134,9 +134,16 @@ def uint16_to_int16(profile):
     """
     convert uint16 profile image to int16
     """
-    if profile.dtype != np.uint16:
-        raise Exception(f'dtype should be uint16, got {profile.dtype}')
-    return profile.view(np.int16) + np.int16(-TWO_TO_FIFTEEN)
+    is_numpy = isinstance(profile, np.ndarray)
+    if is_numpy:
+        profile = torch.from_numpy(profile)
+        
+    if profile.dtype != torch.uint16:
+        raise Exception(f'input should be uint16, got {profile.dtype}')
+    
+    profile = profile.to(torch.int32) - torch.tensor(TWO_TO_FIFTEEN,dtype=torch.int32)
+    profile = profile.to(torch.int16)
+    return profile.numpy() if is_numpy else profile
 
 
 @torch.no_grad()
@@ -144,7 +151,7 @@ def profile_to_3d(profile, resolution, offset):
     """
     convert profile image to 3d sensor space
     args:
-        profile(np array): the profile image
+        profile(np array | tensor): the profile image
         resolution(tuple): (x_resolution, y_resolution, z_resolution)
         offset(tuple): (x_offset, y_offset, z_offset)
     return:
@@ -154,10 +161,12 @@ def profile_to_3d(profile, resolution, offset):
         mask(np array): the mask of the profile image to remove background
     """
     is_numpy = isinstance(profile, np.ndarray)
+    
+    # convert to tensor
     if is_numpy:
         profile = torch.from_numpy(profile)
-        resolution = torch.from_numpy(np.array(resolution))
-        offset = torch.from_numpy(np.array(offset))
+    resolution = torch.from_numpy(np.array(resolution))
+    offset = torch.from_numpy(np.array(offset))
         
     if profile.dtype != torch.int16:
         raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
@@ -181,28 +190,42 @@ def profile_to_3d(profile, resolution, offset):
     return X,Y,Z,mask
 
 
-def pixel_to_3d(pts, profile, resolution, offset):
+def pts_to_3d(pts, profile, resolution, offset):
     """
     convert list of 2d pixel locations to 3d sensor space
     args:
-        pts(list): list of (x,y) points, with shape of Nx2
-        profile(np array): the profile image
+        pts(numpy | tensor): array of (x,y) points, with shape of Nx2
+        profile(same type as pts): the profile image
         resolution(tuple): (x_resolution, y_resolution, z_resolution)
         offset(tuple): (x_offset, y_offset, z_offset)
     """
-    if profile.dtype != np.int16:
+    if type(pts) != type(profile):
+        raise Exception(f'pts and profile should have the same type, got {type(pts)} and {type(profile)}')
+    
+    is_numpy = isinstance(pts, np.ndarray)
+    if is_numpy:
+        pts = torch.from_numpy(pts)
+        profile = torch.from_numpy(profile)
+    offset = torch.from_numpy(np.array(offset))
+    resolution = torch.from_numpy(np.array(resolution))
+    
+    if pts.device != profile.device:
+        raise Exception(f'device of pts and profile should be the same, got {pts.device} and {profile.device}')
+    if pts.ndim<2 or pts.shape[1]!=2:
+        raise Exception(f'shape of pts should be Nx2, got {pts.shape}')
+    if profile.dtype != torch.int16:
         raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
     
-    xyz = []
-    for pt in pts:
-        if len(pt)!=2:
-            raise Exception(f'pts should be a list of (x,y) points, got {pt}')
-        x,y = map(int,pt)
-        nx = offset[0] + x * resolution[0]
-        ny = offset[1] + y * resolution[1]
-        nz = offset[2] + profile[y][x]*resolution[2]
-        xyz += [[nx,ny,nz]]
-    return np.array(xyz)
+    pts = pts.to(torch.int32)
+    Xs = pts[:,0]
+    Ys = pts[:,1]
+    
+    nx = offset[0] + Xs * resolution[0]
+    ny = offset[1] + Ys * resolution[1]
+    nz = offset[2] + profile[Ys,Xs]*resolution[2]
+    xyz = torch.stack([nx,ny,nz],dim=1)
+    
+    return xyz.numpy() if is_numpy else xyz
 
 
 def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, label=None, line_thickness=None):
