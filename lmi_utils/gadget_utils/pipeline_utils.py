@@ -211,7 +211,7 @@ def pts_to_3d(pts, profile, resolution, offset):
     
     if pts.device != profile.device:
         raise Exception(f'device of pts and profile should be the same, got {pts.device} and {profile.device}')
-    if pts.ndim<2 or pts.shape[1]!=2:
+    if pts.ndim!=2 or pts.shape[1]!=2:
         raise Exception(f'shape of pts should be Nx2, got {pts.shape}')
     if profile.dtype != torch.int16:
         raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
