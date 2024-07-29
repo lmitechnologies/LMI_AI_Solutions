@@ -166,7 +166,6 @@ class Test_revert_to_origin:
         
         
 class Test_profile_to_3d:
-    
     def np_func(self, profile, resolution, offset):
         if profile.dtype != np.int16:
             raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
@@ -223,9 +222,8 @@ class Test_profile_to_3d:
             x,y,z,m = pipeline_utils.profile_to_3d(profile.to(torch.uint16), resolution, offset)
         logger.debug(info.value)
         
-            
+        
 class Test_uint16_to_int16:
-    
     def np_func(self, profile):
         if profile.dtype != np.uint16:
             raise Exception(f'dtype should be uint16, got {profile.dtype}')
@@ -255,9 +253,9 @@ class Test_uint16_to_int16:
         with pytest.raises(Exception) as info:
             pipeline_utils.uint16_to_int16(profile.to(torch.int16))
         logger.debug(info.value)
-            
+        
+        
 class Test_pts_to_3d:
-    
     def np_func(self, pts, profile, resolution, offset):
         if profile.dtype != np.int16:
             raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
