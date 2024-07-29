@@ -49,6 +49,7 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                 elif current_labels[i_bbox]['shape']=='rect':
                     ul=current_labels[i_bbox]['upper_left']
                     lr=current_labels[i_bbox]['lower_right']
+                    angle=current_labels[i_bbox]['angle']
                     if angle != 0:
                         # rotate the rectangle
                         corners = rotate(ul[0],ul[1],lr[0]-ul[0],lr[1]-ul[1],angle)
