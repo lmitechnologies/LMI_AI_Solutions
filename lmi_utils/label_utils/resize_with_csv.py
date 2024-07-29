@@ -29,11 +29,12 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
     shapes,_ = csv_utils.load_csv(path_csv, path_img=path_imgs)
     cnt_bg = 0
     files = get_relative_paths(path_imgs, recursive)
+    if not save_bg_images:
+        files = [f for f in files if os.path.basename(f) in shapes]
     for f in files:
         im_name = os.path.basename(f)
         im = cv2.imread(os.path.join(path_imgs, f))
         h,w = im.shape[:2]
-        
         # found bg image
         if im_name not in shapes:
             if not save_bg_images:
