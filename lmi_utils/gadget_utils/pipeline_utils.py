@@ -130,106 +130,102 @@ def fit_im_to_size(im, W=None, H=None, value=0):
     return im, pad_L, pad_R, pad_T, pad_B
 
 
-def fit_array_to_size(im,W,H):
-    """
-    description:
-        pad/crop the image to the size [W,H] with BLACK pixels
-    arguments:
-        im(np array): the numpy array of a image
-        W(int): the target width
-        H(int): the target height
-    return:
-        im(np array): the padded/cropped image 
-        pad_l(int): number of pixels padded to left
-        pad_r(int): number of pixels padded to right
-        pad_t(int): number of pixels padded to top
-        pad_b(int): number of pixels padded to bottom
-    """
-    h_im,w_im=im.shape[:2]
-    # pad or crop width
-    if W >= w_im:
-        pad_L=(W-w_im)//2
-        pad_R=W-w_im-pad_L
-        im=cv2.copyMakeBorder(im,0,0,pad_L,pad_R,cv2.BORDER_CONSTANT,value=BLACK)
-    else:
-        pad_L = (w_im-W)//2
-        pad_R = w_im-W-pad_L
-        im = im[:,pad_L:-pad_R]
-        pad_L *= -1
-        pad_R *= -1
-    # pad or crop height
-    if H >= h_im:
-        pad_T=(H-h_im)//2
-        pad_B=H-h_im-pad_T
-        im=cv2.copyMakeBorder(im,pad_T,pad_B,0,0,cv2.BORDER_CONSTANT,value=BLACK)
-    else:
-        pad_T = (h_im-H)//2
-        pad_B = h_im-H-pad_T
-        im = im[pad_T:-pad_B,:]
-        pad_T *= -1
-        pad_B *= -1
-    return im, pad_L, pad_R, pad_T, pad_B
-
-
 def uint16_to_int16(profile):
     """
     convert uint16 profile image to int16
     """
-    if profile.dtype != np.uint16:
-        raise Exception(f'dtype should be uint16, got {profile.dtype}')
-    return profile.view(np.int16) + np.int16(-TWO_TO_FIFTEEN)
+    is_numpy = isinstance(profile, np.ndarray)
+    if is_numpy:
+        profile = torch.from_numpy(profile)
+        
+    if profile.dtype != torch.uint16:
+        raise Exception(f'input should be uint16, got {profile.dtype}')
+    
+    profile = profile.to(torch.int32) - torch.tensor(TWO_TO_FIFTEEN,dtype=torch.int32)
+    profile = profile.to(torch.int16)
+    return profile.numpy() if is_numpy else profile
 
 
-def profile_to_xyz(profile, resolution, offset):
+@torch.no_grad()
+def profile_to_3d(profile, resolution, offset):
     """
     convert profile image to 3d sensor space
     args:
-        profile(np array): the profile image
+        profile(np array | tensor): the profile image
         resolution(tuple): (x_resolution, y_resolution, z_resolution)
         offset(tuple): (x_offset, y_offset, z_offset)
     return:
-        X(np array): the x coordinates in 3d space, same shape as profile
-        Y(np array): the y coordinates in 3d space, same shape as profile
-        Z(np array): the z coordinates in 3d space, same shape as profile
-        mask(np array): the mask of the profile image to remove background
+        X: the x coordinates in 3d space, same shape as profile
+        Y: the y coordinates in 3d space, same shape as profile
+        Z: the z coordinates in 3d space, same shape as profile
+        mask: the mask of the profile image to remove background
     """
-    if profile.dtype != np.int16:
+    is_numpy = isinstance(profile, np.ndarray)
+    
+    # convert to tensor
+    if is_numpy:
+        profile = torch.from_numpy(profile)
+    resolution = torch.from_numpy(np.array(resolution)).to(profile.device)
+    offset = torch.from_numpy(np.array(offset)).to(profile.device)
+        
+    if profile.dtype != torch.int16:
         raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
     
     h,w = profile.shape[:2]
     x1,y1 = 0,0
     x2,y2 = w,h
     mask = profile != -TWO_TO_FIFTEEN
-    xx,yy = np.meshgrid(np.arange(x1,x2), np.arange(y1,y2))
+    x_range = torch.arange(x1,x2,device=profile.device)
+    y_range = torch.arange(y1,y2,device=profile.device)
+    xx, yy = torch.meshgrid(x_range, y_range, indexing='xy')
     X = offset[0] + xx * resolution[0]
     Y = offset[1] + yy * resolution[1]
     Z = offset[2] + profile*resolution[2]
-    # xyz = np.stack((X[mask],Y[mask],Z[mask]), axis=-1)
+    
+    if is_numpy:
+        X = X.numpy()
+        Y = Y.numpy()
+        Z = Z.numpy()
+        mask = mask.numpy()
     return X,Y,Z,mask
 
 
-def pts_to_xyz(pts, profile, resolution, offset):
+def pts_to_3d(pts, profile, resolution, offset):
     """
-    convert list of 2d pts to 3d sensor space
+    convert list of 2d pixel locations to 3d sensor space
     args:
-        pts(list): list of (x,y) points, with shape of Nx2
-        profile(np array): the profile image
+        pts(numpy | tensor): array of (x,y) points, with shape of Nx2
+        profile(same type as pts): the profile image
         resolution(tuple): (x_resolution, y_resolution, z_resolution)
         offset(tuple): (x_offset, y_offset, z_offset)
     """
-    if profile.dtype != np.int16:
+    if type(pts) != type(profile):
+        raise Exception(f'pts and profile should have the same type, got {type(pts)} and {type(profile)}')
+    
+    is_numpy = isinstance(pts, np.ndarray)
+    if is_numpy:
+        pts = torch.from_numpy(pts)
+        profile = torch.from_numpy(profile)
+    offset = torch.from_numpy(np.array(offset)).to(pts.device)
+    resolution = torch.from_numpy(np.array(resolution)).to(pts.device)
+    
+    if pts.device != profile.device:
+        raise Exception(f'device of pts and profile should be the same, got {pts.device} and {profile.device}')
+    if pts.ndim!=2 or pts.shape[1]!=2:
+        raise Exception(f'shape of pts should be Nx2, got {pts.shape}')
+    if profile.dtype != torch.int16:
         raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
     
-    xyz = []
-    for pt in pts:
-        if len(pt)!=2:
-            raise Exception(f'pts should be a list of (x,y) points, got {pt}')
-        x,y = map(int,pt)
-        nx = offset[0] + x * resolution[0]
-        ny = offset[1] + y * resolution[1]
-        nz = offset[2] + profile[y][x]*resolution[2]
-        xyz += [[nx,ny,nz]]
-    return np.array(xyz)
+    pts = pts.to(torch.int32)
+    Xs = pts[:,0]
+    Ys = pts[:,1]
+    
+    nx = offset[0] + Xs * resolution[0]
+    ny = offset[1] + Ys * resolution[1]
+    nz = offset[2] + profile[Ys,Xs]*resolution[2]
+    xyz = torch.stack([nx,ny,nz],dim=1)
+    
+    return xyz.numpy() if is_numpy else xyz
 
 
 def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, label=None, line_thickness=None):
@@ -302,8 +298,8 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None):
     if len(box) != 4:
         raise Exception(f'box should be a list of 4 points, got {len(box)} points')
     if isinstance(box, list):
-        box = np.array(box).astype(np.int32)
-    
+        box = np.array(box)
+    box = box.astype(int)
     
     cv2.polylines(img, [box], isClosed=True, color=color, thickness=tl)
         
@@ -330,6 +326,7 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None):
         )
 
 
+@torch.no_grad()
 def revert_mask_to_origin(mask, operations:list):
     """
     This func reverts a single mask image according to the operations list IN ORDER.
@@ -338,89 +335,99 @@ def revert_mask_to_origin(mask, operations:list):
         2. <resize: [resized_w, resized_h, orig_w, orig_h]>
         3. <flip: [flip left right, flip up down, im width, im height]>
     """
-    mask2 = mask.copy()
+    is_numpy = isinstance(mask, np.ndarray)
     for operator in reversed(operations):
         if 'resize' in operator:
             _,_,nw,nh = operator['resize']
-            mask2 = cv2.resize(mask2,(nw,nh))
+            mask = resize_image(mask,nw,nh)
         if 'pad' in operator:
-            h,w = mask2.shape[:2]
+            h,w = mask.shape[:2]
             pad_L,pad_R,pad_T,pad_B = operator['pad']
             nw,nh = w-pad_L-pad_R,h-pad_T-pad_B
-            mask2,_,_,_,_ = fit_array_to_size(mask2,nw,nh)
+            mask,_,_,_,_ = fit_im_to_size(mask,nw,nh)
         if 'flip' in operator:
+            # numpy is faster than torch.flip
             lr,ud,im_w,im_h = operator['flip']
-            if lr:
-                mask2 = cv2.flip(mask2,1)
-            if ud:
-                mask2 = cv2.flip(mask2,0)
-    return mask2
+            if not is_numpy:
+                mask = mask.numpy()
+            mask = mask[:,::-1]
+            mask = mask[::-1]
+            if not is_numpy:
+                mask = torch.from_numpy(mask)
+    return mask
 
 
 def revert_masks_to_origin(masks, operations:list):
     results = []
+    if len(masks)==0:
+        return results
+    is_tensor = isinstance(masks[0], torch.Tensor)
+    is_numpy = isinstance(masks, np.ndarray)
     for m in masks:
         results.append(revert_mask_to_origin(m, operations))
-    return results
+    if is_tensor:
+        return torch.stack(results)
+    return np.stack(results) if is_numpy else results
 
 
-def revert_to_origin(pts:np.ndarray, operations:list, verbose=False):
+@torch.no_grad()
+def revert_to_origin(pts, operations:list):
     """
-    revert the points to original image coordinates
-    This func reverts the operation in operations list IN ORDER.
-    The operations list contains items as dictionary. The items are listed as follows: 
+    revert the points to original image space.
+    This func executes operations in the REVERSED order.
+    The operations list contains items as dictionary. The supported items are listed following: 
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
-        2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
+        2. <pad: [pad_left, pad_right, pad_top, pad_bottom]> 
         3. <resize: [resized_w, resized_h, orig_w, orig_h]>
         4. <flip>: [flip left-right (True/False), flip up-down (True/False), image width, image height]
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
     """
-
-    def revert(x,y, operations):
-        nx,ny = x,y
-        for operator in reversed(operations):
-            if 'resize' in operator:
-                tw,th,orig_w,orig_h = operator['resize']
-                r = [tw/orig_w,th/orig_h]
-                nx,ny = nx/r[0], ny/r[1]
-            if 'pad' in operator:
-                pad_L,pad_R,pad_T,pad_B = operator['pad']
-                nx,ny = nx-pad_L,ny-pad_T
-            if 'stretch' in operator:
-                s = operator['stretch']
-                nx,ny = nx/s[0], ny/s[1]
-            if 'flip' in operator:
-                lr,ud,im_w,im_h = operator['flip']
-                if lr:
-                    nx = im_w-nx
-                if ud:
-                    ny = im_h-ny
-            if verbose:
-                logger.info(f'after {operator}, pt: {x:.2f},{y:.2f} -> {nx:.2f},{ny:.2f}')
-        nx = round(nx)
-        ny = round(ny)
-        return [max(nx,0),max(ny,0)]
-
-    pts2 = []
-    if isinstance(pts, list):
-        pts = np.array(pts)
-    for pt in pts:
-        if len(pt)==0:
-            continue
-        if len(pt)==2:
-            x,y = pt
-            pts2.append(revert(x,y,operations))
-        elif len(pt)==4:
-            x1,y1,x2,y2 = pt
-            pts2.append(revert(x1,y1,operations)+revert(x2,y2,operations))
+    is_tensor = isinstance(pts, torch.Tensor)
+    is_numpy = isinstance(pts, np.ndarray)
+    if not is_tensor:
+        pts = torch.from_numpy(pts) if is_numpy else torch.as_tensor(pts)
+    
+    if pts.ndim!=2 or (pts.shape[1]!=2 and pts.shape[1]!=4):
+        raise Exception(f'pts should be Nx2 or Nx4, got shape: {pts.shape}')
+    
+    r,c = pts.shape
+    for op in reversed(operations):
+        if 'resize' in op:
+            tw,th,orig_w,orig_h = op['resize']
+            r = torch.tensor([tw/orig_w,th/orig_h],device=pts.device)
+            if c==4:
+                r = r.repeat(2).unsqueeze(0)
+            pts = pts/r
+        elif 'pad' in op:
+            pad_L,pad_R,pad_T,pad_B = op['pad']
+            p = torch.tensor([pad_L,pad_T],device=pts.device)
+            if c==4:
+                p = p.repeat(2).unsqueeze(0)
+            pts = pts - p
+        elif 'stretch' in op:
+            s = torch.tensor(op['stretch'],device=pts.device)
+            if c==4:
+                s = s.repeat(2).unsqueeze(0)
+            pts = pts/s
+        elif 'flip' in op:
+            lr,ud,im_w,im_h = op['flip']
+            if lr:
+                pts[:,0] = im_w - pts[:,0]
+            if ud:
+                pts[:,1] = im_h - pts[:,1]
         else:
-            raise Exception(f'does not support pts neither Nx2 nor Nx4. Got shape: {pt.shape} with val: {pt}')
-    return pts2
+            raise Exception(f'unsupported operation: {op}')
+            
+    pts = pts.round().clamp(min=0)
+    if is_tensor:
+        return pts
+    return pts.numpy() if is_numpy else pts.tolist()
 
 
 def apply_operations(pts:np.ndarray, operations:list):
+    
     """
     apply operations to pts.
     The operations list contains each item as a dictionary. The items are listed as follows: 
@@ -431,37 +438,25 @@ def apply_operations(pts:np.ndarray, operations:list):
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
     """
-
-    def apply(x,y, operations):
-        nx,ny = x,y
-        for operator in operations:
-            if 'resize' in operator:
-                tw,th,orig_w,orig_h = operator['resize']
-                r = [tw/orig_w,th/orig_h]
-                nx,ny = nx*r[0], ny*r[1]
-            if 'pad' in operator:
-                pad_L,pad_R,pad_T,pad_B = operator['pad']
-                nx,ny = nx+pad_L,ny+pad_T
-            if 'stretch' in operator:
-                s = operator['stretch']
-                nx,ny = nx*s[0], ny*s[1]
-        return [max(nx,0),max(ny,0)]
-
-    pts2 = []
-    if isinstance(pts, list):
-        pts = np.array(pts)
-    for pt in pts:
-        if len(pt)==0:
-            continue
-        if len(pt)==2:
-            x,y = pt
-            pts2.append(apply(x,y,operations))
-        elif len(pt)==4:
-            x1,y1,x2,y2 = pt
-            pts2.append(apply(x1,y1,operations)+apply(x2,y2,operations))
+    new_ops = []
+    for op in operations:
+        if 'resize' in op:
+            tw,th,orig_w,orig_h = op['resize']
+            tmp = {'resize': [orig_w,orig_h,tw,th]}
+        elif 'pad' in op:
+            pad_L,pad_R,pad_T,pad_B = op['pad']
+            tmp = {'pad': [-pad_L,-pad_R,-pad_T,-pad_B]}
+        elif 'stretch' in op:
+            sx,sy = op['stretch']
+            tmp = {'stretch': [1/sx,1/sy]}
+        elif 'flip' in op:
+            lr,ud,im_w,im_h = op['flip']
+            tmp = {'flip': [lr,ud,im_w,im_h]}
         else:
-            raise Exception(f'does not support pts neither Nx2 nor Nx4. Got shape: {pt.shape} with val: {pt}')
-    return pts2
+            raise Exception(f'unsupported operation: {op}')
+        new_ops.append(tmp)
+    return revert_to_origin(pts, new_ops[::-1])
+    
     
     
 def convert_key_to_int(dt):
