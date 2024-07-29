@@ -47,6 +47,7 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                     (Himg,Wimg)=old_image.shape[0:2]
                     lr=(Wimg,Himg)
                 elif current_labels[i_bbox]['shape']=='rect':
+                    print(current_labels[i_bbox])
                     ul=current_labels[i_bbox]['upper_left']
                     lr=current_labels[i_bbox]['lower_right']
                     angle=current_labels[i_bbox]['angle']
