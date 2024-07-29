@@ -64,7 +64,7 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                 for obj_class in object_classes:
                     # step through remaining object classes
                     object_regions=find_class_index(obj_class,current_labels)
-                    print('[INFO] Found ',len(object_regions),' objects of class ',obj_class)
+                    print(f"current_labels: {current_labels}")
                     # step through split regions, appending all object regions     
                     for i in object_regions:
                         if current_labels[i]['shape']=='polygon':
