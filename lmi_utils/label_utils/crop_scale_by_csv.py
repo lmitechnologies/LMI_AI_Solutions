@@ -3,6 +3,7 @@ import csv
 from eval_utils.iou_from_csv import csv_to_dictionary
 from eval_utils.iou_from_csv import find_class_index
 from label_utils.crop_scale_labeled_image import crop_scale_labeled_image
+from label_utils.bbox_utils import rotate
 import os
 import cv2
 import argparse
@@ -48,6 +49,11 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                 elif current_labels[i_bbox]['shape']=='rect':
                     ul=current_labels[i_bbox]['upper_left']
                     lr=current_labels[i_bbox]['lower_right']
+                    if angle != 0:
+                        # rotate the rectangle
+                        corners = rotate(ul[0],ul[1],lr[0]-ul[0],lr[1]-ul[1],angle)
+                        ul = corners.min(axis=0)
+                        lr = corners.max(axis=0)
                 else:
                     raise Exception('Bounding box should be a rect.')
                 bbox=(ul,lr)
@@ -67,9 +73,15 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                         elif current_labels[i]['shape']=='rect':
                             ul=current_labels[i]['upper_left']
                             lr=current_labels[i]['lower_right']
+                            angle=current_labels[i]['angle']
+                            if angle != 0:
+                                # rotate the rectangle
+                                corners = rotate(ul[0],ul[1],lr[0]-ul[0],lr[1]-ul[1],angle)
+                                ul = corners.min(axis=0)
+                                lr = corners.max(axis=0)
                             x_vec=np.asarray([ul[0],lr[0],lr[0],ul[0]])
                             y_vec=np.asarray([ul[1],ul[1],lr[1],lr[1]])
-                            pts=np.stack((x_vec,y_vec),axis=1)
+                            pts=np.stack((x_vec,y_vec, angle),axis=1)
                             label_types.append('rect')
                         else:
                             raise Exception('Unknown object shape.')
@@ -95,6 +107,7 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                         label=object_labels[j]
                         xj=list(new_objects[j][:,0])
                         yj=list(new_objects[j][:,1])
+                        anglej=list(new_objects[j][:,2])
                         if not (np.any(np.asarray(xj)<NAN_INT) or np.any(np.asarray(yj)<NAN_INT)):
                             if label_type=='polygon':
                                 rowWriter.writerow([fname,label,'1.0','polygon','x values']+xj)
@@ -104,6 +117,7 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                                 lr=[xj[2],yj[2]]
                                 rowWriter.writerow([fname,label,'1.0','rect','upper left']+ul)
                                 rowWriter.writerow([fname,label,'1.0','rect','lower right']+lr)
+                                rowWriter.writerow([fname,label,'1.0','rect','angle']+anglej)
                             else:
                                 raise Exception('Unknown object shape.')
                             # plot 
