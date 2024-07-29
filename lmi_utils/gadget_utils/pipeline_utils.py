@@ -165,8 +165,8 @@ def profile_to_3d(profile, resolution, offset):
     # convert to tensor
     if is_numpy:
         profile = torch.from_numpy(profile)
-    resolution = torch.from_numpy(np.array(resolution))
-    offset = torch.from_numpy(np.array(offset))
+    resolution = torch.from_numpy(np.array(resolution)).to(profile.device)
+    offset = torch.from_numpy(np.array(offset)).to(profile.device)
         
     if profile.dtype != torch.int16:
         raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
@@ -206,8 +206,8 @@ def pts_to_3d(pts, profile, resolution, offset):
     if is_numpy:
         pts = torch.from_numpy(pts)
         profile = torch.from_numpy(profile)
-    offset = torch.from_numpy(np.array(offset))
-    resolution = torch.from_numpy(np.array(resolution))
+    offset = torch.from_numpy(np.array(offset)).to(pts.device)
+    resolution = torch.from_numpy(np.array(resolution)).to(pts.device)
     
     if pts.device != profile.device:
         raise Exception(f'device of pts and profile should be the same, got {pts.device} and {profile.device}')
@@ -387,17 +387,19 @@ def revert_to_origin(pts, operations:list):
             if c==4:
                 r = r.repeat(2).unsqueeze(0)
             pts = pts/r
-        if 'pad' in op:
+        elif 'pad' in op:
             pad_L,pad_R,pad_T,pad_B = op['pad']
             p = torch.tensor([pad_L,pad_T],device=pts.device)
             if c==4:
                 p = p.repeat(2).unsqueeze(0)
             pts = pts - p
-        if 'stretch' in op:
+        elif 'stretch' in op:
             s = torch.tensor(op['stretch'],device=pts.device)
             if c==4:
                 s = s.repeat(2).unsqueeze(0)
             pts = pts/s
+        else:
+            raise Exception(f'unsupported operation: {op}')
             
     pts = pts.round().clamp(min=0)
     if is_tensor:
@@ -416,37 +418,22 @@ def apply_operations(pts:np.ndarray, operations:list):
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
     """
-
-    def apply(x,y, operations):
-        nx,ny = x,y
-        for operator in operations:
-            if 'resize' in operator:
-                tw,th,orig_w,orig_h = operator['resize']
-                r = [tw/orig_w,th/orig_h]
-                nx,ny = nx*r[0], ny*r[1]
-            if 'pad' in operator:
-                pad_L,pad_R,pad_T,pad_B = operator['pad']
-                nx,ny = nx+pad_L,ny+pad_T
-            if 'stretch' in operator:
-                s = operator['stretch']
-                nx,ny = nx*s[0], ny*s[1]
-        return [max(nx,0),max(ny,0)]
-
-    pts2 = []
-    if isinstance(pts, list):
-        pts = np.array(pts)
-    for pt in pts:
-        if len(pt)==0:
-            continue
-        if len(pt)==2:
-            x,y = pt
-            pts2.append(apply(x,y,operations))
-        elif len(pt)==4:
-            x1,y1,x2,y2 = pt
-            pts2.append(apply(x1,y1,operations)+apply(x2,y2,operations))
+    new_ops = []
+    for op in operations:
+        if 'resize' in op:
+            tw,th,orig_w,orig_h = op['resize']
+            tmp = {'resize': [orig_w,orig_h,tw,th]}
+        elif 'pad' in op:
+            pad_L,pad_R,pad_T,pad_B = op['pad']
+            tmp = {'pad': [-pad_L,-pad_R,-pad_T,-pad_B]}
+        elif 'stretch' in op:
+            sx,sy = op['stretch']
+            tmp = {'stretch': [1/sx,1/sy]}
         else:
-            raise Exception(f'does not support pts neither Nx2 nor Nx4. Got shape: {pt.shape} with val: {pt}')
-    return pts2
+            raise Exception(f'unsupported operation: {op}')
+        new_ops.append(tmp)
+    return revert_to_origin(pts, new_ops[::-1])
+    
     
     
 def convert_key_to_int(dt):
