@@ -122,6 +122,9 @@ def crop_scale(input_data_dir,input_csv_path,output_data_dir,output_csv_path,all
                                 raise Exception('Unknown object shape.')
                             # plot 
                             pts=new_objects[j].astype(np.int32)
+                            # remove angle from pts
+                            if label_type=='rect':
+                                pts=pts[:,:2]
                             cv2.polylines(new_image,[pts],True,(255,0,0),1)
                             text_ind=pts.min(axis=0)
                             cv2.putText(new_image,label,(text_ind[0],text_ind[1]-4),cv2.FONT_HERSHEY_SIMPLEX,0.8,(255,0,0),1,cv2.LINE_AA)
