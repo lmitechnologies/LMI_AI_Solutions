@@ -379,7 +379,7 @@ def revert_to_origin(pts, operations:list):
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left, pad_right, pad_top, pad_bottom]> 
         3. <resize: [resized_w, resized_h, orig_w, orig_h]>
-        4. <flip>: [flip left-right (True/False), flip up-down (True/False), image width, image height]
+        4. <flip: [flip left-right (True/False), flip up-down (True/False), image width, image height]>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
@@ -413,10 +413,12 @@ def revert_to_origin(pts, operations:list):
             pts = pts/s
         elif 'flip' in op:
             lr,ud,im_w,im_h = op['flip']
+            idx = [0,2] if c==4 else [0]
+            idy = [1,3] if c==4 else [1]
             if lr:
-                pts[:,0] = im_w - pts[:,0]
+                pts[:,idx] = im_w - pts[:,idx]
             if ud:
-                pts[:,1] = im_h - pts[:,1]
+                pts[:,idy] = im_h - pts[:,idy]
         else:
             raise Exception(f'unsupported operation: {op}')
             
@@ -434,6 +436,7 @@ def apply_operations(pts:np.ndarray, operations:list):
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
         3. <resize: [resized_w, resized_h, orig_w, orig_h]>
+        4. <flip: [flip left-right (True/False), flip up-down (True/False), image width, image height]>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
