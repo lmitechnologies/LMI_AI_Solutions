@@ -90,6 +90,7 @@ def plot_one_polygon(pts, img, color=None, label=None, line_thickness=None):
         line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1
     )  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
+    pts = pts.astype(int)
     cv2.polylines(img, [pts], isClosed=True, color=color, thickness=tl)
     if label:
         c1 = (int(np.min(pts[:,:,0])), int(np.min(pts[:,:,1])))
