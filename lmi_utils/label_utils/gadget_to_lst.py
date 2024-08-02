@@ -1,29 +1,39 @@
 from PIL import Image
 from pathlib import Path
-import shutil
 import json
 import subprocess
 import os
+import logging
+from label_utils.csv_to_lst import write_xml, RECT_NAME, POLYGON_NAME
+
+logging.basicConfig()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 """
 Label data should be formatted like this:
-    {
+
+    label_json = {
+        'image_width': width,
+        'image_height': height,
         'boxes': [
             {
                 'object': DEFECT_NAME,
-                'x': X,     // top left
-                'y': Y,     // top left
-                'x1': X1,   // bottom right
-                'y1': Y1,   // bottom right
-                'width': WIDTH,
-                'height': HEIGHT
+                'x': X,             // top left
+                'y': Y,             // top left
+                'width': width,     // box width
+                'height': height,   // box height
+                'score': score,
+                'rotation': angle,  // box rotation angle in degrees
             }
-        ]
+        ],
         'polygons': [
             {
                 'object': DEFECT_NAME,
                 'x': [X1, X2, X3, X4],
-                'y': [Y1, Y2, Y3, Y4]
+                'y': [Y1, Y2, Y3, Y4],
+                'score': score,
             }
         ]
     }
@@ -31,15 +41,15 @@ Label data should be formatted like this:
 The pipeline results should look like this:
 
     result['outputs'] = { 
-            'annotated': inputs['image'],
-            'labels': {
-                'type': 'object',
-                'format': 'json',
-                'content': label_json
-            }   
+        'annotated': inputs['image'],
+        'labels': {
+            'type': 'object',
+            'format': 'json',
+            'content': label_json
+        }   
     }
 
-The label data needs to be called "labels"
+The label data needs to be called "labels".
     
 """
 
@@ -48,7 +58,7 @@ def download_data_from_bucket(bucket):
     if not os.path.isdir("./data"):
         os.mkdir("./data")
     cmd = ["gsutil", "-m", "cp", "-r", "gs://" + bucket, "./data"]
-    print(f'cmd: {cmd}')
+    logger.info(f'cmd: {cmd}')
     subprocess.run(cmd)
 
 
@@ -81,111 +91,95 @@ def convert_to_ls(files, destination, bucket):
     Output: A label.json file to be imported in Label Studio
     """
     labels = []
-    box_types = set()
-    polygon_types = set()
-    found_boxes = False
-    found_polygons = False
-    box_name = 'label'  # label studio tag name for boxes
-    polygon_name = 'label'
+    box_class = set()
+    polygon_class = set()
+    cnt_box = 0
+    cnt_polygon = 0
     for key in files:
-        if 'image' in files[key].keys() and 'labels' in files[key].keys():
-            img = Image.open(files[key]['image'])
-            width, height = img.size
-            with open(files[key]['labels'], 'r') as file:
-                label_json = json.load(file)
-                img_path = "gs://" + bucket + str(files[key]['image']).split(Path(bucket).stem)[1].replace("\\", "/")
-                label_obj = {
-                    'predictions': [
-                        {
-                            'model_version': 'pipeline_prediction',
-                            'result': []
-                        }
-                    ],
-                    'data': {
-                        'image': img_path
+        if 'image' not in files[key].keys() or 'labels' not in files[key].keys():
+            continue
+        
+        with open(files[key]['labels'], 'r') as file:
+            label_json = json.load(file)
+            img_path = "gs://" + bucket + str(files[key]['image']).split(Path(bucket).stem)[1].replace("\\", "/")
+            label_obj = {
+                'predictions': [
+                    {
+                        'model_version': 'pipeline_prediction',
+                        'result': []
                     }
+                ],
+                'data': {
+                    'image': img_path
                 }
+            }
+            
+            width = label_json['image_width']
+            height = label_json['image_height']
 
-                if 'boxes' in label_json:
-                    for boxes in label_json['boxes']:
-                        found_boxes = True
-                        box_types.add(boxes['object'])
-                        box = {
-                            "original_width": width,
-                            "original_height": height,
-                            "image_rotation": 0,
-                            'value': {
-                                'x': boxes['x'] / width * 100,
-                                'y': boxes['y'] / height * 100,
-                                'width': boxes['width'] / width * 100,
-                                'height': boxes['height'] / height * 100,
-                                #'score': 0.5,   #TODO - load score form pipeline
-                                'rotation': 0,
-                                'rectanglelabels': [boxes['object']]
-                            },
-                            'from_name': box_name,
-                            'to_name': 'image',
-                            'type': 'rectanglelabels'
-                        }
-                        label_obj['predictions'][0]['result'].append(box)
-                
-                if 'polygons' in label_json:
-                    for polygons in label_json['polygons']:
-                        # found both boxes and polygons, set a different name for the label studio tag
-                        found_polygons = True
-                        if found_boxes:
-                            polygon_name = 'polygon'
-                        polygon_types.add(polygons['object'])
-                        polygon = {
-                            "original_width": width,
-                            "original_height": height,
-                            "image_rotation": 0,
-                            'value': {
-                                'points': [],
-                                'polygonlabels': [
-                                    polygons['object']
-                                ],
-                                #'score': 0.5,   #TODO - load score form pipeline
-                            },
-                            'from_name': polygon_name,
-                            'to_name': 'image',
-                            'type': 'polygonlabels'
-                        }
-                        for i in range(0, len(polygons['x'])):
-                            x = polygons['x'][i] / width * 100
-                            y = polygons['y'][i] / height * 100
-                            polygon['value']['points'].append([x,y])
-                        
-                        label_obj['predictions'][0]['result'].append(polygon)
+            if 'boxes' in label_json:
+                for box in label_json['boxes']:
+                    box_class.add(box['object'])
+                    box_lst = {
+                        "original_width": width,
+                        "original_height": height,
+                        "image_rotation": 0,
+                        'value': {
+                            'x': box['x'] / width * 100,
+                            'y': box['y'] / height * 100,
+                            'width': box['width'] / width * 100,
+                            'height': box['height'] / height * 100,
+                            'score': box.get('score', None),
+                            'rotation': box.get('rotation', 0),
+                            'rectanglelabels': [box['object']]
+                        },
+                        'from_name': RECT_NAME,
+                        'to_name': 'image',
+                        'type': 'rectanglelabels'
+                    }
+                    label_obj['predictions'][0]['result'].append(box_lst)
+                    cnt_box += 1
+            
+            if 'polygons' in label_json:
+                for polygon in label_json['polygons']:
+                    polygon_class.add(polygon['object'])
+                    polygon_lst = {
+                        "original_width": width,
+                        "original_height": height,
+                        "image_rotation": 0,
+                        'value': {
+                            'points': [],
+                            'polygonlabels': [
+                                polygon['object']
+                            ],
+                            'score': polygon.get('score', None),
+                        },
+                        'from_name': POLYGON_NAME,
+                        'to_name': 'image',
+                        'type': 'polygonlabels'
+                    }
+                    for i in range(len(polygon['x'])):
+                        x = polygon['x'][i] / width * 100
+                        y = polygon['y'][i] / height * 100
+                        polygon_lst['value']['points'].append([x,y])
+                    
+                    label_obj['predictions'][0]['result'].append(polygon_lst)
+                    cnt_polygon += 1
 
-            labels.append(label_obj)
+        labels.append(label_obj)
 
+    if cnt_box == 0 and cnt_polygon == 0:
+        logger.warning("No labels found, skip!")
+        return
 
     if not os.path.isdir(destination):
         os.mkdir(destination)
-
+        
     label_path = Path(f"{destination}/label.json")
     with open(label_path, 'w') as file:
         json.dump(labels, file, indent=4)
-
-    labeling_interface = "<View>\n"
-    labeling_interface += "  <Header value=\"Select label and click the image to start\"/>\n"
-    labeling_interface += "  <Image name=\"image\" value=\"$image\" zoom=\"true\"/>\n"
-    if found_boxes:
-        labeling_interface += f"  <RectangleLabels name=\"{box_name}\" toName=\"image\">\n"
-        for name in box_types:
-            labeling_interface += f"    <Label value=\"{name}\" background=\"green\"/>\n"
-        labeling_interface += "  </RectangleLabels>\n"
-    if found_polygons:
-        labeling_interface += f"  <PolygonLabels name=\"{polygon_name}\" toName=\"image\" strokeWidth=\"3\" pointSize=\"small\" opacity=\"0.9\">\n"
-        for name in polygon_types:
-            labeling_interface += f"    <Label value=\"{name}\" background=\"blue\"/>\n"
-        labeling_interface += "  </PolygonLabels>\n"
-    labeling_interface += "</View>"
-
-    html_path = Path(f"{destination}/labeling_interface.html")
-    with open(html_path, 'w') as file:
-        file.write(labeling_interface)
+        
+    write_xml(destination, box_class, polygon_class)
 
 
 
