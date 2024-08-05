@@ -1,5 +1,5 @@
 import abc
-import gadget_utils.pipeline_utils as pipeline_utils
+import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
 
 
 
