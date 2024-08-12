@@ -130,6 +130,10 @@ def fit_im_to_size(im, W=None, H=None, value=0):
     return im, pad_L, pad_R, pad_T, pad_B
 
 
+def fit_array_to_size(arr, W=None, H=None, value=0):
+    return fit_im_to_size(arr, W, H, value)
+
+
 def uint16_to_int16(profile):
     """
     convert uint16 profile image to int16
