@@ -58,6 +58,7 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
     fname_to_rows = {}
     ignore_cls = set()
     n_pts = 0
+    del_names = []
     for fname in fname_to_shapes:
         rows = []
         kps = []
@@ -68,6 +69,10 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
                 continue
             class_name = shape.category
             #get the image H,W
+            if not os.path.isfile(shape.fullpath):
+                logger.warning(f'Not found file, skip')
+                del_names.append(fname)
+                continue
             I = cv2.imread(shape.fullpath)
             H,W = I.shape[:2]
             if isinstance(shape, Rect):
@@ -156,6 +161,8 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
                 n_pts = int(n_pts)
             elif n_pts!=(len(r)-5)/2:
                 raise Exception(f'Inconsistent number of key points: {n_pts} and {(len(r)-5)/2}')
+    for k in del_names:
+        fname_to_shapes.pop(k)
     return fname_to_rows, ignore_cls, n_pts
 
 
