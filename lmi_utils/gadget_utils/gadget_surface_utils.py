@@ -234,8 +234,8 @@ class GadgetSurfaceUtils():
                 "metadata": {
                     "schema": self.SCHEMA_ID,
                     "version": self.VERSION, 
-                    "resolution": 1, 
-                    "offset": 0, 
+                    "resolution": (1,1,1), 
+                    "offset": (0,0,0), 
                 }, 
                 "profile_array": npy_arr_p,
                 "intensity_array": npy_arr_i,
