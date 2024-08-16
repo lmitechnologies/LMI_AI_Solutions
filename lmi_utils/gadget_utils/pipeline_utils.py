@@ -130,8 +130,35 @@ def fit_im_to_size(im, W=None, H=None, value=0):
     return im, pad_L, pad_R, pad_T, pad_B
 
 
-def fit_array_to_size(arr, W=None, H=None, value=0):
-    return fit_im_to_size(arr, W, H, value)
+def fit_array_to_size(im, W=None, H=None, value=0):
+    h_im,w_im=im.shape[:2]
+    if W is None:
+        W=w_im
+    if H is None:
+        H=h_im
+    # pad or crop width
+    if W >= w_im:
+        pad_L=(W-w_im)//2
+        pad_R=W-w_im-pad_L
+        im=cv2.copyMakeBorder(im,0,0,pad_L,pad_R,cv2.BORDER_CONSTANT,value)
+    else:
+        pad_L = (w_im-W)//2
+        pad_R = w_im-W-pad_L
+        im = im[:,pad_L:-pad_R]
+        pad_L *= -1
+        pad_R *= -1
+    # pad or crop height
+    if H >= h_im:
+        pad_T=(H-h_im)//2
+        pad_B=H-h_im-pad_T
+        im=cv2.copyMakeBorder(im,pad_T,pad_B,0,0,cv2.BORDER_CONSTANT,value)
+    else:
+        pad_T = (h_im-H)//2
+        pad_B = h_im-H-pad_T
+        im = im[pad_T:-pad_B,:]
+        pad_T *= -1
+        pad_B *= -1
+    return im, pad_L, pad_R, pad_T, pad_B
 
 
 def uint16_to_int16(profile):
