@@ -7,7 +7,8 @@ from shapely.validation import make_valid
 import sys
 
 #LMI packages
-from label_utils import csv_utils,rect,mask
+from label_utils import csv_utils
+from label_utils.shapes import Rect, Mask
 
 
 def bbox_iou(bbox1, bbox2):
@@ -95,7 +96,7 @@ def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=
         masks = []
         for shape in shapes:
             cur = np.empty((0,2))
-            if not isinstance(shape, mask.Mask):
+            if not isinstance(shape, Mask):
                 continue
             for x,y in zip(shape.X,shape.Y):
                 cur = np.concatenate((cur,[[x,y]]),axis=0)
@@ -120,24 +121,24 @@ def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, threshold_iou=
     cnt = 0
     for fname in fnames:
         # bbox: [x1,y1,x2,y2]
-        bbox_label = np.array([shape.up_left+shape.bottom_right for shape in label_dt[fname] if isinstance(shape, rect.Rect) ])
-        class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, rect.Rect) ])
+        bbox_label = np.array([shape.up_left+shape.bottom_right for shape in label_dt[fname] if isinstance(shape, Rect) ])
+        class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, Rect) ])
         # mask: [[x1,y1],[x2,y2] ...]
         mask_pred = np.array(mask_to_np(pred_dt[fname]),np.object)
-        conf = np.array([shape.confidence for shape in pred_dt[fname] if isinstance(shape, mask.Mask) ])
-        class_pred = np.array([shape.category for shape in pred_dt[fname] if isinstance(shape, mask.Mask) ])
+        conf = np.array([shape.confidence for shape in pred_dt[fname] if isinstance(shape, Mask) ])
+        class_pred = np.array([shape.category for shape in pred_dt[fname] if isinstance(shape, Mask) ])
         if len(mask_pred):
             # found masks
             is_mask = 1
             # convert label bbox to masks
             mask_label = np.array(mask_to_np(label_dt[fname]) + bboxs_to_np(bbox_label),np.object)
-            mask_class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, mask.Mask) ])
+            mask_class_label = np.array([shape.category for shape in label_dt[fname] if isinstance(shape, Mask) ])
             class_label = np.concatenate((mask_class_label,class_label))
         else:
             is_mask = 0
-            bbox_pred = np.array([shape.up_left+shape.bottom_right for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
-            class_pred = np.array([shape.category for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
-            conf = np.array([shape.confidence for shape in pred_dt[fname] if isinstance(shape, rect.Rect) ])
+            bbox_pred = np.array([shape.up_left+shape.bottom_right for shape in pred_dt[fname] if isinstance(shape, Rect) ])
+            class_pred = np.array([shape.category for shape in pred_dt[fname] if isinstance(shape, Rect) ])
+            conf = np.array([shape.confidence for shape in pred_dt[fname] if isinstance(shape, Rect) ])
             
 
         #found GT but no predictions

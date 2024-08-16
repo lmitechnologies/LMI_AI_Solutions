@@ -5,8 +5,7 @@ import logging
 import lxml.etree as ET
 
 from label_utils.csv_utils import load_csv
-from label_utils import rect
-from label_utils import mask
+from label_utils.shapes import Rect, Mask
 
 
 logging.basicConfig(level=logging.INFO)
@@ -149,12 +148,12 @@ def write_to_lst(shapes, out_path, images_path, gs_path, width, height, is_pred)
         target = 'predictions' if is_pred else 'annotations'
         
         for shape in shapes[fname]:
-            if isinstance(shape, rect.Rect):
+            if isinstance(shape, Rect):
                 box = rect_to_lst(shape, width, height, is_pred)
                 label_obj[target][0]['result'].append(box)
                 cnt_box += 1
                 box_class.add(shape.category)
-            elif isinstance(shape, mask.Mask):
+            elif isinstance(shape, Mask):
                 polygon = mask_to_lst(shape, width, height, is_pred)
                 label_obj[target][0]['result'].append(polygon)
                 cnt_polygon += 1

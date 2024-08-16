@@ -7,9 +7,7 @@ import collections
 import glob
 
 from label_utils.csv_utils import write_to_csv
-from label_utils.rect import Rect
-from label_utils.mask import Mask
-from label_utils.keypoint import Keypoint
+from label_utils.shapes import Rect, Mask, Keypoint
 from label_utils.bbox_utils import convert_from_ls
 
 logging.basicConfig()

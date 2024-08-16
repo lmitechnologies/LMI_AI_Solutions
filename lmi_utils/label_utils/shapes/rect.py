@@ -1,4 +1,4 @@
-from label_utils.shape import Shape
+from .shape import Shape
 
 class Rect(Shape):
     """

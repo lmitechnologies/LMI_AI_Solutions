@@ -4,7 +4,8 @@ import logging
 import cv2
 
 #LMI packages
-from label_utils import mask, rect, keypoint, csv_utils
+from label_utils import csv_utils
+from label_utils.shapes import Rect, Mask, Keypoint
 from image_utils.path_utils import get_relative_paths
 from image_utils.img_resize import resize
 
@@ -65,15 +66,15 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
         
         for i in range(len(shapes[im_name])):
             shapes[im_name][i].im_name = out_name
-            if isinstance(shapes[im_name][i], rect.Rect):
+            if isinstance(shapes[im_name][i], Rect):
                 x,y = shapes[im_name][i].up_left
                 shapes[im_name][i].up_left = [x*rx, y*ry]
                 x,y = shapes[im_name][i].bottom_right
                 shapes[im_name][i].bottom_right = [x*rx, y*ry]
-            elif isinstance(shapes[im_name][i], mask.Mask):
+            elif isinstance(shapes[im_name][i], Mask):
                 shapes[im_name][i].X = [v*rx for v in shapes[im_name][i].X]
                 shapes[im_name][i].Y = [v*ry for v in shapes[im_name][i].Y]
-            elif isinstance(shapes[im_name][i], keypoint.Keypoint):
+            elif isinstance(shapes[im_name][i], Keypoint):
                 shapes[im_name][i].x = shapes[im_name][i].x*rx
                 shapes[im_name][i].y = shapes[im_name][i].y*ry
     if cnt_bg:

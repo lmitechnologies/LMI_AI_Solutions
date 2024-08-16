@@ -5,9 +5,9 @@ import cv2
 import numpy as np
 
 #LMI packages
-from label_utils import mask, rect, keypoint, csv_utils
+from label_utils import csv_utils
+from label_utils.shapes import Rect, Mask, Keypoint
 from image_utils.path_utils import get_relative_paths
-from image_utils.img_resize import resize
 
 
 logging.basicConfig()
@@ -60,7 +60,7 @@ def flip_imgs_with_csv(path_imgs, path_csv, flip, path_out, save_bg_images, recu
         
         for i in range(len(shapes[im_name])):
             shapes[im_name][i].im_name = out_name
-            if isinstance(shapes[im_name][i], rect.Rect):
+            if isinstance(shapes[im_name][i], Rect):
                 x1,y1 = shapes[im_name][i].up_left
                 x2,y2 = shapes[im_name][i].bottom_right
                 if flipx:
@@ -71,7 +71,7 @@ def flip_imgs_with_csv(path_imgs, path_csv, flip, path_out, save_bg_images, recu
                     y2 = h - y2
                 shapes[im_name][i].up_left = [min(x1,x2), min(y1,y2)]
                 shapes[im_name][i].bottom_right = [max(x1,x2), max(y1,y2)]
-            elif isinstance(shapes[im_name][i], mask.Mask):
+            elif isinstance(shapes[im_name][i], Mask):
                 xs = shapes[im_name][i].X
                 ys = shapes[im_name][i].Y
                 if flipx:
@@ -80,7 +80,7 @@ def flip_imgs_with_csv(path_imgs, path_csv, flip, path_out, save_bg_images, recu
                     ys = [h-y for y in ys]
                 shapes[im_name][i].X = xs
                 shapes[im_name][i].Y = ys
-            elif isinstance(shapes[im_name][i], keypoint.Keypoint):
+            elif isinstance(shapes[im_name][i], Keypoint):
                 if flipx:
                     shapes[im_name][i].x = w-shapes[im_name][i].x
                 if flipy:
@@ -99,7 +99,7 @@ if __name__=='__main__':
     ap.add_argument('--path_out', '-o', required=True, help='the path to resized images')
     ap.add_argument('--flip_lr',action='store_true', help='flip images horizontally')
     ap.add_argument('--flip_ud',action='store_true', help='flip images vertically')
-    ap.add_argument('--bg_images', action='store_true', help='save images with no labels')
+    ap.add_argument('--bg', action='store_true', help='save background images that have no labels')
     ap.add_argument('--append', action='store_true', help='append to the existing output csv file')
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = vars(ap.parse_args())
@@ -119,7 +119,7 @@ if __name__=='__main__':
 
     flip = [args['flip_lr'], args['flip_ud']]
     #resize images with annotation csv file
-    shapes = flip_imgs_with_csv(path_imgs, path_csv, flip, path_out, args['bg_images'], args['recursive'])
+    shapes = flip_imgs_with_csv(path_imgs, path_csv, flip, path_out, args['bg'], args['recursive'])
 
     #write csv file
     csv_utils.write_to_csv(shapes, os.path.join(path_out,'labels.csv'), overwrite=not args['append'])
