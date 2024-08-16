@@ -8,7 +8,7 @@ def combine_csv(csv_file_list, output_dir):
     for csv_file in csv_file_list:
         shapes, _ = csv_utils.load_csv(csv_file)
         all_shapes.update(shapes)
-    csv_utils.write_to_csv(f"{os.path.join(output_dir, "combined.csv")}", all_shapes)
+    csv_utils.write_to_csv(f"{os.path.join(output_dir, 'combined.csv')}", all_shapes)
     return all_shapes
 
 def main():
