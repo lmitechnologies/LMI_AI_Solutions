@@ -339,6 +339,12 @@ class Test_apply_operations:
                 if 'stretch' in operator:
                     s = operator['stretch']
                     nx,ny = nx*s[0], ny*s[1]
+                if 'flip' in operator:
+                    lr,ud,im_w,im_h = operator['flip']
+                    if lr:
+                        nx = im_w-nx
+                    if ud:
+                        ny = im_h-ny
             nx,ny = round(nx),round(ny)
             return [max(nx,0),max(ny,0)]
 
@@ -362,9 +368,9 @@ class Test_apply_operations:
     @pytest.mark.parametrize(
         "pts, operations",
         [
-            ([[10, 20], [30, 40], [50, 60], [70, 80]], [{'resize': [100, 100, 200, 300]}, {'pad': [8, 9, 10, 11]}, {'stretch': [1.5, 2]}]),
+            ([[10, 20], [30, 40], [50, 60], [70, 80]], [{'resize': [100, 100, 200, 300]}, {'pad': [8, 9, 10, 11]}, {'stretch': [1.5, 2]}, {'flip': [True, False, 100, 100]}]),
             (np.array([[15.0, 25.2], [35.1, 45.0], [55.0, 65], [75.5, 85]]), [{'resize': [200, 300, 100, 100]}, {'pad': [6, 7, 9, 10]}, {'stretch': [1.0, 2]}]),
-            ([[15, 25, 35, 45], [55, 65, 75, 85]], [{'resize': [200, 300, 100, 100]}, {'pad': [5, 2, 10, 3]}, {'stretch': [1.5, 2]}]),
+            ([[15, 25, 35, 45], [55, 65, 75, 85]], [{'resize': [200, 300, 100, 100]}, {'pad': [11,9,-2,-3]}, {'flip': [False, True, 200, 300]}]),
         ]
     )
     def test_cases(self, pts, operations):

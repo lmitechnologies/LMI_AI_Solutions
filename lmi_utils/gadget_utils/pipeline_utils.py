@@ -364,7 +364,9 @@ def revert_mask_to_origin(mask, operations:list):
     The operations list contains items as dictionary. The items are listed as follows: 
         1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
         2. <resize: [resized_w, resized_h, orig_w, orig_h]>
+        3. <flip: [flip left right, flip up down, im width, im height]>
     """
+    is_numpy = isinstance(mask, np.ndarray)
     for operator in reversed(operations):
         if 'resize' in operator:
             _,_,nw,nh = operator['resize']
@@ -374,6 +376,15 @@ def revert_mask_to_origin(mask, operations:list):
             pad_L,pad_R,pad_T,pad_B = operator['pad']
             nw,nh = w-pad_L-pad_R,h-pad_T-pad_B
             mask,_,_,_,_ = fit_im_to_size(mask,nw,nh)
+        if 'flip' in operator:
+            # numpy is faster than torch.flip
+            lr,ud,im_w,im_h = operator['flip']
+            if not is_numpy:
+                mask = mask.numpy()
+            mask = mask[:,::-1]
+            mask = mask[::-1]
+            if not is_numpy:
+                mask = torch.from_numpy(mask)
     return mask
 
 
@@ -399,6 +410,7 @@ def revert_to_origin(pts, operations:list):
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left, pad_right, pad_top, pad_bottom]> 
         3. <resize: [resized_w, resized_h, orig_w, orig_h]>
+        4. <flip: [flip left-right (True/False), flip up-down (True/False), image width, image height]>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
@@ -408,9 +420,10 @@ def revert_to_origin(pts, operations:list):
     if not is_tensor:
         pts = torch.from_numpy(pts) if is_numpy else torch.as_tensor(pts)
     
+    if pts.ndim!=2 or (pts.shape[1]!=2 and pts.shape[1]!=4):
+        raise Exception(f'pts should be Nx2 or Nx4, got shape: {pts.shape}')
+    
     r,c = pts.shape
-    if c!=2 and c!=4:
-        raise Exception(f'supports pts Nx2 or Nx4. Got shape: {pts.shape}')
     for op in reversed(operations):
         if 'resize' in op:
             tw,th,orig_w,orig_h = op['resize']
@@ -429,6 +442,14 @@ def revert_to_origin(pts, operations:list):
             if c==4:
                 s = s.repeat(2).unsqueeze(0)
             pts = pts/s
+        elif 'flip' in op:
+            lr,ud,im_w,im_h = op['flip']
+            idx = [0,2] if c==4 else [0]
+            idy = [1,3] if c==4 else [1]
+            if lr:
+                pts[:,idx] = im_w - pts[:,idx]
+            if ud:
+                pts[:,idy] = im_h - pts[:,idy]
         else:
             raise Exception(f'unsupported operation: {op}')
             
@@ -439,12 +460,14 @@ def revert_to_origin(pts, operations:list):
 
 
 def apply_operations(pts:np.ndarray, operations:list):
+    
     """
     apply operations to pts.
     The operations list contains each item as a dictionary. The items are listed as follows: 
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
         2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
         3. <resize: [resized_w, resized_h, orig_w, orig_h]>
+        4. <flip: [flip left-right (True/False), flip up-down (True/False), image width, image height]>
     args:
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
@@ -460,6 +483,9 @@ def apply_operations(pts:np.ndarray, operations:list):
         elif 'stretch' in op:
             sx,sy = op['stretch']
             tmp = {'stretch': [1/sx,1/sy]}
+        elif 'flip' in op:
+            lr,ud,im_w,im_h = op['flip']
+            tmp = {'flip': [lr,ud,im_w,im_h]}
         else:
             raise Exception(f'unsupported operation: {op}')
         new_ops.append(tmp)
