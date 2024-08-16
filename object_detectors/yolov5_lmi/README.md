@@ -95,7 +95,7 @@ python -m label_utils.resize_with_csv -i $input_path -o /app/data/resized --widt
 
 # convert to yolo format
 # remote the --seg flag if you want to train a object detection model
-python -m label_utils.convert_data_to_yolo -i /app/data/resized -o /app/data/resized_yolo --seg
+python -m label_utils.csv_to_yolo -i /app/data/resized -o /app/data/resized_yolo --seg
 ```
 
 ### Create a docker-compose file

@@ -90,7 +90,7 @@ if __name__=='__main__':
     ap.add_argument('--width', type=int, default=None, help='the output image width, default=None')
     ap.add_argument('--height', type=int, default=None, help='the output image height, default=None')
     ap.add_argument('--path_out', '-o', required=True, help='the path to resized images')
-    ap.add_argument('--bg_images', action='store_true', help='save images with no labels')
+    ap.add_argument('--bg', action='store_true', help='save background images that have no labels')
     ap.add_argument('--append', action='store_true', help='append to the existing output csv file')
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = vars(ap.parse_args())
@@ -104,7 +104,7 @@ if __name__=='__main__':
     
     #check if annotation exists
     if not os.path.isfile(path_csv):
-        raise Exception(f'cannot find file: {path_csv}')
+        raise Exception(f'cannot find file: {path_csv}. Please create an empty csv file, if there are no labels.')
     
     # create output path
     assert path_imgs!=path_out, 'input and output path must be different'
@@ -112,7 +112,7 @@ if __name__=='__main__':
         os.makedirs(path_out)
 
     #resize images with annotation csv file
-    shapes = resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, args['bg_images'], args['recursive'])
+    shapes = resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, args['bg'], args['recursive'])
 
     #write csv file
     csv_utils.write_to_csv(shapes, os.path.join(path_out,'labels.csv'), overwrite=not args['append'])

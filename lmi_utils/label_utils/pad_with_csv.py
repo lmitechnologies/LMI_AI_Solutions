@@ -155,7 +155,7 @@ if __name__=="__main__":
     ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
     ap.add_argument('--path_out','-o', required=True, help='the output path')
     ap.add_argument('--wh', required=True, help='the output image size [w,h], w and h are separated by a comma')
-    ap.add_argument('--bg_images', action='store_true', help='save images with no labels')
+    ap.add_argument('--bg', action='store_true', help='save background images with no labels')
     ap.add_argument('--append', action='store_true', help='append to the existing output csv file')
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = vars(ap.parse_args())
@@ -163,7 +163,7 @@ if __name__=="__main__":
     path_imgs = args['path_imgs']
     path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
     if not os.path.isfile(path_csv):
-        raise Exception(f'Not found file: {path_csv}')
+        raise Exception(f'Not found file: {path_csv}. Please create an empty csv file, if there are no labels.')
     output_path=args['path_out']
     output_imsize = list(map(int,args['wh'].split(',')))
 
@@ -173,4 +173,4 @@ if __name__=="__main__":
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     
-    pad_image_with_csv(path_imgs, path_csv, output_path, output_imsize, args['bg_images'], args['append'], args['recursive'])
+    pad_image_with_csv(path_imgs, path_csv, output_path, output_imsize, args['bg'], args['append'], args['recursive'])
