@@ -178,17 +178,16 @@ def write_to_lst(shapes, out_path, images_path, gs_path, width, height, is_pred)
 
 if __name__ == '__main__':
     import argparse
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(description='This script requires either --path_imgs or --wh, but not both.')
+    group = ap.add_mutually_exclusive_group(required=True)
+    group.add_argument('--path_imgs', help='path to the images')
+    group.add_argument('--wh', help='width and height of the images separated by a comma, if they are the same size')
     ap.add_argument('--csv', required=True, help='path to the csv file')
-    ap.add_argument('--path_imgs', help='[optional] path to the images')
-    ap.add_argument('--wh', help='[optional] width and height of the images separated by a comma. Assume that images are the same size')
-    ap.add_argument('--path_gs', required=True, help='the gs path or local absolute path')
+    ap.add_argument('--path_gs', required=True, help='the gs path (start with gs://) or local absolute path')
     ap.add_argument('--path_out', '-o', required=True)
     ap.add_argument('--pred', action='store_true', help='if the csv file is a prediction file')
     args = ap.parse_args()
-
-    if args.path_imgs is None and args.wh is None:
-        raise Exception('Provide the path to the images. Or if the images are the same size, provide the width and height')
+    
     width,height = None,None
     if args.wh is not None:
         wh = args.wh.split(',')

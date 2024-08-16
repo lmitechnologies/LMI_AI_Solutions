@@ -226,7 +226,7 @@ if __name__ =='__main__':
     ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')
     ap.add_argument('--seg', action='store_true', help='load labels in segmentation format')
     ap.add_argument('--convert', action='store_true', help='convert label formats: bbox-to-mask if "--seg" is enabled, otherwise mask-to-bbox')
-    ap.add_argument('--bg_images', action='store_true', help='save images with no labels, where yolo models treat them as background')
+    ap.add_argument('--bg', action='store_true', help='save images with no labels, where yolo models treat them as background')
     ap.add_argument('--obb', action='store_true', help='support for oriented bounding box support')
     args = vars(ap.parse_args())
 
@@ -238,7 +238,7 @@ if __name__ =='__main__':
     is_convert = args['convert']
 
     if not os.path.isfile(path_csv):
-        raise Exception(f'Not found file: {path_csv}')
+        raise Exception(f'Not found file: {path_csv}. Please create an empty csv file, if there are no labels.')
 
     class_map = None
     if class_map_file:
@@ -299,7 +299,7 @@ if __name__ =='__main__':
 
     #write images
     path_img_out = os.path.join(args['path_out'], 'images')
-    if args['bg_images']:
+    if args['bg']:
         logger.info('save background images')
         copy_images_in_folder(path_imgs, path_img_out)
     else:
