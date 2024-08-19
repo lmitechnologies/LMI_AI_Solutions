@@ -16,7 +16,32 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-COLORS = [(0,0,255),(255,0,0),(0,255,0),(102,51,153),(255,140,0),(105,105,105),(127,25,27),(9,200,100)]
+def plot_shape(shape, im, color_map):
+    if isinstance(shape, Rect):
+        if shape.angle > 0:
+            x1 , y1 = shape.up_left
+            x2 , y2 = shape.bottom_right
+            angle = shape.angle
+            width = x2 - x1
+            height = y2 - y1
+            # rotated rectangle
+            rotated_rect = rotate(x1, y1, width, height, angle)
+            # draw the rotated rectangle
+            plot_one_polygon(np.array([rotated_rect]), im, label=shape.category, color=color_map[shape.category])
+        else:
+            box = shape.up_left + shape.bottom_right
+            plot_one_box(box, im, label=shape.category, color=color_map[shape.category])
+    elif isinstance(shape, Mask):
+        pts = np.array([[x,y] for x,y in zip(shape.X,shape.Y)])
+        pts = pts.reshape((-1, 1, 2)).astype(int)
+        plot_one_polygon(pts, im, label=shape.category, color=color_map[shape.category])
+    elif isinstance(shape, Keypoint):
+        pt = shape.x, shape.y
+        plot_one_pt(pt, im, label=shape.category, color=color_map[shape.category])
+    else:
+        raise Exception(f'Unknown shape: {type(shape)}')
+    return
+
 
 
 if __name__ == '__main__':
@@ -40,49 +65,25 @@ if __name__ == '__main__':
 
     if not os.path.isfile(path_csv):
         raise Exception(f'Not found file: {path_csv}')
-
     assert path_imgs!=output_path, 'output path must be different with input path'
-
-    if not os.path.isdir(output_path):
-        os.makedirs(output_path)
-
     fname_to_shape, class_map = load_csv(path_csv, path_imgs, class_map)
+    
+    # init color map
     color_map = {}
     for cls in sorted(class_map.keys()):
         logger.info(f'CLASS: {cls}')
-        if len(color_map) < len(COLORS):
-            color_map[cls] = COLORS[len(color_map)]
-        else:
-            color_map[cls] = tuple([random.randint(0,255) for _ in range(3)])
+        color_map[cls] = tuple([random.randint(0,255) for _ in range(3)])
 
+    logger.info(f'found {len(fname_to_shape)} images')
     for im_name in fname_to_shape:
-        logger.info(f'FILE: {im_name}')
         shapes = fname_to_shape[im_name]
         im = cv2.imread(shapes[0].fullpath)
         if im is None:
             logger.warning(f'cannot read image: {shapes[0].fullpath}')
             continue
         for shape in shapes:
-            if isinstance(shape, Rect):
-                if shape.angle > 0.0:
-                    x1 , y1 = shape.up_left
-                    x2 , y2 = shape.bottom_right
-                    angle = shape.angle
-                    width = x2 - x1
-                    height = y2 - y1
-                    # rotated rectangle
-                    rotated_rect = rotate(x1, y1, width, height, angle)
-                    # draw the rotated rectangle
-                    plot_one_polygon(np.array([rotated_rect]), im, label=shape.category, color=color_map[shape.category])
-                else:
-                    box = shape.up_left + shape.bottom_right
-                    plot_one_box(box, im, label=shape.category, color=color_map[shape.category])
-            elif isinstance(shape, Mask):
-                pts = np.array([[x,y] for x,y in zip(shape.X,shape.Y)])
-                pts = pts.reshape((-1, 1, 2)).astype(int)
-                plot_one_polygon(pts, im, label=shape.category, color=color_map[shape.category])
-            elif isinstance(shape, Keypoint):
-                pt = shape.x, shape.y
-                plot_one_pt(pt, im, label=shape.category, color=color_map[shape.category])
+            plot_shape(shape, im, color_map)
+            
+        os.makedirs(output_path, exist_ok=True)
         outname = os.path.join(output_path, im_name)
         cv2.imwrite(outname, im)
