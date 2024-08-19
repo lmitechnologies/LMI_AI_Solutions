@@ -13,9 +13,7 @@ import logging
 
 #LMI packages
 from label_utils.csv_utils import load_csv
-from label_utils.mask import Mask
-from label_utils.rect import Rect
-from label_utils.keypoint import Keypoint
+from label_utils.shapes import Mask, Rect, Keypoint
 from label_utils.bbox_utils import rotate
 
 

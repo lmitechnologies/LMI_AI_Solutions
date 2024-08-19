@@ -9,7 +9,8 @@ import numpy as np
 import cv2
 
 #LMI packages
-from label_utils import mask, rect, csv_utils
+from label_utils import csv_utils
+from label_utils.shapes import Rect, Mask
 from image_utils.path_utils import get_relative_paths
 
 
@@ -34,7 +35,7 @@ def rot90(x,y,h,w):
 
 
 def rot90_shape(shape,h,w):
-    if isinstance(shape, rect.Rect):
+    if isinstance(shape, Rect):
         x0,y0,x2,y2 = shape.up_left+shape.bottom_right
         x0,x2 = np.clip([x0,x2],a_min=0,a_max=w)
         y0,y2 = np.clip([y0,y2],a_min=0,a_max=h)
@@ -42,7 +43,7 @@ def rot90_shape(shape,h,w):
         x3,y3 = x0,y2
         shape.up_left = rot90(x1,y1,h,w)
         shape.bottom_right = rot90(x3,y3,h,w)
-    elif isinstance(shape, mask.Mask):
+    elif isinstance(shape, Mask):
         new_x,new_y = [],[]
         for x,y in zip(shape.X,shape.Y):
             nx,ny = rot90(x,y,h,w)

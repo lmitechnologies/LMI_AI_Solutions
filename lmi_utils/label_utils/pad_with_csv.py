@@ -5,7 +5,7 @@ import numpy as np
 import logging
 
 #LMI packages
-from label_utils import rect, mask, keypoint
+from label_utils.shapes import Rect, Mask, Keypoint
 from label_utils.csv_utils import load_csv, write_to_csv
 from gadget_utils.pipeline_utils import fit_array_to_size
 from image_utils.path_utils import get_relative_paths
@@ -87,7 +87,7 @@ def chop_shapes(shapes, W, H):
     shapes = np.array(shapes)
     for i,shape in enumerate(shapes):
         is_del = 0
-        if isinstance(shape, rect.Rect):
+        if isinstance(shape, Rect):
             box = np.array(shape.up_left+shape.bottom_right)
             new_box = np.clip(box, a_min=0, a_max=[W,H,W,H])
             shapes[i].up_left = new_box[:2]
@@ -99,7 +99,7 @@ def chop_shapes(shapes, W, H):
                     or (np.any(new_box==0) and np.all(box!=0)):
                 logger.warning(f'bbox {box} is chopped to fit the size [{W}, {H}]')
                 is_warning = True
-        elif isinstance(shape, mask.Mask):
+        elif isinstance(shape, Mask):
             X,Y = np.array(shape.X), np.array(shape.Y)
             new_X = np.clip(X, a_min=0, a_max=W)
             new_Y = np.clip(Y, a_min=0, a_max=H)
@@ -111,7 +111,7 @@ def chop_shapes(shapes, W, H):
                 or (np.any(new_X==0) and np.all(X!=0)) or (np.any(new_Y==0) and np.all(Y!=0)):
                 logger.warning(f'polygon {[(x,y) for x,y in zip(new_X,new_Y)]} is chopped to fit the size [{W}, {H}]')
                 is_warning = True
-        elif isinstance(shape, keypoint.Keypoint):
+        elif isinstance(shape, Keypoint):
             x,y = shape.x, shape.y
             if x<0 or x>W or y<0 or y>H:
                 is_del = 1
@@ -134,15 +134,15 @@ def fit_shapes_to_size(shapes, pad_l, pad_t):
         pad_t(int): the top paddings 
     """
     for shape in shapes:
-        if isinstance(shape, rect.Rect):
+        if isinstance(shape, Rect):
             shape.up_left[0] += pad_l
             shape.up_left[1] += pad_t
             shape.bottom_right[0] += pad_l
             shape.bottom_right[1] += pad_t
-        elif isinstance(shape, mask.Mask):
+        elif isinstance(shape, Mask):
             shape.X = [v+pad_l for v in shape.X]
             shape.Y = [v+pad_t for v in shape.Y]
-        elif isinstance(shape, keypoint.Keypoint):
+        elif isinstance(shape, Keypoint):
             shape.x += pad_l
             shape.y += pad_t
     return shapes

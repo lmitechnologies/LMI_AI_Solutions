@@ -9,7 +9,8 @@ import copy
 import cv2
 
 #LMI packages
-from label_utils import mask, rect, csv_utils
+from label_utils import csv_utils
+from label_utils.shapes import Rect, Mask
 
 
 def augment_imgs_with_csv(path_imgs:str, path_csv:str, path_out:str, pixel_mul:float, size_mul:int):
@@ -39,15 +40,11 @@ def augment_imgs_with_csv(path_imgs:str, path_csv:str, path_out:str, pixel_mul:f
             cv2.imwrite(os.path.join(path_out,out_name), im*p_mul)
 
             for i in range(len(shapes[im_name])):
-                if isinstance(shapes[im_name][i], rect.Rect):
-                    #shapes[im_name][i].up_left = [int(v) for v in shapes[im_name][i].up_left]
-                    #shapes[im_name][i].bottom_right = [int(v) for v in shapes[im_name][i].bottom_right]
+                if isinstance(shapes[im_name][i], Rect):
                     temp = copy.deepcopy(shapes[im_name][i])
                     temp.im_name = out_name
                     new_shapes[out_name].append(temp)
-                elif isinstance(shapes[im_name][i], mask.Mask):
-                    #shapes[im_name][i].X = [int(v*ratio) for v in shapes[im_name][i].X]
-                    #shapes[im_name][i].Y = [int(v*ratio) for v in shapes[im_name][i].Y]
+                elif isinstance(shapes[im_name][i], Mask):
                     temp = copy.deepcopy(shapes[im_name][i])
                     temp.im_name = out_name
                     new_shapes[out_name].append(temp)
