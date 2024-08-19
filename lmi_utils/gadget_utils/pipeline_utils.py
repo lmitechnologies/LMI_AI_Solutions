@@ -365,6 +365,9 @@ def revert_mask_to_origin(mask, operations:list):
         1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
         2. <resize: [resized_w, resized_h, orig_w, orig_h]>
         3. <flip: [flip left right, flip up down, im width, im height]>
+    args:
+        mask: np.array or torch.Tensor, shape (H,W) or (H,W,C)
+        operations : list of dict
     """
     is_numpy = isinstance(mask, np.ndarray)
     for operator in reversed(operations):
@@ -377,14 +380,15 @@ def revert_mask_to_origin(mask, operations:list):
             nw,nh = w-pad_L-pad_R,h-pad_T-pad_B
             mask,_,_,_,_ = fit_im_to_size(mask,nw,nh)
         if 'flip' in operator:
-            # numpy is faster than torch.flip
             lr,ud,im_w,im_h = operator['flip']
-            if not is_numpy:
-                mask = mask.numpy()
-            mask = mask[:,::-1]
-            mask = mask[::-1]
-            if not is_numpy:
+            if is_numpy:
                 mask = torch.from_numpy(mask)
+            if lr:
+                mask = torch.flip(mask,[1])
+            if ud:
+                mask = torch.flip(mask,[0])
+            if is_numpy:
+                mask = mask.numpy()
     return mask
 
 

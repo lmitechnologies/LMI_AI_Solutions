@@ -389,3 +389,25 @@ class Test_apply_operations:
             assert pts2.is_cuda
             assert np.array_equal(pts1, pts2.cpu().numpy())
             
+            
+class Test_revert_mask_to_origin:
+    @pytest.mark.parametrize(
+        "mask, operations, expected_shape",
+        [
+            (np.random.randint(0, 255, (100,100,3)), [{'pad': [8, 9, 10, 11]}, {'flip': [True, False, 100, 100]}], (79, 83, 3)),
+            (np.random.randint(0, 255, (90,100)), [{'flip': [True, False, 100, 90]}], (90, 100)),
+        ]
+    )
+    def test_cases(self, mask, operations, expected_shape):
+        mask2 = pipeline_utils.revert_mask_to_origin(mask, operations)
+        assert mask2.shape == expected_shape
+        
+        if 'flip' in operations[0]:
+            lr,up,im_w,im_h = operations[0]['flip']
+            mask3 = mask.copy()
+            if lr:
+                mask3 = np.flip(mask3, axis=1)
+            if up:
+                mask3 = np.flip(mask3, axis=0)
+            assert np.array_equal(mask2, mask3)
+        
