@@ -114,6 +114,10 @@ def convert_to_ls(files, destination, bucket):
                 }
             }
             
+            if 'image_width' not in label_json or 'image_height' not in label_json:
+                logger.warning(f'Not found image width or height, skip')
+                continue
+            
             width = label_json['image_width']
             height = label_json['image_height']
 
