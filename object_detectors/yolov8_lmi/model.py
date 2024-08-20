@@ -325,7 +325,7 @@ class Yolov8(ODBase):
     
     @staticmethod
     @torch.no_grad()
-    def annotate_image(results, image, colormap=None, line_thickness=None):
+    def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
 
         Args:
@@ -333,6 +333,7 @@ class Yolov8(ODBase):
             image (np.ndarray): the input image
             colors (list, optional): a dictionary of colormaps, e.g., {'class-A':(0,0,255), 'class-B':(0,255,0)}. Defaults to None.
             line_thickness (int, optional): the thickness of the bounding box. Defaults to None.
+            hide_bbox (bool,optional): hide the bounding box
         Returns:
             np.ndarray: the annotated image
         """
@@ -353,17 +354,21 @@ class Yolov8(ODBase):
         if image.ndim == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         
+        
         for i in range(len(boxes)):
             mask = masks[i] if len(masks) else None
+            if hide_label:
+                label_arg=None
+            else:
+                label_arg="{}: {:.2f}".format(classes[i], scores[i])
             pipeline_utils.plot_one_box(
                 boxes[i],
                 image,
                 mask,
-                label="{}: {:.2f}".format(
-                    classes[i], scores[i]
-                ),
+                label=label_arg,
                 color=colormap[classes[i]] if colormap is not None else None,
                 line_thickness=line_thickness,
+                hide_bbox=hide_bbox
             )
         return image
 
