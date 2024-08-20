@@ -259,7 +259,7 @@ def pts_to_3d(pts, profile, resolution, offset):
     return xyz.numpy() if is_numpy else xyz
 
 
-def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, label=None, line_thickness=None):
+def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, label=None, line_thickness=None, hide_bbox=False):
     """
     description: Plots one bounding box and mask (optinal) on image img,
                  this function comes from YoLov5 project.
@@ -285,7 +285,8 @@ def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, labe
         
     x1,y1,x2,y2 = box.astype(int)
     c1, c2 = (x1, y1), (x2, y2)
-    cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
+    if not hide_bbox:
+        cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
     if mask is not None:
         # mask *= 255
         m = mask>mask_threshold
