@@ -309,7 +309,7 @@ def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, labe
         )
 
 
-def plot_one_rbox(box, img, color=None, label=None, line_thickness=None):
+def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bbox=False):
     """
     description: Plots one bounding rotated bbox on image img
     param: 
@@ -333,7 +333,8 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None):
         box = np.array(box)
     box = box.astype(int)
     
-    cv2.polylines(img, [box], isClosed=True, color=color, thickness=tl)
+    if not hide_bbox:
+        cv2.polylines(img, [box], isClosed=True, color=color, thickness=tl)
         
     if label:
         highest_point = min(box, key=lambda point: point[1])

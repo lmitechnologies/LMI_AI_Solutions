@@ -346,7 +346,7 @@ class Yolov8(ODBase):
             return to_numpy(image)
         
         # convert to numpy
-        image = to_numpy(image)
+        image = to_numpy(image).copy()
         boxes = to_numpy(boxes)
         if len(masks):
             masks = to_numpy(masks)
@@ -515,7 +515,7 @@ class Yolov8Obb(Yolov8):
         return results_dict, time_info
     
     @staticmethod
-    def annotate_image(results, image, colormap=None, line_thickness=None):
+    def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
 
         Args:
@@ -533,18 +533,22 @@ class Yolov8Obb(Yolov8):
         if not len(boxes):
             return to_numpy(image)
         
-        image = to_numpy(image)
+        image = to_numpy(image).copy()
         boxes = to_numpy(boxes)
         scores = to_numpy(scores)
         
         for i in range(len(boxes)):
-            label = "{}: {:.2f}".format(classes[i], scores[i])
+            if hide_label:
+                label_arg=None
+            else:
+                label_arg="{}: {:.2f}".format(classes[i], scores[i])
             pipeline_utils.plot_one_rbox(
                 boxes[i],
                 image,
-                label=label,
+                label=label_arg,
                 color=colormap[classes[i]] if colormap is not None else None,
                 line_thickness = line_thickness,
+                hide_bbox=hide_bbox
             )
         return image
     
@@ -675,7 +679,7 @@ class Yolov8Pose(Yolov8):
     
     
     @staticmethod
-    def annotate_image(results, image, colormap=None, kp_color=(255,255,255), line_thickness=None):
+    def annotate_image(results, image, colormap=None, kp_color=(255,255,255), line_thickness=None, hide_label=False, hide_bbox=False):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
 
         Args:
@@ -695,20 +699,23 @@ class Yolov8Pose(Yolov8):
             return to_numpy(image)
         
         # convert to numpy
-        image = to_numpy(image)
+        image = to_numpy(image).copy()
         boxes = to_numpy(boxes)
         scores = to_numpy(scores)
         points = to_numpy(points)
         
         for i in range(len(boxes)):
+            if hide_label:
+                label_arg=None
+            else:
+                label_arg="{}: {:.2f}".format(classes[i], scores[i])
             pipeline_utils.plot_one_box(
                 boxes[i],
                 image,
-                label="{}: {:.2f}".format(
-                    classes[i], scores[i]
-                ),
+                label=label_arg,
                 color=colormap[classes[i]] if colormap is not None else None,
                 line_thickness=line_thickness,
+                hide_bbox=hide_bbox
             )
             
         for i in range(len(points)):
