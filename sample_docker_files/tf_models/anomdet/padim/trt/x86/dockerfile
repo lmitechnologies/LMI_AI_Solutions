@@ -1,4 +1,0 @@
-FROM --platform=linux/amd64 nvcr.io/nvidia/tensorflow:22.07-tf2-py3
-
-WORKDIR /repos
-RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git

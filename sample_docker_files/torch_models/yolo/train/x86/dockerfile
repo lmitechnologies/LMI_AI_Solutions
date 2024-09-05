@@ -1,9 +1,0 @@
-FROM --platform=linux/amd64 nvcr.io/nvidia/pytorch:23.01-py3
-WORKDIR /app
-COPY ./requirements.txt /app/requirements.txt
-RUN apt update
-RUN apt install git -y
-RUN git clone --recurse-submodules https://github.com/lmitechnologies/LMI_AI_Solutions.git
-RUN apt install python3-pip -y
-RUN pip install --upgrade pip
-RUN pip3 install -r requirements.txt
