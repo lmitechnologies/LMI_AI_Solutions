@@ -278,12 +278,13 @@ def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, labe
     )  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
     
-    if isinstance(box, list):
-        box = np.array([x for x in box])
+    box = np.array(box, dtype=int)
+    if box.shape != (4,):
+        raise Exception(f'box should be the shape of (4,), but got {box.shape}')
     if torch.is_tensor(mask):
         mask = mask.cpu().numpy()
         
-    x1,y1,x2,y2 = box.astype(int)
+    x1,y1,x2,y2 = box
     c1, c2 = (x1, y1), (x2, y2)
     if not hide_bbox:
         cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
@@ -327,11 +328,9 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bb
     )  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
     
-    if len(box) != 4:
-        raise Exception(f'box should be a list of 4 points, got {len(box)} points')
-    if isinstance(box, list):
-        box = np.array(box)
-    box = box.astype(int)
+    box = np.array(box,dtype=int)
+    if box.shape != (4,2):
+        raise Exception(f'box should be the shape of 4x2, but got {box.shape}')
     
     if not hide_bbox:
         cv2.polylines(img, [box], isClosed=True, color=color, thickness=tl)
