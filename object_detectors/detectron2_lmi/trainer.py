@@ -4,6 +4,8 @@ import argparse
 import os
 from utils.det_utils import create_config
 from detectron2.utils.logger import setup_logger
+import concurrent.futures
+import subprocess
 
 logger = setup_logger()
 
@@ -45,7 +47,18 @@ def main(args):
     for dataset_name, dataset_path in zip(original_config['DATASETS']["TEST"], original_config['DATASETS']["TEST_DIR"]):
         register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
     logger.info("Starting training run")
-    train_model(cfg)
+    training_runs = []
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        training_runs.append(executor.submit(train_model, cfg))
+    
+    # start tensorboard
+    logger.info("Starting tensorboard")
+    tensorboard_proc = subprocess.Popen(["tensorboard", "--logdir", cfg.OUTPUT_DIR, "--port", 6006])
+    
+    # wait for the training runs to complete
+    for training_run in concurrent.futures.as_completed(training_runs):
+        training_run.result()
+    tensorboard_proc.terminate()
     logger.info("Training run completed")
 
 
