@@ -1,7 +1,7 @@
 from detectron2.engine import DefaultTrainer
 import argparse
 import os
-from .utils import register_datasets, create_config
+from .utils.utils import register_datasets, create_config
 
 
 def train_model(cfg):
