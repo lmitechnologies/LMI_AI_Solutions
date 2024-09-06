@@ -30,7 +30,6 @@ class Detectron2Model(ModelBase):
         self.model.eval()
         checkpointer = DetectionCheckpointer(self.model)
         checkpointer.load(weights_path)
-        self.model = DefaultPredictor(self.cfg).model
         self.transforms = T.ResizeShortestEdge([self.cfg.INPUT.MIN_SIZE_TEST, self.cfg.INPUT.MIN_SIZE_TEST], self.cfg.INPUT.MAX_SIZE_TEST)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
