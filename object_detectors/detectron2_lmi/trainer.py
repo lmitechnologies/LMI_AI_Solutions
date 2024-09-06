@@ -5,8 +5,10 @@ import os
 from utils.det_utils import create_config
 from detectron2.utils.logger import setup_logger
 import concurrent.futures
+import sys
 import subprocess
 
+DETACHED_PROCESS = 0x00000008
 logger = setup_logger()
 
 def register_datasets(dataset_dir: str, dataset_name: str):
@@ -36,6 +38,7 @@ def train_model(cfg):
     trainer = DefaultTrainer(cfg)
     trainer.resume_or_load(resume=False)
     trainer.train()
+    return cfg.OUTPUT_DIR
 
 def main(args):
     config_file = args.config_file
@@ -53,12 +56,15 @@ def main(args):
     
     # start tensorboard
     logger.info("Starting tensorboard")
-    tensorboard_proc = subprocess.Popen(["tensorboard", "--logdir", cfg.OUTPUT_DIR, "--port", "6006"])
+    
+
+    pid = subprocess.Popen([sys.executable, "tensorboard --logdir=/home/training/ --port=6006"],
+                       creationflags=DETACHED_PROCESS).pid
     
     # wait for the training runs to complete
     for training_run in concurrent.futures.as_completed(training_runs):
-        training_run.result()
-    tensorboard_proc.terminate()
+        logger.info(f"Training run completed: {training_run.result()}")
+        os.kill(pid, 9)
     logger.info("Training run completed")
 
 
