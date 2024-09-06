@@ -53,7 +53,7 @@ def main(args):
     
     # start tensorboard
     logger.info("Starting tensorboard")
-    tensorboard_proc = subprocess.Popen(["tensorboard", "--logdir", cfg.OUTPUT_DIR, "--port", 6006])
+    tensorboard_proc = subprocess.Popen(["tensorboard", "--logdir", cfg.OUTPUT_DIR, "--port", "6006"])
     
     # wait for the training runs to complete
     for training_run in concurrent.futures.as_completed(training_runs):
