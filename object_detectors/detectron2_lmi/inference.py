@@ -112,10 +112,10 @@ if __name__ == "__main__":
     model = Detectron2Model(weights_path=args.weights, config_file=args.config_file)
     model.warmup()
     
-    images = glob.glob(args.input_path + "/*.jpg") # TODO change this to the correct extension
+    images = glob.glob(args.input_path + "/*") # TODO change this to the correct extension
 
     for image_path in images:
-        image = cv2.imread(image_path)
+        image = cv2.imread(image_path, -1)
         outputs = model.predict(image)
         print(outputs)
         break
