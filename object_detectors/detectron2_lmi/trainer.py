@@ -24,6 +24,8 @@ def register_datasets(dataset_dir: str, dataset_name: str):
             )
         else:
             raise ValueError(f"Invalid dataset directory {dataset_dir} for dataset {dataset_name}")
+    else:
+        raise ValueError(f"Dataset directory {dataset_dir} does not exist")
 
 def train_model(cfg):
     """
