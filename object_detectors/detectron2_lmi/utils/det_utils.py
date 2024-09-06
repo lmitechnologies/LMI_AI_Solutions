@@ -35,6 +35,8 @@ def register_datasets(dataset_dir: str, dataset_name: str):
                 annot_file,
                 images_path,
             )
+        else:
+            raise ValueError(f"Invalid dataset directory {dataset_dir} for dataset {dataset_name}")
 
 def create_config(cfg_file_path):
     # get the default config
