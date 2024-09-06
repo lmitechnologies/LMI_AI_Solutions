@@ -49,9 +49,9 @@ def main(args):
         sys.exit(0)
     else:
         logger.info(f"Tensorboard started with PID {pid}")
-    cfg, original_config = create_config(config_file)
+    
     config_file = args.config_file
-
+    cfg, original_config = create_config(config_file)
     # register the datasets train, test
     for dataset_name, dataset_path in zip(original_config['DATASETS']["TRAIN"], original_config['DATASETS']["TRAIN_DIR"]):
         register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
