@@ -29,4 +29,4 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config-file", type=str, help="Path to the config file")
     args = parser.parse_args()
-    main()
+    main(args=args)
