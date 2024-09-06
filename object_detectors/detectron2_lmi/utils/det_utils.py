@@ -55,8 +55,7 @@ def create_config(cfg_file_path):
         output_dir = f"{date.today()}-v{version}"
     
     
-    cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, output_dir)
-
+    cfg.OUTPUT_DIR = os.path.join(f"/home/training", output_dir)
     logger.info(f"Output directory: {cfg.OUTPUT_DIR}")
 
 
@@ -66,7 +65,7 @@ def create_config(cfg_file_path):
         os.makedirs(cfg.OUTPUT_DIR)
 
     # save the config to the output directory
-    cfg_file = os.path.join(output_dir, "config.yaml")
+    cfg_file = os.path.join(cfg.OUTPUT_DIR, "config.yaml")
     with open(cfg_file, "w") as f:
         f.write(yaml.dump(yaml.safe_load(cfg.dump())))
     return cfg, configuration
