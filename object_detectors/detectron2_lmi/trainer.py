@@ -7,8 +7,8 @@ from detectron2.utils.logger import setup_logger
 import concurrent.futures
 import sys
 import subprocess
+import signal
 
-DETACHED_PROCESS = 0x00000008
 logger = setup_logger()
 
 def register_datasets(dataset_dir: str, dataset_name: str):
@@ -41,6 +41,15 @@ def train_model(cfg):
     return cfg.OUTPUT_DIR
 
 def main(args):
+    # start tensorboard
+    pid = os.fork()
+    if pid == 0:
+        os.setsid()
+        os.system(f"tensorboard --logdir {cfg.OUTPUT_DIR} --port 6006")
+        sys.exit(0)
+    else:
+        logger.info(f"Tensorboard started with PID {pid}")
+    
     config_file = args.config_file
 
     cfg, original_config = create_config(config_file)
@@ -50,24 +59,8 @@ def main(args):
     for dataset_name, dataset_path in zip(original_config['DATASETS']["TEST"], original_config['DATASETS']["TEST_DIR"]):
         register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
     logger.info("Starting training run")
-    training_runs = []
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        training_runs.append(executor.submit(train_model, cfg))
-    
-    # start tensorboard
-    logger.info("Starting tensorboard")
-    
-    # start tensorboard in a separate process
-    pid = os.fork()
-    if pid == 0:
-        os.setsid()
-        os.system(f"tensorboard --logdir {cfg.OUTPUT_DIR} --port 6006")
-        sys.exit(0)
-    
-    # wait for the training runs to complete
-    for training_run in concurrent.futures.as_completed(training_runs):
-        logger.info(f"Training run completed: {training_run.result()}")
-        os.kill(pid, 9)
+    train_model(cfg)
+    os.kill(pid, signal.SIGKILL)
     logger.info("Training run completed")
 
 
