@@ -2,7 +2,7 @@ from detectron2.engine import DefaultTrainer
 from detectron2.data.datasets import register_coco_instances
 import argparse
 import os
-from utils.det_utils import register_datasets, create_config
+from utils.det_utils import create_config
 from detectron2.utils.logger import setup_logger
 
 logger = setup_logger()
