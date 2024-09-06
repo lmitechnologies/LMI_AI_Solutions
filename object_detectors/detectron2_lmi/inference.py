@@ -4,7 +4,7 @@ import detectron2.data.transforms as T
 from detectron2.modeling import build_model
 import torch
 from detectron2.checkpoint import DetectionCheckpointer
-from model_base import ModelBase
+from ..model_base import ModelBase
 
 class Detectron2Model(ModelBase):
     
