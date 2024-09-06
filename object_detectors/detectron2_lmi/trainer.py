@@ -21,6 +21,7 @@ def main(args):
         print(f"Registering dataset {dataset_name} from {dataset_path}")
         register_datasets(dataset_name, dataset_path)
     for dataset_name, dataset_path in zip(original_config['DATASETS']["TEST"], original_config['DATASETS']["TEST_DIR"]):
+        print(f"Registering dataset {dataset_name} from {dataset_path}")
         register_datasets(dataset_name, dataset_path)
     # train the model
     train_model(cfg)

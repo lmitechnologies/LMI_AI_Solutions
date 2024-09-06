@@ -29,6 +29,7 @@ def register_datasets(dataset_dir: str, dataset_name: str):
         annot_file = os.path.join(dataset_dir, "annotations.json")
         images_path = os.path.join(dataset_dir, "images")
         if os.path.isfile(annot_file) and os.path.isdir(images_path):
+            print(f"Registering dataset {dataset_name} from {dataset_dir}")
             register_coco_instances(
                 dataset_name,
                 {},
@@ -37,6 +38,7 @@ def register_datasets(dataset_dir: str, dataset_name: str):
             )
         else:
             raise ValueError(f"Invalid dataset directory {dataset_dir} for dataset {dataset_name}")
+    return None
 
 def create_config(cfg_file_path):
     # get the default config
