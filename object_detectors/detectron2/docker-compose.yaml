@@ -1,0 +1,18 @@
+version: "3.8"
+services:
+  detectron2:
+    build:
+      context: .
+      dockerfile: dockerfile
+    volumes:
+      - ./dataset:/home/dataset/
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
