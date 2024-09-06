@@ -1,0 +1,49 @@
+# This is an example configuration file for a simple for segmentation or object detection model
+DATASETS:
+  TEST: [] # define the test dataset similar to the train dataset or leave it as empty list (use the name "test_dataset")
+  TRAIN:
+  - train_dataset
+  ROOT_DIR: /home/dataset/train # Path to the training dataset directory
+  TEST_DIR: /home/dataset/test # Path to the test dataset directory
+
+ROI_BOX_HEAD:
+  - NUM_CLASSES: 80 # Number of classes in the dataset
+  - SCORE_THRESH_TEST: 0.05 # test score threshold
+
+# Training parameters
+SOLVER:
+  AMP:
+    ENABLED: false
+  BASE_LR: 0.02
+  BIAS_LR_FACTOR: 1.0
+  CHECKPOINT_PERIOD: 5000 # Save a checkpoint after every N number of iterations
+  GAMMA: 0.1
+  IMS_PER_BATCH: 2 # Number of images per batch
+  LR_SCHEDULER_NAME: WarmupMultiStepLR
+  MAX_ITER: 3000 # Maximum number of iterations default is 270000 for 3x schedule please change it accordingly
+
+TEST:
+  AUG:
+    ENABLED: false
+    FLIP: true
+    MAX_SIZE: 4000
+    # Feel free to add more augmentations or change the min/max sizes for the images
+    MIN_SIZES:
+    - 400
+    - 500
+    - 600
+    - 700
+    - 800
+    - 900
+    - 1000
+    - 1100
+    - 1200
+  DETECTIONS_PER_IMAGE: 100 # Number of detections per image
+  EVAL_PERIOD: 0 # Runs evaluation every N iterations
+  EXPECTED_RESULTS: []
+  KEYPOINT_OKS_SIGMAS: []
+  PRECISE_BN:
+    ENABLED: false
+    NUM_ITER: 200
+
+MODEL_CONFIG_FILE: COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml # Path to the base model configuration file feel free to change it to any other model configuration file from detectron2
