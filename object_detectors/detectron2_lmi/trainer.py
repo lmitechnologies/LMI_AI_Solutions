@@ -1,35 +1,16 @@
 from detectron2.engine import DefaultTrainer
-from detectron2.data.datasets import register_coco_instances
 import argparse
 import os
-from utils.det_utils import create_config
+from utils.det_utils import create_config, register_datasets
 from detectron2.utils.logger import setup_logger
 import concurrent.futures
 import sys
 import subprocess
 import signal
+import yaml
 
 logger = setup_logger()
 
-def register_datasets(dataset_dir: str, dataset_name: str):
-    """
-    Register the train and test datasets with Detectron2
-    """
-    if os.path.exists(dataset_dir):
-        annot_file = os.path.join(dataset_dir, "annotations.json")
-        images_path = os.path.join(dataset_dir, "images")
-        if os.path.isfile(annot_file) and os.path.isdir(images_path):
-            logger.info(f"Registering dataset {dataset_name} from {dataset_dir}")
-            register_coco_instances(
-                dataset_name,
-                {},
-                annot_file,
-                images_path,
-            )
-        else:
-            raise ValueError(f"Invalid dataset directory {dataset_dir} for dataset {dataset_name}")
-    else:
-        raise ValueError(f"Dataset directory {dataset_dir} does not exist")
 
 def train_model(cfg):
     """
@@ -45,7 +26,7 @@ def main(args):
     pid = os.fork()
     if pid == 0:
         os.setsid()
-        os.system(f"tensorboard --logdir /home/training/ --port 6006")
+        os.system(f"tensorboard --logdir {args.output_dir} --port 6006")
         sys.exit(0)
     else:
         logger.info(f"Tensorboard started with PID {pid}")
@@ -59,12 +40,22 @@ def main(args):
         register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
     logger.info("Starting training run")
     train_model(cfg)
-    os.kill(pid, signal.SIGKILL)
+    os.kill(pid, signal.SIGTERM)
+
+    # update the config file with the output directory
+    # load the yaml file in the output directory
+    config = yaml.safe_load(open(os.path.join(cfg.OUTPUT_DIR, "config.yaml"), "r"))
+    config["OUTPUT_DIR"] = cfg.OUTPUT_DIR # update the output directory
+    config["MODEL"]["WEIGHTS"] = os.path.join(cfg.OUTPUT_DIR, "model_final.pth") # update the weights path
+    with open(os.path.join(cfg.OUTPUT_DIR, "config.yaml"), "w") as f:
+        yaml.dump(config, f)
+    
     logger.info("Training run completed")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config-file", type=str, help="Path to the config file")
+    parser.add_argument("--output-dir", type=str, help="Path to the output directory", default="/home/training/")
     args = parser.parse_args()
     main(args=args)
