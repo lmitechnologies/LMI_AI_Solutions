@@ -57,9 +57,12 @@ def main(args):
     # start tensorboard
     logger.info("Starting tensorboard")
     
-
-    pid = subprocess.Popen([sys.executable, "tensorboard --logdir=/home/training/ --port=6006"],
-                       creationflags=DETACHED_PROCESS).pid
+    # start tensorboard in a separate process
+    pid = os.fork()
+    if pid == 0:
+        os.setsid()
+        os.system(f"tensorboard --logdir {cfg.OUTPUT_DIR} --port 6006")
+        sys.exit(0)
     
     # wait for the training runs to complete
     for training_run in concurrent.futures.as_completed(training_runs):
