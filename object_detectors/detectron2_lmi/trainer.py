@@ -41,9 +41,9 @@ def main(args):
     cfg, original_config = create_config(config_file)
     # register the datasets train, test
     for dataset_name, dataset_path in zip(original_config['DATASETS']["TRAIN"], original_config['DATASETS']["TRAIN_DIR"]):
-        register_datasets(dataset_name, dataset_path)
+        register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
     for dataset_name, dataset_path in zip(original_config['DATASETS']["TEST"], original_config['DATASETS']["TEST_DIR"]):
-        register_datasets(dataset_name, dataset_path)
+        register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
     logger.info("Starting training run")
     train_model(cfg)
     logger.info("Training run completed")
