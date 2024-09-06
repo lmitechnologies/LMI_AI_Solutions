@@ -79,6 +79,6 @@ def create_config(cfg_file_path):
     cfg_file = os.path.join(output_dir, "config.yaml")
     with open(cfg_file, "w") as f:
         f.write(yaml.dump(yaml.safe_load(cfg.dump())))
-    return cfg
+    return cfg, configuration
 
 

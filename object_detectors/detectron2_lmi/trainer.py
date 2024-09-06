@@ -15,11 +15,11 @@ def train_model(cfg):
 def main(args):
     config_file = args.config_file
 
-    cfg = create_config(config_file)
+    cfg, original_config= create_config(config_file)
     # register the datasets train, test
-    for dataset_name, dataset_path in zip(cfg.DATASETS.TRAIN, cfg.DATASETS.TRAIN_DIR):
+    for dataset_name, dataset_path in zip(original_config['DATASETS']["TRAIN"], original_config['DATASETS']["TRAIN_DIR"]):
         register_datasets(dataset_name, dataset_path)
-    for dataset_name, dataset_path in zip(cfg.DATASETS.TEST, cfg.DATASETS.TEST_DIR):
+    for dataset_name, dataset_path in zip(original_config['DATASETS']["TEST"], original_config['DATASETS']["TEST_DIR"]):
         register_datasets(dataset_name, dataset_path)
     # train the model
     train_model(cfg)
