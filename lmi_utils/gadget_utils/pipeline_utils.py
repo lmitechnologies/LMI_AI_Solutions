@@ -12,12 +12,12 @@ from torch.nn import functional as F
 BLACK=(0,0,0)
 TWO_TO_FIFTEEN = 2**15
 
-logging.basicConfig(level=logging.NOTSET)
+logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def resize_image(im, W=None, H=None, mode='bilinear'):
     """
     args: 
@@ -56,7 +56,7 @@ def resize_image(im, W=None, H=None, mode='bilinear'):
     return im2.numpy() if is_numpy else im2
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def fit_im_to_size(im, W=None, H=None, value=0):
     """
     description:
@@ -177,7 +177,7 @@ def uint16_to_int16(profile):
     return profile.numpy() if is_numpy else profile
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def profile_to_3d(profile, resolution, offset):
     """
     convert profile image to 3d sensor space
@@ -359,7 +359,7 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bb
         )
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def revert_mask_to_origin(mask, operations:list):
     """
     This func reverts a single mask image according to the operations list IN ORDER.
@@ -407,7 +407,7 @@ def revert_masks_to_origin(masks, operations:list):
     return np.stack(results) if is_numpy else results
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def revert_to_origin(pts, operations:list):
     """
     revert the points to original image space.

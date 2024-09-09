@@ -17,7 +17,7 @@ import gadget_utils.pipeline_utils as pipeline_utils
 
 
 
-@torch.no_grad()
+@smart_inference_mode()
 def to_numpy(data):
     """Converts a tensor or a list to numpy arrays.
 
@@ -324,7 +324,7 @@ class Yolov8(ODBase):
     
     
     @staticmethod
-    @torch.no_grad()
+    @smart_inference_mode()
     def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
 
