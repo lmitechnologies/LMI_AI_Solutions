@@ -139,7 +139,7 @@ class Detectron2Model(ModelBase):
         
         postprocessed_results = {}
         
-        thresholds = torch.tensor([configs.get(int(classes[k]) if isinstance(classes[k], str) else classes[k] , 1.0) for k in range(len(classes))])
+        thresholds = torch.tensor([configs.get(str(classes[k]), 1.0) for k in range(len(classes))])
         
         keep = scores > thresholds.to(scores.device)
         
