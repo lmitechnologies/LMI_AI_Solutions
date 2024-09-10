@@ -47,7 +47,7 @@ def resize_image(im, W=None, H=None, mode='bilinear'):
         im = im.unsqueeze(-1)
         
     im2 = F.interpolate(im.permute(2,0,1).unsqueeze(0).float(), size=(H,W), mode=mode)
-    im2 = im2.squeeze(0).permute(1,2,0).to(torch.uint8)
+    im2 = im2.squeeze(0).permute(1,2,0)
     
     # back to 1 channel
     if one_channel:

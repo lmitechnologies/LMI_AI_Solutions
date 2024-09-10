@@ -1,6 +1,7 @@
-import os, sys
+import os
 import logging 
 from collections import OrderedDict, namedtuple
+from collections.abc import Sequence
 import tensorrt as trt
 import torch
 import numpy as np
@@ -15,22 +16,27 @@ logger = logging.getLogger('AnomalyModel v2')
 logger.setLevel(logging.INFO)
 
 
-PASS = 'PASS'
-FAIL = 'FAIL'
 MINIMUM_QUANT=1e-12
-
 Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
+
 
 class AnomalyModel:
     '''
-    Desc: Class used for AD model inference.  
-     
-    Args: 
-        - model_path: path to .pt file or TRT engine
-    
+    Desc: Class used for AD model inference.
     '''
     
     def __init__(self, model_path):
+        """_summary_
+
+        Args:
+            model_path (str): the path to the model file, either a pt or trt engine file
+
+        attributes:
+            - self.device: device to run model on
+            - self.fp16: flag for half precision
+            - self.shape_inspection: model input shape (h,w)
+            - self.inference_mode: model inference mode (TRT or PT)
+        """
         if torch.cuda.is_available():
             self.device = torch.device('cuda:0')
         else:
@@ -38,6 +44,7 @@ class AnomalyModel:
             self.device = torch.device('cpu')
         _,ext = os.path.splitext(model_path)
         self.fp16 = False
+        logger.info(f"Loading model: {model_path}")
         if ext=='.engine':
             with open(model_path, "rb") as f, trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
                 model = runtime.deserialize_cuda_engine(f.read())
@@ -63,11 +70,10 @@ class AnomalyModel:
             checkpoint = torch.load(model_path,map_location=self.device)
             self.pt_model = checkpoint['model']
             self.pt_model.eval()
+            self.pt_model.to(self.device)
             self.pt_metadata = checkpoint["metadata"]
             logger.info(f"Model metadata: {self.pt_metadata}")
-            self.transform = self.pt_model.transform
-            # self.pt_transform = model.transform
-            for d in self.transform.transforms:
+            for d in self.pt_model.transform.transforms:
                 if isinstance(d, v2.Resize):
                     self.shape_inspection = d.size
             self.inference_mode='PT'
@@ -88,18 +94,16 @@ class AnomalyModel:
             - image: numpy array [H,W,Ch]
         
         '''
-        if self.inference_mode not in ['TRT','PT']:
-            raise Exception(f'Unknown inference mode: {self.inference_mode}')
+        img = self.from_numpy(image).float()
         
         if self.inference_mode=='TRT':
             h, w =  self.shape_inspection
-            image = pipeline_utils.resize_image(image, H=h, W=w)
-
+            img = pipeline_utils.resize_image(img, H=h, W=w)
+            
         # resize baked into the pt model
-        image = self.from_numpy(image.astype(np.float32))
-        image = image.permute((2, 0, 1)).contiguous().unsqueeze(0)
-        image = image / 255.0
-        return image.half() if self.fp16 else image
+        img = img.permute((2, 0, 1)).unsqueeze(0).contiguous()
+        img = img / 255.0
+        return img.half() if self.fp16 else img
         
         
     @torch.inference_mode()
@@ -109,15 +113,27 @@ class AnomalyModel:
         Args: image: numpy array [H,W,Ch]
         
         Note: predict calls the preprocess method
+        returns:
+            - output: resized output to match training data's size
         '''
         input_batch = self.preprocess(image)
         if self.inference_mode=='TRT':
             self.binding_addrs['input'] = int(input_batch.data_ptr())
             self.context.execute_v2(list(self.binding_addrs.values()))
-            outputs = {x:self.bindings[x].data.cpu().numpy() for x in self.output_names}
-            output=outputs['output']
+            outputs = {x:self.bindings[x].data for x in self.output_names}
+            output = outputs['output']
         elif self.inference_mode=='PT':
-            output=self.pt_model(input_batch).cpu().numpy()
+            preds = self.pt_model(input_batch)
+            if isinstance(preds, torch.Tensor):
+                output = preds
+            elif isinstance(preds, dict):
+                output = preds['anomaly_map']
+            elif isinstance(preds, Sequence):
+                output = preds[1]
+            else:
+                raise Exception(f'Unknown prediction type: {type(preds)}')
+        if isinstance(output, torch.Tensor):
+            output = output.cpu().numpy()
         output = np.squeeze(output)
         return output
         
@@ -131,7 +147,7 @@ class AnomalyModel:
         self.predict(np.zeros(shape))
     
     
-    def convert_to_onnx(self, export_path, opset_version=11):
+    def convert_to_onnx(self, export_path, opset_version=14):
         '''
         Desc: Convert existing .pt file to onnx
         Args:
@@ -139,9 +155,6 @@ class AnomalyModel:
             - opset_version: onnx version ID
         
         '''
-        if self.inference_mode!='PT':
-            raise Exception('Not a pytorch model. Cannot convert to onnx.')
-        
         # write metadata to export path
         with open(os.path.join(os.path.dirname(export_path), "metadata.json"), "w", encoding="utf-8") as metadata_file:
             json.dump(self.pt_metadata, metadata_file, ensure_ascii=False, indent=4)
@@ -156,7 +169,62 @@ class AnomalyModel:
             output_names=["output"],
         )
         
+    
+    @staticmethod
+    def convert_trt(onnx_path, out_engine_path, fp16, workspace=4096):
+        """
+        Desc: Convert an onnx to trt engine
+        Args:
+            - onnx_path: input file path
+            - out_engine_path: output file path
+            - fp16: set fixed point width
+            - workspace: conversion memory size in MB
+        """
+        logger.info(f"converting {onnx_path}...")
+        assert(out_engine_path.endswith(".engine")), f"trt engine file must end with '.engine'"
+        target_dir = os.path.dirname(out_engine_path)
+        if not os.path.isdir(target_dir):
+            os.makedirs(target_dir)
+        convert_cmd = (f'trtexec --onnx={onnx_path} --saveEngine={out_engine_path}'
+                       f' --memPoolSize=workspace:{workspace}') + (' --fp16' if fp16 else ' ')
+        os.system(convert_cmd)
+        # check if metadata.json exists in the same directory as onnx_path
+        if os.path.isfile(f"{os.path.dirname(onnx_path)}/metadata.json"):
+            os.system(f"cp {os.path.dirname(onnx_path)}/metadata.json {os.path.dirname(out_engine_path)}")
+        else:
+            logger.warning(f"metadata.json not found in {os.path.dirname(onnx_path)}")
+            
+            
+    @staticmethod
+    def convert(model_path, export_path, fp16):
+        '''
+        Desc: Converts .onnx or .pt file to tensorRT engine
         
+        Args:
+            - model path: model file path .pt or .onnx
+            - export path: engine file path
+            - fp16: floating point number length
+        '''
+        if os.path.isfile(export_path):
+            raise Exception('Export path should be a directory.')
+        ext = os.path.splitext(model_path)[1]
+        if ext == '.onnx':
+            logger.info('Converting onnx to trt...')
+            trt_path = os.path.join(export_path, 'model.engine')
+            AnomalyModel.convert_trt(model_path, trt_path, fp16)
+        elif ext == '.pt':
+            model = AnomalyModel(model_path)
+            # convert to onnx
+            logger.info('Converting pt to onnx...')
+            onnx_path = os.path.join(export_path, 'model.onnx')
+            model.convert_to_onnx(onnx_path)
+            logger.info(f'the onnx model is saved at {onnx_path}')
+            # # convert to trt
+            logger.info('Converting onnx to trt engine...')
+            trt_path = os.path.join(export_path, 'model.engine')
+            model.convert_trt(onnx_path, trt_path, fp16)
+            
+            
     @staticmethod
     def annotate(img, ad_scores, ad_threshold, ad_max):
         # Resize AD score to match input image
@@ -191,31 +259,6 @@ class AnomalyModel:
             x, y, w, h = cv2.boundingRect(contour)
             bboxes.append([x,y,x+w,y+h])
         return sorted_contours, bboxes
-       
-    
-    @staticmethod
-    def convert_trt(onnx_path, out_engine_path, fp16=True, workspace=4096):
-        """
-        Desc: Convert an onnx to trt engine
-        Args:
-            - onnx_path: input file path
-            - out_engine_path: output file path
-            - fp16: set fixed point width (True by default)
-            - workspace: conversion memory size in MB
-        """
-        logger.info(f"converting {onnx_path}...")
-        assert(out_engine_path.endswith(".engine")), f"trt engine file must end with '.engine'"
-        target_dir = os.path.dirname(out_engine_path)
-        if not os.path.isdir(target_dir):
-            os.makedirs(target_dir)
-        convert_cmd = (f'trtexec --onnx={onnx_path} --saveEngine={out_engine_path}'
-                       f' --memPoolSize=workspace:{workspace}') + (' --fp16' if fp16 else ' ')
-        os.system(convert_cmd)
-        # check if metadata.json exists in the same directory as onnx_path
-        if os.path.isfile(f"{os.path.dirname(onnx_path)}/metadata.json"):
-            os.system(f"cp {os.path.dirname(onnx_path)}/metadata.json {os.path.dirname(out_engine_path)}")
-        else:
-            logger.warning(f"metadata.json not found in {os.path.dirname(onnx_path)}")
     
     
     @staticmethod
@@ -275,7 +318,6 @@ class AnomalyModel:
             os.makedirs(out_path)
 
         # Load model from .pt or .engine
-        logger.info(f"Loading engine: {engine_path}.")
         pc = AnomalyModel(engine_path)
         pc.warmup()
 
@@ -396,36 +438,6 @@ class AnomalyModel:
             
             
     @staticmethod
-    def convert(model_path, export_path, fp16=True):
-        '''
-        Desc: Converts .onnx or .pt file to tensorRT engine
-        
-        Args:
-            - model path: model file path .pt or .onnx
-            - export path: engine file path
-            - fp16: fixed point number length
-        '''
-        if os.path.isfile(export_path):
-            raise Exception('Export path should be a directory.')
-        ext = os.path.splitext(model_path)[1]
-        if ext == '.onnx':
-            logger.info('Converting onnx to trt...')
-            trt_path = os.path.join(export_path, 'model.engine')
-            AnomalyModel.convert_trt(model_path, trt_path, fp16)
-        elif ext == '.pt':
-            model = AnomalyModel(model_path)
-            # convert to onnx
-            logger.info('Converting pt to onnx...')
-            onnx_path = os.path.join(export_path, 'model.onnx')
-            model.convert_to_onnx(onnx_path)
-            logger.info(f'the onnx model is saved at {onnx_path}')
-            # # convert to trt
-            logger.info('Converting onnx to trt engine...')
-            trt_path = os.path.join(export_path, 'model.engine')
-            AnomalyModel.convert_trt(onnx_path, trt_path, fp16)
-        
-            
-    @staticmethod
     def plot_fig(predict_results, save_dir, err_thresh=None, err_max=None):
         from matplotlib import pyplot as plt
         '''
@@ -451,7 +463,6 @@ class AnomalyModel:
         for img,err_dist,fname in predict_results:
             # fname=fname.decode('ascii')
             fname,fext=os.path.splitext(fname)
-            logging.info(f'Processing data for: {fname}')
             err_dist=np.squeeze(err_dist)
             err_mean=err_dist.mean()
             err_std=err_dist.std()
@@ -508,7 +519,6 @@ class AnomalyModel:
 
 if __name__ == '__main__':
     import argparse
-    import os
 
     ap = argparse.ArgumentParser()
     ap.add_argument('-a','--action', default="test", help='Action: convert, test')
