@@ -250,6 +250,7 @@ if __name__ == '__main__':
 
     path_imgs = args['path_imgs']
     path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
+    path_out = args['path_out']
     if not os.path.isfile(path_csv):
         raise Exception(f'Not found file: {path_csv}')
     
@@ -257,17 +258,17 @@ if __name__ == '__main__':
     
     # write the images to the given directory
     
-    if not os.path.exists(args.path_out) or os.path.isdir(args.path_out):
+    if not os.path.exists(path_out) or os.path.isdir(path_out):
         os.makedirs(
-            args.path_out
+            path_out
         )
     
     # write the json file to the directory
     data.write_to_json(
-        json_out_path=os.path.join(args.path_out, 'annotations.json')
+        json_out_path=os.path.join(path_out, 'annotations.json')
     )
     images_path = os.path.join(
-        args.path_out,'images'
+        path_out,'images'
     )
     if not os.path.exists(images_path):
         os.makedirs(
@@ -276,7 +277,7 @@ if __name__ == '__main__':
     # move the images to the folder
     
     copy_images_in_folder(
-        path_img=args.path_imgs,
+        path_img=path_imgs,
         path_out=images_path
     )
     
