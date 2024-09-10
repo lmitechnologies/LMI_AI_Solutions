@@ -7,7 +7,7 @@ import torch
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.utils.visualizer import ColorMode, GenericMask
 from model_base import ModelBase
-from utils.det_utils import merge_a_into_b
+from detectron2_lmi.utils.det_utils import merge_a_into_b
 import yaml
 import logging
 import time
@@ -139,7 +139,7 @@ class Detectron2Model(ModelBase):
         
         postprocessed_results = {}
         
-        thresholds = torch.tensor([configs.get(int(classes[k]) if isinstance(classes[k], str) is False else classes[k] , 1.0) for k in range(len(classes))])
+        thresholds = torch.tensor([configs.get(int(classes[k]) if isinstance(classes[k], str) else classes[k] , 1.0) for k in range(len(classes))])
         
         keep = scores > thresholds.to(scores.device)
         
