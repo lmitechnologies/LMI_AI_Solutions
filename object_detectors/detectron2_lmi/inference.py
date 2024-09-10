@@ -139,6 +139,7 @@ class Detectron2Model(ModelBase):
         thresholds = torch.tensor([configs.get(int(classes[k]) if isinstance(classes[k], str) is False else classes[k] , 1.0) for k in range(len(classes))])
         
         keep = scores > thresholds.to(scores.device)
+        
         postprocessed_results["boxes"] = boxes[keep].cpu().numpy() if boxes is not None else np.array([])
         postprocessed_results["scores"] = scores[keep].cpu().numpy() if scores is not None else np.array([])
         postprocessed_results["classes"] = classes[keep].cpu().numpy() if classes is not None else np.array([])
@@ -147,6 +148,7 @@ class Detectron2Model(ModelBase):
 
         if return_segments:
             postprocessed_results["segments"] = [GenericMask(x, image_height, image_width).polygons[0].reshape(-1, 2) for x in  postprocessed_results["masks"]]
+        
         return postprocessed_results
     
     def predict(self, image, configs, **kwargs):

@@ -1,11 +1,20 @@
 FROM nvcr.io/nvidia/pytorch:23.11-py3
 ARG DEBIAN_FRONTEND=noninteractive
 
+# Install dependencies
+RUN apt-get update && apt-get install libgl1 -y
+RUN pip install --upgrade pip setuptools wheel
+RUN pip install --user opencv-python
+RUN pip install ultralytics -U
+
+# clone LMI AI Solutions repository
+# WORKDIR /repos
+# RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 WORKDIR /home
 RUN python -m pip install --upgrade pip
 RUN pip install --user 'git+https://github.com/facebookresearch/fvcore'
 RUN git clone https://github.com/facebookresearch/detectron2 detectron2
+RUN pip install --user -e detectron2 
+RUN pip install tensorboard
+RUN git clone -b FAIE-1767 https://github.com/lmitechnologies/LMI_AI_Solutions.git
 
-
-RUN pip install --user -e detectron2
-# RUN pip install 'git+https://github.com/facebookresearch/detectron2.git@5aeb252b194b93dc2879b4ac34bc51a31b5aee13'
