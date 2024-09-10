@@ -21,27 +21,27 @@ logger.setLevel(logging.DEBUG)
 
 class Test_resize_image:
     @pytest.mark.parametrize(
-        "im, resize_args, expected_shape, expected_type",
+        "im, resize_args, expected_shape",
         [
-            (torch.rand(150, 100, 3).numpy(), {"H": 300}, (300, 200, 3), np.ndarray),  # Test resize height
-            (torch.rand(100, 150, 3).numpy(), {"W": 30}, (20, 30, 3), np.ndarray),    # Test resize width
-            (torch.rand(150, 100, 3).numpy(), {"W": 200, "H": 200}, (200, 200, 3), np.ndarray),  # Test warp
-            (torch.rand(150, 100).numpy(), {"W": 50}, (75, 50), np.ndarray),  # Test gray image (2D)
-            (torch.rand(150, 100, 1).numpy(), {"W": 50}, (75, 50, 1), np.ndarray),  # Test gray image (3D)
+            (torch.randint(0,256,(150, 100, 3),dtype=torch.float32).numpy(), {"H": 300}, (300, 200, 3)),  # Test resize height
+            (torch.randint(0,256,(100, 150, 3),dtype=torch.uint8).numpy(), {"W": 30}, (20, 30, 3)),    # Test resize width
+            (torch.randint(0,256,(150, 100, 3),dtype=torch.int16).numpy(), {"W": 200, "H": 200}, (200, 200, 3)),  # Test warp
+            (torch.rand(150, 100).numpy(), {"W": 50}, (75, 50)),  # Test gray image (2D)
+            (torch.rand(150, 100, 1).numpy(), {"W": 50}, (75, 50, 1)),  # Test gray image (3D)
         ]
     )
-    def test_cases(self,im, resize_args, expected_shape, expected_type):
+    def test_cases(self,im, resize_args, expected_shape):
         im2 = pipeline_utils.resize_image(im, **resize_args)
         assert im2.shape == expected_shape
-        assert type(im2) == expected_type
+        assert im2.dtype == im.dtype
         
         im2 = pipeline_utils.resize_image(torch.from_numpy(im), **resize_args)
         assert im2.shape == expected_shape
         assert type(im2) == torch.Tensor
         
         if torch.cuda.is_available():
-            im = torch.from_numpy(im).cuda()
-            im2 = pipeline_utils.resize_image(im, **resize_args)
+            tmp = torch.from_numpy(im).cuda()
+            im2 = pipeline_utils.resize_image(tmp, **resize_args)
             assert im2.shape == expected_shape
             assert type(im2) == torch.Tensor
             assert im2.is_cuda

@@ -46,8 +46,18 @@ def resize_image(im, W=None, H=None, mode='bilinear'):
     if one_channel:
         im = im.unsqueeze(-1)
         
-    im2 = F.interpolate(im.permute(2,0,1).unsqueeze(0).float(), size=(H,W), mode=mode)
+    # deal with integer image
+    dtype = im.dtype
+    is_fp = im.is_floating_point()
+    if not is_fp:
+        im = im.float()
+        
+    im2 = F.interpolate(im.permute(2,0,1).unsqueeze(0), size=(H,W), mode=mode)
     im2 = im2.squeeze(0).permute(1,2,0)
+    
+    # back to integer image
+    if not is_fp:
+        im2 = im2.to(dtype)
     
     # back to 1 channel
     if one_channel:
