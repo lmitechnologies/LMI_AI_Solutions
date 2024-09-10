@@ -14,7 +14,7 @@ class Dataset(object):
     """
     create a coco format dataset from csv file
     """
-    def __init__(self, path_pngs:str, path_csv:str, json_out_path, plot=True):
+    def __init__(self, path_pngs:str, path_csv:str, plot=True):
         super().__init__()
         self.info = {
             "description": "Custom Dataset",
@@ -253,7 +253,7 @@ if __name__ == '__main__':
     if not os.path.isfile(path_csv):
         raise Exception(f'Not found file: {path_csv}')
     
-    data = Dataset(path_imgs, path_csv, json_out_path=args['output_json'], plot=args['plot'])
+    data = Dataset(path_imgs, path_csv, plot=args['plot'])
     
     # write the images to the given directory
     
