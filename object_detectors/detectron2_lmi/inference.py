@@ -41,16 +41,17 @@ class Detectron2Model(ModelBase):
         configuration = yaml.safe_load(open(config_file, "r"))
         self.cfg = get_cfg()
         self.cfg.merge_from_file(model_zoo.get_config_file(configuration["MODEL_CONFIG_FILE"]))
+        
         merge_a_into_b(configuration, self.cfg)
         self.cfg = self.cfg.clone()
         self.model = build_model(self.cfg)
         self.model.eval()
         checkpointer = DetectionCheckpointer(self.model)
         checkpointer.load(weights_path)
+        # Get min max test size, to handle bigger inmages. 
         self.transforms = T.ResizeShortestEdge([self.cfg.INPUT.MIN_SIZE_TEST, self.cfg.INPUT.MIN_SIZE_TEST], self.cfg.INPUT.MAX_SIZE_TEST)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
-        print(type(self.model))
 
 
     def warmup(self):
@@ -147,6 +148,7 @@ class Detectron2Model(ModelBase):
         postprocessed_results["masks"] = masks[keep].cpu().numpy() if masks is not None else np.array([])
 
         if return_segments:
+            # Runs contour detection
             postprocessed_results["segments"] = [GenericMask(x, image_height, image_width).polygons[0].reshape(-1, 2) for x in  postprocessed_results["masks"]]
         
         return postprocessed_results

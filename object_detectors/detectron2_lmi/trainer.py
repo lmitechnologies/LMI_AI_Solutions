@@ -11,7 +11,7 @@ import yaml
 
 logger = setup_logger()
 
-
+# TODO: Will be updated to use lauch for multi-distributed training
 def train_model(cfg):
     """
     Train the model using the given configuration
@@ -40,6 +40,7 @@ def main(args):
         register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
     logger.info("Starting training run")
     train_model(cfg)
+    # kill tensorboard
     os.kill(pid, signal.SIGTERM)
 
     # update the config file with the output directory
