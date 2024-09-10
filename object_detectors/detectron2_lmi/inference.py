@@ -23,7 +23,7 @@ TODO Update for deploying to LMI AISolutions
 class Detectron2Model(ModelBase):
     logger = logging.getLogger(__name__)
     
-    def __init__(self,weights_path: str, config_file: str):
+    def __init__(self,weights_path: str, config_file: str, class_map: dict):
         """
         The function initializes a model with specified weights and configuration for object detection tasks
         in Python.
@@ -41,7 +41,6 @@ class Detectron2Model(ModelBase):
         configuration = yaml.safe_load(open(config_file, "r"))
         self.cfg = get_cfg()
         self.cfg.merge_from_file(model_zoo.get_config_file(configuration["MODEL_CONFIG_FILE"]))
-        
         merge_a_into_b(configuration, self.cfg)
         self.cfg = self.cfg.clone()
         self.model = build_model(self.cfg)
@@ -50,6 +49,9 @@ class Detectron2Model(ModelBase):
         checkpointer.load(weights_path)
         # Get min max test size, to handle bigger inmages. 
         self.transforms = T.ResizeShortestEdge([self.cfg.INPUT.MIN_SIZE_TEST, self.cfg.INPUT.MIN_SIZE_TEST], self.cfg.INPUT.MAX_SIZE_TEST)
+        self.class_map = {
+           int(k): str(v) for k,v in class_map.items()
+        }
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
@@ -143,9 +145,10 @@ class Detectron2Model(ModelBase):
         
         postprocessed_results["boxes"] = boxes[keep].cpu().numpy() if boxes is not None else np.array([])
         postprocessed_results["scores"] = scores[keep].cpu().numpy() if scores is not None else np.array([])
-        postprocessed_results["classes"] = classes[keep].cpu().numpy() if classes is not None else np.array([])
+        postprocessed_results["classes"] = [self.class_map.get(int(label), str(label)) for label in classes[keep].cpu().numpy()] if classes is not None else np.array([])
         postprocessed_results["keypoints"] = keypoints[keep].cpu().numpy() if keypoints is not None else np.array([])
         postprocessed_results["masks"] = masks[keep].cpu().numpy() if masks is not None else np.array([])
+        
 
         if return_segments:
             # Runs contour detection
@@ -219,4 +222,4 @@ if __name__ == "__main__":
         t0 = time.time()
         outputs = model.predict(image, configs={0: 0.5})
         t1 = time.time()
-        print(f"Prediction time: {(t1-t0) * 1000} ms")
+        
