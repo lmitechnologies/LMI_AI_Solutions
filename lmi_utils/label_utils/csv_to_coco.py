@@ -258,7 +258,7 @@ if __name__ == '__main__':
     
     # write the images to the given directory
     
-    if not os.path.exists(path_out) or os.path.isdir(path_out):
+    if not os.path.exists(path_out):
         os.makedirs(
             path_out
         )
