@@ -95,10 +95,14 @@ class Detectron2TRT(ModelBase):
             instances = predictions[0][i]
             for j in range(int(instances[0])):
                 bounding_box = predictions[1][i][j]
-                bounding_box = [int(bounding_box[0] * width), int(bounding_box[1] * height), int(bounding_box[2] * width), int(bounding_box[3] * height)]
                 score = predictions[2][i][j]
                 class_id = predictions[3][i][j]
                 mask = predictions[4][i][j]
+                bounding_box[0] /= width
+                bounding_box[1] /= height
+                bounding_box[2] /= width
+                bounding_box[3] /= height
+                
                 print("Bounding box: ", bounding_box)
                 
                 # draw the bounding box
@@ -109,7 +113,6 @@ class Detectron2TRT(ModelBase):
         # preprocess the image
         input = self.preprocess(images)
         predictions = self.forward(input)
-        print(predictions)
         self.postprocess(images, predictions)
         
         results = {
