@@ -115,6 +115,7 @@ if __name__ == "__main__":
     model.warmup()
     print(args.image_path)
     image = cv2.imread(args.image_path, -1)
-    print(image.shape)
-    print(model.predict([image]))
+    output = model.predict([image])
+    for key, value in output.items():
+        print(key, value.shape)
     # model.predict(cv2.cvtColor(cv2.imread(args.image_path), cv2.COLOR_GRAY2BGR))
