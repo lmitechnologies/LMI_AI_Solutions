@@ -213,8 +213,8 @@ class DET2GraphSurgeon:
         assert (
             image_width % 32 == 0
         ), "Image width must be divisible by 32, got {}".format(image_width)
-        
-        imagelist_images = ImageList.from_tensors(images, 32)
+        # asse
+        imagelist_images = ImageList.from_tensors(images, list(tuple(images[0].shape[-2:])))
 
         # Get feature maps from backbone.
         features = predictor.model.backbone(imagelist_images.tensor)
