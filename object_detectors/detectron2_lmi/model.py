@@ -98,10 +98,6 @@ class Detectron2TRT(ModelBase):
                 score = predictions[2][i][j]
                 class_id = predictions[3][i][j]
                 mask = predictions[4][i][j]
-                bounding_box[0] /= width
-                bounding_box[1] /= height
-                bounding_box[2] /= width
-                bounding_box[3] /= height
                 
                 print("Bounding box: ", bounding_box)
                 
