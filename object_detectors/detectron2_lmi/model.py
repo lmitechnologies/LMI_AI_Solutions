@@ -121,6 +121,4 @@ if __name__ == "__main__":
     t0 = time.time()
     output = model.predict([image])
     print("Inference time: {:.2f} ms".format((time.time() - t0) * 1000))
-    for key, value in output.items():
-        if key == "instances":
-            print(key, value[0])
+    print(output["masks"])
