@@ -93,7 +93,7 @@ class Detectron2TRT(ModelBase):
             image = images[i]
             height, width = image.shape[:2]
             instances = predictions[0][i]
-            for j in range(instances):
+            for j in range(int(instances[0])):
                 y_scale = height / self.input_shape[2]
                 x_scale = width / self.input_shape[3]
                 box = predictions[1][i][j]
