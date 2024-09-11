@@ -53,6 +53,7 @@ class Detectron2TRT(ModelBase):
                 self.outputs.append(binding)
         self.input_shape, self.data_type = self.inputs[0]["shape"], self.inputs[0]["dtype"]
         self.logger.log(trt.Logger.INFO, f"Input shape: {self.input_shape}")
+        self.logger.log(trt.Logger.INFO, f"Input: {self.inputs[0]}")
     
     def warmup(self):
         image_h, image_w = self.input_shape[2], self.input_shape[3]

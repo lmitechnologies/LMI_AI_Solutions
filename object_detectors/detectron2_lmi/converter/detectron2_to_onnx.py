@@ -164,9 +164,12 @@ def get_sample_inputs(args):
         original_image = detection_utils.read_image(args.sample_image, format=cfg.INPUT.FORMAT)
         print(f"Processing image {args.sample_image}")
         print(f"Image size (h,w): {original_image.shape[:2]}")
-        
+        aug = T.ResizeShortestEdge(
+            [image.shape[0], image.shape[0]], image.shape[0]
+        )
+        image = aug.get_transform(original_image).apply_image(original_image)
         height, width = original_image.shape[:2]
-        image = torch.as_tensor(original_image.astype("float32").transpose(2, 0, 1))
+        image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
 
         inputs = {"image": image, "height": height, "width": width}
 
