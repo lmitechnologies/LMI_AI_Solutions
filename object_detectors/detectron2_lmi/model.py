@@ -99,5 +99,15 @@ class Detectron2TRT(ModelBase):
         
     
         
-            
-        
+if __name__ == "__main__":
+    import argparse
+    import cv2
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_path", type=str, required=True)
+    parser.add_argument("--image_path", type=str, required=True)
+    args = parser.parse_args()
+    
+    model = Detectron2TRT(args.model_path)
+    model.warmup()
+    model.predict(cv2.cvtColor(cv2.imread(args.image_path), cv2.COLOR_GRAY2BGR))
