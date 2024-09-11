@@ -107,6 +107,7 @@ class Detectron2TRT(ModelBase):
 if __name__ == "__main__":
     import argparse
     import cv2
+    import time
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, required=True)
@@ -117,7 +118,9 @@ if __name__ == "__main__":
     model.warmup()
     print(args.image_path)
     image = cv2.imread(args.image_path, -1)
+    t0 = time.time()
     output = model.predict([image])
+    print("Inference time: {:.2f} ms".format((time.time() - t0) * 1000))
     for key, value in output.items():
         if key == "instances":
             print(key, value[0])
