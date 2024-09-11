@@ -68,7 +68,7 @@ class EngineBuilder:
         self.network = self.builder.create_network(0)
         self.parser = trt.OnnxParser(self.network, self.trt_logger)
 
-        onnx_path = os.path.realpath(onnx_path)
+        # onnx_path = os.path.realpath(onnx_path)
         with open(onnx_path, "rb") as f:
             if not self.parser.parse(f.read()):
                 log.error("Failed to load ONNX file: {}".format(onnx_path))
