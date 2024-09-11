@@ -114,6 +114,7 @@ class Detectron2TRT(ModelBase):
         # preprocess the image
         input = self.preprocess(images)
         predictions = self.forward(input)
+        print(predictions)
         
         results = {
             "instances": predictions[0],
