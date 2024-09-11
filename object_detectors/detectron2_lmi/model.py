@@ -64,11 +64,11 @@ class Detectron2TRT(ModelBase):
         # convert the image to channels first
         for i, image in enumerate(images):
             image = image.astype(np.float32)
-            mean = (103.53, 116.28, 123.675)
-            std = (1.0, 1.0, 1.0)
-            image /= 255.0
-            image -= mean
-            image /= std
+            # mean = (103.53, 116.28, 123.675)
+            # std = (1.0, 1.0, 1.0)
+            # image /= 255.0
+            # image -= mean
+            # image /= std
             image = image.transpose(2, 0, 1)
             input[i] = image
         return input
