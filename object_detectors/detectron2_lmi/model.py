@@ -52,6 +52,7 @@ class Detectron2TRT(ModelBase):
             else:
                 self.outputs.append(binding)
         self.input_shape, self.data_type = self.inputs[0]["shape"], self.inputs[0]["dtype"]
+        self.logger.log(trt.Logger.INFO, f"Input shape: {self.input_shape}")
     
     def warmup(self):
         image_h, image_w = self.input_shape[2], self.input_shape[3]
@@ -121,4 +122,5 @@ if __name__ == "__main__":
     t0 = time.time()
     output = model.predict([image])
     print("Inference time: {:.2f} ms".format((time.time() - t0) * 1000))
+    print(output["scores"])
     print(output["boxes"])
