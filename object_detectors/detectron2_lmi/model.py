@@ -63,7 +63,13 @@ class Detectron2TRT(ModelBase):
         input = np.zeros(self.input_shape, dtype=self.data_type)
         # convert the image to channels first
         for i, image in enumerate(images):
-            image = image.transpose(2, 0, 1).astype(np.float32)
+            image = image.astype(np.float32)
+            mean = (103.53, 116.28, 123.675)
+            std = (1.0, 1.0, 1.0)
+            image /= 255.0
+            image -= mean
+            image /= std
+            image = image.transpose(2, 0, 1)
             input[i] = image
         return input
     
@@ -82,8 +88,27 @@ class Detectron2TRT(ModelBase):
             common.memcpy_device_to_host(predictions[i], output["allocation"])
         return predictions
 
-    def postprocess(self):
-        pass
+    def postprocess(self, images, predictions):
+        for i in range(0, self.batch_size):
+            image = images[i]
+            height, width = image.shape[:2]
+            instances = predictions[0][i]
+            for j in range(instances):
+                y_scale = height / self.input_shape[2]
+                x_scale = width / self.input_shape[3]
+                box = predictions[1][i][j]
+                box[0] *= y_scale
+                box[1] *= x_scale
+                box[2] *= y_scale
+                box[3] *= x_scale
+                score = predictions[2][i][j]
+                class_id = predictions[3][i][j]
+                mask = predictions[4][i][j]
+                mask = cv2.resize(mask, (width, height))
+                
+                # draw the bounding box
+            
+            
     
     def predict(self, images):
         # preprocess the image
