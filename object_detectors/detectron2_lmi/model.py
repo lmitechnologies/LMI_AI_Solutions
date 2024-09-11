@@ -78,6 +78,9 @@ class Detectron2TRT(ModelBase):
         for i, output in enumerate(self.outputs):
             common.memcpy_device_to_host(predictions[i], output["allocation"])
         return predictions
+
+    def postprocess(self):
+        pass
     
     def predict(self, images):
         # preprocess the image
