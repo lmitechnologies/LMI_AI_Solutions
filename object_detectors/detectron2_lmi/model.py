@@ -103,8 +103,7 @@ class Detectron2TRT(ModelBase):
                 box[3] *= x_scale
                 score = predictions[2][i][j]
                 class_id = predictions[3][i][j]
-                mask = predictions[4][i][j]
-                mask = cv2.resize(mask, (width, height))
+                print(box, score, class_id)
                 
                 # draw the bounding box
             
@@ -115,6 +114,7 @@ class Detectron2TRT(ModelBase):
         input = self.preprocess(images)
         predictions = self.forward(input)
         print(predictions)
+        self.postprocess(images, predictions)
         
         results = {
             "instances": predictions[0],
