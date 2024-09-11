@@ -6,9 +6,11 @@ import detectron2_lmi.utils.common_runtime as common
 from typing import Optional
 
 class Detectron2TRT(ModelBase):
-    logger = trt.Logger(trt.Logger.ERROR)
+    
+    logger = trt.Logger(trt.Logger.INFO)
     
     def __init__(self, model_path):
+        
         self.model_path = model_path
         
         trt.init_libnvinfer_plugins(self.logger, namespace="")
@@ -117,5 +119,5 @@ if __name__ == "__main__":
     image = cv2.imread(args.image_path, -1)
     output = model.predict([image])
     for key, value in output.items():
-        print(key, value.shape)
-    # model.predict(cv2.cvtColor(cv2.imread(args.image_path), cv2.COLOR_GRAY2BGR))
+        if key == "instances":
+            print(key, value[0])
