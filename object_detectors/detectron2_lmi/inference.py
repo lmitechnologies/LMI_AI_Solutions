@@ -99,7 +99,7 @@ class Detectron2Model(ModelBase):
             "width": width
         }
     
-    def forward(self, input):
+    def forward(self, input,**kwargs):
         """
         The `forward` function takes an input, passes it through a model without gradient computation, and
         returns the outputs.
@@ -111,11 +111,11 @@ class Detectron2Model(ModelBase):
         """
         t0 = time.time()
         with torch.no_grad():
-            outputs = self.model.inference([input], do_postprocess=False)
+            outputs = self.model.inference([input], do_postprocess=kwargs.get(f"do_postprocess", False))
         t1 = time.time()
         return outputs
     
-    def postprocess(self, results, image_height, image_width, configs,return_segments=False, **kwargs):
+    def postprocess(self, results, image_height, image_width, confs,return_segments=False, **kwargs):
         """
         The `postprocess` function takes the outputs of the model and processes them to generate the final
         predictions.
@@ -139,7 +139,7 @@ class Detectron2Model(ModelBase):
         
         postprocessed_results = {}
         
-        thresholds = torch.tensor([configs.get(str(classes[k]), 1.0) for k in range(len(classes))])
+        thresholds = torch.tensor([confs.get(str(int(classes[k])), 1.0) for k in range(len(classes))])
         
         keep = scores > thresholds.to(scores.device)
         
@@ -190,7 +190,7 @@ class Detectron2Model(ModelBase):
             color = colormap[class_id] if colormap is not None else None
             mask = results["masks"][i] if len(results["masks"]) > 0 else None
             label = f"{class_id}" # TODO change to text labels
-            plot_one_box(box=box, img=image, mask=mask, mask_threshold=0.5, color=color, label=label, line_thickness=kwargs.get('line_thickness', 2), hide_bbox=kwargs.get('hide_bbox', False))
+            plot_one_box(box=box, img=image, mask=mask, mask_threshold=0.5, color=color, label=label)
         return image
         
 

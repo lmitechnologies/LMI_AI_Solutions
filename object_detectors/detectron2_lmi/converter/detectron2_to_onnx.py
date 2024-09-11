@@ -24,6 +24,7 @@ from detectron2.structures import Boxes
 from detectron2.utils.env import TORCH_VERSION
 from detectron2.utils.file_io import PathManager
 from detectron2.utils.logger import setup_logger
+import cv2
 
 
 def setup_cfg(args):
@@ -161,13 +162,8 @@ def get_sample_inputs(args):
     else:
         # get a sample data
         original_image = detection_utils.read_image(args.sample_image, format=cfg.INPUT.FORMAT)
-        # Do same preprocessing as DefaultPredictor
-        # TODO update to have fixed size
-        aug = T.ResizeShortestEdge(
-            [cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MIN_SIZE_TEST], cfg.INPUT.MAX_SIZE_TEST
-        )
+        
         height, width = original_image.shape[:2]
-        image = aug.get_transform(original_image).apply_image(original_image)
         image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
 
         inputs = {"image": image, "height": height, "width": width}
