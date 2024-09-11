@@ -30,7 +30,7 @@ logging.getLogger("EngineBuilder").setLevel(logging.INFO)
 log = logging.getLogger("EngineBuilder")
 
 sys.path.insert(1, os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
-import common
+import detectron2_lmi.utils.common_runtime as common
 
 
 
