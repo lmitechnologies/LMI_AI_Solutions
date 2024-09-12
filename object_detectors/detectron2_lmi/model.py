@@ -129,7 +129,7 @@ if __name__ == "__main__":
     model.warmup()
     print(args.image_path)
     image = cv2.imread(args.image_path, -1)
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     t0 = time.time()
     output = model.predict([image])
     print("Inference time: {:.2f} ms".format((time.time() - t0) * 1000))
