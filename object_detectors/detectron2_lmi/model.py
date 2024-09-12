@@ -7,6 +7,7 @@ from typing import Optional
 from detectron2.structures import Instances, Boxes, ROIMasks
 import torch
 from gadget_utils.pipeline_utils import plot_one_box, resize_image
+import cv2
 
 class Detectron2TRT(ModelBase):
     
@@ -92,6 +93,17 @@ class Detectron2TRT(ModelBase):
         for o in range(len(outputs)):
             common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
         return outputs
+    
+    def mask_to_polygons(self, mask):
+        mask = np.ascontiguousarray(mask)  # some versions of cv2 does not support incontiguous arr
+        res = cv2.findContours(mask.astype("uint8"), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
+        hierarchy = res[-1]
+        if hierarchy is None:  # empty mask
+            return [], False
+        res = res[-2]
+        res[:, :, 0] += 0.5
+        res[:, :, 1] += 0.5
+        return res
 
     def postprocess(self, image, predictions):
         """_summary_
@@ -103,33 +115,31 @@ class Detectron2TRT(ModelBase):
         Returns:
             _type_: _description_
         """
-        # assuming batch size is 1
-        if len(predictions) == 0 or len(predictions[0]) == 0:
-            return {
+        results = {
                 "boxes": [],
                 "scores": [],
                 "classes": [],
                 "masks": []
             }
+        # assuming batch size is 1
+        if len(predictions) == 0 or len(predictions[0]) == 0:
+            return results
         instances = predictions[0][0]
         boxes = predictions[1][0]
-        masks = predictions[4][0]
+        boxes = boxes[:, [1, 0, 3, 2]]
+        boxes[:, 0] *= image.shape[1]
+        boxes[:, 1] *= image.shape[0]
+        boxes[:, 2] *= image.shape[1]
+        boxes[:, 3] *= image.shape[0]
         scores = predictions[2][0]
-        classes = predictions[3][0]
-        results = {
-            "boxes": [],
-            "scores": [],
-            "classes": [],
-            "masks": []
-        }
+        classes = predictions[3][0].astype(int)
+        
+        # transpose the boxes from (y1, x1, y2, x2) to (x1, y1, x2, y2) without loop
+        
+        
         image_h, image_w = image.shape[0], image.shape[1]
         for i in range(0, instances):
             y1, x1, y2, x2 = boxes[i]
-            x1, y1, x2, y2 = x1*image_w, y1*image_h, x2*image_w, y2*image_h
-            mask = masks[i]
-            results["boxes"].append([x1, y1, x2, y2])
-            results["scores"].append(scores[i])
-            results["classes"].append(classes[i])
             w = x2 - x1 # width
             h = y2 - y1 # height
             mask = mask.astype(np.uint8)
@@ -139,6 +149,12 @@ class Detectron2TRT(ModelBase):
             crop_mask[round(y1):round(y2), round(x1):round(x2)] = mask
             mask = crop_mask
             results["masks"].append(mask)
+            # get the segments from the mask using contours
+            polygons = self.mask_to_polygons(mask)
+            results["segments"].append(polygons)
+        results["boxes"] = boxes
+        results["scores"] = scores
+        results["classes"] = classes
         return results 
             
     def predict(self, image):
