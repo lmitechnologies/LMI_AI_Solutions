@@ -72,7 +72,7 @@ class Detectron2TRT(ModelBase):
             _type_: _description_
         """
         image_h, image_w = self.input_shape[2], self.input_shape[3]
-        input = np.zeros((self.batch_size, 3, image_h, image_w), dtype=np.float32)
+        input = np.zeros((self.batch_size, 3, image_h, image_w), dtype=self.data_type)
         if isinstance(images, np.ndarray):
             images = [images]
         for i, image in enumerate(images):
@@ -85,7 +85,7 @@ class Detectron2TRT(ModelBase):
         outputs = []
         for shape, dtype in self.output_spec():
             outputs.append(np.zeros(shape, dtype))
-        # Process I/O and execute the network.
+            
         common.memcpy_host_to_device(
             self.model_inputs[0]["allocation"], np.ascontiguousarray(inputs)
         )
@@ -134,9 +134,6 @@ class Detectron2TRT(ModelBase):
         scores = predictions[2][0]
         classes = predictions[3][0].astype(int)
         
-        # transpose the boxes from (y1, x1, y2, x2) to (x1, y1, x2, y2) without loop
-        
-        
         image_h, image_w = image.shape[0], image.shape[1]
         for i in range(0, instances):
             y1, x1, y2, x2 = boxes[i]
@@ -144,14 +141,15 @@ class Detectron2TRT(ModelBase):
             h = y2 - y1 # height
             mask = mask.astype(np.uint8)
             mask = resize_image(mask, H=h, W=w)
-            # crop the mask to the bbox size
-            crop_mask = np.zeros((image_h, image_w), dtype=np.uint8)
-            crop_mask[round(y1):round(y2), round(x1):round(x2)] = mask
-            mask = crop_mask
             results["masks"].append(mask)
-            # get the segments from the mask using contours
-            polygons = self.mask_to_polygons(mask)
-            results["segments"].append(polygons)
+            # crop the mask to the bbox size
+            # crop_mask = np.zeros((image_h, image_w), dtype=np.uint8)
+            # crop_mask[round(y1):round(y2), round(x1):round(x2)] = mask
+            # mask = crop_mask
+            # results["masks"].append(mask)
+            # # get the segments from the mask using contours
+            # polygons = self.mask_to_polygons(mask)
+            # results["segments"].append(polygons)
         results["boxes"] = boxes
         results["scores"] = scores
         results["classes"] = classes
@@ -162,3 +160,36 @@ class Detectron2TRT(ModelBase):
         predictions = self.forward(input)
         results = self.postprocess(image, predictions)
         return results
+    
+    def annotate_image(self, results, image):
+        for i in range(len(results["boxes"])):
+            plot_one_box(
+                results["boxes"][i],
+                image,
+                label=f"{results['classes'][i]}",
+                mask=results["masks"][i],
+                color=[0, 255, 0],
+            )
+        return image
+
+
+if __name__ == "__main__":
+    import argparse
+    import glob
+    import os
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--model_path", type=str, required=True)
+    parser.add_argument("--images_path", type=str, required=True)
+    args = parser.parse_args()
+    model = Detectron2TRT(args.model_path)
+    model.warmup()
+    
+    images = glob.glob(os.path.join(args.images_path, "*.png"))
+    for image in images:
+        image = cv2.imread(image)
+        
+        results = model.predict(image)
+        annotated_image = model.annotate_image(results, image)
+    
+    
