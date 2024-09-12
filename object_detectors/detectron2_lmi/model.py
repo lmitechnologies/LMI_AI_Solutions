@@ -133,5 +133,5 @@ if __name__ == "__main__":
     t0 = time.time()
     output = model.predict([image])
     print("Inference time: {:.2f} ms".format((time.time() - t0) * 1000))
-    for box in output["boxes"]:
+    for box in output["boxes"][0]:
         print(box)
