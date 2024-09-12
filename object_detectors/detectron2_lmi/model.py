@@ -17,10 +17,11 @@ class Detectron2TRT(ModelBase):
         trt.init_libnvinfer_plugins(self.logger, namespace="")
         with open(model_path, "rb") as f, trt.Runtime(self.logger) as runtime:
             self.engine = runtime.deserialize_cuda_engine(f.read())
+        
         self.context = self.engine.create_execution_context()
 
-        self.inputs = []
-        self.outputs = []
+        self.model_inputs = []
+        self.model_outputs = []
         self.allocations = []
         for i in range(self.engine.num_io_tensors):
             name = self.engine.get_tensor_name(i)
@@ -45,14 +46,18 @@ class Detectron2TRT(ModelBase):
             }
             self.allocations.append(allocation)
             if is_input:
-                self.inputs.append(binding)
+                self.model_inputs.append(binding)
             else:
-                self.outputs.append(binding)
+                self.model_outputs.append(binding)
+        self.input_shape = self.model_inputs[0]["shape"]
+        self.data_type = self.model_inputs[0]["dtype"]
+        self.input_width = self.input_shape[3]
+        self.input_height = self.input_shape[2]
     
     def warmup(self):
         """_summary_
         """
-        image_h, image_w = self.input_shape[2], self.input_shape[3]
+        image_h, image_w = self.input_height, self.input_width
         input = np.random.rand(self.batch_size, 3, image_h, image_w).astype(self.data_type)
         self.forward(input)
         
@@ -75,17 +80,17 @@ class Detectron2TRT(ModelBase):
             input[i] = image.astype(np.float32).transpose(2, 0, 1)
         return input
     
-    def forward(self, inps):
+    def forward(self, inputs):
         outputs = []
         for shape, dtype in self.output_spec():
             outputs.append(np.zeros(shape, dtype))
         # Process I/O and execute the network.
         common.memcpy_host_to_device(
-            self.inputs[0]["allocation"], np.ascontiguousarray(inps)
+            self.model_inputs[0]["allocation"], np.ascontiguousarray(inputs)
         )
         self.context.execute_v2(self.allocations)
         for o in range(len(outputs)):
-            common.memcpy_device_to_host(outputs[o], self.outputs[o]["allocation"])
+            common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
         return outputs
 
     def postprocess(self, image, predictions):
@@ -99,6 +104,13 @@ class Detectron2TRT(ModelBase):
             _type_: _description_
         """
         # assuming batch size is 1
+        if len(predictions) == 0 or len(predictions[0]) == 0:
+            return {
+                "boxes": [],
+                "scores": [],
+                "classes": [],
+                "masks": []
+            }
         instances = predictions[0][0]
         boxes = predictions[1][0]
         masks = predictions[4][0]
