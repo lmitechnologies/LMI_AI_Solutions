@@ -133,5 +133,6 @@ if __name__ == "__main__":
     t0 = time.time()
     output = model.predict([image])
     print("Inference time: {:.2f} ms".format((time.time() - t0) * 1000))
-    print(output["scores"])
-    print(output["boxes"])
+    for box in output["boxes"]:
+        x1, y1, x2, y2 = box
+        print(x1, y1, x2, y2)
