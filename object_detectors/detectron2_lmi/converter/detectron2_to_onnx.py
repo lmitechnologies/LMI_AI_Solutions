@@ -161,11 +161,11 @@ def get_sample_inputs(args):
         return first_batch
     else:
         # get a sample data
-        original_image = detection_utils.read_image(args.sample_image, format=cfg.INPUT.FORMAT)
+        original_image = cv2.imread(args.sample_image)
         print(f"Processing image {args.sample_image}")
         print(f"Image size (h,w): {original_image.shape[:2]}")
         aug = T.ResizeShortestEdge(
-            [image.shape[0], image.shape[0]], image.shape[0]
+            [original_image.shape[0], original_image.shape[0]], original_image.shape[0]
         )
         image = aug.get_transform(original_image).apply_image(original_image)
         height, width = original_image.shape[:2]

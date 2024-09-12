@@ -90,19 +90,7 @@ class Detectron2TRT(ModelBase):
         return predictions
 
     def postprocess(self, images, predictions):
-        for i in range(0, self.batch_size):
-            image = images[i]
-            height, width = image.shape[:2]
-            instances = predictions[0][i]
-            for j in range(int(instances[0])):
-                bounding_box = predictions[1][i][j]
-                score = predictions[2][i][j]
-                class_id = predictions[3][i][j]
-                mask = predictions[4][i][j]
-                
-                print("Bounding box: ", bounding_box)
-                
-                # draw the bounding box
+        pass
             
             
     
