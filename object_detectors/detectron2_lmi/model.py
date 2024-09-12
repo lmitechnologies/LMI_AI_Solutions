@@ -140,7 +140,7 @@ class Detectron2TRT(ModelBase):
             w = x2 - x1 # width
             h = y2 - y1 # height
             mask = mask.astype(np.uint8)
-            mask = resize_image(mask, H=h, W=w)
+            mask = resize_image(mask, H=image_h, W=image_w)
             results["masks"].append(mask)
             # crop the mask to the bbox size
             # crop_mask = np.zeros((image_h, image_w), dtype=np.uint8)
