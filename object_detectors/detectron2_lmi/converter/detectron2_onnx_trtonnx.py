@@ -195,6 +195,7 @@ class DET2GraphSurgeon:
 
         # Image preprocessing.
         input_im = cv2.imread(sample_image)
+        print(input_im.shape)
         raw_height, raw_width = input_im.shape[:2]
         image = predictor.aug.get_transform(input_im).apply_image(input_im)
         image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
