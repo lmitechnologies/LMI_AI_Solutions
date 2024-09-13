@@ -14,13 +14,13 @@ class Detectron2TRT(ModelBase):
     def __init__(self, model_path):
         
         # Load TRT engine
-        self.logger = trt.Logger(trt.Logger.INFO)
+        self.logger = trt.Logger(trt.Logger.ERROR)
         trt.init_libnvinfer_plugins(self.logger, namespace="")
         with open(model_path, "rb") as f, trt.Runtime(self.logger) as runtime:
             self.engine = runtime.deserialize_cuda_engine(f.read())
-        
         self.context = self.engine.create_execution_context()
 
+        # Setup I/O bindings
         self.model_inputs = []
         self.model_outputs = []
         self.allocations = []
@@ -51,9 +51,7 @@ class Detectron2TRT(ModelBase):
             else:
                 self.model_outputs.append(binding)
         self.input_shape = self.model_inputs[0]["shape"]
-        self.data_type = self.model_inputs[0]["dtype"]
-        self.input_width = self.input_shape[3]
-        self.input_height = self.input_shape[2]
+        self.inputs_dtype = self.model_inputs[0]["dtype"]
     
     def warmup(self):
         """_summary_
@@ -83,94 +81,32 @@ class Detectron2TRT(ModelBase):
     
     def forward(self, inputs):
         outputs = []
-        for shape, dtype in self.output_spec():
-            outputs.append(np.zeros(shape, dtype))
-            
+        for out in self.model_outputs:
+            outputs.append(np.zeros(out["shape"], dtype=out["dtype"]))
         common.memcpy_host_to_device(
-            self.model_inputs[0]["allocation"], np.ascontiguousarray(inputs)
+            self.inputs[0]["allocation"], np.ascontiguousarray(inputs)
         )
         self.context.execute_v2(self.allocations)
-        for o in range(len(outputs)):
-            common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
-        return outputs
-    
-    def mask_to_polygons(self, mask):
-        mask = np.ascontiguousarray(mask)  # some versions of cv2 does not support incontiguous arr
-        res = cv2.findContours(mask.astype("uint8"), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_NONE)
-        hierarchy = res[-1]
-        if hierarchy is None:  # empty mask
-            return [], False
-        res = res[-2]
-        res[:, :, 0] += 0.5
-        res[:, :, 1] += 0.5
-        return res
-
-    def postprocess(self, image, predictions):
-        """_summary_
-
-        Args:
-            image (_type_): _description_
-            predictions (_type_): _description_
-
-        Returns:
-            _type_: _description_
-        """
-        results = {
-                "boxes": [],
-                "scores": [],
-                "classes": [],
-                "masks": []
-            }
-        # assuming batch size is 1
-        if len(predictions) == 0 or len(predictions[0]) == 0:
-            return results
-        instances = predictions[0][0]
-        boxes = predictions[1][0]
-        boxes = boxes[:, [1, 0, 3, 2]]
-        boxes[:, 0] *= image.shape[1]
-        boxes[:, 1] *= image.shape[0]
-        boxes[:, 2] *= image.shape[1]
-        boxes[:, 3] *= image.shape[0]
-        scores = predictions[2][0]
-        classes = predictions[3][0].astype(int)
         
-        image_h, image_w = image.shape[0], image.shape[1]
-        for i in range(0, instances):
-            y1, x1, y2, x2 = boxes[i]
-            w = x2 - x1 # width
-            h = y2 - y1 # height
-            mask = mask.astype(np.uint8)
-            mask = resize_image(mask, H=image_h, W=image_w)
-            results["masks"].append(mask)
-            # crop the mask to the bbox size
-            # crop_mask = np.zeros((image_h, image_w), dtype=np.uint8)
-            # crop_mask[round(y1):round(y2), round(x1):round(x2)] = mask
-            # mask = crop_mask
-            # results["masks"].append(mask)
-            # # get the segments from the mask using contours
-            # polygons = self.mask_to_polygons(mask)
-            # results["segments"].append(polygons)
-        results["boxes"] = boxes
-        results["scores"] = scores
-        results["classes"] = classes
-        return results 
-            
-    def predict(self, image):
-        input = self.preprocess(image)
+        for o in range(len(outputs)):
+            common.memcpy_device_to_host(outputs[o], self.outputs[o]["allocation"])
+        return outputs
+             
+    def predict(self, images):
+        input = self.preprocess(images)
         predictions = self.forward(input)
-        results = self.postprocess(image, predictions)
-        return results
+        return predictions
     
-    def annotate_image(self, results, image):
-        for i in range(len(results["boxes"])):
-            plot_one_box(
-                results["boxes"][i],
-                image,
-                label=f"{results['classes'][i]}",
-                mask=results["masks"][i],
-                color=[0, 255, 0],
-            )
-        return image
+    # def annotate_image(self, results, image):
+    #     for i in range(len(results["boxes"])):
+    #         plot_one_box(
+    #             results["boxes"][i],
+    #             image,
+    #             label=f"{results['classes'][i]}",
+    #             mask=results["masks"][i],
+    #             color=[0, 255, 0],
+    #         )
+    #     return image
 
 
 if __name__ == "__main__":
