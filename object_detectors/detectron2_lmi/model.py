@@ -48,11 +48,12 @@ class Detectron2TRT(ModelBase):
                 self.model_inputs.append(binding)
             else:
                 self.model_outputs.append(binding)
+        
         self.input_shape = self.model_inputs[0]["shape"]
         self.input_dtype = self.model_inputs[0]["dtype"]
 
         self.class_map = {
-            int(k): float(v) for k, v in class_map.items()
+            int(k): str(v) for k, v in class_map.items()
         }
     
     def warmup(self):
@@ -128,6 +129,7 @@ class Detectron2TRT(ModelBase):
                 im_mask[y_0:y_1, x_0:x_1] = mask[
                     (y_0 - box[1]) : (y_1 - box[1]), (x_0 - box[0]) : (x_1 - box[0])
                 ]
+
                 result["masks"].append(im_mask)
                 result["boxes"].append(box)
                 result["scores"].append(scores[i][n])
