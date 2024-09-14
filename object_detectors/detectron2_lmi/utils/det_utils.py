@@ -56,7 +56,7 @@ def create_config(cfg_file_path, detectron2_config_file, output_dir):
     # get the model configuration to use
     # load the config from the file
     cfg.merge_from_file(model_zoo.get_config_file(detectron2_config_file))
-    cfg.merge_from_list(cfg_file_path)
+    cfg.merge_from_file(cfg_file_path)
 
     # set the model weights
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(detectron2_config_file)
