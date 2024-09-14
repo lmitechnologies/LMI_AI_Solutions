@@ -1,152 +1,39 @@
 import os
-import logging 
-from collections import OrderedDict, namedtuple
-from collections.abc import Sequence
-import tensorrt as trt
-import torch
-import numpy as np
 import cv2
-from torchvision.transforms import v2
+import numpy as np
+import logging
+import torch
 import json
+import subprocess
+from abc import ABC, abstractmethod
+
 import gadget_utils.pipeline_utils as pipeline_utils
 
 
 logging.basicConfig()
-logger = logging.getLogger('AnomalyModel v2')
-logger.setLevel(logging.INFO)
 
 
 MINIMUM_QUANT=1e-12
-Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
 
-
-class AnomalyModel:
-    '''
-    Desc: Class used for AD model inference.
-    '''
+class Anomalib_Base(ABC):
     
-    def __init__(self, model_path):
-        """_summary_
-
-        Args:
-            model_path (str): the path to the model file, either a pt or trt engine file
-
-        attributes:
-            - self.device: device to run model on
-            - self.fp16: flag for half precision
-            - self.shape_inspection: model input shape (h,w)
-            - self.inference_mode: model inference mode (TRT or PT)
-        """
-        if torch.cuda.is_available():
-            self.device = torch.device('cuda:0')
-        else:
-            logger.warning('GPU device unavailable. Use CPU instead.')
-            self.device = torch.device('cpu')
-        _,ext = os.path.splitext(model_path)
-        self.fp16 = False
-        logger.info(f"Loading model: {model_path}")
-        if ext=='.engine':
-            with open(model_path, "rb") as f, trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
-                model = runtime.deserialize_cuda_engine(f.read())
-            self.context = model.create_execution_context()
-            self.bindings = OrderedDict()
-            self.output_names = []
-            for i in range(model.num_bindings):
-                name = model.get_tensor_name(i)
-                dtype = trt.nptype(model.get_tensor_dtype(name))
-                shape = tuple(self.context.get_tensor_shape(name))
-                logger.info(f'binding {name} ({dtype}) with shape {shape}')
-                if model.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
-                    if dtype == np.float16:
-                        self.fp16 = True
-                else:
-                    self.output_names.append(name)
-                im = self.from_numpy(np.empty(shape, dtype=dtype)).to(self.device)
-                self.bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
-            self.binding_addrs = OrderedDict((n, d.ptr) for n, d in self.bindings.items())
-            self.shape_inspection=list(shape[-2:])
-            self.inference_mode='TRT'
-        elif ext=='.pt':  
-            checkpoint = torch.load(model_path,map_location=self.device)
-            self.pt_model = checkpoint['model']
-            self.pt_model.eval()
-            self.pt_model.to(self.device)
-            self.pt_metadata = checkpoint["metadata"]
-            logger.info(f"Model metadata: {self.pt_metadata}")
-            for d in self.pt_model.transform.transforms:
-                if isinstance(d, v2.Resize):
-                    self.shape_inspection = d.size
-            self.inference_mode='PT'
-        else:
-            raise Exception(f'Unknown model format: {ext}')
-        
-        
+    logger = logging.getLogger('Anomalib Base')
+    logger.setLevel(logging.INFO)
+    
+    
+    @abstractmethod
+    def __init__(self) -> None:
+        pass
+    
+    
     @torch.inference_mode()
     def from_numpy(self, x):
+        """
+        convert numpy array to torch tensor
+        """
         return torch.from_numpy(x).to(self.device) if isinstance(x, np.ndarray) else x
-    
-    
-    @torch.inference_mode()
-    def preprocess(self, image):
-        '''
-        Desc: Preprocess input image.
-        args:
-            - image: numpy array [H,W,Ch]
-        
-        '''
-        img = self.from_numpy(image).float()
-        
-        if self.inference_mode=='TRT':
-            h, w =  self.shape_inspection
-            img = pipeline_utils.resize_image(img, H=h, W=w)
-            
-        # resize baked into the pt model
-        img = img.permute((2, 0, 1)).unsqueeze(0).contiguous()
-        img = img / 255.0
-        return img.half() if self.fp16 else img
-        
-        
-    @torch.inference_mode()
-    def predict(self, image):
-        '''
-        Desc: Model prediction 
-        Args: image: numpy array [H,W,Ch]
-        
-        Note: predict calls the preprocess method
-        returns:
-            - output: resized output to match training data's size
-        '''
-        input_batch = self.preprocess(image)
-        if self.inference_mode=='TRT':
-            self.binding_addrs['input'] = int(input_batch.data_ptr())
-            self.context.execute_v2(list(self.binding_addrs.values()))
-            outputs = {x:self.bindings[x].data for x in self.output_names}
-            output = outputs['output']
-        elif self.inference_mode=='PT':
-            preds = self.pt_model(input_batch)
-            if isinstance(preds, torch.Tensor):
-                output = preds
-            elif isinstance(preds, dict):
-                output = preds['anomaly_map']
-            elif isinstance(preds, Sequence):
-                output = preds[1]
-            else:
-                raise Exception(f'Unknown prediction type: {type(preds)}')
-        if isinstance(output, torch.Tensor):
-            output = output.cpu().numpy()
-        output = np.squeeze(output)
-        return output
-        
 
-    def warmup(self):
-        '''
-        Desc: Warm up model using a np zeros array with shape matching model input size.
-        Args: None
-        '''
-        shape=self.shape_inspection+[3,]
-        self.predict(np.zeros(shape))
-    
-    
+
     def convert_to_onnx(self, export_path, opset_version=14):
         '''
         Desc: Convert existing .pt file to onnx
@@ -170,8 +57,8 @@ class AnomalyModel:
         )
         
     
-    @staticmethod
-    def convert_trt(onnx_path, out_engine_path, fp16, workspace=4096):
+    @classmethod
+    def convert_trt(cls, onnx_path, out_engine_path, fp16, workspace=4096):
         """
         Desc: Convert an onnx to trt engine
         Args:
@@ -180,23 +67,34 @@ class AnomalyModel:
             - fp16: set fixed point width
             - workspace: conversion memory size in MB
         """
-        logger.info(f"converting {onnx_path}...")
-        assert(out_engine_path.endswith(".engine")), f"trt engine file must end with '.engine'"
-        target_dir = os.path.dirname(out_engine_path)
-        if not os.path.isdir(target_dir):
-            os.makedirs(target_dir)
-        convert_cmd = (f'trtexec --onnx={onnx_path} --saveEngine={out_engine_path}'
-                       f' --memPoolSize=workspace:{workspace}') + (' --fp16' if fp16 else ' ')
-        os.system(convert_cmd)
+        if not out_engine_path.endswith(".engine"):
+            raise Exception(f"trt engine file must end with '.engine'")
+        
+        out_dir = os.path.dirname(out_engine_path)
+        os.makedirs(out_dir, exist_ok=True)
+        
+        # run convert cmd
+        cmd = [
+            'trtexec',
+            f'--onnx={onnx_path}',
+            f'--saveEngine={out_engine_path}',
+            f'--memPoolSize=workspace:{workspace}'
+        ]
+        if fp16:
+            cmd.append('--fp16')
+        subprocess.run(cmd, check=True)
+        
         # check if metadata.json exists in the same directory as onnx_path
-        if os.path.isfile(f"{os.path.dirname(onnx_path)}/metadata.json"):
-            os.system(f"cp {os.path.dirname(onnx_path)}/metadata.json {os.path.dirname(out_engine_path)}")
+        onnx_dir = os.path.dirname(onnx_path)
+        if os.path.isfile(f"{onnx_dir}/metadata.json"):
+            cmd2 = [f"cp {onnx_dir}/metadata.json {out_dir}"]
+            subprocess.run(cmd2, shell=True)
         else:
-            logger.warning(f"metadata.json not found in {os.path.dirname(onnx_path)}")
+            cls.logger.warning(f"metadata.json not found in {onnx_dir}")
             
             
-    @staticmethod
-    def convert(model_path, export_path, fp16):
+    @classmethod
+    def convert(cls, model_path, export_path, fp16):
         '''
         Desc: Converts .onnx or .pt file to tensorRT engine
         
@@ -209,20 +107,20 @@ class AnomalyModel:
             raise Exception('Export path should be a directory.')
         ext = os.path.splitext(model_path)[1]
         if ext == '.onnx':
-            logger.info('Converting onnx to trt...')
+            cls.logger.info('Converting onnx to trt...')
             trt_path = os.path.join(export_path, 'model.engine')
-            AnomalyModel.convert_trt(model_path, trt_path, fp16)
+            cls.convert_trt(model_path, trt_path, fp16)
         elif ext == '.pt':
-            model = AnomalyModel(model_path)
+            model = cls(model_path)
             # convert to onnx
-            logger.info('Converting pt to onnx...')
+            cls.logger.info('Converting pt to onnx...')
             onnx_path = os.path.join(export_path, 'model.onnx')
             model.convert_to_onnx(onnx_path)
-            logger.info(f'the onnx model is saved at {onnx_path}')
+            cls.logger.info(f'the onnx model is saved at {onnx_path}')
             # # convert to trt
-            logger.info('Converting onnx to trt engine...')
+            cls.logger.info('Converting onnx to trt engine...')
             trt_path = os.path.join(export_path, 'model.engine')
-            model.convert_trt(onnx_path, trt_path, fp16)
+            cls.convert_trt(onnx_path, trt_path, fp16)
             
             
     @staticmethod
@@ -261,8 +159,8 @@ class AnomalyModel:
         return sorted_contours, bboxes
     
     
-    @staticmethod
-    def test(engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs=True,anom_threshold=None,anom_max=None):
+    @classmethod
+    def test(cls, engine_path, images_path, annot_dir,generate_stats=True,annotate_inputs=True,anom_threshold=None,anom_max=None):
         """
         Desc: test model performance
         Args:
@@ -308,7 +206,7 @@ class AnomalyModel:
         # Input data
         directory_path=Path(images_path)
         images=list(directory_path.rglob('*.png')) + list(directory_path.rglob('*.jpg'))
-        logger.info(f"{len(images)} images from {images_path}")
+        cls.logger.info(f"{len(images)} images from {images_path}")
         if not images:
             return
         
@@ -318,13 +216,13 @@ class AnomalyModel:
             os.makedirs(out_path)
 
         # Load model from .pt or .engine
-        pc = AnomalyModel(engine_path)
+        pc = cls(engine_path)
         pc.warmup()
 
         proctime = []
         img_all,anom_all,fname_all,path_all=[],[],[],[]
         for image_path in images:
-            logger.info(f"Processing image: {image_path}.")
+            cls.logger.info(f"Processing image: {image_path}.")
             image_path=str(image_path)
             img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
             t0 = time.time()
@@ -340,7 +238,7 @@ class AnomalyModel:
         
         if generate_stats:
             # Compute & Validate pdf
-            logger.info(f"Computing anomaly score PDF for all data.")
+            cls.logger.info(f"Computing anomaly score PDF for all data.")
             anom_sq=np.squeeze(np.array(anom_all))
             data=np.ravel(anom_sq)
             # Fit gamma distribution to anomaly data across entire data set
@@ -359,7 +257,7 @@ class AnomalyModel:
             quantile_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
             # Reduce threshold range when threshold values are too far into the tail of the gamma distribution (quantile goes to zero)
             while quantile_patch.min()<MINIMUM_QUANT:
-                logger.warning(f'Patch quantile saturated with max anomaly score: {max_data}, reducing to {max_data/2}')
+                cls.logger.warning(f'Patch quantile saturated with max anomaly score: {max_data}, reducing to {max_data/2}')
                 max_data=max_data/1.2
                 threshold = np.linspace(min(data), max_data, 10)
                 quantile_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
@@ -382,12 +280,12 @@ class AnomalyModel:
             tp=[threshold_str,quantile_patch_str,quantile_sample_str]
             # Print statistics
             tp_print=tabulate(tp, tablefmt='grid')
-            logger.info('Threshold options:\n'+tp_print)
+            cls.logger.info('Threshold options:\n'+tp_print)
 
         if annotate_inputs:     
             if anom_threshold is None and generate_stats: 
                 anom_threshold=gamma.ppf(0.5,alpha_hat,loc=loc_hat,scale=beta_hat)
-                logger.info(f'Anomaly patch threshold for 50% patch failure rate:{anom_threshold}')
+                cls.logger.info(f'Anomaly patch threshold for 50% patch failure rate:{anom_threshold}')
             if anom_max is None and generate_stats:
                 # Sample target hard coded for 3% failure rate
                 p_sample_target=0.03
@@ -396,13 +294,13 @@ class AnomalyModel:
                     p_target=find_p(threshold,quantile_patch,quantile_sample, p_sample_target)
                     # find the anomaly score coresponding to that p_patch    
                     anom_max = gamma.ppf(1-p_target,alpha_hat,loc=loc_hat,scale=beta_hat)
-                    logger.info(f'Anomaly max set to 97 percentile:{anom_max}')
+                    cls.logger.info(f'Anomaly max set to 97 percentile:{anom_max}')
                 else:
                     anom_max=threshold.max()
-                    logger.warning(f'Anomaly patch max set to minimum discernable value: {anom_max} due to vanishing gradient in the patch quantile.  Sample failure rate: {quantile_sample.min()*100:.2e}')
+                    cls.logger.warning(f'Anomaly patch max set to minimum discernable value: {anom_max} due to vanishing gradient in the patch quantile.  Sample failure rate: {quantile_sample.min()*100:.2e}')
                     
             results=zip(img_all,anom_all,fname_all)
-            AnomalyModel.plot_fig(results,annot_dir,err_thresh=anom_threshold,err_max=anom_max)
+            cls.plot_fig(results,annot_dir,err_thresh=anom_threshold,err_max=anom_max)
             
         # get anom stats
         means = np.array([anom.mean() for anom in anom_all])
@@ -427,14 +325,14 @@ class AnomalyModel:
             
         if proctime:
             proctime = np.asarray(proctime)
-            logger.info(f'Min Proc Time: {proctime.min()}')
-            logger.info(f'Max Proc Time: {proctime.max()}')
-            logger.info(f'Avg Proc Time: {proctime.mean()}')
-            logger.info(f'Median Proc Time: {np.median(proctime)}')
-        logger.info(f"Test results saved to {out_path}")
+            cls.logger.info(f'Min Proc Time: {proctime.min()}')
+            cls.logger.info(f'Max Proc Time: {proctime.max()}')
+            cls.logger.info(f'Avg Proc Time: {proctime.mean()}')
+            cls.logger.info(f'Median Proc Time: {np.median(proctime)}')
+        cls.logger.info(f"Test results saved to {out_path}")
         if generate_stats:
             # Repeat error table
-            logger.info('Threshold options:\n'+tp_print)
+            cls.logger.info('Threshold options:\n'+tp_print)
             
             
     @staticmethod
@@ -514,42 +412,4 @@ class AnomalyModel:
                 os.makedirs(folder)
             fig_img.savefig(filepath, dpi=100)
             plt.close()
-
-
-
-if __name__ == '__main__':
-    import argparse
-
-    ap = argparse.ArgumentParser()
-    ap.add_argument('-a','--action', default="test", help='Action: convert, test')
-    ap.add_argument('-i','--model_path', default="/app/model/model.pt", help='Input model file path.')
-    ap.add_argument('-e','--export_dir', default="/app/export")
-    ap.add_argument('-d','--data_dir', default="/app/data", help='Data file directory.')
-    ap.add_argument('-o','--annot_dir', default="/app/annotation_results", help='Annot file directory.')
-    ap.add_argument('-g','--generate_stats', action='store_true',help='generate the data stats')
-    ap.add_argument('-p','--plot',action='store_true', help='plot the annotated images')
-    ap.add_argument('-t','--ad_threshold',type=float,default=None,help='AD patch threshold.')
-    ap.add_argument('-m','--ad_max',type=float,default=None,help='AD patch max anomaly.')
-
-    args = vars(ap.parse_args())
-    action=args['action']
-    model_path = args['model_path']
-    export_dir = args['export_dir']
-    if action=='convert':
-        if not os.path.isfile(model_path):
-            raise Exception('Cannot find the model file. Need a valid model file to convert.')
-        if not os.path.exists(export_dir):
-            os.makedirs(export_dir)
-        AnomalyModel.convert(model_path,export_dir,fp16=True)
-
-    if action=='test':
-        if not os.path.isfile(model_path):
-            raise Exception(f'Error finding {model_path}. Need a valid model file to test model.')
-        if not os.path.exists(args['annot_dir']):
-            os.makedirs(args['annot_dir'])
-        AnomalyModel.test(model_path, args['data_dir'],
-             args['annot_dir'],
-             generate_stats=args['generate_stats'],
-             annotate_inputs=args['plot'],
-             anom_threshold=args['ad_threshold'],
-             anom_max=args['ad_max'])
+    
