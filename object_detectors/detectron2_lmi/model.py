@@ -168,7 +168,6 @@ if __name__ == "__main__":
     import glob
     import os
     import time
-    import concurrent.futures
     
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, default="")

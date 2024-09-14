@@ -3,12 +3,6 @@ DATASETS:
   TEST: [] # define the test dataset similar to the train dataset or leave it as empty list (use the name "test_dataset")
   TRAIN:
   - train_dataset
-  ROOT_DIR: /home/dataset/train # Path to the training dataset directory
-  TEST_DIR: /home/dataset/test # Path to the test dataset directory
-
-ROI_BOX_HEAD:
-  - NUM_CLASSES: 80 # Number of classes in the dataset
-  - SCORE_THRESH_TEST: 0.05 # test score threshold
 
 # Training parameters
 SOLVER:
