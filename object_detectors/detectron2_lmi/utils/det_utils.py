@@ -41,11 +41,9 @@ def register_datasets(dataset_dir: str, dataset_name: str):
             )
         else:
             raise ValueError(f"Invalid dataset directory {dataset_dir} for dataset {dataset_name}")
-    else:
-        raise ValueError(f"Dataset directory {dataset_dir} does not exist")
 
 
-def create_config(cfg_file_path):
+def create_config(cfg_file_path, detectron2_config_file, output_dir):
     # get the default config
     cfg = get_cfg()
 
@@ -56,27 +54,21 @@ def create_config(cfg_file_path):
 
     configuration = yaml.safe_load(open(cfg_file_path, "r"))
     # get the model configuration to use
-    detectron2_yaml = configuration.get("MODEL_CONFIG_FILE", None)
-    if detectron2_yaml is None:
-        raise ValueError("MODEL_CONFIG_FILE not specified in the config file")
-    
     # load the config from the file
-    cfg.merge_from_file(model_zoo.get_config_file(detectron2_yaml))
-
-    # override the values in the config file
-    merge_a_into_b(configuration, cfg)
+    cfg.merge_from_file(model_zoo.get_config_file(detectron2_config_file))
+    cfg.merge_from_list(cfg_file_path)
 
     # set the model weights
-    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(detectron2_yaml)
+    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(detectron2_config_file)
 
     version = 1
-    output_dir = f"{date.today()}-v{version}"
+    output_dir = os.path.join(output_dir, f"{date.today()}-v{version}")
     # determine the version number based on the existing directories
     while os.path.exists(output_dir):
         version += 1
-        output_dir = f"{date.today()}-v{version}"
+        output_dir = os.path.join(output_dir, f"{date.today()}-v{version}")
     
-    cfg.OUTPUT_DIR = os.path.join(f"/home/training", output_dir)
+    cfg.OUTPUT_DIR = output_dir
     logger.info(f"Output directory: {cfg.OUTPUT_DIR}")
 
 

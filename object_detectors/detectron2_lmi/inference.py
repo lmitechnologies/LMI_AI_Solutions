@@ -23,7 +23,7 @@ TODO Update for deploying to LMI AISolutions
 class Detectron2Model(ModelBase):
     logger = logging.getLogger(__name__)
     
-    def __init__(self,weights_path: str, config_file: str, class_map: dict):
+    def __init__(self,weights_path: str, config_file: str, detectron2_config_file: str, class_map: dict):
         """
         The function initializes a model with specified weights and configuration for object detection tasks
         in Python.
@@ -38,10 +38,9 @@ class Detectron2Model(ModelBase):
         predictions
         :type config_file: str
         """
-        configuration = yaml.safe_load(open(config_file, "r"))
         self.cfg = get_cfg()
-        self.cfg.merge_from_file(model_zoo.get_config_file(configuration["MODEL_CONFIG_FILE"]))
-        merge_a_into_b(configuration, self.cfg)
+        self.cfg.merge_from_file(model_zoo.get_config_file(detectron2_config_file))
+        self.cfg.merge_from_file(config_file)
         self.cfg = self.cfg.clone()
         self.model = build_model(self.cfg)
         self.model.eval()
@@ -62,7 +61,7 @@ class Detectron2Model(ModelBase):
         gradient computation.
         """
         # create a tensor input for warmup
-        input = dict(image=torch.randint(high=255, size=(3,self.cfg.INPUT.MAX_SIZE_TEST, self.cfg.INPUT.MAX_SIZE_TEST,)).to(torch.float32).to(self.device), height=self.cfg.INPUT.MAX_SIZE_TEST, width=self.cfg.INPUT.MAX_SIZE_TEST) # TODO: make sure to make this more general
+        input = dict(image=torch.randint(high=255, size=(3,self.cfg.INPUT.MAX_SIZE_TEST, self.cfg.INPUT.MAX_SIZE_TEST,)).to(torch.float32).to(self.device), height=self.cfg.INPUT.MAX_SIZE_TEST, width=self.cfg.INPUT.MAX_SIZE_TEST) 
 
         # 10 iterations of forward pass without gradient computation
 
@@ -139,7 +138,7 @@ class Detectron2Model(ModelBase):
         
         postprocessed_results = {}
         
-        thresholds = torch.tensor([confs.get(str(int(classes[k])), 1.0) for k in range(len(classes))])
+        thresholds = torch.tensor([confs.get(self.class_map.get(int(classes[k])), 1.0) for k in range(len(classes))])
         
         keep = scores > thresholds.to(scores.device)
         

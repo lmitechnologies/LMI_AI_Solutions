@@ -9,7 +9,7 @@ import cv2
 
 class Detectron2TRT(ModelBase):
     
-    def __init__(self, model_path):
+    def __init__(self, model_path, class_map):
         """source: https://github.com/NVIDIA/TensorRT/tree/release/10.4/samples/python/detectron2"""
         
         self.logger = trt.Logger(trt.Logger.ERROR)
@@ -50,6 +50,10 @@ class Detectron2TRT(ModelBase):
                 self.model_outputs.append(binding)
         self.input_shape = self.model_inputs[0]["shape"]
         self.input_dtype = self.model_inputs[0]["dtype"]
+
+        self.class_map = {
+            int(k): float(v) for k, v in class_map.items()
+        }
     
     def warmup(self):
         """_summary_
@@ -88,8 +92,7 @@ class Detectron2TRT(ModelBase):
             common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
         return outputs
     
-
-    def postprocess(self,images, predictions, mask_threshold=0.0):
+    def postprocess(self,images, predictions, confidence_map, mask_threshold_map):
         results = []
         num_preds = predictions[0]
         boxes = predictions[1]
@@ -102,15 +105,22 @@ class Detectron2TRT(ModelBase):
             result = {"boxes": [], "scores": [], "classes": [], "masks": []}
             image_h, image_w = images[i].shape[0], images[i].shape[1]
             for n in range(0, int(num_preds[i])):
+                class_id = classes[i][n]
+                if scores[i][n] < confidence_map.get(int(class_id), 0.5):
+                    continue
+                
                 mask = masks[i][n]
                 box = boxes[i][n] * scale
                 box = box.astype(np.int32) 
+                
                 samples_w = box[2] - box[0] + 1
                 samples_h = box[3] - box[1] + 1
-                mask = mask > mask_threshold
+                
+                mask = mask > mask_threshold_map.get(int(class_id), 0.5)
                 mask = mask.astype(np.uint8)
                 mask = cv2.resize(mask, (samples_w, samples_h), interpolation=cv2.INTER_LINEAR)
                 im_mask = np.zeros((image_h, image_w), dtype=np.uint8)
+                
                 x_0 = max(box[0], 0)
                 x_1 = min(box[2] + 1, image_w)
                 y_0 = max(box[1], 0)
@@ -120,8 +130,8 @@ class Detectron2TRT(ModelBase):
                 ]
                 result["masks"].append(im_mask)
                 result["boxes"].append(box)
-                result["scores"] = scores[i]
-                result["classes"] = classes[i]
+                result["scores"].append(scores[i][n])
+                result["classes"].append(self.class_map[int(class_id)])
             results.append(result)
         return results
     
@@ -129,17 +139,17 @@ class Detectron2TRT(ModelBase):
         for i in range(0, len(images), self.batch_size):
             yield self.preprocess(images[i:i + self.batch_size])
 
-    def predict(self, images):
+    def predict(self, images, confidence_map, mask_threshold_map):
         results = []
         for batch in self.get_batches(images):
             predictions = self.forward(batch)
-            results.extend(self.postprocess(images, predictions))
+            results.extend(self.postprocess(images, predictions, confidence_map, mask_threshold_map))
         # input = self.preprocess(images)
         # predictions = self.forward(input)
         # postprocessed = self.postprocess(images, predictions)
         return results
     
-    def annotate_image(self, results, image):
+    def annotate_image(self, results, image, color_map=None):
         for i in range(len(results["boxes"])):
             mask = results["masks"][i]
             plot_one_box(
@@ -147,7 +157,7 @@ class Detectron2TRT(ModelBase):
                 image,
                 label=f"{results['classes'][i]}",
                 mask=mask,
-                color=[0, 255, 0],
+                color=color_map,
             )
         return image
 

@@ -3,9 +3,7 @@ import argparse
 import os
 from utils.det_utils import create_config, register_datasets
 from detectron2.utils.logger import setup_logger
-import concurrent.futures
 import sys
-import subprocess
 import signal
 import yaml
 
@@ -21,6 +19,7 @@ def train_model(cfg):
     trainer.train()
     return cfg.OUTPUT_DIR
 
+
 def main(args):
     # start tensorboard
     pid = os.fork()
@@ -32,12 +31,14 @@ def main(args):
         logger.info(f"Tensorboard started with PID {pid}")
     
     config_file = args.config_file
-    cfg, original_config = create_config(config_file)
+    cfg, original_config = create_config(config_file, args.detectron2_config, output_dir=args.output_dir)
+    
     # register the datasets train, test
-    for dataset_name, dataset_path in zip(original_config['DATASETS']["TRAIN"], original_config['DATASETS']["TRAIN_DIR"]):
+    for dataset_name, dataset_path in zip(original_config['DATASETS']["TRAIN"], os.path.join(args.dataset_dir, "train")):
         register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
-    for dataset_name, dataset_path in zip(original_config['DATASETS']["TEST"], original_config['DATASETS']["TEST_DIR"]):
+    for dataset_name, dataset_path in zip(original_config['DATASETS']["TEST"], os.path.join(args.dataset_dir, "test")):
         register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
+    
     logger.info("Starting training run")
     train_model(cfg)
     # kill tensorboard
@@ -57,6 +58,8 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config-file", type=str, help="Path to the config file")
+    parser.add_argument("--detectron2-config", type=str, help="Detectron2 config file", default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
+    parser.add_argument("--dataset-dir", type=int, help="Dataset dir", default="/home/data")
     parser.add_argument("--output-dir", type=str, help="Path to the output directory", default="/home/training/")
     args = parser.parse_args()
     main(args=args)
