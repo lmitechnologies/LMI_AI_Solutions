@@ -35,12 +35,9 @@ def main(args):
     logger.info(f"Dataset Directory: {args.dataset_dir}")
     logger.info(f"Output Directory: {cfg.OUTPUT_DIR}")
     # register the datasets train, test
-    for dataset_name, dataset_path in zip(original_config['DATASETS']["TRAIN"], os.path.join(args.dataset_dir, "train")):
-        logger.info(f"Registering dataset {dataset_name} from {dataset_path}")
-        register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
-    for dataset_name, dataset_path in zip(original_config['DATASETS']["TEST"], os.path.join(args.dataset_dir, "test")):
-        logger.info(f"Registering dataset {dataset_name} from {dataset_path}")
-        register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
+    
+    register_datasets(dataset_dir=os.path.join(args.dataset_dir, "train"), dataset_name=cfg.DATASETS.TRAIN[0])
+    register_datasets(dataset_dir=os.path.join(args.dataset_dir, "train"), dataset_name=cfg.DATASETS.TEST[0])
     
     logger.info("Starting training run")
     
