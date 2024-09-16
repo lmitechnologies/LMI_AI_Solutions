@@ -1,7 +1,7 @@
 from detectron2.engine import DefaultTrainer
 import argparse
 import os
-from utils.det_utils import create_config, register_datasets
+from utils.det_utils import create_config, register_datasets, kill_process_on_port
 from detectron2.utils.logger import setup_logger
 import sys
 import signal
@@ -22,6 +22,7 @@ def train_model(cfg):
 
 def main(args):
     # start tensorboard
+    kill_process_on_port(6006)
     pid = os.fork()
     if pid == 0:
         os.setsid()
