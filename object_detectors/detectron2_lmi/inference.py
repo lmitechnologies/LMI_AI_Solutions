@@ -264,7 +264,7 @@ if __name__ == "__main__":
             )
         shapes[fname] = results
             
-    write_to_csv(results, os.path.join(args.output_path, f"predictions.csv"), overwrite=True)
+    write_to_csv(shapes, os.path.join(args.output_path, f"predictions.csv"), overwrite=True)
             
         
         
