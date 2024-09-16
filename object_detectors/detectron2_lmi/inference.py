@@ -246,6 +246,7 @@ if __name__ == "__main__":
         t0 = time.time()
         outputs = model.predict(image=image, confs=confidence_map)
         t1 = time.time()
+        print(f"Prediction time: {(t1-t0) * 1000} ms")
         fname = os.path.basename(image_path)
         
         
