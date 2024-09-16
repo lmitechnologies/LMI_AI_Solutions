@@ -213,6 +213,10 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
+    
+    if not os.path.exists(args.output_path):
+        os.makedirs(args.output_path)
+    
     with open(args.class_map, "r") as f:
         class_map = json.load(f)
         
