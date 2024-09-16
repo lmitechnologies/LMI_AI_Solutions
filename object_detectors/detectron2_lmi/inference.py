@@ -208,7 +208,7 @@ if __name__ == "__main__":
     parser.add_argument("--detectron2-config", type=str, help="Detectron2 config file", default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
     parser.add_argument("--input-path", type=str, help="Path to the input folder")
     parser.add_argument("--output-path", type=str, help="Path to the output folder")
-    parser.add_argument("--confidence-map", type=str, help="Path to the confidence map file")
+    parser.add_argument("--confidence-threshold", type=float, help="Path to the confidence map file", default=0.5)
     parser.add_argument("--class-map", type=str, help="Class map json file")
     
     args = parser.parse_args()
@@ -216,8 +216,12 @@ if __name__ == "__main__":
     with open(args.class_map, "r") as f:
         class_map = json.load(f)
         
-    with open(args.confidence_map, "r") as f:
-        confidences = json.load(f)
+    # with open(args.confidence_map, "r") as f:
+    #     confidences = json.load(f)
+    
+    confidence_map = {
+        str(v): args.confidence_threshold for k,v in class_map.items()
+    }
     
     model = Detectron2Model(weights_path=args.weights, config_file=args.config_file, detectron2_config_file=args.detectron2_config, class_map=class_map)
     
@@ -235,7 +239,7 @@ if __name__ == "__main__":
             print(f"Error reading image {image_path}: {e}")
             continue
         t0 = time.time()
-        outputs = model.predict(image, confidences = confidences)
+        outputs = model.predict(image, confidences = confidence_map)
         t1 = time.time()
         fname = os.path.basename(image_path)
         
