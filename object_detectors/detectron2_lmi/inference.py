@@ -14,6 +14,8 @@ import time
 import cv2
 import numpy as np
 from gadget_utils.pipeline_utils import plot_one_box
+from label_utils.shapes import Rect, Mask, Keypoint
+import json
 
 
 """
@@ -155,7 +157,7 @@ class Detectron2Model(ModelBase):
         
         return postprocessed_results
     
-    def predict(self, image, configs, **kwargs):
+    def predict(self, image, confs, **kwargs):
         """
         The `predict` function preprocesses an image and then passes it through a neural network for forward
         propagation to make a prediction.
@@ -168,7 +170,7 @@ class Detectron2Model(ModelBase):
         input = self.preprocess(image)
         orig_height, orig_width = input["height"], input["width"]
         predictions = self.forward(input)
-        results = self.postprocess(predictions, orig_height, orig_width, configs,return_segments=kwargs.get("return_segments", False))
+        results = self.postprocess(predictions, orig_height, orig_width, confs,return_segments=kwargs.get("return_segments", False))
         return results
     
     
@@ -203,15 +205,29 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--weights", type=str, help="Path to the weights file")
     parser.add_argument("--config-file", type=str, help="Path to the config file")
+    parser.add_argument("--detectron2-config", type=str, help="Detectron2 config file", default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
     parser.add_argument("--input-path", type=str, help="Path to the input folder")
     parser.add_argument("--output-path", type=str, help="Path to the output folder")
+    parser.add_argument("--confidence-map", type=str, help="Path to the confidence map file")
+    parser.add_argument("--class-map", type=str, help="Class map json file")
+    
     args = parser.parse_args()
-    model = Detectron2Model(weights_path=args.weights, config_file=args.config_file)
+    
+    with open(args.class_map, "r") as f:
+        class_map = json.load(f)
+        
+    with open(args.confidence_map, "r") as f:
+        confidences = json.load(f)
+    
+    model = Detectron2Model(weights_path=args.weights, config_file=args.config_file, detectron2_config_file=args.detectron2_config, class_map=class_map)
+    
     model.warmup()
     
     images = glob.glob(os.path.join(args.input_path, "*")) # TODO change this to the correct extension
+    shapes = {}
 
     for image_path in images:
+        results = []
         print(f"Processing image {image_path}")
         try:
             image = cv2.imread(image_path, -1)
@@ -219,6 +235,23 @@ if __name__ == "__main__":
             print(f"Error reading image {image_path}: {e}")
             continue
         t0 = time.time()
-        outputs = model.predict(image, configs={0: 0.5})
+        outputs = model.predict(image, confidences = confidences)
         t1 = time.time()
+        fname = os.path.basename(image_path)
+        
+        
+        # annotate the image
+        annotated_image = model.annotate_image(image, outputs)
+        cv2.imwrite(os.path.join(args.output_path, fname), annotated_image)
+        
+        # write the output to a file
+        for i in range(len(outputs["classes"])):
+            box = outputs["boxes"][i]
+            class_id = outputs["classes"][i]
+            score = outputs["scores"][i]
+            results.append(
+                Rect(im_name=fname, category=class_id, up_left=box[:2].astype(int).tolist(), bottom_right=box[2:].astype(int).tolist(), confidence=score, angle=0)
+            )
+            
+        
         
