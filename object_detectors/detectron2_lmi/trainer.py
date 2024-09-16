@@ -22,13 +22,14 @@ def train_model(cfg):
 
 def main(args):
     # start tensorboard
-    # pid = os.fork()
-    # if pid == 0:
-    #     os.setsid()
-    #     os.system(f"tensorboard --logdir {args.output_dir} --port 6006")
-    #     sys.exit(0)
-    # else:
-    #     logger.info(f"Tensorboard started with PID {pid}")
+    os.system("pkill -f tensorboard")
+    pid = os.fork()
+    if pid == 0:
+        os.setsid()
+        os.system(f"tensorboard --logdir {args.output_dir} --port 6006")
+        sys.exit(0)
+    else:
+        logger.info(f"Tensorboard started with PID {pid}")
     
     config_file = args.config_file
     cfg, original_config = create_config(config_file, args.detectron2_config, output_dir=args.output_dir)
@@ -44,7 +45,7 @@ def main(args):
     
     train_model(cfg)
     # kill tensorboard
-    # os.kill(pid, signal.SIGTERM)
+    os.kill(pid, signal.SIGTERM)
 
     # update the config file with the output directory
     # load the yaml file in the output directory

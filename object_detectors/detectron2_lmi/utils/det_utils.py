@@ -84,23 +84,3 @@ def create_config(cfg_file_path, detectron2_config_file, output_dir):
     with open(cfg_file, "w") as f:
         f.write(yaml.dump(yaml.safe_load(cfg.dump())))
     return cfg, configuration
-
-
-def kill_process_on_port(port):
-    # Find processes using the given port
-    find_command = f"lsof -i :{port} -t"
-    
-    try:
-        # Get the list of process IDs using the port
-        process_ids = subprocess.check_output(find_command, shell=True).decode().strip().split('\n')
-        
-        if process_ids:
-            for pid in process_ids:
-                # Kill each process by PID
-                print(f"Killing process with PID: {pid}")
-                os.kill(int(pid), 9)  # Sends SIGKILL (9) to terminate the process
-            print(f"Successfully killed all processes using port {port}")
-        else:
-            print(f"No processes found using port {port}")
-    except subprocess.CalledProcessError:
-        print(f"No processes found using port {port}")
