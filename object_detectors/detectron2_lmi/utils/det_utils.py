@@ -62,13 +62,13 @@ def create_config(cfg_file_path, detectron2_config_file, output_dir):
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(detectron2_config_file)
 
     version = 1
-    output_dir = os.path.join(output_dir, f"{date.today()}-v{version}")
+    output_save_dir = os.path.join(output_dir, f"{date.today()}-v{version}")
     # determine the version number based on the existing directories
     while os.path.exists(output_dir):
         version += 1
-        output_dir = os.path.join(output_dir, f"{date.today()}-v{version}")
+        output_save_dir = os.path.join(output_dir, f"{date.today()}-v{version}")
     
-    cfg.OUTPUT_DIR = output_dir
+    cfg.OUTPUT_DIR = output_save_dir
     logger.info(f"Output directory: {cfg.OUTPUT_DIR}")
 
 
