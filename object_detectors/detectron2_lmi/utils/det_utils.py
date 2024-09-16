@@ -64,7 +64,7 @@ def create_config(cfg_file_path, detectron2_config_file, output_dir):
     version = 1
     output_save_dir = os.path.join(output_dir, f"{date.today()}-v{version}")
     # determine the version number based on the existing directories
-    while os.path.exists(output_dir):
+    while os.path.exists(output_save_dir):
         version += 1
         output_save_dir = os.path.join(output_dir, f"{date.today()}-v{version}")
     

@@ -40,6 +40,7 @@ def main(args):
         register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
     
     logger.info("Starting training run")
+    
     train_model(cfg)
     # kill tensorboard
     os.kill(pid, signal.SIGTERM)
