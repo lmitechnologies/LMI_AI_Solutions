@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 from gadget_utils.pipeline_utils import plot_one_box
 from label_utils.shapes import Rect, Mask, Keypoint
-from label_utils.csv_utils import write_csv
+from label_utils.csv_utils import write_to_csv
 import json
 
 
@@ -262,7 +262,7 @@ if __name__ == "__main__":
                 Rect(im_name=fname, category=class_id, up_left=box[:2].astype(int).tolist(), bottom_right=box[2:].astype(int).tolist(), confidence=score, angle=0)
             )
             
-    write_csv(results, os.path.join(args.output_path, f"predictions.csv"), overwrite=True)
+    write_to_csv(results, os.path.join(args.output_path, f"predictions.csv"), overwrite=True)
             
         
         
