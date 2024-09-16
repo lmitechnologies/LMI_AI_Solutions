@@ -33,7 +33,8 @@ def main(args):
     
     config_file = args.config_file
     cfg, original_config = create_config(config_file, args.detectron2_config, output_dir=args.output_dir)
-    
+    logger.info(f"Dataset Directory: {args.dataset_dir}")
+    logger.info(f"Output Directory: {cfg.OUTPUT_DIR}")
     # register the datasets train, test
     for dataset_name, dataset_path in zip(original_config['DATASETS']["TRAIN"], os.path.join(args.dataset_dir, "train")):
         register_datasets(dataset_dir=dataset_path, dataset_name=dataset_name)
