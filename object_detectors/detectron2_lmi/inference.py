@@ -243,7 +243,7 @@ if __name__ == "__main__":
             print(f"Error reading image {image_path}: {e}")
             continue
         t0 = time.time()
-        outputs = model.predict(image, confidences = confidence_map)
+        outputs = model.predict(image=image, confs=confidence_map)
         t1 = time.time()
         fname = os.path.basename(image_path)
         
