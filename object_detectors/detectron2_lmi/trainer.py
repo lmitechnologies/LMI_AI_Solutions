@@ -22,7 +22,6 @@ def train_model(cfg):
 
 def main(args):
     # start tensorboard
-    kill_process_on_port(6006)
     pid = os.fork()
     if pid == 0:
         os.setsid()
