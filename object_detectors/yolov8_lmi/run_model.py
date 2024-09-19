@@ -76,7 +76,11 @@ if __name__ == '__main__':
             im0 = cv2.imread(p,cv2.IMREAD_UNCHANGED) #BGR format
             if len(im0.shape)==2:
                 im0=cv2.cvtColor(im0, cv2.COLOR_GRAY2BGR)
-            im0 = im0[:,:,::-1] #BGR to RGB
+                        # load image
+            im0 = cv2.imread(p,cv2.IMREAD_UNCHANGED) #BGR format
+            if len(im0.shape)==2:
+                im0=cv2.cvtColor(im0, cv2.COLOR_GRAY2BGR)
+            im0 = cv2.cvtColor(im0, cv2.COLOR_BGR2RGB)
             
             # warp image
             im1 = im0
