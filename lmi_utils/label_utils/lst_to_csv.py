@@ -23,6 +23,9 @@ def lst_to_shape(result:dict, fname:str, load_confidence=False):
     """parse the result from label studio result dict, return a Rect/Mask object
     """
     result_type=result['type']
+    if 'value' not in result:
+        logger.warning(f'found empty value in {fname}, skip')
+        return 
     labels = result['value'][result_type]
     if len(labels) > 1:
         raise Exception('Not support more than one labels in a bbox/polygon')
