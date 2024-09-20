@@ -6,6 +6,8 @@ import json
 import torch
 import logging
 import glob
+import tempfile
+import tarfile
 from torch.nn import functional as F
 
 
@@ -549,6 +551,49 @@ def get_gadget_img_batches(batch_size, profile_dir, intensity_dir, fmt='png'):
     if len(batch) > 0:
         ret.append(batch)
     return ret
+
+
+def get_gadget_inputs(path_im, path_surface_tar):
+    """get gadget gocator inputs
+
+    Args:
+        path_im (str): path to a intensity image
+        path_surface_tar (str): path to a gadget3d tar file
+
+    Returns:
+        dict: inputs to pipeline
+    """
+    assert path_surface_tar.endswith('.tar')
+    
+    im_name = os.path.basename(path_im)
+    surface_name = os.path.basename(path_surface_tar)
+    key1 = im_name.split('.')[0]
+    key2 = surface_name.split('.')[0]
+    assert key1==key2
+    
+    # gocator returns a grayscale image
+    im = cv2.imread(path_im)[:,:,0]
+    
+    # create tmp fodler
+    with tempfile.TemporaryDirectory() as tmp_folder:
+        with tarfile.open(path_surface_tar, 'r') as t:
+            t.extractall(tmp_folder)
+        # get surface data
+        with open(os.path.join(tmp_folder, 'metadata.json'), 'r') as f:
+            metadata = json.load(f)
+        profile = cv2.imread(os.path.join(tmp_folder,'profile.png'), cv2.IMREAD_UNCHANGED)
+        if profile.dtype == np.uint16:
+            profile = profile.view(np.int16)+np.int16(-TWO_TO_FIFTEEN)
+    
+    out = {
+        'image':{'pixels': im},
+        'surface':{
+            'profile': profile,
+            'resolution': metadata['resolution'],
+            'offset': metadata['offset']
+        }
+    }
+    return out
 
 
 def load_pipeline_def(filepath):
