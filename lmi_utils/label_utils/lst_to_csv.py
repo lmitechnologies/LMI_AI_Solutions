@@ -24,7 +24,7 @@ def lst_to_shape(result:dict, fname:str, load_confidence=False):
     """
     result_type=result['type']
     if 'value' not in result:
-        logger.warning(f'found empty value in {fname}, skip')
+        logger.warning(f'found empty value in {fname} for {result_type}, skip')
         return 
     labels = result['value'][result_type]
     if len(labels) > 1:
