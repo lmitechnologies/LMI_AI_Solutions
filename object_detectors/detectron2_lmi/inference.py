@@ -92,11 +92,12 @@ class Detectron2Model(ModelBase):
         """
         t0 = time.time()
         height, width = image.shape[:2]
-        input = self.transforms.get_transform(image).apply_image(image)
+        inputs = self.transforms.get_transform(image).apply_image(image)
+        self.logger.info(f"Input shape: {image.shape}")
         t1 = time.time()
         self.logger.info(f"Preprocess time: {(t1-t0) * 1000} ms")
         return {
-            "image": torch.as_tensor(input.astype("float32").transpose(2, 0, 1)).to(self.device),
+            "image": torch.as_tensor(inputs.astype("float32").transpose(2, 0, 1)).to(self.device),
             "height": height,
             "width": width
         }
@@ -191,7 +192,7 @@ class Detectron2Model(ModelBase):
             class_id = results["classes"][i]
             color = colormap[class_id] if colormap is not None else None
             mask = results["masks"][i] if len(results["masks"]) > 0 else None
-            label = f"{class_id}" # TODO change to text labels
+            label = f"{class_id}"
             plot_one_box(box=box, img=image, mask=mask, mask_threshold=0.5, color=color, label=label)
         return image
         
@@ -204,13 +205,13 @@ if __name__ == "__main__":
     import tqdm
     import time
     parser = argparse.ArgumentParser()
-    parser.add_argument("--weights", type=str, help="Path to the weights file")
-    parser.add_argument("--config-file", type=str, help="Path to the config file")
+    parser.add_argument("--weights", type=str, help="Path to the weights file", default="/home/weights/model_final.pth")
+    parser.add_argument("--config-file", type=str, help="Path to the config file", default="/home/config.yaml")
     parser.add_argument("--detectron2-config", type=str, help="Detectron2 config file", default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
-    parser.add_argument("--input-path", type=str, help="Path to the input folder")
-    parser.add_argument("--output-path", type=str, help="Path to the output folder")
+    parser.add_argument("--input-path", type=str, help="Path to the input folder", default="/home/input")
+    parser.add_argument("--output-path", type=str, help="Path to the output folder", default="/home/output")
     parser.add_argument("--confidence-threshold", type=float, help="Path to the confidence map file", default=0.5)
-    parser.add_argument("--class-map", type=str, help="Class map json file")
+    parser.add_argument("--class-map", type=str, help="Class map json file", default="/home/class_map.json")
     
     args = parser.parse_args()
     
@@ -239,7 +240,7 @@ if __name__ == "__main__":
         results = []
         print(f"Processing image {image_path}")
         try:
-            image = cv2.imread(image_path, -1)
+            image = cv2.imread(image_path) # read in as BGR
         except Exception as e:
             print(f"Error reading image {image_path}: {e}")
             continue
