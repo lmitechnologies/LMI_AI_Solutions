@@ -60,7 +60,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config-file", type=str, help="Path to the config file")
+    parser.add_argument("--config-file", type=str, help="Path to the config file", default="/home/config.yaml")
     parser.add_argument("--detectron2-config", type=str, help="Detectron2 config file", default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
     parser.add_argument("--dataset-dir", type=str, help="Dataset dir", default="/home/data")
     parser.add_argument("--output-dir", type=str, help="Path to the output directory", default="/home/weights/")
