@@ -93,9 +93,7 @@ class Detectron2Model(ModelBase):
         t0 = time.time()
         height, width = image.shape[:2]
         inputs = self.transforms.get_transform(image).apply_image(image)
-        self.logger.info(f"Input shape: {image.shape}")
         t1 = time.time()
-        self.logger.info(f"Preprocess time: {(t1-t0) * 1000} ms")
         return {
             "image": torch.as_tensor(inputs.astype("float32").transpose(2, 0, 1)).to(self.device),
             "height": height,
@@ -238,7 +236,7 @@ if __name__ == "__main__":
 
     for image_path in images:
         results = []
-        print(f"Processing image {image_path}")
+
         try:
             image = cv2.imread(image_path) # read in as BGR
         except Exception as e:
@@ -247,7 +245,6 @@ if __name__ == "__main__":
         t0 = time.time()
         outputs = model.predict(image=image, confs=confidence_map)
         t1 = time.time()
-        print(f"Prediction time: {(t1-t0) * 1000} ms")
         fname = os.path.basename(image_path)
         
         
