@@ -234,7 +234,7 @@ if __name__ == "__main__":
     images = glob.glob(os.path.join(args.input_path, "*")) # TODO change this to the correct extension
     shapes = {}
 
-    for image_path in images:
+    for image_path in tqdm.tqdm(images):
         results = []
 
         try:
