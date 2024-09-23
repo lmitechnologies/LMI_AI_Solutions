@@ -166,10 +166,10 @@ class Detectron2TRT(ModelBase):
                 processed_classes.append(batch_classes)         
             
         results = {
-            "boxes": np.array(boxes),
-            "scores": np.array(scores),
-            "classes": np.array(classes),
-            "masks": np.array(masks)
+            "boxes": np.array(processed_boxes),
+            "scores": np.array(processed_scores),
+            "classes": np.array(processed_classes),
+            "masks": np.array(processed_masks)
         }
         return results
     
