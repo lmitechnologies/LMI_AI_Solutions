@@ -58,9 +58,10 @@ class Detectron2TRT(ModelBase):
     def warmup(self):
         """_summary_
         """
-        image_h, image_w = self.input_shape[2], self.input_shape[3]
-        input = np.random.rand(self.batch_size, 3, image_h, image_w).astype(self.input_dtype)
-        self.forward(input)
+        for _ in range(10):
+            image_h, image_w = self.input_shape[2], self.input_shape[3]
+            input = np.random.rand(self.batch_size, 3, image_h, image_w).astype(self.input_dtype)
+            self.forward(input)
         
     def preprocess(self, images: list):
         """_summary_
@@ -121,8 +122,8 @@ class Detectron2TRT(ModelBase):
         processed_masks = []
         results = []
         if len(boxes) > 0:
-            
             boxes *= [images[0].shape[1], images[0].shape[0], images[0].shape[1], images[0].shape[0]]
+            
             if kwargs.get("tile_offsets", False):
                 tile_offsets = kwargs.get("tile_offsets")
                 tile_offsets = np.array(tile_offsets)
@@ -154,7 +155,6 @@ class Detectron2TRT(ModelBase):
                         ]
                         proc_batch_masks.append(im_mask)
                     processed_masks.append(proc_batch_masks)
-
         results = {
             "boxes": boxes,
             "scores": scores,
