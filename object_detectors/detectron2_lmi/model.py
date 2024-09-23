@@ -122,7 +122,9 @@ class Detectron2TRT(ModelBase):
     
 
         # convert classes to human readable format
-        classes = [self.class_map.get(int(c), str(c)) for batch_classes in classes for c in batch_classes]
+        classes = [
+            [self.class_map.get(int(c), str(c)) for c in batch_classes] for batch_classes in classes
+        ]
         processed_masks = []
         results = []
         if len(boxes) > 0:
