@@ -111,9 +111,10 @@ class Detectron2TRT(ModelBase):
         scores = predictions[2]
         classes = predictions[3]
         masks = predictions[4]
-        keep = scores > [
-            confs.get(self.class_map.get(int(c), str(c)), 0.5) for batch_classes in classes for c in batch_classes
+        thresholds = [
+            [confs.get(self.class_map.get(int(c), str(c)), 0.5) for c in batch_classes] for batch_classes in classes
         ]
+        keep = scores > thresholds
         classes = classes[keep]
         scores = scores[keep]
         boxes = boxes[keep]
