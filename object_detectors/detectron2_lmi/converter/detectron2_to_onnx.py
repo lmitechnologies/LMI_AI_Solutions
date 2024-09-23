@@ -185,7 +185,7 @@ def main() -> None:
         "--format",
         choices=["caffe2", "onnx", "torchscript"],
         help="output format",
-        default="torchscript",
+        default="onnx",
     )
     parser.add_argument(
         "--export-method",
@@ -193,10 +193,10 @@ def main() -> None:
         help="Method to export models",
         default="tracing",
     )
-    parser.add_argument("--config-file", default="", metavar="FILE", help="path to config file")
-    parser.add_argument("--sample-image", default=None, type=str, help="sample image for input")
+    parser.add_argument("--config-file", metavar="FILE", help="path to config file", default='/home/weights/config.yaml')
+    parser.add_argument("--sample-image", type=str, help="sample image for input", default='/home/weights/sample_image.png')
     parser.add_argument("--run-eval", action="store_true")
-    parser.add_argument("--output", help="output directory for the converted model")
+    parser.add_argument("--output", help="output directory for the converted model", default='/home/weights/onnx')
     parser.add_argument(
         "opts",
         help="Modify config options using the command-line",
@@ -214,6 +214,7 @@ def main() -> None:
 
     # create a torch model
     torch_model = build_model(cfg)
+    cfg.merge_from_list(["MODEL.WEIGHTS", '/home/weights/model_final.pth'])
     DetectionCheckpointer(torch_model).resume_or_load(cfg.MODEL.WEIGHTS)
     torch_model.eval()
 

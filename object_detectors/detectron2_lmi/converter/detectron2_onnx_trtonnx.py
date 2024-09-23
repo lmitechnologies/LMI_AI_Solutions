@@ -837,21 +837,23 @@ if __name__ == "__main__":
         "--exported_onnx",
         help="The exported to ONNX Detectron 2 Mask R-CNN",
         type=str,
+        default="/home/weights/onnx/model.onnx",
     )
     parser.add_argument(
-        "-o", "--onnx", help="The output ONNX model file to write", type=str
+        "-o", "--onnx", help="The output ONNX model file to write", type=str, default="/home/weights/onnx/exported.onnx",
     )
     parser.add_argument(
         "-c",
         "--det2_config",
         help="The Detectron 2 config file (.yaml) for the model",
         type=str,
+        default="/home/config.yaml",
     )
     parser.add_argument(
-        "-w", "--det2_weights", help="The Detectron 2 model weights (.pkl)", type=str
+        "-w", "--det2_weights", help="The Detectron 2 model weights (.pkl)", type=str, default="/home/weights/model_final.pth",
     )
     parser.add_argument(
-        "-s", "--sample_image", help="Sample image for anchors generation", type=str
+        "-s", "--sample_image", help="Sample image for anchors generation", type=str, default="/home/weights/sample_image.png",
     )
     parser.add_argument(
         "-b", "--batch_size", help="Batch size for the model", type=int, default=1
