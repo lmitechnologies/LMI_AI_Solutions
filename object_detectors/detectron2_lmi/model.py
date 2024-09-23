@@ -3,9 +3,13 @@ import tensorrt as trt
 from cuda import cudart
 import numpy as np
 import detectron2_lmi.utils.common_runtime as common
+from detectron2.layers.mask_ops import paste_mask_in_image_old
 from gadget_utils.pipeline_utils import plot_one_box
 import cv2
 import logging
+import torch
+
+
 
 class Detectron2TRT(ModelBase):
     logger = logging.getLogger(__name__)
@@ -74,12 +78,11 @@ class Detectron2TRT(ModelBase):
             _type_: _description_
         """
         image_h, image_w = self.input_shape[2], self.input_shape[3]
-        input = np.zeros((self.batch_size, 3, image_h, image_w), dtype=self.input_dtype)
+        inputs = np.zeros((self.batch_size, 3, image_h, image_w), dtype=self.input_dtype)
         for i in range(0, self.batch_size):
             image = images[i]
-            self.logger.info(f'image shape {image.shape}')
-            input[i] = image.astype(np.float32).transpose(2, 0, 1)
-        return input
+            inputs[i] = image.astype(np.float32).transpose(2, 0, 1)
+        return inputs
     
     def forward(self, inputs):
         outputs = []
@@ -104,70 +107,69 @@ class Detectron2TRT(ModelBase):
         if len(predictions) == 0:
             return results
         
-        confs = kwargs.get("confs")
+        confs = kwargs.get("confs", {})
         image_h, image_w = images[0].shape[0], images[0].shape[1]
         num_preds = predictions[0]
         boxes = predictions[1]
         scores = predictions[2]
         classes = predictions[3]
         masks = predictions[4]
-        thresholds = [
-            [confs.get(self.class_map.get(int(c), str(c)), 0.5) for c in batch_classes] for batch_classes in classes
-        ]
-        keep = scores > thresholds
-        classes = classes[keep]
-        scores = scores[keep]
-        boxes = boxes[keep]
-        masks = masks[keep]
     
 
         # convert classes to human readable format
-        classes = [
+        classes = np.array([
             [self.class_map.get(int(c), str(c)) for c in batch_classes] for batch_classes in classes
-        ]
-        processed_masks = []
-        results = []
-        if len(boxes) > 0:
-            
+        ])
+        processed_masks =[]
+        processed_boxes = []
+        processed_classes = []
+        processed_scores = []
+        
+        if len(boxes) > 0:           
             boxes *= [images[0].shape[1], images[0].shape[0], images[0].shape[1], images[0].shape[0]]
-            
-            if kwargs.get("tile_offsets", False):
-                tile_offsets = kwargs.get("tile_offsets")
-                tile_offsets = np.array(tile_offsets)
-                boxes[:, 0] += tile_offsets[0]
-                boxes[:, 1] += tile_offsets[1]
-                boxes[:, 2] += tile_offsets[0]
-                boxes[:, 3] += tile_offsets[1]
-            
             boxes = boxes.astype(np.int32)
             
-            if kwargs.get("process_masks", False):
-                for idx in range(0, self.batch_size):
-                    proc_batch_masks = []
-                    for i in range(0, int(num_preds[idx])):
-                        label = classes[i]
-                        mask = masks[i]
-                        box = boxes[i]
+            
+            for idx in range(0, self.batch_size):
+                batch_masks = []
+                batch_scores = []
+                batch_boxes = []
+                batch_classes = []
+                for i in range(0, int(num_preds[idx])):
+                    label = classes[idx][i]
+                    mask = masks[idx][i]
+                    box = boxes[idx][i]
+                    score = scores[idx][i]
+                    if score < confs.get(label, 0.5):
+                        continue
+                    if kwargs.get("process_masks", False):
                         samples_w = box[2] - box[0] + 1
                         samples_h = box[3] - box[1] + 1
-                        mask = mask > kwargs.get("mask_threshod_map", {}).get(label, 0.5)
+                        mask = mask > mask_threshod_map.get(label, 0.5)
                         mask = mask.astype(np.uint8)
                         mask = cv2.resize(mask, (samples_w, samples_h), interpolation=cv2.INTER_LINEAR)
                         x_0 = max(box[0], 0)
-                        x_1 = min(box[2] + 1, )
+                        x_1 = min(box[2] + 1, image_w)
                         y_0 = max(box[1], 0)
                         y_1 = min(box[3] + 1, image_h)
                         im_mask = np.zeros((image_h, image_w), dtype=np.uint8)
                         im_mask[y_0:y_1, x_0:x_1] = mask[
                             (y_0 - box[1]) : (y_1 - box[1]), (x_0 - box[0]) : (x_1 - box[0])
                         ]
-                        proc_batch_masks.append(im_mask)
-                    processed_masks.append(proc_batch_masks)
+                        batch_masks.append(im_mask)
+                    batch_scores.append(score)
+                    batch_boxes.append(box)
+                    batch_classes.append(label)
+                processed_masks.append(batch_masks)
+                processed_boxes.append(batch_boxes)
+                processed_scores.append(batch_scores)
+                processed_classes.append(batch_classes)         
+            
         results = {
-            "boxes": boxes,
-            "scores": scores,
-            "classes": classes,
-            "masks": processed_masks
+            "boxes": np.array(boxes),
+            "scores": np.array(scores),
+            "classes": np.array(classes),
+            "masks": np.array(masks)
         }
         return results
     
