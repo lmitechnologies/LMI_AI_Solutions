@@ -3,7 +3,6 @@ import tensorrt as trt
 from cuda import cudart
 import numpy as np
 import detectron2_lmi.utils.common_runtime as common
-import torch
 from gadget_utils.pipeline_utils import plot_one_box
 import cv2
 
@@ -93,83 +92,69 @@ class Detectron2TRT(ModelBase):
             common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
         return outputs
     
-    def process_masks(self, masks, boxes, classes, image_h, image_w, mask_threshold_map):
-        for i in range(0, len(masks)):
-            class_id = classes[i]
-            mask = masks[i]
-            box = boxes[i]
-            box = box.astype(np.int32) 
-            samples_w = box[2] - box[0] + 1
-            samples_h = box[3] - box[1] + 1
-            mask = mask > mask_threshold_map.get(int(class_id), 0.5)
-            mask = mask.astype(np.uint8)
-            mask = cv2.resize(mask, (samples_w, samples_h), interpolation=cv2.INTER_LINEAR)
-            x_0 = max(box[0], 0)
-            x_1 = min(box[2] + 1, image_w)
-            y_0 = max(box[1], 0)
-            y_1 = min(box[3] + 1, image_h)
-            im_mask = np.zeros((image_h, image_w), dtype=np.uint8)
-            im_mask[y_0:y_1, x_0:x_1] = mask[
-                (y_0 - box[1]) : (y_1 - box[1]), (x_0 - box[0]) : (x_1 - box[0])
-            ]
-            yield im_mask
     
-    def postprocess(self,images, predictions, confidence_map, mask_threshold_map, **kwargs):
+    def postprocess(self, images, predictions,**kwargs):
         results = {
             "boxes": [],
             "scores": [],
             "classes": [],
             "masks": []
         }
+        confs = kwargs.get("confs")
+        image_h, image_w = images[0].shape[0], images[0].shape[1]
         num_preds = predictions[0]
         boxes = predictions[1]
         scores = predictions[2]
         classes = predictions[3]
         masks = predictions[4]
+        keep = scores > [
+            confs.get(self.class_map.get(int(c), c), 0.5) for c in classes
+        ]
+        classes = classes[keep]
+        scores = scores[keep]
+        boxes = boxes[keep]
+        masks = masks[keep]
+    
+
+        # convert classes to human readable format
+        classes = [self.class_map.get(int(c), c) for c in classes]
         processed_masks = []
         results = []
-        boxes *= [images[0].shape[1], images[0].shape[0], images[0].shape[1], images[0].shape[0]]
-        if kwargs.get("process_masks", False):
-            for i in range(0, self.batch_size):
-                processed_masks.append(self.process_masks(masks[i], boxes[i], classes[i], images[i].shape[0], images[i].shape[1], mask_threshold_map))
-        # for i in range(0, self.batch_size):
-        #     scale = np.array([images[i].shape[1], images[i].shape[0], images[i].shape[1], images[i].shape[0]])
-        #     result = {"boxes": [], "scores": [], "classes": [], "masks": []}
-        #     image_h, image_w = images[i].shape[0], images[i].shape[1]
-        #     for n in range(0, int(num_preds[i])):
-        #         class_id = classes[i][n]
-        #         if scores[i][n] < confidence_map.get(int(class_id), 0.5):
-        #             continue
-        #         box = boxes[i][n] * scale
-        #         box = box.astype(np.int32) 
-        #         im_mask = np.zeros((image_h, image_w), dtype=np.uint8)
-        #         if kwargs.get("process_masks", False):
-                
-        #             mask = masks[i][n]
-                    
-        #             samples_w = box[2] - box[0] + 1
-        #             samples_h = box[3] - box[1] + 1
-                    
-        #             mask = mask > mask_threshold_map.get(int(class_id), 0.5)
-        #             mask = mask.astype(np.uint8)
-        #             mask = cv2.resize(mask, (samples_w, samples_h), interpolation=cv2.INTER_LINEAR)
-        #             print(mask.shape)
-                    
-                    
-        #             x_0 = max(box[0], 0)
-        #             x_1 = min(box[2] + 1, image_w)
-        #             y_0 = max(box[1], 0)
-        #             y_1 = min(box[3] + 1, image_h)
+        if len(boxes) > 0:
+            
+            boxes *= [images[0].shape[1], images[0].shape[0], images[0].shape[1], images[0].shape[0]]
+            if kwargs.get("tile_offsets", False):
+                tile_offsets = kwargs.get("tile_offsets")
+                tile_offsets = np.array(tile_offsets)
+                boxes[:, 0] += tile_offsets[0]
+                boxes[:, 1] += tile_offsets[1]
+                boxes[:, 2] += tile_offsets[0]
+                boxes[:, 3] += tile_offsets[1]
+                boxes = boxes.astype(np.int32)
+            
+            if kwargs.get("process_masks", False):
+                for idx in range(0, self.batch_size):
+                    proc_batch_masks = []
+                    for i in range(0, int(num_preds[idx])):
+                        label = classes[i]
+                        mask = masks[i]
+                        box = boxes[i]
+                        samples_w = box[2] - box[0] + 1
+                        samples_h = box[3] - box[1] + 1
+                        mask = mask > kwargs.get("mask_threshod_map", {}).get(label, 0.5)
+                        mask = mask.astype(np.uint8)
+                        mask = cv2.resize(mask, (samples_w, samples_h), interpolation=cv2.INTER_LINEAR)
+                        x_0 = max(box[0], 0)
+                        x_1 = min(box[2] + 1, )
+                        y_0 = max(box[1], 0)
+                        y_1 = min(box[3] + 1, image_h)
+                        im_mask = np.zeros((image_h, image_w), dtype=np.uint8)
+                        im_mask[y_0:y_1, x_0:x_1] = mask[
+                            (y_0 - box[1]) : (y_1 - box[1]), (x_0 - box[0]) : (x_1 - box[0])
+                        ]
+                        proc_batch_masks.append(im_mask)
+                    processed_masks.append(proc_batch_masks)
 
-        #             im_mask[y_0:y_1, x_0:x_1] = mask[
-        #                 (y_0 - box[1]) : (y_1 - box[1]), (x_0 - box[0]) : (x_1 - box[0])
-        #             ]
-
-        #         result["masks"].append(im_mask)
-        #         result["boxes"].append(box)
-        #         result["scores"].append(scores[i][n])
-        #         result["classes"].append(self.class_map.get(int(class_id), str(class_id)))
-        #     results.append(result)
         results = {
             "boxes": boxes,
             "scores": scores,
@@ -181,7 +166,6 @@ class Detectron2TRT(ModelBase):
     def get_batches(self, images):
         # get the number of batches add empty images to make it a multiple of batch size
         num_batches = len(images) // self.batch_size
-        batch_images = []
         if len(images) % self.batch_size != 0:
             num_batches += 1
             for i in range(0, self.batch_size - len(images) % self.batch_size):
@@ -190,10 +174,9 @@ class Detectron2TRT(ModelBase):
             yield images[i * self.batch_size : (i + 1) * self.batch_size]
     
 
-    def predict(self, images, confidence_map, mask_threshold_map, **kwargs):
-        results = []
+    def predict(self, images, **kwargs):
         predictions = self.forward(self.preprocess(images))
-        predictions = self.postprocess(images, predictions, confidence_map, mask_threshold_map, **kwargs)
+        predictions = self.postprocess(images, predictions,**kwargs)
         return predictions
     
     def annotate_images(self, results, images, color_map=None):
@@ -211,19 +194,6 @@ class Detectron2TRT(ModelBase):
                     color=color_map,
                 )
         return images
-        # for i in range(len(results["boxes"])):
-        #     if len(results["masks"]) > 0:
-        #         mask = results["masks"][i]
-        #     else:
-        #         mask = None
-        #     plot_one_box(
-        #         results["boxes"][i],
-        #         image,
-        #         label=f"{results['classes'][i]}",
-        #         mask=mask,
-        #         color=color_map,
-        #     )
-        # return image
 
 
 
