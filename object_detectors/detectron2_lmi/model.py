@@ -112,7 +112,7 @@ class Detectron2TRT(ModelBase):
         classes = predictions[3]
         masks = predictions[4]
         keep = scores > [
-            confs.get(self.class_map.get(int(c), c), 0.5) for c in classes
+            confs.get(self.class_map.get(int(c), str(c)), 0.5) for batch_classes in classes for c in batch_classes
         ]
         classes = classes[keep]
         scores = scores[keep]
@@ -121,7 +121,7 @@ class Detectron2TRT(ModelBase):
     
 
         # convert classes to human readable format
-        classes = [self.class_map.get(int(c), c) for c in classes]
+        classes = [self.class_map.get(int(c), str(c)) for batch_classes in classes for c in batch_classes]
         processed_masks = []
         results = []
         if len(boxes) > 0:
