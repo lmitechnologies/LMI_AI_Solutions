@@ -847,7 +847,7 @@ if __name__ == "__main__":
         "--det2_config",
         help="The Detectron 2 config file (.yaml) for the model",
         type=str,
-        default="/home/config.yaml",
+        default="/home/weights/config.yaml",
     )
     parser.add_argument(
         "-w", "--det2_weights", help="The Detectron 2 model weights (.pkl)", type=str, default="/home/weights/model_final.pth",
