@@ -17,7 +17,7 @@ from gadget_utils.pipeline_utils import plot_one_box
 from label_utils.shapes import Rect, Mask, Keypoint
 from label_utils.csv_utils import write_to_csv
 import json
-
+from scipy.spatial import ConvexHull
 
 """
 TODO Update for deploying to LMI AISolutions
@@ -149,7 +149,9 @@ class Detectron2Model(ModelBase):
         postprocessed_results["classes"] = [self.class_map.get(int(label), str(label)) for label in classes[keep].cpu().numpy()] if classes is not None else np.array([])
         postprocessed_results["keypoints"] = keypoints[keep].cpu().numpy() if keypoints is not None else np.array([])
         postprocessed_results["masks"] = masks[keep].cpu().numpy() if masks is not None else np.array([])
-        
+        coords = np.where(postprocessed_results["masks"][0] > 0.5)
+        points = np.array(list(zip(coords[1], coords[0])))
+        postprocessed_results["convex_hull"] = ConvexHull(points).vertices
 
         if return_segments:
             # Runs contour detection
