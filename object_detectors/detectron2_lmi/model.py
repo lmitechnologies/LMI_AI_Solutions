@@ -5,9 +5,10 @@ import numpy as np
 import detectron2_lmi.utils.common_runtime as common
 from gadget_utils.pipeline_utils import plot_one_box
 import cv2
+import logging
 
 class Detectron2TRT(ModelBase):
-    
+    logger = logging.getLogger(__name__)
     def __init__(self, model_path, class_map):
         """source: https://github.com/NVIDIA/TensorRT/tree/release/10.4/samples/python/detectron2"""
         
