@@ -79,6 +79,7 @@ class Detectron2TRT(ModelBase):
             images = [images]
         for i in range(0, self.batch_size):
             image = images[i]
+            self.logger.info(f'image shape {image.shape}')
             input[i] = image.astype(np.float32).transpose(2, 0, 1)
         return input
     
