@@ -101,6 +101,9 @@ class Detectron2TRT(ModelBase):
             "classes": [],
             "masks": []
         }
+        if len(predictions) == 0:
+            return results
+        
         confs = kwargs.get("confs")
         image_h, image_w = images[0].shape[0], images[0].shape[1]
         num_preds = predictions[0]
