@@ -122,6 +122,7 @@ class Detectron2TRT(ModelBase):
         processed_masks = []
         results = []
         if len(boxes) > 0:
+            
             boxes *= [images[0].shape[1], images[0].shape[0], images[0].shape[1], images[0].shape[0]]
             
             if kwargs.get("tile_offsets", False):
@@ -131,7 +132,8 @@ class Detectron2TRT(ModelBase):
                 boxes[:, 1] += tile_offsets[1]
                 boxes[:, 2] += tile_offsets[0]
                 boxes[:, 3] += tile_offsets[1]
-                boxes = boxes.astype(np.int32)
+            
+            boxes = boxes.astype(np.int32)
             
             if kwargs.get("process_masks", False):
                 for idx in range(0, self.batch_size):
