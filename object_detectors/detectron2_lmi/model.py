@@ -75,8 +75,6 @@ class Detectron2TRT(ModelBase):
         """
         image_h, image_w = self.input_shape[2], self.input_shape[3]
         input = np.zeros((self.batch_size, 3, image_h, image_w), dtype=self.input_dtype)
-        if isinstance(images, np.ndarray):
-            images = [images]
         for i in range(0, self.batch_size):
             image = images[i]
             self.logger.info(f'image shape {image.shape}')
