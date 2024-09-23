@@ -12,9 +12,9 @@ class Detectron2TRT(ModelBase):
     def __init__(self, model_path, class_map):
         """source: https://github.com/NVIDIA/TensorRT/tree/release/10.4/samples/python/detectron2"""
         
-        self.logger = trt.Logger(trt.Logger.ERROR)
-        trt.init_libnvinfer_plugins(self.logger, namespace="")
-        with open(model_path, "rb") as f, trt.Runtime(self.logger) as runtime:
+        trt_logger = trt.Logger(trt.Logger.ERROR)
+        trt.init_libnvinfer_plugins(trt_logger, namespace="")
+        with open(model_path, "rb") as f, trt.Runtime(trt_logger) as runtime:
             self.engine = runtime.deserialize_cuda_engine(f.read())
         self.context = self.engine.create_execution_context()
 
