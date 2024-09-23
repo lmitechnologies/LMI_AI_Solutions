@@ -9,8 +9,8 @@ data:
     mask_dir: null
     normal_split_ratio: 0
     extensions: [".jpg"]
-    image_size: [224,224]
-    train_batch_size: 32
+    image_size: [256,256]
+    train_batch_size: 1
     eval_batch_size: 32
     num_workers: 8
     task: segmentation
@@ -24,18 +24,22 @@ data:
     seed: null
 
 model:
-  class_path: anomalib.models.Padim
+  class_path: anomalib.models.EfficientAd
   init_args:
-    layers:
-      - layer1
-      - layer2
-      - layer3
-    backbone: resnet18
-    pre_trained: true
-    n_features: null
+    teacher_out_channels: 384
+    model_size: S
+    lr: 0.0001
+    weight_decay: 1.0e-05
+    padding: false
+    pad_maps: true
 
 metrics:
-  pixel: AUROC
+  pixel:
+    - AUROC
+
+trainer:
+  max_epochs: 1000
+  max_steps: 70000
 
 default_root_dir: /app/out
 ckpt_path: null
