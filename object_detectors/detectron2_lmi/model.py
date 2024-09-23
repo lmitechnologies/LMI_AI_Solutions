@@ -129,7 +129,7 @@ class Detectron2TRT(ModelBase):
             boxes *= [images[0].shape[1], images[0].shape[0], images[0].shape[1], images[0].shape[0]]
             boxes = boxes.astype(np.int32)
             
-            
+            mask_threshold_map = kwargs.get("mask_threshold_map", {})
             for idx in range(0, self.batch_size):
                 batch_masks = []
                 batch_scores = []
@@ -145,7 +145,7 @@ class Detectron2TRT(ModelBase):
                     if kwargs.get("process_masks", False):
                         samples_w = box[2] - box[0] + 1
                         samples_h = box[3] - box[1] + 1
-                        mask = mask > mask_threshod_map.get(label, 0.5)
+                        mask = mask > mask_threshold_map.get(label, 0.5)
                         mask = mask.astype(np.uint8)
                         mask = cv2.resize(mask, (samples_w, samples_h), interpolation=cv2.INTER_LINEAR)
                         x_0 = max(box[0], 0)
