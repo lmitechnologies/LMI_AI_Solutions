@@ -4,7 +4,7 @@ import argparse
 import logging
 
 from gadget_utils.pipeline_utils import fit_array_to_size
-from image_utils.path_utils import get_relative_paths
+from system_utils.path_utils import get_relative_paths
 
 
 logging.basicConfig()

@@ -21,7 +21,6 @@ def get_relative_paths(inpath, recursive=True, formats=IMG_FORMATS):
     if not isinstance(formats, list):
         raise Exception(f'formats must be a list of strings. But got the type: {type(formats)}')
     
-    logger.info(f'Search files with the following extensions:\n {formats}')
     files = []
     for root, dirs, fs in os.walk(inpath):
         cnt = 0
@@ -33,6 +32,9 @@ def get_relative_paths(inpath, recursive=True, formats=IMG_FORMATS):
         
         if not recursive:
             break
+        
+    if len(files)==0:
+        logger.warning(f'Not found any file with these extensions: {formats}')
     return files
     
     

@@ -8,7 +8,7 @@ import logging
 from label_utils.shapes import Rect, Mask, Keypoint
 from label_utils.csv_utils import load_csv, write_to_csv
 from gadget_utils.pipeline_utils import fit_array_to_size
-from image_utils.path_utils import get_relative_paths
+from system_utils.path_utils import get_relative_paths
 
 
 logging.basicConfig()

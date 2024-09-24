@@ -3,7 +3,7 @@ import cv2
 import os
 import logging
 
-from image_utils.path_utils import get_relative_paths
+from system_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

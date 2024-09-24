@@ -7,7 +7,7 @@ import numpy as np
 #LMI packages
 from label_utils import csv_utils
 from label_utils.shapes import Rect, Mask, Keypoint
-from image_utils.path_utils import get_relative_paths
+from system_utils.path_utils import get_relative_paths
 
 
 logging.basicConfig()

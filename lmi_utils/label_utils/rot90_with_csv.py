@@ -11,7 +11,7 @@ import cv2
 #LMI packages
 from label_utils import csv_utils
 from label_utils.shapes import Rect, Mask
-from image_utils.path_utils import get_relative_paths
+from system_utils.path_utils import get_relative_paths
 
 
 logging.basicConfig()
