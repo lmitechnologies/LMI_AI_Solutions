@@ -179,11 +179,11 @@ if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser(description='This script requires either --path_imgs or --wh, but not both.')
     group = ap.add_mutually_exclusive_group(required=True)
-    group.add_argument('--path_imgs', help='path to the images')
-    group.add_argument('--wh', help='width and height of the images separated by a comma, if they are the same size')
+    group.add_argument('--path_imgs', help='path to the images, where images have different dimensions')
+    group.add_argument('--wh', help='width and height of the images separated by a comma, if they are the same dimension')
     ap.add_argument('--csv', required=True, help='path to the csv file')
-    ap.add_argument('--path_gs', required=True, help='the gs path (start with gs://) or local absolute path')
-    ap.add_argument('--path_out', '-o', required=True)
+    ap.add_argument('--lst_img_dir', required=True, help='the image directory will be output in the label studio json. Either a gs path (start with gs://) or local absolute path (start with /)')
+    ap.add_argument('--out_dir', '-o', required=True, help='the output directory')
     ap.add_argument('--pred', action='store_true', help='if the csv file is a prediction file')
     args = ap.parse_args()
     
@@ -193,10 +193,10 @@ if __name__ == '__main__':
         width = int(wh[0])
         height = int(wh[1])
 
-    if os.path.isfile(args.path_out):
+    if os.path.isfile(args.out_dir):
         raise Exception('The output path should be a directory')
-    if not os.path.isdir(args.path_out):
-        os.makedirs(args.path_out)
+    if not os.path.isdir(args.out_dir):
+        os.makedirs(args.out_dir)
 
     shapes = load_csv(args.csv)[0]
-    write_to_lst(shapes, args.path_out, args.path_imgs, args.path_gs, width, height, args.pred)
+    write_to_lst(shapes, args.out_dir, args.path_imgs, args.lst_img_dir, width, height, args.pred)
