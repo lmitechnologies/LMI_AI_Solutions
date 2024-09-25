@@ -24,10 +24,10 @@ logger.setLevel(logging.DEBUG)
 
 COCO_DIR = 'tests/assets/images/coco'
 DOTA_DIR = 'tests/assets/images/dota'
-MODEL_DET = 'tests/assets/models/yolov8n.pt'
-MODEL_SEG = 'tests/assets/models/yolov8n-seg.pt'
-MODEL_OBB = 'tests/assets/models/yolov8n-obb.pt'
-MODEL_POSE = 'tests/assets/models/yolov8n-pose.pt'
+MODEL_DET = 'tests/assets/models/od/yolov8n.pt'
+MODEL_SEG = 'tests/assets/models/od/yolov8n-seg.pt'
+MODEL_OBB = 'tests/assets/models/od/yolov8n-obb.pt'
+MODEL_POSE = 'tests/assets/models/od/yolov8n-pose.pt'
 OUT_DIR = 'tests/assets/validation'
 
 
