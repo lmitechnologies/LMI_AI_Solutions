@@ -8,6 +8,9 @@ from gadget_utils.pipeline_utils import plot_one_box
 import cv2
 import logging
 import torch
+import scipy
+
+
 
 
 
@@ -136,6 +139,7 @@ class Detectron2TRT(ModelBase):
             filtered_masks = masks[idx][valid_scores] if process_masks else None
             batch_boxes, batch_scores = boxes[idx][valid_scores], scores[idx][valid_scores]
             batch_classes = classes[idx][valid_scores]
+            im_mask = np.zeros((image_h, image_w), dtype=np.uint8)
 
             processed_boxes.append(batch_boxes)
             processed_scores.append(batch_scores)
@@ -156,13 +160,14 @@ class Detectron2TRT(ModelBase):
                     
                     x_0, x_1 = max(box[0], 0), min(box[2] + 1, image_w)
                     y_0, y_1 = max(box[1], 0), min(box[3] + 1, image_h)
-                    im_mask = np.zeros((image_h, image_w), dtype=np.uint8)
-                    im_mask[y_0:y_1, x_0:x_1] = mask[
+                    im_mask[y_0:y_1, x_0:x_1] = np.maximum(
+                        im_mask[y_0:y_1, x_0:x_1],
+                        mask[
                         (y_0 - box[1]):(y_1 - box[1]), (x_0 - box[0]):(x_1 - box[0])
-                    ]
-                    batch_masks.append(im_mask)
-                
-                processed_masks.append(batch_masks)
+                        ]
+                    )
+                    
+                processed_masks.append(im_mask)
                 
         results = {
             "boxes": processed_boxes,
