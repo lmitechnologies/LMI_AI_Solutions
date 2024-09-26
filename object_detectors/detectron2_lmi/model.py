@@ -8,7 +8,7 @@ from gadget_utils.pipeline_utils import plot_one_box
 import cv2
 import logging
 import torch
-import scipy
+import time
 
 
 
@@ -136,10 +136,9 @@ class Detectron2TRT(ModelBase):
 
         for idx in range(self.batch_size):
             valid_scores = scores[idx] >= np.vectorize(confs.get)(classes[idx], 0.5)
-            filtered_masks = masks[idx][valid_scores] if process_masks else None
             batch_boxes, batch_scores = boxes[idx][valid_scores], scores[idx][valid_scores]
             batch_classes = classes[idx][valid_scores]
-            im_mask = np.zeros((image_h, image_w), dtype=np.uint8)
+            
 
             processed_boxes.append(batch_boxes)
             processed_scores.append(batch_scores)
@@ -147,6 +146,8 @@ class Detectron2TRT(ModelBase):
             
             if process_masks:
                 batch_masks = []
+                filtered_masks = masks[idx][valid_scores]
+                im_mask = np.zeros((image_h, image_w), dtype=np.uint8)
                 
                 for i, box in enumerate(batch_boxes):
                     label = batch_classes[i]
@@ -166,7 +167,6 @@ class Detectron2TRT(ModelBase):
                         (y_0 - box[1]):(y_1 - box[1]), (x_0 - box[0]):(x_1 - box[0])
                         ]
                     )
-                    
                 processed_masks.append(im_mask)
                 
         results = {
@@ -191,7 +191,10 @@ class Detectron2TRT(ModelBase):
 
     def predict(self, images, **kwargs):
         predictions = self.forward(self.preprocess(images))
+        t0 = time.time()
         predictions = self.postprocess(images, predictions,**kwargs)
+        t1 = time.time()
+        self.logger.info(f"PostProcessing Time: {(t1-t0)*1000:.2f} ms")
         return predictions
     
     def annotate_images(self, results, images, color_map=None):
