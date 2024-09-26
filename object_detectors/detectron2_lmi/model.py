@@ -97,66 +97,80 @@ class Detectron2TRT(ModelBase):
         return outputs
     
     
-    def postprocess(self, images, predictions,**kwargs):
+    def postprocess(self, images, predictions, **kwargs):
         results = {
             "boxes": [],
             "scores": [],
             "classes": [],
             "masks": []
         }
+        
         if len(predictions) == 0:
             return results
-        
         confs = kwargs.get("confs", {})
-        
+        mask_threshold_map = kwargs.get("mask_threshold_map", {})
+        process_masks = kwargs.get("process_masks", False)
         image_h, image_w = images[0].shape[0], images[0].shape[1]
-        num_preds = predictions[0]
-        boxes = predictions[1]
-        scores = predictions[2]
-        classes = predictions[3]
-        masks = predictions[4]
-    
-
-        # convert classes to human readable format
-        classes = np.array([
-            [self.class_map.get(int(c), str(c)) for c in batch_classes] for batch_classes in classes
-        ])
-        processed_masks =[]
         
-        if len(boxes) > 0:           
-            boxes *= [images[0].shape[1], images[0].shape[0], images[0].shape[1], images[0].shape[0]]
-            boxes = boxes.astype(np.int32)
-            mask_threshod_map = kwargs.get(f"mask_threshod_map", {})
+        num_preds, boxes, scores, classes, masks = predictions[:5]
+
+        class_map = np.vectorize(lambda c: self.class_map.get(int(c), str(c)))
+        classes = class_map(classes)
+        
+        if len(boxes) > 0:
+            scale_factors = np.array([image_w, image_h, image_w, image_h])
+            boxes = (boxes * scale_factors).astype(np.int32)
+
+        processed_masks = [] if process_masks else None
+        processed_boxes = []
+        processed_scores = []
+        processed_classes = []
+        # valid_scores = scores>= np.vectorize(confs.get)(classes, 0.5)
+        # boxes, scores = boxes[valid_scores], scores[valid_scores]
+        # classes = classes[valid_scores]
+        # masks = masks[valid_scores] if process_masks else None
+        
+
+        for idx in range(self.batch_size):
+            valid_scores = scores[idx] >= np.vectorize(confs.get)(classes[idx], 0.5)
+            filtered_masks = masks[idx][valid_scores] if process_masks else None
+            batch_boxes, batch_scores = boxes[idx][valid_scores], scores[idx][valid_scores]
+            batch_classes = classes[idx][valid_scores]
+
+            processed_boxes.append(batch_boxes)
+            processed_scores.append(batch_scores)
+            processed_classes.append(batch_classes)
             
-            for idx in range(0, self.batch_size):
+            if process_masks:
                 batch_masks = []
-                for i in range(0, int(num_preds[idx])):
-                    label = classes[idx][i]
-                    mask = masks[idx][i]
-                    box = boxes[idx][i]
-                    if kwargs.get("process_masks", False):
-                        samples_w = box[2] - box[0] + 1
-                        samples_h = box[3] - box[1] + 1
-                        mask = mask > mask_threshod_map.get(label, 0.5)
-                        mask = mask.astype(np.uint8)
-                        mask = cv2.resize(mask, (samples_w, samples_h), interpolation=cv2.INTER_LINEAR)
-                        x_0 = max(box[0], 0)
-                        x_1 = min(box[2] + 1, image_w)
-                        y_0 = max(box[1], 0)
-                        y_1 = min(box[3] + 1, image_h)
-                        im_mask = np.zeros((image_h, image_w), dtype=np.uint8)
-                        im_mask[y_0:y_1, x_0:x_1] = mask[
-                            (y_0 - box[1]) : (y_1 - box[1]), (x_0 - box[0]) : (x_1 - box[0])
-                        ]
-                        batch_masks.append(im_mask)
-                processed_masks.append(batch_masks)      
-            
+                
+                for i, box in enumerate(batch_boxes):
+                    label = batch_classes[i]
+                    mask = filtered_masks[i]
+                    
+                    w = box[2] - box[0] + 1
+                    h = box[3] - box[1] + 1
+                    mask = mask > mask_threshold_map.get(label, 0.5)
+                    mask = mask.astype(np.uint8)
+                    mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_LINEAR)
+                    
+                    x_0, x_1 = max(box[0], 0), min(box[2] + 1, image_w)
+                    y_0, y_1 = max(box[1], 0), min(box[3] + 1, image_h)
+                    im_mask = np.zeros((image_h, image_w), dtype=np.uint8)
+                    im_mask[y_0:y_1, x_0:x_1] = mask[
+                        (y_0 - box[1]):(y_1 - box[1]), (x_0 - box[0]):(x_1 - box[0])
+                    ]
+                    batch_masks.append(im_mask)
+                
+                processed_masks.append(batch_masks)
+                
         results = {
-            "boxes": np.array(boxes),
-            "scores": np.array(scores),
-            "classes": np.array(classes),
-            "masks": np.array(masks)
+            "boxes": processed_boxes,
+            "scores": processed_scores,
+            "classes": processed_classes,
+            "masks": processed_masks if process_masks else []
         }
+        
         return results
     
     def get_batches(self, images):
@@ -185,7 +199,7 @@ class Detectron2TRT(ModelBase):
                 plot_one_box(
                     boxes[i],
                     images[idx],
-                    label=f"{classes[i]}",
+                    label=f"{classes[i]}:{scores[i]:.2f}",
                     mask=masks[i] if masks is not None else None,
                     color=color_map,
                 )
