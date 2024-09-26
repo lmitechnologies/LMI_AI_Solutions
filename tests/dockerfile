@@ -1,3 +1,4 @@
+# Test using LATEST version of anomalib
 FROM nvcr.io/nvidia/pytorch:24.04-py3
 ARG DEBIAN_FRONTEND=noninteractive
 

@@ -9,4 +9,18 @@ services:
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     ipc: host
     command: >
-      bash -c "cd /app/repo && pytest"
+      bash -c "cd /app/repo && pytest --ignore tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py"
+
+  ais_test_ad_v0_only:
+    build:
+      context: .
+      dockerfile: ./dockerfile.v0
+    depends_on:
+      ais_test:
+        condition: service_completed_successfully
+    volumes:
+      - ../:/app/repo
+    runtime: nvidia
+    ipc: host
+    command: >
+      bash -c "cd /app/repo && pytest tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py"
