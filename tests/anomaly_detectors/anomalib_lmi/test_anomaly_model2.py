@@ -20,7 +20,7 @@ logger.setLevel(logging.DEBUG)
 
 
 DATA_PATH = 'tests/assets/images/nvtec-ad'
-MODEL_PATH = 'tests/assets/models/ad/model.pt'
+MODEL_PATH = 'tests/assets/models/ad/model_v1.pt'
 OUTPUT_PATH = 'tests/assets/validation'
 
 
