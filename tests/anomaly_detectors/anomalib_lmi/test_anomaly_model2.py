@@ -40,6 +40,7 @@ def test_compare_results_with_anomalib():
     model2 = AnomalyModel2(MODEL_PATH)
     paths = glob.glob(os.path.join(DATA_PATH, '*.png'))
     for p in paths:
+        # using anomalib code
         tensor = read_image(p,as_tensor=True)
         pred = model1.forward(model1.pre_process(tensor))
         if isinstance(pred, dict):
@@ -50,13 +51,14 @@ def test_compare_results_with_anomalib():
             pass
         else:
             raise Exception(f'Not supported output: {type(pred)}')
-        pred = pred.cpu().numpy()
+        pred = pred.cpu().numpy().squeeze()
         
+        # using AIS code
         im = cv2.imread(p)
         rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         pred2 = model2.predict(rgb)
         
-        assert np.allclose(pred,pred2,rtol=0)
+        assert np.array_equal(pred, pred2)
         
         
 def test_model():
