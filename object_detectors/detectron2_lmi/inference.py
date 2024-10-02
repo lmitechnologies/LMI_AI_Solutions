@@ -259,10 +259,9 @@ if __name__ == "__main__":
             results.append(
                 Rect(im_name=fname, category=class_id, up_left=box[:2].astype(int).tolist(), bottom_right=box[2:].astype(int).tolist(), confidence=score, angle=0)
             )
-            print(outputs["segments"])
-            if 'segments' in outputs:
-                segments = outputs['segments'][i]
-                results.append(Mask(im_name=fname, category=class_id, x_vals=segments[:,0].tolist(), y_vals=segments[:,1].tolist(), confidence=score))
+            segments = outputs['segments'][i].astype(int)
+            print(segments[:,0].tolist())
+            results.append(Mask(im_name=fname, category=class_id, x_vals=segments[:,0].tolist(), y_vals=segments[:,1].tolist(), confidence=score))
         shapes[fname] = results
             
     write_to_csv(shapes, os.path.join(args.output_path, f"predictions.csv"), overwrite=True)
