@@ -242,7 +242,7 @@ if __name__ == "__main__":
             print(f"Error reading image {image_path}: {e}")
             continue
         t0 = time.time()
-        outputs = model.predict(image=image, confs=confidence_map)
+        outputs = model.predict(image=image, confs=confidence_map, return_segments=True)
         t1 = time.time()
         fname = os.path.basename(image_path)
         
@@ -260,7 +260,7 @@ if __name__ == "__main__":
                 Rect(im_name=fname, category=class_id, up_left=box[:2].astype(int).tolist(), bottom_right=box[2:].astype(int).tolist(), confidence=score, angle=0)
             )
             if 'segments' in outputs:
-                segments = outputs['segments']
+                segments = outputs['segments'][i]
                 results.append(Mask(im_name=fname, category=class_id, x_vals=segments[:,0].tolist(), y_vals=segments[:,1].tolist(), confidence=score))
         shapes[fname] = results
             
