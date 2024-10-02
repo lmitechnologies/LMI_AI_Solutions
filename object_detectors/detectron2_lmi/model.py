@@ -206,7 +206,7 @@ class Detectron2TRT(ModelBase):
                 plot_one_box(
                     boxes[i],
                     images[idx],
-                    label=f"{classes[i]}:{scores[i].astype(float)}",
+                    label=f"{classes[i]}:{scores[i]}",
                     mask=masks[i] if masks is not None else None,
                     color=color_map,
                 )
