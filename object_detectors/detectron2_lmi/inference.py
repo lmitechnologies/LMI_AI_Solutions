@@ -189,7 +189,8 @@ class Detectron2Model(ModelBase):
             class_id = results["classes"][i]
             color = colormap[class_id] if colormap is not None else None
             mask = results["masks"][i] if len(results["masks"]) > 0 else None
-            label = f"{class_id}"
+            score = results["scores"][i]
+            label = f"{class_id}:{score:.2f}"
             plot_one_box(box=box, img=image, mask=mask, mask_threshold=0.5, color=color, label=label)
         return image
         
