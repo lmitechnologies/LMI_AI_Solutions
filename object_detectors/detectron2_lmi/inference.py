@@ -149,9 +149,6 @@ class Detectron2Model(ModelBase):
         postprocessed_results["classes"] = [self.class_map.get(int(label), str(label)) for label in classes[keep].cpu().numpy()] if classes is not None else np.array([])
         postprocessed_results["keypoints"] = keypoints[keep].cpu().numpy() if keypoints is not None else np.array([])
         postprocessed_results["masks"] = masks[keep].cpu().numpy() if masks is not None else np.array([])
-        coords = np.where(postprocessed_results["masks"][0] > 0.5)
-        points = np.array(list(zip(coords[1], coords[0])))
-        postprocessed_results["convex_hull"] = ConvexHull(points).vertices
 
         if return_segments:
             # Runs contour detection
@@ -262,6 +259,9 @@ if __name__ == "__main__":
             results.append(
                 Rect(im_name=fname, category=class_id, up_left=box[:2].astype(int).tolist(), bottom_right=box[2:].astype(int).tolist(), confidence=score, angle=0)
             )
+            if 'segments' in outputs:
+                segments = outputs['segments']
+                results.append(Mask(im_name=fname, category=class_id, x_vals=segments[:,0].tolist(), y_vals=segments[:,1].tolist(), confidence=score))
         shapes[fname] = results
             
     write_to_csv(shapes, os.path.join(args.output_path, f"predictions.csv"), overwrite=True)
