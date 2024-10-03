@@ -17,7 +17,7 @@ def convert_to_trt(**kwargs):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Convert a model to ONNX and then to TensorRT.")
     parser.add_argument("-b","--batch-size", type=int, help="Batch size for the model", default=1)
-    parser.add_argument("-fp16",action='store_true', help="Use fp16", default=False)
+    parser.add_argument("--fp16",action='store_true', help="Use fp16")
     args = parser.parse_args()
     convert_to_onnx(batch_size=args.batch_size)
     convert_to_trt(fp16=args.fp16)
