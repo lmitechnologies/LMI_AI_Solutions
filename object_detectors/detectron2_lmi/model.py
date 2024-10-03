@@ -244,7 +244,7 @@ if __name__ == "__main__":
     model = Detectron2TRT(args.model_path, class_map)
     model.warmup()
     
-    images = glob.glob(os.path.join(args.images_path, "*.png"))
+    images = glob.glob(os.path.join(args.images_path, "*"))
     image_batch = [
         cv2.imread(image)
         for image in images
