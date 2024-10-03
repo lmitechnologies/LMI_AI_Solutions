@@ -12,7 +12,7 @@ def convert_to_trt(**kwargs):
     if kwargs.get('fp16', False):
         command += ' --fp16'
         
-    subprocess.run('command', shell=True)
+    subprocess.run(command, shell=True)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Convert a model to ONNX and then to TensorRT.")
