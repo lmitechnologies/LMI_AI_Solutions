@@ -233,9 +233,9 @@ if __name__ == "__main__":
     import json
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model_path", type=str, default="/home/weights/engine.trt")
-    parser.add_argument("--images_path", type=str, default="/home/data/images")
-    parser.add_argument("--class-map", type=str, help="Class map json file", default="/home/data/class_map.json")
+    parser.add_argument("--model_path", type=str, default="/home/weights/model.trt")
+    parser.add_argument("--images_path", type=str, default="/home/input")
+    parser.add_argument("--class-map", type=str, help="Class map json file", default="/home/class_map.json")
 
     
     args = parser.parse_args()
@@ -251,18 +251,25 @@ if __name__ == "__main__":
     ]
     batches = model.get_batches(image_batch)
     current_image_count = 0
-    for batch in batches:
+    for idx, batch in enumerate(batches):
         batch_preds = model.predict(batch)
         model.annotate_images(batch_preds, batch)
         num_images = len(batch_preds["classes"])
+        batch_classes = batch_preds["classes"]
         # remove empty images
         for i in range(num_images):
             if i + current_image_count >= len(images):
                 break
             image_path = images[i + current_image_count]
             image = cv2.imread(image_path)
-            annotated_image = model.annotate_image(batch_preds, image)
-            cv2.imwrite(f"/home/data/output/{os.path.basename(image_path)}_annotated.png", annotated_image)
+            batch_pred = {
+                "boxes": batch_preds["boxes"][i],
+                "scores": batch_preds["scores"][i],
+                "classes": batch_preds["classes"][i],
+            }
+            annotated_image = model.annotate_image(batch_pred, image)
+            file_ext = os.path.basename(image_path).split('.')[-1]
+            cv2.imwrite(f"/home/data/output/{os.path.basename(image_path)}_annotated.{file_ext}", annotated_image)
         current_image_count += num_images
     # t0 = time.time()
     # preds = model.predict(image_batch[:20], {}, {}, process_masks=True)
