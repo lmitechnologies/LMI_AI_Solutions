@@ -253,7 +253,6 @@ if __name__ == "__main__":
     current_image_count = 0
     for idx, batch in enumerate(batches):
         batch_preds = model.predict(batch)
-        model.annotate_images(batch_preds, batch)
         num_images = len(batch_preds["classes"])
         batch_classes = batch_preds["classes"]
         # remove empty images
