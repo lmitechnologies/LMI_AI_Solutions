@@ -211,6 +211,17 @@ class Detectron2TRT(ModelBase):
                     color=color_map,
                 )
         return images
+    
+    def annotate_image(self, result, image, color_map=None):
+        for i in range(len(result["classes"])):
+            plot_one_box(
+                result["boxes"][i],
+                image,
+                label=f"{result['classes'][i]}:{result['scores'][i]:.2f}",
+                mask=result["masks"][i] if len(result["masks"]) > 0 else None,
+                color=color_map,
+            )
+        return images
 
 
 
@@ -238,13 +249,28 @@ if __name__ == "__main__":
         cv2.imread(image)
         for image in images
     ]
-    t0 = time.time()
-    preds = model.predict(image_batch[:20], {}, {}, process_masks=True)
-    t1 = time.time()
-    print(f"Inference time: {(t1 - t0)* 1000} ms")
-    model.annotate_images(preds, image_batch[:20])
-    for image,pth in zip(image_batch[:20], images[:20]):
-        cv2.imwrite(f"/home/data/output/{os.path.basename(pth)}_annotated.png", image)
+    batches = model.get_batches(image_batch)
+    current_image_count = 0
+    for batch in batches:
+        batch_preds = model.predict(batch)
+        model.annotate_images(batch_preds, batch)
+        num_images = len(batch_preds["classes"])
+        # remove empty images
+        for i in range(num_images):
+            if i + current_image_count >= len(images):
+                break
+            image_path = images[i + current_image_count]
+            image = cv2.imread(image_path)
+            annotated_image = model.annotate_image(batch_preds, image)
+            cv2.imwrite(f"/home/data/output/{os.path.basename(image_path)}_annotated.png", annotated_image)
+        current_image_count += num_images
+    # t0 = time.time()
+    # preds = model.predict(image_batch[:20], {}, {}, process_masks=True)
+    # t1 = time.time()
+    # print(f"Inference time: {(t1 - t0)* 1000} ms")
+    # model.annotate_images(preds, image_batch[:20])
+    # for image,pth in zip(image_batch[:20], images[:20]):
+    #     cv2.imwrite(f"/home/data/output/{os.path.basename(pth)}_annotated.png", image)
     # for image, result, pth in zip(image_batch[:20], preds, images[:20]):
     #     annotated_image = model.annotate_image(result, image)
     #     cv2.imwrite(f"/home/data/output/{os.path.basename(pth)}_annotated.png", annotated_image)
