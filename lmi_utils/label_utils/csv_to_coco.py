@@ -71,6 +71,7 @@ class Dataset(object):
             path_imgs(str): the path to image folder
         """
         files = glob.glob(os.path.join(path_imgs,'*.png'))
+        files += glob.glob(os.path.join(path_imgs,'*.jpg'))
         for f in files:
             dt = {}
             im = cv2.imread(f)
