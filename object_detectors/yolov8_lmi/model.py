@@ -17,7 +17,7 @@ import gadget_utils.pipeline_utils as pipeline_utils
 
 
 
-@torch.no_grad()
+@smart_inference_mode()
 def to_numpy(data):
     """Converts a tensor or a list to numpy arrays.
 
@@ -324,7 +324,7 @@ class Yolov8(ODBase):
     
     
     @staticmethod
-    @torch.no_grad()
+    @smart_inference_mode()
     def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False):
         """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
 
@@ -341,36 +341,51 @@ class Yolov8(ODBase):
         classes = results['classes']
         scores = results['scores']
         masks = results['masks']
+        points = results['points']
         
+        image = to_numpy(image).copy()
         if not len(boxes):
-            return to_numpy(image)
+            return image
         
         # convert to numpy
-        image = to_numpy(image).copy()
         boxes = to_numpy(boxes)
+        points = to_numpy(points)
         if len(masks):
             masks = to_numpy(masks)
         
         if image.ndim == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         
-        
+        # annotate the image
         for i in range(len(boxes)):
-            mask = masks[i] if len(masks) else None
-            if hide_label:
-                label_arg=None
-            else:
-                label_arg="{}: {:.2f}".format(classes[i], scores[i])
-            pipeline_utils.plot_one_box(
-                boxes[i],
-                image,
-                mask,
-                label=label_arg,
-                color=colormap[classes[i]] if colormap is not None else None,
-                line_thickness=line_thickness,
-                hide_bbox=hide_bbox
-            )
+            label = "{}: {:.2f}".format(classes[i], scores[i])
+            args = {
+                'label': None if hide_label else label, 
+                'color': None if colormap is None else colormap[classes[i]], 
+                'line_thickness':line_thickness, 
+                'hide_bbox':hide_bbox
+                }
+            
+            if boxes[i].shape == (4,2):
+                pipeline_utils.plot_one_rbox(
+                    boxes[i],
+                    image,
+                    **args
+                )
+            elif boxes[i].shape == (4,):
+                pipeline_utils.plot_one_box(
+                    boxes[i],
+                    image,
+                    masks[i] if len(masks) else None,
+                    **args
+                )
+        # annotate the keypoints
+        points = points.astype(int)
+        for i in range(len(points)):
+            for j in range(len(points[i])):
+                cv2.circle(image, (points[i][j][0], points[i][j][1]), 4, (255,255,255), -1)
         return image
+
 
 
 class Yolov8Obb(Yolov8):
@@ -514,44 +529,6 @@ class Yolov8Obb(Yolov8):
         time_info['postproc'] = time.time()-t0
         return results_dict, time_info
     
-    @staticmethod
-    def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False):
-        """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
-
-        Args:
-            results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
-            image (np.ndarray): the input image
-            colors (list, optional): a dictionary of colormaps, e.g., {'class-A':(0,0,255), 'class-B':(0,255,0)}. Defaults to None.
-            line_thickness (int, optional): the thickness of the bounding box. Defaults to None.
-        Returns:
-            np.ndarray: the annotated image
-        """
-        boxes = results['boxes']
-        classes = results['classes']
-        scores = results['scores']
-
-        if not len(boxes):
-            return to_numpy(image)
-        
-        image = to_numpy(image).copy()
-        boxes = to_numpy(boxes)
-        scores = to_numpy(scores)
-        
-        for i in range(len(boxes)):
-            if hide_label:
-                label_arg=None
-            else:
-                label_arg="{}: {:.2f}".format(classes[i], scores[i])
-            pipeline_utils.plot_one_rbox(
-                boxes[i],
-                image,
-                label=label_arg,
-                color=colormap[classes[i]] if colormap is not None else None,
-                line_thickness = line_thickness,
-                hide_bbox=hide_bbox
-            )
-        return image
-    
 
 
 class Yolov8Pose(Yolov8):
@@ -676,49 +653,3 @@ class Yolov8Pose(Yolov8):
             
         time_info['postproc'] = time.time()-t0
         return results_dict, time_info
-    
-    
-    @staticmethod
-    def annotate_image(results, image, colormap=None, kp_color=(255,255,255), line_thickness=None, hide_label=False, hide_bbox=False):
-        """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
-
-        Args:
-            results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
-            image (np.ndarray): the input image
-            colors (list, optional): a dictionary of colormaps, e.g., {'class_A':(0,0,255), 'class_B':(0,255,0)}. Defaults to None.
-            line_thickness (int, optional): the thickness of the bounding box. Defaults to None.
-        Returns:
-            np.ndarray: the annotated image
-        """
-        boxes = results['boxes']
-        classes = results['classes']
-        scores = results['scores']
-        points = results['points']
-        
-        if not len(boxes):
-            return to_numpy(image)
-        
-        # convert to numpy
-        image = to_numpy(image).copy()
-        boxes = to_numpy(boxes)
-        scores = to_numpy(scores)
-        points = to_numpy(points)
-        
-        for i in range(len(boxes)):
-            if hide_label:
-                label_arg=None
-            else:
-                label_arg="{}: {:.2f}".format(classes[i], scores[i])
-            pipeline_utils.plot_one_box(
-                boxes[i],
-                image,
-                label=label_arg,
-                color=colormap[classes[i]] if colormap is not None else None,
-                line_thickness=line_thickness,
-                hide_bbox=hide_bbox
-            )
-            
-        for i in range(len(points)):
-            for j in range(len(points[i])):
-                cv2.circle(image, (int(points[i][j][0]), int(points[i][j][1])), 4, kp_color, -1)
-        return image
