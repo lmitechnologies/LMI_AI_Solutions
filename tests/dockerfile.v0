@@ -1,0 +1,23 @@
+# Test using OLD version of anomalib
+FROM nvcr.io/nvidia/pytorch:24.04-py3
+
+RUN apt-get update
+RUN apt-get install libgl1 -y
+WORKDIR /app
+
+# RUN pip install pycuda
+RUN pip install opencv-python --user 
+RUN pip install nvidia-pyindex onnx-graphsurgeon
+RUN pip install tabulate
+RUN pip install albumentations
+RUN pip install pytest
+
+# Installing from anomalib src requires latest pip 
+RUN python3 -m pip install --upgrade pip
+RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN cd LMI_AI_Solutions/anomaly_detectors && git submodule update --init submodules/anomalib
+RUN cd LMI_AI_Solutions/anomaly_detectors/submodules/anomalib && pip install -e .
+
+# install git lfs 
+RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
+RUN apt-get install git-lfs

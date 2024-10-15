@@ -9,12 +9,21 @@ data:
     mask_dir: null
     normal_split_ratio: 0
     extensions: [".jpg"]
-    image_size: [224,224]
     train_batch_size: 32
     eval_batch_size: 32
     num_workers: 8
     task: segmentation
-    transform: null
+    transform:
+      class_path: torchvision.transforms.v2.Compose
+      init_args:
+        transforms:
+          - class_path: torchvision.transforms.v2.Resize
+            init_args:
+              size: [224, 224]
+          - class_path: torchvision.transforms.v2.Normalize
+            init_args:
+              mean: [0.485, 0.456, 0.406]
+              std: [0.229, 0.224, 0.225]
     train_transform: null
     eval_transform: null
     test_split_mode: synthetic
@@ -24,15 +33,15 @@ data:
     seed: null
 
 model:
-  class_path: anomalib.models.Padim
+  class_path: anomalib.models.Patchcore
   init_args:
+    backbone: wide_resnet50_2
     layers:
-      - layer1
       - layer2
       - layer3
-    backbone: resnet18
     pre_trained: true
-    n_features: null
+    coreset_sampling_ratio: 0.1
+    num_neighbors: 9
 
 metrics:
   pixel: AUROC

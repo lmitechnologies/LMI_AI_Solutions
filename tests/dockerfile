@@ -1,0 +1,20 @@
+# Test using LATEST version of anomalib
+FROM nvcr.io/nvidia/pytorch:24.04-py3
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update
+RUN apt-get install libgl1 -y
+WORKDIR /app
+
+RUN pip install opencv-python -U --user
+RUN pip install tabulate
+RUN pip install pytest
+RUN pip install ultralytics
+
+# Installing from anomalib src
+RUN git clone -b v1.1.1 https://github.com/openvinotoolkit/anomalib.git && cd anomalib && pip install -e .
+RUN anomalib install --option core
+
+# install git lfs 
+RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
+RUN apt-get install git-lfs
