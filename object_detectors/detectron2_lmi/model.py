@@ -8,7 +8,6 @@ import cv2
 import logging
 import torch
 import time
-import postprocess_mask_module
 
 
 class Detectron2TRT(ModelBase):
