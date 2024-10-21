@@ -32,6 +32,7 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
     files = get_relative_paths(path_imgs, recursive)
     for f in files:
         im_name = os.path.basename(f)
+        
         im = cv2.imread(os.path.join(path_imgs, f))
         h,w = im.shape[:2]
         
@@ -46,37 +47,40 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
         
         # resize image
         tw,th = output_imsize
-        if tw is None and th is None:
-            raise Exception('Both width and height cannot be None')
-        elif tw is None:
-            tw = 'w'
-            rx = ry = th/h
-            im2 = resize(im, height=th)
-        elif th is None:
-            th = 'h'
-            rx = ry = tw/w
-            im2 = resize(im, width=tw)
-        else:
-            rx,ry = tw/w, th/h
-            im2 = resize(im, width=tw, height=th)
-        
         out_name = os.path.splitext(im_name)[0] + f'_resized_{tw}x{th}' + '.png'
-        logger.info(f'write to {out_name}')
-        cv2.imwrite(os.path.join(path_out,out_name), im2)
+        if not os.path.isfile(out_name):
+            
+            if tw is None and th is None:
+                raise Exception('Both width and height cannot be None')
+            elif tw is None:
+                tw = 'w'
+                rx = ry = th/h
+                im2 = resize(im, height=th)
+            elif th is None:
+                th = 'h'
+                rx = ry = tw/w
+                im2 = resize(im, width=tw)
+            else:
+                rx,ry = tw/w, th/h
+                im2 = resize(im, width=tw, height=th)
         
-        for i in range(len(shapes[im_name])):
-            shapes[im_name][i].im_name = out_name
-            if isinstance(shapes[im_name][i], Rect):
-                x,y = shapes[im_name][i].up_left
-                shapes[im_name][i].up_left = [x*rx, y*ry]
-                x,y = shapes[im_name][i].bottom_right
-                shapes[im_name][i].bottom_right = [x*rx, y*ry]
-            elif isinstance(shapes[im_name][i], Mask):
-                shapes[im_name][i].X = [v*rx for v in shapes[im_name][i].X]
-                shapes[im_name][i].Y = [v*ry for v in shapes[im_name][i].Y]
-            elif isinstance(shapes[im_name][i], Keypoint):
-                shapes[im_name][i].x = shapes[im_name][i].x*rx
-                shapes[im_name][i].y = shapes[im_name][i].y*ry
+            out_name = os.path.splitext(im_name)[0] + f'_resized_{tw}x{th}' + '.png'
+            logger.info(f'write to {out_name}')
+            cv2.imwrite(os.path.join(path_out,out_name), im2)
+        
+            for i in range(len(shapes[im_name])):
+                shapes[im_name][i].im_name = out_name
+                if isinstance(shapes[im_name][i], Rect):
+                    x,y = shapes[im_name][i].up_left
+                    shapes[im_name][i].up_left = [x*rx, y*ry]
+                    x,y = shapes[im_name][i].bottom_right
+                    shapes[im_name][i].bottom_right = [x*rx, y*ry]
+                elif isinstance(shapes[im_name][i], Mask):
+                    shapes[im_name][i].X = [v*rx for v in shapes[im_name][i].X]
+                    shapes[im_name][i].Y = [v*ry for v in shapes[im_name][i].Y]
+                elif isinstance(shapes[im_name][i], Keypoint):
+                    shapes[im_name][i].x = shapes[im_name][i].x*rx
+                    shapes[im_name][i].y = shapes[im_name][i].y*ry
     if cnt_bg:
         logger.info(f'found {cnt_bg} images with no labels. These images will be used as background training data in YOLO')
     return shapes
