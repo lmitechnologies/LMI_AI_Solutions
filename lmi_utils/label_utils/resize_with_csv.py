@@ -48,7 +48,8 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
         # resize image
         tw,th = output_imsize
         out_name = os.path.splitext(im_name)[0] + f'_resized_{tw}x{th}' + '.png'
-        to_resize = os.path.isfile(out_name)
+        out_path = os.path.join(path_out,out_name)
+        to_resize = os.path.isfile(out_path)
         
         if tw is None and th is None:
             raise Exception('Both width and height cannot be None')
