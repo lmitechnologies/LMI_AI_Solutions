@@ -49,7 +49,7 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
         tw,th = output_imsize
         out_name = os.path.splitext(im_name)[0] + f'_resized_{tw}x{th}' + '.png'
         out_path = os.path.join(path_out,out_name)
-        to_resize = not os.path.isfile(out_path)
+        to_resize = True if os.path.isfile(out_path) is False else False
         
         if tw is None and th is None:
             raise Exception('Both width and height cannot be None')
@@ -73,6 +73,8 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
         if to_resize:
             logger.info(f'write to {out_name}')
             cv2.imwrite(os.path.join(path_out,out_name), im2)
+        else:
+            logger.info(f'resized image already exists {out_name}')
         
         for i in range(len(shapes[im_name])):
             shapes[im_name][i].im_name = out_name
