@@ -60,8 +60,8 @@ def convert_to_txt(fname_to_shapes, target_classes:list, is_seg=False, is_conver
     for fname in fname_to_shapes:
         rows = []
         kps = []
+        logger.info(f'{fname}')
         for shape in fname_to_shapes[fname]:
-            logger.info(f'{shape.im_name}')
             #get class ID
             if shape.category not in target_classes:
                 continue

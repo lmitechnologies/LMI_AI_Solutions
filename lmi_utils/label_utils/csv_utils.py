@@ -100,7 +100,7 @@ def write_to_csv(shapes:dict, filename:str, overwrite=True):
         filename(str): the output csv filename
         overwrite(bool): whether to overwrite the file if it exists, default is True
     """
-    with open(filename, 'a+' if not overwrite else 'w') as f:
+    with open(filename, 'a+' if not overwrite else 'w', newline='') as f:
         writer = csv.writer(f, delimiter=';')
         for im_name in shapes:
             for shape in shapes[im_name]:
