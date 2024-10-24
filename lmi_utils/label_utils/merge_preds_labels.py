@@ -12,7 +12,7 @@ logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-def merge_preds_labels(preds, labels, imgs_path,path_out, iou_threshold=0.3, output_csv='merged.csv'):
+def merge_preds_labels(preds, labels, imgs_path,path_out, iou_threshold=0.3, output_csv='merged.csv', tag_preds=False):
     """
     merge predictions and labels into a csv file
     Arguments:
@@ -27,11 +27,12 @@ def merge_preds_labels(preds, labels, imgs_path,path_out, iou_threshold=0.3, out
     labels_shapes, _ = csv_utils.load_csv(labels, path_img=imgs_path)
     # merge unique preds and labels determine by iou_threshold if the iou is less than iou_threshold, 
     # it will be considered as a new shape
-    
+
     # update the label category with <category>-pred
-    for im_name, shapes in preds_shapes.items():
-        for shape in shapes:
-            shape.category = f'{shape.category}-pred'
+    if tag_preds:
+        for im_name, shapes in preds_shapes.items():
+            for shape in shapes:
+                shape.category = f'{shape.category}-pred'
 
     for im_name, shapes in labels_shapes.items():
         if im_name not in preds_shapes:
@@ -46,11 +47,11 @@ def merge_preds_labels(preds, labels, imgs_path,path_out, iou_threshold=0.3, out
             for shape in shapes:
                 x1,y1 =shape.up_left
                 x2,y2 = shape.bottom_right
-                pred_category = shape.category
+                pred_category = shape.category.replace('-pred', '') if tag_preds else shape.category
                 best_iou = 0
                 for label_shape in labels_shapes[im_name]:
                     label_category = label_shape.category
-                    if pred_category.replace('-pred', '') != label_category:
+                    if pred_category != label_category:
                         continue
                     x1_l,y1_l = label_shape.up_left
                     x2_l,y2_l = label_shape.bottom_right
@@ -78,6 +79,7 @@ if __name__ == '__main__':
     ap.add_argument('--path_out', '-o', required=True, help='the path to save the merged csv file')
     ap.add_argument('--iou', type=float, default=0.3, help='the iou threshold to determine the same shape, default=0.3')
     ap.add_argument('--output_csv', default='merged.csv', help='the output csv file name, default="merged.csv"')
+    ap.add_argument('--tag_preds', action='store_true', help='tag the predictions with "-pred"')
     args = ap.parse_args()
 
-    merge_preds_labels(args.path_preds, args.path_csv, args.path_imgs ,args.path_out, args.iou, args.output_csv)
+    merge_preds_labels(args.path_preds, args.path_csv, args.path_imgs ,args.path_out, args.iou, args.output_csv, args.tag_preds)
