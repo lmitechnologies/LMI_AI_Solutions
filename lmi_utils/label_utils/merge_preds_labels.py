@@ -45,14 +45,17 @@ def merge_preds_labels(preds, labels, imgs_path,path_out, iou_threshold=0.3, out
                 best_iou = 0
                 for label_shape in labels_shapes[im_name]:
                     label_category = label_shape.category
-                    if pred_category != label_category:
+                    if pred_category.replace('-pred', '') != label_category:
                         continue
                     x1_l,y1_l = label_shape.up_left
                     x2_l,y2_l = label_shape.bottom_right
+                    # compute the iou between the prediction and the label
                     iou = box_iou(torch.tensor([[x1, y1, x2, y2]]), torch.tensor([[x1_l, y1_l, x2_l, y2_l]]))
                     best_iou = max(iou, best_iou)
                 if best_iou <= iou_threshold:
                     logger.info(f'{im_name}: up left {shape.up_left} bottom right {shape.bottom_right} is not in labels')
+                    # update the label category with <category>-pred
+                    shape.category = f'{shape.category}-pred'
                     labels_shapes[im_name].append(shape)
     
     # save to csv
