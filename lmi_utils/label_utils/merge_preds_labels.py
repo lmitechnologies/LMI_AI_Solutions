@@ -27,6 +27,11 @@ def merge_preds_labels(preds, labels, imgs_path,path_out, iou_threshold=0.3, out
     labels_shapes, _ = csv_utils.load_csv(labels, path_img=imgs_path)
     # merge unique preds and labels determine by iou_threshold if the iou is less than iou_threshold, 
     # it will be considered as a new shape
+    
+    # update the label category with <category>-pred
+    for im_name, shapes in preds_shapes.items():
+        for shape in shapes:
+            shape.category = f'{shape.category}-pred'
 
     for im_name, shapes in labels_shapes.items():
         if im_name not in preds_shapes:
@@ -54,8 +59,6 @@ def merge_preds_labels(preds, labels, imgs_path,path_out, iou_threshold=0.3, out
                     best_iou = max(iou, best_iou)
                 if best_iou <= iou_threshold:
                     logger.info(f'{im_name}: up left {shape.up_left} bottom right {shape.bottom_right} is not in labels')
-                    # update the label category with <category>-pred
-                    shape.category = f'{shape.category}-pred'
                     labels_shapes[im_name].append(shape)
     
     # save to csv
