@@ -10,4 +10,4 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["data_utils", "eval_utils", "gadget_utils", "image_utils", "label_utils", "pcl_utils", "system_utils", "postprocess_utils"]
+packages = ["data_utils", "eval_utils", "gadget_utils", "image_utils", "label_utils", "pcl_utils", "system_utils", "postprocess_utils", "dataset_utils"]

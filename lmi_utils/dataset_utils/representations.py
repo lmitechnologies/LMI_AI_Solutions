@@ -1,15 +1,17 @@
 from dataclasses import dataclass, asdict
 import enum
 import json
-from typing import Union, List
-from dataset_utils.mask_encoder import rle2mask, mask2rle
-from image_utils.img_resize import resize
-from gadget_utils.pipeline_utils import fit_array_to_size
+from typing import Optional, Union, List
 import os
 import numpy as np
 import logging
-from label_utils.bbox_utils import rotate
 import cv2
+
+# Assume these utility functions are defined elsewhere.
+from dataset_utils.mask_encoder import rle2mask, mask2rle
+from image_utils.img_resize import resize
+from gadget_utils.pipeline_utils import fit_array_to_size
+from label_utils.bbox_utils import rotate
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -65,6 +67,10 @@ class Point2d(Base):
         self.x = float(x)
         self.y = float(y)
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "Point2d":
+        return cls(x=data["x"], y=data["y"])
+
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
         rx = new_w / orig_w if orig_w else 1
         ry = new_h / orig_h if orig_h else 1
@@ -95,9 +101,9 @@ class Box(Base):
     y_min: float
     x_max: float
     y_max: float
-    angle: float
+    angle: Optional[float] = 0
 
-    def __init__(self, x_min, y_min, x_max, y_max, angle):
+    def __init__(self, x_min, y_min, x_max, y_max, angle=0):
         super().__init__()
         self.x_min = float(x_min)
         self.y_min = float(y_min)
@@ -108,6 +114,10 @@ class Box(Base):
             raise ValueError("x_min must be less than x_max")
         if self.y_min > self.y_max:
             raise ValueError("y_min must be less than y_max")
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Box":
+        return cls(**data)
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
         if orig_w <= 0 or orig_h <= 0:
@@ -140,7 +150,6 @@ class Box(Base):
     def to_yolo(self, h, w):
         width = self.x_max - self.x_min
         height = self.y_max - self.y_min
-        # If the box is rotated, use the rotated coordinates.
         if self.angle > 0:
             rotated_coords = rotate(
                 self.x_min,
@@ -156,141 +165,153 @@ class Box(Base):
             return [[self.x_min / w, self.y_min / h, width / w, height / h]]
 
     def to_mask(self, **kwargs):
-        # Expect kwargs to include "h", "w", and optionally "mask_type"
         img_h = kwargs.get("h")
         img_w = kwargs.get("w")
         mask_type = kwargs.get("mask_type", AnnotationType.MASK)
         if mask_type == AnnotationType.MASK:
             mask = np.zeros((img_h, img_w), dtype=np.uint8)
             mask[int(self.y_min): int(self.y_max), int(self.x_min): int(self.x_max)] = 1
-            return Mask(mask=mask2rle(mask), h=img_h, w=img_w, mask_type=AnnotationType.MASK)
+            return Mask(mask=mask)
         elif mask_type == AnnotationType.POLYGON:
             return Polygon(
                 points=[
-                    Point2d(self.x_min, self.y_min),
-                    Point2d(self.x_max, self.y_min),
-                    Point2d(self.x_max, self.y_max),
-                    Point2d(self.x_min, self.y_max),
+                    [self.x_min, self.y_min],
+                    [self.x_max, self.y_min],
+                    [self.x_max, self.y_max],
+                    [self.x_min, self.y_max],
                 ]
             )
         else:
             raise ValueError("Unsupported mask_type in Box.to_mask")
+    
+    def point_in_box(self, x: int, y: int):
+        return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
 
 
 class Polygon(Base):
-    def __init__(self, points: List[Point2d] = None):
+    def __init__(self, points: List[List[int]] = []):
         super().__init__()
-        self.points = points if points is not None else []
+        self.points = points
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Polygon":
+        return cls(**data)
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
         for point in self.points:
-            point.resize(orig_h, orig_w, new_h, new_w)
+            p = Point2d(x=point[0], y=point[1])
+            p = p.resize(orig_h, orig_w, new_h, new_w)
+            point[0], point[1] = p.x, p.y
         return self
 
     def pad(self, **kwargs):
         pl = kwargs.get("pl", 0)
         pt = kwargs.get("pt", 0)
         for point in self.points:
-            point.pad(pl=pl, pt=pt)
+            p = Point2d(x=point[0], y=point[1])
+            p = p.pad(pl=pl, pt=pt)
+            point[0], point[1] = p.x, p.y
         return self
 
     def to_numpy(self):
-        return np.array([point.to_numpy() for point in self.points])
+        return np.array(self.points)
 
     def coords(self):
-        return [point.coords() for point in self.points]
+        points = np.array(self.points)
+        return points[:, 0].tolist(), points[:, 1].tolist()
 
     def to_yolo(self, h, w):
-        return [[point.x / w, point.y / h] for point in self.points]
+        return [[point[0] / w, point[1] / h] for point in self.points]
 
     def to_mask(self, **kwargs):
         img_h = kwargs.get("h")
         img_w = kwargs.get("w")
         mask = np.zeros((img_h, img_w), dtype=np.uint8)
-        pts = np.array([[point.x, point.y] for point in self.points], np.int32)
+        pts = self.to_numpy().astype(np.int32)
         cv2.fillPoly(mask, [pts], 1)
-        return Mask(mask=mask2rle(mask), h=img_h, w=img_w, mask_type=AnnotationType.POLYGON)
+        return Mask(mask=mask2rle(mask))
 
 
 @dataclass
 class Mask(Base):
     mask: str
 
-    def __init__(self, mask: Union[str, np.ndarray], h: int = 0, w: int = 0,
-                 mask_type: AnnotationType = AnnotationType.MASK):
+    def __init__(
+        self,
+        mask: Union[str, np.ndarray],
+    ):
         super().__init__()
         if not isinstance(mask, (str, np.ndarray)):
             raise ValueError("Mask must be a string or numpy array")
-        self.h = h
-        self.w = w
-        self.mask_type = mask_type
         if isinstance(mask, np.ndarray):
             self.mask = mask2rle(mask)
         else:
             self.mask = mask
+    @classmethod
+    def from_dict(cls, data: dict) -> "Mask":
+        instance = cls(
+            **data
+        )
+        return instance
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
         assert orig_h > 0 and orig_w > 0, "Original height and width must be positive"
         rx = new_w / orig_w
-        ry = new_h / orig_h  # fixed: use orig_h instead of orig_w here
-        mask_array = rle2mask(self.mask, self.h, self.w)
-        tw = int(self.w * rx)
-        th = int(self.h * ry)
+        ry = new_h / orig_h
+        mask_array = rle2mask(self.mask, h=orig_h, w=orig_w)
+        tw = int(orig_w * rx)
+        th = int(orig_h * ry)
         resized_mask = resize(mask_array, tw, th)
         self.mask = mask2rle(resized_mask)
-        self.h, self.w = th, tw
         return self
 
     def pad(self, **kwargs):
         pad_h = kwargs.get("pad_h", 0)
         pad_w = kwargs.get("pad_w", 0)
-        mask_array = rle2mask(self.mask, self.h, self.w)
+        mask_array = rle2mask(self.mask, h=kwargs.get("h"), w=kwargs.get("w"))
         mask_array, _, _, _, _ = fit_array_to_size(mask_array, pad_w, pad_h)
         self.mask = mask2rle(mask_array)
-        self.w += pad_w
-        self.h += pad_h
         return self
 
-    def to_numpy(self):
-        """Convert the mask to a numpy array."""
-        return rle2mask(self.mask, self.h, self.w)
+    def to_numpy(self, **kwargs):
+        h = kwargs.get("h")
+        w = kwargs.get("w")
+        return rle2mask(self.mask, h, w)
 
-    def coords(self):
-        """Return the mask coordinates as lists of x and y."""
-        mask = self.to_numpy()
+    def coords(self, **kwargs):
+        mask = self.to_numpy(h=kwargs.get("h"), w=kwargs.get("w"))
         ys, xs = np.nonzero(mask)
         return xs.tolist(), ys.tolist()
 
-    def to_polygon(self) -> List[Polygon]:
-        mask_array = self.to_numpy()
+    def to_polygon(self, **kwargs) -> List[Polygon]:
+        h = kwargs.get("h")
+        w = kwargs.get("w")
+        mask_array = self.to_numpy(h=h, w=w)
         contours, _ = cv2.findContours(mask_array, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         polygons = [contour.reshape(-1, 2) for contour in contours]
-        return [Polygon([Point2d(x, y) for x, y in polygon]) for polygon in polygons]
+        return [Polygon([[x, y] for x, y in polygon]) for polygon in polygons]
 
     def to_yolo(self, h, w):
-        # Convert mask into one or more polygon representations then into YOLO format.
+        # Delegate conversion to polygons.
         instances = []
-        polygons = self.to_polygon()
-        for polygon in polygons:
-            instances.append(polygon.to_yolo(h, w))
+        for polygon in self.to_polygon(h=h, w=w):
+            instances.append(polygon.to_yolo(h=h, w=w))
         return instances
 
     def to_box(self, **kwargs):
         merge_boxes = kwargs.get("merge_boxes", False)
-        mask_array = self.to_numpy()
+        mask_array = self.to_numpy(h=kwargs.get("h"), w=kwargs.get("w"))
         if merge_boxes:
-            # Get all nonzero points and compute one bounding rectangle.
             pts = np.column_stack(np.where(mask_array > 0))
             if pts.size == 0:
                 raise ValueError("Mask is empty; cannot compute bounding box.")
             x, y, w_box, h_box = cv2.boundingRect(pts)
             return Box(x_min=x, y_min=y, x_max=x + w_box, y_max=y + h_box, angle=0)
         else:
-            # Compute a bounding box for each contour.
             boxes = []
-            polygons = self.to_polygon()
-            for poly in polygons:
-                pts = np.array(poly.coords(), dtype=np.int32)
+            for poly in self.to_polygon(h=kwargs.get("h"), w=kwargs.get("w")):
+                xs, ys = poly.coords()
+                pts = np.array(list(zip(xs, ys)), dtype=np.int32)
                 if pts.size == 0:
                     continue
                 x, y, w_box, h_box = cv2.boundingRect(pts)
@@ -301,12 +322,18 @@ class Mask(Base):
 @dataclass
 class Label(Base):
     id: str
-    index: str
+    name: str
+    color: Optional[str] = None
 
-    def __init__(self, id: str, index: Union[str, int]):
+    def __init__(self, id: str, name: str, color: Optional[str] = None):
         super().__init__()
         self.id = id
-        self.index = str(index) if isinstance(index, int) else index
+        self.name = name
+        self.color = color
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Label":
+        return cls(id=data["id"], name=data["name"], color=data.get("color"))
 
 
 @dataclass
@@ -314,28 +341,43 @@ class Annotation(Base):
     id: str
     label_id: str
     type: AnnotationType
-    link: str = None  # Can be a Link instance
-    confidence: float = 1.0
-    iou: float = 0.0
-    
+    value: Optional[Union[Box, Mask, Point2d, Polygon]] = None
+    link: Optional[str] = None,
+    confidence: Optional[float] = None,
+    iou: Optional[float] = None,
+
     def __init__(
         self,
         id: str,
         label_id: str,
-        type: AnnotationType,
-        value: Union[Box, Mask, Point2d, Polygon],
-        link: object = None,
-        confidence: float = 1.0,
-        iou: float = 0.0,
+        type: AnnotationType=None,
+        value: Optional[Union[Box, Mask, Point2d, Polygon]] = None,
+        link: Optional[str] = None,
+        confidence: Optional[float] = None,
+        iou: Optional[float] = None,
     ):
         super().__init__()
         self.id = id
         self.label_id = label_id
         self.type = type
-        self.value = value
         self.link = link
         self.confidence = confidence
         self.iou = iou
+        self.value = value
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Annotation":
+        ann_type = data.get("type")
+        if ann_type == AnnotationType.BOX.value:
+            return BoxAnnotation.from_dict(data)
+        elif ann_type == AnnotationType.MASK.value:
+            return MaskAnnotation.from_dict(data)
+        elif ann_type == AnnotationType.KEYPOINT.value:
+            return KeypointAnnotation.from_dict(data)
+        elif ann_type == AnnotationType.POLYGON.value:
+            return PolygonAnnotation.from_dict(data)
+        else:
+            raise ValueError(f"Unsupported annotation type: {ann_type}")
 
 
 class BoxAnnotation(Annotation):
@@ -345,82 +387,153 @@ class BoxAnnotation(Annotation):
         id: str,
         label_id: str,
         value: Box,
-        link: object = None,
-        confidence: float = 1.0,
-        iou: float = 0.0,
+        link: Optional[str] = None,
+        confidence: Optional[float] = None,
+        iou: Optional[float] = None,
     ):
         super().__init__(id=id, label_id=label_id, type=AnnotationType.BOX, link=link, confidence=confidence, iou=iou)
         self.value = value
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "BoxAnnotation":
+        return cls(
+            id=data["id"],
+            label_id=data["label_id"],
+            value=data.get("value"),
+            link=data.get("link"),
+            confidence=data.get("confidence", None),
+            iou=data.get("iou", None),
+        )
+        
+
+    def to_yolo(self, h, w):
+        return self.value.to_yolo(h, w)
+
 
 class MaskAnnotation(Annotation):
     value: Mask
-    
+
     def __init__(
         self,
         id: str,
         label_id: str,
-        value: Mask,
-        link: object = None,
-        confidence: float = 1.0,
-        iou: float = 0.0,
+        value: Box,
+        link: Optional[str] = None,
+        confidence: Optional[float] = None,
+        iou: Optional[float] = None,
     ):
         super().__init__(id=id, label_id=label_id, type=AnnotationType.MASK, link=link, confidence=confidence, iou=iou)
         self.value = value
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "MaskAnnotation":
+        return cls(
+            id=data["id"],
+            label_id=data["label_id"],
+            value=data.get("value"),
+            link=data.get("link"),
+            confidence=data.get("confidence", None),
+            iou=data.get("iou", None),
+        )
+
+    def to_yolo(self, h, w):
+        return self.value.to_yolo(h, w)
 
 
 class KeypointAnnotation(Annotation):
     value: Point2d
+
     def __init__(
         self,
         id: str,
         label_id: str,
         value: Point2d,
-        link: object = None,
-        confidence: float = 1.0,
-        iou: float = 0.0,
-        bounding_box_id: str = None,
+        link: Optional[str] = None,
+        confidence: Optional[float] = None,
+        iou: Optional[float] = None,
+        bounding_box_id: Optional[str] = None,
     ):
         super().__init__(id=id, label_id=label_id, type=AnnotationType.KEYPOINT, link=link, confidence=confidence, iou=iou)
         self.bounding_box_id = bounding_box_id
         self.value = value
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "KeypointAnnotation":
+        value = Point2d.from_dict(data["value"])
+        return cls(
+            id=data["id"],
+            label_id=data["label_id"],
+            value=value,
+            link=data.get("link"),
+            confidence=data.get("confidence", None),
+            iou=data.get("iou", None),
+            bounding_box_id=data.get("bounding_box_id", None),
+        )
+
+    def to_yolo(self, h, w):
+        return self.value.to_yolo(h, w)
+
 
 class PolygonAnnotation(Annotation):
-    value : Polygon
+    value: Polygon
+
     def __init__(
         self,
         id: str,
         label_id: str,
         value: Polygon,
-        link: object = None,
-        confidence: float = 1.0,
-        iou: float = 0.0,
+        link: Optional[Union[str, None]] = None,
+        confidence: Optional[float] = None,
+        iou: Optional[float] = None,
     ):
         super().__init__(id=id, label_id=label_id, type=AnnotationType.POLYGON, link=link, confidence=confidence, iou=iou)
         self.value = value
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PolygonAnnotation":
+        value = Polygon.from_dict(data["value"])
+        return cls(
+            id=data["id"],
+            label_id=data["label_id"],
+            value=value,
+            link=data.get("link"),
+            confidence=data.get("confidence", None),
+            iou=data.get("iou", None),
+        )
+
+    def to_yolo(self, h, w):
+        return self.value.to_yolo(h, w)
 
 
 @dataclass
 class File(Base):
     id: str
     path: str
-    height: int = 0
-    width: int = 0
+    height: Optional[int] = None
+    width: Optional[int] = None
 
-    def __init__(self, id: str, path: str, height: int = 0, width: int = 0):
+    def __init__(self, id: str, path: str, height: Optional[int] = None, width: Optional[int] = None):
         super().__init__()
         self.id = id
         self.path = path
         self.height = height
         self.width = width
 
+    @classmethod
+    def from_dict(cls, data: dict) -> "File":
+        return cls(
+            id=data["id"],
+            path=data["path"],
+            height=data.get("height", None),
+            width=data.get("width", None),
+        )
+
 
 @dataclass
 class FileAnnotations(Base):
-    id: str  # File ID
-    path: str  # File path
-    height: int  # File height
+    id: str     # File ID
+    path: str   # File path
+    height: int # File height
     width: int  # File width
     annotations: List[Annotation]
     predictions: List[Annotation]
@@ -428,20 +541,23 @@ class FileAnnotations(Base):
     def __init__(
         self,
         file: File,
-        annotations: List[Annotation] = None,
-        predictions: List[Annotation] = None,
+        annotations: List[Annotation] = [],
+        predictions: List[Annotation] = [],
     ):
         super().__init__()
-        if annotations is None:
-            annotations = []
-        if predictions is None:
-            predictions = []
         self.id = file.id
         self.path = file.path
         self.height = file.height
         self.width = file.width
         self.annotations = annotations
         self.predictions = predictions
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "FileAnnotations":
+        file = File.from_dict(data)
+        annotations = [Annotation.from_dict(a) for a in data.get("annotations", [])]
+        predictions = [Annotation.from_dict(a) for a in data.get("predictions", [])]
+        return cls(file=file, annotations=annotations, predictions=predictions)
 
     @property
     def has_annotations(self) -> bool:
@@ -490,26 +606,54 @@ class FileAnnotations(Base):
             self.predictions = annotations
 
     def assign_keypoints(self):
-        def is_inside_box(point_coords, box_coords):
-            x, y = point_coords
-            x_min, y_min, x_max, y_max, _ = box_coords
-            return x_min <= x <= x_max and y_min <= y <= y_max
-
         keypoints = self.get_annotations_by_type(AnnotationType.KEYPOINT)
         boxes = self.get_annotations_by_type(AnnotationType.BOX)
         for keypoint in keypoints:
             assigned = False
             for box in boxes:
-                if is_inside_box(keypoint.value.coords(), box.value.coords()):
-                    # Assign the box's id via the link field.
-                    if keypoint.link is None:
-                        keypoint.link = Link()
-                    keypoint.link.annotation_id = box.id
+                if box.value.point_in_box(keypoint.value.x, keypoint.value.y):
+                    keypoint.bounding_box_id = box.id
+                    if keypoint.link is not None:
+                        keypoint.link.annotation_id = box.id
                     assigned = True
                     break
             if not assigned:
                 raise Exception(f"Keypoint {keypoint.id} not assigned to any box")
         return self
+
+    def to_yolo(self, label_to_index, to_segmentation=False, to_object_detection=False, merge_boxes=False, target_classes=["all"]):
+        """Convert this file's annotations to YOLO format.
+           `label_to_index` is a function mapping a label id to an integer index.
+        """
+        yolo_annotations = []
+        h = self.height
+        w = self.width
+        for annotation in self.annotations:
+            if target_classes[0] != "all" and annotation.label_id not in target_classes:
+                continue
+
+            # Conversion steps:
+            if annotation.type == AnnotationType.BOX and to_segmentation:
+                annotation.value = annotation.value.to_mask(h=h, w=w, mask_type=AnnotationType.MASK)
+                annotation.type = AnnotationType.MASK
+            elif (annotation.type == AnnotationType.MASK and getattr(annotation.value, "mask_type", None) == AnnotationType.MASK and to_object_detection):
+                if merge_boxes:
+                    annotation.value = annotation.value.to_box(merge_boxes=True)
+                    annotation.type = AnnotationType.BOX
+                else:
+                    annotation.value = annotation.value.to_box(merge_boxes=False)
+                    annotation.type = AnnotationType.BOX
+            elif (annotation.type == AnnotationType.MASK and getattr(annotation.value, "mask_type", None) == AnnotationType.POLYGON and to_object_detection):
+                annotation.value = annotation.value.to_box()  # returns list of boxes
+                annotation.type = AnnotationType.BOX
+
+            converted = annotation.to_yolo(h, w)
+            if not isinstance(converted, list):
+                converted = [converted]
+            for conv in converted:
+                instance = [label_to_index(annotation.label_id)] + np.array(conv).flatten().tolist()
+                yolo_annotations.append(instance)
+        return yolo_annotations
 
 
 @dataclass
@@ -519,132 +663,8 @@ class Dataset(Base):
 
     @classmethod
     def from_dict(cls, data: dict) -> "Dataset":
-        labels = [Label(**label_dict) for label_dict in data.get("labels", [])]
-        files = []
-        for file_ann_dict in data.get("files", []):
-            file_obj = File(
-                id=file_ann_dict["id"],
-                path=file_ann_dict["path"],
-                height=file_ann_dict["height"],
-                width=file_ann_dict["width"],
-            )
-            file_ann_obj = FileAnnotations(file=file_obj)
-            annotations = []
-            for ann_dict in file_ann_dict.get("annotations", []):
-                ann_type = AnnotationType(ann_dict["type"])
-                annotation_data = ann_dict["value"]
-                link_data = ann_dict.get("link", {})
-                link_instance = Link(**link_data) if link_data else Link()
-                if ann_type == AnnotationType.BOX:
-                    box_obj = Box(**annotation_data)
-                    annotation_instance = BoxAnnotation(
-                        id=ann_dict["id"],
-                        label_id=ann_dict["label_id"],
-                        value=box_obj,
-                        link=link_instance,
-                        confidence=ann_dict.get("confidence", 1.0),
-                        iou=ann_dict.get("iou", 0.0),
-                    )
-                elif ann_type == AnnotationType.MASK:
-                    # Expect annotation_data to include "mask", "h", "w", and "type" (which indicates bitmask vs polygon)
-                    mask_obj = Mask(
-                        mask=annotation_data["mask"],
-                        h=annotation_data.get("h", 0),
-                        w=annotation_data.get("w", 0),
-                        mask_type=AnnotationType(annotation_data["type"]),
-                    )
-                    annotation_instance = MaskAnnotation(
-                        id=ann_dict["id"],
-                        label_id=ann_dict["label_id"],
-                        value=mask_obj,
-                        link=link_instance,
-                        confidence=ann_dict.get("confidence", 1.0),
-                        iou=ann_dict.get("iou", 0.0),
-                    )
-                elif ann_type == AnnotationType.KEYPOINT:
-                    point_obj = Point2d(**annotation_data)
-                    annotation_instance = KeypointAnnotation(
-                        id=ann_dict["id"],
-                        label_id=ann_dict["label_id"],
-                        value=point_obj,
-                        link=link_instance,
-                        confidence=ann_dict.get("confidence", 1.0),
-                        iou=ann_dict.get("iou", 0.0),
-                        bounding_box_id=ann_dict.get("bounding_box_id"),
-                    )
-                elif ann_type == AnnotationType.POLYGON:
-                    polygon_obj = Polygon(points=[Point2d(**p) for p in annotation_data["points"]])
-                    annotation_instance = PolygonAnnotation(
-                        id=ann_dict["id"],
-                        label_id=ann_dict["label_id"],
-                        value=polygon_obj,
-                        link=link_instance,
-                        confidence=ann_dict.get("confidence", 1.0),
-                        iou=ann_dict.get("iou", 0.0),
-                    )
-                else:
-                    raise ValueError(f"Unsupported annotation type: {ann_type}")
-                annotations.append(annotation_instance)
-
-            file_ann_obj.annotations = annotations
-
-            predictions = []
-            for pred_dict in file_ann_dict.get("predictions", []):
-                ann_type = AnnotationType(pred_dict["type"])
-                annotation_data = pred_dict["value"]
-                link_data = pred_dict.get("link", {})
-                link_instance = Link(**link_data) if link_data else Link()
-                if ann_type == AnnotationType.BOX:
-                    box_obj = Box(**annotation_data)
-                    annotation_instance = BoxAnnotation(
-                        id=pred_dict["id"],
-                        label_id=pred_dict["label_id"],
-                        value=box_obj,
-                        link=link_instance,
-                        confidence=pred_dict.get("confidence", 1.0),
-                        iou=pred_dict.get("iou", 0.0),
-                    )
-                elif ann_type == AnnotationType.MASK:
-                    mask_obj = Mask(
-                        mask=annotation_data["mask"],
-                        h=annotation_data.get("h", 0),
-                        w=annotation_data.get("w", 0),
-                        mask_type=AnnotationType(annotation_data["type"]),
-                    )
-                    annotation_instance = MaskAnnotation(
-                        id=pred_dict["id"],
-                        label_id=pred_dict["label_id"],
-                        value=mask_obj,
-                        link=link_instance,
-                        confidence=pred_dict.get("confidence", 1.0),
-                        iou=pred_dict.get("iou", 0.0),
-                    )
-                elif ann_type == AnnotationType.KEYPOINT:
-                    point_obj = Point2d(**annotation_data)
-                    annotation_instance = KeypointAnnotation(
-                        id=pred_dict["id"],
-                        label_id=pred_dict["label_id"],
-                        value=point_obj,
-                        link=link_instance,
-                        confidence=pred_dict.get("confidence", 1.0),
-                        iou=pred_dict.get("iou", 0.0),
-                        bounding_box_id=pred_dict.get("bounding_box_id"),
-                    )
-                elif ann_type == AnnotationType.POLYGON:
-                    polygon_obj = Polygon(points=[Point2d(**p) for p in annotation_data["points"]])
-                    annotation_instance = PolygonAnnotation(
-                        id=pred_dict["id"],
-                        label_id=pred_dict["label_id"],
-                        value=polygon_obj,
-                        link=link_instance,
-                        confidence=pred_dict.get("confidence", 1.0),
-                        iou=pred_dict.get("iou", 0.0),
-                    )
-                else:
-                    raise ValueError(f"Unsupported annotation type: {ann_type}")
-                predictions.append(annotation_instance)
-            file_ann_obj.predictions = predictions
-            files.append(file_ann_obj)
+        labels = [Label.from_dict(l) for l in data.get("labels", [])]
+        files = [FileAnnotations.from_dict(f) for f in data.get("files", [])]
         return cls(labels=labels, files=files)
 
     @classmethod
@@ -659,13 +679,13 @@ class Dataset(Base):
         common_prefix = os.path.commonprefix(all_files)
         return os.path.dirname(common_prefix)
 
-    def get_labels(self) -> List[str]:
+    def get_label_ids(self) -> List[str]:
         return [label.id for label in self.labels]
 
-    def label_to_index(self, label_id: str):
-        for label in self.labels:
+    def label_to_index(self, label_id: str) -> int:
+        for idx, label in enumerate(self.labels):
             if label.id == label_id:
-                return int(label.index)
+                return idx
         raise ValueError(f"Label id {label_id} not found.")
 
     def to_yolo(self, **kwargs):
@@ -683,8 +703,6 @@ class Dataset(Base):
             logger.info(f"Processing file {file_path}")
             if file_path not in image_to_labels:
                 image_to_labels[file_path] = []
-            height = file_ann.height
-            width = file_ann.width
 
             keypoints = file_ann.get_annotations_by_type(AnnotationType.KEYPOINT)
             if keypoints:
@@ -695,64 +713,18 @@ class Dataset(Base):
                         f"Inconsistent number of keypoints: expected {n_kpts}, found {len(keypoints)}"
                     )
 
-            for annotation in file_ann.annotations:
-                logger.info(f"Processing annotation {annotation.id}")
-                if target_classes[0] != "all" and annotation.label_id not in target_classes:
-                    continue
-
-                converted_annotations = None
-                # Convert Box annotations to segmentation if requested.
-                if annotation.type == AnnotationType.BOX and to_segmentation:
-                    converted_value = annotation.value.to_mask(h=height, w=width, mask_type=AnnotationType.MASK)
-                    annotation.value = converted_value
-                    annotation.type = AnnotationType.MASK
-                    logger.info(f"Converted annotation {annotation.id} from box to mask")
-                # Convert MASK annotations to boxes for object detection.
-                elif (annotation.type == AnnotationType.MASK and 
-                      annotation.value.mask_type == AnnotationType.MASK and 
-                      to_object_detection):
-                    if merge_boxes:
-                        box_obj = annotation.value.to_box(merge_boxes=True)
-                        annotation.value = box_obj
-                        annotation.type = AnnotationType.BOX
-                        converted_annotations = box_obj.to_yolo(height, width)
-                    else:
-                        boxes = annotation.value.to_box(merge_boxes=False)
-                        annotation.value = boxes
-                        annotation.type = AnnotationType.BOX
-                        converted_annotations = []
-                        for box in boxes:
-                            converted_annotations.extend(box.to_yolo(height, width))
-                    logger.info(f"Converted annotation {annotation.id} from mask to box")
-                elif (annotation.type == AnnotationType.MASK and 
-                      annotation.value.mask_type == AnnotationType.POLYGON and 
-                      to_object_detection):
-                    boxes = annotation.value.to_box()  # will return a list
-                    annotation.value = boxes
-                    annotation.type = AnnotationType.BOX
-                    converted_annotations = []
-                    for box in boxes:
-                        converted_annotations.extend(box.to_yolo(height, width))
-                    logger.info(f"Converted annotation {annotation.id} (polygon mask) to box")
-                else:
-                    # For BOX and KEYPOINT (and already converted cases) call to_yolo directly.
-                    if hasattr(annotation.value, "to_yolo"):
-                        converted_annotations = annotation.value.to_yolo(height, width)
-                    else:
-                        raise ValueError(f"Annotation {annotation.id} of type {annotation.type} has no to_yolo method.")
-
-                label_index = self.label_to_index(annotation.label_id)
-                # Handle the case where converted_annotations is a list of annotations.
-                if isinstance(converted_annotations, list):
-                    for annot in converted_annotations:
-                        instance = [label_index] + np.array(annot).flatten().tolist()
-                        image_to_labels[file_path].append(instance)
-                else:
-                    instance = [label_index] + np.array(converted_annotations).flatten().tolist()
-                    image_to_labels[file_path].append(instance)
-                logger.info(f"Annotation {annotation.id} converted to YOLO format with {len(image_to_labels[file_path])} entries")
+            # Call the file-level to_yolo method:
+            file_yolo = file_ann.to_yolo(
+                label_to_index=self.label_to_index,
+                to_segmentation=to_segmentation,
+                to_object_detection=to_object_detection,
+                merge_boxes=merge_boxes,
+                target_classes=target_classes,
+            )
+            image_to_labels[file_path].extend(file_yolo)
+            logger.info(f"File {file_path} has {len(file_yolo)} YOLO annotations")
         return dict(
             image_labels=image_to_labels,
-            class_map={label.index: label.id for label in self.labels},
+            class_map={idx: label.id for idx, label in enumerate(self.labels)},
             n_kpts=n_kpts,
         )
