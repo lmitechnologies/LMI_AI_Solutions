@@ -266,6 +266,10 @@ class Mask(Base):
         return self
 
     def pad(self, **kwargs):
+        assert "h" in kwargs and "w" in kwargs, "Height and width must be provided"
+        h = kwargs.get("h", None)
+        w = kwargs.get("w", None)
+        assert h is not None and w is not None, "Height and width cannot be None"
         pad_h = kwargs.get("pad_h", 0)
         pad_w = kwargs.get("pad_w", 0)
         mask_array = rle2mask(self.mask, h=kwargs.get("h"), w=kwargs.get("w"))
@@ -274,18 +278,26 @@ class Mask(Base):
         return self
 
     def to_numpy(self, **kwargs):
-        h = kwargs.get("h")
-        w = kwargs.get("w")
+        assert "h" in kwargs and "w" in kwargs, "Height and width must be provided"
+        h = kwargs.get("h", None)
+        w = kwargs.get("w", None)
+        assert h is not None and w is not None, "Height and width cannot be None"
         return rle2mask(self.mask, h, w)
 
     def coords(self, **kwargs):
-        mask = self.to_numpy(h=kwargs.get("h"), w=kwargs.get("w"))
+        assert "h" in kwargs and "w" in kwargs, "Height and width must be provided"
+        h = kwargs.get("h", None)
+        w = kwargs.get("w", None)
+        assert h is not None and w is not None, "Height and width cannot be None"
+        mask = self.to_numpy(h=h, w=h)
         ys, xs = np.nonzero(mask)
         return xs.tolist(), ys.tolist()
 
     def to_polygon(self, **kwargs) -> List[Polygon]:
-        h = kwargs.get("h")
-        w = kwargs.get("w")
+        assert "h" in kwargs and "w" in kwargs, "Height and width must be provided"
+        h = kwargs.get("h", None)
+        w = kwargs.get("w", None)
+        assert h is not None and w is not None, "Height and width cannot be None"
         mask_array = self.to_numpy(h=h, w=w)
         contours, _ = cv2.findContours(mask_array, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         polygons = [contour.reshape(-1, 2) for contour in contours]
@@ -299,6 +311,10 @@ class Mask(Base):
         return instances
 
     def to_box(self, **kwargs):
+        assert "h" in kwargs and "w" in kwargs, "Height and width must be provided"
+        h = kwargs.get("h", None)
+        w = kwargs.get("w", None)
+        assert h is not None and w is not None, "Height and width cannot be None"
         merge_boxes = kwargs.get("merge_boxes", False)
         mask_array = self.to_numpy(h=kwargs.get("h"), w=kwargs.get("w"))
         if merge_boxes:

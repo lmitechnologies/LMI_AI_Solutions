@@ -125,6 +125,3 @@ if __name__=='__main__':
     dataset = resize_imgs_with_json(path_imgs, path_csv, output_imsize, path_out, args['bg'], args['recursive'])
     
     dataset.save(os.path.join(path_out, 'labels.json'))
-
-    #write csv file
-    # csv_utils.write_to_csv(fname_to_shapes, os.path.join(path_out,'labels.json'), overwrite=not args['append'])
