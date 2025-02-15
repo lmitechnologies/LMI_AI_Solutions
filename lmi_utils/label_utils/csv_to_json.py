@@ -3,7 +3,7 @@ import os
 import cv2
 import pathlib
 
-from dataset_utils.representations import Box, Mask, Point, Label, Annotation, File, MaskType, AnnotationType, Dataset, FileAnnotations,Link
+from dataset_utils.representations import Box, Mask, Label, Annotation, File, AnnotationType, Dataset, FileAnnotations
 from dataset_utils.mask_encoder import mask2rle, rle2mask
 
 

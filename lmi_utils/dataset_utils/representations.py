@@ -6,8 +6,6 @@ import os
 import numpy as np
 import logging
 import cv2
-
-# Assume these utility functions are defined elsewhere.
 from dataset_utils.mask_encoder import rle2mask, mask2rle
 from image_utils.img_resize import resize
 from gadget_utils.pipeline_utils import fit_array_to_size
@@ -88,7 +86,7 @@ class Point2d(Base):
     def to_numpy(self):
         return np.array([self.x, self.y])
 
-    def coords(self):
+    def coords(self, **kwargs):
         return self.x, self.y
 
     def to_yolo(self, h, w):
@@ -144,7 +142,7 @@ class Box(Base):
     def to_numpy(self):
         return np.array([self.x_min, self.y_min, self.x_max, self.y_max, self.angle])
 
-    def coords(self):
+    def coords(self, **kwargs):
         return self.x_min, self.y_min, self.x_max, self.y_max, self.angle
 
     def to_yolo(self, h, w):
@@ -216,7 +214,7 @@ class Polygon(Base):
     def to_numpy(self):
         return np.array(self.points)
 
-    def coords(self):
+    def coords(self, **kwargs):
         points = np.array(self.points)
         return points[:, 0].tolist(), points[:, 1].tolist()
 
@@ -266,10 +264,10 @@ class Mask(Base):
         return self
 
     def pad(self, **kwargs):
-        assert "h" in kwargs and "w" in kwargs, "Height and width must be provided"
         h = kwargs.get("h", None)
         w = kwargs.get("w", None)
-        assert h is not None and w is not None, "Height and width cannot be None"
+        if h is None or w is None:
+            raise ValueError("Height and width cannot be None")
         pad_h = kwargs.get("pad_h", 0)
         pad_w = kwargs.get("pad_w", 0)
         mask_array = rle2mask(self.mask, h=kwargs.get("h"), w=kwargs.get("w"))
@@ -278,26 +276,26 @@ class Mask(Base):
         return self
 
     def to_numpy(self, **kwargs):
-        assert "h" in kwargs and "w" in kwargs, "Height and width must be provided"
         h = kwargs.get("h", None)
         w = kwargs.get("w", None)
-        assert h is not None and w is not None, "Height and width cannot be None"
+        if h is None or w is None:
+            raise ValueError("Height and width cannot be None")
         return rle2mask(self.mask, h, w)
 
     def coords(self, **kwargs):
-        assert "h" in kwargs and "w" in kwargs, "Height and width must be provided"
         h = kwargs.get("h", None)
         w = kwargs.get("w", None)
-        assert h is not None and w is not None, "Height and width cannot be None"
+        if h is None or w is None:
+            raise ValueError("Height and width cannot be None")
         mask = self.to_numpy(h=h, w=h)
         ys, xs = np.nonzero(mask)
         return xs.tolist(), ys.tolist()
 
     def to_polygon(self, **kwargs) -> List[Polygon]:
-        assert "h" in kwargs and "w" in kwargs, "Height and width must be provided"
         h = kwargs.get("h", None)
         w = kwargs.get("w", None)
-        assert h is not None and w is not None, "Height and width cannot be None"
+        if h is None or w is None:
+            raise ValueError("Height and width cannot be None")
         mask_array = self.to_numpy(h=h, w=w)
         contours, _ = cv2.findContours(mask_array, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         polygons = [contour.reshape(-1, 2) for contour in contours]
@@ -307,14 +305,14 @@ class Mask(Base):
         # Delegate conversion to polygons.
         instances = []
         for polygon in self.to_polygon(h=h, w=w):
-            instances.append(polygon.to_yolo(h=h, w=w))
+            instances.append(polygon.to_yolo(h, w))
         return instances
 
     def to_box(self, **kwargs):
-        assert "h" in kwargs and "w" in kwargs, "Height and width must be provided"
         h = kwargs.get("h", None)
         w = kwargs.get("w", None)
-        assert h is not None and w is not None, "Height and width cannot be None"
+        if h is None or w is None:
+            raise ValueError("Height and width cannot be None")
         merge_boxes = kwargs.get("merge_boxes", False)
         mask_array = self.to_numpy(h=kwargs.get("h"), w=kwargs.get("w"))
         if merge_boxes:
@@ -349,7 +347,7 @@ class Label(Base):
 
     @classmethod
     def from_dict(cls, data: dict) -> "Label":
-        return cls(id=data["id"], name=data["name"], color=data.get("color"))
+        return cls(id=data["id"], name=data["name"], color=data.get("color", None))
 
 
 @dataclass
@@ -357,7 +355,7 @@ class Annotation(Base):
     id: str
     label_id: str
     type: AnnotationType
-    value: Optional[Union[Box, Mask, Point2d, Polygon]] = None
+    value: Union[Box, Mask, Point2d, Polygon] = None
     link: Optional[str] = None,
     confidence: Optional[float] = None,
     iou: Optional[float] = None,
@@ -367,7 +365,7 @@ class Annotation(Base):
         id: str,
         label_id: str,
         type: AnnotationType=None,
-        value: Optional[Union[Box, Mask, Point2d, Polygon]] = None,
+        value: Union[Box, Mask, Point2d, Polygon] = None,
         link: Optional[str] = None,
         confidence: Optional[float] = None,
         iou: Optional[float] = None,
@@ -394,6 +392,7 @@ class Annotation(Base):
             return PolygonAnnotation.from_dict(data)
         else:
             raise ValueError(f"Unsupported annotation type: {ann_type}")
+    
 
 
 class BoxAnnotation(Annotation):
@@ -415,7 +414,7 @@ class BoxAnnotation(Annotation):
         return cls(
             id=data["id"],
             label_id=data["label_id"],
-            value=data.get("value"),
+            value=Box.from_dict(data["value"]),
             link=data.get("link"),
             confidence=data.get("confidence", None),
             iou=data.get("iou", None),
@@ -446,7 +445,7 @@ class MaskAnnotation(Annotation):
         return cls(
             id=data["id"],
             label_id=data["label_id"],
-            value=data.get("value"),
+            value=Mask.from_dict(data["value"]),
             link=data.get("link"),
             confidence=data.get("confidence", None),
             iou=data.get("iou", None),
@@ -475,11 +474,10 @@ class KeypointAnnotation(Annotation):
 
     @classmethod
     def from_dict(cls, data: dict) -> "KeypointAnnotation":
-        value = Point2d.from_dict(data["value"])
         return cls(
             id=data["id"],
             label_id=data["label_id"],
-            value=value,
+            value=Point2d.from_dict(data["value"]),
             link=data.get("link"),
             confidence=data.get("confidence", None),
             iou=data.get("iou", None),
@@ -507,11 +505,10 @@ class PolygonAnnotation(Annotation):
 
     @classmethod
     def from_dict(cls, data: dict) -> "PolygonAnnotation":
-        value = Polygon.from_dict(data["value"])
         return cls(
             id=data["id"],
             label_id=data["label_id"],
-            value=value,
+            value=Polygon.from_dict(data["value"]),
             link=data.get("link"),
             confidence=data.get("confidence", None),
             iou=data.get("iou", None),
@@ -645,30 +642,29 @@ class FileAnnotations(Base):
         h = self.height
         w = self.width
         for annotation in self.annotations:
+            updated_annotations = []
             if target_classes[0] != "all" and annotation.label_id not in target_classes:
                 continue
 
             # Conversion steps:
             if annotation.type == AnnotationType.BOX and to_segmentation:
-                annotation.value = annotation.value.to_mask(h=h, w=w, mask_type=AnnotationType.MASK)
-                annotation.type = AnnotationType.MASK
-            elif (annotation.type == AnnotationType.MASK and getattr(annotation.value, "mask_type", None) == AnnotationType.MASK and to_object_detection):
-                if merge_boxes:
-                    annotation.value = annotation.value.to_box(merge_boxes=True)
-                    annotation.type = AnnotationType.BOX
-                else:
-                    annotation.value = annotation.value.to_box(merge_boxes=False)
-                    annotation.type = AnnotationType.BOX
-            elif (annotation.type == AnnotationType.MASK and getattr(annotation.value, "mask_type", None) == AnnotationType.POLYGON and to_object_detection):
-                annotation.value = annotation.value.to_box()  # returns list of boxes
-                annotation.type = AnnotationType.BOX
+                updated_annotations.append(annotation.value.to_mask(h=h, w=w))
+            elif (annotation.type == AnnotationType.MASK and to_object_detection):
+                updated_annotations.append(annotation.value.to_box(h=h, w=w, merge_boxes=merge_boxes))
+            elif (annotation.type == AnnotationType.POLYGON and to_object_detection):
+                updated_annotations.append(annotation.value.to_box(h=h, w=w))
 
-            converted = annotation.to_yolo(h, w)
-            if not isinstance(converted, list):
-                converted = [converted]
+            converted = [
+                ann.to_yolo(h, w) for ann in updated_annotations
+            ] if updated_annotations else [annotation.to_yolo(h, w)]
             for conv in converted:
-                instance = [label_to_index(annotation.label_id)] + np.array(conv).flatten().tolist()
-                yolo_annotations.append(instance)
+                if annotation.type == AnnotationType.MASK:
+                    for p in conv:
+                        instance = [label_to_index(annotation.label_id)] + np.array(p).flatten().tolist()
+                        yolo_annotations.append(instance)
+                else:
+                    instance = [label_to_index(annotation.label_id)] + np.array(conv).flatten().tolist()
+                    yolo_annotations.append(instance)
         return yolo_annotations
 
 
@@ -697,12 +693,21 @@ class Dataset(Base):
 
     def get_label_ids(self) -> List[str]:
         return [label.id for label in self.labels]
+    
+    def get_label_names(self) -> List[str]:
+        return [label.name for label in self.labels]
 
     def label_to_index(self, label_id: str) -> int:
         for idx, label in enumerate(self.labels):
             if label.id == label_id:
                 return idx
         raise ValueError(f"Label id {label_id} not found.")
+    
+    def label_id_to_name(self, label_id: str) -> str:
+        for label in self.labels:
+            if label_id == label.id:
+                return label.name
+        raise ValueError(f"Label name for {label_id} not found.")
 
     def to_yolo(self, **kwargs):
         to_segmentation = kwargs.get("to_segmentation", False)

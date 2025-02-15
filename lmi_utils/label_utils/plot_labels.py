@@ -7,7 +7,7 @@ import logging
 
 #LMI packages
 # from label_utils.shapes import Rect, Mask, Keypoint, Brush
-from dataset_utils.representations import Dataset, Annotation, FileAnnotations, MaskType, Mask,AnnotationType
+from dataset_utils.representations import Dataset,AnnotationType
 from label_utils.plot_utils import plot_one_box, plot_one_polygon, plot_one_pt, plot_one_brush
 from label_utils.bbox_utils import rotate
 
@@ -18,6 +18,7 @@ logger.setLevel(logging.INFO)
 
 
 def plot_shape(shape, im, color_map):
+    img_h, img_w = im.shape[:2]
     if shape.type == AnnotationType.BOX:
         x1,y1, x2, y2, angle = shape.value.coords()
         width = x2 - x1
@@ -28,13 +29,12 @@ def plot_shape(shape, im, color_map):
         else:
             rotated_rect = np.array([[x1,y1],[x2,y1],[x2,y2],[x1,y2]])
         plot_one_polygon(np.array([rotated_rect]), im, label=shape.label_id, color=color_map[shape.label_id])
+    elif shape.type == AnnotationType.POLYGON:
+        pts = shape.value.to_numpy().reshape((-1, 1, 2)).astype(int)
+        plot_one_polygon(pts, im, label=shape.label_id, color=color_map[shape.label_id])
     elif shape.type == AnnotationType.MASK:
-        if shape.value.type == MaskType.POLYGON:
-            pts = shape.value.to_numpy().reshape((-1, 1, 2)).astype(int)
-            plot_one_polygon(pts, im, label=shape.label_id, color=color_map[shape.label_id])
-        elif shape.value.type == MaskType.BITMASK:
-            x,y = shape.value.coords()
-            plot_one_brush(x,y,im,label=shape.label_id,color=color_map[shape.label_id])
+        x,y = shape.value.coords(h=img_h, w=img_w)
+        plot_one_brush(x,y,im,label=shape.label_id,color=color_map[shape.label_id])
     elif shape.type == AnnotationType.KEYPOINT:
         x,y,_ = shape.value.coords()
         plot_one_pt([x,y], im, label=shape.label_id, color=color_map[shape.label_id])
@@ -63,7 +63,7 @@ if __name__ == '__main__':
     
     # init color map
     color_map = {}
-    for cls in dataset.get_labels():
+    for cls in dataset.get_label_ids():
         logger.info(f'CLASS: {cls}')
         color_map[cls] = tuple([random.randint(0,255) for _ in range(3)])
     if not os.path.exists(output_path):

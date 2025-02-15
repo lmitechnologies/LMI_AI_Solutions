@@ -7,13 +7,11 @@ import collections
 import glob
 from label_studio_sdk.converter.brush import decode_rle
 import base64
-from dataset_utils.representations import Box, Mask, Point, Label, Annotation, File, MaskType, AnnotationType, Dataset, FileAnnotations,Link
+from dataset_utils.representations import Box, Mask, Label, File, AnnotationType, Dataset, FileAnnotations, Polygon, Point2d, Annotation
 from dataset_utils.mask_encoder import mask2rle, rle2mask
 import shutil
 import cv2
 
-# from label_utils.csv_utils import write_to_csv
-# from label_utils.shapes import Rect, Mask, Keypoint, Brush
 from label_utils.bbox_utils import convert_from_ls
 
 logging.basicConfig()
@@ -51,19 +49,20 @@ def lst_to_shape(result:dict, fname:str, load_confidence=False):
         points_np=np.array(points)
         points_np[:, 0] /=100*result['original_width']
         points_np[:, 1] /=100*result['original_height']
-        return Mask(mask=points_np.astype(int).tolist(),type=MaskType.POLYGON), label, conf, AnnotationType.MASK
+        return Polygon(points=points_np.astype(int).tolist()), label, conf, AnnotationType.POLYGON
     elif result_type=='brushlabels':
         rle = result['value']['rle']
         h,w = result['original_height'],result['original_width']
         img = decode_rle(rle).reshape(h,w,4)[:,:,3]
         mask = img > 128
-        return Mask(mask=mask,type=MaskType.BITMASK, h=h, w=w), label, conf, AnnotationType.MASK
+        return Mask(mask=mask), label, conf, AnnotationType.MASK
     elif result_type=='keypointlabels':
         dt = result['value']
         x,y = dt['x']/100*result['original_width'],dt['y']/100*result['original_height']
-        return Point(x=x,y=y,z=0.0), label, conf, AnnotationType.KEYPOINT
+        return Point2d(x=x, y=y), label, conf, AnnotationType.KEYPOINT
     else:
         logger.warning(f'unsupported result type: {result_type}, skip')
+    
 
 
 def get_annotations_from_json(path_json, images_dir, output_image_dir):
@@ -126,10 +125,10 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir):
                             if label not in label_dict:
                                 label_id = len(label_dict)
                                 label_dict[label] = label_id
-                                labels.append(Label(id=str(label), index=str(label_id)))
+                                labels.append(Label(id=str(label_id), name=label))
                             else:
                                 label_id = label_dict[label]  
-                            file_annotations.append(Annotation(id=str(cnt_anno), label_id=str(label), type=annot_type, value=shape, confidence=conf, link=Link()))
+                            file_annotations.append(Annotation(id=str(cnt_anno), label_id=str(label_id), type=annot_type, value=shape))
                             cnt_anno += 1
                             
                             
@@ -144,7 +143,7 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir):
                                     labels.append(Label(id=str(label), index=str(label_id)))
                                 else:
                                     label_id = label_dict[label]
-                                pred_annotations.append(Annotation(id=str(cnt_pred), label_id=str(label), type=annot_type, value=shape, confidence=conf, link=Link()))
+                                pred_annotations.append(Annotation(id=str(cnt_pred), label_id=str(label_id), type=annot_type, value=shape, confidence=conf))
                                 cnt_pred += 1
                 if cnt>0:
                     cnt_image += 1
@@ -164,7 +163,7 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir):
                                     labels.append(Label(id=str(label), index=str(label_id)))
                                 else:
                                     label_id = label_dict[label]
-                                pred_annotations.append(Annotation(id=str(cnt_pred), label_id=str(label), type=annot_type, value=shape, confidence=conf, link=Link()))
+                                pred_annotations.append(Annotation(id=str(cnt_pred), label_id=str(label_id), type=annot_type, value=shape, confidence=conf))
                                 cnt_pred += 1
                                 
             file_name = os.path.basename(f)

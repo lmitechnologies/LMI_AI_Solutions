@@ -67,14 +67,11 @@ def resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, save_bg
             raise Exception('Both width and height cannot be None')
         elif tw is None:
             tw = 'w'
-            rx = ry = th/h
             im2 = resize(im, height=th)
         elif th is None:
             th = 'h'
-            rx = ry = tw/w
             im2 = resize(im, width=tw)
         else:
-            rx,ry = tw/w, th/h
             im2 = resize(im, width=tw, height=th)
         
         out_name = os.path.splitext(im_name)[0] + f'_resized_{tw}x{th}' + '.png'
