@@ -8,7 +8,7 @@ import scipy
 import logging
 
 from ultralytics_lmi.yolo.model import Yolo, YoloPose, YoloObb
-from dataset_utils.representations import Dataset, Annotation, AnnotationType, MaskType, Box, Mask, Link
+from dataset_utils.representations import Dataset, Annotation, AnnotationType, Box, Mask
 
 
 logging.basicConfig()
@@ -65,12 +65,12 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
         if annot.type == AnnotationType.BOX:
             boxes.append(annot.value.to_numpy())
         elif annot.type == AnnotationType.MASK:
-            if annot.value.type == MaskType.BITMASK:
-                mask = annot.value.to_numpy()
-            elif annot.value.type == MaskType.POLYGON:
-                mask = np.zeros((h, w), dtype=np.uint8)
-                xy = annot.value.to_numpy().astype(np.int32)
-                cv2.fillPoly(mask, [xy], 1)
+            mask = annot.value.to_numpy(h=h,w=w)
+            masks.append(mask)
+        elif annot.type == AnnotationType.POLYGON:
+            mask = np.zeros((h, w), dtype=np.uint8)
+            xy = annot.value.to_numpy().astype(np.int32)
+            cv2.fillPoly(mask, [xy], 1)
             masks.append(mask)
         else:
             raise Exception(f'Not supported type: {type(annot.type)}')
@@ -96,7 +96,7 @@ def write_json(model_path, config_path, image_dir, label_path, output_path, conf
     """
     model = Yolo(model_path)
     dataset = Dataset.load(label_path)
-    cls_to_id = {l.id:l.index for l in dataset.labels}
+    cls_to_id = {l.name:l.id for l in dataset.labels}
     
     pred_annot_id = 0 # sum([len(f.annotations) for f in dataset.files])
     for file_annot in dataset.files:
@@ -146,15 +146,15 @@ def write_json(model_path, config_path, image_dir, label_path, output_path, conf
             
             if mask is not None:
                 dt = dict(
-                    id=str(pred_annot_id), label_id=label, type=AnnotationType.MASK, value=Mask(MaskType.BITMASK,mask,h,w), 
-                    link=Link(annotation_id=label_annot_id), confidence=score, iou=iou
+                    id=str(pred_annot_id), label_id=label, type=AnnotationType.MASK, value=Mask(mask), 
+                    link=label_annot_id, confidence=score, iou=iou
                 )
                 file_annot.predictions.append(Annotation(**dt))
                 pred_annot_id += 1
             else:
                 dt = dict(
                     id=str(pred_annot_id), label_id=label, type=AnnotationType.BOX, value=Box(*box,angle=0), 
-                    link=Link(annotation_id=label_annot_id), confidence=score, iou=iou
+                    link=label_annot_id, confidence=score, iou=iou
                 )
                 file_annot.predictions.append(Annotation(**dt))
                 pred_annot_id += 1
