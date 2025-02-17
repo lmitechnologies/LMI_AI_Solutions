@@ -101,13 +101,10 @@ def write_json(model_path, config_path, image_dir, label_path, output_path, conf
     pred_annot_id = 0 # sum([len(f.annotations) for f in dataset.files])
     for file_annot in dataset.files:
         fname = os.path.basename(file_annot.path)
-        p = os.path.join(image_dir, fname)
+        p = os.path.join(image_dir, file_annot.path)
         im = cv2.imread(p)
         if im is None:
             raise Exception(f'Could not read image {p}')
-        
-        # update to relative path
-        file_annot.path = os.path.relpath(p,image_dir)
         
         # get labels and preds
         im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
