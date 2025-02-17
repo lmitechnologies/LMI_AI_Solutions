@@ -4,27 +4,6 @@ import numpy as np
 import cv2
 import pytest
 
-# --- Dummy implementations for external utility functions ---
-
-
-def dummy_resize(mask, tw, th):
-    # For testing, return a dummy mask with ones with shape (th, tw)
-    return np.ones((th, tw), dtype=np.uint8)
-
-def dummy_fit_array_to_size(mask, pad_w, pad_h):
-    # Return the original mask along with dummy padding values.
-    return mask, pad_w, pad_h, 0, 0
-
-def dummy_rotate(x_min, x_max, w, h, angle, rot_center, unit):
-    # Ignore angle and return the four corners of a box.
-    return [[x_min, 0], [x_max, 0], [x_max, h], [x_min, h]]
-
-# Override the external functions used in the module.
-resize = dummy_resize
-fit_array_to_size = dummy_fit_array_to_size
-rotate = dummy_rotate
-
-
 
 from dataset_utils.representations import (
     Point2d,
