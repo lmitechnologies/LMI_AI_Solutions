@@ -1,10 +1,9 @@
 import csv
 import os
 import cv2
-import pathlib
+import numpy as np
 
-from dataset_utils.representations import Box, Mask, Label, Annotation, File, AnnotationType, Dataset, FileAnnotations
-from dataset_utils.mask_encoder import mask2rle, rle2mask
+from dataset_utils.representations import Box, Mask, Polygon, Point2d, Label, Annotation, File, AnnotationType, Dataset, FileAnnotations
 
 
 def read_one_row(row):
@@ -30,9 +29,16 @@ def read_two_rows(row1, row2):
     fname2, category2, conf2, shape_type2, coord_type2, coordinates2 = read_one_row(row2)
     
     assert fname == fname2 and category == category2 and conf == conf2 and shape_type == shape_type2
+    
+    angle = None
+    if shape_type == 'rect':
+        if len(coordinates)==4:
+            angle = float(coordinates[-1])
+            coordinates = coordinates[:-2]
+            coordinates2 = coordinates2[:-2]
     c1 = list(map(float, coordinates))
     c2 = list(map(float, coordinates2))
-    return fname, category, conf, shape_type, c1, c2
+    return fname, category, conf, shape_type, c1, c2, angle
 
 
 def read_csv(csv_path:str, img_dir:str):
@@ -55,20 +61,25 @@ def read_csv(csv_path:str, img_dir:str):
         for i in range(0,len(reader),2):
             row1 = reader[i]
             row2 = reader[i+1]
-            fname,category,conf,shape_type,c1,c2 = read_two_rows(row1, row2)
+            fname,category,conf,shape_type,c1,c2,angle = read_two_rows(row1, row2)
+            p = os.path.join(img_dir, fname)
+            im = cv2.imread(p)
+            height, width = im.shape[:2]
             
             if shape_type == 'polygon':
-                xy = [[x,y] for x,y in zip(c1,c2)]
-                shape = Mask(MaskType.POLYGON,xy)
+                xy = np.array([[x,y] for x,y in zip(c1,c2)]).astype(int)
+                mask = np.zeros((height, width), dtype=np.uint8)
+                cv2.fillPoly(mask, [xy], 1)
+                shape = Mask(mask)
                 mtype = AnnotationType.MASK
+                # shape = Polygon(xy.tolist())
+                # mtype = AnnotationType.POLYGON
             if shape_type == 'rect':
-                if len(c1)==4:
-                    angle = float(c1[-1])
                 shape = Box(x_min=c1[0], y_min=c1[1], x_max=c2[0], y_max=c2[1], angle=angle)
                 mtype = AnnotationType.BOX
             if shape_type == 'keypoint':
-                shape = Point(x=c1[0], y=c1[1], z=0)
-                mtype = AnnotationType.POINT
+                shape = Point2d(x=c1[0], y=c2[0])
+                mtype = AnnotationType.KEYPOINT
                 
             if category not in label_map:
                 label_id = len(label_map)
@@ -77,16 +88,13 @@ def read_csv(csv_path:str, img_dir:str):
                 label_id = label_map[category]
                 
             if fname not in file_map:
-                p = os.path.join(img_dir, fname)
-                im = cv2.imread(p)
-                height, width = im.shape[:2]
                 # TODO: add id to filename
                 file_id = len(file_map)
                 file = File(id=str(file_id), path=fname, height=height, width=width)
                 file_map[fname] = FileAnnotations(file=file, annotations=[], predictions=[])
             if fname in file_map:
                 file = file_map[fname]
-                annot = Annotation(id=str(annot_id),label_id=category,type=mtype,value=shape,confidence=conf,link=Link())
+                annot = Annotation(id=str(annot_id),label_id=category,type=mtype,value=shape,confidence=conf)
                 annot_id += 1
                 file.annotations.append(annot)
             
@@ -102,15 +110,19 @@ def write_to_json(label_map:dict, file_map:dict, json_path:str):
         json_path (str): path to a json file
     """
     dataset = Dataset(labels=[], files=[])
-    dataset.labels = [Label(index=str(label_id), id=label_name) for label_name,label_id in label_map.items()]
+    dataset.labels = [Label(id=str(label_id), name=label_name) for label_name,label_id in label_map.items()]
     dataset.files = list(file_map.values())
     dataset.save(json_path)
     
     
 if __name__ == '__main__':
-    csv_path = 'data/tuber/labels.csv'
-    img_dir = 'data/tuber'
-    json_path = 'data/tuber/labels.json'
-    label_map, file_map = read_csv(csv_path, img_dir)
-    write_to_json(label_map, file_map, json_path)
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--csv',required=True)
+    ap.add_argument('-i','--img_dir',required=True)
+    ap.add_argument('-o','--json_path',required=True,help='a output json path')
+    args = ap.parse_args()
+    
+    label_map, file_map = read_csv(args.csv, args.img_dir)
+    write_to_json(label_map, file_map, args.json_path)
     

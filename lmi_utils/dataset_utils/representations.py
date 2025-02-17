@@ -186,7 +186,10 @@ class Box(Base):
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
 
 
+@dataclass
 class Polygon(Base):
+    points: List[List[int]]
+    
     def __init__(self, points: List[List[int]] = []):
         super().__init__()
         self.points = points
