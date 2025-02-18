@@ -6,11 +6,12 @@ import numpy as np
 import collections
 import glob
 from label_studio_sdk.converter.brush import decode_rle
-import base64
 from dataset_utils.representations import Box, Mask, Label, File, AnnotationType, Dataset, FileAnnotations, Polygon, Point2d, Annotation
 from dataset_utils.mask_encoder import mask2rle, rle2mask
-import shutil
+from system_utils.path_utils import get_relative_paths
 import cv2
+import shutil
+
 
 from label_utils.bbox_utils import convert_from_ls
 
@@ -47,8 +48,9 @@ def lst_to_shape(result:dict, fname:str, load_confidence=False):
     elif result_type=='polygonlabels':
         points=result['value']['points']
         points_np=np.array(points)
-        points_np[:, 0] /=100*result['original_width']
-        points_np[:, 1] /=100*result['original_height']
+        xs = (points_np[:, 0]/100*result['original_width']).astype(np.int32)
+        ys = (points_np[:, 1]/100*result['original_height']).astype(np.int32)
+        points_np = np.stack([xs,ys],axis=1)
         return Polygon(points=points_np.astype(int).tolist()), label, conf, AnnotationType.POLYGON
     elif result_type=='brushlabels':
         rle = result['value']['rle']
@@ -62,8 +64,13 @@ def lst_to_shape(result:dict, fname:str, load_confidence=False):
         return Point2d(x=x, y=y), label, conf, AnnotationType.KEYPOINT
     else:
         logger.warning(f'unsupported result type: {result_type}, skip')
-    
 
+def generate_file_ids(files):
+    file_id = {}
+    for i, f in enumerate(files):
+        file_id[f] = i
+    return file_id
+        
 
 def get_annotations_from_json(path_json, images_dir, output_image_dir):
     """read annotation from label studio json file.
@@ -81,8 +88,9 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir):
 
     labels : list[Label] = []
     annotations: list[FileAnnotations] = []
-    file_id = 0
+    
     label_dict = {}
+    file_id_dict = generate_file_ids(get_relative_paths(images_dir))
     
     for path_json in json_files:
         logger.info(f'Extracting labels from: {path_json}')
@@ -168,9 +176,10 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir):
                                 
             file_name = os.path.basename(f)
             ext = file_name.split('.')[-1]
-            new_file_name = file_name.replace(f'.{ext}', f'_{file_id}.{ext}')        # remove the common prefix
             old_file_path = f.replace(common_prefix, '')
             old_file_path = old_file_path[1:] if old_file_path[0]=='/' else old_file_path
+            file_id = file_id_dict[old_file_path]
+            new_file_name = file_name.replace(f'.{ext}', f'_{file_id}.{ext}')  
             updated_fp = os.path.join(output_image_dir, new_file_name)
             if os.path.exists(os.path.join(images_dir, old_file_path)):
                 logger.info(f'copying file: {old_file_path} to {updated_fp}')
@@ -179,6 +188,7 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir):
                 raise Exception(f'file not found: {old_file_path}')
             image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
             height, width = image.shape[:2]
+            
             annotations.append(FileAnnotations(file=File(id=str(file_id), path=updated_fp, height=height, width=width), annotations=file_annotations, predictions=pred_annotations))
             file_id += 1
 
@@ -187,6 +197,24 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir):
             logger.info(f'{cnt_wrong} images with total_annotations > 0, but found 0 annotation')
         logger.info(f'total {cnt_anno} annotations')
         logger.info(f'total {cnt_pred} predictions')
+    # save all background images
+    for f in file_id_dict:
+        file_name = os.path.basename(f)
+        ext = file_name.split('.')[-1]
+        file_id = file_id_dict[f]
+        new_file_name = file_name.replace(f'.{ext}', f'_{file_id}.{ext}')
+        updated_fp = os.path.join(output_image_dir, new_file_name)
+        if not os.path.exists(updated_fp):
+            shutil.copy(os.path.join(images_dir, f), updated_fp)
+        # add the background image to the annotations
+        image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
+        height, width = image.shape[:2]
+        annotations.append(FileAnnotations(file=File(id=str(file_id), path=updated_fp, height=height, width=width)))
+    
+    logger.info(f'total {len(annotations)} images')
+    logger.info(f'total {len(labels)} labels')
+    
+    
     return annotations, labels
 
 if __name__ == '__main__':

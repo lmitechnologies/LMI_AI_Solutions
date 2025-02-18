@@ -91,6 +91,7 @@ class Point2d(Base):
 
     def to_yolo(self, h, w):
         return [[self.x / w, self.y / h]]
+        
 
 
 @dataclass
@@ -693,6 +694,13 @@ class Dataset(Base):
         all_files = [file_ann.path for file_ann in self.files]
         common_prefix = os.path.commonprefix(all_files)
         return os.path.dirname(common_prefix)
+    
+    def files_to_relative(self):
+        base_path = self.base_path
+        if os.path.isabs(base_path):
+            for file_ann in self.files:
+                file_ann.path = file_ann.relative_path(base_path)
+        return self
 
     def get_label_ids(self) -> List[str]:
         return [label.id for label in self.labels]

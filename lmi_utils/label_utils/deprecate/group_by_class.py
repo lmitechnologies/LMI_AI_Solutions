@@ -5,7 +5,7 @@ import random
 import cv2
 
 from .csv_utils import load_csv
-from .plot_labels import plot_shape
+from .plot_with_json import plot_shape
 
 
 logging.basicConfig(level=logging.INFO)

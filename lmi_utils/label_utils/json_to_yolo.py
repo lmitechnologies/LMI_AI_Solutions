@@ -13,7 +13,7 @@ logger.setLevel(logging.INFO)
 def args():
     ap = argparse.ArgumentParser()
     ap.add_argument('--path_imgs', '-i', required=True, help='the path of a image folder')
-    ap.add_argument('--path_file', default='labels.json', help='[optinal] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs')
+    ap.add_argument('--path_file', default='labels.json', help='[optional] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs')
     ap.add_argument('--path_out', '-o', required=True, help='the output path')
     ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')
     ap.add_argument('--seg', action='store_true', help='convert label formats: mask-to-bbox if "--convert" is enabled, otherwise bbox-to-mask')

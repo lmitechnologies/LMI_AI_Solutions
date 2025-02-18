@@ -145,7 +145,6 @@ def convert_to_txt(fname_to_shapes, target_classes, is_seg=False, is_convert=Fal
                     rows.append(row)
                 else:
                     ignore_cls.add(class_name)
-            
             elif isinstance(shape, Brush):
                 mask = shape.to_mask((H,W))
                 mask = mask.astype(np.uint8)*255
@@ -240,11 +239,7 @@ def write_txts(fname_to_rows, path_txts):
     """
     os.makedirs(path_txts, exist_ok=True)
     for fname in fname_to_rows:
-        if '/' in fname:
-            fname = os.path
         txt_file = os.path.join(path_txts, fname)
-        if '.txt' not in txt_file:
-            txt_file += '.txt'
         with open(txt_file, 'w') as f:
             for shape in fname_to_rows[fname]:
                 class_id = shape[0]
@@ -257,7 +252,7 @@ def write_txts(fname_to_rows, path_txts):
     logger.info(f' wrote {len(fname_to_rows)} txt files to {path_txts}')
     
 
-def copy_images_in_folder(path_imgs, path_out, fnames=None):
+def copy_images_in_folder(path_img, path_out, fnames=None):
     """
     copy the images from one folder to another
     Arguments:
@@ -266,9 +261,9 @@ def copy_images_in_folder(path_imgs, path_out, fnames=None):
     """
     os.makedirs(path_out, exist_ok=True)
     if not fnames:
-        l = glob.glob(os.path.join(path_imgs, '*.png')) + glob.glob(os.path.join(path_imgs, '*.jpg'))
+        l = glob.glob(os.path.join(path_img, '*.png')) + glob.glob(os.path.join(path_img, '*.jpg'))
     else:
-        l = [f"{path_imgs}/{fname}" for fname in fnames]
+        l = [f"{path_img}/{fname}" for fname in fnames]
     for f in l:
         shutil.copy(f, path_out)
 
