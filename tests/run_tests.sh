@@ -31,7 +31,7 @@ elif [ "$ARGUMENT" == "object_detectors" ]; then
     pytest --test-package=False --html=/app/repo/tests/object_detectors.html tests/object_detectors/
     exit 0
 elif [ "$ARGUMENT" == "lmi_utils" ]; then
-    pytest --test-package=True --html=/app/repo/tests/lmi_utils_dataset_packaged.html tests/lmi_utils/
+    pytest --test-package=True --html=/app/repo/tests/lmi_utils_packaged.html tests/lmi_utils/
     pytest --test-package=False --html=/app/repo/tests/lmi_utils.html tests/lmi_utils/
     exit 0
 elif [ "$ARGUMENT" == "anomaly_detectors-v0" ]; then
