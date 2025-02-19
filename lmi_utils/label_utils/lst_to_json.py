@@ -244,6 +244,7 @@ if __name__ == '__main__':
     
     
     annotations = Dataset(labels=labels, files=annotations)
+    annotations.files_to_relative()
     annotations.save(os.path.join(images_dir, LABEL_NAME))
     
     

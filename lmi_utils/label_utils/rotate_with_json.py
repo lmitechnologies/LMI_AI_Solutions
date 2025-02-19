@@ -188,7 +188,7 @@ def rotate_dataset(dataset, angle, path_imgs,path_out,clockwise=False, save_bg_i
             
             elif annot.type == AnnotationType.MASK:
                 mask = annot.value.to_numpy(h=height, w=width)
-                mask = cv2.warpAffine(mask, rotation_matrix, (width, height))
+                mask = cv2.warpAffine(mask, rotation_matrix, (new_width, new_height))
                 annot.value.mask = mask2rle(mask)
             
             else:

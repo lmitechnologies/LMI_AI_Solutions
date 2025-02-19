@@ -19,7 +19,7 @@ def pad_image_with_json(input_path, json_path, output_path, output_imsize, save_
     pad/crop the image to the size [W,H] and modify its annotations accordingly
     arguments:
         input_path(str): the input image path
-        csv_path(str): the path to the csv annotation file
+        json_path(str): the path to the json annotation file
         output_imsize(list): the width and height of the output image
     """
     if not os.path.isdir(input_path):
@@ -80,6 +80,7 @@ def pad_image_with_json(input_path, json_path, output_path, output_imsize, save_
     if cnt_warnings:
         logger.warning(f'found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
     output_json = os.path.join(output_path, "labels.json")
+    dataset.files_to_relative()
     dataset.save(output_json)
     
 
@@ -162,20 +163,20 @@ def fit_shapes_to_size(shapes, pad_l, pad_t, pad_h, pad_w,orig_h,orig_w):
 
 
 if __name__=="__main__":
-    ap = argparse.ArgumentParser(description='Pad or crop images with csv to output size.')
+    ap = argparse.ArgumentParser(description='Pad or crop images with json to output size.')
     ap.add_argument('--path_imgs', '-i', required=True, help='the path to the images')
-    ap.add_argument('--path_csv', default='labels.json', help='[optional] the path of a csv file that corresponds to path_imgs, default="labels.json" in path_imgs')
+    ap.add_argument('--path_json', default='labels.json', help='[optional] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs')
     ap.add_argument('--path_out','-o', required=True, help='the output path')
     ap.add_argument('--wh', required=True, help='the output image size [w,h], w and h are separated by a comma')
     ap.add_argument('--bg', action='store_true', help='save background images with no labels')
-    ap.add_argument('--append', action='store_true', help='append to the existing output csv file')
+    ap.add_argument('--append', action='store_true', help='append to the existing output json file')
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
-    path_csv = args['path_csv'] if args['path_csv']!='labels.json' else os.path.join(path_imgs, args['path_csv'])
-    if not os.path.isfile(path_csv):
-        raise Exception(f'Not found file: {path_csv}. Please create an empty csv file, if there are no labels.')
+    path_json = args['path_json'] if args['path_json']!='labels.json' else os.path.join(path_imgs, args['path_json'])
+    if not os.path.isfile(path_json):
+        raise Exception(f'Not found file: {path_json}. Please create an empty json file, if there are no labels.')
     output_path=args['path_out']
     output_imsize = list(map(int,args['wh'].split(',')))
 
@@ -185,6 +186,7 @@ if __name__=="__main__":
     if not os.path.isdir(output_path):
         os.makedirs(output_path)
     
-    pad_image_with_json(path_imgs, path_csv, output_path, output_imsize, args['bg'])
+    
+    pad_image_with_json(path_imgs, path_json, output_path, output_imsize, args['bg'])
     
     

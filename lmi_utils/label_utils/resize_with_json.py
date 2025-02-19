@@ -118,5 +118,6 @@ if __name__=='__main__':
 
     #resize images with annotation json file
     dataset = resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, args['bg'], args['recursive'])
+    dataset.files_to_relative()
     
     dataset.save(os.path.join(path_out, 'labels.json'))
