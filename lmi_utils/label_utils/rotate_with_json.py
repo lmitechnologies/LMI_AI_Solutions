@@ -69,35 +69,6 @@ def rotate_bbox_corners(corners, M):
     
     return ordered_corners.astype(np.float32)
 
-def rotate_bbox(bbox, rotation_matrix):
-    """
-    Rotate an axis-aligned bounding box using an affine rotation matrix.
-    """
-    # Unpack the bounding box coordinates.
-    x_min, y_min, x_max, y_max = bbox
-    
-    # Define the four corners of the bounding box.
-    corners = np.array([
-        [x_min, y_min],
-        [x_max, y_min],
-        [x_max, y_max],
-        [x_min, y_max]
-    ])
-    
-    # Convert corners to homogeneous coordinates (add a column of ones).
-    ones = np.ones((corners.shape[0], 1))
-    corners_hom = np.hstack([corners, ones])
-    
-    # Apply the rotation matrix to each corner.
-    rotated_corners = np.dot(rotation_matrix, corners_hom.T).T
-    
-    # Find the new bounding box coordinates.
-    x_min_new = np.min(rotated_corners[:, 0])
-    y_min_new = np.min(rotated_corners[:, 1])
-    x_max_new = np.max(rotated_corners[:, 0])
-    y_max_new = np.max(rotated_corners[:, 1])
-    
-    return [x_min_new, y_min_new, x_max_new, y_max_new]
 
 def get_args():
     ap = argparse.ArgumentParser()

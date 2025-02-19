@@ -89,7 +89,7 @@ class Point2d(Base):
     def coords(self, **kwargs):
         return self.x, self.y
 
-    def to_yolo(self, h, w):
+    def to_yolo(self, h, w, **kwargs):
         return [[self.x / w, self.y / h]]
         
 
@@ -146,22 +146,37 @@ class Box(Base):
     def coords(self, **kwargs):
         return self.x_min, self.y_min, self.x_max, self.y_max, self.angle
 
-    def to_yolo(self, h, w):
+    def to_yolo(self, h, w, **kwargs):
+        use_obb = kwargs.get("use_obb", False)
+        
+        logger.info(f"Converting box to YOLO format with use_obb={use_obb}")
+        
         width = self.x_max - self.x_min
         height = self.y_max - self.y_min
-        if self.angle > 0:
+        if self.angle > 0 and use_obb:
+            
             rotated_coords = rotate(
                 self.x_min,
-                self.x_max,
-                w,
-                h,
+                self.y_min,
+                width,
+                height,
                 self.angle,
                 rot_center="up_left",
                 unit="degree",
             )
+            for p in rotated_coords:
+                if p[0] > w:
+                    raise ValueError(f"Rotated point x value {p[0]} is greater than image width {w}")
+                if p[1] > h:
+                    raise ValueError(f"Rotated point y value {p[1]} is greater than image height {h}")
             return [[pt[0] / w, pt[1] / h] for pt in rotated_coords]
         else:
-            return [[self.x_min / w, self.y_min / h, width / w, height / h]]
+            if use_obb:
+                logger.warning(f"Use_obb is True but angle is {self.angle}; returning obb formatted bounding box.")
+                corners = np.array([[self.x_min, self.y_min], [self.x_max, self.y_min], [self.x_max, self.y_max], [self.x_min, self.y_max]])
+                return [[pt[0] / w, pt[1] / h] for pt in corners]
+            else:
+                return [[self.x_min / w, self.y_min / h, width / w, height / h]]
 
     def to_mask(self, **kwargs):
         img_h = kwargs.get("h")
@@ -222,7 +237,7 @@ class Polygon(Base):
         points = np.array(self.points)
         return points[:, 0].tolist(), points[:, 1].tolist()
 
-    def to_yolo(self, h, w):
+    def to_yolo(self, h, w, **kwargs):
         return [[point[0] / w, point[1] / h] for point in self.points]
 
     def to_mask(self, **kwargs):
@@ -305,11 +320,11 @@ class Mask(Base):
         polygons = [contour.reshape(-1, 2) for contour in contours]
         return [Polygon([[x, y] for x, y in polygon]) for polygon in polygons]
 
-    def to_yolo(self, h, w):
+    def to_yolo(self, h, w, **kwargs):
         # Delegate conversion to polygons.
         instances = []
         for polygon in self.to_polygon(h=h, w=w):
-            instances.append(polygon.to_yolo(h, w))
+            instances.append(polygon.to_yolo(h, w, **kwargs))
         return instances
 
     def to_box(self, **kwargs):
@@ -425,8 +440,8 @@ class BoxAnnotation(Annotation):
         )
         
 
-    def to_yolo(self, h, w):
-        return self.value.to_yolo(h, w)
+    def to_yolo(self, h, w, **kwargs):
+        return self.value.to_yolo(h, w, **kwargs)
 
 
 class MaskAnnotation(Annotation):
@@ -455,8 +470,8 @@ class MaskAnnotation(Annotation):
             iou=data.get("iou", None),
         )
 
-    def to_yolo(self, h, w):
-        return self.value.to_yolo(h, w)
+    def to_yolo(self, h, w, **kwargs):
+        return self.value.to_yolo(h, w, **kwargs)
 
 
 class KeypointAnnotation(Annotation):
@@ -488,8 +503,8 @@ class KeypointAnnotation(Annotation):
             bounding_box_id=data.get("bounding_box_id", None),
         )
 
-    def to_yolo(self, h, w):
-        return self.value.to_yolo(h, w)
+    def to_yolo(self, h, w, **kwargs):
+        return self.value.to_yolo(h, w, **kwargs)
 
 
 class PolygonAnnotation(Annotation):
@@ -518,8 +533,8 @@ class PolygonAnnotation(Annotation):
             iou=data.get("iou", None),
         )
 
-    def to_yolo(self, h, w):
-        return self.value.to_yolo(h, w)
+    def to_yolo(self, h, w, **kwargs):
+        return self.value.to_yolo(h, w, **kwargs)
 
 
 @dataclass
@@ -622,32 +637,38 @@ class FileAnnotations(Base):
         else:
             self.predictions = annotations
 
-    def assign_keypoints(self):
-        keypoints = self.get_annotations_by_type(AnnotationType.KEYPOINT)
-        boxes = self.get_annotations_by_type(AnnotationType.BOX)
-        for keypoint in keypoints:
-            assigned = False
-            for box in boxes:
-                if box.value.point_in_box(keypoint.value.x, keypoint.value.y):
-                    keypoint.bounding_box_id = box.id
-                    if keypoint.link is not None:
-                        keypoint.link.annotation_id = box.id
-                    assigned = True
-                    break
-            if not assigned:
-                raise Exception(f"Keypoint {keypoint.id} not assigned to any box")
+    def assign_keypoints(self, target_ids=[]):
+        for annotation in self.annotations:
+            if annotation.type == AnnotationType.KEYPOINT:
+                assigned = False
+                for box in self.annotations:
+                    if len(target_ids) > 0 and box.label_id not in target_ids:
+                        continue
+                    if box.type == AnnotationType.BOX and box.value.point_in_box(annotation.value.x, annotation.value.y):
+                        if annotation.bounding_box_id is None:
+                            annotation.bounding_box_id = box.id
+                            assigned = True
+                            break
+                        
+                if not assigned:
+                    raise Exception(f"Keypoint {annotation.id} not assigned to any box")
+        
         return self
 
-    def to_yolo(self, label_to_index, to_segmentation=False, to_object_detection=False, merge_boxes=False, target_classes=["all"]):
+    def to_yolo(self, to_segmentation=False, to_object_detection=False, merge_boxes=False, target_classes=[], use_obb=False):
         """Convert this file's annotations to YOLO format.
            `label_to_index` is a function mapping a label id to an integer index.
         """
         yolo_annotations = []
         h = self.height
         w = self.width
+        yolo_annotations_map = {}
+        
         for annotation in self.annotations:
+            if annotation.type == AnnotationType.KEYPOINT:
+                continue
             updated_annotations = []
-            if target_classes[0] != "all" and annotation.label_id not in target_classes:
+            if len(target_classes) > 0 and annotation.label_id not in target_classes:
                 continue
 
             # Conversion steps:
@@ -659,16 +680,37 @@ class FileAnnotations(Base):
                 updated_annotations.append(annotation.value.to_box(h=h, w=w))
 
             converted = [
-                ann.to_yolo(h, w) for ann in updated_annotations
-            ] if updated_annotations else [annotation.to_yolo(h, w)]
+                ann.to_yolo(h, w, use_obb=use_obb) for ann in updated_annotations
+            ] if updated_annotations else [annotation.to_yolo(h, w, use_obb=use_obb)]
             for conv in converted:
                 if annotation.type == AnnotationType.MASK:
                     for p in conv:
-                        instance = [label_to_index(annotation.label_id)] + np.array(p).flatten().tolist()
+                        instance = [annotation.label_id] + np.array(p).flatten().tolist()
                         yolo_annotations.append(instance)
                 else:
-                    instance = [label_to_index(annotation.label_id)] + np.array(conv).flatten().tolist()
+                    instance = [annotation.label_id] + np.array(conv).flatten().tolist()
                     yolo_annotations.append(instance)
+                yolo_annotations_map[annotation.id] = instance
+                
+        # handle converting keypoints to YOLO format
+        # assign keypoints to bounding boxes
+        self.assign_keypoints(target_ids=target_classes)
+        for annotation in self.annotations:
+            if annotation.type == AnnotationType.KEYPOINT:
+                logger.info(f"Converting keypoint {annotation.id} to YOLO format with bounding box {annotation.bounding_box_id}")
+                box = yolo_annotations_map.get(annotation.bounding_box_id, None)
+                
+                if box is None:
+                    raise Exception(f"Bounding box {annotation.bounding_box_id} not found for keypoint {annotation.id}")
+                idx = yolo_annotations.index(box)
+                yolo_kp = annotation.to_yolo(h, w, use_obb=use_obb)
+                # Add the keypoint to the box annotation
+                box.extend(np.array(yolo_kp).flatten().tolist())
+                # Update the box annotation in the list
+                yolo_annotations[idx] = box
+                
+                    
+        logger.info(f"File {self.path} has {len(yolo_annotations)} YOLO annotations")
         return yolo_annotations
 
 
@@ -719,6 +761,12 @@ class Dataset(Base):
             if label_id == label.id:
                 return label.name
         raise ValueError(f"Label name for {label_id} not found.")
+    
+    def label_name_to_id(self, label_name: str) -> str:
+        for label in self.labels:
+            if label_name == label.name:
+                return label.id
+        raise ValueError(f"Label id for {label_name} not found.")
 
     def to_yolo(self, **kwargs):
         to_segmentation = kwargs.get("to_segmentation", False)
@@ -730,7 +778,6 @@ class Dataset(Base):
         image_to_labels = {}
         base_prefix = self.base_path
         for file_ann in self.files:
-            file_ann.assign_keypoints()
             file_path = file_ann.relative_path(base_prefix)
             logger.info(f"Processing file {file_path}")
             if file_path not in image_to_labels:
@@ -744,19 +791,21 @@ class Dataset(Base):
                     raise Exception(
                         f"Inconsistent number of keypoints: expected {n_kpts}, found {len(keypoints)}"
                     )
+                    
+            # convert target classes to label ids
+            target_label_ids = [self.label_name_to_id(name) for name in target_classes]
 
             # Call the file-level to_yolo method:
             file_yolo = file_ann.to_yolo(
-                label_to_index=self.label_to_index,
                 to_segmentation=to_segmentation,
                 to_object_detection=to_object_detection,
                 merge_boxes=merge_boxes,
-                target_classes=target_classes,
+                target_classes=target_label_ids,
+                use_obb=kwargs.get("use_obb", False),
             )
             image_to_labels[file_path].extend(file_yolo)
-            logger.info(f"File {file_path} has {len(file_yolo)} YOLO annotations")
         return dict(
             image_labels=image_to_labels,
-            class_map={idx: label.id for idx, label in enumerate(self.labels)},
+            class_map={label.name: label.id for idx, label in enumerate(self.labels) if target_classes == ["all"] or label.name in target_classes},
             n_kpts=n_kpts,
         )

@@ -230,7 +230,7 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir, backgroun
     return annotations, labels
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser('Convert label studio json file to csv format')
+    ap = argparse.ArgumentParser('Convert label studio json file to json format')
     ap.add_argument('-i', '--path_json', required=True, help='the directory of label-studio json files')
     ap.add_argument('-imgs', '--path_imgs', required=False, help='the directory of images')
     ap.add_argument('-o', '--path_out', required=True, help='output directory')

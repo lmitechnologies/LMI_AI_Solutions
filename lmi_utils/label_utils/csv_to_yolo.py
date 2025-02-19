@@ -240,6 +240,8 @@ def write_txts(fname_to_rows, path_txts):
     os.makedirs(path_txts, exist_ok=True)
     for fname in fname_to_rows:
         txt_file = os.path.join(path_txts, fname)
+        if '.txt' not in txt_file:
+            txt_file += '.txt'
         with open(txt_file, 'w') as f:
             for shape in fname_to_rows[fname]:
                 class_id = shape[0]

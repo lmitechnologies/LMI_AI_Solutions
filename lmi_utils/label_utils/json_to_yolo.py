@@ -16,6 +16,7 @@ def args():
     ap.add_argument('--path_file', default='labels.json', help='[optional] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs')
     ap.add_argument('--path_out', '-o', required=True, help='the output path')
     ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')
+    ap.add_argument('--obb', action='store_true', help='support for oriented bounding box support')
     ap.add_argument('--seg', action='store_true', help='convert label formats: mask-to-bbox if "--convert" is enabled, otherwise bbox-to-mask')
     ap.add_argument('--convert', action='store_true', help='convert label formats: bbox-to-mask if "--seg" is enabled, otherwise mask-to-bbox')
     ap.add_argument('--bg', action='store_true', help='save images with no labels, where yolo models treat them as background')
@@ -31,6 +32,7 @@ def convert_to_yolo(args):
     bbox_to_mask = True if args.get('convert', False) and args.get('seg', False) else False
     mask_to_od = True if args.get('convert', False) and not args.get('seg', False) else False
     target_classes = args['target_classes'].split(',')
+    use_obb = args.get('obb', False)
     
     # check if the dataset path exists
     if not os.path.exists(path_imgs):
@@ -47,6 +49,7 @@ def convert_to_yolo(args):
         to_segmentation=bbox_to_mask,
         to_object_detection=mask_to_od,
         target_classes=target_classes,
+        use_obb=use_obb
     )
     
     # print(yolo_dataset)
@@ -84,13 +87,13 @@ def convert_to_yolo(args):
         }
         if yolo_dataset['n_kpts']:
             dt['kpt_shape'] = [yolo_dataset['n_kpts'],2]
-        dt['names'] = {int(k):v for k,v in yolo_dataset['class_map'].items()}
+        dt['names'] = {int(v):k for k,v in yolo_dataset['class_map'].items() }
         yaml.dump(dt, f, sort_keys=False)
     
     fname = os.path.join(args['path_out'], 'class_map.json')
     
     with open(fname, 'w') as outfile:
-        json.dump({v:k
+        json.dump({k:int(v)
             for k,v in yolo_dataset['class_map'].items()}, outfile)
     
     if args.get('bg', False):
