@@ -183,14 +183,25 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir, backgroun
             updated_fp = os.path.join(output_image_dir, new_file_name)
             if os.path.exists(os.path.join(images_dir, old_file_path)):
                 logger.info(f'copying file: {old_file_path} to {updated_fp}')
-                shutil.copy(os.path.join(images_dir, old_file_path), updated_fp)
+                if len(file_annotations)>0:
+                    shutil.copy(os.path.join(images_dir, old_file_path), updated_fp)
+                else:
+                    if background:
+                        shutil.copy(os.path.join(images_dir, old_file_path), updated_fp)
             else:
                 raise Exception(f'file not found: {old_file_path}')
             image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
             height, width = image.shape[:2]
-            
-            annotations.append(FileAnnotations(file=File(id=str(file_id), path=updated_fp, height=height, width=width), annotations=file_annotations, predictions=pred_annotations))
-            file_id += 1
+            if len(file_annotations)>0:
+                annotations.append(FileAnnotations(file=File(id=str(file_id), path=updated_fp, height=height, width=width), annotations=file_annotations, predictions=pred_annotations))
+                cnt_image += 1
+
+            else:
+                logger.warning(f'no annotation found in {f}')
+                
+                if background:
+                    annotations.append(FileAnnotations(file=File(id=str(file_id), path=updated_fp, height=height, width=width)))
+                
 
         logger.info(f'{cnt_image} out of {len(l)} images have annotations')
         if cnt_wrong>0:
