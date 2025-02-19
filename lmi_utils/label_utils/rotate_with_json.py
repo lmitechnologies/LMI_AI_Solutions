@@ -7,12 +7,42 @@ import json
 import math
 from dataset_utils.representations import Dataset, AnnotationType
 from dataset_utils.mask_encoder import mask2rle
-from label_utils.bbox_utils import rotate
+from label_utils.bbox_utils import rotate, get_rotated_bbox
 import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+
+def rotate_bbox(bbox, rotation_matrix):
+    """
+    Rotate an axis-aligned bounding box using an affine rotation matrix.
+    """
+    # Unpack the bounding box coordinates.
+    x_min, y_min, x_max, y_max = bbox
+    
+    # Define the four corners of the bounding box.
+    corners = np.array([
+        [x_min, y_min],
+        [x_max, y_min],
+        [x_max, y_max],
+        [x_min, y_max]
+    ])
+    
+    # Convert corners to homogeneous coordinates (add a column of ones).
+    ones = np.ones((corners.shape[0], 1))
+    corners_hom = np.hstack([corners, ones])
+    
+    # Apply the rotation matrix to each corner.
+    rotated_corners = np.dot(rotation_matrix, corners_hom.T).T
+    
+    # Find the new bounding box coordinates.
+    x_min_new = np.min(rotated_corners[:, 0])
+    y_min_new = np.min(rotated_corners[:, 1])
+    x_max_new = np.max(rotated_corners[:, 0])
+    y_max_new = np.max(rotated_corners[:, 1])
+    
+    return [x_min_new, y_min_new, x_max_new, y_max_new]
 
 def get_args():
     ap = argparse.ArgumentParser()
@@ -55,50 +85,35 @@ def rotate_dataset(dataset, angle, path_imgs,path_out,clockwise=False, save_bg_i
         center = (width // 2, height // 2)
         rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
         rotated_img = cv2.warpAffine(img, rotation_matrix, (width, height))
+        new_h, new_w = rotated_img.shape[:2]
         
         
         for annot in file.annotations:
             if annot.type == AnnotationType.BOX:
                 x_min, y_min, x_max, y_max, theta = annot.value.coords()
-                if angle != 0:
-                    corners = rotate(x_min, y_min, x_max-x_min, y_max-y_min, angle, 'up_left', 'degree')
-                else:
-                    corners = [[x_min, y_min], [x_max, y_min], [x_max, y_max], [x_min, y_max]]
-                
-                # rotate the corners
-                rotated_corners = cv2.transform(np.array([corners]), rotation_matrix)[0]
-                
-                # get the new coordinates
-                if theta != 0:
-                    new_x, new_y, new_w, new_h, new_theta = cv2.minAreaRect(rotated_corners)
-                    new_xmin, new_ymin, new_xmax, new_ymax = new_x-new_w/2, new_y-new_h/2, new_x+new_w/2, new_y+new_h/2
-                    annot.value.x_min, annot.value.y_min, annot.value.x_max, annot.value.y_max = new_xmin, new_ymin, new_xmax, new_ymax
-                    annot.value.angle = new_theta
-                else:
-                    x_min, y_min = rotated_corners[0]
-                    x_max, y_max = rotated_corners[2]
-                    annot.value.x_min, annot.value.y_min, annot.value.x_max, annot.value.y_max = x_min, y_min, x_max, y_max
-                    
+                x_min, y_min, x_max, y_max = rotate_bbox([x_min, y_min, x_max, y_max], rotation_matrix)
+                annot.value.x_min, annot.value.y_min = x_min, y_min
+                annot.value.x_max, annot.value.y_max = x_max, y_max
                 
             elif annot.type == AnnotationType.POLYGON:
                 points = annot.value.to_numpy()
                 for i in range(len(points)):
                     points[i] = np.dot(rotation_matrix[:, :2], [points[i][0], points[i][1]]) + rotation_matrix[:, 2]
-                annot.value.points = points.tolist()
+                annot.value.points = points.astype(float).tolist()
             
-            elif annot.value.type == AnnotationType.KEYPOINT:
-                x, y = annot.x, annot.y
+            elif annot.type == AnnotationType.KEYPOINT:
+                x, y = annot.value.x, annot.value.y
                 new_x, new_y = np.dot(rotation_matrix[:, :2], [x, y]) + rotation_matrix[:, 2]
-                annot.value.x, annot.value.y = new_x, new_y
+                annot.value.x, annot.value.y = new_x.astype(float), new_y.astype(float)
             
             elif annot.type == AnnotationType.MASK:
-                mask = annot.value.mask.to_numpy()
+                mask = annot.value.to_numpy(h=height, w=width)
                 mask = cv2.warpAffine(mask, rotation_matrix, (width, height))
                 annot.value.mask = mask2rle(mask)
             
             else:
                 logging.warning(f'unsupported annotation type: {annot.type}')
-        
+
         # update the file
         
         ext = os.path.basename(file.path).split('.')[-1]

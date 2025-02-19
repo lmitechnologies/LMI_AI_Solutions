@@ -36,7 +36,7 @@ def plot_shape(dataset,shape, im, color_map, no_label=False):
         x,y = shape.value.coords(h=img_h, w=img_w)
         plot_one_brush(x,y,im,label=label,color=color_map[label])
     elif shape.type == AnnotationType.KEYPOINT:
-        x,y,_ = shape.value.coords()
+        x,y, = shape.value.coords()
         plot_one_pt([x,y], im, label=label, color=color_map[label])
     else:
         raise Exception(f'Unknown shape: {type(shape)}')
@@ -73,9 +73,9 @@ if __name__ == '__main__':
     
     for f in dataset.files:
         file_path = f.relative_path(base_prefix)
-        im_name = os.path.basename(file_path)
+        
         fname = os.path.basename(file_path)
-        logger.info(f'processing {im_name}')
+        logger.info(f'processing {fname}')
         if not os.path.exists(os.path.join(path_imgs, fname)) and f.has_annotations:
             logger.warning(f'file not found: {file_path} has annotations {f.annotations}')
             raise Exception(f'file not found: {file_path}')
@@ -87,7 +87,7 @@ if __name__ == '__main__':
         im = im0.copy()
         for shape in f.annotations:
             plot_shape(dataset,shape, im, color_map, args['no_label'])
-        outname = os.path.join(output_path, im_name)
+        outname = os.path.join(output_path, fname)
         cv2.imwrite(outname, im)
         
         if args['preds'] and len(f.predictions):
@@ -95,6 +95,6 @@ if __name__ == '__main__':
             for shape in f.predictions:
                 plot_shape(dataset,shape, im, color_map, args['no_label'])
             
-            root,ext = os.path.splitext(im_name)
+            root,ext = os.path.splitext(fname)
             outname = os.path.join(output_path, root+'_pred'+ext)
             cv2.imwrite(outname, im)

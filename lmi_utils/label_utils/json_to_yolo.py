@@ -98,7 +98,7 @@ def convert_to_yolo(args):
     else:
         fnames = [os.path.basename(k) for k in yolo_dataset['image_labels'].keys() if len(yolo_dataset['image_labels'][k])>0]
     
-    copy_images_in_folder(path_imgs=path_imgs, path_out=path_out_imgs, fnames=fnames)
+    copy_images_in_folder(path_img=path_imgs, path_out=path_out_imgs, fnames=fnames)
 
 def main(args):
     convert_to_yolo(args)

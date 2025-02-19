@@ -4,9 +4,7 @@ import logging
 import cv2
 
 #LMI packages
-from label_utils import csv_utils
 from label_utils.shapes import Rect, Mask, Keypoint, Brush
-from system_utils.path_utils import get_relative_paths
 from image_utils.img_resize import resize
 from dataset_utils.representations import Dataset, File
 
@@ -35,7 +33,7 @@ def resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, save_bg
     if the aspect ratio changes, it will generate warnings.
     Arguments:
         path_imgs(str): the image folder
-        path_csv(str): the path of csv annotation file
+        path_json(str): the path of csv annotation file
         output_imsize(list): a list of output image size [w,h]
     Return:
         shapes(dict): the map <original image name, a list of shape objects>, where shape objects are annotations
@@ -93,12 +91,12 @@ if __name__=='__main__':
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument('--path_imgs', '-i', required=True, help='the path to images')
-    ap.add_argument('--path_json', default='labels.json', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.json" in path_imgs')
+    ap.add_argument('--path_json', default='labels.json', help='[optinal] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs')
     ap.add_argument('--width', type=int, default=None, help='the output image width, default=None')
     ap.add_argument('--height', type=int, default=None, help='the output image height, default=None')
     ap.add_argument('--path_out', '-o', required=True, help='the path to resized images')
     ap.add_argument('--bg', action='store_true', help='save background images that have no labels')
-    ap.add_argument('--append', action='store_true', help='append to the existing output csv file')
+    ap.add_argument('--append', action='store_true', help='append to the existing output json file')
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = vars(ap.parse_args())
 
@@ -107,18 +105,18 @@ if __name__=='__main__':
     
     path_imgs = args['path_imgs']
     path_out = args['path_out']
-    path_csv = args['path_json'] if args['path_json']!='labels.json' else os.path.join(path_imgs, args['path_json'])
+    path_json = args['path_json'] if args['path_json']!='labels.json' else os.path.join(path_imgs, args['path_json'])
     
     #check if annotation exists
-    if not os.path.isfile(path_csv):
-        raise Exception(f'cannot find file: {path_csv}. Please create an empty csv file, if there are no labels.')
+    if not os.path.isfile(path_json):
+        raise Exception(f'cannot find file: {path_json}. Please create an empty json file, if there are no labels.')
     
     # create output path
     assert path_imgs!=path_out, 'input and output path must be different'
     if not os.path.isdir(path_out):
         os.makedirs(path_out)
 
-    #resize images with annotation csv file
-    dataset = resize_imgs_with_json(path_imgs, path_csv, output_imsize, path_out, args['bg'], args['recursive'])
+    #resize images with annotation json file
+    dataset = resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, args['bg'], args['recursive'])
     
     dataset.save(os.path.join(path_out, 'labels.json'))

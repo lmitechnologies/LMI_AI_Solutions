@@ -72,7 +72,7 @@ def generate_file_ids(files):
     return file_id
         
 
-def get_annotations_from_json(path_json, images_dir, output_image_dir):
+def get_annotations_from_json(path_json, images_dir, output_image_dir, background=False):
     """read annotation from label studio json file.
 
     Args:
@@ -198,18 +198,19 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir):
         logger.info(f'total {cnt_anno} annotations')
         logger.info(f'total {cnt_pred} predictions')
     # save all background images
-    for f in file_id_dict:
-        file_name = os.path.basename(f)
-        ext = file_name.split('.')[-1]
-        file_id = file_id_dict[f]
-        new_file_name = file_name.replace(f'.{ext}', f'_{file_id}.{ext}')
-        updated_fp = os.path.join(output_image_dir, new_file_name)
-        if not os.path.exists(updated_fp):
-            shutil.copy(os.path.join(images_dir, f), updated_fp)
-        # add the background image to the annotations
-        image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
-        height, width = image.shape[:2]
-        annotations.append(FileAnnotations(file=File(id=str(file_id), path=updated_fp, height=height, width=width)))
+    if background:
+        for f in file_id_dict:
+            file_name = os.path.basename(f)
+            ext = file_name.split('.')[-1]
+            file_id = file_id_dict[f]
+            new_file_name = file_name.replace(f'.{ext}', f'_{file_id}.{ext}')
+            updated_fp = os.path.join(output_image_dir, new_file_name)
+            if not os.path.exists(updated_fp):
+                shutil.copy(os.path.join(images_dir, f), updated_fp)
+            # add the background image to the annotations
+            image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
+            height, width = image.shape[:2]
+            annotations.append(FileAnnotations(file=File(id=str(file_id), path=updated_fp, height=height, width=width)))
     
     logger.info(f'total {len(annotations)} images')
     logger.info(f'total {len(labels)} labels')
@@ -222,6 +223,7 @@ if __name__ == '__main__':
     ap.add_argument('-i', '--path_json', required=True, help='the directory of label-studio json files')
     ap.add_argument('-imgs', '--path_imgs', required=False, help='the directory of images')
     ap.add_argument('-o', '--path_out', required=True, help='output directory')
+    ap.add_argument('-bg', '--background', action='store_true', help='save bacground')
     args = ap.parse_args()
     
     if os.path.isfile(args.path_out):
@@ -237,7 +239,7 @@ if __name__ == '__main__':
         args.path_imgs = os.path.dirname(args.path_json)
     
     
-    annotations, labels = get_annotations_from_json(args.path_json, args.path_imgs, output_image_dir=images_dir)
+    annotations, labels = get_annotations_from_json(args.path_json, args.path_imgs, output_image_dir=images_dir, background=args.background)
     
     
     

@@ -28,7 +28,7 @@ def pad_image_with_json(input_path, json_path, output_path, output_imsize, save_
     W,H = output_imsize
     cnt_bg = 0
     cnt_warnings = 0
-    output_shapes = {}
+
     
     dataset = Dataset.load(json_path)
     base_prefix = dataset.base_path
