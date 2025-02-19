@@ -34,7 +34,7 @@ def lst_to_shape(result:dict, fname:str, load_confidence=False):
         raise Exception('Not support more than one labels in a bbox/polygon')
     if len(labels) == 0:
         logger.warning(f'found empty label in {fname}, skip')
-        return
+        return None, None, None, None
     
     label = labels[0]
     conf = result['value']['score'] if load_confidence else 1.0
