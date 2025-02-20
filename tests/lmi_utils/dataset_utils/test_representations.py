@@ -242,18 +242,19 @@ def test_file_annotations_assign_keypoints_error(add_root_path):
         fa.assign_keypoints()
 
 def test_file_annotations_to_yolo(dummy_file_annotations, add_root_path):
-    # Dummy label-to-index function: map any label to 0.
-    def dummy_label_to_index(label_id):
-        return 0
-    yolo = dummy_file_annotations.to_yolo(
-        label_to_index=dummy_label_to_index,
+    logger.warning(f"dummy_file_annotations: {dummy_file_annotations}")
+    # logger.warning(f"yolo: {yolo}")
+    yolo, label_ids = dummy_file_annotations.to_yolo(
         to_segmentation=False,
         to_object_detection=False,
         merge_boxes=False,
-        target_classes=["all"]
+        target_classes=[]
     )
     assert isinstance(yolo, list)
+    assert isinstance(label_ids, list)
     assert len(yolo) > 0
+    
+    
 
 # ============================
 #       Dataset Tests
