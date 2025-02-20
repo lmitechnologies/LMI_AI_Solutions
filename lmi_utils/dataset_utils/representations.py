@@ -357,16 +357,18 @@ class Label(Base):
     id: str
     name: str
     color: Optional[str] = None
+    annotation_type: Optional[AnnotationType] = None
 
-    def __init__(self, id: str, name: str, color: Optional[str] = None):
+    def __init__(self, id: str, name: str, color: Optional[str] = None, annotation_type: Optional[AnnotationType] = None):
         super().__init__()
         self.id = id
         self.name = name
         self.color = color
+        self.annotation_type = annotation_type
 
     @classmethod
     def from_dict(cls, data: dict) -> "Label":
-        return cls(id=data["id"], name=data["name"], color=data.get("color", None))
+        return cls(id=data["id"], name=data["name"], color=data.get("color", None), annotation_type=data.get("annotation_type", None))
 
 
 @dataclass
@@ -663,7 +665,8 @@ class FileAnnotations(Base):
         h = self.height
         w = self.width
         yolo_annotations_map = {}
-        
+        label_ids = []
+                
         for annotation in self.annotations:
             if annotation.type == AnnotationType.KEYPOINT:
                 continue
@@ -691,9 +694,11 @@ class FileAnnotations(Base):
                     instance = [annotation.label_id] + np.array(conv).flatten().tolist()
                     yolo_annotations.append(instance)
                 yolo_annotations_map[annotation.id] = instance
+            label_ids.append(annotation.label_id)
                 
         # handle converting keypoints to YOLO format
         # assign keypoints to bounding boxes
+        
         self.assign_keypoints(target_ids=target_classes)
         for annotation in self.annotations:
             if annotation.type == AnnotationType.KEYPOINT:
@@ -709,9 +714,9 @@ class FileAnnotations(Base):
                 # Update the box annotation in the list
                 yolo_annotations[idx] = box
                 
-                    
-        logger.info(f"File {self.path} has {len(yolo_annotations)} YOLO annotations")
-        return yolo_annotations
+        if len(yolo_annotations) == 0:
+            logger.warning(f"No annotations found for file {self.path}")
+        return yolo_annotations, label_ids
 
 
 @dataclass
@@ -767,18 +772,59 @@ class Dataset(Base):
             if label_name == label.name:
                 return label.id
         raise ValueError(f"Label id for {label_name} not found.")
+    
+    def delete_label(self, label_id: str):
+        for idx, label in enumerate(self.labels):
+            if label.id == label_id:
+                del self.labels[idx]
+                break
+        for file_ann in self.files:
+            for annotation in file_ann.annotations:
+                if annotation.label_id == label_id:
+                    file_ann.delete_annotation(annotation.id)
+            for annotation in file_ann.predictions:
+                if annotation.label_id == label_id:
+                    file_ann.delete_annotation(annotation.id, list_type="predictions")
+        return self
+    
+    def update_label_ids(self):
+        for idx, label in enumerate(self.labels):
+            label.id = str(idx)
+        return self
 
     def to_yolo(self, **kwargs):
         to_segmentation = kwargs.get("to_segmentation", False)
         to_object_detection = kwargs.get("to_object_detection", False)
         merge_boxes = kwargs.get("merge_boxes", False)
         target_classes = kwargs.get("target_classes", ["all"])
-
+        target_label_ids = []
+        if target_classes != ["all"]:
+            target_label_ids = [self.label_name_to_id(name) for name in target_classes]
+            
+            # delete the annotations that are not in the target classes
+            delete_ids = [label.id for label in self.labels if label.name not in target_classes]
+            old_label_map = {label.id: label.name for label in self.labels}
+            self.labels = [label for label in self.labels if label.name in target_classes]
+            for file_ann in self.files:
+                file_ann.annotations = [ann for ann in file_ann.annotations if ann.label_id not in delete_ids]
+                file_ann.predictions = [ann for ann in file_ann.predictions if ann.label_id not in delete_ids]
+            logger.info(f"Deleted annotations for labels {delete_ids}")
+            
+            self.update_label_ids()
+            logger.info(f"Updated label ids {self.labels}")
+            for file_ann in self.files:
+                for annotation in file_ann.annotations:
+                    annotation.label_id = self.label_name_to_id(old_label_map[annotation.label_id])
+                for annotation in file_ann.predictions:
+                    annotation.label_id = self.label_name_to_id(old_label_map[annotation.label_id])
+                    
         n_kpts = 0
         image_to_labels = {}
         base_prefix = self.base_path
+        label_ids = []
         for file_ann in self.files:
             file_path = file_ann.relative_path(base_prefix)
+            
             logger.info(f"Processing file {file_path}")
             if file_path not in image_to_labels:
                 image_to_labels[file_path] = []
@@ -792,20 +838,22 @@ class Dataset(Base):
                         f"Inconsistent number of keypoints: expected {n_kpts}, found {len(keypoints)}"
                     )
                     
-            # convert target classes to label ids
-            target_label_ids = [self.label_name_to_id(name) for name in target_classes]
+            
+            
 
             # Call the file-level to_yolo method:
-            file_yolo = file_ann.to_yolo(
+            file_yolo, file_label_ids = file_ann.to_yolo(
                 to_segmentation=to_segmentation,
                 to_object_detection=to_object_detection,
                 merge_boxes=merge_boxes,
                 target_classes=target_label_ids,
                 use_obb=kwargs.get("use_obb", False),
             )
+            label_ids.extend(file_label_ids)
             image_to_labels[file_path].extend(file_yolo)
+        label_ids = list(set(label_ids))
         return dict(
             image_labels=image_to_labels,
-            class_map={label.name: label.id for idx, label in enumerate(self.labels) if target_classes == ["all"] or label.name in target_classes},
+            class_map={self.label_id_to_name(label_id): label_id for  label_id in label_ids},
             n_kpts=n_kpts,
         )
