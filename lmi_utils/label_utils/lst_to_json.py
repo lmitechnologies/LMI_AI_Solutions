@@ -72,7 +72,7 @@ def generate_file_ids(files):
     return file_id
         
 
-def get_annotations_from_json(path_json, images_dir, output_image_dir, background=False):
+def get_annotations_from_json(path_json, images_dir, background=False):
     """read annotation from label studio json file.
 
     Args:
@@ -108,7 +108,7 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir, backgroun
             dt['data']['image'] for dt in l if 'data' in dt
         ]
         common_prefix = os.path.dirname(os.path.commonprefix(files))
-        logger.info(f'common prefix: {common_prefix}')
+        logger.info(f'base_path: {common_prefix}')
         
         # find the common prefix between the image path
         
@@ -174,33 +174,42 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir, backgroun
                                 pred_annotations.append(Annotation(id=str(cnt_pred), label_id=str(label_id), type=annot_type, value=shape, confidence=conf))
                                 cnt_pred += 1
                                 
-            file_name = os.path.basename(f)
-            ext = file_name.split('.')[-1]
-            old_file_path = f.replace(common_prefix, '')
-            old_file_path = old_file_path[1:] if old_file_path[0]=='/' else old_file_path
-            file_id = file_id_dict[old_file_path]
-            new_file_name = file_name.replace(f'.{ext}', f'_{file_id}.{ext}')  
-            updated_fp = os.path.join(output_image_dir, new_file_name)
-            if os.path.exists(os.path.join(images_dir, old_file_path)):
-                logger.info(f'copying file: {old_file_path} to {updated_fp}')
-                if len(file_annotations)>0:
-                    shutil.copy(os.path.join(images_dir, old_file_path), updated_fp)
-                else:
-                    if background:
-                        shutil.copy(os.path.join(images_dir, old_file_path), updated_fp)
-            else:
-                raise Exception(f'file not found: {old_file_path}')
+            # file_name = os.path.basename(f)
+            # ext = file_name.split('.')[-1]
+            # old_file_path = f.replace(common_prefix, '')
+            # old_file_path = old_file_path[1:] if old_file_path[0]=='/' else old_file_path
+            # file_id = file_id_dict[old_file_path]
+            # new_file_name = file_name.replace(f'.{ext}', f'_{file_id}.{ext}')  
+            # updated_fp = os.path.join(output_image_dir, new_file_name)
+            # if os.path.exists(os.path.join(images_dir, old_file_path)):
+            #     logger.info(f'copying file: {old_file_path} to {updated_fp}')
+            #     if len(file_annotations)>0:
+            #         shutil.copy(os.path.join(images_dir, old_file_path), updated_fp)
+            #     else:
+            #         if background:
+            #             shutil.copy(os.path.join(images_dir, old_file_path), updated_fp)
+            # else:
+            #     raise Exception(f'file not found: {old_file_path}')
+            
+            f = f.removeprefix(common_prefix).removeprefix('/')
+            updated_fp = os.path.join(images_dir, f)
+            if not os.path.isfile(updated_fp):
+                raise Exception(f'file not found: {updated_fp}')
+            
+            file_id = file_id_dict[f]
+                
+                
             image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
             height, width = image.shape[:2]
             if len(file_annotations)>0:
-                annotations.append(FileAnnotations(file=File(id=str(file_id), path=updated_fp, height=height, width=width), annotations=file_annotations, predictions=pred_annotations))
+                annotations.append(FileAnnotations(file=File(id=str(file_id), path=f, height=height, width=width), annotations=file_annotations, predictions=pred_annotations))
                 cnt_image += 1
 
             else:
                 logger.warning(f'no annotation found in {f}')
                 
                 if background:
-                    annotations.append(FileAnnotations(file=File(id=str(file_id), path=updated_fp, height=height, width=width)))
+                    annotations.append(FileAnnotations(file=File(id=str(file_id), path=f, height=height, width=width)))
                 
 
         logger.info(f'{cnt_image} out of {len(l)} images have annotations')
@@ -211,17 +220,13 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir, backgroun
     # save all background images
     if background:
         for f in file_id_dict:
-            file_name = os.path.basename(f)
-            ext = file_name.split('.')[-1]
+            updated_fp = os.path.join(images_dir, f)
+            if not os.path.isfile(updated_fp):
+                raise Exception(f'file not found: {updated_fp}')
             file_id = file_id_dict[f]
-            new_file_name = file_name.replace(f'.{ext}', f'_{file_id}.{ext}')
-            updated_fp = os.path.join(output_image_dir, new_file_name)
-            if not os.path.exists(updated_fp):
-                shutil.copy(os.path.join(images_dir, f), updated_fp)
-            # add the background image to the annotations
             image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
             height, width = image.shape[:2]
-            annotations.append(FileAnnotations(file=File(id=str(file_id), path=updated_fp, height=height, width=width)))
+            annotations.append(FileAnnotations(file=File(id=str(file_id), path=f, height=height, width=width)))
     
     logger.info(f'total {len(annotations)} images')
     logger.info(f'total {len(labels)} labels')
@@ -232,30 +237,26 @@ def get_annotations_from_json(path_json, images_dir, output_image_dir, backgroun
 if __name__ == '__main__':
     ap = argparse.ArgumentParser('Convert label studio json file to json format')
     ap.add_argument('-i', '--path_json', required=True, help='the directory of label-studio json files')
-    ap.add_argument('-imgs', '--path_imgs', required=False, help='the directory of images')
-    ap.add_argument('-o', '--path_out', required=True, help='output directory')
+    ap.add_argument('-imgs', '--path_images', required=False, help='the root directory of images')
+    ap.add_argument('-of', '--path_out_json', required=True, help='path to store the json file')
+
+    
     ap.add_argument('-bg', '--background', action='store_true', help='save bacground')
     args = ap.parse_args()
     
-    if os.path.isfile(args.path_out):
-        raise Exception('The output path should be a directory')
-    
-    if not os.path.isdir(args.path_out):
-        os.makedirs(args.path_out)
-    images_dir = os.path.join(args.path_out, IMAGES_DIR)
-    if not os.path.isdir(images_dir):
-        os.makedirs(images_dir)
-    
-    if args.path_imgs is None:
-        args.path_imgs = os.path.dirname(args.path_json)
     
     
-    annotations, labels = get_annotations_from_json(args.path_json, args.path_imgs, output_image_dir=images_dir, background=args.background)
+    annotations, labels = get_annotations_from_json(args.path_json, args.path_images, background=args.background)
     
     
     
     annotations = Dataset(labels=labels, files=annotations)
-    annotations.files_to_relative()
-    annotations.save(os.path.join(images_dir, LABEL_NAME))
+    # annotations.files_to_relative()
+    out_path = args.path_out_json
+    if not out_path.endswith('.json'):
+        if not os.path.isdir(out_path):
+            os.makedirs(out_path)
+        out_path = os.path.join(out_path, 'labels.json')
+    annotations.save(out_path)
     
     

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def pad_image_with_json(input_path, json_path, output_path, output_imsize, save_bg_images):
+def pad_image_with_json(input_path, json_path, output_images_path, output_imsize, save_bg_images):
     """
     pad/crop the image to the size [W,H] and modify its annotations accordingly
     arguments:
@@ -31,11 +31,16 @@ def pad_image_with_json(input_path, json_path, output_path, output_imsize, save_
 
     
     dataset = Dataset.load(json_path)
-    base_prefix = dataset.base_path
+    # base_prefix = dataset.base_path
     for f in dataset.files:
-        file_path = f.relative_path(base_prefix)
+        # file_path = f.relative_path(base_prefix)
+        # p = os.path.join(input_path, file_path)
+        # im_name = os.path.basename(file_path)
+        file_path = f.path
         p = os.path.join(input_path, file_path)
         im_name = os.path.basename(file_path)
+        if not os.path.isfile(p):
+            raise Exception(f'cannot find file: {file_path}')
         
         # found bg image
         if not f.has_annotations:
@@ -53,10 +58,13 @@ def pad_image_with_json(input_path, json_path, output_path, output_imsize, save_
         logger.info(f'[PAD] {im_name}: wh of [{w},{h}]')
         # pad image
         im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,W,H)
+        
+        if f'id{f.id}_' not in im_name:
+            im_name = f'id{f.id}_{im_name}'
 
         #create output fname and save it
         out_name = os.path.splitext(im_name)[0] + f'_pad_{W}x{H}' + '.png'
-        output_file=os.path.join(output_path, out_name)
+        output_file=os.path.join(output_images_path, out_name)
         logger.info(f'write to: {output_file}')
         cv2.imwrite(output_file,im_out)
 
@@ -74,15 +82,12 @@ def pad_image_with_json(input_path, json_path, output_path, output_imsize, save_
 
         height = im_out.shape[0]
         width = im_out.shape[1]
-        f.update_file(File(path=out_name, width=width, height=height, id=f.id))
+        f.update_file(File(path=os.path.relpath(output_file, output_images_path), width=width, height=height, id=f.id))
     if cnt_bg:
         logger.info(f'found {cnt_bg} images with no labels. These images will be used as background training data for YOLO.')
     if cnt_warnings:
         logger.warning(f'found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
-    output_json = os.path.join(output_path, "labels.json")
-    dataset.files_to_relative()
-    dataset.save(output_json)
-    
+    return dataset
 
 def clip_shapes(shapes, W, H):
     """
@@ -166,10 +171,11 @@ if __name__=="__main__":
     ap = argparse.ArgumentParser(description='Pad or crop images with json to output size.')
     ap.add_argument('--path_imgs', '-i', required=True, help='the path to the images')
     ap.add_argument('--path_json', default='labels.json', help='[optional] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs')
-    ap.add_argument('--path_out','-o', required=True, help='the output path')
-    ap.add_argument('--wh', required=True, help='the output image size [w,h], w and h are separated by a comma')
+    ap.add_argument('--path_out_images','-oi', required=True, help='the output path for images')
+    ap.add_argument('--path_out_json', '-of', required=False, help='the path to store json file', default='labels.json')
+    ap.add_argument('--width', type=int, default=None, help='the output image width, default=None')
+    ap.add_argument('--height', type=int, default=None, help='the output image height, default=None')
     ap.add_argument('--bg', action='store_true', help='save background images with no labels')
-    ap.add_argument('--append', action='store_true', help='append to the existing output json file')
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = vars(ap.parse_args())
 
@@ -177,8 +183,16 @@ if __name__=="__main__":
     path_json = args['path_json'] if args['path_json']!='labels.json' else os.path.join(path_imgs, args['path_json'])
     if not os.path.isfile(path_json):
         raise Exception(f'Not found file: {path_json}. Please create an empty json file, if there are no labels.')
-    output_path=args['path_out']
-    output_imsize = list(map(int,args['wh'].split(',')))
+    output_path=args['path_out_images']
+    output_imsize = [args['width'], args['height']]
+    out_json = args['path_out_json']
+    if not out_json.endswith('.json') and out_json!='labels.json':
+        if not os.path.isdir(out_json):
+            os.makedirs(out_json)
+        out_json = os.path.join(out_json, 'labels.json')
+    else:
+        out_json = os.path.join(output_path, 'labels.json')
+        
 
     logger.info(f'output image size: {output_imsize}')
     assert len(output_imsize)==2, 'the output image size must be two ints'
@@ -187,6 +201,12 @@ if __name__=="__main__":
         os.makedirs(output_path)
     
     
-    pad_image_with_json(path_imgs, path_json, output_path, output_imsize, args['bg'])
+    updated_dataset = pad_image_with_json(path_imgs, path_json, output_path, output_imsize, args['bg'])
+    updated_dataset.save(out_json)
+    logger.info(f'output json file: {out_json}')
+    logger.info(f'output images: {output_path}')
+    logger.info(f'finished!')
+    
+    
     
     

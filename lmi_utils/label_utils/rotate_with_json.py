@@ -74,21 +74,25 @@ def get_args():
     ap = argparse.ArgumentParser()
     ap.add_argument('--path_imgs', '-i', required=True, help='the path to images')
     ap.add_argument('--path_json', default='labels.json', help='[optional] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs')
-    ap.add_argument('--path_out', '-o', required=True, help='the path to resized images')
+    ap.add_argument('--path_out_images', '-oi', required=True, help='the output path for images')
+    ap.add_argument('--path_out_json', '-of', required=False, help='the path to store json file', default='labels.json')
+
     ap.add_argument('--angle', default=90, type=int, help='the angle to rotate the images')
     ap.add_argument('--counter-clockwise', action='store_true', help='rotate the images counter-clockwise')
     ap.add_argument('--bg', action='store_true', help='save background images that have no labels')
     args = vars(ap.parse_args())
     return args
 
-def rotate_dataset(dataset, angle, path_imgs,path_out,clockwise=False, save_bg_images=False):
+def rotate_dataset(dataset, angle, path_imgs,path_out,counter_clockwise=False, save_bg_images=False):
     """
     Rotate annotations clockwise or counterclockwise
     """
-    if clockwise is False:
+    if counter_clockwise is False:
         angle = -angle
     cnt_bg = 0
     for file in dataset.files:
+        
+        logger.info(f'rotating {os.path.basename(file.path)} with angle {angle} degrees counter_clockwise : {counter_clockwise}')
         
         if not file.has_annotations:
             if not save_bg_images:
@@ -166,26 +170,37 @@ def rotate_dataset(dataset, angle, path_imgs,path_out,clockwise=False, save_bg_i
                 logging.warning(f'unsupported annotation type: {annot.type}')
 
         # update the file
-        
-        ext = os.path.basename(file.path).split('.')[-1]
-        out_file = os.path.basename(file.path).replace(f'.{ext}', f'_rotated_{angle*-1}.{ext}') # -1 so that the angle is positive for clockwise rotation
-        cv2.imwrite(os.path.join(path_out, out_file), rotated_img)
+        im_name = os.path.basename(file.path)
+        if f'id{file.id}_' not in im_name:
+            im_name = f'id{file.id}_{im_name}'
+        ext = im_name.split('.')[-1]
+        out_file = im_name.replace(f'.{ext}', f'_rotated_{angle*-1}.{ext}') # -1 so that the angle is positive for clockwise rotation
+        updated_file_path = os.path.join(path_out, out_file)
+        cv2.imwrite(updated_file_path, rotated_img)
         file.height, file.width = rotated_img.shape[:2]
-        file.path = out_file
+        file.path = os.path.relpath(updated_file_path, path_out)
     return dataset
 
 def main(args):
     path_imgs = args['path_imgs']
     path_json = args['path_json']
-    path_out = args['path_out']
+    path_out_images = args['path_out_images']
+    out_json = args['path_out_json']
     angle = args['angle']
     path_json = args['path_json'] if args['path_json']!='labels.json' else os.path.join(path_imgs, args['path_json'])
     counter_clockwise = args['counter_clockwise']
     save_bg = args['bg']
     
-    if not os.path.exists(path_out):
-        os.makedirs(path_out)
-        
+    if not os.path.exists(path_out_images):
+        os.makedirs(path_out_images)
+    
+    if not out_json.endswith('.json') and out_json!='labels.json':
+        if not os.path.isdir(out_json):
+            os.makedirs(out_json)
+        out_json = os.path.join(out_json, 'labels.json')
+    else:
+        out_json = os.path.join(path_out_images, 'labels.json')
+    
 
     
     if not os.path.exists(path_json):
@@ -195,10 +210,8 @@ def main(args):
     dataset = Dataset.load(path_json)
     
     # rotate the dataset
-    dataset = rotate_dataset(dataset, angle, path_imgs, path_out, counter_clockwise, save_bg)
-    
-    # save the rotated dataset
-    dataset.save(os.path.join(path_out, 'labels.json'))
+    dataset = rotate_dataset(dataset, angle, path_imgs, path_out_images, counter_clockwise, save_bg)
+    dataset.save(out_json)
 
 if __name__ == '__main__':
     args = get_args()

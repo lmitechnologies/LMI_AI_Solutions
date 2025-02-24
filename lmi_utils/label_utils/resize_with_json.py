@@ -40,14 +40,14 @@ def resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, save_bg
     """
     
     dataset = Dataset.load(path_json)
-    for file in dataset.files:
-        logger.info(f'processing {file.path}')
-    base_prefix = dataset.base_path
     cnt_bg = 0
     # files = get_relative_paths(path_imgs, recursive)
     for f in dataset.files:
-        file_path = f.relative_path(base_prefix)
+        file_path = f.path
         im_name = os.path.basename(file_path)
+        if not os.path.isfile(os.path.join(path_imgs, file_path)):
+            raise Exception(f'cannot find file: {file_path}')
+        
         im = cv2.imread(os.path.join(path_imgs, file_path))
         h,w = im.shape[:2]
         
@@ -71,12 +71,17 @@ def resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, save_bg
             im2 = resize(im, width=tw)
         else:
             im2 = resize(im, width=tw, height=th)
+        # check if id is in the path
+        if f'id{f.id}_' not in im_name:
+            im_name = f'id{f.id}_{im_name}'
         
         out_name = os.path.splitext(im_name)[0] + f'_resized_{tw}x{th}' + '.png'
+        absolute_image_path = os.path.join(path_out, out_name)
         logger.info(f'write to {out_name}')
+        relative_image_path = os.path.relpath(absolute_image_path, path_out)
         cv2.imwrite(os.path.join(path_out,out_name), im2)
         im2_h, im2_w = im2.shape[:2]
-        f.update_file(File(path=os.path.basename(out_name), width=im2_w, height=im2_h, id=f.id))
+        f.update_file(File(path=relative_image_path, width=im2_w, height=im2_h, id=f.id))
         
         # resize shapes
         shapes = resize_shapes(f.annotations,orig_h=h, orig_w=w, new_h=im2_h, new_w=im2_w)
@@ -94,9 +99,9 @@ if __name__=='__main__':
     ap.add_argument('--path_json', default='labels.json', help='[optinal] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs')
     ap.add_argument('--width', type=int, default=None, help='the output image width, default=None')
     ap.add_argument('--height', type=int, default=None, help='the output image height, default=None')
-    ap.add_argument('--path_out', '-o', required=True, help='the path to resized images')
+    ap.add_argument('--path_out_images', '-oi', required=True, help='the path to resized images')
+    ap.add_argument('--path_out_json', '-of', required=False, help='the path to store json file', default='labels.json')
     ap.add_argument('--bg', action='store_true', help='save background images that have no labels')
-    ap.add_argument('--append', action='store_true', help='append to the existing output json file')
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = vars(ap.parse_args())
 
@@ -104,9 +109,10 @@ if __name__=='__main__':
     logger.info(f'output image size: {output_imsize}')
     
     path_imgs = args['path_imgs']
-    path_out = args['path_out']
-    path_json = args['path_json'] if args['path_json']!='labels.json' else os.path.join(path_imgs, args['path_json'])
-    
+    path_out = args['path_out_images']
+    # path_json = args['path_json'] if args['path_json']!='labels.json' else os.path.join(path_imgs, args['path_json'])
+    path_json = args['path_json'] if os.path.isfile(args['path_json']) else os.path.join(path_imgs, args['path_json'])
+    out_json = args['path_out_json']
     #check if annotation exists
     if not os.path.isfile(path_json):
         raise Exception(f'cannot find file: {path_json}. Please create an empty json file, if there are no labels.')
@@ -118,6 +124,13 @@ if __name__=='__main__':
 
     #resize images with annotation json file
     dataset = resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, args['bg'], args['recursive'])
-    dataset.files_to_relative()
     
-    dataset.save(os.path.join(path_out, 'labels.json'))
+    # dataset.files_to_relative()
+    if not out_json.endswith('.json') and out_json!='labels.json':
+        if not os.path.isdir(out_json):
+            os.makedirs(out_json)
+        out_json = os.path.join(out_json, 'labels.json')
+    else:
+        out_json = os.path.join(path_out, 'labels.json')
+    
+    dataset.save(out_json)

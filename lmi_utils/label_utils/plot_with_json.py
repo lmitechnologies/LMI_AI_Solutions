@@ -58,6 +58,9 @@ if __name__ == '__main__':
     path_json = args['path_json'] if args['path_json']!='labels.json' else os.path.join(path_imgs, args['path_json'])
     output_path = args['path_out']
     assert path_imgs!=output_path, 'output path must be different with input path'
+    
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
     # fname_to_shape, class_map = load_csv(path_json, path_imgs, class_map)
     
     dataset = Dataset.load(path_json)
@@ -68,27 +71,30 @@ if __name__ == '__main__':
     for name in dataset.get_label_names():
         logger.info(f'CLASS: {name}')
         color_map[name] = tuple([random.randint(0,255) for _ in range(3)])
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
     
     for f in dataset.files:
-        file_path = f.relative_path(base_prefix)
+        file_path = os.path.join(path_imgs, f.path)
         
         fname = os.path.basename(file_path)
         logger.info(f'processing {fname}')
-        if not os.path.exists(os.path.join(path_imgs, fname)) and f.has_annotations:
+        if not os.path.isfile(file_path) and f.has_annotations:
             logger.warning(f'file not found: {file_path} has annotations {f.annotations}')
             raise Exception(f'file not found: {file_path}')
-        elif not os.path.exists(os.path.join(path_imgs, fname)):
+        elif not os.path.exists(file_path):
             logger.warning(f'file not found: {file_path}')
             continue
-        im0 = cv2.imread(os.path.join(path_imgs, fname))
+        im0 = cv2.imread(file_path)
         
         im = im0.copy()
         for shape in f.annotations:
             plot_shape(dataset,shape, im, color_map, args['no_label'])
-        outname = os.path.join(output_path, fname)
-        cv2.imwrite(outname, im)
+            
+        if f'id{f.id}_' not in fname:
+            fname = f'id{f.id}_{fname}'
+
+        #create output fname and save it
+        out_name = os.path.splitext(fname)[0] + f'_annot' + '.png'
+        output_file=os.path.join(output_path, out_name)
         
         if args['preds'] and len(f.predictions):
             im = im0.copy()
@@ -96,5 +102,10 @@ if __name__ == '__main__':
                 plot_shape(dataset,shape, im, color_map, args['no_label'])
             
             root,ext = os.path.splitext(fname)
-            outname = os.path.join(output_path, root+'_pred'+ext)
-            cv2.imwrite(outname, im)
+
+            #create output fname and save it
+            out_name = os.path.splitext(fname)[0] + f'_annot' + '.png'
+            output_file=os.path.join(output_path, out_name)
+        
+        cv2.imwrite(output_file, im)
+            
