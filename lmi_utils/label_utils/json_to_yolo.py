@@ -51,7 +51,7 @@ def write_txts(fname_to_rows, path_txts, fnames=None):
                     row2 += f'{pt:.4f} '
                 row2 += '\n'
                 f.write(row2)
-    logger.info(f' wrote {len(fnames)} txt files to {path_txts}')
+    logger.info(f' wrote {len(fnames) if fnames is not None else len(fname_to_rows)} txt files to {path_txts}')
     
 
 def convert_to_yolo(args):
@@ -101,6 +101,10 @@ def convert_to_yolo(args):
         n_train = int(len(files) * args.get('split_ratio'))
         train_files = list(files)[:n_train]
         val_files = list(files)[n_train:]
+        if len(val_files)>len(train_files):
+            train_files, val_files = val_files, train_files
+        if len(val_files)==0:
+            logger.warning('no validation files')
     
     
     logger.info(f'train files: {len(train_files)}')
