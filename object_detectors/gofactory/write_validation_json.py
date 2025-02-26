@@ -32,7 +32,7 @@ def match_predictions(preds, labels, cls_to_id, ious):
         return {}
     
     pred_ids = np.array([cls_to_id[l] for l in preds['classes']])
-    label_ids = np.array([cls_to_id[l] for l in labels['classes']])
+    label_ids = labels['ids']
     class_match = label_ids[:,None] == pred_ids
     ious = ious.cpu().numpy()
     ious = ious*class_match # zero out ious for non-matching classes, (n_gt, n_pred)
@@ -55,29 +55,28 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
         w (int): image width
 
     Returns:
-        dict: a dictionary contain 'classes','boxes','masks'
+        dict: a dictionary contains 'ids','boxes','masks'
     """
     boxes = []
     masks = []
-    labels = []
+    label_ids = []
     for annot in annotations:
-        labels.append(annot.label_id)
+        label_ids.append(int(annot.label_id))
         if annot.type == AnnotationType.BOX:
             boxes.append(annot.value.to_numpy())
         elif annot.type == AnnotationType.MASK:
             mask = annot.value.to_numpy(h=h,w=w)
             masks.append(mask)
         elif annot.type == AnnotationType.POLYGON:
-            mask = np.zeros((h, w), dtype=np.uint8)
-            xy = annot.value.to_numpy().astype(np.int32)
-            cv2.fillPoly(mask, [xy], 1)
+            obj = annot.value.to_mask(h=h, w=w)
+            mask = obj.to_numpy(h=h,w=w)
             masks.append(mask)
         else:
             raise Exception(f'Not supported type: {type(annot.type)}')
     return {
         'boxes': np.array(boxes),
         'masks': np.array(masks),
-        'classes': labels
+        'ids': np.array(label_ids)
     }
 
 
@@ -96,7 +95,7 @@ def write_json(model_path, config_path, image_dir, label_path, output_path, conf
     """
     model = Yolo(model_path)
     dataset = Dataset.load(label_path)
-    cls_to_id = {l.name:l.id for l in dataset.labels}
+    cls_to_id = {l.name:int(l.id) for l in dataset.labels}
     
     pred_annot_id = 0 # sum([len(f.annotations) for f in dataset.files])
     for file_annot in dataset.files:
@@ -133,6 +132,7 @@ def write_json(model_path, config_path, image_dir, label_path, output_path, conf
             box = preds['boxes'][i]
             mask = preds['masks'][i] if 'masks' in preds else None
             label = preds['classes'][i]
+            label_id = cls_to_id[label]
             score = preds['scores'][i].item()
             label_annot_id = None
             iou = 0
@@ -143,14 +143,14 @@ def write_json(model_path, config_path, image_dir, label_path, output_path, conf
             
             if mask is not None:
                 dt = dict(
-                    id=str(pred_annot_id), label_id=label, type=AnnotationType.MASK, value=Mask(mask), 
+                    id=str(pred_annot_id), label_id=str(label_id), type=AnnotationType.MASK, value=Mask(mask), 
                     link=label_annot_id, confidence=score, iou=iou
                 )
                 file_annot.predictions.append(Annotation(**dt))
                 pred_annot_id += 1
             else:
                 dt = dict(
-                    id=str(pred_annot_id), label_id=label, type=AnnotationType.BOX, value=Box(*box,angle=0), 
+                    id=str(pred_annot_id), label_id=str(label_id), type=AnnotationType.BOX, value=Box(*box,angle=0), 
                     link=label_annot_id, confidence=score, iou=iou
                 )
                 file_annot.predictions.append(Annotation(**dt))

@@ -68,12 +68,12 @@ def read_csv(csv_path:str, img_dir:str):
             
             if shape_type == 'polygon':
                 xy = np.array([[x,y] for x,y in zip(c1,c2)]).astype(int)
-                mask = np.zeros((height, width), dtype=np.uint8)
-                cv2.fillPoly(mask, [xy], 1)
-                shape = Mask(mask)
-                mtype = AnnotationType.MASK
-                # shape = Polygon(xy.tolist())
-                # mtype = AnnotationType.POLYGON
+                # mask = np.zeros((height, width), dtype=np.uint8)
+                # cv2.fillPoly(mask, [xy], 1)
+                # shape = Mask(mask)
+                # mtype = AnnotationType.MASK
+                shape = Polygon(xy.tolist())
+                mtype = AnnotationType.POLYGON
             if shape_type == 'rect':
                 shape = Box(x_min=c1[0], y_min=c1[1], x_max=c2[0], y_max=c2[1], angle=angle)
                 mtype = AnnotationType.BOX
@@ -94,7 +94,7 @@ def read_csv(csv_path:str, img_dir:str):
                 file_map[fname] = FileAnnotations(file=file, annotations=[], predictions=[])
             if fname in file_map:
                 file = file_map[fname]
-                annot = Annotation(id=str(annot_id),label_id=category,type=mtype,value=shape,confidence=conf)
+                annot = Annotation(id=str(annot_id),label_id=str(label_id),type=mtype,value=shape,confidence=conf)
                 annot_id += 1
                 file.annotations.append(annot)
             
