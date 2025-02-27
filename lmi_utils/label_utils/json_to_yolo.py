@@ -13,10 +13,13 @@ logger.setLevel(logging.INFO)
 
 def args():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_imgs', '-i', required=True, help='the path of a image folder')
-    ap.add_argument('--path_json', default='labels.json', help='[optional] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs')
+    # ap.add_argument('--path_imgs', '-i', required=True, help='the path of a image folder')
+    ap.add_argument('--path_train_json', default='labels.json', help='[optional] the path of a json file for train')
+    ap.add_argument('--path_val_json', default='labels.json', help='[optional] the path of a json file for val')
     ap.add_argument('--path_out', '-o', required=True, help='the output path for dataset')
-    ap.add_argument('--split_ratio', type=float, default=0.0, help='the ratio to split the dataset, default=0.0, all images will go to train' )
+    ap.add_argument('--path_train_imgs', '-ti', required=True, help='the output path for train images')
+    ap.add_argument('--path_val_imgs', '-vi', required=True, help='the output path for val images')
+    # ap.add_argument('--split_ratio', type=float, default=0.0, help='the ratio to split the dataset, default=0.0, all images will go to train' )
     ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')
     ap.add_argument('--obb', action='store_true', help='support for oriented bounding box support')
     ap.add_argument('--seg', action='store_true', help='convert label formats: mask-to-bbox if "--convert" is enabled, otherwise bbox-to-mask')
@@ -55,9 +58,12 @@ def write_txts(fname_to_rows, path_txts, fnames=None):
     
 
 def convert_to_yolo(args):
-    path_file = args['path_json'] if args['path_json']!='labels.json' else os.path.join(args.get('path_imgs'), args['path_json'])
+    path_train_json = args['path_train_json'] if args['path_train_json']!='labels.json' else os.path.join(args.get('path_imgs'), args['path_train_json'])
+    path_val_json = args['path_val_json'] if args['path_val_json']!='labels.json' else os.path.join(args.get('path_imgs'), args['path_val_json'])
     path_out = args['path_out']
-    path_imgs = args['path_imgs']
+    # path_imgs = args['path_imgs']
+    path_train_imgs = args['path_train_imgs']
+    path_val_imgs = args['path_val_imgs']
     merge_box = args.get('merge_box', False)
     bbox_to_mask = True if args.get('convert', False) and args.get('seg', False) else False
     mask_to_od = True if args.get('convert', False) and not args.get('seg', False) else False
@@ -65,16 +71,33 @@ def convert_to_yolo(args):
     use_obb = args.get('obb', False)
     
     # check if the dataset path exists
-    if not os.path.exists(path_imgs):
-        raise Exception('The image path does not exist')
-    if not os.path.exists(path_file):
+    if not os.path.exists(path_train_imgs):
+        raise Exception('The training image path does not exist')
+    if not os.path.exists(path_val_imgs):
+        raise Exception('The validation image path does not exist')
+    if not os.path.exists(path_train_json):
+        raise Exception('The json file does not exist')
+    if not os.path.exists(path_val_json):
         raise Exception('The json file does not exist')
     
+    # check if using training data for validation based on path
+    if path_train_imgs == path_val_imgs and path_train_json == path_val_json:
+        logger.warning('The training and validation image paths are the same, will use train images for validation')
+    
+         
     # load the json file
     
-    dataset = Dataset.load(path_file)
+    train_dataset = Dataset.load(path_train_json)
+    val_dataset = Dataset.load(path_val_json)
     
-    yolo_dataset = dataset.to_yolo(
+    train_yolo_dataset = train_dataset.to_yolo(
+        merge_boxes=merge_box,
+        to_segmentation=bbox_to_mask,
+        to_object_detection=mask_to_od,
+        target_classes=target_classes,
+        use_obb=use_obb
+    )
+    val_yolo_dataset = val_dataset.to_yolo(
         merge_boxes=merge_box,
         to_segmentation=bbox_to_mask,
         to_object_detection=mask_to_od,
@@ -82,37 +105,38 @@ def convert_to_yolo(args):
         use_obb=use_obb
     )
     
+    
     # print(yolo_dataset)
     
     # path for labels files
     path_txts = os.path.join(path_out, 'labels')
     
     
-    files = list(yolo_dataset['image_labels'].keys())
-    logger.info(f'# of Files: {len(files)}')
-    random.shuffle(files)
-    logger.info(f'# of Files: {len(files)}')
+    # files = list(yolo_dataset['image_labels'].keys())
+    # logger.info(f'# of Files: {len(files)}')
+    # random.shuffle(files)
+    # logger.info(f'# of Files: {len(files)}')
     # shuffle the files
-    train_files = files
-    val_files = []
+    train_files = list(train_yolo_dataset['image_labels'].keys())
+    val_files = list(val_yolo_dataset['image_labels'].keys())
     
-    if args.get('split_ratio', 0.0)>0.0:
+    # if args.get('split_ratio', 0.0)>0.0:
         
-        n_train = int(len(files) * args.get('split_ratio'))
-        train_files = list(files)[:n_train]
-        val_files = list(files)[n_train:]
-        if len(val_files)>len(train_files):
-            train_files, val_files = val_files, train_files
-        if len(val_files)==0:
-            logger.warning('no validation files')
+    #     n_train = int(len(files) * args.get('split_ratio'))
+    #     train_files = list(files)[:n_train]
+    #     val_files = list(files)[n_train:]
+    #     if len(val_files)>len(train_files):
+    #         train_files, val_files = val_files, train_files
+    #     if len(val_files)==0:
+    #         logger.warning('no validation files')
     
     
     logger.info(f'train files: {len(train_files)}')
     logger.info(f'val files: {len(val_files)}')
     
 
-    write_txts(yolo_dataset['image_labels'], path_txts=path_txts, fnames=train_files)
-    write_txts(yolo_dataset['image_labels'], path_txts=path_txts,fnames=val_files if len(val_files)>0 else None)
+    write_txts(train_yolo_dataset['image_labels'], path_txts=path_txts, fnames=train_files)
+    write_txts(val_yolo_dataset['image_labels'], path_txts=path_txts,fnames=val_files if len(val_files)>0 else None)
     
     # move the images to the output folder
     
@@ -132,16 +156,16 @@ def convert_to_yolo(args):
             'val': 'train' if len(val_files)==0 else 'val',
             'test': None,
         }
-        if yolo_dataset['n_kpts']:
-            dt['kpt_shape'] = [yolo_dataset['n_kpts'],2]
-        dt['names'] = {int(v):k for k,v in yolo_dataset['class_map'].items() }
+        if train_yolo_dataset['n_kpts']:
+            dt['kpt_shape'] = [train_yolo_dataset['n_kpts'],2]
+        dt['names'] = {int(v):k for k,v in train_yolo_dataset['class_map'].items() }
         yaml.dump(dt, f, sort_keys=False)
     
     fname = os.path.join(args['path_out'], 'class_map.json')
     
     with open(fname, 'w') as outfile:
         json.dump({k:int(v)
-            for k,v in yolo_dataset['class_map'].items()}, outfile)
+            for k,v in train_yolo_dataset['class_map'].items()}, outfile)
     
     # if args.get('bg', False):
     #     fnames = [os.path.basename(k) for k in yolo_dataset['image_labels'].keys()]
@@ -152,19 +176,19 @@ def convert_to_yolo(args):
     val_fnames = []
     
     if not args.get('bg'):
-        train_fnames = [os.path.basename(k) for k in train_files if len(yolo_dataset['image_labels'][k])>0]
+        train_fnames = [os.path.basename(k) for k in train_files if len(train_yolo_dataset['image_labels'][k])>0]
         if len(val_files)>0:
-            val_fnames = [os.path.basename(k) for k in val_files if len(yolo_dataset['image_labels'][k])>0]
+            val_fnames = [os.path.basename(k) for k in val_files if len(val_yolo_dataset['image_labels'][k])>0]
     
     else:
         train_fnames = [os.path.basename(k) for k in train_files]
         if len(val_files)>0:
             val_fnames = [os.path.basename(k) for k in val_files]
     
-    copy_images_in_folder(path_img=path_imgs, path_out=path_out_imgs_train, fnames=train_fnames)
+    copy_images_in_folder(path_img=path_train_imgs, path_out=path_out_imgs_train, fnames=train_fnames)
     
     if len(val_fnames)>0:
-        copy_images_in_folder(path_img=path_imgs, path_out=path_out_imgs_val, fnames=val_fnames)
+        copy_images_in_folder(path_img=path_val_imgs, path_out=path_out_imgs_val, fnames=val_fnames)
     
 
 def main(args):

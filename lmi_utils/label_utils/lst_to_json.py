@@ -238,7 +238,7 @@ if __name__ == '__main__':
     ap = argparse.ArgumentParser('Convert label studio json file to json format')
     ap.add_argument('-i', '--path_json', required=True, help='the directory of label-studio json files')
     ap.add_argument('-imgs', '--path_images', required=False, help='the root directory of images')
-    ap.add_argument('-of', '--path_out_json', required=True, help='path to store the json file')
+    ap.add_argument('-of', '--path_out_json', required=False, help='path to store the json file')
 
     
     ap.add_argument('-bg', '--background', action='store_true', help='save bacground')
@@ -253,10 +253,11 @@ if __name__ == '__main__':
     annotations = Dataset(labels=labels, files=annotations)
     # annotations.files_to_relative()
     out_path = args.path_out_json
-    if not out_path.endswith('.json'):
+    if not out_path.endswith('.json') and out_path!='labels.json':
         if not os.path.isdir(out_path):
             os.makedirs(out_path)
-        out_path = os.path.join(out_path, 'labels.json')
-    annotations.save(out_path)
+        out_json = os.path.join(out_path, 'labels.json')
+    else:
+        out_json = os.path.join(os.path.dirname(args.path_json), 'labels.json')
     
     

@@ -130,7 +130,10 @@ if __name__=='__main__':
         if not os.path.isdir(out_json):
             os.makedirs(out_json)
         out_json = os.path.join(out_json, 'labels.json')
-    else:
+    elif out_json == 'labels.json':
         out_json = os.path.join(path_out, 'labels.json')
+    else:
+        out_json = out_json
+        
     
     dataset.save(out_json)

@@ -198,8 +198,10 @@ def main(args):
         if not os.path.isdir(out_json):
             os.makedirs(out_json)
         out_json = os.path.join(out_json, 'labels.json')
-    else:
+    elif out_json == 'labels.json':
         out_json = os.path.join(path_out_images, 'labels.json')
+    else:
+        out_json = out_json
     
 
     
