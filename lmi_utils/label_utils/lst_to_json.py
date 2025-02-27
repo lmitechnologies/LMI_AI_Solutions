@@ -93,6 +93,8 @@ def get_annotations_from_json(path_json, images_dir, background=False):
     file_id_dict = generate_file_ids(get_relative_paths(images_dir))
     
     for path_json in json_files:
+        if path_json.endswith(LABEL_NAME) or path_json.endswith(PRED_NAME):
+            continue
         logger.info(f'Extracting labels from: {path_json}')
         logger.info(f'dir_path : {images_dir}')
         with open(path_json) as f:    
