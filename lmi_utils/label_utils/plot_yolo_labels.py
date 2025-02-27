@@ -146,6 +146,7 @@ if __name__ == "__main__":
     parser.add_argument("--path_out", type=str, help="path to the output directory")
     parser.add_argument('--kp', action='store_true', help='whether the labels contain keypoint data')
     parser.add_argument('--nkpt', type=int, default=0, help='number of keypoints')
+
     print(f'args: {parser.parse_args()}')
     args = parser.parse_args()
     txt_files = glob.glob(os.path.join(args.path_dataset, "labels/*.txt"))
@@ -161,7 +162,12 @@ if __name__ == "__main__":
     for txt_file in txt_files:
         logger.info(f"Processing {txt_file}")
         image_path = txt_file.replace(".txt", ".png")
-        image_path = image_path.replace("labels", "images")
+        image_path = image_path.replace("labels", "train")
+        if not os.path.isfile(image_path):
+            image_path = image_path.replace("train", "val")
+            if not os.path.isfile(image_path):
+                logger.warning(f"Image not found: {image_path}")
+                continue
         image = cv2.imread(image_path)
         h, w = image.shape[:2]
         labels = load_yolo_labels(txt_file, image_path, (h, w), num_cls=num_classes, keypoint=args.kp, nkpt=args.nkpt)
