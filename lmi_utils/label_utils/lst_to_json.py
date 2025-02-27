@@ -258,6 +258,9 @@ if __name__ == '__main__':
             os.makedirs(out_path)
         out_json = os.path.join(out_path, 'labels.json')
     else:
-        out_json = os.path.join(os.path.dirname(args.path_json), 'labels.json')
+        out_json = out_path
+    
+    annotations.save(out_json)
+    logger.info(f'saved to {out_json}')
     
     
