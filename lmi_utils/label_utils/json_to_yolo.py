@@ -109,7 +109,8 @@ def convert_to_yolo(args):
     # print(yolo_dataset)
     
     # path for labels files
-    path_txts = os.path.join(path_out, 'labels')
+    path_txts_train = os.path.join(path_out, 'labels/train')
+    path_txts_val = os.path.join(path_out, 'labels/val')
     
     
     # files = list(yolo_dataset['image_labels'].keys())
@@ -135,13 +136,13 @@ def convert_to_yolo(args):
     logger.info(f'val files: {len(val_files)}')
     
 
-    write_txts(train_yolo_dataset['image_labels'], path_txts=path_txts, fnames=train_files)
-    write_txts(val_yolo_dataset['image_labels'], path_txts=path_txts,fnames=val_files if len(val_files)>0 else None)
+    write_txts(train_yolo_dataset['image_labels'], path_txts=path_txts_train, fnames=train_files)
+    write_txts(val_yolo_dataset['image_labels'], path_txts=path_txts_val,fnames=val_files if len(val_files)>0 else None)
     
     # move the images to the output folder
     
-    path_out_imgs_train = os.path.join(path_out, 'train')
-    path_out_imgs_val = os.path.join(path_out, 'val')
+    path_out_imgs_train = os.path.join(path_out, 'images/train')
+    path_out_imgs_val = os.path.join(path_out, 'images/val')
     
     # move the images to the output folder
     for p in [path_out_imgs_train, path_out_imgs_val]:
@@ -152,8 +153,8 @@ def convert_to_yolo(args):
     with open(os.path.join(args['path_out'], 'dataset.yaml'), 'w') as f:
         dt = {
             'path': path_out,
-            'train': 'train',
-            'val': 'train' if len(val_files)==0 else 'val',
+            'train': 'images/train',
+            'val': 'train' if len(val_files)==0 else 'images/val',
             'test': None,
         }
         if train_yolo_dataset['n_kpts']:
