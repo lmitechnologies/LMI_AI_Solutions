@@ -149,7 +149,7 @@ if __name__ == "__main__":
 
     print(f'args: {parser.parse_args()}')
     args = parser.parse_args()
-    txt_files = glob.glob(os.path.join(args.path_dataset, "labels/*.txt"))
+    txt_files = glob.glob(os.path.join(args.path_dataset, "labels/train/*.txt"))
     print(f"Found {len(txt_files)} label files.")
     os.makedirs(args.path_out, exist_ok=True)
     # load class map json
@@ -162,9 +162,9 @@ if __name__ == "__main__":
     for txt_file in txt_files:
         logger.info(f"Processing {txt_file}")
         image_path = txt_file.replace(".txt", ".png")
-        image_path = image_path.replace("labels", "train")
+        image_path = image_path.replace("labels/train", "images/train")
         if not os.path.isfile(image_path):
-            image_path = image_path.replace("train", "val")
+            image_path = image_path.replace("images/train", "images/val")
             if not os.path.isfile(image_path):
                 logger.warning(f"Image not found: {image_path}")
                 continue

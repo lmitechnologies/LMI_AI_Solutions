@@ -148,11 +148,13 @@ class Box(Base):
 
     def to_yolo(self, h, w, **kwargs):
         use_obb = kwargs.get("use_obb", False)
+        logger.info(f'h,w: {h},{w}')
         
         logger.info(f"Converting box to YOLO format with use_obb={use_obb}")
-        
         width = self.x_max - self.x_min
         height = self.y_max - self.y_min
+        cx = (self.x_min + self.x_max) / 2
+        cy = (self.y_min + self.y_max) / 2
         if self.angle > 0 and use_obb:
             
             rotated_coords = rotate(
@@ -176,7 +178,10 @@ class Box(Base):
                 corners = np.array([[self.x_min, self.y_min], [self.x_max, self.y_min], [self.x_max, self.y_max], [self.x_min, self.y_max]])
                 return [[pt[0] / w, pt[1] / h] for pt in corners]
             else:
-                return [[self.x_min / w, self.y_min / h, width / w, height / h]]
+                # convert to center_x, center_y, width, height
+                return [
+                    [cx/w, cy/h, (self.x_max - self.x_min)/w, (self.y_max - self.y_min)/h]
+                ]
 
     def to_mask(self, **kwargs):
         img_h = kwargs.get("h")
@@ -676,10 +681,13 @@ class FileAnnotations(Base):
 
             # Conversion steps:
             if annotation.type == AnnotationType.BOX and to_segmentation:
+                logger.info(f"Converting box {annotation.id} to YOLO format with mask_type=AnnotationType.MASK")
                 updated_annotations.append(annotation.value.to_mask(h=h, w=w))
             elif (annotation.type == AnnotationType.MASK and to_object_detection):
+                logger.info(f"Converting mask {annotation.id} to YOLO format with mask_type=AnnotationType.MASK")
                 updated_annotations.append(annotation.value.to_box(h=h, w=w, merge_boxes=merge_boxes))
             elif (annotation.type == AnnotationType.POLYGON and to_object_detection):
+                logger.info(f"Converting polygon {annotation.id} to YOLO format with mask_type=AnnotationType.POLYGON")
                 updated_annotations.append(annotation.value.to_box(h=h, w=w))
 
             converted = [
