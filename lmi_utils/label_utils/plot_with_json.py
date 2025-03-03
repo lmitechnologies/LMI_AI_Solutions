@@ -85,9 +85,9 @@ if __name__ == '__main__':
             continue
         im0 = cv2.imread(file_path)
         
-        im = im0.copy()
+        im_annot = im0.copy()
         for shape in f.annotations:
-            plot_shape(dataset,shape, im, color_map, args['no_label'])
+            plot_shape(dataset,shape, im_annot, color_map, args['no_label'])
             
         if f'id{f.id}_' not in fname:
             fname = f'id{f.id}_{fname}'
@@ -95,17 +95,17 @@ if __name__ == '__main__':
         #create output fname and save it
         out_name = os.path.splitext(fname)[0] + f'_annot' + '.png'
         output_file=os.path.join(output_path, out_name)
+        cv2.imwrite(output_file, im_annot)
         
         if args['preds'] and len(f.predictions):
-            im = im0.copy()
+            im_pred = im0.copy()
             for shape in f.predictions:
-                plot_shape(dataset,shape, im, color_map, args['no_label'])
+                plot_shape(dataset,shape, im_pred, color_map, args['no_label'])
             
             root,ext = os.path.splitext(fname)
 
             #create output fname and save it
-            out_name = os.path.splitext(fname)[0] + f'_annot' + '.png'
+            out_name = os.path.splitext(fname)[0] + f'_pred' + '.png'
             output_file=os.path.join(output_path, out_name)
-        
-        cv2.imwrite(output_file, im)
+            cv2.imwrite(output_file, im_pred)
             
