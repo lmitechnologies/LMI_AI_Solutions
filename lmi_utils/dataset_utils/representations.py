@@ -662,7 +662,7 @@ class FileAnnotations(Base):
         
         return self
 
-    def to_yolo(self, to_segmentation=False, to_object_detection=False, merge_boxes=False, target_classes=[], use_obb=False):
+    def to_yolo(self, label_id_idx: dict,to_segmentation=False, to_object_detection=False, merge_boxes=False, target_classes=[], use_obb=False):
         """Convert this file's annotations to YOLO format.
            `label_to_index` is a function mapping a label id to an integer index.
         """
@@ -696,10 +696,10 @@ class FileAnnotations(Base):
             for conv in converted:
                 if annotation.type == AnnotationType.MASK:
                     for p in conv:
-                        instance = [annotation.label_id] + np.array(p).flatten().tolist()
+                        instance = [label_id_idx[annotation.label_id]] + np.array(p).flatten().tolist()
                         yolo_annotations.append(instance)
                 else:
-                    instance = [annotation.label_id] + np.array(conv).flatten().tolist()
+                    instance = [label_id_idx[annotation.label_id]] + np.array(conv).flatten().tolist()
                     yolo_annotations.append(instance)
                 yolo_annotations_map[annotation.id] = instance
             label_ids.append(annotation.label_id)
@@ -825,13 +825,15 @@ class Dataset(Base):
                     annotation.label_id = self.label_name_to_id(old_label_map[annotation.label_id])
                 for annotation in file_ann.predictions:
                     annotation.label_id = self.label_name_to_id(old_label_map[annotation.label_id])
+            
+        label_id_index = {label.id: idx for idx, label in enumerate(self.labels)}
                     
         n_kpts = 0
         image_to_labels = {}
-        base_prefix = self.base_path
+        # base_prefix = self.base_path
         label_ids = []
         for file_ann in self.files:
-            file_path = file_ann.relative_path(base_prefix)
+            file_path = file_ann.path
             
             logger.info(f"Processing file {file_path}")
             if file_path not in image_to_labels:
@@ -851,6 +853,7 @@ class Dataset(Base):
 
             # Call the file-level to_yolo method:
             file_yolo, file_label_ids = file_ann.to_yolo(
+                label_id_idx=label_id_index,
                 to_segmentation=to_segmentation,
                 to_object_detection=to_object_detection,
                 merge_boxes=merge_boxes,
@@ -860,8 +863,11 @@ class Dataset(Base):
             label_ids.extend(file_label_ids)
             image_to_labels[file_path].extend(file_yolo)
         label_ids = list(set(label_ids))
+        
+        # generate the class map
+        
         return dict(
             image_labels=image_to_labels,
-            class_map={self.label_id_to_name(label_id): label_id for  label_id in label_ids},
+            class_map={self.label_id_to_name(label_id): label_id_index[label_id] for label_id in label_ids},
             n_kpts=n_kpts,
         )
