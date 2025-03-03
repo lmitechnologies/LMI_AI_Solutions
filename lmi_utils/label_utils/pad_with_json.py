@@ -183,9 +183,11 @@ if __name__=="__main__":
     path_json = args['path_json'] if args['path_json']!='labels.json' else os.path.join(path_imgs, args['path_json'])
     if not os.path.isfile(path_json):
         raise Exception(f'Not found file: {path_json}. Please create an empty json file, if there are no labels.')
+    
     output_path=args['path_out_images']
     output_imsize = [args['width'], args['height']]
     out_json = args['path_out_json']
+    
     if not out_json.endswith('.json') and out_json!='labels.json':
         if not os.path.isdir(out_json):
             os.makedirs(out_json)
@@ -204,6 +206,8 @@ if __name__=="__main__":
     
     
     updated_dataset = pad_image_with_json(path_imgs, path_json, output_path, output_imsize, args['bg'])
+    if not args['bg']:
+        updated_dataset.delete_empty_files()
     updated_dataset.save(out_json)
     logger.info(f'output json file: {out_json}')
     logger.info(f'output images: {output_path}')
