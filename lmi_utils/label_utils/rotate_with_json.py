@@ -94,6 +94,7 @@ def rotate_dataset(dataset, angle, path_imgs,path_out,counter_clockwise=False, s
         
         logger.info(f'rotating {os.path.basename(file.path)} with angle {angle} degrees counter_clockwise : {counter_clockwise}')
         
+        
         if not file.has_annotations:
             if not save_bg_images:
                 continue
@@ -112,6 +113,8 @@ def rotate_dataset(dataset, angle, path_imgs,path_out,counter_clockwise=False, s
         
         # rotate the image
         height, width = img.shape[:2]
+        file.height = height
+        file.width = width
         center = (width // 2, height // 2)
         rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
         # Calculate the sine and cosine (i.e., the rotation components)

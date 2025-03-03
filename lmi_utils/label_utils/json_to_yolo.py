@@ -89,6 +89,7 @@ def convert_to_yolo(args):
     train_dataset = Dataset.load(path_train_json)
     
     
+    
     train_yolo_dataset = train_dataset.to_yolo(
         merge_boxes=merge_box,
         to_segmentation=bbox_to_mask,

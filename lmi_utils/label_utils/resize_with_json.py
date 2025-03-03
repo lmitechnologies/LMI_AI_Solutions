@@ -40,6 +40,7 @@ def resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, save_bg
     """
     
     dataset = Dataset.load(path_json)
+    
     cnt_bg = 0
     # files = get_relative_paths(path_imgs, recursive)
     for f in dataset.files:
@@ -50,6 +51,8 @@ def resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, save_bg
         
         im = cv2.imread(os.path.join(path_imgs, file_path))
         h,w = im.shape[:2]
+        f.height = h
+        f.width = w
         
         if not f.has_annotations:
             if not save_bg_images:

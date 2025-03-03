@@ -175,23 +175,6 @@ def get_annotations_from_json(path_json, images_dir, background=False):
                                     label_id = label_dict[label]
                                 pred_annotations.append(Annotation(id=str(cnt_pred), label_id=str(label_id), type=annot_type, value=shape, confidence=conf))
                                 cnt_pred += 1
-                                
-            # file_name = os.path.basename(f)
-            # ext = file_name.split('.')[-1]
-            # old_file_path = f.replace(common_prefix, '')
-            # old_file_path = old_file_path[1:] if old_file_path[0]=='/' else old_file_path
-            # file_id = file_id_dict[old_file_path]
-            # new_file_name = file_name.replace(f'.{ext}', f'_{file_id}.{ext}')  
-            # updated_fp = os.path.join(output_image_dir, new_file_name)
-            # if os.path.exists(os.path.join(images_dir, old_file_path)):
-            #     logger.info(f'copying file: {old_file_path} to {updated_fp}')
-            #     if len(file_annotations)>0:
-            #         shutil.copy(os.path.join(images_dir, old_file_path), updated_fp)
-            #     else:
-            #         if background:
-            #             shutil.copy(os.path.join(images_dir, old_file_path), updated_fp)
-            # else:
-            #     raise Exception(f'file not found: {old_file_path}')
             
             f = f.removeprefix(common_prefix).removeprefix('/')
             updated_fp = os.path.join(images_dir, f)
@@ -241,9 +224,7 @@ if __name__ == '__main__':
     ap.add_argument('-i', '--path_json', required=True, help='the directory of label-studio json files')
     ap.add_argument('-imgs', '--path_images', required=False, help='the root directory of images')
     ap.add_argument('-of', '--path_out_json', required=False, help='path to store the json file')
-
-    
-    ap.add_argument('-bg', '--background', action='store_true', help='save bacground')
+    ap.add_argument('-bg', '--background', action='store_true', help='save background')
     args = ap.parse_args()
     
     

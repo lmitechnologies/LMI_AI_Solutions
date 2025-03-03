@@ -37,6 +37,7 @@ def pad_image_with_json(input_path, json_path, output_images_path, output_imsize
         # p = os.path.join(input_path, file_path)
         # im_name = os.path.basename(file_path)
         file_path = f.path
+        
         p = os.path.join(input_path, file_path)
         im_name = os.path.basename(file_path)
         if not os.path.isfile(p):
@@ -55,6 +56,8 @@ def pad_image_with_json(input_path, json_path, output_images_path, output_imsize
         
         im = cv2.imread(p)
         h,w = im.shape[:2]
+        f.height = h
+        f.width = w
         logger.info(f'[PAD] {im_name}: wh of [{w},{h}]')
         # pad image
         im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,W,H)
