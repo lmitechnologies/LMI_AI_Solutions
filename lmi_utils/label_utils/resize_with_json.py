@@ -102,7 +102,6 @@ if __name__=='__main__':
     ap.add_argument('--path_out_images', '-oi', required=True, help='the path to resized images')
     ap.add_argument('--path_out_json', '-of', required=False, help='the path to store json file', default='labels.json')
     ap.add_argument('--bg', action='store_true', help='save background images that have no labels')
-    ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = vars(ap.parse_args())
 
     output_imsize = [args['width'], args['height']]

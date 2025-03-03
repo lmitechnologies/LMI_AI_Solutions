@@ -176,7 +176,6 @@ if __name__=="__main__":
     ap.add_argument('--width', type=int, default=None, help='the output image width, default=None')
     ap.add_argument('--height', type=int, default=None, help='the output image height, default=None')
     ap.add_argument('--bg', action='store_true', help='save background images with no labels')
-    ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = vars(ap.parse_args())
 
     path_imgs = args['path_imgs']
