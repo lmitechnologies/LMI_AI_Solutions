@@ -213,6 +213,8 @@ def main(args):
     
     # rotate the dataset
     dataset = rotate_dataset(dataset, angle, path_imgs, path_out_images, counter_clockwise, save_bg)
+    if not save_bg:
+        dataset.delete_empty_files()
     dataset.save(out_json)
 
 if __name__ == '__main__':
