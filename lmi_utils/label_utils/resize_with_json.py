@@ -125,6 +125,10 @@ if __name__=='__main__':
     #resize images with annotation json file
     dataset = resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, args['bg'], args['recursive'])
     
+    if not args['bg']:
+        # remove files with no annotations
+        dataset.delete_empty_files()
+    
     # dataset.files_to_relative()
     if not out_json.endswith('.json') and out_json!='labels.json':
         if not os.path.isdir(out_json):

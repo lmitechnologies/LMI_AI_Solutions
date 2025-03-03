@@ -198,15 +198,19 @@ if __name__ == "__main__":
         
         if labels['segments'] is None:
             for label in labels['labels']:
-                x, y, width, height = label[1], label[2], label[3], label[4]
-                x = x * w
-                y = y * h
-                width *= w
-                height *= h
+                cx, cy, width, height = label[1], label[2], label[3], label[4]
+                x1 = cx - width/2
+                y1 = cy - height/2
+                x2 = cx + width/2
+                y2 = cy + height/2
+                x1 = int(x1 * w)
+                y1 = int(y1 * h)
+                x2 = int(x2 * w)
+                y2 = int(y2 * h)
                 class_id = int(label[0])
                 color = color_map[class_id]
-                cv2.rectangle(image, (int(x), int(y)), (int(x+width), int(y+height)), color, 2)
-                cv2.putText(image, id_to_class[class_id], (int(x), int(y-10)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+                cv2.putText(image, id_to_class[class_id], (int(x1), int(y1)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                 
 
         

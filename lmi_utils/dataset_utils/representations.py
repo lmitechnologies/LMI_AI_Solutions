@@ -148,9 +148,7 @@ class Box(Base):
 
     def to_yolo(self, h, w, **kwargs):
         use_obb = kwargs.get("use_obb", False)
-        logger.info(f'h,w: {h},{w}')
         
-        logger.info(f"Converting box to YOLO format with use_obb={use_obb}")
         width = self.x_max - self.x_min
         height = self.y_max - self.y_min
         cx = (self.x_min + self.x_max) / 2
@@ -750,6 +748,12 @@ class Dataset(Base):
         common_prefix = os.path.commonprefix(all_files)
         return os.path.dirname(common_prefix)
     
+    def delete_empty_files(self):
+        for idx, file_ann in enumerate(self.files):
+            if not file_ann.has_annotations:
+                del self.files[idx]
+        return self
+    
     def files_to_relative(self):
         base_path = self.base_path
         if os.path.isabs(base_path):
@@ -848,8 +852,6 @@ class Dataset(Base):
                         f"Inconsistent number of keypoints: expected {n_kpts}, found {len(keypoints)}"
                     )
                     
-            
-            
 
             # Call the file-level to_yolo method:
             file_yolo, file_label_ids = file_ann.to_yolo(
@@ -865,9 +867,10 @@ class Dataset(Base):
         label_ids = list(set(label_ids))
         
         # generate the class map
-        
+        class_map = {self.label_id_to_name(label_id): label_id_index[label_id] for label_id in label_ids}
+        class_map = dict(sorted(class_map.items(), key=lambda item: item[1]))
         return dict(
             image_labels=image_to_labels,
-            class_map={self.label_id_to_name(label_id): label_id_index[label_id] for label_id in label_ids},
+            class_map=class_map,
             n_kpts=n_kpts,
         )
