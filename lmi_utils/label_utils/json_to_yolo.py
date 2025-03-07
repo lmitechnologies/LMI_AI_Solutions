@@ -1,12 +1,13 @@
 import os
 import json
 from dataset_utils.representations import Dataset
-from label_utils.csv_to_yolo import copy_images_in_folder
 import logging
 import yaml
 import argparse
 import random
+import glob
 import cv2
+import shutil
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,10 +39,11 @@ def write_txts(fname_to_rows, path_txts, fnames=None):
     os.makedirs(path_txts, exist_ok=True)
     
     for fname in fname_to_rows:
-        if fnames is not None and os.path.basename(fname) not in fnames:
+        if fnames is not None and fname not in fnames:
             continue
-        txt_file = os.path.join(path_txts, fname)
-        ext = fname.split('.')[-1]
+        name = os.path.basename(fname)
+        txt_file = os.path.join(path_txts, name)
+        ext = name.split('.')[-1]
         txt_file = txt_file.replace(f'.{ext}', '.txt')
     
         with open(txt_file, 'w') as f:
@@ -69,7 +71,22 @@ def update_file_dimensions(dataset, path_imgs):
         file.height = h
         file.width = w
     return dataset
+
+def copy_images_in_folder(path_img, path_out, fnames=None):
+    """
+    copy the images from one folder to another
+    Arguments:
+        path_img(str): the path of original image folder
+        path_out(str): the path of output folder
+    """
+    os.makedirs(path_out, exist_ok=True)
+    if fnames is None:
+        raise Exception('fnames cannot be None')
+    for fname in fnames:
+        logger.info(f'copying {fname}')
+        shutil.copy(os.path.join(path_img, fname), path_out)
     
+    logger.info(f'copied {len(fnames)} images to {path_out}')
 
 def convert_to_yolo(args):
     path_train_imgs = args['path_train_imgs']
@@ -104,8 +121,6 @@ def convert_to_yolo(args):
     
     train_dataset = Dataset.load(path_train_json)
     train_dataset = update_file_dimensions(train_dataset, path_train_imgs)
-    
-    
     
     train_yolo_dataset = train_dataset.to_yolo(
         merge_boxes=merge_box,
@@ -175,14 +190,14 @@ def convert_to_yolo(args):
     val_fnames = []
     
     if not args.get('bg'):
-        train_fnames = [os.path.basename(k) for k in train_files if len(train_yolo_dataset['image_labels'][k])>0]
+        train_fnames = [k for k in train_files if len(train_yolo_dataset['image_labels'][k])>0]
         if len(val_files)>0 and use_train_for_val is False:
-            val_fnames = [os.path.basename(k) for k in val_files if len(val_yolo_dataset['image_labels'][k])>0]
+            val_fnames = [k for k in val_files if len(val_yolo_dataset['image_labels'][k])>0]
     
     else:
-        train_fnames = [os.path.basename(k) for k in train_files]
+        train_fnames = [k for k in train_files]
         if len(val_files)>0 and use_train_for_val is False:
-            val_fnames = [os.path.basename(k) for k in val_files]
+            val_fnames = [k for k in val_files]
     
     copy_images_in_folder(path_img=path_train_imgs, path_out=path_out_imgs_train, fnames=train_fnames)
     

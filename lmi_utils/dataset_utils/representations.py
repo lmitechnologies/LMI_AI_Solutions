@@ -12,7 +12,6 @@ from gadget_utils.pipeline_utils import fit_array_to_size
 from label_utils.bbox_utils import rotate
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class AnnotationType(enum.Enum):
