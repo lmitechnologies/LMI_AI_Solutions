@@ -27,7 +27,7 @@ def resize_shapes(shapes, orig_h: int, orig_w: int, new_h: int, new_w: int):
     
     return shapes
 
-def resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, save_bg_images, recursive):
+def resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, save_bg_images):
     """
     resize images and its annotations with a csv file
     if the aspect ratio changes, it will generate warnings.
@@ -125,7 +125,7 @@ if __name__=='__main__':
         os.makedirs(path_out)
 
     #resize images with annotation json file
-    dataset = resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, args['bg'], args['recursive'])
+    dataset = resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, args['bg'])
     
     if not args['bg']:
         # remove files with no annotations
