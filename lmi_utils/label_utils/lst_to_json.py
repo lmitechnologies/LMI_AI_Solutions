@@ -231,10 +231,7 @@ if __name__ == '__main__':
     
     annotations, labels = get_annotations_from_json(args.path_json, args.path_images, background=args.background)
     
-    
-    
     annotations = Dataset(labels=labels, files=annotations)
-    # annotations.files_to_relative()
     out_path = args.path_out_json
     if not out_path.endswith('.json') and out_path!='labels.json':
         if not os.path.isdir(out_path):

@@ -6,6 +6,7 @@ import logging
 import yaml
 import argparse
 import random
+import cv2
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,6 +54,21 @@ def write_txts(fname_to_rows, path_txts, fnames=None):
                 row2 += '\n'
                 f.write(row2)
     logger.info(f' wrote {len(fnames) if fnames is not None else len(fname_to_rows)} txt files to {path_txts}')
+
+def update_file_dimensions(dataset, path_imgs):
+    """
+    update the file dimensions
+    """
+    for file in dataset.files:
+        if os.path.isfile(os.path.join(path_imgs, file.path)) is False:
+            raise Exception(f'File not found: {file.path}')
+        img = cv2.imread(os.path.join(path_imgs, file.path))
+        if img is None:
+            raise Exception(f'cannot read image: {file.path}')
+        h,w = img.shape[:2]
+        file.height = h
+        file.width = w
+    return dataset
     
 
 def convert_to_yolo(args):
@@ -87,6 +103,7 @@ def convert_to_yolo(args):
     # load the json file
     
     train_dataset = Dataset.load(path_train_json)
+    train_dataset = update_file_dimensions(train_dataset, path_train_imgs)
     
     
     
@@ -99,6 +116,7 @@ def convert_to_yolo(args):
     )
     if use_train_for_val is False:
         val_dataset = Dataset.load(path_val_json)
+        val_dataset = update_file_dimensions(val_dataset, path_val_imgs)
         val_yolo_dataset = val_dataset.to_yolo(
             merge_boxes=merge_box,
             to_segmentation=bbox_to_mask,
