@@ -11,8 +11,9 @@ from image_utils.img_resize import resize
 from gadget_utils.pipeline_utils import fit_array_to_size
 from label_utils.bbox_utils import rotate
 
+logging.basicConfig()
 logger = logging.getLogger(__name__)
-
+logger.setLevel(logging.INFO)
 
 class AnnotationType(enum.Enum):
     BOX = "Box"
@@ -810,8 +811,6 @@ class Dataset(Base):
         target_classes = kwargs.get("target_classes", ["all"])
         target_label_ids = []
         if target_classes != ["all"]:
-            target_label_ids = [self.label_name_to_id(name) for name in target_classes]
-            
             # delete the annotations that are not in the target classes
             delete_ids = [label.id for label in self.labels if label.name not in target_classes]
             old_label_map = {label.id: label.name for label in self.labels}
@@ -822,6 +821,7 @@ class Dataset(Base):
             logger.info(f"Deleted annotations for labels {delete_ids}")
             
             self.update_label_ids()
+            target_label_ids = [label.id for label in self.labels]
             logger.info(f"Updated label ids {self.labels}")
             for file_ann in self.files:
                 for annotation in file_ann.annotations:
