@@ -821,7 +821,7 @@ class Dataset(Base):
             logger.info(f"Deleted annotations for labels {delete_ids}")
             
             self.update_label_ids()
-            target_label_ids = [label.id for label in self.labels]
+            target_label_ids = [self.label_name_to_id(name) for name in target_classes]
             logger.info(f"Updated label ids {self.labels}")
             for file_ann in self.files:
                 for annotation in file_ann.annotations:
