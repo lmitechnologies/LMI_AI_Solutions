@@ -2,9 +2,13 @@ if [ "$#" -eq 0 ]; then
     echo "Usage: $0 <argument>"
     exit 1
 fi
-pip3 install -e lmi_utils/
-pip3 install -e object_detectors/
-pip3 install -e anomaly_detectors/
+INSTALL=$2
+if [ "$INSTALL" == "install-packages" ]; then
+    echo "Installing packages"
+    pip3 install -e lmi_utils/
+    pip3 install -e object_detectors/
+    pip3 install -e anomaly_detectors/
+fi
 ARGUMENT=$1
 if [ "$ARGUMENT" == "v1-all" ]; then
     pytest --test-package=True --html=/app/repo/tests/lmi_utils_v1_packaged.html tests/lmi_utils/
