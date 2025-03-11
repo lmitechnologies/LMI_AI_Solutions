@@ -22,3 +22,5 @@
 config
 **/untracked-data
 debug
+**/*.egg-info
+**/*.html
