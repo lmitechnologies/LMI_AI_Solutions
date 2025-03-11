@@ -76,6 +76,7 @@ class Yolov8_cls(Yolov8):
         """
         
         results = defaultdict(list)
+        preds = preds[0] if isinstance(preds, (list, tuple)) else preds
         for pred in preds:
             pred = pred.cpu().numpy()
             idx = pred.argmax()
