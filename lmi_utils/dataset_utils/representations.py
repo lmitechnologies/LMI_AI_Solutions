@@ -693,6 +693,7 @@ class FileAnnotations(Base):
             ] if updated_annotations else [annotation.to_yolo(h, w, use_obb=use_obb)]
             for conv in converted:
                 if annotation.type == AnnotationType.MASK:
+                    instance = []
                     for p in conv:
                         instance = [label_id_idx[annotation.label_id]] + np.array(p).flatten().tolist()
                         yolo_annotations.append(instance)
