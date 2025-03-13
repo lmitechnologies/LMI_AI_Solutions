@@ -810,6 +810,7 @@ class Dataset(Base):
         to_object_detection = kwargs.get("to_object_detection", False)
         merge_boxes = kwargs.get("merge_boxes", False)
         target_classes = kwargs.get("target_classes", ["all"])
+        class_map = kwargs.get("class_map", {})
         target_label_ids = []
         if target_classes != ["all"]:
             # delete the annotations that are not in the target classes
@@ -829,6 +830,21 @@ class Dataset(Base):
                     annotation.label_id = self.label_name_to_id(old_label_map[annotation.label_id])
                 for annotation in file_ann.predictions:
                     annotation.label_id = self.label_name_to_id(old_label_map[annotation.label_id])
+                    
+        if class_map:
+            if len(class_map) != len(self.labels):
+                raise ValueError("Class map must have the same number of classes as the dataset")
+            old_label_map = {label.id: label.name for label in self.labels}
+            self.labels = [Label(id=str(label_id), name=label_name) for label_id,label_name in class_map.items()]
+            logger.info(f"Updated label ids for classmap {self.labels}")
+            for file_ann in self.files:
+                for annotation in file_ann.annotations:
+                    annotation.label_id = self.label_name_to_id(old_label_map[annotation.label_id])
+                for annotation in file_ann.predictions:
+                    annotation.label_id = self.label_name_to_id(old_label_map[annotation.label_id])
+            if len(target_label_ids):
+                target_label_ids = [self.label_name_to_id(name) for name in target_classes]
+            
             
         label_id_index = {label.id: idx for idx, label in enumerate(self.labels)}
                     
