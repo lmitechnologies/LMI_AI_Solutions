@@ -103,10 +103,9 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         # write ious to a json file
         ious_out = [] if ious is None else ious.cpu().numpy().tolist()
         iou_json = dict(
-            impath=p,
             n_gt=n_gt,
             n_pred=n_pred,
-            iou=ious_out
+            iou=ious_out # a shape of n_gt x n_pred
         )
         os.makedirs(out_iou_dir, exist_ok=True)
         out_iou_path = os.path.join(out_iou_dir, file_annot.id + '.json')
