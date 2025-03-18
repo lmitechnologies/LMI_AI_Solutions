@@ -58,7 +58,7 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         config_path (str): a path to a model configuration file
         image_dir (str): a input image directory, where each image should have the same dimension as training images
         label_path (str): a path to a label json file
-        output_path (str): a full output json file path
+        out_pred_json (str): a full output json file path
         out_iou_dir (str): a full output folder for iou matrix json files
         confidence (float, optional): a confidence threshold. Defaults to 0.01.
         iou (float, optional): an iou threshold for NMS. Defaults to 0.45.
