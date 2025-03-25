@@ -65,7 +65,9 @@ def resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, save_bg
         # resize image
         tw,th = output_imsize
         if tw is None and th is None:
-            raise Exception('Both width and height cannot be None')
+            # raise Exception('Both width and height cannot be None')
+            tw,th = w,h
+            im2 = im
         elif tw is None:
             tw = 'w'
             im2 = resize(im, height=th)
@@ -106,6 +108,11 @@ if __name__=='__main__':
     ap.add_argument('--path_out_json', '-of', required=False, help='the path to store json file', default='labels.json')
     ap.add_argument('--bg', action='store_true', help='save background images that have no labels')
     args = vars(ap.parse_args())
+    if args['width'] == 0:
+        args['width'] = None
+    if args['height'] == 0:
+        args['height'] = None
+    
 
     output_imsize = [args['width'], args['height']]
     logger.info(f'output image size: {output_imsize}')

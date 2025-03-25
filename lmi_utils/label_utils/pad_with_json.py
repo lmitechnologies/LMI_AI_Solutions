@@ -56,6 +56,10 @@ def pad_image_with_json(input_path, json_path, output_images_path, output_imsize
         
         im = cv2.imread(p)
         h,w = im.shape[:2]
+        if W is None and H is None:
+            W = w
+            H = h
+        
         f.height = h
         f.width = w
         logger.info(f'[PAD] {im_name}: wh of [{w},{h}]')
@@ -180,7 +184,12 @@ if __name__=="__main__":
     ap.add_argument('--height', type=int, default=None, help='the output image height, default=None')
     ap.add_argument('--bg', action='store_true', help='save background images with no labels')
     args = vars(ap.parse_args())
-
+    if args['width'] == 0:
+        args['width'] = None
+    
+    if args['height'] == 0:
+        args['height'] = None
+    
     path_imgs = args['path_imgs']
     path_json = args['path_json'] if args['path_json']!='labels.json' else os.path.join(path_imgs, args['path_json'])
     if not os.path.isfile(path_json):
