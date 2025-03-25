@@ -56,29 +56,35 @@ def pad_image_with_json(input_path, json_path, output_images_path, output_imsize
         
         im = cv2.imread(p)
         h,w = im.shape[:2]
-        if W is None and H is None:
-            W = w
-            H = h
-        
+        pw = W
+        ph = H
+        if ph is None and pw is None:
+            ph = h
+            pw = w
+
+
         f.height = h
         f.width = w
         logger.info(f'[PAD] {im_name}: wh of [{w},{h}]')
         # pad image
-        im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,W,H)
+        im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
+        pw = im_out.shape[1]
+        ph = im_out.shape[0]
         
         if f'id{f.id}_' not in im_name:
             im_name = f'id{f.id}_{im_name}'
 
         #create output fname and save it
-        out_name = os.path.splitext(im_name)[0] + f'_pad_{W}x{H}' + '.png'
+        out_name = os.path.splitext(im_name)[0] + f'_pad_{pw}x{ph}' + '.png'
         output_file=os.path.join(output_images_path, out_name)
         logger.info(f'write to: {output_file}')
         cv2.imwrite(output_file,im_out)
 
         #pad shapes
-        f.annotations = fit_shapes_to_size(f.annotations,pad_l,pad_t, pad_h=H, pad_w=W, orig_h=h, orig_w=w)
+        
+        f.annotations = fit_shapes_to_size(f.annotations,pad_l,pad_t, pad_h=ph, pad_w=pw, orig_h=h, orig_w=w)
             
-        delete_ids,is_warning = clip_shapes(f.annotations, W, H)
+        delete_ids,is_warning = clip_shapes(f.annotations, W=pw, H=ph)
         f.annotations = [shape for shape in f.annotations if shape.id not in delete_ids]
 
         # update the dataset annotaions
