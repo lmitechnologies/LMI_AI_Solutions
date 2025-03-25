@@ -79,7 +79,7 @@ class AnomalyModel2(Anomalib_Base):
             self.batch_size = input_shape[0]
             self.inference_mode='TRT'
         elif ext=='.pt':  
-            checkpoint = torch.load(model_path,map_location=self.device)
+            checkpoint = torch.load(model_path,map_location=self.device,weights_only=False)
             self.pt_model = checkpoint['model']
             self.pt_model.eval()
             self.pt_metadata = checkpoint["metadata"]
