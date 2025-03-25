@@ -30,7 +30,7 @@ def rle2mask(rle: str, h:int = 0, w: int = 0, label: int = 1) -> np.ndarray:
     starts = np.array(list(map(int, seq[0::2])))
     lengths = np.array(list(map(int, seq[1::2])))
     ends = starts + lengths
-    img = np.zeros((np.product(img_shape),), dtype=np.uint8)
+    img = np.zeros((h * w,), dtype=np.uint8)
     for begin, end in zip(starts, ends):
         img[begin:end] = label
     return img.reshape(img_shape)
