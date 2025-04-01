@@ -165,8 +165,8 @@ class Anomalib_Base(ABC):
         # convert to tensor
         ad_scores = self.from_numpy(ad_scores)
         img = self.from_numpy(img)
-        ad_threshold = self.from_numpy(np.array(ad_threshold))
-        ad_max = self.from_numpy(np.array(ad_max))
+        ad_threshold = self.from_numpy(np.array(ad_threshold)).to(ad_scores.dtype)
+        ad_max = self.from_numpy(np.array(ad_max)).to(ad_scores.dtype)
         # Resize AD score to match input image
         h_img,w_img=img.shape[:2]
         ad_scores=pipeline_utils.resize_image(ad_scores,H=h_img,W=w_img)

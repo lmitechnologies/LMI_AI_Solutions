@@ -142,6 +142,46 @@ def fit_im_to_size(im, W=None, H=None, value=0):
     return im, pad_L, pad_R, pad_T, pad_B
 
 
+@torch.inference_mode()
+def fit_im(im, pad_ops, value=0):
+    """
+    description:
+        pad/crop the image using the pad_ops
+    arguments:
+        im(np.array or torch.Tensor): the image of the shape (H,W) or (H,W,C)
+        pad_ops(list): [pad_left, pad_right, pad_top, pad_bottom]
+        value(int): the value to pad
+    return:
+        im(torch.Tensor): the padded/cropped image
+    """
+    is_numpy = isinstance(im, np.ndarray)
+    if is_numpy:
+        im = torch.from_numpy(im)
+
+    # deal with 1 channel image
+    one_channel = im.ndim==2
+    if one_channel:
+        im = im.unsqueeze(-1)
+
+    # convert to CHW format    
+    im = im.permute(2, 0, 1)
+    
+    # pad/crop
+    pad_L, pad_R, pad_T, pad_B = pad_ops
+    im = F.pad(im, (pad_L, pad_R, pad_T, pad_B), value=value)
+
+    # convert back to HWC format
+    im = im.permute(1, 2, 0)
+    
+    # back to 1 channel
+    if one_channel:
+        im = im.squeeze(-1)
+
+    if is_numpy:
+        im = im.numpy()
+    return im
+
+
 def fit_array_to_size(im, W=None, H=None, value=0):
     h_im,w_im=im.shape[:2]
     if W is None:
@@ -388,10 +428,7 @@ def revert_mask_to_origin(mask, operations:list):
             _,_,nw,nh = operator['resize']
             mask = resize_image(mask,nw,nh)
         if 'pad' in operator:
-            h,w = mask.shape[:2]
-            pad_L,pad_R,pad_T,pad_B = operator['pad']
-            nw,nh = w-pad_L-pad_R,h-pad_T-pad_B
-            mask,_,_,_,_ = fit_im_to_size(mask,nw,nh)
+            mask = fit_im(mask, -np.array(operator['pad']))
         if 'flip' in operator:
             lr,ud,im_w,im_h = operator['flip']
             if is_numpy:

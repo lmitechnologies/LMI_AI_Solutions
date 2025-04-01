@@ -45,6 +45,7 @@ The pipeline results should look like this:
         'labels': {
             'type': 'object',
             'format': 'json',
+            'extension': '.label.json',
             'content': label_json
         }   
     }

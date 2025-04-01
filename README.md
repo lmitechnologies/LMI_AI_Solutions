@@ -44,9 +44,16 @@ git submodule update --init --remote
 ```bash
 source PATH_TO_REPO/lmi_ai.env
 ```
-where ``PATH_TO_REPO`` is the path to the LMI_AI_Solutions repo.   
+where ``PATH_TO_REPO`` is the path to the LMI_AI_Solutions repo.  
 
-2. Run any scripts in this repo, for example:
+2. Installing using pip
+   ```
+   cd LMI_AI_Solutions && pip install -e lmi_utils
+   cd LMI_AI_Solutions && pip install -e object_detectors
+   cd LMI_AI_Solutions && pip install -e anomaly_detectors
+   ```
+
+3. Run any scripts in this repo, for example:
 ```bash
 python -m label_utils.plot_labels -h
 ```

@@ -24,8 +24,8 @@ The folder structure below will be created when we go through the tutorial. By c
 │   ├── 2023-07-19.sh
 ├── data
 │   ├── train
-│   ├── val
-│   ├── test (optional)
+│   ├── val (optional)
+│   ├── test 
 ├── training
 │   ├── 2023-07-19
 ├── validation
