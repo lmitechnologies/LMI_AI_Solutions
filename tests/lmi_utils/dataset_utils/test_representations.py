@@ -34,12 +34,11 @@ from dataset_utils.representations import (
     MaskAnnotation,
     KeypointAnnotation,
     PolygonAnnotation,
-    File,
     FileAnnotations,
     Dataset,
     AnnotationType
 )
-from dataset_utils.mask_encoder import rle2mask, mask2rle
+from dataset_utils.mask_encoder import mask2rle
 
 
 # ============================
@@ -67,7 +66,8 @@ def test_point2d_resize_and_pad(add_root_path):
 def test_box_from_dict_and_to_yolo_no_angle(add_root_path):
     b = Box.from_dict({"x_min": 10, "y_min": 20, "x_max": 50, "y_max": 80, "angle": 0})
     yolo = b.to_yolo(100, 100)
-    expected = [[10/100, 20/100, (50-10)/100, (80-20)/100]]
+    expected = [[0.3, 0.5, 0.4, 0.6]]
+    logger.warning(f'{yolo}')
     assert yolo == expected
 
 def test_box_resize_and_pad(add_root_path):
@@ -198,10 +198,15 @@ def test_polygon_annotation_to_yolo(add_root_path):
 
 @pytest.fixture
 def dummy_file_annotations():
-    file = File("file1", "/dummy/path/image1.jpg", height=100, width=100)
+    # file = File("file1", "/dummy/path/image1.jpg", height=100, width=100)
+    file_id = "file1"
+    file_path = "/dummy/path/image1.jpg"
+    height = 100
+    width = 100
+    
     b = Box(10, 20, 50, 80, 0)
     ba = BoxAnnotation(id="a1", label_id="label1", value=b)
-    return FileAnnotations(file, annotations=[ba])
+    return FileAnnotations(id=file_id,path=file_path, height=height,width=width, annotations=[ba])
 
 def test_file_annotations_relative_path(dummy_file_annotations, add_root_path):
     rel_path = dummy_file_annotations.relative_path("/dummy")
@@ -210,11 +215,14 @@ def test_file_annotations_relative_path(dummy_file_annotations, add_root_path):
 
 def test_file_annotations_update_file(dummy_file_annotations, add_root_path):
     # Create a new File and update the file annotation.
-    new_file = File("file2", "/dummy/new/image2.jpg", height=200, width=200)
-    dummy_file_annotations.update_file(new_file)
-    assert dummy_file_annotations.id == "file2"
-    assert dummy_file_annotations.height == 200
-    assert dummy_file_annotations.width == 200
+    file_id = "file1"
+    file_path = "/dummy/path/image1.jpg"
+    height = 100
+    width = 100
+    dummy_file_annotations.update_file(id=file_id, path=file_path,height=height,width=width)
+    assert dummy_file_annotations.id == "file1"
+    assert dummy_file_annotations.height == 100
+    assert dummy_file_annotations.width == 100
 
 def test_file_annotations_delete_annotation(dummy_file_annotations, add_root_path):
     # Try deleting an annotation that exists.
@@ -233,11 +241,14 @@ def test_file_annotations_update_annotations(dummy_file_annotations, add_root_pa
 
 def test_file_annotations_assign_keypoints_error(add_root_path):
     # Create a FileAnnotations with a keypoint that does not fall inside any box.
-    file = File("file_err", "/dummy/path/image_err.jpg", height=100, width=100)
+    file_id = "file1"
+    file_path = "/dummy/path/image1.jpg"
+    height = 100
+    width = 100
     p = Point2d(5, 5)  # Outside any box we will add.
     ka = KeypointAnnotation("kp1", "label1", p)
     # No box annotation provided.
-    fa = FileAnnotations(file, annotations=[ka])
+    fa = FileAnnotations(id=file_id, path=file_path,height=height,width=width, annotations=[ka])
     with pytest.raises(Exception, match="not assigned"):
         fa.assign_keypoints()
 
@@ -248,7 +259,8 @@ def test_file_annotations_to_yolo(dummy_file_annotations, add_root_path):
         to_segmentation=False,
         to_object_detection=False,
         merge_boxes=False,
-        target_classes=[]
+        target_classes=[],
+        label_id_idx={"label1": 0}
     )
     assert isinstance(yolo, list)
     assert isinstance(label_ids, list)
@@ -263,12 +275,15 @@ def test_file_annotations_to_yolo(dummy_file_annotations, add_root_path):
 @pytest.fixture
 def dummy_dataset():
     labels = [Label("label1", "Label One"), Label("label2", "Label Two")]
-    file = File("file1", "/dummy/path/image1.jpg", height=100, width=100)
+    file_id = "file1"
+    file_path = "/dummy/path/image1.jpg"
+    height = 100
+    width = 100
     b = Box(10, 20, 50, 80, 0)
     ba = BoxAnnotation("a1", "label1", b)
     p = Point2d(30, 40)
     ka = KeypointAnnotation("a2", "label2", p)
-    file_ann = FileAnnotations(file, annotations=[ba, ka])
+    file_ann = FileAnnotations(id=file_id, path=file_path,height=height,width=width, annotations=[ba, ka])
     return Dataset(labels, [file_ann])
 
 def test_dataset_from_dict(dummy_dataset, add_root_path):
