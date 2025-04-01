@@ -133,9 +133,9 @@ def get_annotations_from_json(path_json, images_dir, background=False):
                         shape, label, conf, annot_type = lst_to_shape(result,f)
                         if shape is not None:
                             if label not in label_dict:
-                                label_id = len(label_dict)
+                                label_id = label
                                 label_dict[label] = label_id
-                                labels.append(Label(id=str(label_id), name=label, annotation_type=annot_type))
+                                labels.append(Label(id=str(label_id), annotation_type=annot_type))
                             else:
                                 label_id = label_dict[label]  
                             file_annotations.append(Annotation(id=str(cnt_anno), label_id=str(label_id), type=annot_type, value=shape))
@@ -148,9 +148,9 @@ def get_annotations_from_json(path_json, images_dir, background=False):
                             shape, label, conf, annot_type = lst_to_shape(result,f,load_confidence=True)
                             if shape is not None:
                                 if label not in label_dict:
-                                    label_id = len(label_dict)
+                                    label_id = label
                                     label_dict[label] = label_id
-                                    labels.append(Label(id=str(label_id), name=label, annotation_type=annot_type))
+                                    labels.append(Label(id=str(label_id), annotation_type=annot_type))
                                 else:
                                     label_id = label_dict[label]
                                 pred_annotations.append(Annotation(id=str(cnt_pred), label_id=str(label_id), type=annot_type, value=shape, confidence=conf))
@@ -168,9 +168,9 @@ def get_annotations_from_json(path_json, images_dir, background=False):
                             shape, label, conf, annot_type = lst_to_shape(result,f,load_confidence=True)
                             if shape is not None:
                                 if label not in label_dict:
-                                    label_id = len(label_dict)
+                                    label_id = label
                                     label_dict[label] = label_id
-                                    labels.append(Label(id=str(label_id), name=label, annotation_type=annot_type))
+                                    labels.append(Label(id=str(label_id), annotation_type=annot_type))
                                 else:
                                     label_id = label_dict[label]
                                 pred_annotations.append(Annotation(id=str(cnt_pred), label_id=str(label_id), type=annot_type, value=shape, confidence=conf))

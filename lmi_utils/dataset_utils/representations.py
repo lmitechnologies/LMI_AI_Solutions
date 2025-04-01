@@ -358,20 +358,18 @@ class Mask(Base):
 @dataclass
 class Label(Base):
     id: str
-    name: str
+    annotation_type: AnnotationType = None
     color: Optional[str] = None
-    annotation_type: Optional[AnnotationType] = None
 
-    def __init__(self, id: str, name: str, color: Optional[str] = None, annotation_type: Optional[AnnotationType] = None):
+    def __init__(self, id: str, color: Optional[str] = None, annotation_type: AnnotationType = None):
         super().__init__()
         self.id = id
-        self.name = name
         self.color = color
         self.annotation_type = annotation_type
 
     @classmethod
     def from_dict(cls, data: dict) -> "Label":
-        return cls(id=data["id"], name=data["name"], color=data.get("color", None), annotation_type=data.get("annotation_type", None))
+        return cls(id=data["id"], color=data.get("color", None), annotation_type=data.get("annotation_type", None))
 
 
 @dataclass
@@ -774,18 +772,6 @@ class Dataset(Base):
                 return idx
         raise ValueError(f"Label id {label_id} not found.")
     
-    def label_id_to_name(self, label_id: str) -> str:
-        for label in self.labels:
-            if label_id == label.id:
-                return label.name
-        raise ValueError(f"Label name for {label_id} not found.")
-    
-    def label_name_to_id(self, label_name: str) -> str:
-        for label in self.labels:
-            if label_name == label.name:
-                return label.id
-        raise ValueError(f"Label id for {label_name} not found.")
-    
     def delete_label(self, label_id: str):
         for idx, label in enumerate(self.labels):
             if label.id == label_id:
@@ -867,7 +853,7 @@ class Dataset(Base):
         label_ids = list(set(label_ids))
         
         # generate the class map
-        class_map = {self.label_id_to_name(label_id): label_id_index[label_id] for label_id in label_ids}
+        class_map = {label_id: label_id_index[label_id] for label_id in label_ids}
         class_map = dict(sorted(class_map.items(), key=lambda item: item[1]))
         return dict(
             image_labels=image_to_labels,
