@@ -217,12 +217,12 @@ def convert_to_yolo(args):
         copy_images_in_folder(path_img=path_val_imgs, path_out=path_out_imgs_val, fnames=val_fnames, file_id_map=val_file_id_map)
     
 
-def main(args):
+def main():
+    args = args()
     convert_to_yolo(args)
 
 if __name__ == '__main__':
-    args = args()
-    main(args)
+    main()
     
     
     

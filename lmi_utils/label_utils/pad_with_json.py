@@ -178,9 +178,7 @@ def fit_shapes_to_size(shapes, pad_l, pad_t, pad_h, pad_w,orig_h,orig_w):
         annot.value = annot.value.pad(pad_h=pad_h, pad_w=pad_w, pl=pad_l, pt=pad_t, h=orig_h, w=orig_w)   
     return shapes 
     
-
-
-if __name__=="__main__":
+def main():
     ap = argparse.ArgumentParser(description='Pad or crop images with json to output size.')
     ap.add_argument('--path_imgs', '-i', required=True, help='the path to the images')
     ap.add_argument('--path_json', default='labels.json', help='[optional] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs')
@@ -229,7 +227,8 @@ if __name__=="__main__":
     logger.info(f'output json file: {out_json}')
     logger.info(f'output images: {output_path}')
     logger.info(f'finished!')
-    
-    
+
+if __name__=="__main__":
+    main()
     
     

@@ -102,8 +102,7 @@ class GadgetImageUtils():
             with open(join(destination_path, file.replace('.png', '.gadget2d.pickle')), "wb") as f:
                 pickle.dump(content, f, protocol=4)
 
-
-if __name__=="__main__":
+def main():
     import argparse
     ap=argparse.ArgumentParser()
     ap.add_argument('--option',required=True,help='pkl_2_npy or pkl_2_png or npy_2_pkl or png_2_pkl')
@@ -136,3 +135,6 @@ if __name__=="__main__":
         translate.png_2_pkl(src,dest,rotate)
     else:
         raise Exception('Input option must be pkl_2_npy, pkl_2_png, npy_2_pkl, or png_2_pkl')
+
+if __name__=="__main__":
+    main()

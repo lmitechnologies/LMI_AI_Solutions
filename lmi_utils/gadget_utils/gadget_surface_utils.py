@@ -339,9 +339,7 @@ class GadgetSurfaceUtils():
             with open(join(destination_path, file.replace(".pcd", ".gadget3d.pickle")), "wb") as f:
                 pickle.dump(content, f, protocol=4)
 
-
-
-if __name__=="__main__":
+def main():
     import argparse
     ap=argparse.ArgumentParser()
     ap.add_argument('--option',required=True,help='pkl_2_npy, pkl_2_png, pkl_2_pcd, npy_2_pkl, png_2_pkl, tar_2_pcd, or pcd_2_pkl')
@@ -388,3 +386,6 @@ if __name__=="__main__":
         translate.tar_2_pkl(src,dest,source_path_intensity=src_intensity)
     else:
         raise Exception('Input option must be pkl_2_npy, pkl_2_png, npy_2_pkl,tar_2_pkl, or png_2_pkl')
+
+if __name__=="__main__":
+    main()

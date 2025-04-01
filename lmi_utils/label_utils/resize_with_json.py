@@ -2,9 +2,8 @@
 import os
 import logging
 import cv2
-
+import argparse
 #LMI packages
-from label_utils.shapes import Rect, Mask, Keypoint, Brush
 from image_utils.img_resize import resize
 from dataset_utils.representations import Dataset, File
 
@@ -95,10 +94,7 @@ def resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, save_bg
         logger.info(f'found {cnt_bg} images with no labels. These images will be used as background training data in YOLO')
     return dataset
 
-
-
-if __name__=='__main__':
-    import argparse
+def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--path_imgs', '-i', required=True, help='the path to images')
     ap.add_argument('--path_json', default='labels.json', help='[optinal] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs')
@@ -150,3 +146,6 @@ if __name__=='__main__':
         
     
     dataset.save(out_json)
+
+if __name__=='__main__':
+    main()
