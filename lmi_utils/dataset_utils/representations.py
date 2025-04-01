@@ -454,7 +454,7 @@ class MaskAnnotation(Annotation):
         self,
         id: str,
         label_id: str,
-        value: Box,
+        value: Mask,
         link: Optional[str] = None,
         confidence: Optional[float] = None,
         iou: Optional[float] = None,
@@ -763,9 +763,6 @@ class Dataset(Base):
     def get_label_ids(self) -> List[str]:
         return [label.id for label in self.labels]
     
-    def get_label_names(self) -> List[str]:
-        return [label.name for label in self.labels]
-
     def label_to_index(self, label_id: str) -> int:
         for idx, label in enumerate(self.labels):
             if label.id == label_id:
