@@ -539,31 +539,6 @@ class PolygonAnnotation(Annotation):
     def to_yolo(self, h, w, **kwargs):
         return self.value.to_yolo(h, w, **kwargs)
 
-
-# @dataclass
-# class File(Base):
-#     id: str
-#     path: str
-#     height: Optional[int] = None
-#     width: Optional[int] = None
-
-#     def __init__(self, id: str, path: str, height: Optional[int] = None, width: Optional[int] = None):
-#         super().__init__()
-#         self.id = id
-#         self.path = path
-#         self.height = height
-#         self.width = width
-
-#     @classmethod
-#     def from_dict(cls, data: dict) -> "File":
-#         return cls(
-#             id=data["id"],
-#             path=data["path"],
-#             height=data.get("height", None),
-#             width=data.get("width", None),
-#         )
-
-
 @dataclass
 class FileAnnotations(Base):
     id: str     # File ID
