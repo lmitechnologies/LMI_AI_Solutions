@@ -5,7 +5,7 @@ import numpy as np
 import logging
 
 #LMI packages
-from dataset_utils.representations import Dataset, File, AnnotationType, Box, Mask, Polygon, Point2d
+from dataset_utils.representations import Dataset, AnnotationType, Box, Mask, Polygon, Point2d
 from gadget_utils.pipeline_utils import fit_array_to_size
 
 
@@ -67,7 +67,12 @@ def pad_image_with_json(input_path, json_path, output_images_path, output_imsize
         f.width = w
         logger.info(f'[PAD] {im_name}: wh of [{w},{h}]')
         # pad image
-        im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
+        if pw != W or ph != H:
+            im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
+        else:
+            im_out = im
+            pad_l = 0
+            pad_t = 0
         pw = im_out.shape[1]
         ph = im_out.shape[0]
         
@@ -81,21 +86,19 @@ def pad_image_with_json(input_path, json_path, output_images_path, output_imsize
         cv2.imwrite(output_file,im_out)
 
         #pad shapes
-        
-        f.annotations = fit_shapes_to_size(f.annotations,pad_l,pad_t, pad_h=ph, pad_w=pw, orig_h=h, orig_w=w)
+        if pw != W or ph != H:
+            f.annotations = fit_shapes_to_size(f.annotations,pad_l,pad_t, pad_h=ph, pad_w=pw, orig_h=h, orig_w=w)
             
-        delete_ids,is_warning = clip_shapes(f.annotations, W=pw, H=ph)
-        f.annotations = [shape for shape in f.annotations if shape.id not in delete_ids]
-
-        # update the dataset annotaions
-        
-        
-        if is_warning:
-            cnt_warnings += 1
+            delete_ids,is_warning = clip_shapes(f.annotations, W=pw, H=ph)
+            f.annotations = [shape for shape in f.annotations if shape.id not in delete_ids]
+            
+            
+            if is_warning:
+                cnt_warnings += 1
 
         height = im_out.shape[0]
         width = im_out.shape[1]
-        f.update_file(File(path=os.path.relpath(output_file, output_images_path), width=width, height=height, id=f.id))
+        f.update_file(path=os.path.relpath(output_file, output_images_path), width=width,height=height,id=f.id)
     if cnt_bg:
         logger.info(f'found {cnt_bg} images with no labels. These images will be used as background training data for YOLO.')
     if cnt_warnings:

@@ -6,7 +6,7 @@ import numpy as np
 import collections
 import glob
 from label_studio_sdk.converter.brush import decode_rle
-from dataset_utils.representations import Box, Mask, Label, File, AnnotationType, Dataset, FileAnnotations, Polygon, Point2d, Annotation
+from dataset_utils.representations import Box, Mask, Label, AnnotationType, Dataset, FileAnnotations, Polygon, Point2d, Annotation
 from dataset_utils.mask_encoder import mask2rle, rle2mask
 from system_utils.path_utils import get_relative_paths
 import cv2
@@ -187,14 +187,15 @@ def get_annotations_from_json(path_json, images_dir, background=False):
             image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
             height, width = image.shape[:2]
             if len(file_annotations)>0:
-                annotations.append(FileAnnotations(file=File(id=str(file_id), path=f, height=height, width=width), annotations=file_annotations, predictions=pred_annotations))
+                # File(id=str(file_id), path=f, height=height, width=width)
+                annotations.append(FileAnnotations(id=file_id,path=f, height=height,width=width, annotations=file_annotations, predictions=pred_annotations))
                 cnt_image += 1
 
             else:
                 logger.warning(f'no annotation found in {f}')
                 
                 if background:
-                    annotations.append(FileAnnotations(file=File(id=str(file_id), path=f, height=height, width=width)))
+                    annotations.append(FileAnnotations(id=str(file_id),path=f, height=height,width=width))
                 
 
         logger.info(f'{cnt_image} out of {len(l)} images have annotations')
@@ -211,7 +212,7 @@ def get_annotations_from_json(path_json, images_dir, background=False):
             file_id = file_id_dict[f]
             image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
             height, width = image.shape[:2]
-            annotations.append(FileAnnotations(file=File(id=str(file_id), path=f, height=height, width=width)))
+            annotations.append(FileAnnotations(id=str(file_id),path=f, height=height,width=width))
     
     logger.info(f'total {len(annotations)} images')
     logger.info(f'total {len(labels)} labels')

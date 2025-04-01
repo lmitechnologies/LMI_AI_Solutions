@@ -6,7 +6,7 @@ import cv2
 #LMI packages
 from label_utils.shapes import Rect, Mask, Keypoint, Brush
 from image_utils.img_resize import resize
-from dataset_utils.representations import Dataset, File
+from dataset_utils.representations import Dataset
 
 
 logging.basicConfig()
@@ -86,11 +86,12 @@ def resize_imgs_with_json(path_imgs, path_json, output_imsize, path_out, save_bg
         relative_image_path = os.path.relpath(absolute_image_path, path_out)
         cv2.imwrite(os.path.join(path_out,out_name), im2)
         im2_h, im2_w = im2.shape[:2]
-        f.update_file(File(path=relative_image_path, width=im2_w, height=im2_h, id=f.id))
+        f.update_file(path=relative_image_path, width=im2_w, height=im2_h, id=f.id)
         
         # resize shapes
-        shapes = resize_shapes(f.annotations,orig_h=h, orig_w=w, new_h=im2_h, new_w=im2_w)
-        f.annotations = shapes
+        if tw != w or th != h:
+            shapes = resize_shapes(f.annotations,orig_h=h, orig_w=w, new_h=im2_h, new_w=im2_w)
+            f.annotations = shapes
     if cnt_bg:
         logger.info(f'found {cnt_bg} images with no labels. These images will be used as background training data in YOLO')
     return dataset

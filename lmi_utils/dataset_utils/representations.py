@@ -540,28 +540,28 @@ class PolygonAnnotation(Annotation):
         return self.value.to_yolo(h, w, **kwargs)
 
 
-@dataclass
-class File(Base):
-    id: str
-    path: str
-    height: Optional[int] = None
-    width: Optional[int] = None
+# @dataclass
+# class File(Base):
+#     id: str
+#     path: str
+#     height: Optional[int] = None
+#     width: Optional[int] = None
 
-    def __init__(self, id: str, path: str, height: Optional[int] = None, width: Optional[int] = None):
-        super().__init__()
-        self.id = id
-        self.path = path
-        self.height = height
-        self.width = width
+#     def __init__(self, id: str, path: str, height: Optional[int] = None, width: Optional[int] = None):
+#         super().__init__()
+#         self.id = id
+#         self.path = path
+#         self.height = height
+#         self.width = width
 
-    @classmethod
-    def from_dict(cls, data: dict) -> "File":
-        return cls(
-            id=data["id"],
-            path=data["path"],
-            height=data.get("height", None),
-            width=data.get("width", None),
-        )
+#     @classmethod
+#     def from_dict(cls, data: dict) -> "File":
+#         return cls(
+#             id=data["id"],
+#             path=data["path"],
+#             height=data.get("height", None),
+#             width=data.get("width", None),
+#         )
 
 
 @dataclass
@@ -575,24 +575,26 @@ class FileAnnotations(Base):
 
     def __init__(
         self,
-        file: File,
+        id: str,
+        path:str,
+        height:int,
+        width: int,
         annotations: List[Annotation] = [],
         predictions: List[Annotation] = [],
     ):
         super().__init__()
-        self.id = file.id
-        self.path = file.path
-        self.height = file.height
-        self.width = file.width
+        self.id = id
+        self.path = path
+        self.height = height
+        self.width = width
         self.annotations = annotations
         self.predictions = predictions
 
     @classmethod
     def from_dict(cls, data: dict) -> "FileAnnotations":
-        file = File.from_dict(data)
         annotations = [Annotation.from_dict(a) for a in data.get("annotations", [])]
         predictions = [Annotation.from_dict(a) for a in data.get("predictions", [])]
-        return cls(file=file, annotations=annotations, predictions=predictions)
+        return cls(id=data['id'],path=data['path'], height=data.get('height', None), width=data.get('width', None), annotations=annotations, predictions=predictions)
 
     @property
     def has_annotations(self) -> bool:
@@ -601,11 +603,11 @@ class FileAnnotations(Base):
     def relative_path(self, base_path: str) -> str:
         return os.path.relpath(self.path, base_path)
 
-    def update_file(self, file: File):
-        self.id = file.id
-        self.path = file.path
-        self.height = file.height
-        self.width = file.width
+    def update_file(self, id, path,height,width):
+        self.id = id
+        self.path = path
+        self.height = height
+        self.width = width
         return self
 
     def delete_annotation(
