@@ -760,10 +760,6 @@ class Dataset(Base):
                     file_ann.delete_annotation(annotation.id, list_type="predictions")
         return self
     
-    def update_label_ids(self):
-        for idx, label in enumerate(self.labels):
-            label.id = str(idx)
-        return self
 
     def to_yolo(self, **kwargs):
         to_segmentation = kwargs.get("to_segmentation", False)
@@ -773,22 +769,15 @@ class Dataset(Base):
         target_label_ids = []
         if target_classes != ["all"]:
             # delete the annotations that are not in the target classes
-            delete_ids = [label.id for label in self.labels if label.name not in target_classes]
-            old_label_map = {label.id: label.name for label in self.labels}
-            self.labels = [label for label in self.labels if label.name in target_classes]
+            delete_ids = [label.id for label in self.labels if label.id not in target_classes]
+            self.labels = [label for label in self.labels if label.id in target_classes]
             for file_ann in self.files:
                 file_ann.annotations = [ann for ann in file_ann.annotations if ann.label_id not in delete_ids]
                 file_ann.predictions = [ann for ann in file_ann.predictions if ann.label_id not in delete_ids]
             logger.info(f"Deleted annotations for labels {delete_ids}")
             
-            self.update_label_ids()
-            target_label_ids = [self.label_name_to_id(name) for name in target_classes]
+            target_label_ids = target_classes
             logger.info(f"Updated label ids {self.labels}")
-            for file_ann in self.files:
-                for annotation in file_ann.annotations:
-                    annotation.label_id = self.label_name_to_id(old_label_map[annotation.label_id])
-                for annotation in file_ann.predictions:
-                    annotation.label_id = self.label_name_to_id(old_label_map[annotation.label_id])
             
         label_id_index = {label.id: idx for idx, label in enumerate(self.labels)}
                     
