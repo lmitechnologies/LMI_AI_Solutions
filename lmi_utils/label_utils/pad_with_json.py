@@ -67,7 +67,7 @@ def pad_image_with_json(input_path, json_path, output_images_path, output_imsize
         f.width = w
         logger.info(f'[PAD] {im_name}: wh of [{w},{h}]')
         # pad image
-        if pw != W or ph != H:
+        if pw != w or ph != h:
             im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
         else:
             im_out = im
