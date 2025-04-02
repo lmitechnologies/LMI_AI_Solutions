@@ -25,13 +25,13 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
         w (int): image width
 
     Returns:
-        dict: a dictionary contains 'ids','boxes','masks'
+        dict: a dictionary contains 'classes','boxes','masks'
     """
     boxes = []
     masks = []
-    label_ids = []
+    label_names = []
     for annot in annotations:
-        label_ids.append(int(annot.label_id))
+        label_names.append(annot.label_id)
         if annot.type == AnnotationType.BOX:
             boxes.append(annot.value.to_numpy())
         elif annot.type == AnnotationType.MASK:
@@ -46,7 +46,7 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
     return {
         'boxes': np.array(boxes),
         'masks': np.array(masks),
-        'ids': np.array(label_ids)
+        'classes': np.array(label_names)
     }
 
 
@@ -67,7 +67,6 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
     """
     model = Yolo(model_path)
     dataset = Dataset.load(label_path)
-    cls_to_id = {l.name:int(l.id) for l in dataset.labels}
     
     pred_annot_id = 0 # sum([len(f.annotations) for f in dataset.files])
     for file_annot in dataset.files:
@@ -117,20 +116,19 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         for i in range(len(preds['classes'])):
             box = preds['boxes'][i]
             mask = preds['masks'][i] if 'masks' in preds else None
-            label = preds['classes'][i]
-            label_id = cls_to_id[label]
+            label_name = preds['classes'][i]
             score = preds['scores'][i].item()
             
             if mask is not None:
                 dt = dict(
-                    id=str(pred_annot_id), label_id=str(label_id), type=AnnotationType.MASK, value=Mask(mask), 
+                    id=str(pred_annot_id), label_id=label_name, type=AnnotationType.MASK, value=Mask(mask), 
                     confidence=score, 
                 )
                 file_annot.predictions.append(Annotation(**dt))
                 pred_annot_id += 1
             else:
                 dt = dict(
-                    id=str(pred_annot_id), label_id=str(label_id), type=AnnotationType.BOX, value=Box(*box,angle=0), 
+                    id=str(pred_annot_id), label_id=label_name, type=AnnotationType.BOX, value=Box(*box,angle=0), 
                     confidence=score
                 )
                 file_annot.predictions.append(Annotation(**dt))

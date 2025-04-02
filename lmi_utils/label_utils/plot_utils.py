@@ -2,10 +2,30 @@ import cv2
 import random
 import numpy as np
 import logging
+import colorsys
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+def get_distinct_colors(n):
+    """Generate a list of distinct colors in RGB format.
+
+    Args:
+        n (int): Number of distinct colors to generate.
+
+    Returns:
+        list: A list of tuples representing RGB colors.
+    """
+    colors = []
+    for i in range(n):
+        hue = i / n  # Equally spaced hue values
+        saturation = 0.9  # High saturation
+        value = 0.9  # High value
+        rgb = colorsys.hsv_to_rgb(hue, saturation, value)
+        colors.append(tuple(int(255 * x) for x in rgb))
+    return colors
 
 
 def plot_one_pt(pt, img, color=None, label=None, radius=3, line_thickness=None):
@@ -38,7 +58,6 @@ def plot_one_pt(pt, img, color=None, label=None, radius=3, line_thickness=None):
             lineType=cv2.LINE_AA,
         )
     
-
 
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     """

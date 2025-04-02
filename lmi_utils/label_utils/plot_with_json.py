@@ -1,24 +1,23 @@
 import numpy as np
-import random
 import cv2
 import os
-import json
 import logging
 
 #LMI packages
 from dataset_utils.representations import Dataset,AnnotationType
 from label_utils.plot_utils import plot_one_polygon, plot_one_pt, plot_one_brush
 from label_utils.bbox_utils import rotate
-
+from label_utils.plot_utils import get_distinct_colors
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def plot_shape(dataset,shape, im, color_map, no_label=False):
-    label = None if no_label else dataset.label_id_to_name(shape.label_id)
+def plot_shape(shape, im, color_map, no_label=False):
     img_h, img_w = im.shape[:2]
+    label = shape.label_id
+    label_str = None if no_label else label
     if shape.type == AnnotationType.BOX:
         x1,y1, x2, y2, angle = shape.value.coords()
         width = x2 - x1
@@ -28,16 +27,16 @@ def plot_shape(dataset,shape, im, color_map, no_label=False):
             rotated_rect = rotate(x1, y1, width, height, angle)
         else:
             rotated_rect = np.array([[x1,y1],[x2,y1],[x2,y2],[x1,y2]])
-        plot_one_polygon(np.array([rotated_rect]), im, label=label, color=color_map[label])
+        plot_one_polygon(np.array([rotated_rect]), im, label=label_str, color=color_map[label])
     elif shape.type == AnnotationType.POLYGON:
         pts = shape.value.to_numpy().reshape((-1, 1, 2)).astype(int)
-        plot_one_polygon(pts, im, label=label, color=color_map[label])
+        plot_one_polygon(pts, im, label=label_str, color=color_map[label])
     elif shape.type == AnnotationType.MASK:
         x,y = shape.value.coords(h=img_h, w=img_w)
-        plot_one_brush(x,y,im,label=label,color=color_map[label])
+        plot_one_brush(x,y,im,label=label_str,color=color_map[label])
     elif shape.type == AnnotationType.KEYPOINT:
         x,y, = shape.value.coords()
-        plot_one_pt([x,y], im, label=label, color=color_map[label])
+        plot_one_pt([x,y], im, label=label_str, color=color_map[label])
     else:
         raise Exception(f'Unknown shape: {type(shape)}')
     return
@@ -68,9 +67,10 @@ if __name__ == '__main__':
     
     # init color map
     color_map = {}
-    for name in dataset.get_label_names():
+    colors = get_distinct_colors(len(dataset.get_label_ids()))
+    for i,name in enumerate(dataset.get_label_ids()):
         logger.info(f'CLASS: {name}')
-        color_map[name] = tuple([random.randint(0,255) for _ in range(3)])
+        color_map[name] = tuple(colors[i])
     
     for f in dataset.files:
         file_path = os.path.join(path_imgs, f.path)
@@ -87,7 +87,7 @@ if __name__ == '__main__':
         
         im_annot = im0.copy()
         for shape in f.annotations:
-            plot_shape(dataset,shape, im_annot, color_map, args['no_label'])
+            plot_shape(shape, im_annot, color_map, args['no_label'])
             
         if f'id{f.id}_' not in fname:
             fname = f'id{f.id}_{fname}'
@@ -100,7 +100,7 @@ if __name__ == '__main__':
         if args['preds'] and len(f.predictions):
             im_pred = im0.copy()
             for shape in f.predictions:
-                plot_shape(dataset,shape, im_pred, color_map, args['no_label'])
+                plot_shape(shape, im_pred, color_map, args['no_label'])
             
             root,ext = os.path.splitext(fname)
 

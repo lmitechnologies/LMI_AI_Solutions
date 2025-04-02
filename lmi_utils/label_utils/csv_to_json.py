@@ -3,7 +3,7 @@ import os
 import cv2
 import numpy as np
 
-from dataset_utils.representations import Box, Mask, Polygon, Point2d, Label, Annotation, File, AnnotationType, Dataset, FileAnnotations
+from dataset_utils.representations import Box, Mask, Polygon, Point2d, Label, Annotation, AnnotationType, Dataset, FileAnnotations
 
 
 def read_one_row(row):
@@ -55,7 +55,7 @@ def read_csv(csv_path:str, img_dir:str):
     with open(csv_path, newline='') as f:
         reader = list(csv.reader(f, delimiter=';'))
         
-        label_map = {}
+        label_set = set()
         file_map = {}
         annot_id = 0
         for i in range(0,len(reader),2):
@@ -81,36 +81,31 @@ def read_csv(csv_path:str, img_dir:str):
                 shape = Point2d(x=c1[0], y=c2[0])
                 mtype = AnnotationType.KEYPOINT
                 
-            if category not in label_map:
-                label_id = len(label_map)
-                label_map[category] = label_id
-            else:
-                label_id = label_map[category]
+            label_set.add(category)
                 
             if fname not in file_map:
                 # TODO: add id to filename
                 file_id = len(file_map)
-                file = File(id=str(file_id), path=fname, height=height, width=width)
-                file_map[fname] = FileAnnotations(file=file, annotations=[], predictions=[])
+                file_map[fname] = FileAnnotations(id=str(file_id), path=fname, height=height, width=width, annotations=[], predictions=[])
             if fname in file_map:
                 file = file_map[fname]
-                annot = Annotation(id=str(annot_id),label_id=str(label_id),type=mtype,value=shape,confidence=conf)
+                annot = Annotation(id=str(annot_id),label_id=str(category),type=mtype,value=shape,confidence=conf)
                 annot_id += 1
                 file.annotations.append(annot)
             
-    return label_map, file_map
+    return label_set, file_map
 
 
-def write_to_json(label_map:dict, file_map:dict, json_path:str):
+def write_to_json(label_set:dict, file_map:dict, json_path:str):
     """write to a json file using the new representation classes
 
     Args:
-        label_map (dict): a dictionary mapping label names to label ids
+        label_set (dict): a set of labels
         file_map (dict): a dictionary mapping filenames to FileAnnotations
         json_path (str): path to a json file
     """
     dataset = Dataset(labels=[], files=[])
-    dataset.labels = [Label(id=str(label_id), name=label_name) for label_name,label_id in label_map.items()]
+    dataset.labels = [Label(id=str(label_name)) for label_name in label_set]
     dataset.files = list(file_map.values())
     dataset.save(json_path)
     
