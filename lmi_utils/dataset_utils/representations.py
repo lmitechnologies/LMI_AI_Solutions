@@ -276,12 +276,8 @@ class Mask(Base):
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
         assert orig_h > 0 and orig_w > 0, "Original height and width must be positive"
-        rx = new_w / orig_w
-        ry = new_h / orig_h
         mask_array = rle2mask(self.mask, h=orig_h, w=orig_w)
-        tw = int(orig_w * rx)
-        th = int(orig_h * ry)
-        resized_mask = resize(mask_array, tw, th)
+        resized_mask = resize(mask_array, width=new_w, height=new_h)
         self.mask = mask2rle(resized_mask)
         return self
 
@@ -309,8 +305,8 @@ class Mask(Base):
         w = kwargs.get("w", None)
         if h is None or w is None:
             raise ValueError("Height and width cannot be None")
-        mask = self.to_numpy(h=h, w=h)
-        ys, xs = np.nonzero(mask)
+        mask = self.to_numpy(h=h, w=w)
+        ys, xs = np.nonzero(mask==1)
         return xs.tolist(), ys.tolist()
 
     def to_polygon(self, **kwargs) -> List[Polygon]:
