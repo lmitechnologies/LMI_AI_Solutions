@@ -22,7 +22,8 @@ def fit_shapes_to_size(shapes, pad_l, pad_t, pad_h, pad_w,orig_h,orig_w):
     """
     
     for annot in shapes:
-        annot.value = annot.value.pad(pad_h=pad_h, pad_w=pad_w, pl=pad_l, pt=pad_t, h=orig_h, w=orig_w)   
+        annot.value = annot.value.pad(pad_h=pad_h, pad_w=pad_w, pl=pad_l, pt=pad_t, h=orig_h, w=orig_w)
+        cv2.imwrite('/app/data/annotated/test_mask_new_pad.png', (annot.value.to_numpy(h=pad_h, w=pad_w)*255).astype(np.uint8)) 
     return shapes 
 
 def pad_dataset(dataset, images,output_imsize):
@@ -59,7 +60,7 @@ def pad_dataset(dataset, images,output_imsize):
         
         # pad image
         if pw != w or ph != h:
-            logger.info(f'pad {file_path} [w:{w},h:{h}]->[w:{W},h:{H}]')
+            logger.info(f'pad {file_path} [w:{w},h:{h}]->[w:{pw},h:{ph}]')
             im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
         else:
             logger.info(f'no pad {file_path}')
@@ -87,6 +88,8 @@ def pad_dataset(dataset, images,output_imsize):
         f.height = height
         f.width = width
         padded_images[file_path] = im_out
+    if cnt_warnings:
+        logger.warning(f'found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
     return padded_images, dataset
 
 def clip_shapes(shapes, W, H):
