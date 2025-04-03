@@ -121,19 +121,22 @@ def parse_args():
         help='Angle (in degrees) to rotate images.'
     )
     
-    rotate_parser.add_argument('--counter-clockwise', action='store_true', help='rotate the images counter-clockwise')
+    rotate_parser.add_argument('--counter-clockwise', action='store_true', help='rotate the images counter-clockwise', default=False, required=False)
     return vars(parser.parse_args())
 
 
 def cli():
     args = parse_args()
-    if args['width'] == 0:
+    
+    if args.get('width', None) == 0:
         args['width'] = None
-    if args['height'] == 0:
+    if args.get('height', None) == 0:
         args['height'] = None
     
-
-    output_imsize = [args['width'], args['height']]
+    if args['operation'] in ['resize', 'pad']:
+        output_imsize = [args['width'], args['height']]
+    else:
+        output_imsize = None
     logger.info(f'output image size: {output_imsize}')
     
     path_imgs = args['path_imgs']
@@ -168,11 +171,11 @@ def cli():
     
     elif args['operation'] == 'rotate':
         logger.info(f'Rotating images by {args["angle"]} degrees')
-        output_images, output_dataset = rotate_dataset(dataset, images, args['angle'], args['counter-clockwise'])
+        output_images, output_dataset = rotate_dataset(dataset, images, args['angle'], args['counter_clockwise'])
     
     if not args['bg']:
         # remove files with no annotations
-        dataset.delete_empty_files()
+        output_dataset.delete_empty_files()
         
     # save images and dataset
     save_dataset(output_dataset, output_images, path_out_images=path_out,out_json=out_json, args=args)

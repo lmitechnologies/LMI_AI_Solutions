@@ -69,7 +69,7 @@ def resize_dataset(dataset, images, output_imsize, maintain_aspect_ratio=False):
 
         th,tw = im2.shape[:2]
         if tw != w or th != h:
-            shapes = resize_annotations(f.annotations,orig_h=h, orig_w=w, new_h=tw, new_w=th)
+            shapes = resize_annotations(f.annotations,orig_h=h, orig_w=w, new_h=th, new_w=tw)
             f.annotations = shapes
         logger.info(f'resize {file_path} from w:{w} h:{h} to w:{tw} h:{th}')
         f.height = th

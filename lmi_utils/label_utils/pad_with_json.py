@@ -86,7 +86,7 @@ def pad_image_with_json(input_path, json_path, output_images_path, output_imsize
         cv2.imwrite(output_file,im_out)
 
         #pad shapes
-        if pw != W or ph != H:
+        if pw != w or ph != h:
             f.annotations = fit_shapes_to_size(f.annotations,pad_l,pad_t, pad_h=ph, pad_w=pw, orig_h=h, orig_w=w)
             
             delete_ids,is_warning = clip_shapes(f.annotations, W=pw, H=ph)
