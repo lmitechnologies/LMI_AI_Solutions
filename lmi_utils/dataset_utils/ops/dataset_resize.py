@@ -19,7 +19,6 @@ def resize_annotations(shapes, orig_h: int, orig_w: int, new_h: int, new_w: int)
     """
     for annot in shapes:
         annot.value = annot.value.resize(orig_h, orig_w, new_h, new_w)
-        # cv2.imwrite('/app/data/annotated/test_mask_new_resize.png', (annot.value.to_numpy(h=new_h, w=new_h)*255).astype(np.uint8))   
 
     return shapes
 
