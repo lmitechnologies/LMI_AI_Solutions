@@ -65,16 +65,20 @@ def pad_image_with_json(input_path, json_path, output_images_path, output_imsize
 
         f.height = h
         f.width = w
-        logger.info(f'[PAD] {im_name}: wh of [{w},{h}]')
         # pad image
-        if pw != w or ph != h:
-            im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
-        else:
-            im_out = im
-            pad_l = 0
-            pad_t = 0
+        im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
         pw = im_out.shape[1]
         ph = im_out.shape[0]
+ 
+
+        #pad shapes
+
+        f.annotations = fit_shapes_to_size(f.annotations,pad_l,pad_t, pad_h=ph, pad_w=pw, orig_h=h, orig_w=w)
+            
+            
+        delete_ids,is_warning = clip_shapes(f.annotations, W=pw, H=ph)
+        f.annotations = [shape for shape in f.annotations if shape.id not in delete_ids]
+            
         
         if f'id{f.id}_' not in im_name:
             im_name = f'id{f.id}_{im_name}'
