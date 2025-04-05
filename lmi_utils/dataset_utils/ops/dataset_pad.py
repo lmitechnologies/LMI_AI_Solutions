@@ -57,12 +57,6 @@ def pad_dataset(dataset, images,output_imsize):
         f.width = w
         # pad image
         im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
-        # if pw != w or ph != h:
-        #     im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
-        # else:
-        #     im_out = im
-        #     pad_l = 0
-        #     pad_t = 0
         pw = im_out.shape[1]
         ph = im_out.shape[0]
  
