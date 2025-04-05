@@ -47,40 +47,37 @@ def pad_dataset(dataset, images,output_imsize):
         h,w = im.shape[:2]
         pw = W
         ph = H
+        
         if ph is None and pw is None:
             ph = h
             pw = w
-        
 
 
         f.height = h
         f.width = w
-        
-        
         # pad image
-        if pw != w or ph != h:
-            logger.info(f'pad {file_path} [w:{w},h:{h}]->[w:{pw},h:{ph}]')
-            im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
-        else:
-            logger.info(f'no pad {file_path}')
-            im_out = im
-            pad_l = 0
-            pad_t = 0
-        
+        im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
+        # if pw != w or ph != h:
+        #     im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
+        # else:
+        #     im_out = im
+        #     pad_l = 0
+        #     pad_t = 0
         pw = im_out.shape[1]
         ph = im_out.shape[0]
-        
+ 
 
         #pad shapes
-        if pw != w or ph != w:
-            f.annotations = fit_shapes_to_size(f.annotations,pad_l,pad_t, pad_h=ph, pad_w=pw, orig_h=h, orig_w=w)
-            
-            delete_ids,is_warning = clip_shapes(f.annotations, W=pw, H=ph)
-            f.annotations = [shape for shape in f.annotations if shape.id not in delete_ids]
+
+        f.annotations = fit_shapes_to_size(f.annotations,pad_l,pad_t, pad_h=ph, pad_w=pw, orig_h=h, orig_w=w)
             
             
-            if is_warning:
-                cnt_warnings += 1
+        delete_ids,is_warning = clip_shapes(f.annotations, W=pw, H=ph)
+        f.annotations = [shape for shape in f.annotations if shape.id not in delete_ids]
+            
+            
+        if is_warning:
+            cnt_warnings += 1
 
         height = im_out.shape[0]
         width = im_out.shape[1]
