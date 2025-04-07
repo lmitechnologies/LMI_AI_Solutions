@@ -8,6 +8,8 @@ import json
 
 from ultralytics_lmi.yolo.model import Yolo, YoloPose, YoloObb
 from dataset_utils.representations import Dataset, Annotation, AnnotationType, Box, Mask
+from dataset_utils.ops.dataset_resize import resize_annotated_image, resize_annotations
+from dataset_utils.ops.dataset_pad import pad_annotated_image
 
 
 logging.basicConfig()
@@ -50,7 +52,7 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
     }
 
 
-def write_json(model_path, config_path, image_dir, label_path, out_pred_json, out_iou_dir, confidence=0.01, iou=0.45, max_det=600):
+def write_json(model_path, config_path, image_dir, label_path, out_pred_json, out_image_dir, out_iou_dir, image_size: tuple[int,int] | None, confidence=0.01, iou=0.45, max_det=600):
     """write predictions and labels to a json file
 
     Args:
@@ -59,7 +61,9 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         image_dir (str): a input image directory, where each image should have the same dimension as training images
         label_path (str): a path to a label json file
         out_pred_json (str): a full output json file path
+        out_image_dir (str): path to save output images
         out_iou_dir (str): a full output folder for iou matrix json files
+        image_size (tuple[int] | None, optional): a target image size for the model. Defaults to None.
         confidence (float, optional): a confidence threshold. Defaults to 0.01.
         iou (float, optional): an iou threshold for NMS. Defaults to 0.45.
         max_det (int, optional): the max number of detections. Defaults to 600.
@@ -79,8 +83,13 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         # get labels and preds
         im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         h,w = im.shape[:2]
-        labels = parse_annotations(file_annot.annotations, h, w)
-        preds,_ = model.predict(im, confidence, iou=iou, max_det=max_det, return_segments=False)
+        h_train,w_train = image_size if image_size is not None else (h,w)
+
+        im_resized, annotations_resized = resize_annotated_image(im, file_annot.annotations, w_train, h_train, maintain_aspect_ratio=True)
+        im_padded, annotations_padded, _ = pad_annotated_image(im_resized, annotations_resized, w_train, h_train)
+        labels = parse_annotations(annotations_padded, w_train, w_train)
+
+        preds,_ = model.predict(im_padded, confidence, iou=iou, max_det=max_det, return_segments=False)
         
         # get ious
         ious = None
@@ -113,6 +122,7 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         
         # add predictions to dataset
         logger.info(f'Found {len(preds["classes"])} predictions for {fname}')
+        preds_padded = []
         for i in range(len(preds['classes'])):
             box = preds['boxes'][i]
             mask = preds['masks'][i] if 'masks' in preds else None
@@ -124,16 +134,30 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
                     id=str(pred_annot_id), label_id=label_name, type=AnnotationType.MASK, value=Mask(mask), 
                     confidence=score, 
                 )
-                file_annot.predictions.append(Annotation(**dt))
+                preds_padded.append(Annotation(**dt))
                 pred_annot_id += 1
             else:
                 dt = dict(
                     id=str(pred_annot_id), label_id=label_name, type=AnnotationType.BOX, value=Box(*box,angle=0), 
                     confidence=score
                 )
-                file_annot.predictions.append(Annotation(**dt))
+                preds_padded.append(Annotation(**dt))
                 pred_annot_id += 1
-                
+
+        # remove padding and save image                
+        im_unpadded, preds_unpadded, _ = pad_annotated_image(im_padded, preds_padded, im_resized.shape[1], im_resized.shape[0])
+        _, annotations_unpadded, _ = pad_annotated_image(im_padded, annotations_padded, im_resized.shape[1], im_resized.shape[0])
+        im_out = cv2.cvtColor(im_unpadded, cv2.COLOR_RGB2BGR)
+        out_image_path = os.path.join(out_image_dir, file_annot.path)
+        os.makedirs(os.path.dirname(out_image_path), exist_ok=True)
+        cv2.imwrite(out_image_path, im_out)
+
+        # add predictions to dataset
+        file_annot.width = im_unpadded.shape[1]
+        file_annot.height = im_unpadded.shape[0]
+        file_annot.annotations = annotations_unpadded
+        file_annot.predictions = preds_unpadded
+
     # write out dataset
     dataset.save(out_pred_json)
     return
@@ -147,11 +171,23 @@ if __name__ =='__main__':
     parser.add_argument('--img_dir',required=True,help='a input image directory')
     parser.add_argument('--label_path',required=True,help='a path to a label json file')
     parser.add_argument('--out_pred_json',required=True,help='a full output json file path for predictions and labels')
+    parser.add_argument('--out_image_dir',required=True,help='a path to save output images')
     parser.add_argument('--out_iou_dir',required=True,help='a full output folder for saving iou json files')
+    parser.add_argument('--image_size',default=None,help='[optional] a target image size for the model, either w,h or single number')
     parser.add_argument('--confidence',default=0.01,type=float,help='[optional] confidence threshold, defaults to 0.01')
     parser.add_argument('--iou',default=0.45,type=float,help='[optional] iou NMS threshold, defaults to 0.45')
     parser.add_argument('--max_det',default=600,type=int,help='[optional] the max number of detections per image, default to 600')
     ap = parser.parse_args()
     
-    write_json(ap.model_path, ap.config_path, ap.img_dir, ap.label_path, ap.out_pred_json, ap.out_iou_dir, ap.confidence, ap.iou, ap.max_det)
+    image_size = None
+    if ap.image_size is not None:
+        parsed_size = ap.image_size.split(',')
+        if len(parsed_size) == 1:
+            image_size = (int(parsed_size[0]), int(parsed_size[0]))
+        elif len(parsed_size) == 2:
+            image_size = (int(parsed_size[1]), int(parsed_size[0]))     #w,h -> (h,w)
+        else:
+            raise Exception(f'Invalid image size: {ap.image_size}; must be either w,h or a single number')
+
+    write_json(ap.model_path, ap.config_path, ap.img_dir, ap.label_path, ap.out_pred_json, ap.out_image_dir, ap.out_iou_dir, image_size, ap.confidence, ap.iou, ap.max_det)
     
