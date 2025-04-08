@@ -87,7 +87,7 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
 
         im_resized, annotations_resized = resize_annotated_image(im, file_annot.annotations, w_train, h_train, maintain_aspect_ratio=True)
         im_padded, annotations_padded, _ = pad_annotated_image(im_resized, annotations_resized, w_train, h_train)
-        labels = parse_annotations(annotations_padded, w_train, w_train)
+        labels = parse_annotations(annotations_padded, h_train, w_train)
 
         preds,_ = model.predict(im_padded, confidence, iou=iou, max_det=max_det, return_segments=False)
         
