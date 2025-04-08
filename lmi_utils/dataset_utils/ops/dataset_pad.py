@@ -3,7 +3,7 @@ import numpy as np
 import logging
 
 #LMI packages
-from dataset_utils.representations import AnnotationType, Box, Mask, Polygon, Point2d
+from dataset_utils.representations import AnnotationType, Box, Mask, Polygon, Point2d, Annotation
 from gadget_utils.pipeline_utils import fit_array_to_size
 
 
@@ -25,6 +25,43 @@ def fit_shapes_to_size(shapes, pad_l, pad_t, pad_h, pad_w,orig_h,orig_w):
         annot.value = annot.value.pad(pad_h=pad_h, pad_w=pad_w, pl=pad_l, pt=pad_t, h=orig_h, w=orig_w)
     return shapes 
 
+
+def pad_annotated_image(image: np.ndarray, annotations: list[Annotation], width: int, height: int) -> tuple[np.ndarray, list[Annotation], bool]:
+    """
+    description:
+        pad the image to the size [width,height] and modify its annotations accordingly
+    arguments:
+        image(np.ndarray): the input image
+        annotations(list): a list of annotation objects
+        width(int): the target width of the output image
+        height(int): the target height of the output image
+    return:
+        im_out(np.ndarray): the padded image
+        annotations(list): a list of annotation objects
+        is_warning(bool): whether the annotations have been clipped or removed
+    """
+    h, w = image.shape[:2]
+    pw = width
+    ph = height
+    
+    if ph is None and pw is None:
+        ph = h
+        pw = w
+
+    # pad image
+    im_out, pad_l, _, pad_t, _ = fit_array_to_size(image, pw, ph)
+    pw = im_out.shape[1]
+    ph = im_out.shape[0]
+    
+    # pad shapes
+    annotations = fit_shapes_to_size(annotations,pad_l,pad_t, pad_h=ph, pad_w=pw, orig_h=h, orig_w=w)
+
+    delete_ids,is_warning = clip_shapes(annotations, W=pw, H=ph)
+    annotations = [shape for shape in annotations if shape.id not in delete_ids]
+
+    return im_out, annotations, is_warning
+   
+
 def pad_dataset(dataset, images,output_imsize):
     """
     pad/crop the image to the size [W,H] and modify its annotations accordingly
@@ -33,54 +70,25 @@ def pad_dataset(dataset, images,output_imsize):
         json_path(str): the path to the json annotation file
         output_imsize(list): the width and height of the output image
     """
-
-    W,H = output_imsize
     
     padded_images = {}
     cnt_warnings = 0
-    for f in dataset.files:
-        
-
+    for f in dataset.files:        
         file_path = f.path
-        im = images[file_path]
         
-        h,w = im.shape[:2]
-        pw = W
-        ph = H
-        
-        if ph is None and pw is None:
-            ph = h
-            pw = w
+        im_out, annot_out, is_warning = pad_annotated_image(image=images[file_path], annotations=f.annotations, width=output_imsize[1], height=output_imsize[0])
 
-
-        f.height = h
-        f.width = w
-        # pad image
-        im_out,pad_l,_,pad_t,_ = fit_array_to_size(im,pw,ph)
-        pw = im_out.shape[1]
-        ph = im_out.shape[0]
- 
-
-        #pad shapes
-
-        f.annotations = fit_shapes_to_size(f.annotations,pad_l,pad_t, pad_h=ph, pad_w=pw, orig_h=h, orig_w=w)
-            
-            
-        delete_ids,is_warning = clip_shapes(f.annotations, W=pw, H=ph)
-        f.annotations = [shape for shape in f.annotations if shape.id not in delete_ids]
-            
-            
         if is_warning:
             cnt_warnings += 1
 
-        height = im_out.shape[0]
-        width = im_out.shape[1]
-        f.height = height
-        f.width = width
+        f.height =  im_out.shape[0]
+        f.width = im_out.shape[1]
+        f.annotations = annot_out
         padded_images[file_path] = im_out
     if cnt_warnings:
         logger.warning(f'found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
     return padded_images, dataset
+
 
 def clip_shapes(shapes, W, H):
     """
