@@ -774,12 +774,29 @@ class Dataset(Base):
             
             target_label_ids = target_classes
             logger.info(f"Updated label ids {self.labels}")
-            
-        label_id_index = {label.id: idx for idx, label in enumerate(self.labels)}
+        
+        # generate label counts 
+        label_counts = {}
+        for label in self.labels:
+            label_counts[label.id] = 0
+        for file_ann in self.files:
+            for annotation in file_ann.annotations:
+                if annotation.label_id in label_counts:
+                    label_counts[annotation.label_id] += 1
+        
+        # assign label ids if label_counts > 0
+        label_id_index = {}
+        label_idx = 0
+        for label in label_counts.keys():
+            if label_counts.get(label) > 0:
+                label_id_index[label] = label_idx
+                label_idx += 1
+        
+
+        logger.info(f"Label counts: {label_counts}")
                     
         n_kpts = 0
         image_to_labels = {}
-        # base_prefix = self.base_path
         label_ids = []
         for file_ann in self.files:
             file_path = file_ann.path
@@ -809,13 +826,12 @@ class Dataset(Base):
             )
             label_ids.extend(file_label_ids)
             image_to_labels[file_path].extend(file_yolo)
-        label_ids = list(set(label_ids))
         
+        label_ids = list(set(label_ids))
+        label_id_index = dict(sorted(label_id_index.items(), key=lambda item: item[1]))
         # generate the class map
-        class_map = {label_id: label_id_index[label_id] for label_id in label_ids}
-        class_map = dict(sorted(class_map.items(), key=lambda item: item[1]))
         return dict(
             image_labels=image_to_labels,
-            class_map=class_map,
+            class_map=label_id_index,
             n_kpts=n_kpts,
         )
