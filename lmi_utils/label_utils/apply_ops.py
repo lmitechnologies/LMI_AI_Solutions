@@ -125,8 +125,7 @@ def parse_args():
     return vars(parser.parse_args())
 
 
-def cli():
-    args = parse_args()
+def apply_ops(args):
     
     if args.get('width', None) == 0:
         args['width'] = None
@@ -182,15 +181,13 @@ def cli():
     logger.info(f'output json file: {out_json}')
     
 
-    
-        
-    
-    
-    
+def main():
+    args = parse_args()
+    apply_ops(args)
 
 
 if __name__=='__main__':
-    cli()
+    main()
 
         
     
