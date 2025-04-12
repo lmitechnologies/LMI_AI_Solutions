@@ -76,7 +76,7 @@ def pad_dataset(dataset, images,output_imsize):
     for f in dataset.files:        
         file_path = f.path
         
-        im_out, annot_out, is_warning = pad_annotated_image(image=images[file_path], annotations=f.annotations, width=output_imsize[1], height=output_imsize[0])
+        im_out, annot_out, is_warning = pad_annotated_image(image=images[file_path], annotations=f.annotations, width=output_imsize[0], height=output_imsize[1])
 
         if is_warning:
             cnt_warnings += 1

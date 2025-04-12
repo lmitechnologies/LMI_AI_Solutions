@@ -81,7 +81,7 @@ def resize_dataset(dataset, images, output_imsize, maintain_aspect_ratio=False):
         file_path = f.path
         im = images[file_path]
       
-        im_out, annot_out = resize_annotated_image(image=im, annotations=f.annotations, width=output_imsize[1], height=output_imsize[0], maintain_aspect_ratio=maintain_aspect_ratio)
+        im_out, annot_out = resize_annotated_image(image=im, annotations=f.annotations, width=output_imsize[0], height=output_imsize[1], maintain_aspect_ratio=maintain_aspect_ratio)
 
         logger.info(f'resize {file_path} from w:{im.shape[1]} h:{im.shape[0]} to w:{im_out.shape[1]} h:{im_out.shape[0]}')
 
