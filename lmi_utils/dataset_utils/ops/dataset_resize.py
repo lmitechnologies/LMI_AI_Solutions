@@ -44,7 +44,7 @@ def resize_annotated_image(image: np.ndarray, annotations: list[Annotation], wid
         im_out = image
     else:
         if maintain_aspect_ratio:
-            scale = max(tw,th) / max(w,h)
+            scale = min(th / h, tw / w)
             tw = np.int32(scale * w)
             th = np.int32(scale * h)
             im_out = resize(image, width=tw, height=th)            
