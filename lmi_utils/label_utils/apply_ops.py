@@ -13,7 +13,6 @@ from dataset_utils.ops.dataset_rotate import rotate_dataset
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 def load_images(path_imgs,dataset):
     """
@@ -90,6 +89,10 @@ def parse_args():
         '--bg', action='store_true',
         help='Save background images that have no labels.'
     )
+    parser.add_argument(
+        '--warn_crop', action='store_true',
+        help='If enabled, will warn if labels are cropped.'
+    )
     
     # Create subparsers for each operation
     subparsers = parser.add_subparsers(dest='operation', required=True,
@@ -136,7 +139,7 @@ def apply_ops(args):
         output_imsize = [args['width'], args['height']]
     else:
         output_imsize = None
-    logger.info(f'output image size: {output_imsize}')
+    logger.debug(f'output image size: {output_imsize}')
     
     path_imgs = args['path_imgs']
     path_out = args['path_out_images']
@@ -151,6 +154,9 @@ def apply_ops(args):
     if not os.path.isdir(path_out):
         os.makedirs(path_out)
     
+    # determine warning level for annotation crop
+    crop_warning_level = logging.WARNING if args['warn_crop'] else logging.DEBUG
+
     # load dataset
     dataset = Dataset.load(path_json)
     images = load_images(path_imgs, dataset)
@@ -165,11 +171,11 @@ def apply_ops(args):
                 output_images, output_dataset = pad_dataset(output_dataset, output_images, output_imsize)
     
     elif args['operation'] == 'pad':
-        logger.info(f'Padding images to size: {output_imsize}')
-        output_images, output_dataset = pad_dataset(dataset, images, output_imsize)
+        logger.debug(f'Padding images to size: {output_imsize}')
+        output_images, output_dataset = pad_dataset(dataset, images, output_imsize, crop_warning_level=crop_warning_level)
     
     elif args['operation'] == 'rotate':
-        logger.info(f'Rotating images by {args["angle"]} degrees')
+        logger.debug(f'Rotating images by {args["angle"]} degrees')
         output_images, output_dataset = rotate_dataset(dataset, images, args['angle'], args['counter_clockwise'])
     
     if not args['bg']:
@@ -178,7 +184,7 @@ def apply_ops(args):
         
     # save images and dataset
     save_dataset(output_dataset, output_images, path_out_images=path_out,out_json=out_json, args=args)
-    logger.info(f'output json file: {out_json}')
+    logger.debug(f'output json file: {out_json}')
     
 
 def main():

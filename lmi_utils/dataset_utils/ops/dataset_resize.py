@@ -8,7 +8,6 @@ from image_utils.img_resize import resize
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 def resize_annotations(shapes, orig_h: int, orig_w: int, new_h: int, new_w: int):
     """resize shapes in-place
@@ -83,7 +82,7 @@ def resize_dataset(dataset, images, output_imsize, maintain_aspect_ratio=False):
       
         im_out, annot_out = resize_annotated_image(image=im, annotations=f.annotations, width=output_imsize[0], height=output_imsize[1], maintain_aspect_ratio=maintain_aspect_ratio)
 
-        logger.info(f'resize {file_path} from w:{im.shape[1]} h:{im.shape[0]} to w:{im_out.shape[1]} h:{im_out.shape[0]}')
+        logger.debug(f'resize {file_path} from w:{im.shape[1]} h:{im.shape[0]} to w:{im_out.shape[1]} h:{im_out.shape[0]}')
 
         f.height =  im_out.shape[0]
         f.width = im_out.shape[1]

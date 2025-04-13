@@ -8,7 +8,6 @@ from gadget_utils.pipeline_utils import fit_array_to_size
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def fit_shapes_to_size(shapes, pad_l, pad_t, pad_h, pad_w,orig_h,orig_w):
@@ -62,7 +61,7 @@ def pad_annotated_image(image: np.ndarray, annotations: list[Annotation], width:
     return im_out, annotations, is_warning
    
 
-def pad_dataset(dataset, images,output_imsize):
+def pad_dataset(dataset, images, output_imsize, crop_warning_level=logging.DEBUG):
     """
     pad/crop the image to the size [W,H] and modify its annotations accordingly
     arguments:
@@ -86,11 +85,11 @@ def pad_dataset(dataset, images,output_imsize):
         f.annotations = annot_out
         padded_images[file_path] = im_out
     if cnt_warnings:
-        logger.warning(f'found {cnt_warnings} images with labels that is either removed entirely, or chopped to fit the new size')
+        logger.log(crop_warning_level, f'Labels were cropped for {cnt_warnings} images.')
     return padded_images, dataset
 
 
-def clip_shapes(shapes, W, H):
+def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
     """
     description:
         clip the shapes so that they are fit in the target size [W,H]
@@ -108,10 +107,10 @@ def clip_shapes(shapes, W, H):
             if np.all(new_box==0) or new_box[0]==new_box[2] or new_box[1]==new_box[3]:
                 is_del = 1
                 delete_ids.append(shape.id)
-                logger.warning(f'bbox {box} is outside of the size [{W},{H}]')
+                logger.log(crop_warning_level, f'Bounding box {box} was excluded by image dimensions [{W},{H}]')
             elif (np.any(new_box==W) and np.all(box!=W)) or (np.any(new_box==H) and np.all(box!=H)) \
                     or (np.any(new_box==0) and np.all(box!=0)):
-                logger.warning(f'bbox {box} is chopped to fit the size [{W}, {H}]')
+                logger.log(crop_warning_level, f'Bounding box {box} was clipped to image dimensions [{W}, {H}]')
                 is_warning = True
                 
                 shape.value = Box(*new_box)
@@ -124,11 +123,11 @@ def clip_shapes(shapes, W, H):
                 is_del = 1
                 delete_ids.append(shape.id)
                 # logger.warning(f'polygon {[(x,y) for x,y in zip(new_X,new_Y)]} is outside of the size [{W},{H}]')
-                logger.warning(f'polygon {shape.id} is outside of the size [{W},{H}]')
+                logger.log(crop_warning_level, f'Polygon {shape.id} was excluded by image dimensions [{W},{H}]')
 
             elif (np.any(new_X==W) and np.all(X!=W)) or (np.any(new_Y==H) and np.all(Y!=H)) \
                 or (np.any(new_X==0) and np.all(X!=0)) or (np.any(new_Y==0) and np.all(Y!=0)):
-                logger.warning(f'polygon {shape.id} is chopped to fit the size [{W}, {H}]')
+                logger.log(crop_warning_level, f'Polygon {shape.id} was clipped to image dimensions [{W}, {H}]')
                 is_warning = True
                 if shape.type == AnnotationType.POLYGON:
                     shape.value = Polygon(points=np.array(list(zip(new_X,new_Y))).astype(int).tolist())
@@ -141,7 +140,7 @@ def clip_shapes(shapes, W, H):
             x,y = shape.value.coords()
             if x<0 or x>W or y<0 or y>H:
                 is_del = 1
-                logger.warning(f'keypoint ({x},{y}) is outside of the size [{W},{H}]')
+                logger.log(crop_warning_level, f'keypoint ({x},{y}) was excluded by image dimensions [{W},{H}]')
                 delete_ids.append(shape.id)
             else:
                 shape.value = Point2d(x=x, y=y)

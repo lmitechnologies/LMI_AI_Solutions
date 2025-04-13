@@ -13,7 +13,6 @@ from label_utils.bbox_utils import rotate
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 class AnnotationType(enum.Enum):
     BOX = "Box"
@@ -172,7 +171,7 @@ class Box(Base):
             return [[pt[0] / w, pt[1] / h] for pt in rotated_coords]
         else:
             if use_obb:
-                logger.warning(f"Use_obb is True but angle is {self.angle}; returning obb formatted bounding box.")
+                logger.debug(f"Use_obb is True but angle is {self.angle}; returning obb formatted bounding box.")
                 corners = np.array([[self.x_min, self.y_min], [self.x_max, self.y_min], [self.x_max, self.y_max], [self.x_min, self.y_max]])
                 return [[pt[0] / w, pt[1] / h] for pt in corners]
             else:
@@ -590,7 +589,7 @@ class FileAnnotations(Base):
         for index, ann in enumerate(target_list):
             if ann.id == annotation_id:
                 del target_list[index]
-                logger.info(f"Deleted annotation with id '{annotation_id}' from {list_type}.")
+                logger.debug(f"Deleted annotation with id '{annotation_id}' from {list_type}.")
                 return True
         logger.warning(f"Annotation with id '{annotation_id}' not found in {list_type}.")
         return False
@@ -650,13 +649,13 @@ class FileAnnotations(Base):
 
             # Conversion steps:
             if annotation.type == AnnotationType.BOX and to_segmentation:
-                logger.info(f"Converting box {annotation.id} to YOLO format with mask_type=AnnotationType.MASK")
+                logger.debug(f"Converting box {annotation.id} to YOLO format with mask_type=AnnotationType.MASK")
                 updated_annotations.append(annotation.value.to_mask(h=h, w=w))
             elif (annotation.type == AnnotationType.MASK and to_object_detection):
-                logger.info(f"Converting mask {annotation.id} to YOLO format with mask_type=AnnotationType.MASK")
+                logger.debug(f"Converting mask {annotation.id} to YOLO format with mask_type=AnnotationType.MASK")
                 updated_annotations.append(annotation.value.to_box(h=h, w=w, merge_boxes=merge_boxes))
             elif (annotation.type == AnnotationType.POLYGON and to_object_detection):
-                logger.info(f"Converting polygon {annotation.id} to YOLO format with mask_type=AnnotationType.POLYGON")
+                logger.debug(f"Converting polygon {annotation.id} to YOLO format with mask_type=AnnotationType.POLYGON")
                 updated_annotations.append(annotation.value.to_box(h=h, w=w))
 
             converted = [
@@ -680,7 +679,7 @@ class FileAnnotations(Base):
         self.assign_keypoints(target_ids=target_classes)
         for annotation in self.annotations:
             if annotation.type == AnnotationType.KEYPOINT:
-                logger.info(f"Converting keypoint {annotation.id} to YOLO format with bounding box {annotation.bounding_box_id}")
+                logger.debug(f"Converting keypoint {annotation.id} to YOLO format with bounding box {annotation.bounding_box_id}")
                 box = yolo_annotations_map.get(annotation.bounding_box_id, None)
                 
                 if box is None:
@@ -693,7 +692,7 @@ class FileAnnotations(Base):
                 yolo_annotations[idx] = box
                 
         if len(yolo_annotations) == 0:
-            logger.warning(f"No annotations found for file {self.path}")
+            logger.debug(f"No annotations found for file {self.path}")
         return yolo_annotations, label_ids
 
 
@@ -770,10 +769,10 @@ class Dataset(Base):
             for file_ann in self.files:
                 file_ann.annotations = [ann for ann in file_ann.annotations if ann.label_id not in delete_ids]
                 file_ann.predictions = [ann for ann in file_ann.predictions if ann.label_id not in delete_ids]
-            logger.info(f"Deleted annotations for labels {delete_ids}")
+            logger.debug(f"Deleted annotations for labels {delete_ids}")
             
             target_label_ids = target_classes
-            logger.info(f"Updated label ids {self.labels}")
+            logger.debug(f"Updated label ids {self.labels}")
         
         # generate label counts 
         label_counts = {}
@@ -793,7 +792,7 @@ class Dataset(Base):
                 label_idx += 1
         
 
-        logger.info(f"Label counts: {label_counts}")
+        logger.debug(f"Label counts: {label_counts}")
                     
         n_kpts = 0
         image_to_labels = {}
@@ -801,7 +800,7 @@ class Dataset(Base):
         for file_ann in self.files:
             file_path = file_ann.path
             
-            logger.info(f"Processing file {file_path}")
+            logger.debug(f"Processing file {file_path}")
             if file_path not in image_to_labels:
                 image_to_labels[file_path] = []
 

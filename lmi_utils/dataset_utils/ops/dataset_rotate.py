@@ -10,7 +10,6 @@ from label_utils.bbox_utils import rotate, get_rotated_bbox
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def order_points(pts):
@@ -78,7 +77,7 @@ def rotate_dataset(dataset, images,angle,counter_clockwise=False):
         angle = -angle
     for file in dataset.files:
         
-        logger.info(f'rotating {os.path.basename(file.path)} with angle {angle} degrees counter_clockwise : {counter_clockwise}')
+        logger.debug(f'rotating {os.path.basename(file.path)} with angle {angle} degrees counter_clockwise : {counter_clockwise}')
         
         img = images[file.path]
         

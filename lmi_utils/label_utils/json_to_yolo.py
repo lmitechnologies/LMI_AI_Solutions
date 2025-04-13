@@ -11,7 +11,6 @@ import shutil
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 def args():
     ap = argparse.ArgumentParser()
@@ -59,7 +58,7 @@ def write_txts(fname_to_rows, path_txts, fnames,file_id_map):
                     row2 += f'{pt:.4f} '
                 row2 += '\n'
                 f.write(row2)
-    logger.info(f' wrote {len(fnames) if fnames is not None else len(fname_to_rows)} txt files to {path_txts}')
+    logger.debug(f' wrote {len(fnames) if fnames is not None else len(fname_to_rows)} txt files to {path_txts}')
 
 def update_file_dimensions(dataset, path_imgs):
     """
@@ -87,14 +86,14 @@ def copy_images_in_folder(path_img, path_out, fnames, file_id_map):
     if fnames is None:
         raise Exception('fnames cannot be None')
     for fname in fnames:
-        logger.info(f'copying {fname}')
+        logger.debug(f'copying {fname}')
         out_name = os.path.basename(fname)
         file_id = file_id_map[fname]
         if f'id{file_id}_' not in out_name:
             out_name = f'id{file_id}_{out_name}'
         shutil.copy(os.path.join(path_img, fname), os.path.join(path_out, out_name))
     
-    logger.info(f'copied {len(fnames)} images to {path_out}')
+    logger.debug(f'copied {len(fnames)} images to {path_out}')
 
 def convert_to_yolo(args):
     path_train_imgs = args['path_train_imgs']
@@ -165,8 +164,8 @@ def convert_to_yolo(args):
     val_files = list(val_yolo_dataset['image_labels'].keys())
     
     
-    logger.info(f'train files: {len(train_files)}')
-    logger.info(f'val files: {len(val_files)}')
+    logger.debug(f'train files: {len(train_files)}')
+    logger.debug(f'val files: {len(val_files)}')
     
 
     write_txts(train_yolo_dataset['image_labels'], path_txts=path_txts_train, fnames=train_files, file_id_map=train_file_id_map)
