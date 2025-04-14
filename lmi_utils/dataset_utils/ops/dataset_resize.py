@@ -8,7 +8,6 @@ from image_utils.img_resize import resize
 
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 def resize_annotations(shapes, orig_h: int, orig_w: int, new_h: int, new_w: int):
     """resize shapes in-place
@@ -44,7 +43,7 @@ def resize_annotated_image(image: np.ndarray, annotations: list[Annotation], wid
         im_out = image
     else:
         if maintain_aspect_ratio:
-            scale = max(tw,th) / max(w,h)
+            scale = min(th / h, tw / w)
             tw = np.int32(scale * w)
             th = np.int32(scale * h)
             im_out = resize(image, width=tw, height=th)            
@@ -81,9 +80,9 @@ def resize_dataset(dataset, images, output_imsize, maintain_aspect_ratio=False):
         file_path = f.path
         im = images[file_path]
       
-        im_out, annot_out = resize_annotated_image(image=im, annotations=f.annotations, width=output_imsize[1], height=output_imsize[0], maintain_aspect_ratio=maintain_aspect_ratio)
+        im_out, annot_out = resize_annotated_image(image=im, annotations=f.annotations, width=output_imsize[0], height=output_imsize[1], maintain_aspect_ratio=maintain_aspect_ratio)
 
-        logger.info(f'resize {file_path} from w:{im.shape[1]} h:{im.shape[0]} to w:{im_out.shape[1]} h:{im_out.shape[0]}')
+        logger.debug(f'resize {file_path} from w:{im.shape[1]} h:{im.shape[0]} to w:{im_out.shape[1]} h:{im_out.shape[0]}')
 
         f.height =  im_out.shape[0]
         f.width = im_out.shape[1]
