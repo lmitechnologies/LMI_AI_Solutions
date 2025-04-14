@@ -11,7 +11,6 @@ from image_utils.img_resize import resize
 from gadget_utils.pipeline_utils import fit_array_to_size
 from label_utils.bbox_utils import rotate
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
 
 class AnnotationType(enum.Enum):
@@ -773,26 +772,23 @@ class Dataset(Base):
             
             target_label_ids = target_classes
             logger.debug(f"Updated label ids {self.labels}")
+        else:
+            target_label_ids = [label.id for label in self.labels]
+            logger.debug(f"Using all labels {target_label_ids}")
         
         # generate label counts 
-        label_counts = {}
-        for label in self.labels:
-            label_counts[label.id] = 0
-        for file_ann in self.files:
-            for annotation in file_ann.annotations:
-                if annotation.label_id in label_counts:
-                    label_counts[annotation.label_id] += 1
-        
-        # assign label ids if label_counts > 0
         label_id_index = {}
         label_idx = 0
-        for label in label_counts.keys():
-            if label_counts.get(label) > 0:
-                label_id_index[label] = label_idx
-                label_idx += 1
+        # generate label id index for labels that have annotations
+        # create a sequential index for the labels
+        for file_ann in self.files:
+            for annotation in file_ann.annotations:                    
+                if annotation.label_id in target_label_ids and annotation.label_id not in label_id_index:
+                    label_id_index[annotation.label_id] = label_idx
+                    label_idx += 1
         
-
-        logger.debug(f"Label counts: {label_counts}")
+        # sort the label_id_index by label id
+        label_id_index = dict(sorted(label_id_index.items(), key=lambda item: item[1]))
                     
         n_kpts = 0
         image_to_labels = {}
@@ -826,8 +822,6 @@ class Dataset(Base):
             label_ids.extend(file_label_ids)
             image_to_labels[file_path].extend(file_yolo)
         
-        label_ids = list(set(label_ids))
-        label_id_index = dict(sorted(label_id_index.items(), key=lambda item: item[1]))
         # generate the class map
         return dict(
             image_labels=image_to_labels,
