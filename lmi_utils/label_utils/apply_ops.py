@@ -10,6 +10,7 @@ from dataset_utils.representations import Dataset
 from dataset_utils.ops.dataset_resize import resize_dataset
 from dataset_utils.ops.dataset_pad import pad_dataset
 from dataset_utils.ops.dataset_rotate import rotate_dataset
+from dataset_utils.ops.dataset_crop_by_label import crop_dataset_by_label
 
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,7 @@ def parse_args():
     
     # Create subparsers for each operation
     subparsers = parser.add_subparsers(dest='operation', required=True,
-                                       help='Image operation to perform (resize, pad, or rotate)')
+                                       help='Image operation to perform (resize, pad, rotate, crop).')
     
     # Create a parent parser for commands that require dimensions
     dim_parser = argparse.ArgumentParser(add_help=False)
@@ -125,11 +126,19 @@ def parse_args():
     )
     
     rotate_parser.add_argument('--counter-clockwise', action='store_true', help='rotate the images counter-clockwise', default=False, required=False)
+    
+    # crop by label parser
+    crop_by_label = subparsers.add_parser('crop', help='Crop images by label')
+    
+    crop_by_label.add_argument(
+        '--target_label', type=str, required=True,
+        help='Bbox label to crop images and labels.'
+    )
+    
     return vars(parser.parse_args())
 
 
 def apply_ops(args):
-    
     if args.get('width', None) == 0:
         args['width'] = None
     if args.get('height', None) == 0:
@@ -170,13 +179,21 @@ def apply_ops(args):
             if args['width'] is not None and args['height'] is not None:
                 output_images, output_dataset = pad_dataset(output_dataset, output_images, output_imsize)
     
+    # pad images
     elif args['operation'] == 'pad':
         logger.debug(f'Padding images to size: {output_imsize}')
         output_images, output_dataset = pad_dataset(dataset, images, output_imsize, crop_warning_level=crop_warning_level)
     
+    # rotate images
     elif args['operation'] == 'rotate':
         logger.debug(f'Rotating images by {args["angle"]} degrees')
         output_images, output_dataset = rotate_dataset(dataset, images, args['angle'], args['counter_clockwise'])
+    
+    # crop images by label
+    elif args['operation'] == 'crop':
+        logger.debug(f'Cropping images by label: {args["target_label"]}')
+        output_images, output_dataset = crop_dataset_by_label(dataset, images, args['target-label'])
+    
     
     if not args['bg']:
         # remove files with no annotations
