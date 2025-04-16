@@ -135,7 +135,7 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
                     y_min=cropped_bbox[1],
                     x_max=cropped_bbox[2],
                     y_max=cropped_bbox[3],
-                    angle=annot.angle,
+                    angle=angle,
                 )
                 updated_annotations.append(
                     BoxAnnotation(
