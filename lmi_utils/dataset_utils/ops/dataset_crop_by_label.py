@@ -101,6 +101,8 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
     
     # delete all the empty files
     dataset.delete_empty_files()
+    # delete the target label annotations
+    dataset.delete_label(target_label)
     
     for file in dataset.files:
         if len(crop_labels[file.path]['label']) == 0:
