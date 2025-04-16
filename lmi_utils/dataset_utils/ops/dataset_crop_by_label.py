@@ -32,7 +32,7 @@ def crop_kp(bbox, shape):
     valid = True
     if x<0 or x>=w or y<0 or y>=h:
         valid = False
-        logger.warning(f'in {shape.im_name}, keypoint {x:.4f},{y:.4f} is out of the foreground bbox: {x1:.4f},{y1:.4f},{x2:.4f},{y2:.4f}. skip')
+        logger.warning(f'in {shape.im_name}, keypoint {x:.4f},{y:.4f} is out of the label bbox: {x1:.4f},{y1:.4f},{x2:.4f},{y2:.4f}. skip')
     
     return x,y,valid
 
@@ -77,14 +77,14 @@ def crop_mask(bbox, mask=None, polygon_mask=None, bbox_format="xywh"):
 
 def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=logging.DEBUG):
     
-    # determine the foreground labels for each of the files
-    foreground_labels = {}
+    # determine the label labels for each of the files
+    crop_labels = {}
     cropped_images = {}
     for file in dataset.files:
         
-        if file.path not in foreground_labels:
-            foreground_labels[file.path] = {
-                'foreground': []
+        if file.path not in crop_labels:
+            crop_labels[file.path] = {
+                'label': []
             }
         
         filtered_annotations = [
@@ -92,23 +92,23 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
         ]
         
         if len(filtered_annotations) == 0:
-            logger.warning(f'no foreground found in {file.path}')
+            logger.warning(f'no label found in {file.path}')
             continue
         
         if len(filtered_annotations) > 1:
-            raise ValueError(f'more than one foreground found in {file.path}')
+            raise ValueError(f'more than one label found in {file.path}')
         
-        foreground_labels[file.path]['foreground'] = filtered_annotations[0].value.to_numpy()
+        crop_labels[file.path]['label'] = filtered_annotations[0].value.to_numpy()
     
     for file in dataset.files:
-        if len(foreground_labels[file.path]['foreground']) == 0:
-            logger.warning(f'no foreground found in {file.path}')
+        if len(crop_labels[file.path]['label']) == 0:
+            logger.warning(f'no label found in {file.path}')
             # set the file to be deleted unless if needed to be used as background
             file.annotations = [] 
             continue
         
-        crop_box = foreground_labels[file.path]['foreground'][:-1]
-        cangle = foreground_labels[file.path]['foreground'][-1]
+        crop_box = crop_labels[file.path]['label'][:-1]
+        cangle = crop_labels[file.path]['label'][-1]
         crop_box = np.array(crop_box).astype(np.int32)
         if cangle > 0:
             raise Exception(f'Obb is not supported')
