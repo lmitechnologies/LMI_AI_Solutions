@@ -77,7 +77,6 @@ def load_yolo_labels(lb_file, im_file, shape, keypoint=False, nkpt=0, ndim=2, nu
                 classes = np.array([x[0] for x in lb], dtype=np.float32)
                 segments = [np.array(x[1:], dtype=np.float32).reshape(-1, 2) for x in lb]
                 lb = np.concatenate((classes.reshape(-1, 1), segments2boxes(segments)), axis=1)
-            print(f'lb: {lb}')
             lb = np.array(lb, dtype=np.float32)
             classes = lb[:, 0]
             if len(classes) == 0:
@@ -181,8 +180,8 @@ if __name__ == "__main__":
                     segment[i][0] = segment[i][0] * w
                     segment[i][1] = segment[i][1] * h
                 class_id = int(labels["classes"][idx])
-            color = color_map[class_id]
-            plot_one_polygon(segment, image, color=color, label=id_to_class[int(class_id)])
+                color = color_map[class_id]
+                plot_one_polygon(segment, image, color=color, label=id_to_class[int(class_id)])
         
         if labels['keypoints'] is not None:
             for idx, keypoint in enumerate(labels["keypoints"]):
