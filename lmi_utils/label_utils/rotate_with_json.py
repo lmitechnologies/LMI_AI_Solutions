@@ -184,7 +184,8 @@ def rotate_dataset(dataset, angle, path_imgs,path_out,counter_clockwise=False, s
         file.path = os.path.relpath(updated_file_path, path_out)
     return dataset
 
-def main(args):
+def main():
+    args = get_args()
     path_imgs = args['path_imgs']
     path_json = args['path_json']
     path_out_images = args['path_out_images']
@@ -221,8 +222,4 @@ def main(args):
     dataset.save(out_json)
 
 if __name__ == '__main__':
-    args = get_args()
-    main(args)
-        
-        
-        
+    main()
