@@ -7,6 +7,10 @@ name = "lmi_utils"
 version = "0.0.0"
 description = "Utility functions and scripts for LMI AI Solutions."
 dependencies = [
+    "opencv-python",
+    "pycocotools",
+    "torch",
+    "label-studio-sdk"
 ]
 
 [tool.setuptools]
@@ -14,6 +18,7 @@ packages = ["data_utils", "eval_utils", "gadget_utils", "image_utils", "label_ut
 
 [project.scripts]
 # label utils commands
+labels-preprocess = "label_utils.apply_ops:main"
 labels-resize = "label_utils.resize_with_json:main"
 labels-pad = "label_utils.pad_with_json:main"
 labels-rotate = "label_utils.rotate_with_json:main"
