@@ -48,7 +48,6 @@ def generate_image_name(image_name, args):
 def save_dataset(dataset, images,path_out_images, out_json, args):
     for f in dataset.files:
         file_path = f.path
-        print(dataset.files)
         im_out = images[file_path]
         im_name = os.path.basename(file_path)
         out_h, out_w = im_out.shape[:2]
