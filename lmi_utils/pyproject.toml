@@ -19,9 +19,6 @@ packages = ["data_utils", "eval_utils", "gadget_utils", "image_utils", "label_ut
 [project.scripts]
 # label utils commands
 labels-preprocess = "label_utils.apply_ops:main"
-labels-resize = "label_utils.resize_with_json:main"
-labels-pad = "label_utils.pad_with_json:main"
-labels-rotate = "label_utils.rotate_with_json:main"
 labels-convert-yolo = "label_utils.json_to_yolo:main"
 labels-convert-lst = "label_utils.lst_to_json:main"
 # feel free to add more label utils commands here
