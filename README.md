@@ -60,16 +60,19 @@ where ``PATH_TO_REPO`` is the path to the LMI_AI_Solutions repo.
 
 #### Using pip
 
-Installing latest
+Installing latest from git
 
 ```bash
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=lmi_utils&subdirectory=lmi_utils"
-```
-```bash
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=object_detectors&subdirectory=object_detectors"
-```
-```bash
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=anomaly_detectors&subdirectory=anomaly_detectors"
+```
+Installing from source
+
+```bash
+cd LMI_AI_Solutions && pip install -e lmi_utils
+cd LMI_AI_Solutions && pip install -e object_detectors
+cd LMI_AI_Solutions && pip install -e anomaly_detectors
 ```
 #### Runing Scripts
 1. Run any scripts in this repo, for example:
