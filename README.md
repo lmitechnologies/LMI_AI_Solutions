@@ -1,5 +1,9 @@
-<div align="center">
-  <img src="assets/images/FactorySmartAI_Logo.png" alt="Descriptive text for your image">
+<div style="text-align: center;"> 
+    <picture>
+        <source srcset="assets/images/FactorySmartAI_Logo_dark.png" media="(prefers-color-scheme: dark)">
+        <source srcset="assets/images/FactorySmartAI_Logo_light.png" media="(prefers-color-scheme: light)">
+        <img src="assets/images/FactorySmartAI_Logo_light.png" alt="FactorySmartAI Logo">
+    </picture>
 </div>
 
 # <img src="assets/images/lmi.png" width="20"/> LMI AI Solutions
