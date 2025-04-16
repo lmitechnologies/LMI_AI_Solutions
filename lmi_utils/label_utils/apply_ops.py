@@ -2,7 +2,6 @@ import cv2
 import argparse
 import os
 import argparse
-import numpy as np
 import logging
 
 #LMI packages
@@ -10,6 +9,7 @@ from dataset_utils.representations import Dataset
 from dataset_utils.ops.dataset_resize import resize_dataset
 from dataset_utils.ops.dataset_pad import pad_dataset
 from dataset_utils.ops.dataset_rotate import rotate_dataset
+from dataset_utils.ops.dataset_crop_by_label import crop_dataset_by_label
 
 
 logger = logging.getLogger(__name__)
@@ -36,8 +36,13 @@ def generate_image_name(image_name, args):
         out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}_{args['width']}x{args['height']}" + '.png'
     elif args['operation'] == 'pad':
         out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}_{args['width']}x{args['height']}" + '.png'
-    else:
+    elif args['operation'] == 'rotate':
         out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}_{-1*args['angle']}" + '.png' # -1 so that the angle is positive for clockwise rotation
+    elif args['operation'] == 'crop-by-label':
+        out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}_{args['target_label']}" + '.png'
+    else:
+        out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}" + '.png'
+    
     return out_name
 
 def save_dataset(dataset, images,path_out_images, out_json, args):
@@ -96,7 +101,7 @@ def parse_args():
     
     # Create subparsers for each operation
     subparsers = parser.add_subparsers(dest='operation', required=True,
-                                       help='Image operation to perform (resize, pad, or rotate)')
+                                       help='Image operation to perform (resize, pad, rotate, crop).')
     
     # Create a parent parser for commands that require dimensions
     dim_parser = argparse.ArgumentParser(add_help=False)
@@ -125,11 +130,19 @@ def parse_args():
     )
     
     rotate_parser.add_argument('--counter-clockwise', action='store_true', help='rotate the images counter-clockwise', default=False, required=False)
+    
+    # crop by label parser
+    crop_by_label = subparsers.add_parser('crop-by-label', help='Crop images by label')
+    
+    crop_by_label.add_argument(
+        '--target_label', type=str, required=True,
+        help='Bbox label to crop images and labels.'
+    )
+    
     return vars(parser.parse_args())
 
 
 def apply_ops(args):
-    
     if args.get('width', None) == 0:
         args['width'] = None
     if args.get('height', None) == 0:
@@ -145,7 +158,8 @@ def apply_ops(args):
     path_out = args['path_out_images']
     path_json = args['path_json'] if os.path.isfile(args['path_json']) else os.path.join(path_imgs, args['path_json'])
     out_json = args['path_out_json']
-    #check if annotation exists
+    
+    # check if annotation exists
     if not os.path.isfile(path_json):
         raise Exception(f'cannot find file: {path_json}. Please create an empty json file, if there are no labels.')
     
@@ -163,20 +177,28 @@ def apply_ops(args):
     output_images = images
     output_dataset = dataset
     # perform operation
+    
+    # Resize images
     if args['operation'] == 'resize':
-        # Resize images
         output_images, output_dataset = resize_dataset(dataset, images, output_imsize, args['par'])
         if args['par']:
             if args['width'] is not None and args['height'] is not None:
                 output_images, output_dataset = pad_dataset(output_dataset, output_images, output_imsize)
     
+    # Pad images
     elif args['operation'] == 'pad':
         logger.debug(f'Padding images to size: {output_imsize}')
         output_images, output_dataset = pad_dataset(dataset, images, output_imsize, crop_warning_level=crop_warning_level)
     
+    # Rotate images
     elif args['operation'] == 'rotate':
         logger.debug(f'Rotating images by {args["angle"]} degrees')
         output_images, output_dataset = rotate_dataset(dataset, images, args['angle'], args['counter_clockwise'])
+    
+    # Crop images by label
+    elif args['operation'] == 'crop-by-label':
+        logger.debug(f'Cropping images by label: {args["target_label"]}')
+        output_images, output_dataset = crop_dataset_by_label(dataset, images, args['target_label'])
     
     if not args['bg']:
         # remove files with no annotations

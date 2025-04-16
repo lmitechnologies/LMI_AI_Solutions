@@ -1,4 +1,12 @@
-# LMI AI Solutions
+<div style="text-align: center;"> 
+    <picture>
+        <source srcset="assets/images/FactorySmartAI_Logo_dark.png" media="(prefers-color-scheme: dark)">
+        <source srcset="assets/images/FactorySmartAI_Logo_light.png" media="(prefers-color-scheme: light)">
+        <img src="assets/images/FactorySmartAI_Logo_light.png" alt="FactorySmartAI Logo">
+    </picture>
+</div>
+
+# <img src="assets/images/lmi.png" width="20"/> LMI AI Solutions
 This repo contains the utils scripts, and several submodules for LMI Technologies Inc. AI modeling development.
 Currently, the following models are supported in the repo:
 + object detection
@@ -12,12 +20,12 @@ Currently, the following models are supported in the repo:
 - OCR
     - [paddleOCR](https://github.com/lmitechnologies/models)
 
-## Clone this master repo
+## Clone this repo
 For users who haven't set up the ssh keys
 ```bash
 git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 ```
-For users who have the ssh keys
+For users who have setup ssh keys
 ```bash
 git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 # npm using git for https
@@ -25,8 +33,8 @@ git config --global url."git@github.com:".insteadOf https://github.com/
 git config --global url."git://".insteadOf https://
 ```
 
-## Clone submodules
-Go to the master repo
+### Clone submodules
+Go to the repo and run the following commands 
 ```bash
 cd LMI_AI_Solutions
 ```
@@ -39,21 +47,36 @@ git submodule update --init
 git submodule update --init --remote
 ```
 
-## Use this repo
-1. Activate the environmental file - [lmi_ai.env](https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/lmi_ai.env): 
+### Use this repo
+To utilize the following repo you have two options
+
+#### Using the environment file
+Activate the environmental file - [lmi_ai.env](https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/lmi_ai.env): 
+
 ```bash
 source PATH_TO_REPO/lmi_ai.env
 ```
 where ``PATH_TO_REPO`` is the path to the LMI_AI_Solutions repo.  
 
-2. Installing using pip
-   ```
-   cd LMI_AI_Solutions && pip install -e lmi_utils
-   cd LMI_AI_Solutions && pip install -e object_detectors
-   cd LMI_AI_Solutions && pip install -e anomaly_detectors
-   ```
+#### Using pip
 
-3. Run any scripts in this repo, for example:
+Installing latest from git
+
+```bash
+pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=lmi_utils&subdirectory=lmi_utils"
+pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=object_detectors&subdirectory=object_detectors"
+pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=anomaly_detectors&subdirectory=anomaly_detectors"
+```
+Installing from source
+
+```bash
+cd LMI_AI_Solutions && pip install -e lmi_utils
+cd LMI_AI_Solutions && pip install -e object_detectors
+cd LMI_AI_Solutions && pip install -e anomaly_detectors
+```
+#### Runing Scripts
+1. Run any scripts in this repo, for example:
+
 ```bash
 python -m label_utils.plot_labels -h
 ```

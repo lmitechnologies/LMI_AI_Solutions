@@ -90,8 +90,6 @@ class Point2d(Base):
     def to_yolo(self, h, w, **kwargs):
         return [[self.x / w, self.y / h]]
         
-
-
 @dataclass
 class Box(Base):
     x_min: float
@@ -348,7 +346,6 @@ class Mask(Base):
                 boxes.append(Box(x_min=x, y_min=y, x_max=x + w_box, y_max=y + h_box, angle=0))
             return boxes
 
-
 @dataclass
 class Label(Base):
     id: str
@@ -364,7 +361,6 @@ class Label(Base):
     @classmethod
     def from_dict(cls, data: dict) -> "Label":
         return cls(id=data["id"], color=data.get("color", None), annotation_type=data.get("annotation_type", None))
-
 
 @dataclass
 class Annotation(Base):
@@ -409,8 +405,6 @@ class Annotation(Base):
         else:
             raise ValueError(f"Unsupported annotation type: {ann_type}")
     
-
-
 class BoxAnnotation(Annotation):
     value: Box
     def __init__(
@@ -440,7 +434,6 @@ class BoxAnnotation(Annotation):
     def to_yolo(self, h, w, **kwargs):
         return self.value.to_yolo(h, w, **kwargs)
 
-
 class MaskAnnotation(Annotation):
     value: Mask
 
@@ -469,7 +462,6 @@ class MaskAnnotation(Annotation):
 
     def to_yolo(self, h, w, **kwargs):
         return self.value.to_yolo(h, w, **kwargs)
-
 
 class KeypointAnnotation(Annotation):
     value: Point2d
@@ -719,9 +711,8 @@ class Dataset(Base):
         return os.path.dirname(common_prefix)
     
     def delete_empty_files(self):
-        for idx, file_ann in enumerate(self.files):
-            if not file_ann.has_annotations:
-                del self.files[idx]
+        """Delete files that have no annotations."""
+        self.files = [file_ann for file_ann in self.files if file_ann.has_annotations]
         return self
     
     def files_to_relative(self):
@@ -741,17 +732,10 @@ class Dataset(Base):
         raise ValueError(f"Label id {label_id} not found.")
     
     def delete_label(self, label_id: str):
-        for idx, label in enumerate(self.labels):
-            if label.id == label_id:
-                del self.labels[idx]
-                break
+        self.labels = [label for label in self.labels if label.id != label_id]
         for file_ann in self.files:
-            for annotation in file_ann.annotations:
-                if annotation.label_id == label_id:
-                    file_ann.delete_annotation(annotation.id)
-            for annotation in file_ann.predictions:
-                if annotation.label_id == label_id:
-                    file_ann.delete_annotation(annotation.id, list_type="predictions")
+            file_ann.annotations = [ann for ann in file_ann.annotations if ann.label_id != label_id]
+            file_ann.predictions = [ann for ann in file_ann.predictions if ann.label_id != label_id]
         return self
     
 
