@@ -1,12 +1,9 @@
 
 import numpy as np
-import os
-import cv2
-import collections
 import logging
 
 #LMI packages
-from dataset_utils.representations import AnnotationType, Box, Mask, Polygon, Point2d, BoxAnnotation, MaskAnnotation, PolygonAnnotation
+from dataset_utils.representations import Box, Mask, Polygon, BoxAnnotation, MaskAnnotation, PolygonAnnotation
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +73,7 @@ def crop_mask(bbox, mask=None, polygon_mask=None, bbox_format="xywh"):
     return cropped_mask, cropped_polygon
 
 def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=logging.DEBUG):
+    logger.setLevel(crop_warning_level)
     
     # determine the label labels for each of the files
     crop_labels = {}
@@ -93,6 +91,7 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
         
         if len(filtered_annotations) == 0:
             logger.warning(f'no label found in {file.path}')
+            file.annotations = []
             continue
         
         if len(filtered_annotations) > 1:
@@ -100,11 +99,12 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
         
         crop_labels[file.path]['label'] = filtered_annotations[0].value.to_numpy()
     
+    # delete all the empty files
+    dataset.delete_empty_files()
+    
     for file in dataset.files:
         if len(crop_labels[file.path]['label']) == 0:
             logger.warning(f'no label found in {file.path}')
-            # set the file to be deleted unless if needed to be used as background
-            file.annotations = [] 
             continue
         
         crop_box = crop_labels[file.path]['label'][:-1]
@@ -203,6 +203,8 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
         file.height = cropped_image.shape[0]
         file.width = cropped_image.shape[1]
         file.annotations = updated_annotations
+        
+
         
     return cropped_images, dataset
         

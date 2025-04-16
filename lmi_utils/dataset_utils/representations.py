@@ -740,17 +740,10 @@ class Dataset(Base):
         raise ValueError(f"Label id {label_id} not found.")
     
     def delete_label(self, label_id: str):
-        for idx, label in enumerate(self.labels):
-            if label.id == label_id:
-                del self.labels[idx]
-                break
+        self.labels = [label for label in self.labels if label.id != label_id]
         for file_ann in self.files:
-            for annotation in file_ann.annotations:
-                if annotation.label_id == label_id:
-                    file_ann.delete_annotation(annotation.id)
-            for annotation in file_ann.predictions:
-                if annotation.label_id == label_id:
-                    file_ann.delete_annotation(annotation.id, list_type="predictions")
+            file_ann.annotations = [ann for ann in file_ann.annotations if ann.label_id != label_id]
+            file_ann.predictions = [ann for ann in file_ann.predictions if ann.label_id != label_id]
         return self
     
 
