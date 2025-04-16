@@ -90,8 +90,6 @@ class Point2d(Base):
     def to_yolo(self, h, w, **kwargs):
         return [[self.x / w, self.y / h]]
         
-
-
 @dataclass
 class Box(Base):
     x_min: float
@@ -348,7 +346,6 @@ class Mask(Base):
                 boxes.append(Box(x_min=x, y_min=y, x_max=x + w_box, y_max=y + h_box, angle=0))
             return boxes
 
-
 @dataclass
 class Label(Base):
     id: str
@@ -364,7 +361,6 @@ class Label(Base):
     @classmethod
     def from_dict(cls, data: dict) -> "Label":
         return cls(id=data["id"], color=data.get("color", None), annotation_type=data.get("annotation_type", None))
-
 
 @dataclass
 class Annotation(Base):
@@ -409,8 +405,6 @@ class Annotation(Base):
         else:
             raise ValueError(f"Unsupported annotation type: {ann_type}")
     
-
-
 class BoxAnnotation(Annotation):
     value: Box
     def __init__(
@@ -440,7 +434,6 @@ class BoxAnnotation(Annotation):
     def to_yolo(self, h, w, **kwargs):
         return self.value.to_yolo(h, w, **kwargs)
 
-
 class MaskAnnotation(Annotation):
     value: Mask
 
@@ -469,7 +462,6 @@ class MaskAnnotation(Annotation):
 
     def to_yolo(self, h, w, **kwargs):
         return self.value.to_yolo(h, w, **kwargs)
-
 
 class KeypointAnnotation(Annotation):
     value: Point2d

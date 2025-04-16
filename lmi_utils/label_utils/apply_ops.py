@@ -38,7 +38,7 @@ def generate_image_name(image_name, args):
         out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}_{args['width']}x{args['height']}" + '.png'
     elif args['operation'] == 'rotate':
         out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}_{-1*args['angle']}" + '.png' # -1 so that the angle is positive for clockwise rotation
-    elif args['operation'] == 'crop':
+    elif args['operation'] == 'crop-by-label':
         out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}_{args['target_label']}" + '.png'
     else:
         out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}" + '.png'
@@ -132,7 +132,7 @@ def parse_args():
     rotate_parser.add_argument('--counter-clockwise', action='store_true', help='rotate the images counter-clockwise', default=False, required=False)
     
     # crop by label parser
-    crop_by_label = subparsers.add_parser('crop', help='Crop images by label')
+    crop_by_label = subparsers.add_parser('crop-by-label', help='Crop images by label')
     
     crop_by_label.add_argument(
         '--target_label', type=str, required=True,
@@ -196,7 +196,7 @@ def apply_ops(args):
         output_images, output_dataset = rotate_dataset(dataset, images, args['angle'], args['counter_clockwise'])
     
     # Crop images by label
-    elif args['operation'] == 'crop':
+    elif args['operation'] == 'crop-by-label':
         logger.debug(f'Cropping images by label: {args["target_label"]}')
         output_images, output_dataset = crop_dataset_by_label(dataset, images, args['target_label'])
     
