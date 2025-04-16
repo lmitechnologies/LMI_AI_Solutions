@@ -36,9 +36,8 @@ def crop_kp(bbox, shape):
     
     return x,y,valid
 
-
 def crop_bbox(bbox1, bbox2):
-    crop_x1, crop_y1, crop_x2, crop_y2 = bbox1
+    crop_x1, crop_y1, _, _ = bbox1
     target_x1, target_y1, target_x2, target_y2 = bbox2
     adjusted_x1 = target_x1 - crop_x1
     adjusted_y1 = target_y1 - crop_y1
