@@ -719,9 +719,8 @@ class Dataset(Base):
         return os.path.dirname(common_prefix)
     
     def delete_empty_files(self):
-        for idx, file_ann in enumerate(self.files):
-            if not file_ann.has_annotations:
-                del self.files[idx]
+        """Delete files that have no annotations."""
+        self.files = [file_ann for file_ann in self.files if file_ann.has_annotations]
         return self
     
     def files_to_relative(self):

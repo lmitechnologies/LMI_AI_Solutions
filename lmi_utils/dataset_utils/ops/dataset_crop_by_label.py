@@ -82,16 +82,20 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
     foreground_labels = {}
     cropped_images = {}
     for file in dataset.files:
+        
         if file.path not in foreground_labels:
             foreground_labels[file.path] = {
                 'foreground': []
             }
+        
         filtered_annotations = [
             annot for annot in file.annotations if annot.label_id == target_label
         ]
+        
         if len(filtered_annotations) == 0:
             logger.warning(f'no foreground found in {file.path}')
             continue
+        
         if len(filtered_annotations) > 1:
             raise ValueError(f'more than one foreground found in {file.path}')
         
@@ -100,12 +104,14 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
     for file in dataset.files:
         if len(foreground_labels[file.path]['foreground']) == 0:
             logger.warning(f'no foreground found in {file.path}')
+            # set the file to be deleted unless if needed to be used as background
+            file.annotations = [] 
             continue
         
         crop_box = foreground_labels[file.path]['foreground'][:-1]
-        angle = foreground_labels[file.path]['foreground'][-1]
+        cangle = foreground_labels[file.path]['foreground'][-1]
         crop_box = np.array(crop_box).astype(np.int32)
-        if angle > 0:
+        if cangle > 0:
             raise Exception(f'Obb is not supported')
         
         cx1, cy1, cx2, cy2 = crop_box   
@@ -117,7 +123,7 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
             
             # Bounding Box Annotation
             if isinstance(annot, BoxAnnotation):
-                x1, y1, x2, y2 = annot.value.to_numpy()
+                x1, y1, x2, y2, angle = annot.value.to_numpy()
                 #check if the box is inside the crop box
                 if x1 < cx1 or y1 < cy1 or x2 > cx2 or y2 > cy2:
                     logger.warning(f'box {annot.id} is out of the crop box, skip')
@@ -137,7 +143,6 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
                         value=annotation,
                         label_id=annot.label_id,
                         confidence=annot.confidence,
-                        type=annot.type,
                         link=annot.link,
                         iou=annot.iou,
                     )
@@ -145,7 +150,7 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
             
             # Mask Annotation
             elif isinstance(annot, MaskAnnotation):
-                mask = annot.value.to_numpy()
+                mask = annot.value.to_numpy(h=file.height, w=file.width)
                 cropped_mask, _ = crop_mask([cx1, cy1,cx2,cy2], mask=mask, bbox_format="xyxy")
                 if cropped_mask is None:
                     logger.warning(f'mask {annot.id} is out of the crop box, skip')
@@ -159,7 +164,6 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
                         value=annotation,
                         label_id=annot.label_id,
                         confidence=annot.confidence,
-                        type=annot.type,
                         link=annot.link,
                         iou=annot.iou,
                     )
@@ -181,7 +185,6 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
                         value=annotation,
                         label_id=annot.label_id,
                         confidence=annot.confidence,
-                        type=annot.type,
                         link=annot.link,
                         iou=annot.iou,
                     )
