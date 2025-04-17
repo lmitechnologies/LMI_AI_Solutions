@@ -32,16 +32,25 @@ class ObjectDetector(ODBase):
         """
         Override __new__ to return the appropriate wrapper instance based on version, model_name, and task.
         """
-        framework = metadata.get('framework', None)
-        model_name = metadata.get('model_name', None)
-        task = metadata.get('task', None)
-        version = metadata.get('version', None)
+        framework = metadata.get('framework') or metadata.get('package')
+        model_name = metadata.get('model_name') or metadata.get('algorithm')
+        task = metadata.get('task') or metadata.get('model_type')
+        version = metadata.get('version', 'v1') # Default version
         info = metadata.get('info', {})
-        if not all([framework, model_name, task, version]):
-            raise ValueError("Framework, model_name, task, and version must be specified.")
-        key = (framework, model_name, task, version, json.dumps(info))
+        model_path = metadata.get('model_path', None)
+        
+        if not all([framework.lower(), model_name.lower(), task.lower()]):
+            raise ValueError("framework/package, model_name/algorithm, task/model_type must be specified.")
+        
+        key = (framework.lower(), model_name.lower(), task.lower(), version, json.dumps(info))
+        
         if key not in cls._registry:
             raise ValueError(f"No class found for version={version}, model_name='{model_name}', task='{task}', framework='{framework}', metadata='{json.dumps(info)}'.")
+        
         wrapper_cls = cls._registry[key]
-        return wrapper_cls(*args, **kwargs)
+        
+        if model_path is not None:
+            return wrapper_cls(model_path, *args, **kwargs)
+        else:
+            return wrapper_cls(*args, **kwargs)
 

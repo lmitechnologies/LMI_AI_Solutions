@@ -38,7 +38,7 @@ def to_numpy(data):
         raise TypeError(f'Data type {type(data)} not supported')
 
 
-@ObjectDetector.register(metadata=dict(versions=['v1'], model_names=['yolov8', 'yolov11'], tasks=['od', 'seg'], frameworks=['ultralytics']))
+@ObjectDetector.register(metadata=dict(versions=['v1'], model_names=['yolo','yolov8', 'yolov11'], tasks=['od', 'seg', 'instancesegmentation', 'objectdetection'], frameworks=['ultralytics', 'ultralytics8']))
 class Yolo(ODBase):
     
     logger = logging.getLogger(__name__)
