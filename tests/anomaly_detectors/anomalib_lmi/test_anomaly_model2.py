@@ -87,7 +87,7 @@ def test_compare_results_with_anomalib_api(add_root_path):
     compare prediction results between current implementation and anomalib
     """
     model1 = TorchInferencer(MODEL_PATH)
-    model2 = AnomalyDetector(dict(framework='anomalib', model_name='padim', task='seg', version='v1'), MODEL_PATH)
+    model2 = AnomalyDetector(dict(framework='anomalib1', model_name='padim', task='seg', version='v1', model_path=MODEL_PATH))
     paths = glob.glob(os.path.join(DATA_PATH, '*.png'))
     for p in paths:
         # using anomalib code
@@ -121,11 +121,11 @@ def test_warmup(add_root_path):
     ad.warmup([256,224])
 
 def test_warmup_api(add_root_path):
-    ad = AnomalyDetector(dict(framework='anomalib', model_name='padim', task='seg', version='v1'), MODEL_PATH,224,112)
+    ad = AnomalyDetector(dict(framework='anomalib1', model_name='padim', task='seg', version='v1', model_path=MODEL_PATH),224,112)
     ad.warmup()
     ad.warmup([672,640])
     
-    ad = AnomalyDetector(dict(framework='anomalib', model_name='padim', task='seg', version='v1'), MODEL_PATH,224,112)
+    ad = AnomalyDetector(dict(framework='anomalib1', model_name='padim', task='seg', version='v1', model_path=MODEL_PATH),224,112)
     ad.warmup()
     ad.warmup([256,224])
     
@@ -141,10 +141,10 @@ def test_model(add_root_path):
     ad.test(DATA_PATH, OUTPUT_PATH)
 
 def test_model_api(add_root_path):
-    ad = AnomalyDetector(dict(framework='anomalib', model_name='padim', version='v1'), MODEL_PATH,224,224,'resize')
+    ad = AnomalyDetector(dict(framework='anomalib1', model_name='padim', version='v1', model_path=MODEL_PATH),224,224,'resize')
     ad.test(DATA_PATH, OUTPUT_PATH)
     
-    ad = AnomalyDetector(dict(framework='anomalib', model_name='padim', version='v1'), MODEL_PATH)
+    ad = AnomalyDetector(dict(framework='anomalib1', model_name='padim', version='v1', model_path=MODEL_PATH))
     ad.test(DATA_PATH, OUTPUT_PATH)
     
 def test_annotate(test_data, add_root_path):

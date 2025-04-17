@@ -93,7 +93,7 @@ def model_pose():
 @pytest.fixture
 def model_det_api():
     return [
-        ObjectDetector(metadata=dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='od', framework='ultralytics'), model_path=model) for model in OD_DET_MODELS
+        ObjectDetector(metadata=dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='od', framework='ultralytics', model_path=model)) for model in OD_DET_MODELS
     ]
 
 @pytest.fixture

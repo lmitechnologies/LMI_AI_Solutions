@@ -388,7 +388,7 @@ class Yolo(ODBase):
         return image
 
 
-@ObjectDetector.register(metadata=dict(versions=['v1'], model_names=['yolov8', 'yolov11'], tasks=['obb'], frameworks=['ultralytics']))
+@ObjectDetector.register(metadata=dict(versions=['v1'], model_names=['yolo','yolov8', 'yolov11'], tasks=['obb'], frameworks=['ultralytics', 'ultralytics8']))
 class YoloObb(Yolo):
     def __init__(self, model_path:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16)
@@ -530,7 +530,7 @@ class YoloObb(Yolo):
         time_info['postproc'] = time.time()-t0
         return results_dict, time_info
 
-@ObjectDetector.register(metadata=dict(versions=['v1'], model_names=['yolov8', 'yolov11'], tasks=['pose'], frameworks=['ultralytics']))
+@ObjectDetector.register(metadata=dict(versions=['v1'], model_names=['yolo','yolov8', 'yolov11'], tasks=['pose'], frameworks=['ultralytics', 'ultralytics8']))
 class YoloPose(Yolo):
     def __init__(self, model_path:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16)

@@ -12,7 +12,7 @@ class AnomalyDetector:
         model_names = metadata.get('model_names', None)
         tasks = metadata.get('tasks', ['seg'])
         versions = metadata.get('versions', None)
-        info = metadata.get('info', None)
+        info = metadata.get('info', {})
         
         def decorator(wrapper_cls):
             assert all([frameworks, model_names, tasks, versions]), "frameworks, model_names, tasks, and versions must be specified."
