@@ -20,7 +20,7 @@ MINIMUM_QUANT=1e-12
 Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
 
 
-@AnomalyDetector.register(metadata=dict(frameworks=['anomalib'], model_names=['patchcore', 'padim', 'efficientad'], tasks=['seg'], versions=['v1']))
+@AnomalyDetector.register(metadata=dict(frameworks=['anomalib1'], model_names=['patchcore', 'padim', 'efficientad'], tasks=['seg'], versions=['v1']))
 class AnomalyModel2(Anomalib_Base):
     '''
     Desc: Class used for AD model inference.
