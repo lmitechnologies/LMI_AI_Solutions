@@ -207,6 +207,8 @@ class Polygon(Base):
     
     def __init__(self, points: List[List[int]] = []):
         super().__init__()
+        if isinstance(points, np.ndarray):
+            points = points.astype(int).tolist()
         self.points = points
 
     @classmethod
