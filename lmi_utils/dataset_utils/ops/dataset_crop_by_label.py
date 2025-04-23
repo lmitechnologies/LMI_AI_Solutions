@@ -33,13 +33,24 @@ def crop_kp(bbox, shape):
     
     return x,y,valid
 
-def crop_bbox(bbox1, bbox2):
-    crop_x1, crop_y1, _, _ = bbox1
+def crop_bbox(bbox1, bbox2, clip=True):
+    crop_x1, crop_y1, crop_x2, crop_y2 = bbox1
     target_x1, target_y1, target_x2, target_y2 = bbox2
+    crop_width = crop_x2 - crop_x1
+    crop_height = crop_y2 - crop_y1
+    if crop_width <= 0 or crop_height <= 0:
+        return None
+
     adjusted_x1 = target_x1 - crop_x1
     adjusted_y1 = target_y1 - crop_y1
     adjusted_x2 = target_x2 - crop_x1
     adjusted_y2 = target_y2 - crop_y1
+    if clip:
+        adjusted_x1 = max(0, adjusted_x1)
+        adjusted_y1 = max(0, adjusted_y1)
+        adjusted_x2 = min(crop_width, adjusted_x2)
+        adjusted_y2 = min(crop_height, adjusted_y2)
+    
     return adjusted_x1, adjusted_y1, adjusted_x2, adjusted_y2
 
 def crop_mask(bbox, mask=None, polygon_mask=None, bbox_format="xywh"):
@@ -72,7 +83,7 @@ def crop_mask(bbox, mask=None, polygon_mask=None, bbox_format="xywh"):
     
     return cropped_mask, cropped_polygon
 
-def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=logging.DEBUG):
+def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=logging.DEBUG, clip=True):
     logger.setLevel(crop_warning_level)
     
     # determine the label labels for each of the files
@@ -125,12 +136,15 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
             # Bounding Box Annotation
             if isinstance(annot, BoxAnnotation):
                 x1, y1, x2, y2, angle = annot.value.to_numpy()
-                #check if the box is inside the crop box
+                # check if the box is inside the crop box
                 if x1 < cx1 or y1 < cy1 or x2 > cx2 or y2 > cy2:
-                    logger.warning(f'box {annot.id} is out of the crop box, skip')
-                    continue
+                    logger.warning(f'box {annot.id} is out of the crop box. bbox will be cropped to fit the target label bbox')
                 # crop the box
-                cropped_bbox = crop_bbox([cx1, cy1,cx2,cy2], [x1, y1, x2, y2])
+                cropped_bbox = crop_bbox([cx1, cy1,cx2,cy2], [x1, y1, x2, y2], clip=clip)
+                if cropped_bbox is None:
+                    logger.warning(f'box {annot.id} is height or width is 0, skip')
+                    continue
+                
                 annotation = Box(
                     x_min=cropped_bbox[0],
                     y_min=cropped_bbox[1],
@@ -206,7 +220,6 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
         file.width = cropped_image.shape[1]
         file.annotations = updated_annotations
         
-
         
     return cropped_images, dataset
         
