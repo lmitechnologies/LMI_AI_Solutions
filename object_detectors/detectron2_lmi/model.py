@@ -1,6 +1,6 @@
 from typing import Dict, List
 from od_core.od_base import ODBase
-from od_core.object_detector import ObjectDetector
+from od_core.object_detector_registry import ObjectDetectorRegistry
 import tensorrt as trt
 from cuda import cudart
 import numpy as np
@@ -13,7 +13,7 @@ import torch
 import torchvision
 import time
 
-@ObjectDetector.register(metadata=dict(versions=["v0"], model_names=["mask_rcnn", "faster_rcnn"], tasks=["od","seg"], frameworks=["detectron2"]))
+@ObjectDetectorRegistry.register(metadata=dict(versions=["v0"], model_names=["mask_rcnn", "faster_rcnn"], tasks=["od","seg"], frameworks=["detectron2"]))
 class Detectron2Model(ODBase):
     """
     Detectron2Model is a factory class for creating object detection models based on the Detectron2 framework.
