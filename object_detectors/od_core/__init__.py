@@ -34,12 +34,11 @@ MODEL_PARENT_DIRS = ['yolov8_lmi', 'ultralytics_lmi', 'detectron2_lmi']
 log.info(f"[{__name__}] Initializing automatic model registration...")
 
 package_root = Path(__file__).resolve().parent.parent
-base_package_name = __name__
 
 total_modules_scanned = 0
 for dir_rel_path in MODEL_PARENT_DIRS:
     current_dir_abs_path = package_root / dir_rel_path
-    current_package_name = f"{base_package_name}.{dir_rel_path.replace('/', '.')}"
+    current_package_name = f"{dir_rel_path.replace('/', '.')}"
 
     log.info(f"--- Scanning directory '{dir_rel_path}' (Package: {current_package_name}) ---")
     modules_found = _discover_and_import_modules(current_dir_abs_path, current_package_name)
