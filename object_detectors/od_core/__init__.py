@@ -33,7 +33,7 @@ MODEL_PARENT_DIRS = ['yolov8_lmi', 'ultralytics_lmi', 'detectron2_lmi']
 
 log.info(f"[{__name__}] Initializing automatic model registration...")
 
-package_root = Path(__file__).resolve().parent
+package_root = Path(__file__).resolve().parent.parent
 base_package_name = __name__
 
 total_modules_scanned = 0
