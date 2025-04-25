@@ -1,5 +1,4 @@
 from typing import Dict, Any
-from .models import *
 from .od_base import ODBase
 from .object_detector_registry import ObjectDetectorRegistry
 import logging
