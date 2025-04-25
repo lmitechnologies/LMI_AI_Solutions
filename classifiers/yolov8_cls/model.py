@@ -32,7 +32,7 @@ class Yolov8_cls(Yolov8):
         Raises:
             FileNotFoundError: _description_
         """
-        super().__init__(weights, device, data, fp16)
+        super().__init__(weights, device, data, fp16,image_size=imgsz)
         
         self.transforms = (
             getattr(
