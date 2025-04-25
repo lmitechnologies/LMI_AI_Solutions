@@ -13,7 +13,7 @@ from ultralytics.utils.torch_utils import smart_inference_mode
 
 # import LMI AI Solutions modules
 from od_core.od_base import ODBase
-from od_core.object_detector import ObjectDetector
+from od_core.object_detector_registry import ObjectDetectorRegistry
 import gadget_utils.pipeline_utils as pipeline_utils
 
 
@@ -38,12 +38,12 @@ def to_numpy(data):
         raise TypeError(f'Data type {type(data)} not supported')
 
 
-@ObjectDetector.register(metadata=dict(versions=['v0'], model_names=['yolov8'], tasks=['od', 'seg'], frameworks=['ultralytics']))
+@ObjectDetectorRegistry.register(metadata=dict(versions=['v0'], model_names=['yolov8'], tasks=['od', 'seg'], frameworks=['ultralytics']))
 class Yolov8(ODBase):
     
     logger = logging.getLogger(__name__)
     
-    def __init__(self, weights:str, device='gpu', data=None, fp16=False) -> None:
+    def __init__(self, weights:str, device='gpu', data=None, fp16=False,  **kwargs) -> None:
         """init the model
         Args:
             weights (str): the path to the weights file.
@@ -53,6 +53,7 @@ class Yolov8(ODBase):
         Raises:
             FileNotFoundError: _description_
         """
+        self.image_size = kwargs.get('image_size', [640, 640])
         if not os.path.isfile(weights):
             raise FileNotFoundError(f'File not found: {weights}')
         
@@ -92,21 +93,24 @@ class Yolov8(ODBase):
     
     
     @smart_inference_mode()
-    def warmup(self, imgsz=[640, 640]):
+    def warmup(self, imgsz=None):
         """
         Warm up the model by running one forward pass with a dummy input.
         Args:
-            imgsz(list): list of [h,w], default to [640,640]
+            imgsz(list): list of [h,w], default to None
         Returns:
             (None): This method runs the forward pass and don't return any value
         """
+        if imgsz is None:
+            imgsz = self.image_size
+            
         if isinstance(imgsz, tuple):
             imgsz = list(imgsz)
+        
             
         imgsz = [1,3]+imgsz
         im = torch.empty(*imgsz, dtype=torch.half if self.model.fp16 else torch.float, device=self.device)  # input
         self.forward(im)  # warmup
-        
         
     @smart_inference_mode()
     def preprocess(self, im):
@@ -388,10 +392,10 @@ class Yolov8(ODBase):
         return image
 
 
-@ObjectDetector.register(metadata=dict(versions=['v0'], model_names=['yolov8'], tasks=['obb'], frameworks=['ultralytics']))
+@ObjectDetectorRegistry.register(metadata=dict(versions=['v0'], model_names=['yolov8'], tasks=['obb'], frameworks=['ultralytics']))
 class Yolov8Obb(Yolov8):
-    def __init__(self, weights:str, device='gpu', data=None, fp16=False) -> None:
-        super().__init__(weights, device, data, fp16)
+    def __init__(self, weights:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
+        super().__init__(weights, device, data, fp16, **kwargs)
         self.logger = logging.getLogger(__name__)
         
     @smart_inference_mode()
@@ -532,10 +536,10 @@ class Yolov8Obb(Yolov8):
     
 
 
-@ObjectDetector.register(metadata=dict(versions=['v0'], model_names=['yolov8'], tasks=['pose'], frameworks=['ultralytics']))
+@ObjectDetectorRegistry.register(metadata=dict(versions=['v0'], model_names=['yolov8'], tasks=['pose'], frameworks=['ultralytics']))
 class Yolov8Pose(Yolov8):
-    def __init__(self, weights:str, device='gpu', data=None, fp16=False) -> None:
-        super().__init__(weights, device, data, fp16)
+    def __init__(self, weights:str, device='gpu', data=None, fp16=False,  **kwargs) -> None:
+        super().__init__(weights, device, data, fp16, **kwargs)
         
         
     @smart_inference_mode()

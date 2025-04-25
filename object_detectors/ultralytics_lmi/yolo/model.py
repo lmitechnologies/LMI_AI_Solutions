@@ -13,7 +13,7 @@ from ultralytics.utils.torch_utils import smart_inference_mode
 
 # import LMI AI Solutions modules
 from od_core.od_base import ODBase
-from od_core.object_detector import ObjectDetector
+from od_core.object_detector_registry import ObjectDetectorRegistry
 import gadget_utils.pipeline_utils as pipeline_utils
 
 
@@ -38,7 +38,7 @@ def to_numpy(data):
         raise TypeError(f'Data type {type(data)} not supported')
 
 
-@ObjectDetector.register(metadata=dict(versions=['v1'], model_names=['yolo','yolov8', 'yolov11'], tasks=['od', 'seg', 'instancesegmentation', 'objectdetection'], frameworks=['ultralytics', 'ultralytics8']))
+@ObjectDetectorRegistry.register(metadata=dict(versions=['v1'], model_names=['yolo','yolov8', 'yolov11'], tasks=['od', 'seg', 'instancesegmentation', 'objectdetection'], frameworks=['ultralytics', 'ultralytics8']))
 class Yolo(ODBase):
     
     logger = logging.getLogger(__name__)
@@ -53,6 +53,7 @@ class Yolo(ODBase):
         Raises:
             FileNotFoundError: _description_
         """
+        self.image_size = kwargs.get('image_size', [640, 640])
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f'File not found: {model_path}')
         
@@ -92,16 +93,20 @@ class Yolo(ODBase):
     
     
     @smart_inference_mode()
-    def warmup(self, imgsz=[640, 640]):
+    def warmup(self, imgsz=None):
         """
         Warm up the model by running one forward pass with a dummy input.
         Args:
-            imgsz(list): list of [h,w], default to [640,640]
+            imgsz(list): list of [h,w], default to None
         Returns:
             (None): This method runs the forward pass and don't return any value
         """
+        if imgsz is None:
+            imgsz = self.image_size
+            
         if isinstance(imgsz, tuple):
             imgsz = list(imgsz)
+        
             
         imgsz = [1,3]+imgsz
         im = torch.empty(*imgsz, dtype=torch.half if self.model.fp16 else torch.float, device=self.device)  # input
@@ -388,7 +393,7 @@ class Yolo(ODBase):
         return image
 
 
-@ObjectDetector.register(metadata=dict(versions=['v1'], model_names=['yolo','yolov8', 'yolov11'], tasks=['obb'], frameworks=['ultralytics', 'ultralytics8']))
+@ObjectDetectorRegistry.register(metadata=dict(versions=['v1'], model_names=['yolo','yolov8', 'yolov11'], tasks=['obb'], frameworks=['ultralytics', 'ultralytics8']))
 class YoloObb(Yolo):
     def __init__(self, model_path:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16)
@@ -530,7 +535,7 @@ class YoloObb(Yolo):
         time_info['postproc'] = time.time()-t0
         return results_dict, time_info
 
-@ObjectDetector.register(metadata=dict(versions=['v1'], model_names=['yolo','yolov8', 'yolov11'], tasks=['pose'], frameworks=['ultralytics', 'ultralytics8']))
+@ObjectDetectorRegistry.register(metadata=dict(versions=['v1'], model_names=['yolo','yolov8', 'yolov11'], tasks=['pose'], frameworks=['ultralytics', 'ultralytics8']))
 class YoloPose(Yolo):
     def __init__(self, model_path:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16)
