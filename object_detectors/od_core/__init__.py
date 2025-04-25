@@ -29,7 +29,7 @@ def _discover_and_import_modules(package_path: Path, package_name: str):
             log.error(f"  Error during import or execution of {full_module_name_for_log}: {e}", exc_info=True)
     return imported_count
 
-MODEL_PARENT_DIRS = ['yolov8_lmi', 'ultralytics_lmi', 'detectron2_lmi']
+MODEL_PARENT_DIRS = ['yolov8_lmi', 'ultralytics_lmi.yolo', 'detectron2_lmi']
 
 log.info(f"[{__name__}] Initializing automatic model registration...")
 
