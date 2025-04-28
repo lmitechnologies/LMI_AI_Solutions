@@ -75,6 +75,7 @@ class AnomalyModel2(Anomalib_Base):
                 self.bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
             self.binding_addrs = OrderedDict((n, d.ptr) for n, d in self.bindings.items())
             self.model_shape=list(input_shape[-2:])
+            self.image_size = self.model_shape
             self.batch_size = input_shape[0]
             self.inference_mode='TRT'
         elif ext=='.pt':  
@@ -86,6 +87,7 @@ class AnomalyModel2(Anomalib_Base):
             for d in self.pt_model.transform.transforms:
                 if isinstance(d, v2.Resize):
                     self.model_shape = to_list(d.size)
+                    self.image_size = to_list(d.size)
                     self.logger.info(f"Model shape: {self.model_shape}")
             self.inference_mode='PT'
         else:
