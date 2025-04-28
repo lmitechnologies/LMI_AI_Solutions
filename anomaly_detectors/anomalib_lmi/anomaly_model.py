@@ -8,7 +8,7 @@ import albumentations as A
 
 from .base import Anomalib_Base
 import gadget_utils.pipeline_utils as pipeline_utils
-from ad_core.anomaly_detector import AnomalyDetector
+from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 
 
 logging.basicConfig()
@@ -18,7 +18,7 @@ FAIL = 'FAIL'
 MINIMUM_QUANT=1e-12
 
 Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
-@AnomalyDetector.register(metadata=dict(frameworks=['anomalib'], model_names=['patchcore', 'padim'], tasks=['seg'], versions=['v0']))
+@AnomalyDetectorRegistry.register(metadata=dict(frameworks=['anomalib'], model_names=['patchcore', 'padim'], tasks=['seg'], versions=['v0']))
 class AnomalyModel(Anomalib_Base):
     '''
     Desc: Class used for AD model inference.  

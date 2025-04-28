@@ -1,55 +1,31 @@
-import json
+from typing import Dict, Any
+from anomalib_lmi.base import Anomalib_Base
+from .anomaly_detector_registry import AnomalyDetectorRegistry
+import logging
 
-class AnomalyDetector:
-    _registry = {}
+class AnomalyDetector(Anomalib_Base):
 
-    @classmethod
-    def register(cls,metadata):
-        """
-        Decorator to register a wrapper class for multiple versions, model names, and tasks.
-        """
-        frameworks = metadata.get('frameworks', None)
-        model_names = metadata.get('model_names', None)
-        tasks = metadata.get('tasks', ['seg'])
-        versions = metadata.get('versions', None)
-        info = metadata.get('info', {})
+    def __new__(cls, metadata: Dict[str, Any], *args, **kwargs):
+        logger = logging.getLogger(__name__)
+        model_path = metadata.get('model_path')
+        image_size = metadata.get('image_size')
+        if image_size:
+            if 'image_size' in kwargs and kwargs['image_size'] is not None:
+                logger.warning(
+                    "Both 'image_size' in metadata and kwargs provided. "
+                    "Using the one from metadata."
+                )
+            
+        kwargs['image_size'] = image_size
         
-        def decorator(wrapper_cls):
-            assert all([frameworks, model_names, tasks, versions]), "frameworks, model_names, tasks, and versions must be specified."
-            for framework in frameworks:
-                for model_name in model_names:
-                    for task in tasks:
-                        for version in versions:
-                            key = (framework, model_name, task, version,json.dumps(info))
-                            if key in cls._registry:
-                                raise ValueError(f"Wrapper already registered for version={version}, model_name='{model_name}', task='{task}', framework='{framework}', info='{json.dumps(info)}'.")
-                            cls._registry[key] = wrapper_cls
-            return wrapper_cls
-        return decorator
-    
-    def __new__(cls, metadata,*args, **kwargs):
-        """
-        Override __new__ to return the appropriate wrapper instance based on version, model_name, and task.
-        """
-        framework = metadata.get('framework') or metadata.get('package')
-        model_name = metadata.get('model_name') or metadata.get('algorithm')
-        task = metadata.get('task', 'seg') or metadata.get('model_type', 'seg')
-        version = metadata.get('version', 'v1') # Default version
-        info = metadata.get('info', {})
-        model_path = metadata.get('model_path', None)
-        
-        if not all([framework.lower(), model_name.lower(), task.lower()]):
-            raise ValueError("framework/package, model_name/algorithm, task/model_type must be specified.")
-        
-        key = (framework.lower(), model_name.lower(), task.lower(), version, json.dumps(info))
-        
-        if key not in cls._registry:
-            raise ValueError(f"No class found for version={version}, model_name='{model_name}', task='{task}', framework='{framework}', metadata='{json.dumps(info)}'.")
-        
-        wrapper_cls = cls._registry[key]
-        
+        try:
+            wrapper_cls = AnomalyDetectorRegistry.get_class(metadata)
+        except ValueError as e:
+            raise ValueError(f"Failed to find a registered detector for metadata: {metadata}") from e
+
         if model_path is not None:
-            return wrapper_cls(model_path, *args, **kwargs)
+            instance = wrapper_cls(model_path, *args, **kwargs)
         else:
-            return wrapper_cls(*args, **kwargs)
+            instance = wrapper_cls(*args, **kwargs)
 
+        return instance
