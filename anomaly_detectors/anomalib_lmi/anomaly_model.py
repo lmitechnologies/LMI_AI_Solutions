@@ -62,7 +62,8 @@ class AnomalyModel(Anomalib_Base):
                 im = self.from_numpy(np.empty(shape, dtype=dtype)).to(self.device)
                 self.bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
             self.binding_addrs = OrderedDict((n, d.ptr) for n, d in self.bindings.items())
-            self.model_shape=list(shape[-2:])
+            self.model_shape = list(shape[-2:])
+            self.image_size = list(shape[-2:])
             self.inference_mode='TRT'
         elif ext=='.pt':     
             model = torch.load(model_path,map_location=self.device)["model"]
@@ -73,6 +74,7 @@ class AnomalyModel(Anomalib_Base):
             for d in self.pt_metadata['transform']['transform']['transforms']:
                 if d['__class_fullname__']=='Resize':
                     self.model_shape = [d['height'], d['width']]
+                    self.image_size = [d['height'], d['width']]
             self.inference_mode='PT'
         else:
             raise Exception(f'Unknown model format: {ext}')
