@@ -2,6 +2,7 @@ import logging
 import torch
 from .base import to_list
 import argparse
+from torchvision.transforms import v2
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -33,7 +34,6 @@ def convert_v1_torchscript(model_path, output_path):
     Returns:
         torch.jit.ScriptModule: The converted TorchScript model.
     """
-    from torchvision.transforms import v2
     logger.info(f"Converting {model_path} to TorchScript format.")
     ckpt = torch.load(model_path)
     model = ckpt['model'].eval().cuda()
@@ -55,7 +55,7 @@ def main():
     
     args = parser.parse_args()
     
-    generate_traced_torchscript(args.model_path, args.output_path, args.version)
+    generate_traced_torchscript(args.input_path, args.output_path, args.version)
 
 if __name__ == "__main__":
     main()
