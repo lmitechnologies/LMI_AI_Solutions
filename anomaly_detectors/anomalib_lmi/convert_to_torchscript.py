@@ -35,7 +35,7 @@ def convert_v1_torchscript(model_path, output_path):
         torch.jit.ScriptModule: The converted TorchScript model.
     """
     logger.info(f"Converting {model_path} to TorchScript format.")
-    ckpt = torch.load(model_path)
+    ckpt = torch.load(model_path, weights_only=False)
     model = ckpt['model'].eval().cuda()
     image_size = None
     for d in model.transform.transforms:
