@@ -9,6 +9,3 @@ description = "LMI AI Solutions anomaly detectors"
 
 [tool.setuptools]
 packages = ["anomalib_lmi", "ad_core"]
-
-[project.scripts]
-ad-convert-to-torchscript="anomalib_lmi.convert_to_torchscript:main"
