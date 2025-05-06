@@ -1,6 +1,7 @@
 import logging 
 import torch
 from .base import to_list
+import argparse
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -47,7 +48,6 @@ def convert_v1_torchscript(model_path, output_path):
     return traced_model
 
 def main():
-    import argparse
     parser = argparse.ArgumentParser(description="Convert a model to TorchScript format.")
     parser.add_argument('--input_path', type=str, required=True, help='Path to the model file.')
     parser.add_argument('--output_path', type=str, required=True, help='Path to save the converted model.')
