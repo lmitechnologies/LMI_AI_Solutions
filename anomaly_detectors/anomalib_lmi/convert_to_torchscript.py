@@ -33,6 +33,7 @@ def convert_v1_torchscript(model_path, output_path):
         torch.jit.ScriptModule: The converted TorchScript model.
     """
     from torchvision.transforms import v2
+    logger.info(f"Converting {model_path} to TorchScript format.")
     ckpt = torch.load(model_path)
     model = ckpt['model'].eval().cuda()
     image_size = None
@@ -42,6 +43,7 @@ def convert_v1_torchscript(model_path, output_path):
     inp = torch.rand(1,3,image_size[0], image_size[1]).cuda()
     traced_model = torch.jit.trace(model,inp,strict=False)
     torch.jit.save(traced_model, output_path)
+    logger.info(f"Saved traced model to {output_path}")
     return traced_model
 
 def main():
