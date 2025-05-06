@@ -78,17 +78,29 @@ class AnomalyModel2(Anomalib_Base):
             self.image_size = self.model_shape
             self.batch_size = input_shape[0]
             self.inference_mode='TRT'
-        elif ext=='.pt':  
-            checkpoint = torch.load(model_path,map_location=self.device,weights_only=False)
-            self.pt_model = checkpoint['model']
+        elif ext=='.pt':
+            try:  
+                checkpoint = torch.load(model_path,map_location=self.device,weights_only=False)
+                self.pt_model = checkpoint['model']
+                self.pt_metadata = checkpoint["metadata"]
+                self.logger.info(f"Model metadata: {self.pt_metadata}")
+                for d in self.pt_model.transform.transforms:
+                    if isinstance(d, v2.Resize):
+                        self.model_shape = to_list(d.size)
+                        self.image_size = to_list(d.size)
+                        self.logger.info(f"Model shape: {self.model_shape}")
+            
+            except Exception as e:
+                self.logger.warning(f"Failed to load model: {model_path}. Error: {e}")
+                self.pt_model = None
+            
+            if self.pt_model is None:
+                # try loading the model using torchscript
+                self.pt_model = torch.jit.load(model_path).to(self.device)
+                self.image_size = kwargs.get('image_size', [224,224])
+                self.model_shape = self.image_size
+                
             self.pt_model.eval()
-            self.pt_metadata = checkpoint["metadata"]
-            self.logger.info(f"Model metadata: {self.pt_metadata}")
-            for d in self.pt_model.transform.transforms:
-                if isinstance(d, v2.Resize):
-                    self.model_shape = to_list(d.size)
-                    self.image_size = to_list(d.size)
-                    self.logger.info(f"Model shape: {self.model_shape}")
             self.inference_mode='PT'
         else:
             raise Exception(f'Unknown model format: {ext}')
@@ -115,6 +127,8 @@ class AnomalyModel2(Anomalib_Base):
         args:
             - image: numpy array [H,W,Ch]
         '''
+        if image.shape[0] != self.model_shape[0] or image.shape[1] != self.model_shape[1]:
+            image = pipeline_utils.resize_image(image, W=self.model_shape[1], H=self.model_shape[0])
         img = self.from_numpy(image).float()
         
         # grayscale to rgb
