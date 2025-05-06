@@ -124,8 +124,8 @@ if __name__ == '__main__':
     ap.add_argument('--model', type=str, required=True, help='path to the AD model')
     ap.add_argument('-i','--images', type=str, required=True, help='path to the testing images')
     ap.add_argument('-o','--output', type=str, required=True, help='path to the output folder')
-    ap.add_argument('--height', '-h',type=int, default=244, help='input image size')
-    ap.add_argument('--width', '-w',type=int, default=244, help='input image size')
+    ap.add_argument('--height',type=int, required=True, help='input height')
+    ap.add_argument('--width',type=int, required=True, help='image width')
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = ap.parse_args()
     
