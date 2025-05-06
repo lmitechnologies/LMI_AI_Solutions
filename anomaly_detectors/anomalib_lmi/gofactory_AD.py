@@ -16,12 +16,13 @@ logger = logging.getLogger(__name__)
 
 
 
-def predict(model_path, images_path, out_path, recursive=True):
+def predict(model_path, images_path, image_size, out_path, recursive=True):
     """generating anomaly maps for a set of images
 
     Args:
         model_path (str): the path to the anomaly detection model, supports .engine and .pt
         images_path (str): the path to input images
+        image_size (list): the size of the input images (h,w)
         out_path (str): the output path to save the anomaly maps and summary.json
         recursive (bool, optional): whether to search images recursively. Defaults to True.
     """
@@ -37,8 +38,9 @@ def predict(model_path, images_path, out_path, recursive=True):
     if not images:
         return
     
-    logger.info(f"Loading engine: {model_path}.")
-    model = AnomalyModel2(model_path)
+    logger.info(f"Loading model: {model_path}.")
+    model = AnomalyModel2(model_path, image_size=image_size)
+    logger.info(f"Model loaded.")
     model.warmup()
 
     proctime = []
@@ -122,7 +124,9 @@ if __name__ == '__main__':
     ap.add_argument('--model', type=str, required=True, help='path to the AD model')
     ap.add_argument('-i','--images', type=str, required=True, help='path to the testing images')
     ap.add_argument('-o','--output', type=str, required=True, help='path to the output folder')
+    ap.add_argument('--height', '-h',type=int, default=244, help='input image size')
+    ap.add_argument('--width', '-w',type=int, default=244, help='input image size')
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
     args = ap.parse_args()
     
-    predict(args.model, args.images, args.output, args.recursive)
+    predict(args.model, args.images, [args.height,args.width] ,args.output, args.recursive)
