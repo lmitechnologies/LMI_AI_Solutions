@@ -2,12 +2,13 @@ import os
 import cv2
 import numpy as np
 import torch
-from ultralytics.utils.metrics import box_iou, mask_iou
+from ultralytics.utils.metrics import box_iou, mask_iou, kpt_iou
 import logging
 import json
 
 from ultralytics_lmi.yolo.model import Yolo, YoloPose, YoloObb
-from dataset_utils.representations import Dataset, Annotation, AnnotationType, Box, Mask
+from ultralytics.utils import ops
+from dataset_utils.representations import Dataset, Annotation, AnnotationType, Box, Mask, Point2d
 from dataset_utils.ops.dataset_resize import resize_annotated_image, resize_annotations
 from dataset_utils.ops.dataset_pad import pad_annotated_image
 
@@ -31,6 +32,7 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
     """
     boxes = []
     masks = []
+    points = []
     label_names = []
     for annot in annotations:
         label_names.append(annot.label_id)
@@ -43,20 +45,24 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
             obj = annot.value.to_mask(h=h, w=w)
             mask = obj.to_numpy(h=h,w=w)
             masks.append(mask)
+        elif annot.type == AnnotationType.KEYPOINT:
+            points.append(annot.value.to_numpy())
         else:
             raise Exception(f'Not supported type: {type(annot.type)}')
     return {
         'boxes': np.array(boxes),
         'masks': np.array(masks),
+        'points': np.array(points),
         'classes': np.array(label_names)
     }
 
 
-def write_json(model_path, config_path, image_dir, label_path, out_pred_json, out_image_dir, out_iou_dir, image_size: tuple[int,int] | None, confidence=0.01, iou=0.45, max_det=600):
+def write_json(model_path, model_type, config_path, image_dir, label_path, out_pred_json, out_image_dir, out_iou_dir, image_size: tuple[int,int] | None, confidence=0.01, iou=0.45, max_det=600):
     """write predictions and labels to a json file
 
     Args:
         model_path (str): a path to a model weights file
+        model_type (str): a type of the model, either "ObjectDetection", "OrientedObjectDetection", "InstanceSegmentation", "KeyPointDetection"
         config_path (str): a path to a model configuration file
         image_dir (str): a input image directory, where each image should have the same dimension as training images
         label_path (str): a path to a label json file
@@ -69,10 +75,18 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         max_det (int, optional): the max number of detections. Defaults to 600.
         
     """
-    model = Yolo(model_path)
-    dataset = Dataset.load(label_path)
+    # load the model by model type
+    if model_type in ['ObjectDetection','InstanceSegmentation']:
+        model = Yolo(model_path)
+    elif model_type == 'OrientedObjectDetection':
+        model = YoloObb(model_path)
+    elif model_type == 'KeyPointDetection':
+        model = YoloPose(model_path)
+    else:
+        raise Exception(f'Not supported model type: {model_type}')
     
-    pred_annot_id = 0 # sum([len(f.annotations) for f in dataset.files])
+    dataset = Dataset.load(label_path)
+    pred_annot_id = 0
     for file_annot in dataset.files:
         fname = os.path.basename(file_annot.path)
         p = os.path.join(image_dir, file_annot.path)
@@ -80,7 +94,7 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         if im is None:
             raise Exception(f'Could not read image {p}')
         
-        # get labels and preds
+        # get labels
         im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         h,w = im.shape[:2]
         h_train,w_train = image_size if image_size is not None else (h,w)
@@ -89,32 +103,58 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         im_padded, annotations_padded, _ = pad_annotated_image(im_resized, annotations_resized, w_train, h_train)
         labels = parse_annotations(annotations_padded, h_train, w_train)
 
-        preds,_ = model.predict(im_padded, confidence, iou=iou, max_det=max_det, return_segments=False)
+        preds,_ = model.predict(im_padded, confidence, iou=iou, max_det=max_det)
         
         # get ious
         ious = None
-        if 'masks' in preds:
+        if model_type == 'InstanceSegmentation':
             n_gt = len(labels['masks'])
             n_pred = len(preds['masks'])
             if n_gt and n_pred:
                 gt_masks = torch.from_numpy(labels['masks']).float().to(model.device)
                 pred_masks = torch.from_numpy(preds['masks']).to(model.device)
                 ious = mask_iou(gt_masks.view(gt_masks.shape[0], -1),pred_masks.view(pred_masks.shape[0],-1))
-        else:
+        elif model_type in ['ObjectDetection', 'KeyPointDetection']:
             n_gt = len(labels['boxes'])
             n_pred = len(preds['boxes'])
             if n_gt and n_pred:
                 gt_boxes = torch.from_numpy(labels['boxes'][:,:-1]).to(model.device)
                 pred_boxes = torch.from_numpy(preds['boxes']).to(model.device)
                 ious = box_iou(gt_boxes, pred_boxes)
+            ious_kpt = None
+            if model_type == 'KeyPointDetection':
+                kpt_shape = model.model.kpt_shape
+                labels['points'] = labels['points'].reshape(-1, *kpt_shape) # (N, n_kp, 2)
+                n_gt_kpt = len(labels['points'])
+                n_pred_kpt = len(preds['points'])
+                if n_gt_kpt and n_pred_kpt:
+                    # add ones to the last dimension for visibility
+                    gt_points = torch.from_numpy(labels['points']).to(model.device)
+                    gt_points = torch.cat((gt_points, torch.ones_like(gt_points[..., :-1])), dim=-1) # (N, n_kp, 3)
+                    
+                    pred_points = torch.from_numpy(preds['points']).to(model.device)
+                    pred_points = torch.cat((pred_points, torch.ones_like(pred_points[..., :-1])), dim=-1) # (M, n_kp, 3)
+                    # `0.53` is from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/models/yolo/pose/val.py#L251
+                    area = ops.xyxy2xywh(gt_boxes)[:, 2:].prod(1) * 0.53
+                    nkpt = kpt_shape[0]
+                    sigma = np.ones(nkpt) / nkpt
+                    ious_kpt = kpt_iou(gt_points, pred_points, sigma=sigma, area=area)
+        elif model_type == 'OrientedObjectDetection':
+            pass
                 
-        # write ious to a json file
+        # get iou matrixs
         ious_out = [] if ious is None else ious.cpu().numpy().tolist()
         iou_json = dict(
             n_gt=n_gt,
             n_pred=n_pred,
             iou=ious_out # a shape of n_gt x n_pred
         )
+        if model_type == 'KeyPointDetection':
+            iou_json['kpt_iou'] = [] if ious_kpt is None else ious_kpt.cpu().numpy().tolist()
+            iou_json['n_gt_kpt'] = n_gt_kpt
+            iou_json['n_pred_kpt'] = n_pred_kpt
+            
+        # write ious to a json file
         os.makedirs(out_iou_dir, exist_ok=True)
         out_iou_path = os.path.join(out_iou_dir, file_annot.id + '.json')
         with open(out_iou_path, 'w') as f:
@@ -129,20 +169,31 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
             label_name = preds['classes'][i]
             score = preds['scores'][i].item()
             
-            if mask is not None:
+            if model_type == 'InstanceSegmentation':
                 dt = dict(
                     id=str(pred_annot_id), label_id=label_name, type=AnnotationType.MASK, value=Mask(mask), 
                     confidence=score, 
                 )
                 preds_padded.append(Annotation(**dt))
                 pred_annot_id += 1
-            else:
+            elif model_type in ['ObjectDetection', 'KeyPointDetection']:
                 dt = dict(
                     id=str(pred_annot_id), label_id=label_name, type=AnnotationType.BOX, value=Box(*box,angle=0), 
                     confidence=score
                 )
                 preds_padded.append(Annotation(**dt))
                 pred_annot_id += 1
+                
+                if model_type == 'KeyPointDetection':
+                    pts = preds['points'][i]
+                    for j in range(len(pts)):
+                        pt = np.squeeze(pts[j])
+                        dt = dict(
+                            id=str(pred_annot_id), label_id=label_name, type=AnnotationType.KEYPOINT, value=Point2d(*pt)
+                        )
+                        preds_padded.append(Annotation(**dt))
+                        pred_annot_id += 1
+                    
 
         # remove padding and save image                
         im_unpadded, preds_unpadded, _ = pad_annotated_image(im_padded, preds_padded, im_resized.shape[1], im_resized.shape[0])
@@ -167,6 +218,7 @@ if __name__ =='__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path',required=True,help='a path to a model weights file')
+    parser.add_argument('--model_type',required=True,help='a type of the model, either ObjectDetection, OrientedObjectDetection, InstanceSegmentation, KeyPointDetection')
     parser.add_argument('--config_path',default=None,help='[optional] a path to a model config file')
     parser.add_argument('--img_dir',required=True,help='a input image directory')
     parser.add_argument('--label_path',required=True,help='a path to a label json file')
@@ -189,5 +241,6 @@ if __name__ =='__main__':
         else:
             raise Exception(f'Invalid image size: {ap.image_size}; must be either w,h or a single number')
 
-    write_json(ap.model_path, ap.config_path, ap.img_dir, ap.label_path, ap.out_pred_json, ap.out_image_dir, ap.out_iou_dir, image_size, ap.confidence, ap.iou, ap.max_det)
+    write_json(ap.model_path, ap.model_type, ap.config_path, ap.img_dir, ap.label_path, ap.out_pred_json, 
+               ap.out_image_dir, ap.out_iou_dir, image_size, ap.confidence, ap.iou, ap.max_det)
     
