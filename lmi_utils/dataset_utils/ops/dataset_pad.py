@@ -13,13 +13,13 @@ logger = logging.getLogger(__name__)
 def fit_shapes_to_size(shapes, pad_l, pad_t, pad_h, pad_w,orig_h,orig_w):
     """
     description:
-        add the left and top paddings to the shapes, modify in-place
+        add the left and top paddings to the shapes
     arguments:
         shapes(list): a list of Shape objects (Rect or Mask)
         pad_l(int): the left paddings
         pad_t(int): the top paddings 
     """
-    
+    shapes = shapes.copy()
     for annot in shapes:
         annot.value = annot.value.pad(pad_h=pad_h, pad_w=pad_w, pl=pad_l, pt=pad_t, h=orig_h, w=orig_w)
     return shapes 

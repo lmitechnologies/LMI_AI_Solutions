@@ -8,8 +8,8 @@ import json
 
 from ultralytics_lmi.yolo.model import Yolo, YoloPose, YoloObb
 from ultralytics.utils import ops
-from dataset_utils.representations import Dataset, Annotation, AnnotationType, Box, Mask, Point2d
-from dataset_utils.ops.dataset_resize import resize_annotated_image, resize_annotations
+from dataset_utils.representations import Dataset, Annotation, AnnotationType, Box, Mask, Polygon, Point2d
+from dataset_utils.ops.dataset_resize import resize_annotated_image
 from dataset_utils.ops.dataset_pad import pad_annotated_image
 
 
@@ -19,13 +19,14 @@ logger.setLevel(logging.INFO)
 
 
 
-def parse_annotations(annotations:list[Annotation], h:int, w:int):
+def parse_annotations(annotations:list[Annotation], h:int, w:int, model_type:str) -> dict:
     """parse label annotations from a list. Only support Box and Mask annotation objects.
 
     Args:
         annotations (list[Annotation]): a list of Annotation objects (Box and Mask)
         h (int): image height
         w (int): image width
+        model_type (str): a type of the model, "ObjectDetection", "OrientedObjectDetection", "InstanceSegmentation", "KeyPointDetection"
 
     Returns:
         dict: a dictionary contains 'classes','boxes','masks'
@@ -42,9 +43,15 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
             mask = annot.value.to_numpy(h=h,w=w)
             masks.append(mask)
         elif annot.type == AnnotationType.POLYGON:
-            obj = annot.value.to_mask(h=h, w=w)
-            mask = obj.to_numpy(h=h,w=w)
-            masks.append(mask)
+            if model_type == 'InstanceSegmentation':
+                obj = annot.value.to_mask(h=h, w=w, mask_type=AnnotationType.MASK)
+                mask = obj.to_numpy(h=h,w=w)
+                masks.append(mask)
+            elif model_type == 'OrientedObjectDetection':
+                poly = annot.value.to_numpy()
+                boxes.append(poly)
+            else:
+                logger.warning(f'Not supported loading polygons for the model type: {model_type}, skip')
         elif annot.type == AnnotationType.KEYPOINT:
             points.append(annot.value.to_numpy())
         else:
@@ -99,9 +106,21 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
         h,w = im.shape[:2]
         h_train,w_train = image_size if image_size is not None else (h,w)
 
-        im_resized, annotations_resized = resize_annotated_image(im, file_annot.annotations, w_train, h_train, maintain_aspect_ratio=True)
+        # convert rotated bbox to polygon
+        # To prevent from clipping: rotated boxes are stored in the UNROTATED (xyxyr) format and might be outside of the image
+        converted_annots = file_annot.annotations.copy()
+        if model_type == 'OrientedObjectDetection':
+            for i,annot in enumerate(file_annot.annotations):
+                if annot.type == AnnotationType.BOX:
+                    poly = annot.value.to_mask(mask_type=AnnotationType.POLYGON)
+                    converted_annots[i] = Annotation(
+                        id=annot.id, label_id=annot.label_id, type=AnnotationType.POLYGON, value=poly, 
+                        link=annot.link, confidence=annot.confidence, iou=annot.iou
+                    )
+                    
+        im_resized, annotations_resized = resize_annotated_image(im, converted_annots, w_train, h_train, maintain_aspect_ratio=True)
         im_padded, annotations_padded, _ = pad_annotated_image(im_resized, annotations_resized, w_train, h_train)
-        labels = parse_annotations(annotations_padded, h_train, w_train)
+        labels = parse_annotations(annotations_padded, h_train, w_train, model_type)
 
         preds,_ = model.predict(im_padded, confidence, iou=iou, max_det=max_det)
         
@@ -140,7 +159,16 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
                     sigma = np.ones(nkpt) / nkpt
                     ious_kpt = kpt_iou(gt_points, pred_points, sigma=sigma, area=area)
         elif model_type == 'OrientedObjectDetection':
-            pass
+            gt = labels['boxes'].astype(np.int32)
+            pred = preds['boxes'].astype(np.int32)
+            n_gt = len(gt)
+            n_pred = len(pred)
+            if n_gt and n_pred:
+                gt = torch.from_numpy(gt).to(model.device)
+                gt2 = ops.xyxyxyxy2xywhr(gt)
+                pred = torch.from_numpy(pred).to(model.device)
+                pred2 = ops.xyxyxyxy2xywhr(pred)
+                ious = ops.batch_probiou(gt2, pred2)
                 
         # get iou matrixs
         ious_out = [] if ious is None else ious.cpu().numpy().tolist()
@@ -193,11 +221,37 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
                         )
                         preds_padded.append(Annotation(**dt))
                         pred_annot_id += 1
+            elif model_type == 'OrientedObjectDetection':
+                # save as polygons
+                dt = dict(
+                    id=str(pred_annot_id), label_id=label_name, type=AnnotationType.POLYGON, value=Polygon(points=box), 
+                    confidence=score
+                )
+                preds_padded.append(Annotation(**dt))
+                pred_annot_id += 1
                     
 
         # remove padding and save image                
         im_unpadded, preds_unpadded, _ = pad_annotated_image(im_padded, preds_padded, im_resized.shape[1], im_resized.shape[0])
         _, annotations_unpadded, _ = pad_annotated_image(im_padded, annotations_padded, im_resized.shape[1], im_resized.shape[0])
+        
+        # convert back to xyxyr format
+        if model_type == 'OrientedObjectDetection':
+            for i,annot in enumerate(preds_unpadded):
+                if annot.type == AnnotationType.POLYGON:
+                    rbox = annot.value.to_rbox()
+                    preds_unpadded[i] = Annotation(
+                        id=annot.id, label_id=annot.label_id, type=AnnotationType.BOX, value=rbox, 
+                        link=annot.link, confidence=annot.confidence, iou=annot.iou
+                    )
+            for i,annot in enumerate(annotations_unpadded):
+                if annot.type == AnnotationType.POLYGON:
+                    rbox = annot.value.to_rbox()
+                    annotations_unpadded[i] = Annotation(
+                        id=annot.id, label_id=annot.label_id, type=AnnotationType.BOX, value=rbox, 
+                        link=annot.link, confidence=annot.confidence, iou=annot.iou
+                    )
+        
         im_out = cv2.cvtColor(im_unpadded, cv2.COLOR_RGB2BGR)
         out_image_path = os.path.join(out_image_dir, file_annot.path)
         os.makedirs(os.path.dirname(out_image_path), exist_ok=True)

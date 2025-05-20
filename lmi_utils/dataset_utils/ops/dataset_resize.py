@@ -10,13 +10,14 @@ from image_utils.img_resize import resize
 logger = logging.getLogger(__name__)
 
 def resize_annotations(shapes, orig_h: int, orig_w: int, new_h: int, new_w: int):
-    """resize shapes in-place
+    """resize shapes
 
     Args:
         shapes (Shape): a list of Shape objects
         rx (float): resize ratio in x direction
         ry (float): resize ratio in y direction
     """
+    shapes = shapes.copy()
     for annot in shapes:
         annot.value = annot.value.resize(orig_h, orig_w, new_h, new_w)
 
