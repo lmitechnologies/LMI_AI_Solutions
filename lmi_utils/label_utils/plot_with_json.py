@@ -17,6 +17,8 @@ logger.setLevel(logging.INFO)
 def plot_shape(shape, im, color_map, no_label=False):
     img_h, img_w = im.shape[:2]
     label = shape.label_id
+    if label not in color_map:
+        color_map[label] = [255,255,255]
     label_str = None if no_label else label
     if shape.type == AnnotationType.BOX:
         x1,y1, x2, y2, angle = shape.value.coords()
