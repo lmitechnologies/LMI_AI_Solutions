@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torchvision.transforms import v2
 
 from .base import Anomalib_Base, to_list
-from image_utils.tiler import Tiler, ScaleMode
+from image_utils.tiler import Tiler, ScaleMode, OverlapMode
 import gadget_utils.pipeline_utils as pipeline_utils
 from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 logging.basicConfig()
@@ -155,7 +155,7 @@ class AnomalyModel2(Anomalib_Base):
         
         
     @torch.inference_mode()
-    def predict(self, image):
+    def predict(self, image, **kwargs):
         '''
         Desc: Model prediction 
         Args: image: numpy array [H,W,Ch]
@@ -164,6 +164,14 @@ class AnomalyModel2(Anomalib_Base):
         returns:
             - output: resized output to match training data's size
         '''
+        overlap_mode = kwargs.get('overlap_mode', 'average')
+        if overlap_mode not in ['average', 'max']:
+            raise ValueError(f'Unknown overlap mode: {overlap_mode}. Use "average" or "max".')
+        if overlap_mode == 'average':
+            overlap_mode = OverlapMode.AVERAGE
+        else:
+            overlap_mode = OverlapMode.MAX
+        
         input_batch = self.preprocess(image)
         if self.inference_mode=='TRT':
             self.binding_addrs['input'] = int(input_batch.data_ptr())
@@ -183,7 +191,7 @@ class AnomalyModel2(Anomalib_Base):
             
         if self.tiler is not None:
             output = self.tiler.untile(output,self.tile_mode)
-        
+    
         if isinstance(output, torch.Tensor):
             output = output.cpu().numpy()
         output = np.squeeze(output)

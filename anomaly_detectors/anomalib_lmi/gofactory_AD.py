@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 
-def predict(model_path, images_path, image_size, out_path, recursive=True):
+def predict(model_path, images_path, image_size, out_path, recursive=True, tile=None, stride=None, resize=False, overlap_mode='average'):
     """generating anomaly maps for a set of images
 
     Args:
@@ -39,7 +39,8 @@ def predict(model_path, images_path, image_size, out_path, recursive=True):
         return
     
     logger.info(f"Loading model: {model_path}.")
-    model = AnomalyModel2(model_path, image_size=image_size)
+    model = AnomalyModel2(model_path, image_size=image_size, 
+                          tile=tile, stride=stride, tile_mode='resize' if resize else 'padding')
     logger.info(f"Model loaded.")
     model.warmup()
 
@@ -52,7 +53,7 @@ def predict(model_path, images_path, image_size, out_path, recursive=True):
         
         # inference
         t0 = time.time()
-        anom_map = model.predict(img).astype(np.float32)
+        anom_map = model.predict(img, predict).astype(np.float32)
         proctime.append(time.time() - t0)
         
         anom_all.append(anom_map)
@@ -127,6 +128,10 @@ if __name__ == '__main__':
     ap.add_argument('--height',type=int, required=True, help='input height')
     ap.add_argument('--width',type=int, required=True, help='image width')
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
+    ap.add_argument('--tile', type=int, nargs='*', help='tile hight and width. Can be a single int or two integers')
+    ap.add_argument('--stride', type=int, nargs='*', help='stride hight and width. Can be a single int or two integers')
+    ap.add_argument('--resize', action='store_true', help='interpolate if it needs to resize images, otherwise pad zeros')
+    ap.add_argument('--overlap_mode','-om', type=str, required=False,default="average", help='overlap mode for tiling, can be "average" or "max"')
     args = ap.parse_args()
     
-    predict(args.model, args.images, [args.height,args.width] ,args.output, args.recursive)
+    predict(args.model, args.images, [args.height,args.width] ,args.output, args.recursive, args.tile, args.stride, args.resize, args.overlap_mode)
