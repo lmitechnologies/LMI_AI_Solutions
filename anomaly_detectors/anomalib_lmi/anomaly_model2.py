@@ -190,7 +190,7 @@ class AnomalyModel2(Anomalib_Base):
                 raise Exception(f'Unknown prediction type: {type(preds)}')
             
         if self.tiler is not None:
-            output = self.tiler.untile(output,self.tile_mode)
+            output = self.tiler.untile(output,tile_mode=self.tile_mode, overlap_mode=overlap_mode)
     
         if isinstance(output, torch.Tensor):
             output = output.cpu().numpy()
