@@ -53,7 +53,7 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
         
         # inference
         t0 = time.time()
-        anom_map = model.predict(img, predict).astype(np.float32)
+        anom_map = model.predict(img, overlap_mode=overlap_mode).astype(np.float32)
         proctime.append(time.time() - t0)
         
         anom_all.append(anom_map)
