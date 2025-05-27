@@ -175,7 +175,6 @@ class AnomalyModel2(Anomalib_Base):
             overlap_mode = OverlapMode.AVERAGE
         else:
             overlap_mode = OverlapMode.MAX
-        
         input_batch = self.preprocess(image)
         if self.inference_mode=='TRT':
             self.binding_addrs['input'] = int(input_batch.data_ptr())
@@ -212,7 +211,11 @@ class AnomalyModel2(Anomalib_Base):
         if input_hw is None:
             input_hw = self.model_shape
         input_hw = to_list(input_hw)
+        input_hw = [
+            896, 224
+        ]
         zeros = np.zeros(input_hw+[3,])
+        self.logger.info(f'Warming up model with input shape: {zeros.shape}')
         self.predict(zeros)
 
 
