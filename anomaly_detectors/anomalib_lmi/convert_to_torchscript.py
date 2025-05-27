@@ -8,7 +8,7 @@ logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-def generate_traced_torchscript(model_path,output_path,version='v1'):
+def generate_traced_torchscript(model_path,output_path,version='v1', batch_size=1, height=1024, width=1024):
     """
     Generate a traced TorchScript model from the given model path.
     
@@ -20,11 +20,11 @@ def generate_traced_torchscript(model_path,output_path,version='v1'):
         torch.jit.ScriptModule: The traced TorchScript model.
     """
     if version == 'v1':
-        return convert_v1_torchscript(model_path=model_path, output_path=output_path)
+        return convert_v1_torchscript(model_path=model_path, output_path=output_path, batch_size=batch_size, height=height, width=width)
     else:
         raise ValueError(f"Unsupported version: {version}")
 
-def convert_v1_torchscript(model_path, output_path):
+def convert_v1_torchscript(model_path, output_path, batch_size=1, height=1024, width=1024):
     """
     Convert a model to TorchScript format.
     
@@ -41,7 +41,10 @@ def convert_v1_torchscript(model_path, output_path):
     for d in model.transform.transforms:
         if isinstance(d, v2.Resize):
             image_size = to_list(d.size)
-    inp = torch.rand(1,3,image_size[0], image_size[1]).cuda()
+    if image_size[0] == height and image_size[1] == width:
+        logger.warning(f"Model already has the correct input size: {image_size} updating to exporting resizing.")
+        image_size = [height*2, width*2]
+    inp = torch.rand(batch_size,3,image_size[0], image_size[1]).cuda()
     traced_model = torch.jit.trace(model,inp,strict=False)
     torch.jit.save(traced_model, output_path)
     logger.info(f"Saved traced model to {output_path}")
@@ -52,10 +55,13 @@ def main():
     parser.add_argument('--input_path', type=str, required=True, help='Path to the model file.')
     parser.add_argument('--output_path', type=str, required=True, help='Path to save the converted model.')
     parser.add_argument('--version', type=str, default='v1', help='Version of the model. Default is v1.',required=False, choices=['v1'])
+    parser.add_argument('--batch_size', type=int, default=1, help='Export batch size. Default is 1.', required=False)
+    parser.add_argument('--height', type=int, default=1024, help='Input height. Default is 256.', required=False)
+    parser.add_argument('--width', type=int, default=1024, help='Input width. Default is 256.', required=False)
     
     args = parser.parse_args()
     
-    generate_traced_torchscript(args.input_path, args.output_path, args.version)
+    generate_traced_torchscript(args.input_path, args.output_path, args.version, args.batch_size, args.height, args.width)
 
 if __name__ == "__main__":
     main()
