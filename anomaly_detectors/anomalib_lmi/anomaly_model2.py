@@ -109,6 +109,7 @@ class AnomalyModel2(Anomalib_Base):
         
         # init tiler
         if tile is not None:
+            self.logger.info('Tiling is enabled.')
             if stride is None:
                 raise Exception('Must provide stride using tiling')
             
@@ -129,10 +130,12 @@ class AnomalyModel2(Anomalib_Base):
         args:
             - image: numpy array [H,W,Ch]
         '''
-        if self.tiler is None:
-            if image.shape[0] != self.model_shape[0] or image.shape[1] != self.model_shape[1]:
-                image = pipeline_utils.resize_image(image, W=self.model_shape[1], H=self.model_shape[0])
+        # if self.tiler is None:
+        #     self.logger.warning('Tiler is not initialized. Using model shape for resizing.')
+        #     if image.shape[0] != self.model_shape[0] or image.shape[1] != self.model_shape[1]:
+        #         image = pipeline_utils.resize_image(image, W=self.model_shape[1], H=self.model_shape[0])
         img = self.from_numpy(image).float()
+        self.logger.info(f'Input image shape: {img.device}, {img.shape}')
         
         # grayscale to rgb
         if img.ndim == 2:
@@ -143,6 +146,7 @@ class AnomalyModel2(Anomalib_Base):
         
         if self.tiler is not None:
             img = self.tiler.tile(img,self.tile_mode)
+        self.logger.info(f'Input image shape: {img.device}, {img.shape}')
         
         # resize baked into the pt model
         batch = img.shape[0]
@@ -190,7 +194,7 @@ class AnomalyModel2(Anomalib_Base):
                 raise Exception(f'Unknown prediction type: {type(preds)}')
             
         if self.tiler is not None:
-            output = self.tiler.untile(output,tile_mode=self.tile_mode, overlap_mode=overlap_mode)
+            output = self.tiler.untile(output,scale_mode=self.tile_mode, overlap_mode=overlap_mode)
     
         if isinstance(output, torch.Tensor):
             output = output.cpu().numpy()

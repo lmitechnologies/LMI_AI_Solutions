@@ -42,8 +42,8 @@ def convert_v1_torchscript(model_path, output_path, batch_size=1, height=1024, w
         if isinstance(d, v2.Resize):
             image_size = to_list(d.size)
     if image_size[0] == height and image_size[1] == width:
-        logger.warning(f"Model already has the correct input size: {image_size} updating to exporting resizing.")
-        image_size = [height*2, width*2]
+        logger.warning(f"Model already has the correct input size: {image_size} updating to exporting preprocessing operations.")
+        image_size = [image_size[0]*2, image_size[1]*2]
     inp = torch.rand(batch_size,3,image_size[0], image_size[1]).cuda()
     traced_model = torch.jit.trace(model,inp,strict=False)
     torch.jit.save(traced_model, output_path)
