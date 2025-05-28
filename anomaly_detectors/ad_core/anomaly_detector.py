@@ -8,6 +8,10 @@ class AnomalyDetector:
         logger = logging.getLogger(__name__)
         model_path = metadata.get('model_path')
         image_size = metadata.get('image_size')
+        tile_size = metadata.get('tile_size', None)
+        stride = metadata.get('stride', None)
+        tile_mode = metadata.get('tile_mode', 'padding')
+
         if image_size:
             if 'image_size' in kwargs and kwargs['image_size'] is not None:
                 logger.warning(
@@ -23,7 +27,7 @@ class AnomalyDetector:
             raise ValueError(f"Failed to find a registered detector for metadata: {metadata}") from e
 
         if model_path is not None:
-            instance = wrapper_cls(model_path, *args, **kwargs)
+            instance = wrapper_cls(model_path, tile_size, stride, tile_mode,*args, **kwargs)
         else:
             instance = wrapper_cls(*args, **kwargs)
 
