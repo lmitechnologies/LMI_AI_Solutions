@@ -213,7 +213,6 @@ class Tiler:
 
         if num_total_tiles == 0: # Handle empty tiles tensor
              # Construct an empty or zero image of the target output shape if possible, or raise error
-            print("Warning: Input 'tiles' tensor is empty.")
             final_h, final_w = self.im_size
             return torch.zeros((self.batch_size, num_channel, final_h, final_w), dtype=tiles.dtype, device=tiles.device)
 
