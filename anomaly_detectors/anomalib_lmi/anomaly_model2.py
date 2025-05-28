@@ -172,17 +172,18 @@ class AnomalyModel2(Anomalib_Base):
                       If tiling is used, this is the untilled output.
                       The output is squeezed.
         '''
-        tiling_settings = kwargs.get('tiling_settings', {})
-        overlap_mode_str = tiling_settings.get('overlap_mode', 'average')
-        if overlap_mode_str not in ['average', 'max']:
-            raise ValueError(f'Unknown overlap mode: {overlap_mode_str}. Use "average" or "max".')
-        if overlap_mode_str == 'average':
-            current_overlap_mode = OverlapMode.AVERAGE
-        else:
-            current_overlap_mode = OverlapMode.MAX
+        if self.tiler is not None:
+            tiling_settings = kwargs.get('tiling_settings', {})
+            overlap_mode_str = tiling_settings.get('overlap_mode', 'average')
+            if overlap_mode_str not in ['average', 'max']:
+                raise ValueError(f'Unknown overlap mode: {overlap_mode_str}. Use "average" or "max".')
+            if overlap_mode_str == 'average':
+                current_overlap_mode = OverlapMode.AVERAGE
+            else:
+                current_overlap_mode = OverlapMode.MAX
 
-        tiling_settings['overlap_mode'] = current_overlap_mode
-        tiling_settings['scale_mode'] = self.tile_mode
+            tiling_settings['overlap_mode'] = current_overlap_mode
+            tiling_settings['scale_mode'] = self.tile_mode
 
         
 
