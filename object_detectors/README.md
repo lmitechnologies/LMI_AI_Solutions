@@ -2,12 +2,12 @@
 
 ## 1. Pre Labeling with Segment Anything Model 2
 
-### 1.1 Clone the sam lmi repo
+### 1.1 Clone the Repo
 ```bash
 git clone https://github.com/lmitechnologies/sam.git
 ```
 
-### 1.2 sam lmi repo strcture
+### 1.2 Repo Structure
 ```
 ├── data
 ├── v1 (deprecated)
@@ -22,17 +22,16 @@ git clone https://github.com/lmitechnologies/sam.git
 ├── my_utils.py
 ```
 
-This document focus on the `v2` folder including the scripts related to the sam2 model. It's content is listed below:
+This document focuses on the `v2` folder, which contains scripts related to the sam2 model. The contents of this folder are as follows:
 
-`configs`: the folder contains the sam2 configuration files.  
-`weights`: the folder contains the pretrained sam2 weights files.  
-`automatic_mask_generator.py`: the script to automatically generate masks for all the found objects in images.  
-`prompt_with_similarity2.py`: the script to interactive select points for objects in the first image and automatically find similar objects in the remaining images.  
-`prompt.py`: the script to manually select points of target objects for all the images.  
+`configs`: this folder contains the sam2 configuration files.  
+`weights`: this folder contains the pretrained sam2 weights files.  
+`automatic_mask_generator.py`: the script automatically generates masks for all detected objects within images.  
+`prompt_with_similarity2.py`: the script allows for interactively point selection for objects in the first image and automatically find similar objects in subsequent images.  
+`prompt.py`: the script allows manually point selection for target objects across all images.  
 
-Note: `prompt_with_similarity2.py` and `prompt.py` are tested inside docker in a **windows** host.
 
-### 1.3 modify the docker-compose.yaml file
+### 1.3 Auto Mask Generation
 
 Modify `v2/docker-compose.yaml` file:
 - Modify the path to input folder
@@ -63,3 +62,37 @@ services:
 
 ```
 
+### 1.4 Prompting
+These instructions explain how to set up your environment to enable GUI-based prompting, likely from within a Docker container that requires an X server for display.
+
+#### 1.4.1 Running on a Windows host
+To display graphical applications from the Docker container on your Windows host, you'll need to install and configure an X server.
+
+1. Install VcXsrv (X server for Windows) from https://vcxsrv.com/.
+2. Launch XLaunch from your Start Menu.
+3. Go through the configuration wizard with these settings:
+    - Display settings: Choose "Multiple windows".
+    - Display number: Leave it as 0.
+    - Client startup: Choose "Start no client".
+    - Extra settings: Crucially, check the box for "Disable access control". This allows the Docker container to connect to it.
+4. Find Your Host's IP Address.
+5. Replace the IP in the docker compose file.
+
+#### 1.4.2 Running on a Linux host
+Ensure your Linux host's X server is configured to accept connections from the Docker container.
+
+1. Allow Connections to Your X Server by running this command in your terminal:
+    ```bash
+    xhost +
+    ```
+2. Modify the docker-compose file:
+    - Modify the `DISPLAY` environmental variable: 
+      ```yaml
+      environment:
+        - DISPLAY=${DISPLAY}
+      ```
+    - Add a volume for X11 communication:
+      ```yaml
+      volumes:
+        - /tmp/.X11-unix:/tmp/.X11-unix
+      ```
