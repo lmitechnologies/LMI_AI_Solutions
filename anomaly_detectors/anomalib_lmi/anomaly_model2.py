@@ -244,6 +244,7 @@ class AnomalyModel2(Anomalib_Base):
                 aggregated_output_tensor = self.bindings['output'].data
 
             elif self.inference_mode == 'PT':
+                self.logger.info(f'Running PT model inference on input batch of shape: {input_batch.shape}')
                 preds = self.pt_model(input_batch)
                 if isinstance(preds, torch.Tensor):
                     aggregated_output_tensor = preds
