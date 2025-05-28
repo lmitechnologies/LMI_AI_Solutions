@@ -6,6 +6,7 @@ import logging
 import json
 import torch
 from torch.nn import functional as F
+from torchvision import transforms
 
 
 logging.basicConfig()
@@ -177,87 +178,115 @@ class Tiler:
 
 
     @torch.inference_mode()
-    def untile(self, tiles, scale_mode=ScaleMode.PADDING, overlap_mode=OverlapMode.AVERAGE): 
-        """Convert tiles into original image. Handles overlapping tiles by averaging or taking the max.
+    def untile(self, tiles, scale_mode=ScaleMode.PADDING, overlap_mode=OverlapMode.AVERAGE,
+               apply_post_smoothing=False, smoothing_kernel_size=3, smoothing_sigma=1.0):
+        """Convert tiles into original image. Handles overlapping tiles.
+        Optionally applies a smoothing filter to reduce artifacts in overlapped regions.
 
         Args:
-            tiles (Torch): the tiles tensor in the format: [n_tiles*batch, c, tile_h, tile_w]
-            scale_mode (ScaleMode, optional): scale mode for final image. Defaults to ScaleMode.PADDING.
-            overlap_mode (OverlapMode, optional): how to handle overlapping regions. Defaults to OverlapMode.AVERAGE.
+            tiles (torch.Tensor): The tiles tensor in the format: [n_total_tiles, c, tile_h, tile_w],
+                                   where n_total_tiles = n_tiles_per_batch_item * batch_size.
+            scale_mode (ScaleMode, optional): Scale mode for final image. Defaults to ScaleMode.PADDING.
+            overlap_mode (OverlapMode, optional): How to handle overlapping regions. Defaults to OverlapMode.AVERAGE.
+            apply_post_smoothing (bool, optional): If True, applies a Gaussian blur after reconstruction. Defaults to False.
+            smoothing_kernel_size (int, optional): Kernel size for Gaussian blur. Must be a positive odd integer. Defaults to 5.
+            smoothing_sigma (float, optional): Sigma for Gaussian blur. Must be positive. Defaults to 1.0.
 
         Returns:
-            Tensor: the reconstructed image
+            torch.Tensor: The reconstructed image.
         """
-        if not isinstance(scale_mode, ScaleMode): 
-            raise ValueError('scale_mode must be a ScaleMode object') 
-        if not isinstance(overlap_mode, OverlapMode): 
-            raise ValueError('overlap_mode must be an OverlapMode object') 
+        if not isinstance(scale_mode, ScaleMode):
+            raise ValueError('scale_mode must be a ScaleMode object')
+        if not isinstance(overlap_mode, OverlapMode):
+            raise ValueError('overlap_mode must be an OverlapMode object')
 
-        # Validate input tensor
+        if apply_post_smoothing:
+            if not isinstance(smoothing_kernel_size, int) or smoothing_kernel_size <= 0 or smoothing_kernel_size % 2 == 0:
+                raise ValueError('smoothing_kernel_size must be a positive odd integer.')
+            if not isinstance(smoothing_sigma, (float, int)) or smoothing_sigma <= 0: # Also allow int sigma if positive
+                raise ValueError('smoothing_sigma must be a positive number.')
+
         if tiles.dim() != 4:
             raise ValueError(f'Expected 4D tensor, got {tiles.dim()}D tensor')
-        
-        _, num_channel, tile_h, tile_w = tiles.shape
-        
-        # Check if tiles can be evenly divided by batch_size
-        if tiles.shape[0] % self.batch_size != 0:
-            raise ValueError(f'Number of tiles ({tiles.shape[0]}) must be divisible by batch_size ({self.batch_size})')
-        
-        n_tiles_per_batch = tiles.shape[0] // self.batch_size
-        tiles_reshaped = tiles.contiguous().view(n_tiles_per_batch, self.batch_size, num_channel, tile_h, tile_w) 
+
+        num_total_tiles, num_channel, tile_h, tile_w = tiles.shape
+
+        if num_total_tiles == 0: # Handle empty tiles tensor
+             # Construct an empty or zero image of the target output shape if possible, or raise error
+            print("Warning: Input 'tiles' tensor is empty.")
+            final_h, final_w = self.im_size
+            return torch.zeros((self.batch_size, num_channel, final_h, final_w), dtype=tiles.dtype, device=tiles.device)
+
+
+        if num_total_tiles % self.batch_size != 0:
+            raise ValueError(f'Total number of tiles ({num_total_tiles}) must be divisible by batch_size ({self.batch_size})')
+
+        n_tiles_per_batch_item = num_total_tiles // self.batch_size
+        tiles_reshaped = tiles.contiguous().view(n_tiles_per_batch_item, self.batch_size, num_channel, tile_h, tile_w)
         device = tiles_reshaped.device
 
-        # Ensure tile dimensions match expected tile_size
         if (tile_h, tile_w) != tuple(self.tile_size):
             raise ValueError(f'Tile dimensions ({tile_h}, {tile_w}) do not match expected tile_size {tuple(self.tile_size)}')
 
-        im = torch.zeros(self.batch_size, num_channel, *self.scale_size, device=device, dtype=tiles_reshaped.dtype) 
-        
-        if overlap_mode == OverlapMode.AVERAGE: 
-            cnts = torch.zeros(self.batch_size, num_channel, *self.scale_size, device=device, dtype=torch.float32) 
-            ones = torch.ones(self.batch_size, num_channel, *self.tile_size, device=device, dtype=torch.float32) 
+        # Initialize 'im' tensor
+        if overlap_mode == OverlapMode.MAX:
+            if tiles_reshaped.dtype.is_floating_point:
+                init_val = -float('inf')
+            else:
+                init_val = torch.iinfo(tiles_reshaped.dtype).min
+            im = torch.full((self.batch_size, num_channel, *self.scale_size),
+                            init_val, device=device, dtype=tiles_reshaped.dtype)
+        else: # For AVERAGE mode or others expecting zero initialization
+            im = torch.zeros(self.batch_size, num_channel, *self.scale_size,
+                             device=device, dtype=tiles_reshaped.dtype)
 
-        # Calculate expected number of tiles
-        expected_tiles = len(list(product(
-            range(0, self.scale_size[0] - self.tile_size[0] + 1, self.stride[0]),
-            range(0, self.scale_size[1] - self.tile_size[1] + 1, self.stride[1])
-        )))
-        
-        if n_tiles_per_batch != expected_tiles:
-            raise ValueError(f'Expected {expected_tiles} tiles per batch, got {n_tiles_per_batch}')
+        if overlap_mode == OverlapMode.AVERAGE:
+            # For AVERAGE mode, promote accumulator 'im' to float to prevent overflow/precision loss
+            if not im.dtype.is_floating_point:
+                im = im.float()
+            cnts = torch.zeros(self.batch_size, num_channel, *self.scale_size, device=device, dtype=torch.float32)
+            ones_for_avg = torch.ones(self.batch_size, num_channel, *self.tile_size, device=device, dtype=torch.float32)
 
-        processed_tiles = 0 
+        # Calculate expected number of unique tile positions for one item in a batch
+        expected_tiles_y = (self.scale_size[0] - self.tile_size[0]) // self.stride[0] + 1
+        expected_tiles_x = (self.scale_size[1] - self.tile_size[1]) // self.stride[1] + 1
+        expected_tiles_per_item = expected_tiles_y * expected_tiles_x
+
+        if n_tiles_per_batch_item != expected_tiles_per_item:
+            raise ValueError(f'Expected {expected_tiles_per_item} tiles per batch item, got {n_tiles_per_batch_item}. Check scale_size, tile_size, and stride.')
+
         for idx, (i, j) in enumerate(product(range(0, self.scale_size[0] - self.tile_size[0] + 1, self.stride[0]),
                                             range(0, self.scale_size[1] - self.tile_size[1] + 1, self.stride[1]))):
-            if idx >= n_tiles_per_batch:
-                break  # Safety check to prevent index out of bounds
-                
-            current_tile = tiles_reshaped[idx] 
+            if idx >= n_tiles_per_batch_item: # Should not be hit if previous check passes
+                break
             
+            current_tile_batch = tiles_reshaped[idx] # Shape: [batch_size, num_channel, tile_h, tile_w]
+
             if overlap_mode == OverlapMode.AVERAGE:
-                im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] += current_tile
-                cnts[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] += ones
+                im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] += current_tile_batch.to(im.dtype) # im.dtype is float here
+                cnts[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] += ones_for_avg
+            elif overlap_mode == OverlapMode.MAX:
+                im_slice_current_canvas = im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]]
+                im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] = \
+                    torch.maximum(im_slice_current_canvas, current_tile_batch)
+
+        if overlap_mode == OverlapMode.AVERAGE:
+            im = torch.div(im, cnts.clamp(min=1)) # Avoid division by zero; original used clamp(min=1)
+
+        # Apply post-smoothing if requested
+        if apply_post_smoothing:
+            im_for_blur = im
+            if not im.dtype.is_floating_point: # Ensure 'im' is float before blurring
+                im_for_blur = im.float()
             
-            elif overlap_mode == OverlapMode.MAX: 
-                if processed_tiles == 0:
-                    # Initialize with first tile
-                    im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] = current_tile
-                else:
-                    im_slice = im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] 
-                    im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] = torch.maximum(im_slice, current_tile)
-            
-            processed_tiles += 1
+            gaussian_blur_transform = transforms.GaussianBlur(kernel_size=smoothing_kernel_size, sigma=smoothing_sigma)
+            im = gaussian_blur_transform(im_for_blur) # Output of GaussianBlur is float
 
-        if overlap_mode == OverlapMode.AVERAGE: 
-            # Average the overlapping tiles
-            # Ensure cnts has the same dtype as im for consistent division
-            cnts = cnts.to(im.dtype)
-            im = torch.div(im, cnts.clamp(min=1))
-        
-        # Return image scaled to original size, maintaining original dtype
-        return downscale_image(im, self.im_size, scale_mode).to(tiles.dtype)
-
-
+        # Downscale to final im_size and cast to original input tile dtype
+        # 'im' could be float at this stage (from averaging or smoothing)
+        reconstructed_image = downscale_image(im, self.im_size, scale_mode)
+        return reconstructed_image.to(tiles.dtype)
+    
     def write_metadata(self, out_path):
         """write tiler metadata to a json file
 

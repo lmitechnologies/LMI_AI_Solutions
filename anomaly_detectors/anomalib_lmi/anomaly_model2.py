@@ -130,10 +130,6 @@ class AnomalyModel2(Anomalib_Base):
         args:
             - image: numpy array [H,W,Ch]
         '''
-        # if self.tiler is None:
-        #     self.logger.warning('Tiler is not initialized. Using model shape for resizing.')
-        #     if image.shape[0] != self.model_shape[0] or image.shape[1] != self.model_shape[1]:
-        #         image = pipeline_utils.resize_image(image, W=self.model_shape[1], H=self.model_shape[0])
         img = self.from_numpy(image).float()
         self.logger.info(f'Input image shape: {img.device}, {img.shape}')
         
@@ -161,44 +157,122 @@ class AnomalyModel2(Anomalib_Base):
     @torch.inference_mode()
     def predict(self, image, **kwargs):
         '''
-        Desc: Model prediction 
-        Args: image: numpy array [H,W,Ch]
-        
+        Desc: Model prediction
+        Args: image: numpy array [H,W,Ch] or [N,H,W,Ch]
+        kwargs:
+            overlap_mode (str): 'average' or 'max'. Default 'average'.
+            batch_size (int, optional): If provided and the input batch contains more
+                                        samples than this size, the input batch will be
+                                        split and processed in chunks of this size.
+                                        The results are then aggregated.
+
         Note: predict calls the preprocess method
         returns:
-            - output: resized output to match training data's size
+            - output: processed output, typically a numpy array.
+                      If tiling is used, this is the untilled output.
+                      The output is squeezed.
         '''
-        overlap_mode = kwargs.get('overlap_mode', 'average')
-        if overlap_mode not in ['average', 'max']:
-            raise ValueError(f'Unknown overlap mode: {overlap_mode}. Use "average" or "max".')
-        if overlap_mode == 'average':
-            overlap_mode = OverlapMode.AVERAGE
+        tiling_settings = kwargs.get('tiling_settings', {})
+        overlap_mode_str = tiling_settings.get('overlap_mode', 'average')
+        if overlap_mode_str not in ['average', 'max']:
+            raise ValueError(f'Unknown overlap mode: {overlap_mode_str}. Use "average" or "max".')
+        if overlap_mode_str == 'average':
+            current_overlap_mode = OverlapMode.AVERAGE
         else:
-            overlap_mode = OverlapMode.MAX
-        input_batch = self.preprocess(image)
-        if self.inference_mode=='TRT':
-            self.binding_addrs['input'] = int(input_batch.data_ptr())
-            self.context.execute_v2(list(self.binding_addrs.values()))
-            outputs = {x:self.bindings[x].data for x in self.output_names}
-            output = outputs['output']
-        elif self.inference_mode=='PT':
-            preds = self.pt_model(input_batch)
-            if isinstance(preds, torch.Tensor):
-                output = preds
-            elif isinstance(preds, dict):
-                output = preds['anomaly_map']
-            elif isinstance(preds, Sequence):
-                output = preds[1]
+            current_overlap_mode = OverlapMode.MAX
+
+        tiling_settings['overlap_mode'] = current_overlap_mode
+        tiling_settings['scale_mode'] = self.tile_mode
+
+        
+
+        input_batch = self.preprocess(image) 
+        
+        num_samples_in_input = input_batch.shape[0]
+
+        if num_samples_in_input == 0:
+            return np.array([])
+        inference_settings = kwargs.get('inference_settings', {})
+        user_inference_batch_size = inference_settings.get('inference_batch_size', None)
+        
+        aggregated_output_tensor = None
+        
+        perform_mini_batch_inference = (
+            user_inference_batch_size is not None and \
+            user_inference_batch_size > 0
+        )
+
+        if perform_mini_batch_inference:
+            all_mini_batch_outputs = []
+            for i in range(0, num_samples_in_input, user_inference_batch_size):
+                mini_batch = input_batch[i:min(i + user_inference_batch_size, num_samples_in_input)]
+                current_mini_batch_output_tensor = None
+                if self.inference_mode == 'TRT':
+                    self.binding_addrs['input'] = int(mini_batch.data_ptr())
+                    self.context.execute_v2(list(self.binding_addrs.values()))
+                    current_mini_batch_output_tensor = self.bindings['output'].data.clone() 
+                               
+                elif self.inference_mode == 'PT':
+                    preds = self.pt_model(mini_batch)
+                    if isinstance(preds, torch.Tensor):
+                        current_mini_batch_output_tensor = preds
+                    elif isinstance(preds, dict):
+                        current_mini_batch_output_tensor = preds['anomaly_map']
+                    elif isinstance(preds, Sequence):
+                        current_mini_batch_output_tensor = preds[1]
+                    else:
+                        raise Exception(f'Unknown prediction type from PT model: {type(preds)}')
+                
+                if current_mini_batch_output_tensor is not None:
+                    all_mini_batch_outputs.append(current_mini_batch_output_tensor)
+                else:
+                    raise Exception(f"Model failed to produce an output for a mini-batch.")
+
+            if not all_mini_batch_outputs:
+                raise Exception("Batched inference was performed, but no outputs were collected.")
+
+            if isinstance(all_mini_batch_outputs[0], torch.Tensor):
+                aggregated_output_tensor = torch.cat(all_mini_batch_outputs, dim=0)
             else:
-                raise Exception(f'Unknown prediction type: {type(preds)}')
-            
+                raise Exception(f"Unsupported output type for aggregation: {type(all_mini_batch_outputs[0])}")
+
+        else: 
+            if self.inference_mode == 'TRT':
+                self.binding_addrs['input'] = int(input_batch.data_ptr())
+                self.context.execute_v2(list(self.binding_addrs.values()))
+                aggregated_output_tensor = self.bindings['output'].data
+
+            elif self.inference_mode == 'PT':
+                preds = self.pt_model(input_batch)
+                if isinstance(preds, torch.Tensor):
+                    aggregated_output_tensor = preds
+                elif isinstance(preds, dict):
+                    aggregated_output_tensor = preds['anomaly_map']
+                elif isinstance(preds, Sequence):
+                    aggregated_output_tensor = preds[1]
+                else:
+                    raise Exception(f'Unknown prediction type: {type(preds)}')
+        
+        if aggregated_output_tensor is None:
+            raise Exception("Model inference failed to produce an output tensor.")
+
+        processed_output = aggregated_output_tensor
+        
         if self.tiler is not None:
-            output = self.tiler.untile(output,scale_mode=self.tile_mode, overlap_mode=overlap_mode)
+            processed_output = self.tiler.untile(processed_output, **tiling_settings)
     
-        if isinstance(output, torch.Tensor):
-            output = output.cpu().numpy()
-        output = np.squeeze(output)
-        return output
+        output_numpy = None
+        if isinstance(processed_output, torch.Tensor):
+            output_numpy = processed_output.cpu().numpy()
+        elif isinstance(processed_output, np.ndarray): 
+            output_numpy = processed_output
+        else:
+            raise Exception(f"Output from model/tiler is of unexpected type: {type(processed_output)}")
+
+        final_squeezed_output = np.squeeze(output_numpy)
+        
+        return final_squeezed_output
+
         
 
     def warmup(self,input_hw=None):
@@ -211,9 +285,6 @@ class AnomalyModel2(Anomalib_Base):
         if input_hw is None:
             input_hw = self.model_shape
         input_hw = to_list(input_hw)
-        input_hw = [
-            896, 224
-        ]
         zeros = np.zeros(input_hw+[3,])
         self.logger.info(f'Warming up model with input shape: {zeros.shape}')
         self.predict(zeros)
