@@ -26,9 +26,9 @@ This document focuses on the `v2` folder, which contains scripts related to the 
 
 `configs`: this folder contains the sam2 configuration files.  
 `weights`: this folder contains the pretrained sam2 weights files.  
-`automatic_mask_generator.py`: the script automatically generates masks for all detected objects within images.  
-`prompt_with_similarity2.py`: the script allows for interactively point selection for objects in the first image and automatically find similar objects in subsequent images.  
-`prompt.py`: the script allows manually point selection for target objects across all images.  
+`automatic_mask_generator.py`: this script automatically generates masks for all detected objects within images.  
+`prompt_with_similarity2.py`: this script allows for interactively point selection for objects in the first image and automatically find similar objects in subsequent images.  
+`prompt.py`: this script allows manually point selection for target objects across all images.  
 
 
 ### 1.3 Auto Mask Generation
