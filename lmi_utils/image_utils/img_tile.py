@@ -23,7 +23,7 @@ def __to_tiles(source:Path, dest:Path, tile_hw:list, stride_hw:list, mode=ScaleM
     img = torchvision.io.read_image(source.as_posix()).unsqueeze(0) # [b,c,h,w]
     
     tiler = Tiler(tile_hw,stride_hw)
-    tiles = tiler.tile(img,mode)
+    tiles = tiler.tile(img,scale_mode=mode)
     
     # write tile images
     os.makedirs(dest, exist_ok=True)
