@@ -53,7 +53,9 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
         
         # inference
         t0 = time.time()
-        anom_map = model.predict(img, overlap_mode=overlap_mode).astype(np.float32)
+        anom_map = model.predict(img, **{"tiling_settings": {
+            "overlap_mode": overlap_mode,
+        }}).astype(np.float32)
         proctime.append(time.time() - t0)
         
         anom_all.append(anom_map)
@@ -125,8 +127,8 @@ if __name__ == '__main__':
     ap.add_argument('--model', type=str, required=True, help='path to the AD model')
     ap.add_argument('-i','--images', type=str, required=True, help='path to the testing images')
     ap.add_argument('-o','--output', type=str, required=True, help='path to the output folder')
-    ap.add_argument('--height',type=int, required=True, help='input height')
-    ap.add_argument('--width',type=int, required=True, help='image width')
+    ap.add_argument('--height',type=int, required=False, help='input height', default=224)
+    ap.add_argument('--width',type=int, required=False, help='image width', default=224)
     ap.add_argument('--recursive', action='store_true', help='search images recursively')
     ap.add_argument('--tile', type=int, nargs='*', help='tile hight and width. Can be a single int or two integers')
     ap.add_argument('--stride', type=int, nargs='*', help='stride hight and width. Can be a single int or two integers')
