@@ -255,13 +255,13 @@ class Tiler:
 
         for idx, (i, j) in enumerate(product(range(0, self.scale_size[0] - self.tile_size[0] + 1, self.stride[0]),
                                             range(0, self.scale_size[1] - self.tile_size[1] + 1, self.stride[1]))):
-            if idx >= n_tiles_per_batch_item: # Should not be hit if previous check passes
+            if idx >= n_tiles_per_batch_item: 
                 break
             
-            current_tile_batch = tiles_reshaped[idx] # Shape: [batch_size, num_channel, tile_h, tile_w]
+            current_tile_batch = tiles_reshaped[idx] 
 
             if overlap_mode == OverlapMode.AVERAGE:
-                im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] += current_tile_batch.to(im.dtype) # im.dtype is float here
+                im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] += current_tile_batch.to(im.dtype) 
                 cnts[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] += ones_for_avg
             elif overlap_mode == OverlapMode.MAX:
                 im_slice_current_canvas = im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]]
