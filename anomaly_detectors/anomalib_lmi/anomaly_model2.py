@@ -131,7 +131,6 @@ class AnomalyModel2(Anomalib_Base):
             - image: numpy array [H,W,Ch]
         '''
         img = self.from_numpy(image).float()
-        self.logger.info(f'Input image shape: {img.device}, {img.shape}')
         
         # grayscale to rgb
         if img.ndim == 2:
@@ -142,7 +141,6 @@ class AnomalyModel2(Anomalib_Base):
         
         if self.tiler is not None:
             img = self.tiler.tile(img,self.tile_mode)
-        self.logger.info(f'Input image shape: {img.device}, {img.shape}')
         
         # resize baked into the pt model
         batch = img.shape[0]

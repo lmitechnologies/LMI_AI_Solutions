@@ -240,7 +240,6 @@ class Tiler:
                              device=device, dtype=tiles_reshaped.dtype)
 
         if overlap_mode == OverlapMode.AVERAGE:
-            # For AVERAGE mode, promote accumulator 'im' to float to prevent overflow/precision loss
             if not im.dtype.is_floating_point:
                 im = im.float()
             cnts = torch.zeros(self.batch_size, num_channel, *self.scale_size, device=device, dtype=torch.float32)
@@ -270,20 +269,17 @@ class Tiler:
                     torch.maximum(im_slice_current_canvas, current_tile_batch)
 
         if overlap_mode == OverlapMode.AVERAGE:
-            im = torch.div(im, cnts.clamp(min=1)) # Avoid division by zero; original used clamp(min=1)
+            im = torch.div(im, cnts.clamp(min=1)) 
 
-        # Apply post-smoothing if requested
+        reconstructed_image = downscale_image(im, self.im_size, scale_mode)
+
         if apply_post_smoothing:
-            im_for_blur = im
-            if not im.dtype.is_floating_point: # Ensure 'im' is float before blurring
+            im_for_blur = reconstructed_image
+            if not reconstructed_image.dtype.is_floating_point:
                 im_for_blur = im.float()
             
             gaussian_blur_transform = transforms.GaussianBlur(kernel_size=smoothing_kernel_size, sigma=smoothing_sigma)
-            im = gaussian_blur_transform(im_for_blur) # Output of GaussianBlur is float
-
-        # Downscale to final im_size and cast to original input tile dtype
-        # 'im' could be float at this stage (from averaging or smoothing)
-        reconstructed_image = downscale_image(im, self.im_size, scale_mode)
+            reconstructed_image = gaussian_blur_transform(im_for_blur) 
         return reconstructed_image.to(tiles.dtype)
     
     def write_metadata(self, out_path):
