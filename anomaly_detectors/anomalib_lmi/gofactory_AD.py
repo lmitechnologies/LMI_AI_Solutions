@@ -135,5 +135,14 @@ if __name__ == '__main__':
     ap.add_argument('--resize', action='store_true', help='interpolate if it needs to resize images, otherwise pad zeros')
     ap.add_argument('--overlap_mode','-om', type=str, required=False,default="average", help='overlap mode for tiling, can be "average" or "max"')
     args = ap.parse_args()
+    if args.tile is not None:
+        if len(args.tile) not in (1, 2):
+            ap.error("--tile requires 1 or 2 integers")
+        if len(args.stride) not in (1, 2):
+            ap.error("--stride requires 1 or 2 integers")
+        if len(args.tile) == 1:
+            args.tile = [args.tile[0], args.tile[0]]
+        if len(args.stride) == 1:
+            args.stride = [args.stride[0], args.stride[0]]
     
     predict(args.model, args.images, [args.height,args.width] ,args.output, args.recursive, args.tile, args.stride, args.resize, args.overlap_mode)
