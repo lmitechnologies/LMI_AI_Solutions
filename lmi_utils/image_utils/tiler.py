@@ -41,7 +41,7 @@ def compute_new_edges(edges:list, tile_size:list, stride:list):
     return out_h,out_w
 
 
-def create_blend_mask(tile_size: list, stride: list, overlap_mode: OverlapMode = OverlapMode.LINEAR, device='cpu') -> torch.Tensor:
+def create_blend_mask(tile_size: list, stride: list, overlap_mode: OverlapMode = OverlapMode.AVERAGE, device='cpu') -> torch.Tensor:
     """Create a blending mask for tile transitions.
     
     Args:
@@ -262,13 +262,13 @@ class Tiler:
     
     
     @torch.inference_mode()
-    def untile(self, tiles, scale_mode=ScaleMode.PADDING, overlap_mode: OverlapMode = OverlapMode.LINEAR):
+    def untile(self, tiles, scale_mode=ScaleMode.PADDING, overlap_mode: OverlapMode = OverlapMode.AVERAGE):
         """convert tiles into original image. Apply blending for smooth transitions.
 
         Args:
             tiles (Torch): the tiles tensor in the format: [n_tiles*batch, c, tile_h, tile_w]
             mode (ScaleMode, optional): scale mode. Defaults to ScaleMode.PADDING.
-            overlap_mode (OverlapMode, optional): overlap handling mode. Defaults to OverlapMode.LINEAR.
+            overlap_mode (OverlapMode, optional): overlap handling mode. Defaults to OverlapMode.AVERAGE.
 
         Returns:
             Tensor: the reconstructed image with smooth blending
