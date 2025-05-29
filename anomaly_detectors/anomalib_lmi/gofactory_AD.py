@@ -14,8 +14,6 @@ NUM_BINS = 100
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-
 def predict(model_path, images_path, image_size, out_path, recursive=True, tile=None, stride=None, resize=False, overlap_mode='average'):
     """generating anomaly maps for a set of images
 
@@ -56,6 +54,8 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
         anom_map = model.predict(img, **{"tiling_settings": {
             "overlap_mode": overlap_mode,
         }}).astype(np.float32)
+        logger.info(f'anom_map shape {anom_map.shape}')
+
         proctime.append(time.time() - t0)
         
         anom_all.append(anom_map)
@@ -63,9 +63,13 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
     
     # Compute histogram
     logger.info(f"Computing anomaly score histogram for all data.")
-    anom_sq=np.squeeze(np.array(anom_all))
-    data=np.ravel(anom_sq)
-    global_min,global_max = data.min().item(),data.max().item()
+    all_data_raveled = []
+    for anom_map in anom_all:
+        all_data_raveled.extend(np.squeeze(anom_map).ravel().tolist())
+
+    data = np.array(all_data_raveled)
+    global_min, global_max = data.min().item(), data.max().item()
+    logger.info(f'Global Min: {global_min}, Global Max: {global_max}')
     hist,bin_edges = np.histogram(data, bins=NUM_BINS, density=True)
     logger.info(f"Anomaly score histogram: {hist}")
     logger.info(f"Anomaly score bins: {bin_edges}")
@@ -83,6 +87,7 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
     
     for path_src,anom in zip(path_all,anom_all):
         # normalize to uint16
+        anom_map = anom.copy()
         anom = np.squeeze(anom)
         cur_max = anom.max()
         anom = (anom-global_min)/(global_max-global_min)*MAX_UINT16
@@ -94,6 +99,9 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
         path_anom = os.path.join(out_path, relpath.replace(ext,'_anom.png'))
         if not os.path.exists(os.path.dirname(path_anom)):
             os.makedirs(os.path.dirname(path_anom))
+        # if annotate:
+        #     annotated = ad_postprocess(cv2.cvtColor(cv2.imread(path_src), cv2.COLOR_BGR2RGB), anom_map, ad_threshold=anom_map.min(), ad_max=anom_map.max())
+        #     cv2.imwrite(os.path.join(out_path, relpath.replace(ext,'_anot.png')),cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR))
         logger.info(f'write anomaly map to {path_anom}')
         cv2.imwrite(path_anom,anom)
         
@@ -133,7 +141,8 @@ if __name__ == '__main__':
     ap.add_argument('--tile', type=int, nargs='*', help='tile hight and width. Can be a single int or two integers')
     ap.add_argument('--stride', type=int, nargs='*', help='stride hight and width. Can be a single int or two integers')
     ap.add_argument('--resize', action='store_true', help='interpolate if it needs to resize images, otherwise pad zeros')
-    ap.add_argument('--overlap_mode','-om', type=str, required=False,default="average", help='overlap mode for tiling, can be "average" or "max"')
+    ap.add_argument('--annotate', action='store_true', help='interpolate if it needs to resize images, otherwise pad zeros')
+    # ap.add_argument('--overlap_mode','-om', type=str, required=False,default="gaussian", help='overlap mode for tiling, can be "average", "max", "cosine", "linear", "gaussian"')
     args = ap.parse_args()
     if args.tile is not None:
         if len(args.tile) not in (1, 2):
