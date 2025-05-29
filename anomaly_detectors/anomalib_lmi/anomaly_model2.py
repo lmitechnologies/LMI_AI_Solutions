@@ -209,7 +209,7 @@ class AnomalyModel2(Anomalib_Base):
                 if self.inference_mode == 'TRT':
                     self.binding_addrs['input'] = int(mini_batch.data_ptr())
                     self.context.execute_v2(list(self.binding_addrs.values()))
-                    current_mini_batch_output_tensor = self.bindings['output'].data.clone() 
+                    current_mini_batch_output_tensor = self.bindings['output'].data
                                
                 elif self.inference_mode == 'PT':
                     preds = self.pt_model(mini_batch)
