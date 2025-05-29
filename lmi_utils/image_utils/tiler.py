@@ -6,7 +6,6 @@ import logging
 import json
 import torch
 from torch.nn import functional as F
-from torchvision import transforms
 
 
 logging.basicConfig()
@@ -21,10 +20,13 @@ class ScaleMode(str, Enum):
     INTERPOLATION = "interpolation"
 
 
-class OverlapMode(str, Enum): # New enum for overlap handling
-    """Type of mode for handling overlapping tiles.""" # New enum for overlap handling
-    AVERAGE = "average" # New enum for overlap handling
-    MAX = "max" # New enum for overlap handling
+class OverlapMode(str, Enum):
+    """Type of blending mode for tile edges."""
+    
+    AVERAGE = "average"  
+    LINEAR = "linear"   
+    COSINE = "cosine"    
+    GAUSSIAN = "gaussian"  
 
 
 def compute_new_edges(edges:list, tile_size:list, stride:list):
@@ -32,10 +34,89 @@ def compute_new_edges(edges:list, tile_size:list, stride:list):
         if (edge-tile) % stride != 0:
             return tile + max(0,ceil((edge-tile)/stride)*stride)
         return edge
-
+    
     out_h = __compute_new_edge(edges[0],tile_size[0],stride[0])
     out_w = __compute_new_edge(edges[1],tile_size[1],stride[1])
     return out_h,out_w
+
+
+def create_blend_mask(tile_size: list, stride: list, overlap_mode: OverlapMode = OverlapMode.LINEAR, device='cpu') -> torch.Tensor:
+    """Create a blending mask for smooth tile transitions.
+    
+    Args:
+        tile_size (list): [tile_h, tile_w]
+        stride (list): [stride_h, stride_w]
+        overlap_mode (OverlapMode): Type of blending to apply
+        device: Device to create tensor on
+        
+    Returns:
+        torch.Tensor: Blending mask of shape [tile_h, tile_w]
+    """
+    tile_h, tile_w = tile_size
+    stride_h, stride_w = stride
+    
+    # Calculate overlap regions
+    overlap_h = tile_h - stride_h
+    overlap_w = tile_w - stride_w
+    
+    if overlap_h <= 0 or overlap_w <= 0:
+        # No overlap, return uniform mask
+        return torch.ones(tile_h, tile_w, device=device)
+    
+    mask = torch.ones(tile_h, tile_w, device=device)
+    
+    if overlap_mode == OverlapMode.AVERAGE:
+        return mask
+    
+    # Create distance-based blending
+    y_coords = torch.arange(tile_h, device=device).float()
+    x_coords = torch.arange(tile_w, device=device).float()
+    
+    # Calculate distance from edges
+    y_dist_from_top = y_coords
+    y_dist_from_bottom = tile_h - 1 - y_coords
+    x_dist_from_left = x_coords
+    x_dist_from_right = tile_w - 1 - x_coords
+    
+    # Create 2D grids
+    y_grid, x_grid = torch.meshgrid(y_coords, x_coords, indexing='ij')
+    
+    # Calculate minimum distance to any edge
+    y_edge_dist = torch.minimum(y_dist_from_top, y_dist_from_bottom)
+    x_edge_dist = torch.minimum(x_dist_from_left, x_dist_from_right)
+    
+    # Apply blending in overlap regions only
+    blend_region_h = overlap_h // 2
+    blend_region_w = overlap_w // 2
+    
+    if overlap_mode == OverlapMode.LINEAR:
+        # Linear falloff from center
+        y_blend = torch.clamp(y_edge_dist / blend_region_h, 0, 1)
+        x_blend = torch.clamp(x_edge_dist / blend_region_w, 0, 1)
+        mask = torch.minimum(y_blend, x_blend)
+        
+    elif overlap_mode == OverlapMode.COSINE:
+        # Cosine-based smooth blending
+        y_blend = torch.clamp(y_edge_dist / blend_region_h, 0, 1)
+        x_blend = torch.clamp(x_edge_dist / blend_region_w, 0, 1)
+        y_blend = 0.5 * (1 + torch.cos(torch.pi * (1 - y_blend)))
+        x_blend = 0.5 * (1 + torch.cos(torch.pi * (1 - x_blend)))
+        mask = torch.minimum(y_blend, x_blend)
+        
+    elif overlap_mode == OverlapMode.GAUSSIAN:
+        # Gaussian-based blending
+        center_h, center_w = tile_h // 2, tile_w // 2
+        y_dist_center = torch.abs(y_grid - center_h)
+        x_dist_center = torch.abs(x_grid - center_w)
+        
+        sigma_h = blend_region_h / 2
+        sigma_w = blend_region_w / 2
+        
+        gaussian_y = torch.exp(-(y_dist_center ** 2) / (2 * sigma_h ** 2))
+        gaussian_x = torch.exp(-(x_dist_center ** 2) / (2 * sigma_w ** 2))
+        mask = torch.minimum(gaussian_y, gaussian_x)
+    
+    return mask
 
 
 @torch.inference_mode()
@@ -92,7 +173,7 @@ def downscale_image(image: torch.Tensor, size: tuple, mode: ScaleMode = ScaleMod
 
 class Tiler:
     logger = logging.getLogger('Tiler')
-
+    
     def __init__(self, tile_size, stride):
         """init tiler
 
@@ -104,14 +185,14 @@ class Tiler:
             tile_size = [tile_size]*2
         if isinstance(stride, int):
             stride = [stride]*2
-
+            
         if not isinstance(tile_size, list) or len(tile_size)!=2:
             raise Exception(f'tile size must be a list of two elements. Got: {tile_size}')
         if not isinstance(stride, list) or len(stride)!=2:
             raise Exception(f'stride must be a list of two elements. Got: {stride}')
         if stride[0]>tile_size[0] or stride[1]>tile_size[1]:
             raise Exception('Stride size must be smaller or equal to tile size')
-
+        
         self.tile_size = tile_size
         self.stride = stride
         self.im_size: list
@@ -119,8 +200,9 @@ class Tiler:
         self.batch_size: int
         self.num_channel: int
         self.n_tiles: list
-
-
+        self._blend_mask_cache = {}  # Cache for blend masks by overlap mode
+        
+        
     @classmethod
     def from_json(cls, json_path):
         """init tiler from a json file
@@ -131,12 +213,12 @@ class Tiler:
         obj = cls(0,0) # init an obj using dummy sizes
         with open(json_path, 'r') as file:
             metadata = json.load(file)
-
+            
         for k,v in metadata.items():
             setattr(obj,k,v)
         return obj
-
-
+        
+    
     @torch.inference_mode()
     def tile(self, im:torch.Tensor, mode=ScaleMode.PADDING) -> torch.Tensor:
         """generate tiles from the image. Will resize images if necessary.
@@ -153,134 +235,86 @@ class Tiler:
         self.batch_size,self.num_channel,im_h,im_w = im.shape
         self.im_size = [im_h,im_w]
         device = im.device
-
+        
         # scale image
         self.scale_size = compute_new_edges([im_h,im_w],self.tile_size,self.stride)
         resized_im = upscale_image(im,self.scale_size,mode)
-
+        
         if self.scale_size[0]!=im_h or self.scale_size[1]!=im_w:
             if mode==ScaleMode.INTERPOLATION:
                 self.logger.warning(f'resize img from {self.im_size} to {self.scale_size}')
             elif mode==ScaleMode.PADDING:
                 self.logger.warning(f'pad img from {self.im_size} to {self.scale_size}')
-
+        
         n_tiles_h = int((self.scale_size[0]-self.tile_size[0])/self.stride[0]) + 1
         n_tiles_w = int((self.scale_size[1]-self.tile_size[1])/self.stride[1]) + 1
         self.n_tiles = [n_tiles_h,n_tiles_w]
-
+        
         tiles = torch.zeros((n_tiles_h,n_tiles_w,self.batch_size,self.num_channel,*self.tile_size),dtype=resized_im.dtype,device=device)
         for i,j in product(range(0,self.scale_size[0]-self.tile_size[0]+1,self.stride[0]),
                            range(0,self.scale_size[1]-self.tile_size[1]+1,self.stride[1])):
             x,y = i//self.stride[0],j//self.stride[1]
             tiles[x,y,:,:,:] = resized_im[:,:,i:i+self.tile_size[0],j:j+self.tile_size[1]]
-
+        
         return tiles.contiguous().view(-1,self.num_channel,*self.tile_size)
-
-
+    
+    
     @torch.inference_mode()
-    def untile(self, tiles, scale_mode=ScaleMode.PADDING, overlap_mode=OverlapMode.AVERAGE,
-               apply_post_smoothing=False, smoothing_kernel_size=3, smoothing_sigma=1.0):
-        """Convert tiles into original image. Handles overlapping tiles.
-        Optionally applies a smoothing filter to reduce artifacts in overlapped regions.
+    def untile(self, tiles, mode=ScaleMode.PADDING, overlap_mode: OverlapMode = OverlapMode.LINEAR):
+        """convert tiles into original image. Apply blending for smooth transitions.
 
         Args:
-            tiles (torch.Tensor): The tiles tensor in the format: [n_total_tiles, c, tile_h, tile_w],
-                                   where n_total_tiles = n_tiles_per_batch_item * batch_size.
-            scale_mode (ScaleMode, optional): Scale mode for final image. Defaults to ScaleMode.PADDING.
-            overlap_mode (OverlapMode, optional): How to handle overlapping regions. Defaults to OverlapMode.AVERAGE.
-            apply_post_smoothing (bool, optional): If True, applies a Gaussian blur after reconstruction. Defaults to False.
-            smoothing_kernel_size (int, optional): Kernel size for Gaussian blur. Must be a positive odd integer. Defaults to 5.
-            smoothing_sigma (float, optional): Sigma for Gaussian blur. Must be positive. Defaults to 1.0.
+            tiles (Torch): the tiles tensor in the format: [n_tiles*batch, c, tile_h, tile_w]
+            mode (ScaleMode, optional): scale mode. Defaults to ScaleMode.PADDING.
+            overlap_mode (OverlapMode, optional): overlap handling mode. Defaults to OverlapMode.LINEAR.
 
         Returns:
-            torch.Tensor: The reconstructed image.
+            Tensor: the reconstructed image with smooth blending
         """
-        if not isinstance(scale_mode, ScaleMode):
-            raise ValueError('scale_mode must be a ScaleMode object')
+        if not isinstance(mode, ScaleMode):
+            raise Exception('mode must be a ScaleMode object')
         if not isinstance(overlap_mode, OverlapMode):
-            raise ValueError('overlap_mode must be an OverlapMode object')
-
-        if apply_post_smoothing:
-            if not isinstance(smoothing_kernel_size, int) or smoothing_kernel_size <= 0 or smoothing_kernel_size % 2 == 0:
-                raise ValueError('smoothing_kernel_size must be a positive odd integer.')
-            if not isinstance(smoothing_sigma, (float, int)) or smoothing_sigma <= 0: # Also allow int sigma if positive
-                raise ValueError('smoothing_sigma must be a positive number.')
-
-        if tiles.dim() != 4:
-            raise ValueError(f'Expected 4D tensor, got {tiles.dim()}D tensor')
-
-        num_total_tiles, num_channel, tile_h, tile_w = tiles.shape
-
-        if num_total_tiles == 0: # Handle empty tiles tensor
-             # Construct an empty or zero image of the target output shape if possible, or raise error
-            final_h, final_w = self.im_size
-            return torch.zeros((self.batch_size, num_channel, final_h, final_w), dtype=tiles.dtype, device=tiles.device)
-
-
-        if num_total_tiles % self.batch_size != 0:
-            raise ValueError(f'Total number of tiles ({num_total_tiles}) must be divisible by batch_size ({self.batch_size})')
-
-        n_tiles_per_batch_item = num_total_tiles // self.batch_size
-        tiles_reshaped = tiles.contiguous().view(n_tiles_per_batch_item, self.batch_size, num_channel, tile_h, tile_w)
-        device = tiles_reshaped.device
-
-        if (tile_h, tile_w) != tuple(self.tile_size):
-            raise ValueError(f'Tile dimensions ({tile_h}, {tile_w}) do not match expected tile_size {tuple(self.tile_size)}')
-
-        # Initialize 'im' tensor
-        if overlap_mode == OverlapMode.MAX:
-            if tiles_reshaped.dtype.is_floating_point:
-                init_val = -float('inf')
-            else:
-                init_val = torch.iinfo(tiles_reshaped.dtype).min
-            im = torch.full((self.batch_size, num_channel, *self.scale_size),
-                            init_val, device=device, dtype=tiles_reshaped.dtype)
-        else: # For AVERAGE mode or others expecting zero initialization
-            im = torch.zeros(self.batch_size, num_channel, *self.scale_size,
-                             device=device, dtype=tiles_reshaped.dtype)
-
-        if overlap_mode == OverlapMode.AVERAGE:
-            if not im.dtype.is_floating_point:
-                im = im.float()
-            cnts = torch.zeros(self.batch_size, num_channel, *self.scale_size, device=device, dtype=torch.float32)
-            ones_for_avg = torch.ones(self.batch_size, num_channel, *self.tile_size, device=device, dtype=torch.float32)
-
-        # Calculate expected number of unique tile positions for one item in a batch
-        expected_tiles_y = (self.scale_size[0] - self.tile_size[0]) // self.stride[0] + 1
-        expected_tiles_x = (self.scale_size[1] - self.tile_size[1]) // self.stride[1] + 1
-        expected_tiles_per_item = expected_tiles_y * expected_tiles_x
-
-        if n_tiles_per_batch_item != expected_tiles_per_item:
-            raise ValueError(f'Expected {expected_tiles_per_item} tiles per batch item, got {n_tiles_per_batch_item}. Check scale_size, tile_size, and stride.')
-
-        for idx, (i, j) in enumerate(product(range(0, self.scale_size[0] - self.tile_size[0] + 1, self.stride[0]),
-                                            range(0, self.scale_size[1] - self.tile_size[1] + 1, self.stride[1]))):
-            if idx >= n_tiles_per_batch_item: 
-                break
+            raise Exception('overlap_mode must be an OverlapMode object')
+        
+        # rearrange input tiles in format [tile_count, batch, channel, tile_h, tile_w]
+        _,num_channel,tile_h,tile_w = tiles.shape
+        tiles = tiles.contiguous().view(-1,self.batch_size,num_channel,tile_h,tile_w)
+        device = tiles.device
+        
+        # Create or get cached blend mask for this overlap mode
+        cache_key = (overlap_mode.value, str(device))
+        if cache_key not in self._blend_mask_cache:
+            self._blend_mask_cache[cache_key] = create_blend_mask(
+                self.tile_size, self.stride, overlap_mode, device
+            )
+        
+        blend_mask = self._blend_mask_cache[cache_key]
+        
+        im = torch.zeros(self.batch_size,num_channel,*self.scale_size,device=device)
+        weight_sum = torch.zeros(self.batch_size,num_channel,*self.scale_size,device=device)
+        
+        # Broadcast blend mask to match tile dimensions [batch, channel, tile_h, tile_w]
+        blend_mask_broadcast = blend_mask.unsqueeze(0).unsqueeze(0).expand(
+            self.batch_size, num_channel, -1, -1
+        )
+        
+        for tile,(i,j) in zip(tiles, product(range(0,self.scale_size[0]-self.tile_size[0]+1,self.stride[0]),
+                                      range(0,self.scale_size[1]-self.tile_size[1]+1,self.stride[1]))):
             
-            current_tile_batch = tiles_reshaped[idx] 
-
-            if overlap_mode == OverlapMode.AVERAGE:
-                im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] += current_tile_batch.to(im.dtype) 
-                cnts[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] += ones_for_avg
-            elif overlap_mode == OverlapMode.MAX:
-                im_slice_current_canvas = im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]]
-                im[:, :, i:i+self.tile_size[0], j:j+self.tile_size[1]] = \
-                    torch.maximum(im_slice_current_canvas, current_tile_batch)
-
-        if overlap_mode == OverlapMode.AVERAGE:
-            im = torch.div(im, cnts.clamp(min=1)) 
-
-        reconstructed_image = downscale_image(im, self.im_size, scale_mode)
-
-        if apply_post_smoothing:
-            im_for_blur = reconstructed_image
-            if not reconstructed_image.dtype.is_floating_point:
-                im_for_blur = im.float()
+            # Apply blend mask to tile
+            weighted_tile = tile * blend_mask_broadcast
             
-            gaussian_blur_transform = transforms.GaussianBlur(kernel_size=smoothing_kernel_size, sigma=smoothing_sigma)
-            reconstructed_image = gaussian_blur_transform(im_for_blur) 
-        return reconstructed_image.to(tiles.dtype)
+            # Add weighted contributions
+            im[:,:,i:i+self.tile_size[0],j:j+self.tile_size[1]] += weighted_tile
+            weight_sum[:,:,i:i+self.tile_size[0],j:j+self.tile_size[1]] += blend_mask_broadcast
+        
+        # Normalize by weight sum to get final blended result
+        # Add small epsilon to avoid division by zero
+        eps = 1e-8
+        im = torch.div(im, weight_sum + eps)
+        
+        return downscale_image(im,self.im_size,mode).to(tiles.dtype)
+    
     
     def write_metadata(self, out_path):
         """write tiler metadata to a json file
@@ -291,7 +325,7 @@ class Tiler:
         def save_json(data, json_file):
             with open(json_file, 'w') as f:
                 json.dump(data,f)
-
+        
         ext = os.path.splitext(out_path)[-1]
         if ext=='.json':
             os.makedirs(os.path.dirname(out_path),exist_ok=True)
