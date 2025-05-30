@@ -3,13 +3,12 @@ import cv2
 import os
 import logging
 import argparse
-
+from gadget_utils.pipeline_utils import fit_array_to_size
 from system_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
-
 
 
 def is_cuda_cv(): # 1 == using cuda, 0 = not using cuda
@@ -21,6 +20,32 @@ def is_cuda_cv(): # 1 == using cuda, 0 = not using cuda
             return False
     except:
         return False
+
+def resize_and_pad(image, width=None, height=None, maintain_aspect_ratio=False):
+    h, w = image.shape[:2]
+    th, tw  = height, width
+    
+    if (tw is None and th is None) or (tw == w and th == h):
+        th, tw = h, w
+        im_out = image
+    else:
+        if maintain_aspect_ratio:
+            scale = min(th / h, tw / w)
+            tw = np.int32(scale * w)
+            th = np.int32(scale * h)
+            im_out = resize(image, width=tw, height=th) 
+            if width is not None and height is not None:
+                im_out, pad_l, _, pad_t, _ = fit_array_to_size(image, width, height)           
+        else:    
+            if tw is None:
+                tw = w
+                im_out = resize(image, height=th)
+            elif th is None:
+                th = h
+                im_out = resize(image, width=tw)
+            else:
+                im_out = resize(image, width=tw, height=th)
+    return im_out
 
 
 def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
@@ -79,6 +104,10 @@ def main():
     ap.add_argument('--width', type=int, default=None)
     ap.add_argument('--height',type=int, default=None)
     ap.add_argument('--recursive', action='store_true', help='process images recursively')
+    ap.add_argument(
+        '--par', '-par', action='store_true',
+        help='Maintain aspect ratio when resizing and pad when needed.'
+    )
     args = vars(ap.parse_args())
 
     inpath=args['input_path']
@@ -86,6 +115,7 @@ def main():
     height=args['height']
     width=args['width']
     recursive=args['recursive']
+    maintain_aspect_ratio=args['par']
     
     if not os.path.isdir(inpath):
         raise Exception('Input path is not a directory')
@@ -99,7 +129,8 @@ def main():
     out_h = height if height else 'h'
     for file in files:
         image=cv2.imread(os.path.join(inpath,file))
-        resized=resize(image,width,height)
+        # resized=resize(image,width,height)
+        resized = resize_and_pad(image=image, width=width, height=height, maintain_aspect_ratio=maintain_aspect_ratio)
         # change file name
         fname = os.path.basename(file)
         outname = fname.replace(os.path.splitext(file)[1],'.png')
