@@ -58,7 +58,7 @@ def main():
     
     args = parser.parse_args()
     
-    generate_traced_torchscript(args.input_path, args.output_path, args.version, args.batch_size, args.height, args.width)
+    generate_traced_torchscript(args.input_path, args.output_path, args.version, args.batch_size)
 
 if __name__ == "__main__":
     main()
