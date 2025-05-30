@@ -23,7 +23,7 @@ def __to_tiles(source:Path, dest:Path, tile_hw:list, stride_hw:list, mode=ScaleM
     img = torchvision.io.read_image(source.as_posix()).unsqueeze(0) # [b,c,h,w]
     
     tiler = Tiler(tile_hw,stride_hw)
-    tiles = tiler.tile(img,mode=mode)
+    tiles = tiler.tile(img,mode)
     
     # write tile images
     os.makedirs(dest, exist_ok=True)
@@ -73,19 +73,24 @@ def to_images(source, dest, mode=ScaleMode.PADDING):
     
     meta_map = {}
     meta_fname,ext = os.path.splitext(METADATA_FILENAME)
+
     for p in src_path.glob('*'+ext):
-        ls = p.stem.split('-')
-        if len(ls)==2 and ls[1]==meta_fname:
-            meta_map[ls[0]] = p
-            
+        filename = os.path.basename(p)
+        if filename.split('-')[-1] != f'{METADATA_FILENAME}':
+            continue
+        
+        img_file = filename.replace(f'-{METADATA_FILENAME}', '')
+        meta_map[img_file] = p
+        
+    logger.info(f'number of metadata files : {len(meta_map)}')
     tile_map = collections.defaultdict(list)
     for p in src_path.glob('*.png'):
         ls = p.stem.split('-t')
         if len(ls)==2:
             tile_map[ls[0]] += [(int(ls[1]),p)]
+    if tile_map.keys() != meta_map.keys():
+        raise Exception('tile fnames must equal to metadata fnames')
     
-    # if tile_map.keys() != meta_map.keys():
-    #     raise Exception('tile fnames must equal to metadata fnames')
     for fname,ps in tile_map.items():
         logger.info(str(p)+'.png')
         # init tiler through loading a metadata.json
@@ -116,7 +121,6 @@ if __name__=="__main__":
     ap.add_argument('--resize', action='store_true', help='interpolate if it needs to resize images, otherwise pad zeros')
     
     args=ap.parse_args()
-    print("here")
     
     if len(args.tile) not in (1, 2):
         ap.error("--tile requires 1 or 2 integers")
@@ -126,11 +130,9 @@ if __name__=="__main__":
         args.tile = [args.tile[0], args.tile[0]]
     if len(args.stride) == 1:
         args.stride = [args.stride[0], args.stride[0]]
-    print("here")
+    
     mode = ScaleMode.INTERPOLATION if args.resize else ScaleMode.PADDING
     if args.option == 'tile':
         to_tiles(args.src,args.dest,args.tile,args.stride,mode=mode,recursive=args.recursive)
-    else:
-        print("here")
+    elif args.option == 'untile':
         to_images(args.src,args.dest,mode)
-        
