@@ -101,7 +101,7 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
             os.makedirs(os.path.dirname(path_anom))
         if annotate:
             annotated_image = model.annotate(cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB), ad_scores=anom_map, ad_threshold=anom_map.min(), ad_max=anom_map.max())
-            cv2.imwrite(os.path.join(out_path, relpath.replace(ext,'_anot.png')), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(os.path.join(out_path, relpath.replace(ext,'_anot.png')), annotated_image)
 
         logger.info(f'write anomaly map to {path_anom}')
         cv2.imwrite(path_anom,anom)
