@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import os
 import logging
+import argparse
 
 from system_utils.path_utils import get_relative_paths
 
@@ -32,7 +33,18 @@ def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
         height: desired height
         inter: interpolation method
     '''
+    if width == 0:
+        width = None
+    if height == 0:
+        height = None
+    
+    if height == None and width == None:
+        return image
+    
     (h, w) = image.shape[:2]
+    
+    if h == height and width == width:
+        return image
 
     if (height is None) and (width is None):
         return image
@@ -60,9 +72,7 @@ def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
     return resized
 
 
-
-if __name__=='__main__':
-    import argparse
+def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('-i','--input_path', required=True, help='the path to images')
     ap.add_argument('-o','--output_path', required=True)
@@ -99,3 +109,6 @@ if __name__=='__main__':
         if not os.path.exists(outp):
             os.makedirs(outp)
         cv2.imwrite(os.path.join(outp,outname),resized)
+
+if __name__=='__main__':
+    main()
