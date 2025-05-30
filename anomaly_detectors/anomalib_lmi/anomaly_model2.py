@@ -192,7 +192,7 @@ class AnomalyModel2(Anomalib_Base):
             user_inference_batch_size is not None and \
             user_inference_batch_size > 0
         )
-        self.logger.info(f'Performing mini-batch inference: {perform_mini_batch_inference}, user_inference_batch_size={user_inference_batch_size}')
+        
         if perform_mini_batch_inference:
             all_mini_batch_outputs = []
             for i in range(0, num_samples_in_input, user_inference_batch_size):
@@ -234,7 +234,6 @@ class AnomalyModel2(Anomalib_Base):
                 aggregated_output_tensor = self.bindings['output'].data
 
             elif self.inference_mode == 'PT':
-                self.logger.info(f'Running PT model inference on input batch of shape: {input_batch.shape}')
                 preds = self.pt_model(input_batch)
                 if isinstance(preds, torch.Tensor):
                     aggregated_output_tensor = preds
