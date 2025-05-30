@@ -108,9 +108,7 @@ def to_images(source, dest, mode=ScaleMode.PADDING):
         im = tiler.untile(tiles,mode).squeeze()
         torchvision.io.write_png(im, str(dest_path/(fname+'.png')))
 
-
-
-if __name__=="__main__":
+def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--option', required=True)
     ap.add_argument('-i','--src', required=True)
@@ -136,3 +134,7 @@ if __name__=="__main__":
         to_tiles(args.src,args.dest,args.tile,args.stride,mode=mode,recursive=args.recursive)
     elif args.option == 'untile':
         to_images(args.src,args.dest,mode)
+
+
+if __name__=="__main__":
+    main()
