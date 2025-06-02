@@ -44,7 +44,6 @@ def convert_v1_torchscript(model_path, output_path, batch_size=1):
     image_size = [image_size[0]+1, image_size[1]+1]
     inp = torch.rand(batch_size,3,image_size[0], image_size[1]).cuda()
     traced_model = torch.jit.trace(model,inp,strict=False)
-    logger.info(f"Output size: {traced_model(inp)}")
     torch.jit.save(traced_model, output_path)
     logger.info(f"Saved traced model to {output_path}")
     return traced_model
