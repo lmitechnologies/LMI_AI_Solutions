@@ -13,7 +13,7 @@ import torch
 import torchvision
 import time
 
-@ObjectDetectorRegistry.register(metadata=dict(versions=["v0"], model_names=["mask_rcnn", "faster_rcnn"], tasks=["od","seg"], frameworks=["detectron2"]))
+@ObjectDetectorRegistry.register(metadata=dict(versions=["v0"], model_names=["mask_rcnn", "faster_rcnn"], tasks=["od","seg", "instancesegmentation", "objectdetection"], frameworks=["detectron2"]))
 class Detectron2Model(ODBase):
     """
     Detectron2Model is a factory class for creating object detection models based on the Detectron2 framework.
