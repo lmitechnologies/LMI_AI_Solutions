@@ -121,6 +121,7 @@ class Detectron2TRT(ODBase):
         
         self.input_shape = self.model_inputs[0]["shape"]
         self.input_dtype = self.model_inputs[0]["dtype"]
+        self.image_size = [self.input_shape[2], self.input_shape[3]]
         class_map = kwargs.get("class_map", None)
         if class_map is None:
             raise ValueError("class_map is required for [Detectron2TRT]")
@@ -147,7 +148,7 @@ class Detectron2TRT(ODBase):
         None
         """
         for _ in range(1):
-            image_h, image_w = self.input_shape[2], self.input_shape[3]
+            image_h, image_w = self.image_size
             input = np.random.rand(self.batch_size, 3, image_h, image_w).astype(self.input_dtype)
             self.forward(input)
         
@@ -161,7 +162,7 @@ class Detectron2TRT(ODBase):
         Returns:
             np.ndarray: A batch of preprocessed images with shape (batch_size, 3, image_h, image_w).
         """
-        image_h, image_w = self.input_shape[2], self.input_shape[3]
+        image_h, image_w = self.image_size
         inputs = np.zeros((self.batch_size, 3, image_h, image_w), dtype=self.input_dtype)
         for i in range(0, self.batch_size):
             image = images[i]
@@ -376,6 +377,7 @@ class Detectron2PT(ODBase):
         }
         self.batch_size = kwargs.get('batch_size', 1)
         self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)))
+        self.image_size = kwargs.get('image_size', [640, 640])
     
     def warmup(self, **kwargs):
         """
@@ -393,7 +395,7 @@ class Detectron2PT(ODBase):
         Raises:
             ValueError: If 'img_size' is not provided in kwargs.
         """
-        image_size = kwargs.get('img_size', [1024,1024])
+        image_size = kwargs.get('img_size', self.image_size)
         image_h, image_w = image_size[0], image_size[1]
         images = [np.random.rand(image_h, image_w, 3).astype(np.float32) for _ in range(self.batch_size)]
         input = [

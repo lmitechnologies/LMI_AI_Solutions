@@ -469,6 +469,8 @@ def revert_to_origin(pts, operations:list):
         pts: Nx2 or Nx4, where each row =(X_i,Y_i)
         operations : list of dict
     """
+    if not len(pts):
+        return pts
     is_tensor = isinstance(pts, torch.Tensor)
     is_numpy = isinstance(pts, np.ndarray)
     if not is_tensor:
