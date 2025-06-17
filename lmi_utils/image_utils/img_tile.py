@@ -54,7 +54,7 @@ def to_tiles(source:str, dest:str, tile_hw, stride_hw, mode=ScaleMode.PADDING, r
     elif src_path.is_dir():
         for t in IM_TYPES:
             for file in src_path.rglob(f'*.{t}') if recursive else src_path.glob(f'*.{t}'):
-                logger.info(file)
+                logger.debug(file)
                 __to_tiles(file, dest_path, tile_hw, stride_hw, mode)
 
 
@@ -82,7 +82,7 @@ def to_images(source, dest, mode=ScaleMode.PADDING):
         img_file = filename.replace(f'-{METADATA_FILENAME}', '')
         meta_map[img_file] = p
         
-    logger.info(f'number of metadata files : {len(meta_map)}')
+    logger.debug(f'number of metadata files : {len(meta_map)}')
     tile_map = collections.defaultdict(list)
     for p in src_path.glob('*.png'):
         ls = p.stem.split('-t')
@@ -92,7 +92,7 @@ def to_images(source, dest, mode=ScaleMode.PADDING):
         raise Exception('tile fnames must equal to metadata fnames')
     
     for fname,ps in tile_map.items():
-        logger.info(str(p)+'.png')
+        logger.debug(str(p)+'.png')
         # init tiler through loading a metadata.json
         tiler = Tiler.from_json(meta_map[fname])
         

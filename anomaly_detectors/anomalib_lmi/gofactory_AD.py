@@ -42,10 +42,11 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
     logger.info(f"Model loaded.")
     model.warmup()
 
+    logger.info(f"Processing images")
     proctime = []
     anom_all,path_all = [],[]
-    for image_path in images:
-        logger.info(f"Processing image: {image_path}.")
+    for idx, image_path in enumerate(images, 1):
+        logger.info(f"Processing image [{idx}/{len(images)}]: {image_path}")
         image_path=str(image_path)
         img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
         
@@ -54,7 +55,7 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
         anom_map = model.predict(img, **{"tiling_settings": {
             "overlap_mode": overlap_mode,
         }}).astype(np.float32)
-        logger.info(f'anom_map shape {anom_map.shape}')
+        logger.debug(f'anom_map shape {anom_map.shape}')
 
         proctime.append(time.time() - t0)
         
@@ -69,11 +70,11 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
 
     data = np.array(all_data_raveled)
     global_min, global_max = data.min().item(), data.max().item()
-    logger.info(f'Global Min: {global_min}, Global Max: {global_max}')
+    logger.debug(f'Global Min: {global_min}, Global Max: {global_max}')
     hist,bin_edges = np.histogram(data, bins=NUM_BINS, density=True)
-    logger.info(f"Anomaly score histogram: {hist}")
-    logger.info(f"Anomaly score bins: {bin_edges}")
-    
+    logger.debug(f"Anomaly score histogram: {hist}")
+    logger.debug(f"Anomaly score bins: {bin_edges}")
+
     out_dict = {
         'summary':{
             'anomaly_distribution':{},
@@ -103,7 +104,7 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
             annotated_image = model.annotate(cv2.imread(path_src), ad_scores=anom_map, ad_threshold=anom_map.min(), ad_max=anom_map.max())
             cv2.imwrite(os.path.join(out_path, relpath.replace(ext,'_anot.png')), annotated_image)
 
-        logger.info(f'write anomaly map to {path_anom}')
+        logger.debug(f'write anomaly map to {path_anom}')
         cv2.imwrite(path_anom,anom)
         
         # append to out_dict

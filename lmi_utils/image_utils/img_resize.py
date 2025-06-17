@@ -135,7 +135,7 @@ def main():
         fname = os.path.basename(file)
         outname = fname.replace(os.path.splitext(file)[1],'.png')
         outname = outname.replace('.png',f'_resize_{out_w}x{out_h}.png')
-        logger.info(f'Writing {outname}')
+        logger.debug(f'Writing {outname}')
         outp = os.path.join(outpath,os.path.dirname(file))
         if not os.path.exists(outp):
             os.makedirs(outp)

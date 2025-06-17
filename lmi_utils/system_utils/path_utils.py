@@ -28,7 +28,7 @@ def get_relative_paths(inpath, recursive=True, formats=IMG_FORMATS):
             if os.path.splitext(file)[1] in formats:
                 files.append(os.path.relpath(os.path.join(root, file), inpath))
                 cnt += 1
-        logger.info(f'Load {cnt} files in {root}')
+        logger.debug(f'Load {cnt} files in {root}')
         
         if not recursive:
             break
