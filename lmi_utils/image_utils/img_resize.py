@@ -35,7 +35,7 @@ def resize_and_pad(image, width=None, height=None, maintain_aspect_ratio=False):
             th = np.int32(scale * h)
             im_out = resize(image, width=tw, height=th) 
             if width is not None and height is not None:
-                im_out, pad_l, _, pad_t, _ = fit_array_to_size(image, width, height)           
+                im_out, pad_l, _, pad_t, _ = fit_array_to_size(im_out, width, height)           
         else:    
             if tw is None:
                 tw = w
@@ -97,6 +97,46 @@ def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
     return resized
 
 
+def img_resize(input_path, output_path, width=None, height=None, recursive=False, maintain_aspect_ratio=False):
+    """
+    Resize images in the input path and save them to the output path.
+    
+    Args:
+        input_path (str): Path to the input images.
+        output_path (str): Path to save resized images.
+        width (int, optional): Desired width of the resized images. Defaults to None.
+        height (int, optional): Desired height of the resized images. Defaults to None.
+        recursive (bool, optional): Process images recursively. Defaults to False.
+        maintain_aspect_ratio (bool, optional): Maintain aspect ratio when resizing. Defaults to False.
+    """
+    if not os.path.isdir(input_path):
+        raise Exception('Input path is not a directory')
+
+    files = get_relative_paths(input_path, recursive)
+    
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+    
+    out_w = width if width else 'w'
+    out_h = height if height else 'h'
+    
+    for file in files:
+        image = cv2.imread(os.path.join(input_path, file))
+        resized = resize_and_pad(image=image, width=width, height=height, maintain_aspect_ratio=maintain_aspect_ratio)
+        
+        fname = os.path.basename(file)
+        outname = fname.replace(os.path.splitext(file)[1], '.png')
+        outname = outname.replace('.png', f'_resize_{out_w}x{out_h}.png')
+        
+        logger.debug(f'Writing {outname}')
+        
+        outp = os.path.join(output_path, os.path.dirname(file))
+        if not os.path.exists(outp):
+            os.makedirs(outp)
+        
+        cv2.imwrite(os.path.join(outp, outname), resized)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('-i','--input_path', required=True, help='the path to images')
@@ -117,29 +157,14 @@ def main():
     recursive=args['recursive']
     maintain_aspect_ratio=args['par']
     
-    if not os.path.isdir(inpath):
-        raise Exception('Input path is not a directory')
-
-    files = get_relative_paths(inpath,recursive)
-    
-    if not os.path.exists(outpath):
-        os.makedirs(outpath)
-    
-    out_w = width if width else 'w'
-    out_h = height if height else 'h'
-    for file in files:
-        image=cv2.imread(os.path.join(inpath,file))
-        # resized=resize(image,width,height)
-        resized = resize_and_pad(image=image, width=width, height=height, maintain_aspect_ratio=maintain_aspect_ratio)
-        # change file name
-        fname = os.path.basename(file)
-        outname = fname.replace(os.path.splitext(file)[1],'.png')
-        outname = outname.replace('.png',f'_resize_{out_w}x{out_h}.png')
-        logger.debug(f'Writing {outname}')
-        outp = os.path.join(outpath,os.path.dirname(file))
-        if not os.path.exists(outp):
-            os.makedirs(outp)
-        cv2.imwrite(os.path.join(outp,outname),resized)
+    img_resize(
+        input_path=inpath, 
+        output_path=outpath, 
+        width=width, 
+        height=height, 
+        recursive=recursive, 
+        maintain_aspect_ratio=maintain_aspect_ratio
+    )
 
 if __name__=='__main__':
     main()
