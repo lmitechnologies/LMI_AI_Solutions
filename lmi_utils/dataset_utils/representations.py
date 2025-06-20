@@ -746,6 +746,7 @@ class Dataset(Base):
         to_object_detection = kwargs.get("to_object_detection", False)
         merge_boxes = kwargs.get("merge_boxes", False)
         target_classes = kwargs.get("target_classes", ["all"])
+        class_map = kwargs.get("class_map", {})
         target_label_ids = []
         if target_classes != ["all"]:
             # delete the annotations that are not in the target classes
@@ -763,15 +764,20 @@ class Dataset(Base):
             logger.debug(f"Using all labels {target_label_ids}")
         
         # generate label counts 
-        label_id_index = {}
-        label_idx = 0
-        # generate label id index for labels that have annotations
-        # create a sequential index for the labels
-        for file_ann in self.files:
-            for annotation in file_ann.annotations:                    
-                if annotation.label_id in target_label_ids and annotation.label_id not in label_id_index:
-                    label_id_index[annotation.label_id] = label_idx
-                    label_idx += 1
+        if class_map:
+            if len(class_map) != len(self.labels):
+                raise ValueError("Class map must have the same number of classes as the dataset")
+            label_id_index = {name:idx for idx,name in class_map.items()}
+        else:    
+            label_id_index = {}
+            label_idx = 0
+            # generate label id index for labels that have annotations
+            # create a sequential index for the labels
+            for file_ann in self.files:
+                for annotation in file_ann.annotations:                    
+                    if annotation.label_id in target_label_ids and annotation.label_id not in label_id_index:
+                        label_id_index[annotation.label_id] = label_idx
+                        label_idx += 1
         
         # sort the label_id_index by label id
         label_id_index = dict(sorted(label_id_index.items(), key=lambda item: item[1]))

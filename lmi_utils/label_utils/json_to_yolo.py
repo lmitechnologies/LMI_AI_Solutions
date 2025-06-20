@@ -19,6 +19,7 @@ def get_args():
     ap.add_argument('--path_out', '-o', required=True, help='the output path for dataset')
     ap.add_argument('--path_train_imgs', '-ti', required=True, help='the output path for train images')
     ap.add_argument('--path_val_imgs', '-vi', required=False, help='the output path for val images')
+    ap.add_argument('--path_dataset_yaml', '-cy', required=False, help='[optional] the path of a yolo dataset yaml file')
     ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')
     ap.add_argument('--obb', action='store_true', help='support for oriented bounding box support')
     ap.add_argument('--seg', action='store_true', help='convert label formats: mask-to-bbox if "--convert" is enabled, otherwise bbox-to-mask')
@@ -106,6 +107,7 @@ def convert_to_yolo(args):
     mask_to_od = True if args.get('convert', False) and not args.get('seg', False) else False
     target_classes = args['target_classes'].split(',')
     use_obb = args.get('obb', False)
+    path_class_yaml = args.get('path_dataset_yaml', None)
     
     # check if the dataset path exists
     if not os.path.exists(path_train_imgs):
@@ -116,16 +118,23 @@ def convert_to_yolo(args):
         raise Exception('The json file does not exist')
     if not os.path.exists(path_val_json):
         raise Exception('The json file does not exist')
+    if path_class_yaml is not None and not os.path.exists(path_class_yaml):
+        raise Exception('The yaml file for the class map does not exist')
     
     # check if using training data for validation based on path
     use_train_for_val = False
     if path_train_imgs == path_val_imgs and path_train_json == path_val_json:
         use_train_for_val = True
         logger.warning('The training and validation image paths are the same, will use train images for validation')
-    
+        
+    # load the class map
+    class_map = None
+    if path_class_yaml is not None:
+        with open(path_class_yaml, 'r') as f:
+            class_map = yaml.load(f, Loader=yaml.SafeLoader)['names']
+            logger.info(f'class map: {class_map}')
          
     # load the json file
-    
     train_dataset = Dataset.load(path_train_json)
     train_dataset = update_file_dimensions(train_dataset, path_train_imgs)
     train_file_id_map = {f.path:f.id for f in train_dataset.files}
@@ -135,7 +144,8 @@ def convert_to_yolo(args):
         to_segmentation=bbox_to_mask,
         to_object_detection=mask_to_od,
         target_classes=target_classes,
-        use_obb=use_obb
+        use_obb=use_obb,
+        class_map=class_map
     )
     if use_train_for_val is False:
         val_dataset = Dataset.load(path_val_json)
