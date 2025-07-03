@@ -91,6 +91,7 @@ class AnomalyModel2(Anomalib_Base):
                         self.model_shape = to_list(d.size)
                         self.image_size = to_list(d.size)
                         self.logger.info(f"Model shape: {self.model_shape}")
+
             
             except Exception as e:
                 self.logger.warning(f"Failed to load model: {model_path}. Attempting to load using torchscript.")
@@ -101,6 +102,7 @@ class AnomalyModel2(Anomalib_Base):
                 self.pt_model = torch.jit.load(model_path).to(self.device)
                 self.image_size = kwargs.get('image_size', [224,224])
                 self.model_shape = self.image_size
+
                 
             self.pt_model.eval()
             self.inference_mode='PT'
@@ -129,10 +131,11 @@ class AnomalyModel2(Anomalib_Base):
         args:
             - image: numpy array [H,W,Ch]
         '''
-        if self.tiler is None:
-            if image.shape[0] != self.model_shape[0] or image.shape[1] != self.model_shape[1]:
-                image = pipeline_utils.resize_image(image, W=self.model_shape[1], H=self.model_shape[0])
-        img = self.from_numpy(image).float()
+        
+        if isinstance(image, np.ndarray):
+            img = self.from_numpy(image).float()
+        else:
+            img = image.float()
         
         # grayscale to rgb
         if img.ndim == 2:
@@ -140,6 +143,7 @@ class AnomalyModel2(Anomalib_Base):
             
         img = img.permute((2, 0, 1)).unsqueeze(0)
         img = img / 255.0
+        
         
         if self.tiler is not None:
             img = self.tiler.tile(img,self.tile_mode)
@@ -149,6 +153,11 @@ class AnomalyModel2(Anomalib_Base):
         if self.inference_mode=='TRT' and batch != self.batch_size:
             self.logger.warning(f'Got batch size of {batch},  but trt expects {self.batch_size}. The trt engine might output weird results')
             img = F.interpolate(img, size=self.model_shape, mode='bilinear')
+        
+        if self.tiler is None:
+            if image.shape[0] != self.model_shape[0] or image.shape[1] != self.model_shape[1]:
+                self.logger.debug(f'Input image shape {image.shape[:2]} does not match model shape {self.model_shape}. Resizing input image.')
+                img = v2.Resize(self.model_shape, antialias=True)(img)
         
         img = img.contiguous()
         return img.half() if self.fp16 else img
