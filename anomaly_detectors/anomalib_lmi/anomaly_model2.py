@@ -132,10 +132,7 @@ class AnomalyModel2(Anomalib_Base):
             - image: numpy array [H,W,Ch]
         '''
         
-        if isinstance(image, np.ndarray):
-            img = self.from_numpy(image).float()
-        else:
-            img = image.float()
+        img = self.from_numpy(image).float()
         
         # grayscale to rgb
         if img.ndim == 2:
@@ -148,14 +145,15 @@ class AnomalyModel2(Anomalib_Base):
         if self.tiler is not None:
             img = self.tiler.tile(img,self.tile_mode)
         
-        # resize baked into the pt model
+        
         batch = img.shape[0]
         if self.inference_mode=='TRT' and batch != self.batch_size:
             self.logger.warning(f'Got batch size of {batch},  but trt expects {self.batch_size}. The trt engine might output weird results')
             img = F.interpolate(img, size=self.model_shape, mode='bilinear')
         
-        if self.tiler is None:
-            if image.shape[0] != self.model_shape[0] or image.shape[1] != self.model_shape[1]:
+        # resize baked into the pt model (although some torchscript models dont have preprocessing so resizing here)
+        if self.tiler is None and self.inference_mode == 'PT':
+            if img.shape[1] != self.model_shape[0] or img.shape[2] != self.model_shape[1]:
                 self.logger.debug(f'Input image shape {image.shape[:2]} does not match model shape {self.model_shape}. Resizing input image.')
                 img = v2.Resize(self.model_shape, antialias=True)(img)
         
