@@ -181,10 +181,6 @@ class Box(Base):
         mask_type = kwargs.get("mask_type", AnnotationType.MASK)
         angle_unit = kwargs.get("angle_unit", "degree")
         rot_center = kwargs.get("rot_center", "up_left")
-        if rot_center not in ["up_left", "center"]:
-            raise ValueError("rot_center must be either 'up_left' or 'center'")
-        if angle_unit not in ["degree", "radian"]:
-            raise ValueError("angle_unit must be either 'degree' or 'radian'")
         if self.angle != 0:
             pts = rotate(self.x_min, self.y_min, self.x_max - self.x_min, self.y_max - self.y_min, self.angle, rot_center, angle_unit)
         if mask_type == AnnotationType.MASK:
@@ -403,11 +399,11 @@ class Annotation(Base):
         iou: Optional[float] = None,
     ):
         super().__init__()
-        self.id = id
-        self.label_id = label_id
+        self.id = str(id)
+        self.label_id = str(label_id)
         self.type = type
         self.link = link
-        self.confidence = confidence
+        self.confidence = float(confidence) if confidence is not None else None
         self.iou = iou
         self.value = value
 
