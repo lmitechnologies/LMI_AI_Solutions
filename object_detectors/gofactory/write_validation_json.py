@@ -20,13 +20,13 @@ logger.setLevel(logging.INFO)
 
 
 def parse_annotations(annotations:list[Annotation], h:int, w:int, model_type:str) -> dict:
-    """parse label annotations from a list. Only support Box and Mask annotation objects.
+    """parse label annotations from a list.
 
     Args:
-        annotations (list[Annotation]): a list of Annotation objects (Box and Mask)
+        annotations (list[Annotation]): a list of Annotation objects
         h (int): image height
         w (int): image width
-        model_type (str): a type of the model, "ObjectDetection", "OrientedObjectDetection", "InstanceSegmentation", "KeyPointDetection"
+        model_type (str): the model type
 
     Returns:
         dict: a dictionary contains 'classes','boxes','masks'
@@ -51,7 +51,7 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int, model_type:str
                 poly = annot.value.to_numpy()
                 boxes.append(poly)
             else:
-                logger.warning(f'Not supported loading polygons for the model type: {model_type}, skip')
+                logger.warning(f'Not support loading polygons for the model type: {model_type}, skip')
         elif annot.type == AnnotationType.KEYPOINT:
             points.append(annot.value.to_numpy())
         else:
@@ -69,7 +69,7 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
 
     Args:
         model_path (str): a path to a model weights file
-        model_type (str): a type of the model, either "ObjectDetection", "OrientedObjectDetection", "InstanceSegmentation", "KeyPointDetection"
+        model_type (str): a type of the model, either "ObjectDetection", "OrientedObjectDetection", "InstanceSegmentation", "KeypointDetection"
         config_path (str): a path to a model configuration file
         image_dir (str): a input image directory, where each image should have the same dimension as training images
         label_path (str): a path to a label json file
@@ -87,7 +87,7 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
         model = Yolo(model_path)
     elif model_type == 'OrientedObjectDetection':
         model = YoloObb(model_path)
-    elif model_type == 'KeyPointDetection':
+    elif model_type == 'KeypointDetection':
         model = YoloPose(model_path)
     else:
         raise Exception(f'Not supported model type: {model_type}')
@@ -133,7 +133,7 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
                 gt_masks = torch.from_numpy(labels['masks']).float().to(model.device)
                 pred_masks = torch.from_numpy(preds['masks']).to(model.device)
                 ious = mask_iou(gt_masks.view(gt_masks.shape[0], -1),pred_masks.view(pred_masks.shape[0],-1))
-        elif model_type in ['ObjectDetection', 'KeyPointDetection']:
+        elif model_type in ['ObjectDetection', 'KeypointDetection']:
             n_gt = len(labels['boxes'])
             n_pred = len(preds['boxes'])
             if n_gt and n_pred:
@@ -141,7 +141,7 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
                 pred_boxes = torch.from_numpy(preds['boxes']).to(model.device)
                 ious = box_iou(gt_boxes, pred_boxes)
             ious_kpt = None
-            if model_type == 'KeyPointDetection':
+            if model_type == 'KeypointDetection':
                 kpt_shape = model.model.kpt_shape
                 labels['points'] = labels['points'].reshape(-1, *kpt_shape) # (N, n_kp, 2)
                 n_gt_kpt = len(labels['points'])
@@ -177,7 +177,7 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
             n_pred=n_pred,
             iou=ious_out # a shape of n_gt x n_pred
         )
-        if model_type == 'KeyPointDetection':
+        if model_type == 'KeypointDetection':
             iou_json['kpt_iou'] = [] if ious_kpt is None else ious_kpt.cpu().numpy().tolist()
             iou_json['n_gt_kpt'] = n_gt_kpt
             iou_json['n_pred_kpt'] = n_pred_kpt
@@ -204,7 +204,7 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
                 )
                 preds_padded.append(Annotation(**dt))
                 pred_annot_id += 1
-            elif model_type in ['ObjectDetection', 'KeyPointDetection']:
+            elif model_type in ['ObjectDetection', 'KeypointDetection']:
                 dt = dict(
                     id=str(pred_annot_id), label_id=label_name, type=AnnotationType.BOX, value=Box(*box,angle=0), 
                     confidence=score
@@ -212,7 +212,7 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
                 preds_padded.append(Annotation(**dt))
                 pred_annot_id += 1
                 
-                if model_type == 'KeyPointDetection':
+                if model_type == 'KeypointDetection':
                     pts = preds['points'][i]
                     for j in range(len(pts)):
                         pt = np.squeeze(pts[j])
@@ -272,7 +272,7 @@ if __name__ =='__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path',required=True,help='a path to a model weights file')
-    parser.add_argument('--model_type',required=True,help='a type of the model, either ObjectDetection, OrientedObjectDetection, InstanceSegmentation, KeyPointDetection')
+    parser.add_argument('--model_type',required=True,help='a type of the model, either ObjectDetection, OrientedObjectDetection, InstanceSegmentation, KeypointDetection')
     parser.add_argument('--config_path',default=None,help='[optional] a path to a model config file')
     parser.add_argument('--img_dir',required=True,help='a input image directory')
     parser.add_argument('--label_path',required=True,help='a path to a label json file')
