@@ -234,7 +234,7 @@ class Detectron2TRT(ODBase):
         process_masks  = kwargs.get("process_masks", True)
         operators      = kwargs.get("operators", [])
         iou_threshold  = kwargs.get("iou", 0.0)
-        max_detections = kwargs.get("max_det", 100)
+        max_detections = kwargs.get("max_det", 300)
         return_segs    = kwargs.get("return_segments", False)
 
         # image dims
@@ -529,7 +529,7 @@ class Detectron2PT(ODBase):
         operators      = kwargs.get("operators", [])
         return_segs    = kwargs.get("return_segments", False)
         iou_threshold  = kwargs.get("iou", 0.0)
-        max_detections = kwargs.get("max_det", 100)
+        max_detections = kwargs.get("max_det", 300)
 
         for idx, output in enumerate(predictions):
             image_h, image_w = images[idx].shape[:2]
