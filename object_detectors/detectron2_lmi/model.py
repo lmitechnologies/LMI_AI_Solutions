@@ -8,6 +8,7 @@ import cv2
 import logging
 import torch
 import torchvision
+from torchvision.ops import batched_nms
 import time
 
 @ObjectDetectorRegistry.register(metadata=dict(versions=["v0"], model_names=["mask_rcnn", "faster_rcnn"], tasks=["od","seg", "instancesegmentation", "objectdetection"], frameworks=["detectron2"]))
@@ -201,109 +202,148 @@ class Detectron2TRT(ODBase):
     def postprocess(self, images, predictions, **kwargs):
         """
         Post-process the predictions from the object detection model.
+
         Args:
             images (list): List of input images.
-            predictions (tuple): Tuple containing the number of predictions, bounding boxes, scores, classes, and masks.
+            predictions (tuple): Tuple containing (num_preds, boxes, scores, classes[, masks]).
             **kwargs: Additional keyword arguments for processing.
-                - confs (dict): Dictionary of confidence thresholds for each class.
+                - confs (dict): Dict of confidence thresholds per class.
                 - mask_threshold (float): Threshold for mask binarization.
-                - process_masks (bool): Flag to indicate whether to process masks.
+                - process_masks (bool): Whether to process masks.
+                - operators (list): Geometric ops to revert.
+                - return_segments (bool): Whether to compute polygons.
+                - iou (float): IoU threshold for NMS. Default: 0.5.
+                - max_det (int): Max boxes to keep per image after NMS. Default: 100.
         Returns:
-            dict: A dictionary containing the processed results with keys:
-                - "boxes" (list): List of processed bounding boxes for each image.
-                - "scores" (list): List of processed scores for each image.
-                - "classes" (list): List of processed class labels for each image.
-                - "masks" (list): List of processed masks for each image.
+            dict: {
+                "boxes": list of ndarray [N×4],
+                "scores": list of ndarray [N],
+                "classes": list of ndarray [N],
+                "masks": list (if any),
+                "segments": list (if any),
+            }
         """
-        results = {
-            "boxes": [],
-            "scores": [],
-            "classes": [],
-            "masks": [],
-            "segments": []
-        }
-        
+        # prepare outputs
+        results = {"boxes": [], "scores": [], "classes": [], "masks": [], "segments": []}
         if len(predictions) == 0:
             return results
-        confs = kwargs.get("confs", {})
+
+        # unpack kwargs
+        confs          = kwargs.get("confs", {})
         mask_threshold = kwargs.get("mask_threshold", 0.5)
-        process_masks = kwargs.get("process_masks", True)
-        operators = kwargs.get("operators", [])
-        image_h, image_w = images[0].shape[0], images[0].shape[1]
-        
+        process_masks  = kwargs.get("process_masks", True)
+        operators      = kwargs.get("operators", [])
+        iou_threshold  = kwargs.get("iou", 0.5)
+        max_detections = kwargs.get("max_det", 100)
+        return_segs    = kwargs.get("return_segments", False)
+
+        # image dims
+        image_h, image_w = images[0].shape[:2]
+
+        # unpack predictions
         if len(predictions) == 5:
-            num_preds, boxes, scores, classes, masks = predictions[:5]
+            _, boxes, scores, classes, masks = predictions
         else:
-            num_preds, boxes, scores, classes = predictions[:4]
+            _, boxes, scores, classes = predictions
             masks = None
 
-        
+        # map classes
         classes = self.class_map_func(classes)
-        
-        if len(boxes) > 0:
-            scale_factors = np.array([image_w, image_h, image_w, image_h])
-            boxes = (boxes * scale_factors).astype(np.int32)
-            
-        processed_masks = []
-        processed_boxes = []
-        processed_scores = []
-        processed_classes = []
-        processed_segments = []
 
+        # scale to pixel coords
+        if len(boxes) > 0:
+            scale = np.array([image_w, image_h, image_w, image_h])
+            boxes = (boxes * scale).astype(np.int32)
+
+        # per-image containers
+        proc_boxes, proc_scores, proc_classes = [], [], []
+        proc_masks, proc_segs                 = [], []
 
         t0 = time.time()
-        for idx in range(self.batch_size):
-            valid_scores = scores[idx] >= np.vectorize(confs.get)(classes[idx], 1.0)
-            batch_boxes, batch_scores = boxes[idx][valid_scores], scores[idx][valid_scores]
-            batch_classes = classes[idx][valid_scores]
-            batch_segments = []
-            processed_boxes.append(batch_boxes)
-            processed_scores.append(batch_scores)
-            processed_classes.append(batch_classes)
-            filtered_masks = masks[idx][valid_scores] if masks is not None else []
-            batch_masks = []
-            if process_masks and masks is not None:
-                batch_masks = rescale_masks(
-                    torch.from_numpy(filtered_masks).to(self.device),
-                    torch.from_numpy(batch_boxes).to(self.device),
-                    (image_h, image_w,),
-                    mask_threshold
-                )
-                num_masks = len(batch_masks)
-                if len(operators) > 0 and num_masks > 0:
-                    batch_masks = np.array([
-                        revert_mask_to_origin(mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask, operators) for mask in batch_masks
+        for b in range(self.batch_size):
+            raw_boxes   = boxes[b]
+            raw_scores  = scores[b]
+            raw_classes = classes[b]
+            raw_masks   = masks[b] if masks is not None else None
+
+            # NMS on raw detections 
+            if raw_boxes.shape[0] > 0:
+                tb = torch.tensor(raw_boxes,   device=self.device).float()
+                ts = torch.tensor(raw_scores,  device=self.device).float()
+                tc = torch.tensor(raw_classes, device=self.device).long()
+
+                keep_idx = batched_nms(tb, ts, tc, iou_threshold)
+
+                if keep_idx.numel() > max_detections:
+                    # gather the scores of all kept detections
+                    kept_scores = ts[keep_idx]
+                    # sort them descending
+                    _, order = kept_scores.sort(descending=True)
+                    # pick only the top‐max_detections by score
+                    keep_idx = keep_idx[order[:max_detections]]
+
+
+                raw_boxes   = raw_boxes[keep_idx]
+                raw_scores  = raw_scores[keep_idx]
+                raw_classes = raw_classes[keep_idx]
+                if raw_masks is not None:
+                    raw_masks = raw_masks[keep_idx]
+
+            # confidence filtering
+            conf_fn = np.vectorize(lambda c: confs.get(c, 1.0))
+            keep_conf = raw_scores >= conf_fn(raw_classes)
+
+            batch_boxes   = raw_boxes[keep_conf]
+            batch_scores  = raw_scores[keep_conf]
+            batch_classes = raw_classes[keep_conf]
+            batch_masks   = raw_masks[keep_conf] if raw_masks is not None else None
+
+            # mask processing
+            segs, final_masks = [], []
+            if process_masks and batch_masks is not None:
+                m_tensor   = torch.from_numpy(batch_masks).to(self.device)
+                box_tensor = torch.from_numpy(batch_boxes).to(self.device)
+                resized    = rescale_masks(m_tensor, box_tensor, (image_h, image_w), mask_threshold)
+
+                # revert geometric ops on masks
+                if operators:
+                    resized = torch.stack([
+                        torch.from_numpy(
+                            revert_mask_to_origin(m.cpu().numpy(), operators)
+                        ) for m in resized
                     ])
-                if kwargs.get("return_segments", False) and num_masks > 0:
-                    if len(operators) > 0:
-                        batch_segments = [
-                            revert_to_origin(mask_to_polygon_cv2(
-                                mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask
-                            ), operators) for mask in batch_masks
-                        ]
-                    else:
-                        batch_segments = [
-                            mask_to_polygon_cv2(mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask) for mask in batch_masks
-                        ]
-                    
+
+                final_masks = [m.cpu().numpy() for m in resized]
+
+                if return_segs:
+                    for m in resized:
+                        arr = m.cpu().numpy()
+                        poly = mask_to_polygon_cv2(arr)
+                        segs.append(
+                            revert_to_origin(poly, operators) if operators else poly
+                        )
             else:
-                batch_masks = filtered_masks
-            
-            # apply revert to origin
+                final_masks = batch_masks if batch_masks is not None else []
+
+            # Revert ops on boxes
             batch_boxes = revert_to_origin(batch_boxes, operators)
-            processed_masks.append(batch_masks)
-            processed_segments.append(batch_segments)
-            
+
+            # collect
+            proc_boxes.append(batch_boxes)
+            proc_scores.append(batch_scores)
+            proc_classes.append(batch_classes)
+            proc_masks.append(final_masks)
+            proc_segs.append(segs)
+
         t1 = time.time()
-        proc_time = (t1-t0)
-        results = {
-            "boxes": processed_boxes,
-            "scores": processed_scores,
-            "classes": processed_classes,
-            "masks": processed_masks,
-            "segments": processed_segments
+
+        return {
+            "boxes":    proc_boxes,
+            "scores":   proc_scores,
+            "classes":  proc_classes,
+            "masks":    proc_masks,
+            "segments": proc_segs,
         }
-        return results
 
     def predict(self, images, **kwargs):
         """
@@ -456,79 +496,134 @@ class Detectron2PT(ODBase):
     def postprocess(self, images, predictions, **kwargs):
         """
         Post-processes the predictions from the model to filter and format the results.
+
         Args:
             images (list): A list of input images.
-            predictions (list): A list of predictions from the model, where each prediction is a dictionary containing:
-            - "scores" (Tensor): Confidence scores for each detected object.
-            - "pred_classes" (Tensor): Predicted class indices for each detected object.
-            - "pred_boxes" (Tensor): Bounding boxes for each detected object.
-            - "pred_masks" (Tensor, optional): Segmentation masks for each detected object.
-            **kwargs: Additional keyword arguments for post-processing:
-            - confs (dict): A dictionary mapping class indices to confidence thresholds.
-            - mask_threshold (float): Threshold for binarizing masks.
+            predictions (list): A list of model outputs, each a dict with:
+                - "scores" (Tensor): confidence scores [N]
+                - "pred_classes" (Tensor): class indices [N]
+                - "pred_boxes" (Tensor): boxes [N×4]
+                - "pred_masks" (Tensor, optional): masks [N×1×H×W]
+            **kwargs:
+                - confs (dict): class → confidence threshold (default 0.5)
+                - mask_threshold (float): binarization threshold for masks (default 0.5)
+                - process_masks (bool): whether to rescale/process masks (default True)
+                - operators (list): geometric ops for reverting to original coords
+                - return_segments (bool): whether to compute polygon segments from masks
+                - iou_threshold (float): IoU threshold for NMS (default 0.5)
+                - max_detections (int): max detections per image after NMS (default 100)
+
         Returns:
-            dict: A dictionary containing the post-processed results with the following keys:
-            - "boxes" (list): A list of numpy arrays containing bounding boxes for each image.
-            - "scores" (list): A list of numpy arrays containing confidence scores for each image.
-            - "classes" (list): A list of numpy arrays containing class indices for each image.
-            - "masks" (list): A list of numpy arrays containing segmentation masks for each image (if available).
+            dict with keys "boxes", "scores", "classes", "masks", "segments",
+            each a list of length batch_size.
         """
-        results = {
-            "boxes": [],
-            "scores": [],
-            "classes": [],
-            "masks": [],
-            "segments": []
-        }
-        
-        if len(predictions) == 0:
+        results = {"boxes": [], "scores": [], "classes": [], "masks": [], "segments": []}
+        if not predictions:
             return results
-        confs = kwargs.get("confs", {})
+
+        confs          = kwargs.get("confs", {})
         mask_threshold = kwargs.get("mask_threshold", 0.5)
-        process_masks = kwargs.get("process_masks", True)
-        operators = kwargs.get("operators", [])
-        # if no predictions, return empty results
-        if predictions[0]["pred_classes"].shape[0] == 0:
-            return results
+        process_masks  = kwargs.get("process_masks", True)
+        operators      = kwargs.get("operators", [])
+        return_segs    = kwargs.get("return_segments", False)
+        iou_threshold  = kwargs.get("iou", 0.5)
+        max_detections = kwargs.get("max_det", 100)
+
         for idx, output in enumerate(predictions):
             image_h, image_w = images[idx].shape[:2]
-            batch_scores = output["scores"].cpu().numpy()
-            batch_classes = output["pred_classes"].cpu().numpy()
-            batch_segments = []
-            batch_masks = []
-            batch_classes = self.class_map_func(batch_classes)
-            keep = batch_scores >= np.vectorize(confs.get)(batch_classes, 0.5)
-            batch_scores = batch_scores[keep]
-            batch_classes = batch_classes[keep]
-            batch_boxes = output["pred_boxes"][keep]
-            if 'pred_masks' in output:
-                batch_masks = output["pred_masks"][keep]
-                if process_masks and len(batch_masks) > 0:
-                    batch_masks = rescale_masks(batch_masks.to(self.device).squeeze(1), batch_boxes.to(self.device), (image_h,image_w,), mask_threshold)
-                    
-                    if len(operators) > 0:
-                        batch_masks = np.array([
-                                revert_mask_to_origin(mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask ,operators) for mask in batch_masks
-                        ])
-                    if kwargs.get("return_segments", False):
-                        if len(operators) > 0:
-                            batch_segments = [
-                                revert_to_origin(mask_to_polygon_cv2(
-                                    mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask
-                                    ), operators) for mask in batch_masks
-                            ]
-                        else:
-                            batch_segments = [
-                                mask_to_polygon_cv2(mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask) for mask in batch_masks
-                            ]
 
-                        
-            batch_boxes = revert_to_origin(batch_boxes, operators)
-            results["boxes"].append(batch_boxes.cpu().numpy())
+            # Raw tensors
+            raw_scores  = output["scores"]
+            raw_classes = output["pred_classes"]
+            raw_boxes   = output["pred_boxes"]
+            raw_masks   = output.get("pred_masks", None)
+
+            # 1) NMS on raw outputs
+            if raw_boxes.numel() > 0:
+                keep_nms = batched_nms(
+                    raw_boxes.to(self.device).float(),
+                    raw_scores.to(self.device).float(),
+                    raw_classes.to(self.device).long(),
+                    iou_threshold
+                )
+                if keep_nms.numel() > max_detections:
+                    # gather the scores of all kept detections
+                    kept_scores = raw_scores[keep_nms]
+                    # sort them descending
+                    _, order = kept_scores.sort(descending=True)
+                    # pick only the top‐max_detections by score
+                    keep_nms = keep_nms[order[:max_detections]]
+
+                raw_scores  = raw_scores[keep_nms]
+                raw_classes = raw_classes[keep_nms]
+                raw_boxes   = raw_boxes[keep_nms]
+                if raw_masks is not None:
+                    raw_masks = raw_masks[keep_nms]
+            else:
+                raw_masks = None
+
+            #  class‐aware confidence filtering
+            scores_np  = raw_scores.cpu().numpy()
+            classes_np = self.class_map_func(raw_classes.cpu().numpy())
+            # build threshold array
+            thr_arr = np.vectorize(lambda c: confs.get(c, 0.5))(classes_np)
+            keep_conf = scores_np >= thr_arr
+
+            if keep_conf.any():
+                batch_scores  = scores_np[keep_conf]
+                batch_classes = classes_np[keep_conf]
+                batch_boxes   = raw_boxes[keep_conf]
+                batch_masks   = raw_masks[keep_conf] if raw_masks is not None else None
+            else:
+                # no detections
+                results["boxes"].append(np.zeros((0, 4), dtype=np.int32))
+                results["scores"].append(np.array([]))
+                results["classes"].append(np.array([]))
+                results["masks"].append([])
+                results["segments"].append([])
+                continue
+
+            # process masks & segments
+            batch_segments = []
+            if process_masks and batch_masks is not None and batch_masks.numel() > 0:
+                # squeeze channel dim
+                masks_t = batch_masks.to(self.device).squeeze(1)
+                boxes_t = batch_boxes.to(self.device)
+                rescaled = rescale_masks(masks_t, boxes_t, (image_h, image_w), mask_threshold)
+
+                # revert geometric ops on masks
+                if operators:
+                    rescaled = torch.stack([
+                        torch.from_numpy(
+                            revert_mask_to_origin(m.cpu().numpy(), operators)
+                        ) for m in rescaled
+                    ])
+
+                final_masks = [m.cpu().numpy() for m in rescaled]
+
+                if return_segs:
+                    for m in rescaled:
+                        arr = m.cpu().numpy()
+                        poly = mask_to_polygon_cv2(arr)
+                        if operators:
+                            poly = revert_to_origin(poly, operators)
+                        batch_segments.append(poly)
+            else:
+                final_masks = (
+                    batch_masks.cpu().numpy() if isinstance(batch_masks, torch.Tensor) else []
+                )
+
+            # 4) Revert boxes to original coords
+            boxes_np = batch_boxes.cpu().numpy()
+            boxes_np = revert_to_origin(boxes_np, operators)
+
+            # collect
+            results["boxes"].append(boxes_np)
             results["scores"].append(batch_scores)
             results["classes"].append(batch_classes)
-            results["masks"].append(batch_masks.cpu().numpy() if isinstance(batch_masks, torch.Tensor) else batch_masks)
+            results["masks"].append(final_masks)
             results["segments"].append(batch_segments)
+
         return results
     
     def predict(self, images, **kwargs):

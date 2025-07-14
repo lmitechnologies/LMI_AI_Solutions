@@ -77,8 +77,6 @@ def export_scripting(torch_model, args):
     ts_model = scripting_with_instances(ScriptableAdapter(), fields)
     with PathManager.open(args.get(f'pt_file_path'), "wb") as f:
         torch.jit.save(ts_model, f)
-    # dump_torchscript_IR(ts_model, args.get('output'))
-    # TODO inference in Python now missing postprocessing glue code
     return None
 
 
