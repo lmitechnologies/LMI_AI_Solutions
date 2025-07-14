@@ -178,12 +178,6 @@ class DET2GraphSurgeon:
                 # No new folding occurred in this iteration, so we can stop for now.
                 break
     
-    def resize_to_nearest_32(self,img: np.ndarray) -> np.ndarray:
-        h, w = img.shape[:2]
-        new_h = max(32, round(h / 32) * 32)
-        new_w = max(32, round(w / 32) * 32)
-        return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-
     def get_anchors(self, sample_image):
         """
         Detectron 2 exported ONNX does not contain anchors required for efficientNMS plug-in, so they must be generated
@@ -211,6 +205,7 @@ class DET2GraphSurgeon:
         inputs = [{"image": image, "height": raw_height, "width": raw_width}]
         images = [x["image"].to(model.device) for x in inputs]
         images = [(x - model.pixel_mean) / model.pixel_std for x in images]
+        
         image_height = images[0].shape[-2]
         image_width = images[0].shape[-1]
         

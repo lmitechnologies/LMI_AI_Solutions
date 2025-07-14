@@ -38,7 +38,7 @@ if __name__ == '__main__':
     test.add_argument('-o',"--output", type=str, default=DET2_OUTPUT_DIR, help="The path to the outputs")
     test.add_argument("--class_map", type=str, default=DET2_CLASS_MAP, help="The path to the class map")
     test.add_argument("--confidence", type=float, default=0.5, help="The confidence threshold")
-    test.add_argument("--iou", type=float, default=0.5, help="The IoU threshold for NMS")
+    test.add_argument("--iou", type=float, default=0.0, help="The IoU threshold for NMS")
     test.add_argument("--max_det", type=int, default=100, help="The max detections per image after NMS")
     
     convert_ap = subs.add_parser('convert',help='convert model')
@@ -50,7 +50,7 @@ if __name__ == '__main__':
         "-w", "--weights", help="The Detectron 2 model weights (.pth)", type=str, default=os.path.join(DET2_DEFAULT_DIR, DET2_PTH_EXPORT),
     )
     convert_ap.add_argument(
-        "-s", "--sample_image", help="Sample image for anchors generation/predictions", type=str, default=os.path.join(DET2_DEFAULT_DIR, DET2_SAMPLE_IMAGE),
+        "-s", "--sample_image", help="Sample image for anchors generation/predictions", type=str, default=os.path.join(DET2_DEFAULT_DIR, 'sample_image.png'),
     )
     convert_ap.add_argument("-b","--batch-size", type=int, help="Batch size for the model", default=1)
     convert_ap.add_argument('-fp16',"--fp16",action='store_true', help="Use fp16", default=True)

@@ -248,7 +248,7 @@ class Detectron2TRT(ODBase):
             masks = None
 
         # map classes
-        classes = self.class_map_func(classes)
+        # classes = self.class_map_func(classes)
 
         # scale to pixel coords
         if len(boxes) > 0:
@@ -266,7 +266,8 @@ class Detectron2TRT(ODBase):
             raw_classes = classes[b]
             raw_masks   = masks[b] if masks is not None else None
             # NMS on raw detections 
-            if raw_boxes.shape[0] > 0:
+            if raw_boxes.shape[0] > 0 and iou_threshold > 0.0:
+                self.logger.info(f"Running NMS on {raw_boxes.shape[0]} boxes")
                 tb = torch.tensor(raw_boxes,   device=self.device).float()
                 ts = torch.tensor(raw_scores,  device=self.device).float()
                 tc = torch.tensor(raw_classes, device=self.device).long()
@@ -280,6 +281,7 @@ class Detectron2TRT(ODBase):
                     _, order = kept_scores.sort(descending=True)
                     # pick only the top‐max_detections by score
                     keep_idx = keep_idx[order[:max_detections]]
+                keep_idx = keep_idx.cpu()
 
 
                 raw_boxes   = raw_boxes[keep_idx]
@@ -296,6 +298,7 @@ class Detectron2TRT(ODBase):
             batch_scores  = raw_scores[keep_conf]
             batch_classes = raw_classes[keep_conf]
             batch_masks   = raw_masks[keep_conf] if raw_masks is not None else None
+            batch_classes = self.class_map_func(batch_classes)
 
             # mask processing
             segs, final_masks = [], []
