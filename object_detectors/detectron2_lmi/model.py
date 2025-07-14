@@ -233,7 +233,7 @@ class Detectron2TRT(ODBase):
         mask_threshold = kwargs.get("mask_threshold", 0.5)
         process_masks  = kwargs.get("process_masks", True)
         operators      = kwargs.get("operators", [])
-        iou_threshold  = kwargs.get("iou", 0.5)
+        iou_threshold  = kwargs.get("iou", 0.0)
         max_detections = kwargs.get("max_det", 100)
         return_segs    = kwargs.get("return_segments", False)
 
@@ -528,7 +528,7 @@ class Detectron2PT(ODBase):
         process_masks  = kwargs.get("process_masks", True)
         operators      = kwargs.get("operators", [])
         return_segs    = kwargs.get("return_segments", False)
-        iou_threshold  = kwargs.get("iou", 0.5)
+        iou_threshold  = kwargs.get("iou", 0.0)
         max_detections = kwargs.get("max_det", 100)
 
         for idx, output in enumerate(predictions):
@@ -543,7 +543,7 @@ class Detectron2PT(ODBase):
                 continue
 
             # 1) NMS on raw outputs
-            if raw_boxes.numel() > 0:
+            if raw_boxes.numel() > 0 and iou_threshold > 0.0:
                 keep_nms = batched_nms(
                     raw_boxes.to(self.device).float(),
                     raw_scores.to(self.device).float(),
