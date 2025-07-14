@@ -13,6 +13,7 @@ class ObjectDetector(ODBase):
         logger = logging.getLogger(__name__)
         model_path = metadata.get('model_path')
         image_size = metadata.get('image_size')
+        class_map = metadata.get('class_map', {})
         if image_size:
             if 'image_size' in kwargs and kwargs['image_size'] is not None:
                 logger.warning(
@@ -21,6 +22,7 @@ class ObjectDetector(ODBase):
                 )
             
         kwargs['image_size'] = image_size
+        kwargs['class_map'] = class_map
         
         try:
             wrapper_cls = ObjectDetectorRegistry.get_class(metadata)
