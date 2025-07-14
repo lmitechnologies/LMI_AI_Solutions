@@ -66,7 +66,7 @@ def inference_run(args):
         csv_results = []
         img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        outputs = model.predict(img, confs=confidence_map, return_segments=True)
+        outputs = model.predict(img, confs=confidence_map, return_segments=True, iou=args.get('iou', 0.5), max_det=args.get('max_det', 100))
         if len (outputs['boxes']) == 0:
             logger.warning(f"No detections found for image: {img_path}")
             continue
@@ -76,7 +76,7 @@ def inference_run(args):
         outputs['masks'] = outputs['masks'][0]
         outputs['segments'] = outputs['segments'][0]
         annotated_image = model.annotate_image(
-           outputs, img, show_segments=True
+           outputs, img,
         )
         
         # save the image

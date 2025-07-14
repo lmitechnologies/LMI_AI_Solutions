@@ -265,7 +265,6 @@ class Detectron2TRT(ODBase):
             raw_scores  = scores[b]
             raw_classes = classes[b]
             raw_masks   = masks[b] if masks is not None else None
-
             # NMS on raw detections 
             if raw_boxes.shape[0] > 0:
                 tb = torch.tensor(raw_boxes,   device=self.device).float()
@@ -510,8 +509,8 @@ class Detectron2PT(ODBase):
                 - process_masks (bool): whether to rescale/process masks (default True)
                 - operators (list): geometric ops for reverting to original coords
                 - return_segments (bool): whether to compute polygon segments from masks
-                - iou_threshold (float): IoU threshold for NMS (default 0.5)
-                - max_detections (int): max detections per image after NMS (default 100)
+                - iou (float): IoU threshold for NMS (default 0.5)
+                - max_det (int): max detections per image after NMS (default 100)
 
         Returns:
             dict with keys "boxes", "scores", "classes", "masks", "segments",
@@ -537,6 +536,8 @@ class Detectron2PT(ODBase):
             raw_classes = output["pred_classes"]
             raw_boxes   = output["pred_boxes"]
             raw_masks   = output.get("pred_masks", None)
+            if raw_boxes.shape[0] == 0:
+                continue
 
             # 1) NMS on raw outputs
             if raw_boxes.numel() > 0:

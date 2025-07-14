@@ -38,6 +38,8 @@ if __name__ == '__main__':
     test.add_argument('-o',"--output", type=str, default=DET2_OUTPUT_DIR, help="The path to the outputs")
     test.add_argument("--class_map", type=str, default=DET2_CLASS_MAP, help="The path to the class map")
     test.add_argument("--confidence", type=float, default=0.5, help="The confidence threshold")
+    test.add_argument("--iou", type=float, default=0.5, help="The IoU threshold for NMS")
+    test.add_argument("--max_det", type=int, default=100, help="The max detections per image after NMS")
     
     convert_ap = subs.add_parser('convert',help='convert model')
     
