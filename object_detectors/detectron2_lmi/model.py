@@ -498,134 +498,88 @@ class Detectron2PT(ODBase):
     
     def postprocess(self, images, predictions, **kwargs):
         """
-        Post-processes the predictions from the model to filter and format the results.
+        Post-processes a batch of model predictions to filter and format the results.
 
         Args:
-            images (list): A list of input images.
-            predictions (list): A list of model outputs, each a dict with:
-                - "scores" (Tensor): confidence scores [N]
-                - "pred_classes" (Tensor): class indices [N]
-                - "pred_boxes" (Tensor): boxes [N×4]
-                - "pred_masks" (Tensor, optional): masks [N×1×H×W]
+            images (list): A list of input images in the batch.
+            predictions (list): A list of prediction dicts, one for each image.
             **kwargs:
-                - confs (dict): class → confidence threshold (default 0.5)
-                - mask_threshold (float): binarization threshold for masks (default 0.5)
-                - process_masks (bool): whether to rescale/process masks (default True)
-                - operators (list): geometric ops for reverting to original coords
-                - return_segments (bool): whether to compute polygon segments from masks
-                - iou (float): IoU threshold for NMS (default 0.5)
-                - max_det (int): max detections per image after NMS (default 100)
-
+                - confs (dict): Confidence thresholds per class.
+                - iou (float): IoU threshold for NMS.
+                - max_detections (int): Max detections to return per image.
         Returns:
-            dict with keys "boxes", "scores", "classes", "masks", "segments",
-            each a list of length batch_size.
+            dict: A dictionary of lists containing the post-processed results for each image.
         """
+        # --- Get kwargs with default values ---
+        iou_threshold = kwargs.get("iou", 0.7)
+        max_detections = kwargs.get("max_detections", 300)
+        confs = kwargs.get("confs", {})
+        mask_threshold = kwargs.get("mask_threshold", 0.5)
+        process_masks = kwargs.get("process_masks", True)
+        operators = kwargs.get("operators", [])
+
         results = {"boxes": [], "scores": [], "classes": [], "masks": [], "segments": []}
-        if not predictions:
+        
+        if not predictions or not predictions[0]["pred_classes"].numel():
             return results
 
-        confs          = kwargs.get("confs", {})
-        mask_threshold = kwargs.get("mask_threshold", 0.5)
-        process_masks  = kwargs.get("process_masks", True)
-        operators      = kwargs.get("operators", [])
-        return_segs    = kwargs.get("return_segments", False)
-        iou_threshold  = kwargs.get("iou", 0.0)
-        max_detections = kwargs.get("max_det", 300)
-
-        for idx, output in enumerate(predictions):
+        # --- Process each image's predictions in the batch ---
+        for idx, image_preds in enumerate(predictions):
             image_h, image_w = images[idx].shape[:2]
+            
+            # run nms
+            keep_indices = torchvision.ops.nms(image_preds["pred_boxes"], image_preds["scores"], iou_threshold)
+            
+            scores = image_preds["scores"][keep_indices]
+            pred_boxes = image_preds["pred_boxes"][keep_indices]
+            pred_classes = image_preds["pred_classes"][keep_indices]
+            pred_masks = image_preds.get("pred_masks", torch.empty(0))[keep_indices]
 
-            # Raw tensors
-            raw_scores  = output["scores"]
-            raw_classes = output["pred_classes"]
-            raw_boxes   = output["pred_boxes"]
-            raw_masks   = output.get("pred_masks", None)
-            if raw_boxes.shape[0] == 0:
-                continue
+            # confidence filtering
+            scores_np = scores.cpu().numpy()
+            classes_np = self.class_map_func(pred_classes.cpu().numpy())
+            keep_conf_mask = scores_np >= np.vectorize(confs.get)(classes_np, 0.5)
+            
+            final_scores = scores_np[keep_conf_mask]
+            final_classes = classes_np[keep_conf_mask]
+            final_boxes = pred_boxes[keep_conf_mask]
+            final_masks = pred_masks[keep_conf_mask] if pred_masks.numel() > 0 else []
 
-            # 1) NMS on raw outputs
-            if raw_boxes.numel() > 0 and iou_threshold > 0.0:
-                keep_nms = batched_nms(
-                    raw_boxes.to(self.device).float(),
-                    raw_scores.to(self.device).float(),
-                    raw_classes.to(self.device).long(),
-                    iou_threshold
-                )
-                if keep_nms.numel() > max_detections:
-                    # gather the scores of all kept detections
-                    kept_scores = raw_scores[keep_nms]
-                    # sort them descending
-                    _, order = kept_scores.sort(descending=True)
-                    # pick only the top‐max_detections by score
-                    keep_nms = keep_nms[order[:max_detections]]
+            # max_detections: Limit the number of detections per image.
+            if len(final_scores) > max_detections:
+                top_k_indices = np.argsort(final_scores)[::-1][:max_detections]
+                
+                final_scores = final_scores[top_k_indices]
+                final_classes = final_classes[top_k_indices]
+                final_boxes = final_boxes[top_k_indices]
+                if len(final_masks) > 0:
+                    final_masks = final_masks[top_k_indices]
+            
+            # process masks if available
+            final_segments = []
+            if process_masks and len(final_masks) > 0:
+                final_masks = rescale_masks(final_masks.to(self.device).squeeze(1), final_boxes.to(self.device), (image_h, image_w), mask_threshold)
+                
+                if len(operators) > 0:
+                    final_masks = np.array([revert_mask_to_origin(m.cpu().numpy() if isinstance(m, torch.Tensor) else m, operators) for m in final_masks])
+                
+                if kwargs.get("return_segments", False):
+                    processed_masks = [m.cpu().numpy() if isinstance(m, torch.Tensor) else m for m in final_masks]
+                    polygons = [mask_to_polygon_cv2(m) for m in processed_masks]
+                    final_segments = [revert_to_origin(p, operators) for p in polygons] if len(operators) > 0 else polygons
 
-                raw_scores  = raw_scores[keep_nms]
-                raw_classes = raw_classes[keep_nms]
-                raw_boxes   = raw_boxes[keep_nms]
-                if raw_masks is not None:
-                    raw_masks = raw_masks[keep_nms]
-            else:
-                raw_masks = None
-
-            #  class‐aware confidence filtering
-            scores_np  = raw_scores.cpu().numpy()
-            classes_np = self.class_map_func(raw_classes.cpu().numpy())
-            # build threshold array
-            thr_arr = np.vectorize(lambda c: confs.get(c, 0.5))(classes_np)
-            keep_conf = scores_np >= thr_arr
-
-            if keep_conf.any():
-                batch_scores  = scores_np[keep_conf]
-                batch_classes = classes_np[keep_conf]
-                batch_boxes   = raw_boxes[keep_conf]
-                batch_masks   = raw_masks[keep_conf] if raw_masks is not None else None
-            else:
-                # no detections
-                continue
-
-            # process masks & segments
-            batch_segments = []
-            if process_masks and batch_masks is not None and batch_masks.numel() > 0:
-                # squeeze channel dim
-                masks_t = batch_masks.to(self.device).squeeze(1)
-                boxes_t = batch_boxes.to(self.device)
-                rescaled = rescale_masks(masks_t, boxes_t, (image_h, image_w), mask_threshold)
-
-                # revert geometric ops on masks
-                if operators:
-                    rescaled = torch.stack([
-                        torch.from_numpy(
-                            revert_mask_to_origin(m.cpu().numpy(), operators)
-                        ) for m in rescaled
-                    ])
-
-                final_masks = [m.cpu().numpy() for m in rescaled]
-
-                if return_segs:
-                    for m in rescaled:
-                        arr = m.cpu().numpy()
-                        poly = mask_to_polygon_cv2(arr)
-                        if operators:
-                            poly = revert_to_origin(poly, operators)
-                        batch_segments.append(poly)
-            else:
-                final_masks = (
-                    batch_masks.cpu().numpy() if isinstance(batch_masks, torch.Tensor) else []
-                )
-
-            # 4) Revert boxes to original coords
-            boxes_np = batch_boxes.cpu().numpy()
-            boxes_np = revert_to_origin(boxes_np, operators)
-
-            # collect
-            results["boxes"].append(boxes_np)
-            results["scores"].append(batch_scores)
-            results["classes"].append(batch_classes)
-            results["masks"].append(final_masks)
-            results["segments"].append(batch_segments)
-
+            # revert boxes to original coordinates if operators are provided
+            if len(operators) > 0:
+                final_boxes = revert_to_origin(final_boxes, operators)
+            
+            results["boxes"].append(final_boxes.cpu().numpy())
+            results["scores"].append(final_scores)
+            results["classes"].append(final_classes)
+            results["masks"].append(final_masks.cpu().numpy() if isinstance(final_masks, torch.Tensor) else final_masks)
+            results["segments"].append(final_segments)
+                
         return results
-    
+        
     def predict(self, images, **kwargs):
         """
         Perform prediction on the given images.
@@ -657,10 +611,10 @@ class Detectron2PT(ODBase):
         predictions = self.forward(inputs)
         # postprocess
         results = self.postprocess(images, predictions,**kwargs)
-        
-        
-        # if batch size is 1, return the first result
-        # results = {k: v[0] for k, v in results.items() } if self.batch_size == 1 else results
+
+        # if batch size is 1, return single result
+        if self.batch_size == 1 or len(images) == 1:
+            results = {k: v[0] if len(v) > 0 else v for k, v in results.items()}
         
         t1= time.time()
         return results, t1 - t0
