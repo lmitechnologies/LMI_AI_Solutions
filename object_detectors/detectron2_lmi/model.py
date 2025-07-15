@@ -485,10 +485,10 @@ class Detectron2PT(ODBase):
         for idx, image_preds in enumerate(predictions):
             image_h, image_w = images[idx].shape[:2]
             if image_preds is None or len(image_preds['pred_classes']) == 0:
-                results["boxes"].append(np.empty((0, 4), dtype=np.float32))
-                results["scores"].append(np.empty((0,), dtype=np.float32))
-                results["classes"].append(np.empty((0,), dtype=np.int64))
-                results["masks"].append(np.empty((0, 0, 0), dtype=np.float32))
+                results["boxes"].append([])
+                results["scores"].append([])
+                results["classes"].append([])
+                results["masks"].append([])
                 results["segments"].append([])
                 continue
             
