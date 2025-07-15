@@ -581,11 +581,6 @@ class Detectron2PT(ODBase):
                 batch_masks   = raw_masks[keep_conf] if raw_masks is not None else None
             else:
                 # no detections
-                results["boxes"].append(np.zeros((0, 4), dtype=np.int32))
-                results["scores"].append(np.array([]))
-                results["classes"].append(np.array([]))
-                results["masks"].append([])
-                results["segments"].append([])
                 continue
 
             # process masks & segments
