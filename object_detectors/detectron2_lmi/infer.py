@@ -66,15 +66,11 @@ def inference_run(args):
         csv_results = []
         img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        outputs, _ = model.predict(img, confs=confidence_map, return_segments=True, iou=args.get('iou', 0.5), max_det=args.get('max_det', 100))
+        outputs, proc_time = model.predict(img, confs=confidence_map, return_segments=True, iou=args.get('iou', 0.5), max_det=args.get('max_det', 100))
         if len (outputs['boxes']) == 0:
-            logger.warning(f"No detections found for image: {img_path}")
+            logger.warning(f"No detections found for image: {img_path} ")
             continue
-        outputs['boxes'] = outputs['boxes']
-        outputs['classes'] = outputs['classes']
-        outputs['scores'] = outputs['scores']
-        outputs['masks'] = outputs['masks']
-        outputs['segments'] = outputs['segments']
+        logger.info(f'Processed image: {img_path} | {len(outputs["classes"])} |Time taken: {proc_time:.4f} seconds')
         annotated_image = model.annotate_image(
            outputs, img,
         )
