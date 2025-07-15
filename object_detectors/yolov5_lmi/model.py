@@ -20,7 +20,7 @@ from utils.segment.general import masks2segments, process_mask, process_mask_nat
 from models.common import DetectMultiBackend
 from utils.torch_utils import smart_inference_mode
 
-from od_base import ODBase
+from od_core.od_base import ODBase
 import gadget_utils.pipeline_utils as pipeline_utils
 from yolov8_lmi.model import Yolov8
 

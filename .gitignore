@@ -24,3 +24,5 @@ config
 debug
 **/*.egg-info
 **/*.html
+datasets
+runs
