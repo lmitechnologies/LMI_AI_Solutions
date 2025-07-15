@@ -11,6 +11,19 @@ from detectron2.utils.testing import (
 import logging
 import numpy as np
 
+
+PATH = os.path.abspath(__file__)
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(PATH))))
+
+@pytest.fixture()
+def add_root_path(request):
+    if request.config.getoption("--test-package") is False:
+        sys.path.append(os.path.join(ROOT, 'lmi_utils'))
+        sys.path.append(os.path.join(ROOT, 'object_detectors'))
+        logger.info(f"Added {ROOT} to sys.path")
+    else:
+        logger.info("Skipping adding root path to sys.path")
+
 from detectron2_lmi.model import Detectron2Model
 from od_core.object_detector import ObjectDetector
 
@@ -70,11 +83,11 @@ class TestDetectron2ModelPT:
            v:0.00 for k,v in class_map.items()
         }
         image = cv2.imread(SAMPLE_IMAGE)
-        preds = detectron2_model.predict(image, confs=confs, process_masks=False)
-        assert orginal_preds.pred_boxes.tensor.shape == preds.get('boxes')[0].shape
-        assert orginal_preds.pred_classes.shape == preds.get('classes')[0].shape
-        assert orginal_preds.scores.shape == preds.get('scores')[0].shape
-        assert orginal_preds.pred_masks.shape == preds.get('masks')[0].shape
+        preds, _ = model.predict(image, confs=confs, process_masks=False, iou=0.0)
+        assert orginal_preds.pred_boxes.tensor.shape == preds.get('boxes').shape
+        assert orginal_preds.pred_classes.shape == preds.get('classes').shape
+        assert orginal_preds.scores.shape == preds.get('scores').shape
+        assert orginal_preds.pred_masks.shape == preds.get('masks').shape
         
         # check if the scores are all close
         assert np.allclose(orginal_preds.scores.cpu().numpy(), preds.get('scores'))
@@ -85,14 +98,12 @@ class TestDetectron2ModelPT:
            v:0.95 for k,v in class_map.items()
         }
         image = cv2.imread(SAMPLE_IMAGE)
-        outputs = detectron2_model.predict(image, confs=confs, return_segments=True, process_masks=True)
-        outputs['boxes'] = outputs['boxes'][0]
-        outputs['classes'] = outputs['classes'][0]
-        outputs['scores'] = outputs['scores'][0]
-        outputs['masks'] = outputs['masks'][0]
-        outputs['segments'] = outputs['segments'][0]
+        outputs, _ = model.predict(image, confs=confs, return_segments=True, process_masks=True, iou=0.0)
         
-        assert len(outputs['boxes']) == len(outputs['classes']) == len(outputs['scores']) == len(outputs['masks']) == len(outputs['segments'])
+        assert len(outputs['boxes']) == len(outputs['classes']) 
+        assert len(outputs['scores']) == len(outputs['classes'])
+        assert len(outputs['masks']) == len(outputs['classes'])
+        assert len(outputs['segments']) == len(outputs['classes'])
         
         annotated_image = detectron2_model.annotate_image(
            outputs, image, show_segments=True
@@ -107,12 +118,7 @@ class TestDetectron2ModelPT:
         image = cv2.imread(SAMPLE_IMAGE)
         image = cv2.resize(image, (512, 512))
         operators = [{'resize': [1024,1024,512,512]}]
-        outputs = detectron2_model.predict(image, confs=confs, return_segments=True, process_masks=True, operators=operators)
-        outputs['boxes'] = outputs['boxes'][0]
-        outputs['classes'] = outputs['classes'][0]
-        outputs['scores'] = outputs['scores'][0]
-        outputs['masks'] = outputs['masks'][0]
-        outputs['segments'] = outputs['segments'][0]
+        outputs , _ = model.predict(image, confs=confs, return_segments=True, process_masks=True, operators=operators, iou=0.0)
         assert len(outputs['boxes']) == len(outputs['classes']) == len(outputs['scores']) == len(outputs['masks']) == len(outputs['segments'])
         assert outputs['masks'].shape[1] == 512
         assert outputs['masks'].shape[2] == 512
@@ -129,12 +135,7 @@ class TestDetectron2ModelPT:
         image = cv2.imread(SAMPLE_IMAGE)
         image = cv2.resize(image, (512, 512))
         operators = [{'resize': [1024,1024,512,512]}]
-        outputs = detectron2_model.predict(image, confs=confs, return_segments=True, process_masks=True, operators=operators)
-        outputs['boxes'] = outputs['boxes'][0]
-        outputs['classes'] = outputs['classes'][0]
-        outputs['scores'] = outputs['scores'][0]
-        outputs['masks'] = outputs['masks'][0]
-        outputs['segments'] = outputs['segments'][0]
+        outputs, _ = model.predict(image, confs=confs, return_segments=True, process_masks=True, operators=operators)
         assert len(outputs['boxes']) == len(outputs['classes']) == len(outputs['scores']) == len(outputs['masks']) == len(outputs['segments'])
         assert len(outputs['boxes']) == 0
         
@@ -149,13 +150,13 @@ class TestDetectron2ModelPT_API:
         confs = {
            v:0.00 for k,v in class_map.items()
         }
-        
+        model = ObjectDetector(metadata=dict(version='v0', model_name='mask_rcnn', task='seg', framework='detectron2', class_map=class_map), model_path=MODEL_PATH)
         image = cv2.imread(SAMPLE_IMAGE)
-        preds = detectron2_model_api.predict(image, confs=confs, process_masks=False)
-        assert orginal_preds.pred_boxes.tensor.shape == preds.get('boxes')[0].shape
-        assert orginal_preds.pred_classes.shape == preds.get('classes')[0].shape
-        assert orginal_preds.scores.shape == preds.get('scores')[0].shape
-        assert orginal_preds.pred_masks.shape == preds.get('masks')[0].shape
+        preds, _ = model.predict(image, confs=confs, process_masks=False, iou=0.0)
+        assert orginal_preds.pred_boxes.tensor.shape == preds.get('boxes').shape
+        assert orginal_preds.pred_classes.shape == preds.get('classes').shape
+        assert orginal_preds.scores.shape == preds.get('scores').shape
+        assert orginal_preds.pred_masks.shape == preds.get('masks').shape
         
         # check if the scores are all close
         assert np.allclose(orginal_preds.scores.cpu().numpy(), preds.get('scores'))
@@ -165,16 +166,14 @@ class TestDetectron2ModelPT_API:
         confs = {
            v:0.95 for k,v in class_map.items()
         }
-        
+        model = ObjectDetector(metadata=dict(version='v0', model_name='mask_rcnn', task='seg', framework='detectron2', class_map=class_map), model_path=MODEL_PATH)
         image = cv2.imread(SAMPLE_IMAGE)
-        outputs = detectron2_model_api.predict(image, confs=confs, return_segments=True, process_masks=True)
-        outputs['boxes'] = outputs['boxes'][0]
-        outputs['classes'] = outputs['classes'][0]
-        outputs['scores'] = outputs['scores'][0]
-        outputs['masks'] = outputs['masks'][0]
-        outputs['segments'] = outputs['segments'][0]
+        outputs, _ = model.predict(image, confs=confs, return_segments=True, process_masks=True, iou=0.0)
         
-        assert len(outputs['boxes']) == len(outputs['classes']) == len(outputs['scores']) == len(outputs['masks']) == len(outputs['segments'])
+        assert len(outputs['boxes']) == len(outputs['classes']) 
+        assert len(outputs['scores']) == len(outputs['classes'])
+        assert len(outputs['masks']) == len(outputs['classes'])
+        assert len(outputs['segments']) == len(outputs['classes'])
         
         annotated_image = detectron2_model_api.annotate_image(
            outputs, image, show_segments=True
@@ -185,16 +184,11 @@ class TestDetectron2ModelPT_API:
         confs = {
            v:0.95 for k,v in class_map.items()
         }
-        
+        model = ObjectDetector(metadata=dict(version='v0', model_name='mask_rcnn', task='seg', framework='detectron2', class_map=class_map), model_path=MODEL_PATH)
         image = cv2.imread(SAMPLE_IMAGE)
         image = cv2.resize(image, (512, 512))
         operators = [{'resize': [1024,1024,512,512]}]
-        outputs = detectron2_model_api.predict(image, confs=confs, return_segments=True, process_masks=True, operators=operators)
-        outputs['boxes'] = outputs['boxes'][0]
-        outputs['classes'] = outputs['classes'][0]
-        outputs['scores'] = outputs['scores'][0]
-        outputs['masks'] = outputs['masks'][0]
-        outputs['segments'] = outputs['segments'][0]
+        outputs , _ = model.predict(image, confs=confs, return_segments=True, process_masks=True, operators=operators, iou=0.0)
         assert len(outputs['boxes']) == len(outputs['classes']) == len(outputs['scores']) == len(outputs['masks']) == len(outputs['segments'])
         assert outputs['masks'].shape[1] == 512
         assert outputs['masks'].shape[2] == 512
@@ -208,15 +202,10 @@ class TestDetectron2ModelPT_API:
         confs = {
            v:1.0 for k,v in class_map.items()
         }
-        
+        model = ObjectDetector(metadata=dict(version='v0', model_name='mask_rcnn', task='seg', framework='detectron2', class_map=class_map), model_path=MODEL_PATH)
         image = cv2.imread(SAMPLE_IMAGE)
         image = cv2.resize(image, (512, 512))
         operators = [{'resize': [1024,1024,512,512]}]
-        outputs = detectron2_model_api.predict(image, confs=confs, return_segments=True, process_masks=True, operators=operators)
-        outputs['boxes'] = outputs['boxes'][0]
-        outputs['classes'] = outputs['classes'][0]
-        outputs['scores'] = outputs['scores'][0]
-        outputs['masks'] = outputs['masks'][0]
-        outputs['segments'] = outputs['segments'][0]
+        outputs, _ = model.predict(image, confs=confs, return_segments=True, process_masks=True, operators=operators)
         assert len(outputs['boxes']) == len(outputs['classes']) == len(outputs['scores']) == len(outputs['masks']) == len(outputs['segments'])
         assert len(outputs['boxes']) == 0
