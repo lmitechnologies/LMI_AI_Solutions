@@ -660,7 +660,7 @@ class Detectron2PT(ODBase):
         
         
         # if batch size is 1, return the first result
-        results = {k: v[0] for k, v in results.items() } if self.batch_size == 1 else results
+        # results = {k: v[0] for k, v in results.items() } if self.batch_size == 1 else results
         
         t1= time.time()
         return results, t1 - t0
