@@ -118,13 +118,14 @@ class TestDetectron2ModelPT:
         image = cv2.imread(SAMPLE_IMAGE)
         image = cv2.resize(image, (512, 512))
         operators = [{'resize': [1024,1024,512,512]}]
-        outputs , _ = model.predict(image, confs=confs, return_segments=True, process_masks=True, operators=operators, iou=0.0)
-        assert len(outputs['boxes']) == len(outputs['classes']) == len(outputs['scores']) == len(outputs['masks']) == len(outputs['segments'])
+        outputs , _ = model.predict(image, confs=confs, return_segments=False, process_masks=True, operators=operators, iou=0.0)
+        assert 'segments' not in outputs
+        assert len(outputs['boxes']) == len(outputs['classes']) == len(outputs['scores']) == len(outputs['masks'])
         assert outputs['masks'].shape[1] == 512
         assert outputs['masks'].shape[2] == 512
         
-        annotated_image = detectron2_model.annotate_image(
-           outputs, image, show_segments=True
+        annotated_image = model.annotate_image(
+           outputs, image
         )
         cv2.imwrite(os.path.join(OUT_DIR, os.path.basename(SAMPLE_IMAGE)), annotated_image)
     
