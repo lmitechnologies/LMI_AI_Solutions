@@ -663,9 +663,10 @@ class Detectron2PT(ODBase):
         # postprocess
         results = self.postprocess(images, predictions,**kwargs)
         
-        self.logger.info(f"proc-time {(t1-t0)*1000.0:.2f} ms")
+        
         # if batch size is 1, return the first result
         results = {k: v[0] for k, v in results.items()} if self.batch_size == 1 else results
+        self.logger.info(f"proc-time {(t1-t0)*1000.0:.2f} ms")
         t1= time.time()
         return results, t1 - t0
         
