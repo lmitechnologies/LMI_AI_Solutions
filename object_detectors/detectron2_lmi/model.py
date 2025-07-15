@@ -78,25 +78,37 @@ class Detectron2ModelBase(ODBase):
         process_masks = kwargs.get("process_masks", True)
         operators = kwargs.get("operators", [])
         image_h, image_w = image.shape[0], image.shape[1]
-        results = {"boxes": [], "scores": [], "classes": [], "masks": []}
+        results = {"boxes": [], "scores": [], "classes": []}
         use_masks = True
         if "masks" not in prediction:
             use_masks = False
+        else:
+            results["masks"] = []
         
         if kwargs.get("return_segments", False):
             results["segments"] = []
+        
         if len(prediction["boxes"]) == 0:
+            self.logger.warning("No detections found.")
             return results
-        keep_indices = torchvision.ops.nms(prediction["boxes"], prediction["scores"], iou_threshold)
-        scores = prediction["scores"][keep_indices]
-        pred_boxes = prediction["boxes"][keep_indices]
-        pred_classes = prediction["classes"][keep_indices]
-        if use_masks:
-            pred_masks = prediction.get("masks", torch.empty(0))[keep_indices]
+
+        if iou_threshold > 0.0:
+            keep_indices = torchvision.ops.nms(prediction["boxes"], prediction["scores"], iou_threshold)
+            scores = prediction["scores"][keep_indices]
+            pred_boxes = prediction["boxes"][keep_indices]
+            pred_classes = prediction["classes"][keep_indices]
+            if use_masks:
+                pred_masks = prediction.get("masks", torch.empty(0))[keep_indices]
+        else:
+            scores = prediction["scores"]
+            pred_boxes = prediction["boxes"]
+            pred_classes = prediction["classes"]
+            if use_masks:
+                pred_masks = prediction.get("masks", torch.empty(0))
         # confidence filtering
         scores_np = scores.cpu().numpy()
         classes_np = self.class_map_func(pred_classes.cpu().numpy())
-        keep_conf_mask = scores_np >= np.vectorize(confs.get)(classes_np, 0.5)
+        keep_conf_mask = scores_np >= np.vectorize(confs.get)(classes_np, 1.0)
             
         final_scores = scores_np[keep_conf_mask]
         final_classes = classes_np[keep_conf_mask]
@@ -104,17 +116,18 @@ class Detectron2ModelBase(ODBase):
         if use_masks:
             final_masks = pred_masks[keep_conf_mask] if pred_masks.numel() > 0 else []
 
-        # max_detections: Limit the number of detections per image.
+        # max_detections: limit the number of detections per image.
         if len(final_scores) > max_detections:
-            top_k_indices = np.argsort(final_scores)[::-1][:max_detections]
-                
+            top_k_indices =  np.argsort(final_scores)[::-1][:max_detections].copy()
+            
+            # filter all result arrays using the top indices
             final_scores = final_scores[top_k_indices]
             final_classes = final_classes[top_k_indices]
             final_boxes = final_boxes[top_k_indices]
-            if use_masks:
-                if len(final_masks) > 0:
-                    final_masks = final_masks[top_k_indices]
             
+            if use_masks and len(final_masks) > 0:
+                final_masks = final_masks[top_k_indices]
+                
         # process masks if available
         final_segments = []
         if use_masks:
@@ -124,21 +137,21 @@ class Detectron2ModelBase(ODBase):
                 if len(operators) > 0:
                     final_masks = np.array([revert_mask_to_origin(m.cpu().numpy() if isinstance(m, torch.Tensor) else m, operators) for m in final_masks])
                     
-                    if kwargs.get("return_segments", False):
-                        processed_masks = [m.cpu().numpy() if isinstance(m, torch.Tensor) else m for m in final_masks]
-                        polygons = [mask_to_polygon_cv2(m) for m in processed_masks]
-                        final_segments = [revert_to_origin(p, operators) for p in polygons] if len(operators) > 0 else polygons
+                if kwargs.get("return_segments", False):
+                    processed_masks = [m.cpu().numpy() if isinstance(m, torch.Tensor) else m for m in final_masks]
+                    polygons = [mask_to_polygon_cv2(m) for m in processed_masks]
+                    final_segments = [revert_to_origin(p, operators) for p in polygons] if len(operators) > 0 else polygons
 
                 # revert boxes to original coordinates if operators are provided
-                if len(operators) > 0:
-                    final_boxes = revert_to_origin(final_boxes, operators)
-                
-                results["boxes"] = final_boxes.cpu().numpy()
-                results["scores"] = final_scores
-                results["classes"] = final_classes
-                results["masks"] = final_masks.cpu().numpy() if isinstance(final_masks, torch.Tensor) else final_masks
-                if kwargs.get("return_segments", False):
-                    results["segments"] = final_segments
+        if len(operators) > 0:
+            final_boxes = revert_to_origin(final_boxes, operators)
+        results["boxes"] = final_boxes.cpu().numpy()
+        results["scores"] = final_scores
+        results["classes"] = final_classes
+        if use_masks:
+            results["masks"] = final_masks.cpu().numpy() if isinstance(final_masks, torch.Tensor) else final_masks
+        if kwargs.get("return_segments", False):
+            results["segments"] = final_segments
         return results
 
         
@@ -291,45 +304,51 @@ class Detectron2TRT(Detectron2ModelBase):
             "boxes": [],
             "scores": [],
             "classes": [],
-            "masks": [],
-            "segments": []
         }
+
         
         if len(predictions) == 0:
             return results
         
         if len(predictions) == 5:
             num_preds, boxes, scores, classes, masks = predictions[:5]
+            if kwargs.get("return_segments", False):
+                results["segments"] = []
+            results["masks"] = []
         else:
             num_preds, boxes, scores, classes = predictions[:4]
             masks = None
 
-        
-        if len(boxes) > 0:
-            scale_factors = np.array([image_w, image_h, image_w, image_h])
-            boxes = (boxes * scale_factors).astype(np.int32)
-        
+
         for idx in range(len(images)):
             # scale the boxes
             image_h, image_w = images[idx].shape[0], images[idx].shape[1]
             if len(boxes) > 0:
                 boxes[idx] = boxes[idx] * np.array([image_w, image_h, image_w, image_h])
+                boxes[idx] = boxes[idx].astype(np.int32)
+            inp = {
+                    "boxes": torch.from_numpy(boxes[idx]),
+                    "scores": torch.from_numpy(scores[idx]),
+                    "classes": torch.from_numpy(classes[idx]),
+            }
+            if masks is not None:
+                inp["masks"] = torch.from_numpy(masks[idx]) if masks is not None else torch.empty(0)
             processed_results = self.postprocess_batch(
                 images[idx],
-                {
-                    "boxes": boxes[idx],
-                    "scores": scores[idx],
-                    "classes": classes[idx],
-                    "masks": masks[idx] if masks is not None else torch.empty(0)
-                },
+                inp,
                 **kwargs
             )
             results["boxes"].append(processed_results["boxes"])
             results["scores"].append(processed_results["scores"])
             results["classes"].append(processed_results["classes"])
-            results["masks"].append(processed_results["masks"])
+            if masks is not None:
+                if "masks" in processed_results:
+                    results["masks"].append(processed_results["masks"])
             if kwargs.get("return_segments", False):
-                results["segments"].append(processed_results.get("segments", []))
+                if "segments" in processed_results:
+                    results["segments"].append(processed_results.get("segments", []))
+                else:
+                    results["segments"].append([])  # Append empty list if segments are not present
         return results
 
     def predict(self, images, **kwargs):
@@ -385,7 +404,7 @@ class Detectron2TRT(Detectron2ModelBase):
                 result["boxes"][i],
                 image,
                 label=f"{result['classes'][i]}:{result['scores'][i]:.2f}",
-                mask=result["masks"][i] if len(result["masks"]) > 0 else None,
+                mask=result["masks"][i] if len(result["masks"]) > 0 and "masks" in result else None,
                 color=color_map,
             )
         return image
@@ -402,24 +421,8 @@ class Detectron2PT(Detectron2ModelBase):
             self.model = torch.jit.load(model_path, map_location=self.device)
         except Exception as e:
             self.logger.exception(f"❗ Failed to load model: {e}")
-        # device = kwargs.get("device", "cuda")
-        # self.device = torch.device(device)
-        # move the model to gpu
         self.model.to(self.device)
-        # class_map = kwargs.get("class_map", None)
-        # if class_map is None:
-        #     raise ValueError("class_map is required for [Detectron2PT]")
-        # try:
-        #     self.class_map = {
-        #         int(k): str(v) for k, v in class_map.items()
-        #     }
-        # except Exception as e:
-        #     # handle the case where class_map is in reverse order
-        #     self.class_map = {
-        #         int(v): str(k) for k, v in class_map.items()
-        #     }
         self.batch_size = kwargs.get('batch_size', 1)
-        # self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)))
         self.image_size = kwargs.get('image_size', [640, 640])
     
     def warmup(self, **kwargs):
@@ -495,18 +498,14 @@ class Detectron2PT(Detectron2ModelBase):
             dict: A dictionary of lists containing the post-processed results for each image.
         """
 
-        results = {"boxes": [], "scores": [], "classes": [], "masks": []}
-        if kwargs.get("return_segments", False):
-            results["segments"] = []
+        results = {"boxes": [], "scores": [], "classes": []}
+
         
         if not predictions:
             return results
 
         # --- Process each image's predictions in the batch ---
         for idx, image_preds in enumerate(predictions):
-            if not isinstance(image_preds, dict):
-                self.logger.error(f"Invalid prediction format for image {idx}: {image_preds}")
-                continue
             if 'pred_classes' not in image_preds or 'pred_boxes' not in image_preds:
                 self.logger.warning(f"Missing required keys in predictions for image {idx}. Skipping.")
                 results["boxes"].append([])
@@ -517,27 +516,30 @@ class Detectron2PT(Detectron2ModelBase):
                     results["segments"].append([])
                 continue
             
+            preds = {
+                "boxes": image_preds["pred_boxes"],
+                "scores": image_preds["scores"],
+                "classes": image_preds["pred_classes"],
+            }
+            if 'pred_masks' in image_preds:
+                results["masks"] = []
+                if kwargs.get("return_segments", False):
+                    results["segments"] = []
+
+                preds["masks"] = image_preds["pred_masks"]
+                
             processed_results = self.postprocess_batch(
-                images[idx], {
-                    "boxes": image_preds["pred_boxes"],
-                    "scores": image_preds["scores"],
-                    "classes": image_preds["pred_classes"],
-                    "masks": image_preds.get("pred_masks", torch.empty(0))
-                },**kwargs)
+                images[idx], preds,**kwargs)
             results["boxes"].append(processed_results["boxes"])
             results["scores"].append(processed_results["scores"])
             results["classes"].append(processed_results["classes"])
-            results["masks"].append(processed_results["masks"])
+            if 'masks' in processed_results:
+                results["masks"].append(processed_results["masks"])
             if kwargs.get("return_segments", False):
-                results["segments"].append(processed_results["segments"])
-
-        # --- Convert results to numpy arrays for consistency ---
-        for key in results:
-            if isinstance(results[key], list) and len(results[key]) > 0:
-                results[key] = np.array(results[key])
-            else:
-                results[key] = np.array([])
-
+                if "segments" in processed_results:
+                    results["segments"].append(processed_results.get("segments", []))
+                else:
+                    results["segments"].append([])  # Append empty list if segments are not present
                     
         return results
         

@@ -39,6 +39,7 @@ def inference_run(args):
     out_path = args.get('output')
     class_map_path = args.get('class_map')
     confidence = args.get('confidence')
+    logger.info(f"{confidence}")
     
     if not os.path.exists(out_path):
         os.makedirs(args.output)
@@ -46,7 +47,14 @@ def inference_run(args):
     with open(class_map_path, "r") as f:
         class_map = json.load(f)
         
-    
+    try:
+        class_map = {
+            int(k): str(v) for k, v in class_map.items()
+        }
+    except Exception as e:
+        class_map = {
+            int(v): str(k) for k, v in class_map.items()
+        }
     confidence_map = {
         str(v): confidence for k,v in class_map.items()
     }
