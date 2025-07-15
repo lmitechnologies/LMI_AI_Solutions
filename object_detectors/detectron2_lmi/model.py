@@ -476,7 +476,9 @@ class Detectron2PT(ODBase):
         process_masks = kwargs.get("process_masks", True)
         operators = kwargs.get("operators", [])
 
-        results = {"boxes": [], "scores": [], "classes": [], "masks": [], "segments": []}
+        results = {"boxes": [], "scores": [], "classes": [], "masks": []}
+        if kwargs.get("return_segments", False):
+            results["segments"] = []
         
         if not predictions:
             return results
@@ -528,7 +530,7 @@ class Detectron2PT(ODBase):
                 if len(operators) > 0:
                     final_masks = np.array([revert_mask_to_origin(m.cpu().numpy() if isinstance(m, torch.Tensor) else m, operators) for m in final_masks])
                 
-                if kwargs.get("return_segments", False):
+                if kwargs.get("return_segments", ):
                     processed_masks = [m.cpu().numpy() if isinstance(m, torch.Tensor) else m for m in final_masks]
                     polygons = [mask_to_polygon_cv2(m) for m in processed_masks]
                     final_segments = [revert_to_origin(p, operators) for p in polygons] if len(operators) > 0 else polygons
@@ -541,8 +543,9 @@ class Detectron2PT(ODBase):
             results["scores"].append(final_scores)
             results["classes"].append(final_classes)
             results["masks"].append(final_masks.cpu().numpy() if isinstance(final_masks, torch.Tensor) else final_masks)
-            results["segments"].append(final_segments)
-                
+            if kwargs.get("return_segments", False):
+                results["segments"].append(final_segments)
+                    
         return results
         
     def predict(self, images, **kwargs):
