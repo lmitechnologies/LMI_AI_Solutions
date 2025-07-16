@@ -26,7 +26,7 @@ from yolov8_lmi.model import Yolov8
 from od_core.object_detector_registry import ObjectDetectorRegistry
 
 
-@ObjectDetectorRegistry.register(metadata=dict(versions=['v0'], model_names=['yolov5'], tasks=['od', 'seg'], frameworks=['ultralytics']))
+@ObjectDetectorRegistry.register(metadata=dict(versions=['v0'], model_names=['yolov5'], tasks=['od', 'seg', "instancesegmentation", "objectdetection"], frameworks=['ultralytics']))
 class Yolov5(ODBase):
     logger = logging.getLogger(__name__)
     
