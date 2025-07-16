@@ -23,13 +23,15 @@ from utils.torch_utils import smart_inference_mode
 from od_core.od_base import ODBase
 import gadget_utils.pipeline_utils as pipeline_utils
 from yolov8_lmi.model import Yolov8
+from od_core.object_detector_registry import ObjectDetectorRegistry
 
 
+@ObjectDetectorRegistry.register(metadata=dict(versions=['v0'], model_names=['yolov5'], tasks=['od', 'seg'], frameworks=['ultralytics']))
 class Yolov5(ODBase):
     logger = logging.getLogger(__name__)
     
     
-    def __init__(self, weights:str, device='gpu', data=None, fp16=False) -> None:
+    def __init__(self, weights:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
         """
         args:
             weights(str): the path to the tensorRT engine file
@@ -38,6 +40,7 @@ class Yolov5(ODBase):
         if not os.path.isfile(weights):
             raise FileNotFoundError(f'File not found: {weights}')
         
+        self.image_size = kwargs.get('image_size', [640, 640])
         # set device
         self.device = torch.device('cpu')
         if device == 'gpu':
@@ -64,18 +67,19 @@ class Yolov5(ODBase):
     
     
     @smart_inference_mode()
-    def warmup(self, imgsz=[640, 640]):
+    def warmup(self, imgsz=None):
         """
         warm up the model once
         Args:
             imgsz (list, optional): list of [H,W] format. Defaults to (640, 640).
         """
+        if imgsz is None:
+            imgsz = self.image_size
+            
         if isinstance(imgsz, tuple):
             imgsz = list(imgsz)
-        # if self.imgsz and self.imgsz != imgsz:
-        #     raise Exception(f'The warmup imgsz of {imgsz} does not match with the size of the model: {self.imgsz}!')
-        
-        imgsz = [1,3]+imgsz
+            
+        imgsz = [1, 3] + imgsz
         im = torch.empty(*imgsz, dtype=torch.half if self.model.fp16 else torch.float, device=self.device)  # input
         self.forward(im)
     
