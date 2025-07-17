@@ -158,6 +158,32 @@ class AnomalyModel2(Anomalib_Base):
         
         img = img.contiguous()
         return img.half() if self.fp16 else img
+    
+    def _infer(self, input_batch):
+        '''
+        Desc: Run inference on the input batch.
+        Args:
+            - input_batch: preprocessed input batch
+        Returns:
+            - output: model output tensor
+        '''
+        if self.inference_mode == 'TRT':
+            self.binding_addrs['input'] = int(input_batch.data_ptr())
+            self.context.execute_v2(list(self.binding_addrs.values()))
+            output_tensor = self.bindings['output'].data
+            
+        elif self.inference_mode == 'PT':
+            preds = self.pt_model(input_batch)
+            if isinstance(preds, torch.Tensor):
+                output_tensor = preds
+            elif isinstance(preds, dict):
+                output_tensor = preds['anomaly_map']
+            elif isinstance(preds, Sequence):
+                output_tensor = preds[1]
+            else:
+                raise Exception(f'Unknown prediction type: {type(preds)}')
+        
+        return output_tensor
         
         
     @torch.inference_mode()
@@ -206,21 +232,7 @@ class AnomalyModel2(Anomalib_Base):
             for i in range(0, num_samples_in_input, user_inference_batch_size):
                 mini_batch = input_batch[i:min(i + user_inference_batch_size, num_samples_in_input)]
                 current_mini_batch_output_tensor = None
-                if self.inference_mode == 'TRT':
-                    self.binding_addrs['input'] = int(mini_batch.data_ptr())
-                    self.context.execute_v2(list(self.binding_addrs.values()))
-                    current_mini_batch_output_tensor = self.bindings['output'].data
-                               
-                elif self.inference_mode == 'PT':
-                    preds = self.pt_model(mini_batch)
-                    if isinstance(preds, torch.Tensor):
-                        current_mini_batch_output_tensor = preds
-                    elif isinstance(preds, dict):
-                        current_mini_batch_output_tensor = preds['anomaly_map']
-                    elif isinstance(preds, Sequence):
-                        current_mini_batch_output_tensor = preds[1]
-                    else:
-                        raise Exception(f'Unknown prediction type from PT model: {type(preds)}')
+                current_mini_batch_output_tensor = self._infer(mini_batch)
                 
                 if current_mini_batch_output_tensor is not None:
                     all_mini_batch_outputs.append(current_mini_batch_output_tensor)
@@ -236,21 +248,7 @@ class AnomalyModel2(Anomalib_Base):
                 raise Exception(f"Unsupported output type for aggregation: {type(all_mini_batch_outputs[0])}")
 
         else: 
-            if self.inference_mode == 'TRT':
-                self.binding_addrs['input'] = int(input_batch.data_ptr())
-                self.context.execute_v2(list(self.binding_addrs.values()))
-                aggregated_output_tensor = self.bindings['output'].data
-
-            elif self.inference_mode == 'PT':
-                preds = self.pt_model(input_batch)
-                if isinstance(preds, torch.Tensor):
-                    aggregated_output_tensor = preds
-                elif isinstance(preds, dict):
-                    aggregated_output_tensor = preds['anomaly_map']
-                elif isinstance(preds, Sequence):
-                    aggregated_output_tensor = preds[1]
-                else:
-                    raise Exception(f'Unknown prediction type: {type(preds)}')
+            aggregated_output_tensor = self._infer(input_batch)
         
         if aggregated_output_tensor is None:
             raise Exception("Model inference failed to produce an output tensor.")
