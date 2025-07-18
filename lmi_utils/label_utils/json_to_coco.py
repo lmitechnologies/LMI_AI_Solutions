@@ -1,6 +1,6 @@
 from dataset_utils.representations import Dataset, PolygonAnnotation, MaskAnnotation, BoxAnnotation
 from dataset_utils.coco_dataset import CocoDataset, CocoImage, CocoAnnotation
-from dataset_utils.file_utils import update_file_dimensions
+from dataset_utils.file_utils import load_and_update
 import argparse
 import os
 import logging
@@ -33,7 +33,7 @@ def get_coco_annotation(annotation, **kwargs):
     else:
         raise ValueError(f"Unsupported annotation type: {type(annotation)}")
 
-def create_coco_dataset(dataset: Dataset, is_crowd:bool = False) -> CocoDataset:
+def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:list = []) -> CocoDataset:
     """
     Create a COCO dataset from a given dataset and image path.
 
@@ -45,18 +45,23 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False) -> CocoDataset:
         CocoDataset: A COCO dataset with updated file dimensions.
     """
     coco_dataset = CocoDataset()
-    annotation_id = 1
+    annotation_id = 0
     # add categories
     labels = dataset.labels
     for label_id, label in enumerate(labels):
         coco_dataset.get_category_by_name(id=label_id+1, name=label.name, supercategory="")
+
+    
     
     # add images and annotations
     for file_id, file in enumerate(dataset.files):
+        filtered_annotations = [ann for ann in file.annotations if ann.label.name in target_classes]
+        if len(filtered_annotations) == 0:
+            logger.warning(f'Skipping file {file.path} as it has no annotations for target classes: {target_classes}')
+            continue
         logger.info(f'Processing file {file_id+1}/{len(dataset.files)}: {file.path}')
-
         image_id = file_id + 1
-
+        annotation_id += 1
         coco_dataset.add_image(CocoImage(
             id=image_id,
             file_name=os.path.basename(file.path),
@@ -76,7 +81,6 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False) -> CocoDataset:
                 area=annotation.area(),
                 iscrowd=int(is_crowd),
             ))
-            annotation_id += 1
     return coco_dataset
 
 def main(args):
@@ -85,39 +89,43 @@ def main(args):
     path_train_json = args['path_train_json'] if args['path_train_json']!='labels.json' else os.path.join(path_train_imgs, args['path_train_json'])
     path_val_json = args['path_val_json'] if args['path_val_json']!='labels.json' else os.path.join(path_val_imgs, args['path_val_json'])
     path_out = args['path_out']
-
-    if not os.path.exists(path_train_imgs):
-        raise Exception('The training image path does not exist')
-    if not os.path.exists(path_val_imgs) :
-        raise Exception('The validation image path does not exist')
-    if not os.path.exists(path_train_json):
-        raise Exception('The json file does not exist')
-    if not os.path.exists(path_val_json):
-        raise Exception('The json file does not exist')
+    
     if not os.path.exists(path_out):
         os.makedirs(path_out)
     
+    use_train_for_val = path_train_imgs == path_val_imgs and path_train_json == path_val_json
     # load datasets
-    train_dataset = Dataset.from_json(path_train_json, path_imgs=path_train_imgs)
-    val_dataset = Dataset.from_json(path_val_json, path_imgs=path_val_imgs)
-    
-    # update file dimensions
-    train_dataset = update_file_dimensions(train_dataset, path_train_imgs)
-    val_dataset = update_file_dimensions(val_dataset, path_val_imgs)
+    train_dataset = load_and_update(annotations_path=path_train_json, path_imgs=path_train_imgs)
+    if use_train_for_val:
+        logger.info('Using train dataset for validation')
+        val_dataset = train_dataset
+    else:
+        val_dataset = load_and_update(annotations_path=path_val_json, path_imgs=path_val_imgs)
+
+    if not use_train_for_val:
+        val_dataset = load_and_update(val_dataset, path_val_imgs)
     # filter target classes
     target_classes = args['target_classes']
     if target_classes != 'all':
         target_classes = [c.strip() for c in target_classes.split(',')]
-        train_dataset = train_dataset.filter_by_labels(target_classes)
-        val_dataset = val_dataset.filter_by_labels(target_classes)
+    else:
+        target_classes = [c.name for c in train_dataset.labels]
+    logger.info(f'Target classes: {target_classes}')
+
         
     # create coco datasets
-    coco_train_dataset = create_coco_dataset(train_dataset, is_crowd=False)
-    coco_val_dataset = create_coco_dataset(val_dataset, is_crowd=False)
+    coco_train_dataset = create_coco_dataset(train_dataset, is_crowd=False, target_classes=target_classes)
+    if use_train_for_val:
+        logger.info('Creating validation dataset from train dataset')
+        coco_val_dataset = coco_train_dataset
+    else:
+        logger.info('Creating validation dataset from val dataset')
+        coco_val_dataset = create_coco_dataset(val_dataset, is_crowd=False, target_classes=target_classes)
 
     # save coco datasets
-    coco_train_dataset.save(os.path.join(path_out, 'train.annotations.json'))
-    coco_val_dataset.save(os.path.join(path_out, 'val.annotations.json'))
+    coco_train_dataset.save_to_json(file_path=os.path.join(path_out, 'train.annotations.json'))
+    if not use_train_for_val:
+        coco_val_dataset.save_to_json(file_path=os.path.join(path_out, 'validation.annotations.json'))
     # TODO: save images
 
 if __name__ == "__main__":
