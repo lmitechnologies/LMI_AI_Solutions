@@ -10,6 +10,7 @@ from dataset_utils.mask_encoder import rle2mask, mask2rle
 from image_utils.img_resize import resize
 from gadget_utils.pipeline_utils import fit_array_to_size
 from label_utils.bbox_utils import rotate, get_rotated_bbox
+from pycocotools import mask as coco_mask
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,16 @@ class Box(Base):
 
     def coords(self, **kwargs):
         return self.x_min, self.y_min, self.x_max, self.y_max, self.angle
+    
+    def to_xywh(self):
+        """Convert to (x, y, width, height) format."""
+        width = self.x_max - self.x_min
+        height = self.y_max - self.y_min
+        return np.array([self.x_min, self.y_min, width, height, self.angle])
+    
+    def to_coco(self):
+        """Convert to COCO format (x_min, y_min, width, height)."""
+        return self.to_xywh().tolist()[:4]  # Exclude angle for COCO format
 
     def to_yolo(self, h, w, **kwargs):
         use_obb = kwargs.get("use_obb", False)
@@ -244,6 +255,10 @@ class Polygon(Base):
     def coords(self, **kwargs):
         points = np.array(self.points)
         return points[:, 0].tolist(), points[:, 1].tolist()
+    
+    def to_coco(self):
+        """convert to COCO format."""
+        return np.array(self.points).ravel().tolist()
 
     def to_yolo(self, h, w, **kwargs):
         return [[point[0] / w, point[1] / h] for point in self.points]
@@ -255,6 +270,14 @@ class Polygon(Base):
         pts = self.to_numpy().astype(np.int32)
         cv2.fillPoly(mask, [pts], 1)
         return Mask(mask=mask2rle(mask))
+    
+    def to_box(self, **kwargs):
+        poly = self.to_numpy()
+        x_min = np.min(poly[:, 0])
+        y_min = np.min(poly[:, 1])
+        x_max = np.max(poly[:, 0])
+        y_max = np.max(poly[:, 1])
+        return Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max)
     
     def to_rbox(self, **kwargs):
         rbox = get_rotated_bbox(self.to_numpy().astype(int))
@@ -330,6 +353,15 @@ class Mask(Base):
         contours, _ = cv2.findContours(mask_array, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         polygons = [contour.reshape(-1, 2) for contour in contours]
         return [Polygon([[x, y] for x, y in polygon]) for polygon in polygons]
+
+    def to_coco(self, **kwargs):
+        """Convert the mask to COCO format."""
+        h = kwargs.get("h", None)
+        w = kwargs.get("w", None)
+        if h is None or w is None:
+            raise ValueError("Height and width cannot be None")
+        mask_array = self.to_numpy(h=h, w=w)
+        return coco_mask.encode(np.asfortranarray(mask_array.astype(np.uint8)))
 
     def to_yolo(self, h, w, **kwargs):
         # Delegate conversion to polygons.
