@@ -8,4 +8,4 @@ version = "2.3.0.0"
 description = "LMI AI Solutions object detectors"
 
 [tool.setuptools]
-packages = ["ultralytics_lmi", "yolov8_lmi", "od_core", "detectron2_lmi"]
+packages = ["ultralytics_lmi", "yolov8_lmi", "od_core", "detectron2_lmi", "yolov5_lmi"]
