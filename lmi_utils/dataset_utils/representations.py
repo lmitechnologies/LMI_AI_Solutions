@@ -149,6 +149,10 @@ class Box(Base):
         height = self.y_max - self.y_min
         return np.array([self.x_min, self.y_min, width, height, self.angle])
     
+    def area(self):
+        """Calculate the area of the bounding box."""
+        return (self.x_max - self.x_min) * (self.y_max - self.y_min)
+
     def to_coco(self):
         """Convert to COCO format (x_min, y_min, width, height)."""
         return self.to_xywh().tolist()[:4]  # Exclude angle for COCO format
@@ -251,6 +255,13 @@ class Polygon(Base):
 
     def to_numpy(self):
         return np.array(self.points)
+    
+    def area(self):
+        """Calculate the area of the polygon using the shoelace formula."""
+        coords = self.to_numpy()
+        x = coords[:, 0]
+        y = coords[:, 1]
+        return 0.5 * abs((x * np.roll(y, -1) - y * np.roll(x,1)).sum())
 
     def coords(self, **kwargs):
         points = np.array(self.points)
@@ -369,6 +380,11 @@ class Mask(Base):
         for polygon in self.to_polygon(h=h, w=w):
             instances.append(polygon.to_yolo(h, w, **kwargs))
         return instances
+    
+    def area(self, **kwargs):
+        """Calculate the area of the mask."""
+        return self.to_polygon(**kwargs).area()
+        
 
     def to_box(self, **kwargs):
         h = kwargs.get("h", None)
