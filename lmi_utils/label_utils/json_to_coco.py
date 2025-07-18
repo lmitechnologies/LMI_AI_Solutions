@@ -3,6 +3,9 @@ from dataset_utils.coco_dataset import CocoDataset, CocoImage, CocoAnnotation
 from dataset_utils.file_utils import update_file_dimensions
 import argparse
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 def get_args():
     ap = argparse.ArgumentParser()
@@ -29,7 +32,6 @@ def get_coco_annotation(annotation, **kwargs):
         return poly.to_coco(), annotation.to_coco()
     else:
         raise ValueError(f"Unsupported annotation type: {type(annotation)}")
-    
 
 def create_coco_dataset(dataset: Dataset, is_crowd:bool = False) -> CocoDataset:
     """
@@ -43,6 +45,7 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False) -> CocoDataset:
         CocoDataset: A COCO dataset with updated file dimensions.
     """
     coco_dataset = CocoDataset()
+    annotation_id = 1
     # add categories
     labels = dataset.labels
     for label_id, label in enumerate(labels):
@@ -50,6 +53,7 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False) -> CocoDataset:
     
     # add images and annotations
     for file_id, file in enumerate(dataset.files):
+        logger.info(f'Processing file {file_id+1}/{len(dataset.files)}: {file.path}')
 
         image_id = file_id + 1
 
@@ -61,17 +65,18 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False) -> CocoDataset:
         ))
 
         for annotation in file.annotations:
+            # both segmentation and bbox are required for COCO format
             segmentation, bbox = get_coco_annotation(annotation, h=file.height, w=file.width)
             coco_dataset.add_annotation(CocoAnnotation(
-                id=len(coco_dataset.annotations) + 1,
+                id=annotation_id,
                 image_id=image_id,
                 category_id=coco_dataset.get_category_by_name(annotation.label.name).id,
                 segmentation=segmentation,
                 bbox=bbox,
                 area=annotation.area(),
-                iscrowd= int(is_crowd),
+                iscrowd=int(is_crowd),
             ))
-            
+            annotation_id += 1
     return coco_dataset
 
 def main(args):
@@ -115,6 +120,9 @@ def main(args):
     coco_val_dataset.save(os.path.join(path_out, 'val.annotations.json'))
     # TODO: save images
 
+if __name__ == "__main__":
+    args = get_args()
+    main(args)
 
 
             
