@@ -68,12 +68,12 @@ class AnomalyDetectorRegistry:
         framework: Optional[str] = metadata.get('framework') or metadata.get('package')
         model_name: Optional[str] = metadata.get('model_name') or metadata.get('algorithm')
         task: Optional[str] = metadata.get('task', 'seg') or metadata.get('model_type', 'seg')
-        version: str = metadata.get('version','v0' if '0' in metadata.get('framework', '').lower() else 'v1')
+        
         info: Dict[str, Any] = metadata.get('info', {})
 
         if not all([framework, model_name, task]):
             raise ValueError("Lookup metadata must include 'framework' (or 'package'), 'model_name' (or 'algorithm'), and 'task' (or 'model_type').")
-
+        version: str = metadata.get('version','v0' if '0' in framework else 'v1')
         key = cls._generate_key(framework, model_name, task, version, info)
 
         wrapper_cls = cls._registry.get(key)
