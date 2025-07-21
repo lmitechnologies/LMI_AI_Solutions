@@ -68,7 +68,7 @@ class AnomalyDetectorRegistry:
         framework: Optional[str] = metadata.get('framework') or metadata.get('package')
         model_name: Optional[str] = metadata.get('model_name') or metadata.get('algorithm')
         task: Optional[str] = metadata.get('task', 'seg') or metadata.get('model_type', 'seg')
-        version: str = metadata.get('version', 'v1') 
+        version: str = metadata.get('version','v0' if '0' in metadata.get('framework', '').lower() else 'v1')
         info: Dict[str, Any] = metadata.get('info', {})
 
         if not all([framework, model_name, task]):
