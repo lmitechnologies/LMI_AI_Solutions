@@ -2,6 +2,10 @@ import os
 import glob
 import cv2
 from dataset_utils.representations import Dataset
+import logging
+import shutil
+
+logger = logging.getLogger(__name__)
 
 IMAGE_FORMATS=IMG_FORMATS = ["jpeg", "jpg", "png", "tif", "tiff", "heic"]
 
@@ -56,3 +60,21 @@ def load_and_update(annotations_path, path_imgs):
         raise Exception(f'The annotations path does not exist: {annotations_path}')
     dataset = Dataset.load(annotations_path)
     return update_file_dimensions(dataset=dataset, path_imgs=path_imgs)
+
+def copy_images_in_folder(path_img, path_out, fnames, file_id_map):
+    """
+    copy the images from one folder to another
+    Arguments:
+        path_img(str): the path of original image folder
+        path_out(str): the path of output folder
+    """
+    os.makedirs(path_out, exist_ok=True)
+    if fnames is None:
+        raise Exception('fnames cannot be None')
+    for fname in fnames:
+        logger.info(f'Copying image {fname} to {path_out}')
+        out_name = os.path.basename(fname)
+        file_id = file_id_map[fname]
+        if f'id{file_id}_' not in out_name:
+            out_name = f'id{file_id}_{out_name}'
+        shutil.copy(os.path.join(path_img, fname), os.path.join(path_out, out_name))

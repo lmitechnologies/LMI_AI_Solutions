@@ -85,7 +85,7 @@ class CocoAnnotation:
     segmentation: Union[List[List[float]], Dict[str, Any]]
     area: float
     bbox: List[float]
-    iscrowd: int = 0
+    iscrowd: bool = False
 
     def __post_init__(self):
         if self.id < 0:
@@ -403,7 +403,7 @@ class CocoDataset:
                 segmentation=ann_data['segmentation'],
                 area=ann_data['area'],
                 bbox=ann_data['bbox'],
-                iscrowd=ann_data.get('iscrowd', 0)
+                iscrowd=ann_data.get('iscrowd', False)
             ))
         
         return dataset
