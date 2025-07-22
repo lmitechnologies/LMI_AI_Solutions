@@ -220,6 +220,9 @@ class Box(Base):
         else:
             raise ValueError("Unsupported mask_type in Box.to_mask")
     
+    def to_polygon(self, **kwargs):
+        return self.to_mask(mask_type=AnnotationType.MASK, **kwargs)
+    
     def point_in_box(self, x: int, y: int):
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
 
