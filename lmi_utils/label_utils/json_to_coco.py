@@ -1,6 +1,6 @@
 from dataset_utils.representations import Dataset, PolygonAnnotation, MaskAnnotation, BoxAnnotation
 from dataset_utils.coco_dataset import CocoDataset, CocoImage, CocoAnnotation, CocoCategory
-from dataset_utils.file_utils import load_and_update
+from dataset_utils.file_utils import load_and_update, copy_images_in_folder
 import argparse
 import os
 import logging
@@ -17,7 +17,8 @@ def get_args():
     ap.add_argument('--path_out', '-o', required=True, help='the output path for dataset')
     ap.add_argument('--path_train_imgs', '-ti', required=True, help='the output path for train images')
     ap.add_argument('--path_val_imgs', '-vi', required=False, help='the output path for val images')
-    ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')  
+    ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')
+    ap.add_argument('--bg', action='store_true', help='save images with no labels, where yolo models treat them as background')
     ap.add_argument('--merge_box', action='store_true', help='merge multiple instances of same class boxes into one. Brush labels only!')
     args = vars(ap.parse_args())
     return args
@@ -49,6 +50,7 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:
         CocoDataset: A COCO dataset with updated file dimensions.
     """
     coco_dataset = CocoDataset()
+    file_id_map = {}
     annotation_id = 0
     # add categories
     labels = dataset.labels
@@ -66,6 +68,7 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:
         if len(filtered_annotations) == 0:
             logger.warning(f'Skipping file {file.path} as it has no annotations for target classes: {target_classes}')
             continue
+        file_id_map[file.id] = file.path
         logger.info(f'Processing file {file_id+1}/{len(dataset.files)}: {file.path}')
         image_id = file_id + 1
         annotation_id += 1
@@ -86,11 +89,12 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:
                 segmentation=segmentation,
                 bbox=bbox,
                 area=annotation.value.area(h=file.height, w=file.width),
-                iscrowd=int(is_crowd),
+                iscrowd=is_crowd,
             ))
-    return coco_dataset
+    return coco_dataset, file_id_map
 
-def main(args):
+
+def convert_to_json(args):
     path_train_imgs = args['path_train_imgs']
     path_val_imgs = args['path_val_imgs'] if args.get('path_val_imgs') else path_train_imgs
     path_train_json = args['path_train_json'] if args['path_train_json']!='labels.json' else os.path.join(path_train_imgs, args['path_train_json'])
@@ -121,23 +125,33 @@ def main(args):
 
         
     # create coco datasets
-    coco_train_dataset = create_coco_dataset(train_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
+    coco_train_dataset, train_file_id_map = create_coco_dataset(train_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
     if use_train_for_val:
         logger.info('Creating validation dataset from train dataset')
+        val_file_id_map = train_file_id_map
         coco_val_dataset = coco_train_dataset
     else:
         logger.info('Creating validation dataset from val dataset')
-        coco_val_dataset = create_coco_dataset(val_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
+        coco_val_dataset,val_file_id_map = create_coco_dataset(val_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
 
     # save coco datasets
-    coco_train_dataset.save_to_json(file_path=os.path.join(path_out, 'train.annotations.json'))
+    coco_train_dataset.save_to_json(file_path=os.path.join(path_out, 'train', 'annotations.json'))
     if not use_train_for_val:
-        coco_val_dataset.save_to_json(file_path=os.path.join(path_out, 'validation.annotations.json'))
-    # TODO: save images
+        coco_val_dataset.save_to_json(file_path=os.path.join(path_out, 'val','annotations.json'))
+    
+    # save the train dataset
+    copy_images_in_folder(path_train_imgs, os.path.join(path_out, 'train', 'images'), train_file_id_map)
+    if not use_train_for_val:
+        # save the val dataset
+        copy_images_in_folder(path_val_imgs, os.path.join(path_out, 'val', 'images'), val_file_id_map)
+
+def main():
+    args = get_args()
+    convert_to_json(args)
+
 
 if __name__ == "__main__":
-    args = get_args()
-    main(args)
+    main()
 
 
             
