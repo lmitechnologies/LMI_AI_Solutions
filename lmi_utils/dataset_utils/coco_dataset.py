@@ -143,7 +143,14 @@ class CocoDataset:
     - annotations: A list of all annotations (e.g., bounding boxes, masks).
     - categories: A list of all object categories.
     """
-    info: Optional[CocoInfo] = None
+    info: Optional[CocoInfo] = field(default_factory=lambda: CocoInfo(
+        year=datetime.now().year,
+        version="1.0",
+        description="COCO dataset",
+        contributor="Unknown",
+        url="",
+        date_created=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ))
     licenses: List[CocoLicense] = field(default_factory=list)
     images: List[CocoImage] = field(default_factory=list)
     annotations: List[CocoAnnotation] = field(default_factory=list)
@@ -321,7 +328,6 @@ class CocoDataset:
         # Ensure the directory exists
         if os.path.dirname(file_path):
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        
         try:
             with open(file_path, 'w') as f:
                 json.dump(self.to_dict(), f, indent=indent)

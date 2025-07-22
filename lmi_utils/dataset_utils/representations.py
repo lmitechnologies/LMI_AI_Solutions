@@ -11,6 +11,7 @@ from image_utils.img_resize import resize
 from gadget_utils.pipeline_utils import fit_array_to_size
 from label_utils.bbox_utils import rotate, get_rotated_bbox
 from pycocotools import mask as coco_mask
+from shapely.geometry import Polygon as ShapelyPolygon
 
 logger = logging.getLogger(__name__)
 
@@ -261,7 +262,7 @@ class Polygon(Base):
         coords = self.to_numpy()
         x = coords[:, 0]
         y = coords[:, 1]
-        return 0.5 * abs((x * np.roll(y, -1) - y * np.roll(x,1)).sum())
+        return ShapelyPolygon([(int(xi),int(yi)) for xi,yi in zip(x,y)]).area
 
     def coords(self, **kwargs):
         points = np.array(self.points)
@@ -372,7 +373,10 @@ class Mask(Base):
         if h is None or w is None:
             raise ValueError("Height and width cannot be None")
         mask_array = self.to_numpy(h=h, w=w)
-        return coco_mask.encode(np.asfortranarray(mask_array.astype(np.uint8)))
+        mask = coco_mask.encode(np.asfortranarray(mask_array.astype(np.uint8)))
+        mask['counts'] = mask['counts'].decode('utf-8')
+        mask['size'] = [int(dim) for dim in mask['size']]
+        return mask
 
     def to_yolo(self, h, w, **kwargs):
         # Delegate conversion to polygons.
@@ -383,7 +387,11 @@ class Mask(Base):
     
     def area(self, **kwargs):
         """Calculate the area of the mask."""
-        return self.to_polygon(**kwargs).area()
+        polygons  = self.to_polygon(**kwargs)
+        area = 0
+        for polygon in polygons:
+            area += polygon.area()
+        return area 
         
 
     def to_box(self, **kwargs):

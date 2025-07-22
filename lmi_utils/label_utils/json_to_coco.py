@@ -1,11 +1,14 @@
 from dataset_utils.representations import Dataset, PolygonAnnotation, MaskAnnotation, BoxAnnotation
-from dataset_utils.coco_dataset import CocoDataset, CocoImage, CocoAnnotation
+from dataset_utils.coco_dataset import CocoDataset, CocoImage, CocoAnnotation, CocoCategory
 from dataset_utils.file_utils import load_and_update
 import argparse
 import os
 import logging
 
+
+logging.basicConfig()
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 def get_args():
     ap = argparse.ArgumentParser()
@@ -15,6 +18,7 @@ def get_args():
     ap.add_argument('--path_train_imgs', '-ti', required=True, help='the output path for train images')
     ap.add_argument('--path_val_imgs', '-vi', required=False, help='the output path for val images')
     ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')  
+    ap.add_argument('--merge_box', action='store_true', help='merge multiple instances of same class boxes into one. Brush labels only!')
     args = vars(ap.parse_args())
     return args
 
@@ -22,18 +26,18 @@ def get_args():
 def get_coco_annotation(annotation, **kwargs):
     """Convert a dataset annotation to COCO format."""
     if isinstance(annotation, MaskAnnotation):
-        bbox = annotation.to_box(**kwargs)
-        return annotation.to_coco(**kwargs), bbox.to_coco()
+        bbox = annotation.value.to_box(**kwargs)
+        return annotation.value.to_coco(**kwargs), bbox.to_coco()
     elif isinstance(annotation, PolygonAnnotation):
-        bbox = annotation.to_box()
-        return annotation.to_coco(), bbox.to_coco()
+        bbox = annotation.value.to_box()
+        return annotation.value.to_coco(), bbox.to_coco()
     elif isinstance(annotation, BoxAnnotation):
-        poly = annotation.to_polygon()
-        return poly.to_coco(), annotation.to_coco()
+        poly = annotation.value.to_polygon()
+        return poly.to_coco(), annotation.value.to_coco()
     else:
         raise ValueError(f"Unsupported annotation type: {type(annotation)}")
 
-def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:list = []) -> CocoDataset:
+def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:list = [], **kwargs) -> CocoDataset:
     """
     Create a COCO dataset from a given dataset and image path.
 
@@ -49,13 +53,16 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:
     # add categories
     labels = dataset.labels
     for label_id, label in enumerate(labels):
-        coco_dataset.get_category_by_name(id=label_id+1, name=label.name, supercategory="")
-
+        coco_dataset.add_category(CocoCategory(
+            id=label_id + 1,
+            name=label.id,
+            supercategory='',
+        ))
     
     
     # add images and annotations
     for file_id, file in enumerate(dataset.files):
-        filtered_annotations = [ann for ann in file.annotations if ann.label.name in target_classes]
+        filtered_annotations = [ann for ann in file.annotations if ann.label_id in target_classes]
         if len(filtered_annotations) == 0:
             logger.warning(f'Skipping file {file.path} as it has no annotations for target classes: {target_classes}')
             continue
@@ -71,14 +78,14 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:
 
         for annotation in file.annotations:
             # both segmentation and bbox are required for COCO format
-            segmentation, bbox = get_coco_annotation(annotation, h=file.height, w=file.width)
+            segmentation, bbox = get_coco_annotation(annotation, h=file.height, w=file.width, **kwargs)
             coco_dataset.add_annotation(CocoAnnotation(
                 id=annotation_id,
                 image_id=image_id,
-                category_id=coco_dataset.get_category_by_name(annotation.label.name).id,
+                category_id=coco_dataset.get_category_by_name(annotation.label_id).id,
                 segmentation=segmentation,
                 bbox=bbox,
-                area=annotation.area(),
+                area=annotation.value.area(h=file.height, w=file.width),
                 iscrowd=int(is_crowd),
             ))
     return coco_dataset
@@ -89,11 +96,13 @@ def main(args):
     path_train_json = args['path_train_json'] if args['path_train_json']!='labels.json' else os.path.join(path_train_imgs, args['path_train_json'])
     path_val_json = args['path_val_json'] if args['path_val_json']!='labels.json' else os.path.join(path_val_imgs, args['path_val_json'])
     path_out = args['path_out']
+    merge_box = args.get('merge_box', False)
     
     if not os.path.exists(path_out):
         os.makedirs(path_out)
     
-    use_train_for_val = path_train_imgs == path_val_imgs and path_train_json == path_val_json
+    use_train_for_val = (path_train_imgs == path_val_imgs and path_train_json == path_val_json)
+    logger.info(f'Using train for validation: {use_train_for_val}')
     # load datasets
     train_dataset = load_and_update(annotations_path=path_train_json, path_imgs=path_train_imgs)
     if use_train_for_val:
@@ -102,25 +111,23 @@ def main(args):
     else:
         val_dataset = load_and_update(annotations_path=path_val_json, path_imgs=path_val_imgs)
 
-    if not use_train_for_val:
-        val_dataset = load_and_update(val_dataset, path_val_imgs)
     # filter target classes
     target_classes = args['target_classes']
     if target_classes != 'all':
         target_classes = [c.strip() for c in target_classes.split(',')]
     else:
-        target_classes = [c.name for c in train_dataset.labels]
+        target_classes = [c.id for c in train_dataset.labels]
     logger.info(f'Target classes: {target_classes}')
 
         
     # create coco datasets
-    coco_train_dataset = create_coco_dataset(train_dataset, is_crowd=False, target_classes=target_classes)
+    coco_train_dataset = create_coco_dataset(train_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
     if use_train_for_val:
         logger.info('Creating validation dataset from train dataset')
         coco_val_dataset = coco_train_dataset
     else:
         logger.info('Creating validation dataset from val dataset')
-        coco_val_dataset = create_coco_dataset(val_dataset, is_crowd=False, target_classes=target_classes)
+        coco_val_dataset = create_coco_dataset(val_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
 
     # save coco datasets
     coco_train_dataset.save_to_json(file_path=os.path.join(path_out, 'train.annotations.json'))
