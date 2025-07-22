@@ -6,21 +6,6 @@ import sys
 import os
 import cv2
 
-# add path to the repo
-PATH = os.path.abspath(__file__)
-ROOT = os.path.abspath(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(PATH))))))
-# sys.path.append(os.path.join(ROOT, 'lmi_utils'))
-# sys.path.append(os.path.join(ROOT, 'object_detectors'))
-
-@pytest.fixture()
-def add_root_path(request):
-    if request.config.getoption("--test-package") is False:
-        sys.path.append(os.path.join(ROOT, 'lmi_utils'))
-        sys.path.append(os.path.join(ROOT, 'object_detectors'))
-        logger.info(f"Added {ROOT} to sys.path")
-    else:
-        logger.info("Skipping adding root path to sys.path")
-
 import gadget_utils.pipeline_utils as pipeline_utils
 from ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose
 from od_core.object_detector import ObjectDetector
@@ -93,32 +78,32 @@ def model_pose():
 @pytest.fixture
 def model_det_api():
     return [
-        ObjectDetector(metadata=dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='od', framework='ultralytics', model_path=model)) for model in OD_DET_MODELS
+        ObjectDetector(metadata=dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='od', framework='ultralytics', model_path=model, image_size=[640, 640])) for model in OD_DET_MODELS
     ]
 
 @pytest.fixture
 def model_seg_api():
     return [
-        ObjectDetector(metadata=dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='seg', framework='ultralytics'), model_path=model) for model in OD_SEG_MODELS
+        ObjectDetector(metadata=dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='seg', framework='ultralytics', model_path=model, image_size=[640, 640])) for model in OD_SEG_MODELS
     ]
 
 @pytest.fixture
 def model_obb_dota8_api():
     return [
-        ObjectDetector(metadata=dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='obb', framework='ultralytics'), model_path=model) for model in OD_OBB_DOTA_8
+        ObjectDetector(metadata=dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='obb', framework='ultralytics', model_path=model, image_size=[640, 640])) for model in OD_OBB_DOTA_8
     ]
     
 @pytest.fixture
 def model_obb_dota_api():
     return [
-        ObjectDetector(metadata=dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='obb', framework='ultralytics'), model_path=model) for model in OD_OBB_DOTA
+        ObjectDetector(metadata=dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='obb', framework='ultralytics', model_path=model, image_size=[640, 640])) for model in OD_OBB_DOTA
     ]
 
 
 @pytest.fixture
 def model_pose_api():
     return [
-        ObjectDetector(dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='pose', framework='ultralytics'), model_path=model) for model in OD_POSE_MODELS
+        ObjectDetector(metadata=dict(version='v1', model_name='yolov8' if 'yolov8n' in model else 'yolov11', task='pose', framework='ultralytics', model_path=model, image_size=[640, 640])) for model in OD_POSE_MODELS
     ]
 
 def load_image(path):
@@ -182,11 +167,11 @@ def imgs_dota8():
 
 
 class Test_Yolo_Det:
-    def test_warmup(self, model_det,add_root_path):
+    def test_warmup(self, model_det):
         for model in model_det:
             model.warmup()
             
-    def test_predict(self, model_det, imgs_coco, add_root_path):
+    def test_predict(self, model_det, imgs_coco):
         i = 0
         for model in model_det:
             for img,resized,op in zip(*imgs_coco):
@@ -209,11 +194,11 @@ class Test_Yolo_Det:
                 i += 1
 
 class Test_Yolo_Det_API:
-    def test_warmup(self, model_det_api, add_root_path):
+    def test_warmup(self, model_det_api):
         for model in model_det_api:
             model.warmup()
             
-    def test_predict(self, model_det_api, imgs_coco, add_root_path):
+    def test_predict(self, model_det_api, imgs_coco):
         i = 0
         for model in model_det_api:
             for img,resized,op in zip(*imgs_coco):
@@ -236,11 +221,11 @@ class Test_Yolo_Det_API:
                 i += 1
                 
 class Test_Yolo_Seg:
-    def test_warmup(self, model_seg, add_root_path):
+    def test_warmup(self, model_seg):
         for model in model_seg:
             model.warmup()
             
-    def test_predict(self, model_seg, imgs_coco, add_root_path):
+    def test_predict(self, model_seg, imgs_coco):
         i = 0
         for model in model_seg:
             for img,resized,op in zip(*imgs_coco):
@@ -263,11 +248,11 @@ class Test_Yolo_Seg:
                 i += 1
 
 class Test_Yolo_Seg_API:
-    def test_warmup(self, model_seg_api, add_root_path):
+    def test_warmup(self, model_seg_api):
         for model in model_seg_api:
             model.warmup()
             
-    def test_predict(self, model_seg_api, imgs_coco, add_root_path):
+    def test_predict(self, model_seg_api, imgs_coco):
         i = 0
         for model in model_seg_api:
             for img,resized,op in zip(*imgs_coco):
@@ -290,15 +275,15 @@ class Test_Yolo_Seg_API:
                 i += 1
 
 class Test_Yolo_Obb:
-    def test_warmup_dota8(self, model_obb_dota8, add_root_path):
+    def test_warmup_dota8(self, model_obb_dota8):
         for model in model_obb_dota8:
             model.warmup()
             
-    def test_warmup_dota(self, model_obb_dota, add_root_path):
+    def test_warmup_dota(self, model_obb_dota):
         for model in model_obb_dota:
             model.warmup()
         
-    def test_predict_dota8(self, model_obb_dota8, imgs_dota8, add_root_path):
+    def test_predict_dota8(self, model_obb_dota8, imgs_dota8):
         i = 0
         for model in model_obb_dota8:
             for img,resized,op in zip(*imgs_dota8):
@@ -320,7 +305,7 @@ class Test_Yolo_Obb:
                     cv2.imwrite(os.path.join(OUT_DIR, f'obb-{i}.png'), im_out)
                 i += 1
     
-    def test_predict_dota(self, model_obb_dota, imgs_dota, add_root_path):
+    def test_predict_dota(self, model_obb_dota, imgs_dota):
         i = 0
         for model in model_obb_dota:
             for img,resized,op in zip(*imgs_dota):
@@ -343,15 +328,15 @@ class Test_Yolo_Obb:
                 i += 1
 
 class Test_Yolo_Obb_API:
-    def test_warmup_dota8(self, model_obb_dota8_api, add_root_path):
+    def test_warmup_dota8(self, model_obb_dota8_api):
         for model in model_obb_dota8_api:
             model.warmup()
             
-    def test_warmup_dota(self, model_obb_dota_api, add_root_path):
+    def test_warmup_dota(self, model_obb_dota_api):
         for model in model_obb_dota_api:
             model.warmup()
         
-    def test_predict_dota8(self, model_obb_dota8_api, imgs_dota8, add_root_path):
+    def test_predict_dota8(self, model_obb_dota8_api, imgs_dota8):
         i = 0
         for model in model_obb_dota8_api:
             for img,resized,op in zip(*imgs_dota8):
@@ -373,7 +358,7 @@ class Test_Yolo_Obb_API:
                     cv2.imwrite(os.path.join(OUT_DIR, f'obb-{i}.png'), im_out)
                 i += 1
     
-    def test_predict_dota(self, model_obb_dota_api, imgs_dota, add_root_path):
+    def test_predict_dota(self, model_obb_dota_api, imgs_dota):
         i = 0
         for model in model_obb_dota_api:
             for img,resized,op in zip(*imgs_dota):
@@ -396,11 +381,11 @@ class Test_Yolo_Obb_API:
                 i += 1  
 
 class Test_Yolo_Pose:
-    def test_warmup(self, model_pose, add_root_path):
+    def test_warmup(self, model_pose):
         for model in model_pose:
             model.warmup()
         
-    def test_predict(self, model_pose, imgs_coco, add_root_path):
+    def test_predict(self, model_pose, imgs_coco):
         i = 0
         for model in model_pose:
             for img,resized,op in zip(*imgs_coco):
@@ -424,11 +409,11 @@ class Test_Yolo_Pose:
                 
 
 class Test_Yolo_Pose_API:
-    def test_warmup(self, model_pose_api, add_root_path):
+    def test_warmup(self, model_pose_api):
         for model in model_pose_api:
             model.warmup()
         
-    def test_predict(self, model_pose_api, imgs_coco, add_root_path):
+    def test_predict(self, model_pose_api, imgs_coco):
         i = 0
         for model in model_pose_api:
             for img,resized,op in zip(*imgs_coco):

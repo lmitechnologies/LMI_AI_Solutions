@@ -6,19 +6,9 @@ import logging
 import torch
 import torchvision
 
-# add path to the repo
+# path to the repo
 PATH = pathlib.Path(__file__)
 ROOT = PATH.parents[3]
-# sys.path.append(os.path.join(ROOT, 'lmi_utils'))
-
-
-@pytest.fixture()
-def add_root_path(request):
-    if request.config.getoption("--test-package") is False:
-        sys.path.append(os.path.join(ROOT, 'lmi_utils'))
-        logger.info(f"Added {ROOT} to sys.path")
-    else:
-        logger.info("Skipping adding root path to sys.path")
 
 from image_utils.tiler import Tiler, ScaleMode
 from system_utils import path_utils
@@ -49,7 +39,7 @@ def load_imgs(im_dir, recursive=True):
         (torch.rand(1,1,110,110),[224,112],[112,112],[1,1,224,112],[224,112]),
     ]
 )
-def test_cases(im,tile,stride,expected_tile_hw,expected_resized_hw, add_root_path):
+def test_cases(im,tile,stride,expected_tile_hw,expected_resized_hw):
     t = Tiler(tile,stride)
     tiles1 = t.tile(im)
     assert list(tiles1.shape) == expected_tile_hw
@@ -77,7 +67,7 @@ def test_cases(im,tile,stride,expected_tile_hw,expected_resized_hw, add_root_pat
         (torch.rand(8,3,512,512), 256, 256),
     ]
 )        
-def test_batch(im, tile, stride, add_root_path):
+def test_batch(im, tile, stride):
     mode = ScaleMode.INTERPOLATION
     t = Tiler(tile, stride)
     tiles = t.tile(im, mode)

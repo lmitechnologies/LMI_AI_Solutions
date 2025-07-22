@@ -8,7 +8,7 @@ services:
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     ipc: host
     command: >
-      bash -c "cd /app/repo/ && bash tests/run_tests.sh v1-all install-packages"
+      bash -c "cd /app/repo/ && bash tests/run_tests.sh v1-all"
   
   test_ais_v0_all:
     depends_on:
@@ -22,5 +22,5 @@ services:
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     ipc: host
     command: >
-      bash -c "cd /app/repo/ && bash tests/run_tests.sh v0-all install-packages"
+      bash -c "cd /app/repo/ && bash tests/run_tests.sh v0-all"
   

@@ -1,28 +1,29 @@
 #ignore files
 *.pyc
+*.html
 
 #pytorch weights
 *.pt
 
 #ignore folders
 **.vscode
-**/data
-**/.ipynb_checkpoints
-**/validation
-**/training
-**/weights
-**/wandb
-**/trained-inference-models
-**/pretrained-models
-**/records
-**/venv
-**/testfiles
-**/logs
-**/temp
+data
+.ipynb_checkpoints
+validation
+training
+weights
+wandb
+trained-inference-models
+pretrained-models
+records
+venv
+testfiles
+logs
+temp
 config
-**/untracked-data
+untracked-data
 debug
-**/*.egg-info
-**/*.html
+*.egg-info
 datasets
 runs
+outputs

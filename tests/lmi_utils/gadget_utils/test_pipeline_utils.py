@@ -6,23 +6,9 @@ import sys
 import os
 import cv2
 
-# add path to the repo
-PATH = os.path.abspath(__file__)
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(PATH))))
-
-
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-
-# add a pytest fixture to add the root path to sys.path based on the argument passed
-@pytest.fixture()
-def add_root_path(request):
-    if request.config.getoption("--test-package") is False:
-        sys.path.append(os.path.join(ROOT, 'lmi_utils'))
-        logger.info(f"Added {ROOT} to sys.path")
-    else:
-        logger.info("Skipping adding root path to sys.path")
     
 
 import gadget_utils.pipeline_utils as pipeline_utils
@@ -39,7 +25,7 @@ class Test_resize_image:
             (torch.rand(150, 100, 1).numpy(), {"W": 50}, (75, 50, 1)),  # Test gray image (3D)
         ]
     )
-    def test_cases(self,im, resize_args, expected_shape, add_root_path):
+    def test_cases(self,im, resize_args, expected_shape):
         im2 = pipeline_utils.resize_image(im, **resize_args)
         assert im2.shape == expected_shape
         assert im2.dtype == im.dtype
@@ -101,7 +87,7 @@ class Test_fit_im_to_size:
             (torch.rand(100, 100, 1).numpy(), [89, None]),
         ]
     )
-    def test_cases(self, im, wh, add_root_path):
+    def test_cases(self, im, wh):
         W,H = wh
         im1, l1, r1, t1, b1 = self.np_func(im, W, H)
         
@@ -177,7 +163,7 @@ class Test_revert_to_origin:
             ),
         ]
     )
-    def test_cases(self, pts, operations, add_root_path):
+    def test_cases(self, pts, operations):
         pts1 = self.np_func(pts, operations)
         
         pts2 = pipeline_utils.revert_to_origin(pts, operations)
@@ -217,7 +203,7 @@ class Test_profile_to_3d:
             (torch.randint(-32768, 32767, (90,100), dtype=torch.int16).numpy(), [1, 1, 1], [0, 0, 0]),
         ]
     )
-    def test_cases(self, profile, resolution, offset, add_root_path):
+    def test_cases(self, profile, resolution, offset):
         x1,y1,z1,m1 = self.np_func(profile, resolution, offset)
         x2,y2,z2,m2 = pipeline_utils.profile_to_3d(profile, resolution, offset)
         assert np.array_equal(x1, x2)
@@ -260,7 +246,7 @@ class Test_uint16_to_int16:
             (torch.randint(0, 65535, (520,530), dtype=torch.uint16).numpy()),
         ]
     )
-    def test_cases(self, profile, add_root_path):
+    def test_cases(self, profile):
         p1 = self.np_func(profile)
         p2 = pipeline_utils.uint16_to_int16(profile)
         assert np.array_equal(p1, p2)
@@ -301,7 +287,7 @@ class Test_pts_to_3d:
             (np.array([[15, 25], [35, 45], [55, 65], [75, 85]]), torch.randint(-32768, 32767, (90,100), dtype=torch.int16).numpy(), [1, 1, 1], [0, 0, 0]),
         ]
     )
-    def test_cases(self, pts, profile, resolution, offset, add_root_path):
+    def test_cases(self, pts, profile, resolution, offset):
         xyz1 = self.np_func(pts, profile, resolution, offset)
         
         xyz2 = pipeline_utils.pts_to_3d(pts, profile, resolution, offset)
@@ -318,7 +304,7 @@ class Test_pts_to_3d:
             assert xyz3.is_cuda
             assert np.array_equal(xyz1,xyz3.cpu().numpy())
             
-    def test_error_handle(self, add_root_path):
+    def test_error_handle(self):
         pts = np.array([[15, 25], [35, 45], [55, 65], [75, 85]])
         profile = torch.randint(-32768, 32767, (90,100), dtype=torch.int16)
         resolution = [1, 1, 1]
