@@ -105,42 +105,42 @@ class DET2GraphSurgeon:
         self.second_ROIAlign_type = self.det2_cfg.MODEL.ROI_MASK_HEAD.POOLER_TYPE
         self.mask_out_res = 28
 
-        # Model characteristics.
-        log.info("Number of FPN output channels is {}".format(self.fpn_out_channels))
-        log.info("Number of classes is {}".format(self.num_classes))
-        log.info("First NMS max proposals is {}".format(self.first_NMS_max_proposals))
-        log.info("First NMS iou threshold is {}".format(self.first_NMS_iou_threshold))
-        log.info(
-            "First NMS score threshold is {}".format(self.first_NMS_score_threshold)
-        )
-        log.info("First ROIAlign type is {}".format(self.first_ROIAlign_type))
-        log.info(
-            "First ROIAlign pooled size is {}".format(self.first_ROIAlign_pooled_size)
-        )
-        log.info(
-            "First ROIAlign sampling ratio is {}".format(
-                self.first_ROIAlign_sampling_ratio
-            )
-        )
-        log.info("Second NMS max proposals is {}".format(self.second_NMS_max_proposals))
-        log.info("Second NMS iou threshold is {}".format(self.second_NMS_iou_threshold))
-        log.info(
-            "Second NMS score threshold is {}".format(self.second_NMS_score_threshold)
-        )
-        log.info("Second ROIAlign type is {}".format(self.second_ROIAlign_type))
-        log.info(
-            "Second ROIAlign pooled size is {}".format(self.second_ROIAlign_pooled_size)
-        )
-        log.info(
-            "Second ROIAlign sampling ratio is {}".format(
-                self.second_ROIAlign_sampling_ratio
-            )
-        )
-        log.info(
-            "Individual mask output resolution is {}x{}".format(
-                self.mask_out_res, self.mask_out_res
-            )
-        )
+        # # Model characteristics.
+        # log.info("Number of FPN output channels is {}".format(self.fpn_out_channels))
+        # log.info("Number of classes is {}".format(self.num_classes))
+        # log.info("First NMS max proposals is {}".format(self.first_NMS_max_proposals))
+        # log.info("First NMS iou threshold is {}".format(self.first_NMS_iou_threshold))
+        # log.info(
+        #     "First NMS score threshold is {}".format(self.first_NMS_score_threshold)
+        # )
+        # log.info("First ROIAlign type is {}".format(self.first_ROIAlign_type))
+        # log.info(
+        #     "First ROIAlign pooled size is {}".format(self.first_ROIAlign_pooled_size)
+        # )
+        # log.info(
+        #     "First ROIAlign sampling ratio is {}".format(
+        #         self.first_ROIAlign_sampling_ratio
+        #     )
+        # )
+        # log.info("Second NMS max proposals is {}".format(self.second_NMS_max_proposals))
+        # log.info("Second NMS iou threshold is {}".format(self.second_NMS_iou_threshold))
+        # log.info(
+        #     "Second NMS score threshold is {}".format(self.second_NMS_score_threshold)
+        # )
+        # log.info("Second ROIAlign type is {}".format(self.second_ROIAlign_type))
+        # log.info(
+        #     "Second ROIAlign pooled size is {}".format(self.second_ROIAlign_pooled_size)
+        # )
+        # log.info(
+        #     "Second ROIAlign sampling ratio is {}".format(
+        #         self.second_ROIAlign_sampling_ratio
+        #     )
+        # )
+        # log.info(
+        #     "Individual mask output resolution is {}x{}".format(
+        #         self.mask_out_res, self.mask_out_res
+        #     )
+        # )
 
         self.batch_size = None
 

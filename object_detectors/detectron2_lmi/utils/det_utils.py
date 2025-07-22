@@ -9,6 +9,7 @@ from detectron2.utils.logger import setup_logger
 from detectron2.data.datasets import register_coco_instances
 import os
 import subprocess
+import sys
 
 
 logger = setup_logger()
@@ -26,13 +27,13 @@ def merge_a_into_b(a: Dict[str, Any], b: Dict[str, Any]) -> None:
             b[k] = v
 
 
-def register_datasets(dataset_dir: str, dataset_name: str):
+def register_datasets(dataset_dir: str, dataset_name: str, images_path: str = "images", annotations_file: str = "annotations.json"):
     """
     Register the train and test datasets with Detectron2
     """
     if os.path.exists(dataset_dir):
-        annot_file = os.path.join(dataset_dir, "annotations.json")
-        images_path = os.path.join(dataset_dir, "images")
+        annot_file = os.path.join(dataset_dir, annotations_file)
+        images_path = os.path.join(dataset_dir, images_path)
         if os.path.isfile(annot_file) and os.path.isdir(images_path):
             logger.info(f"Registering dataset {dataset_name} from {dataset_dir}")
             register_coco_instances(
@@ -43,6 +44,7 @@ def register_datasets(dataset_dir: str, dataset_name: str):
             )
         else:
             raise ValueError(f"Invalid dataset directory {dataset_dir} for dataset {dataset_name}")
+
 
 
 def create_config(cfg_file_path, detectron2_config_file, output_dir):
@@ -66,7 +68,6 @@ def create_config(cfg_file_path, detectron2_config_file, output_dir):
         raise ValueError(f"Config file {cfg_file_path} does not exist")
 
     configuration = yaml.safe_load(open(cfg_file_path, "r"))
-    print(f"Configuration: {configuration}")
     # get the model configuration to use
     # load the config from the file
     # remove augmentations from the config
@@ -103,4 +104,20 @@ def create_config(cfg_file_path, detectron2_config_file, output_dir):
     cfg_file = os.path.join(cfg.OUTPUT_DIR, "config.yaml")
     with open(cfg_file, "w") as f:
         f.write(yaml.dump(yaml.safe_load(cfg.dump())))
+    cfg.freeze()
     return cfg, configuration
+
+
+def start_tensorboard(output_dir: str):
+    """
+    Start tensorboard in the background
+    """
+    os.system("pkill -f tensorboard")
+    pid = os.fork()
+    if pid == 0:
+        os.setsid()
+        os.system(f"tensorboard --logdir {output_dir} --port 6006")
+        sys.exit(0)
+    else:
+        logger.info(f"Tensorboard started with PID {pid}")
+    return pid

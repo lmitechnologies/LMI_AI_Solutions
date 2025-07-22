@@ -13,9 +13,20 @@ from detectron2.data import DatasetMapper
 
 logger = setup_logger()
 
+class Trainer(DefaultTrainer):   
+    
+    @classmethod
+    def build_train_loader(cls, cfg):
+        if os.path.isfile(os.path.join(cfg.OUTPUT_DIR, "augmentations.yaml")):
+            augmentations = yaml.safe_load(open(os.path.join(cfg.OUTPUT_DIR, "augmentations.yaml"), "r"))
+            mapper = DatasetMapper(cfg, is_train=True, augmentations=build_augmentations(cfg=cfg, augmentations=augmentations))
+        else:
+            mapper = DatasetMapper(cfg, is_train=True, augmentations=build_augmentations(cfg=cfg))
+        return build_detection_train_loader(cfg, mapper=mapper)
 
 
 def build_augmentations(cfg, augmentations=None):
+
     augs = [
         T.ResizeShortestEdge(
             cfg.INPUT.MIN_SIZE_TRAIN,
@@ -50,16 +61,6 @@ def build_augmentations(cfg, augmentations=None):
             augs.append(T.RandomSaturation(augmentations['SATURATION']['MIN'], augmentations['SATURATION']['MAX']))
     
     return augs
-class Trainer(DefaultTrainer):   
-    
-    @classmethod
-    def build_train_loader(cls, cfg):
-        if os.path.isfile(os.path.join(cfg.OUTPUT_DIR, "augmentations.yaml")):
-            augmentations = yaml.safe_load(open(os.path.join(cfg.OUTPUT_DIR, "augmentations.yaml"), "r"))
-            mapper = DatasetMapper(cfg, is_train=True, augmentations=build_augmentations(cfg=cfg, augmentations=augmentations))
-        else:
-            mapper = DatasetMapper(cfg, is_train=True, augmentations=build_augmentations(cfg=cfg))
-        return build_detection_train_loader(cfg, mapper=mapper)
 
 
 def train_model(cfg):
@@ -113,13 +114,3 @@ def training_run(args):
     config["MODEL"]["WEIGHTS"] = os.path.join(cfg.OUTPUT_DIR, "model_final.pth") # update the weights path
     with open(os.path.join(cfg.OUTPUT_DIR, "config.yaml"), "w") as f:
         yaml.dump(config, f)
-
-# if __name__ == "__main__":
-#     import argparse
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument("--config-file", type=str, help="Path to the config file", default="/home/config.yaml")
-#     parser.add_argument("--detectron2-config", type=str, help="Detectron2 config file", default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
-#     parser.add_argument("--dataset-dir", type=str, help="Dataset dir", default="/home/data")
-#     parser.add_argument("--output-dir", type=str, help="Path to the output directory", default="/home/weights/")
-#     args = parser.parse_args()
-#     main(args=args)

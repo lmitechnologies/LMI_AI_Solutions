@@ -28,9 +28,10 @@ if __name__ == '__main__':
     
     train_ap = subs.add_parser('train',help='train model')
     train_ap.add_argument('-c',"--config-file",metavar="FILE", help="path to config file", default=os.path.join('/home', DET2_CONFIG_FILE))
-    train_ap.add_argument("--detectron2-config", type=str, help="Detectron2 config file", default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
-    train_ap.add_argument("--dataset_dir", type=str, help="Dataset dir", default=DET2_DATASET_DIR)
+    train_ap.add_argument("--detectron2-config", f'-det2config',type=str, help="Detectron2 config file", default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
+    train_ap.add_argument("--dataset_dir", type=str, help="Dataset dir that contains the train and validation datasets", default=DET2_DATASET_DIR)
     train_ap.add_argument("--output", type=str, help="Path to the output directory", default=DET2_DEFAULT_DIR)
+    train_ap.add_argument('-tensorboard',"--tensorboard",action='store_true', help="Start Tensorboard", default=False)
     
     test = subs.add_parser('test',help='test model')
     test.add_argument('-w',"--weights", type=str, default=os.path.join(DET2_DEFAULT_DIR, DET2_PT_EXPORT), help="The path to the model")
@@ -53,10 +54,11 @@ if __name__ == '__main__':
         "-s", "--sample_image", help="Sample image for anchors generation/predictions", type=str, default=os.path.join(DET2_DEFAULT_DIR, 'sample_image.png'),
     )
     convert_ap.add_argument("-b","--batch-size", type=int, help="Batch size for the model", default=1)
-    convert_ap.add_argument('-fp16',"--fp16",action='store_true', help="Use fp16", default=True)
+    convert_ap.add_argument('-fp16',"--fp16",action='store_true', help="Use fp16", default=False)
     convert_ap.add_argument('-pt',"--pt",action='store_true', help="Convert to pt")
     convert_ap.add_argument('-onnx',"--onnx",action='store_true', help="Convert to onnx")
     convert_ap.add_argument('-trt', "--trt",action='store_true', help="Convert to TensorRT")
+    
     args = ap.parse_args()
     args = vars(args)
     

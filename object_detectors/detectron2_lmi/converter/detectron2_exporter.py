@@ -9,12 +9,10 @@ from torch import Tensor, nn
 import detectron2.data.transforms as T
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
-from detectron2.data import build_detection_test_loader, detection_utils
-from detectron2.evaluation import COCOEvaluator, inference_on_dataset, print_csv_format
+from detectron2.data import build_detection_test_loader
 from detectron2.export import (
     STABLE_ONNX_OPSET_VERSION,
     TracingAdapter,
-    dump_torchscript_IR,
     scripting_with_instances,
 )
 from detectron2.modeling import GeneralizedRCNN, RetinaNet, build_model
@@ -30,7 +28,6 @@ logger = setup_logger()
 
 def setup_cfg(args):
     cfg = get_cfg()
-    # cuda context is initialized before creating dataloader, so we don't fork anymore
     cfg.DATALOADER.NUM_WORKERS = 0
     add_pointrend_config(cfg)
     cfg.merge_from_file(args.get('config_file'))
@@ -77,8 +74,6 @@ def export_scripting(torch_model, args):
     ts_model = scripting_with_instances(ScriptableAdapter(), fields)
     with PathManager.open(args.get(f'pt_file_path'), "wb") as f:
         torch.jit.save(ts_model, f)
-    # dump_torchscript_IR(ts_model, args.get('output'))
-    # TODO inference in Python now missing postprocessing glue code
     return None
 
 
@@ -142,7 +137,7 @@ def get_sample_inputs(args,cfg):
         print(f"Processing image {args.get('sample_image', None)}")
         print(f"Image size (h,w): {original_image.shape[:2]}")
         aug = T.ResizeShortestEdge(
-            [original_image.shape[0], original_image.shape[0]], original_image.shape[0]
+            [original_image.shape[0], original_image.shape[1]], max(original_image.shape[:2])
         )
         image = aug.get_transform(original_image).apply_image(original_image)
         height, width = original_image.shape[:2]
@@ -177,22 +172,3 @@ def det2export(args) -> None:
 
     logger.info("Success.")
     return None
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Export a model for deployment.")
-    parser.add_argument(
-        "--format",
-        choices=["onnx", "pt"],
-        help="output format",
-        default="onnx",
-    )
-    parser.add_argument('-c',"--config-file",metavar="FILE", help="path to config file", default='/home/weights/config.yaml')
-    parser.add_argument('-o','--output',help="output directory for the converted model", default='/home/weights')
-    parser.add_argument(
-        "-w", "--weights", help="The Detectron 2 model weights (.pkl)", type=str, default="/home/weights/model_final.pth",
-    )
-    parser.add_argument(
-        "-s", "--sample_image", help="Sample image for anchors generation/predictions", type=str, default="/home/weights/sample_image.png",
-    )
-    
