@@ -44,3 +44,15 @@ def update_file_dimensions(dataset, path_imgs):
         file.height = h
         file.width = w
     return dataset
+
+def load_and_update(annotations_path, path_imgs):
+    """
+    Load the dataset and update the file dimensions.
+    """
+    if not os.path.exists(path_imgs):
+        raise Exception(f'The image path does not exist: {path_imgs}')
+    if not os.path.exists(annotations_path) and not os.path.isfile(annotations_path):
+        raise Exception(f'The annotations path does not exist: {annotations_path}')
+    
+    dataset = dataset.load(path_imgs=path_imgs)
+    return update_file_dimensions(annotations_path, path_imgs)
