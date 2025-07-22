@@ -102,6 +102,9 @@ def convert_to_json(args):
     path_train_json = args['path_train_json'] if args['path_train_json']!='labels.json' else os.path.join(path_train_imgs, args['path_train_json'])
     path_val_json = args['path_val_json'] if args['path_val_json']!='labels.json' else os.path.join(path_val_imgs, args['path_val_json'])
     path_out = args['path_out']
+    background = args.get('bg', False)
+    if background:
+        logger.warning(f'Background is not supported for COCO format at the moment')
     merge_box = args.get('merge_box', False)
     
     if not os.path.exists(path_out):
