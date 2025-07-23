@@ -12,7 +12,7 @@ logger.setLevel(logging.INFO)
 
 def get_args():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_train_json', default='labels.json', help='[optional] the path of a json file for train')
+    ap.add_argument('--path_train_json', default='labels.json', help='[optional] the path of a json file for train' )
     ap.add_argument('--path_val_json', default='labels.json', help='[optional] the path of a json file for val')
     ap.add_argument('--path_out', '-o', required=True, help='the output path for dataset')
     ap.add_argument('--path_train_imgs', '-ti', required=True, help='the output path for train images')
@@ -61,45 +61,51 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:
             supercategory='',
         ))
     
-    fnames = []
+    fnames = set()
     # add images and annotations
     for file_id, file in enumerate(dataset.files):
         filtered_annotations = [ann for ann in file.annotations if ann.label_id in target_classes]
         file_id_map[os.path.basename(file.path)] = file.id
         if len(filtered_annotations) == 0:
-            logger.warning(f'Skipping file {file.path} as it has no annotations for target classes: {target_classes}')
+            logger.warning(f'Skipping file {file.path} as it has no annotations for target classes')
             continue
         
         logger.info(f'Processing file {file_id+1}/{len(dataset.files)}: {file.path}')
         image_id = file_id + 1
-        annotation_id += 1
         coco_dataset.add_image(CocoImage(
             id=image_id,
             file_name=os.path.basename(file.path),
             height=file.height,
             width=file.width,
         ))
-
+        added_annotations = 0
         for annotation in file.annotations:
-            # both segmentation and bbox are required for COCO format
-            segmentation, bbox = get_coco_annotation(annotation, h=file.height, w=file.width, **kwargs)
-            coco_dataset.add_annotation(CocoAnnotation(
-                id=annotation_id,
-                image_id=image_id,
-                category_id=coco_dataset.get_category_by_name(annotation.label_id).id,
-                segmentation=segmentation,
-                bbox=bbox,
-                area=annotation.value.area(h=file.height, w=file.width),
-                iscrowd=is_crowd,
-            ))
-        fnames.append(file.path)
+            try:
+                annotation_id += 1
+                # both segmentation and bbox are required for COCO format
+                segmentation, bbox = get_coco_annotation(annotation, h=file.height, w=file.width, **kwargs)
+                coco_dataset.add_annotation(CocoAnnotation(
+                    id=annotation_id,
+                    image_id=image_id,
+                    category_id=coco_dataset.get_category_by_name(annotation.label_id).id,
+                    segmentation=segmentation,
+                    bbox=bbox,
+                    area=annotation.value.area(h=file.height, w=file.width),
+                    iscrowd=is_crowd,
+                ))
+                added_annotations += 1
+            except Exception as e:
+                logger.error(f'Error processing annotation {annotation} for file {file.path}: {e}')
+                continue
+        if added_annotations > 0:
+            fnames.add(os.path.basename(file.path))
     return coco_dataset, fnames,file_id_map
 
 
 def convert_to_json(args):
     path_train_imgs = args['path_train_imgs']
     path_val_imgs = args['path_val_imgs'] if args.get('path_val_imgs') else path_train_imgs
-    path_train_json = args['path_train_json'] if args['path_train_json']!='labels.json' else os.path.join(path_train_imgs, args['path_train_json'])
+    path_train_json = args['path_train_json'] if args['path_train_json'] !='labels.json' else os.path.join(path_train_imgs, args['path_train_json'])
     path_val_json = args['path_val_json'] if args['path_val_json']!='labels.json' else os.path.join(path_val_imgs, args['path_val_json'])
     path_out = args['path_out']
     background = args.get('bg', False)
@@ -107,11 +113,24 @@ def convert_to_json(args):
         logger.warning(f'Background is not supported for COCO format at the moment')
     merge_box = args.get('merge_box', False)
     
+
+    if not os.path.exists(path_train_json):
+        raise FileNotFoundError(f'Train annotations file {path_train_json} does not exist')
+    
+    if not os.path.exists(path_val_json):
+        logger.warning(f'Validation annotations file {path_val_json} does not exist, using train annotations instead')
+        path_val_json = path_train_json
+        path_val_imgs = path_train_imgs
+    
     if not os.path.exists(path_out):
         os.makedirs(path_out)
-    
+        
+    logger.info(f'Train images path: {path_train_imgs}')
+    logger.info(f'Validation images path: {path_val_imgs}')
+    logger.info(f'Train annotations path: {path_train_json}')
+    logger.info(f'Validation annotations path: {path_val_json}')
     use_train_for_val = (path_train_imgs == path_val_imgs and path_train_json == path_val_json)
-    logger.info(f'Using train for validation: {use_train_for_val}')
+    logger.info(f'Using train dataset for validation: {use_train_for_val}')
     # load datasets
     train_dataset = load_and_update(annotations_path=path_train_json, path_imgs=path_train_imgs)
     if use_train_for_val:
