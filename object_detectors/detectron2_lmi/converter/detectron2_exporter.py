@@ -70,7 +70,6 @@ def export_scripting(torch_model, args):
             def forward(self, inputs: List[Dict[str, torch.Tensor]]) -> List[Dict[str, Tensor]]:
                 instances = self.model(inputs)
                 return [i.get_fields() for i in instances]
-
     ts_model = scripting_with_instances(ScriptableAdapter(), fields)
     with PathManager.open(args.get(f'pt_file_path'), "wb") as f:
         torch.jit.save(ts_model, f)
@@ -99,6 +98,7 @@ def export_tracing(torch_model, inputs, args):
         ts_model = torch.jit.trace(traceable_model, (image,))
         with PathManager.open(args.get('pt_file_path'), "wb") as f:
             torch.jit.save(ts_model, f)
+
     if args.get('format') == "onnx":
         with PathManager.open(args.get('onnx_file_path'), "wb") as f:
             torch.onnx.export(traceable_model, (image,), f, opset_version=STABLE_ONNX_OPSET_VERSION)

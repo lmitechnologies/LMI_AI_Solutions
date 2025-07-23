@@ -74,6 +74,8 @@ def copy_images_in_folder(path_img, path_out, fnames, file_id_map):
     for fname in fnames:
         logger.info(f'Copying image {fname} to {path_out}')
         out_name = os.path.basename(fname)
+        if not os.path.isfile(os.path.join(path_img, fname)):
+            raise Exception(f'File not found: {os.path.join(path_img, fname)}')
         file_id = file_id_map[fname]
         if f'id{file_id}_' not in out_name:
             out_name = f'id{file_id}_{out_name}'

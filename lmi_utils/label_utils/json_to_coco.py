@@ -72,9 +72,13 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:
         
         logger.info(f'Processing file {file_id+1}/{len(dataset.files)}: {file.path}')
         image_id = file_id + 1
+        # update the image name if id is not part of the image
+        out_name = os.path.basename(file.path)
+        if f'id{file.id}_' not in out_name:
+            out_name = f'id{file.id}_{out_name}'
         coco_dataset.add_image(CocoImage(
             id=image_id,
-            file_name=os.path.basename(file.path),
+            file_name=out_name,
             height=file.height,
             width=file.width,
         ))
@@ -84,21 +88,32 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:
                 annotation_id += 1
                 # both segmentation and bbox are required for COCO format
                 segmentation, bbox = get_coco_annotation(annotation, h=file.height, w=file.width, **kwargs)
+                if bbox[2] <= 0 or bbox[3] <= 0:
+                    logger.warning(f'Skipping annotation {annotation.id} for file {file.path} as bbox is invalid: {bbox}')
+                    continue
                 coco_dataset.add_annotation(CocoAnnotation(
                     id=annotation_id,
                     image_id=image_id,
                     category_id=coco_dataset.get_category_by_name(annotation.label_id).id,
                     segmentation=segmentation,
                     bbox=bbox,
-                    area=annotation.value.area(h=file.height, w=file.width),
+                    area=0,
                     iscrowd=is_crowd,
                 ))
                 added_annotations += 1
             except Exception as e:
-                logger.error(f'Error processing annotation {annotation} for file {file.path}: {e}')
+                logger.error(f'Error processing  (annotation could be invalid) {annotation.id} for file {file.path}: {e}')
                 continue
         if added_annotations > 0:
             fnames.add(os.path.basename(file.path))
+        else:
+            # remove the image if no annotations were added
+            logger.warning(f'No valid annotations found for file {file.path}, removing image from dataset')
+            for coco_image in coco_dataset.images:
+                if coco_image.file_name == out_name:
+                    coco_dataset.images.remove(coco_image)
+                    # removing annotations for this image
+                    break
     return coco_dataset, fnames,file_id_map
 
 

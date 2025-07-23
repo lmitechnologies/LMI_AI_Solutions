@@ -3,7 +3,9 @@ import argparse
 import logging
 import cv2
 import numpy as np
-from pycocotools.coco import COCO
+
+from label_utils.COCO_dataset import COCO_Dataset, rotate
+from label_utils.plot_utils import plot_one_polygon, plot_one_brush, plot_one_box
 from pycocotools import mask as coco_mask
 
 from label_utils.bbox_utils import rotate
@@ -33,46 +35,48 @@ def get_annotations_from_json(path_json, path_imgs, path_out):
         if not os.path.isfile(path_img):
             raise Exception(f'Cannot find the file: {path_img}')
         
-        # load img
-        I = cv2.imread(path_img)
+    color_map = {}
+    for annot in dt['annotations']:
+        bbox = annot['bbox']
+        cat_id = int(annot['category_id'])
+        img_id = annot['image_id']
+        segs = annot['segmentation']
+        if cat_id not in color_map:
+            color_map[cat_id] = np.random.randint(0, 255, size=3).tolist()
         
-        # get annotations
-        img_id = m['id']
-        annotations = coco.loadAnns(coco.getAnnIds(imgIds=img_id))
-        for annot in annotations:
-            bbox = annot['bbox']
-            cat_id = int(annot['category_id'])
-            cat_name = coco.loadCats(cat_id)[0]['name']
-            img_id = annot['image_id']
-            segs = annot['segmentation']
-            if 'keypoints' in annot:
-                logger.warning(f'Does not support keypoints')
-
-            if len(bbox) == 5:
-                x,y,w,h,angle = bbox
-                angle = float(angle)
-            else:
-                x,y,w,h = bbox
-                angle = 0
-                
-            # plot box
-            x,y,w,h = list(map(int,[x,y,w,h]))
-            pts = rotate(x,y,w,h,angle,unit='radian',rot_center='center')
-            pts = pts.reshape((-1, 1, 2))
-            plot_one_polygon(pts, I, label=f'{cat_name}', color=colormap[cat_id])
-
-            # plot segments
-            if isinstance(segs, list):
-                for seg in segs:
-                    pts = np.array(list(map(int, seg)))
-                    pts = pts.reshape((-1, 1, 2))
-                    plot_one_polygon(pts, I, label=f'{cat_name}', color=colormap[cat_id])
-            elif isinstance(segs, dict):
-                mask = coco_mask.decode(segs)
-                ys,xs = np.where(mask)
-                plot_one_brush(xs, ys, I, label=f'{cat_name}', color=colormap[cat_id])
-            else:
-                raise Exception(f'Unknown segmentation type: {type(segs)}')
+        if len(bbox) == 5:
+            x,y,w,h,angle = bbox
+            angle = float(angle)
+        else:
+            x,y,w,h = bbox
+            angle = 0
+        
+        # load img
+        I = id_to_img[img_id]
+            
+        # plot 
+        x,y,w,h = list(map(int,[x,y,w,h]))
+        x1,y1,x2,y2 = x, y, x+w, y+h
+        print(f'Plotting box: {x1}, {y1}, {x2}, {y2} for category {cat_id}')
+        plot_one_box(
+            [x1, y1, x2, y2], I, label=f'{cat_id}', color=color_map[cat_id]
+        )
+        
+    #     pts = rotate(x,y,w,h,angle,unit='radian',rot_center='center')
+    #     pts = pts.reshape((-1, 1, 2))
+    #     plot_one_polygon(pts, I, label=f'{cat_id}')
+        
+    #     if isinstance(segs, list):
+    #         for seg in segs:
+    #             pts = np.array(list(map(int, seg)))
+    #             pts = pts.reshape((-1, 1, 2))
+    #             plot_one_polygon(pts, I, label=f'{cat_id}')
+    #     elif isinstance(segs, dict):
+    #         mask = coco_mask.decode(segs)
+    #         ys,xs = np.where(mask)
+    #         plot_one_brush(xs, ys, I, label=f'{cat_id}')
+    #     else:
+    #         raise Exception(f'Unknown segmentation type: {type(segs)}')
 
         # write the annotated image
         path = os.path.join(path_out,fname)

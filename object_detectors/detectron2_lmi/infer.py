@@ -82,7 +82,6 @@ def inference_run(args):
         annotated_image = model.annotate_image(
            outputs, img,
         )
-        
         # save the image
         fname = os.path.basename(img_path)
         out_img_path = os.path.join(out_path, fname)
@@ -92,17 +91,17 @@ def inference_run(args):
         
         # save to csv file
         
-        for idx, box in enumerate(outputs['boxes']):
-            score = outputs['scores'][idx]
-            csv_results.append(
-                Rect(im_name=fname, category=outputs['classes'][idx], up_left=box[:2].astype(int).tolist(), bottom_right=box[2:].astype(int).tolist(), confidence=score, angle=0)
-            )
-            if 'segments' in outputs and len(outputs['segments']) > 0:
-                segments = outputs['segments'][idx].astype(int)
-                csv_results.append(Mask(im_name=fname, category=outputs['classes'][idx], x_vals=segments[:,0].tolist(), y_vals=segments[:,1].tolist(), confidence=score))
+    #     for idx, box in enumerate(outputs['boxes']):
+    #         score = outputs['scores'][idx]
+    #         csv_results.append(
+    #             Rect(im_name=fname, category=outputs['classes'][idx], up_left=box[:2].astype(int).tolist(), bottom_right=box[2:].astype(int).tolist(), confidence=score, angle=0)
+    #         )
+    #         if 'segments' in outputs and len(outputs['segments']) > 0:
+    #             segments = outputs['segments'][idx].astype(int)
+    #             csv_results.append(Mask(im_name=fname, category=outputs['classes'][idx], x_vals=segments[:,0].tolist(), y_vals=segments[:,1].tolist(), confidence=score))
         
-        results[fname] = csv_results
-    write_to_csv(results, os.path.join(out_path, f"predictions.csv"), overwrite=True)
+    #     results[fname] = csv_results
+    # write_to_csv(results, os.path.join(out_path, f"predictions.csv"), overwrite=True)
 
     
     

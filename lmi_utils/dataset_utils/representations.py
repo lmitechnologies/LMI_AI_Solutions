@@ -12,6 +12,8 @@ from gadget_utils.pipeline_utils import fit_array_to_size
 from label_utils.bbox_utils import rotate, get_rotated_bbox
 from pycocotools import mask as coco_mask
 from shapely.geometry import Polygon as ShapelyPolygon
+from torchvision.ops import masks_to_boxes
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -400,26 +402,29 @@ class Mask(Base):
     def to_box(self, **kwargs):
         h = kwargs.get("h", None)
         w = kwargs.get("w", None)
+        
         if h is None or w is None:
             raise ValueError("Height and width cannot be None")
         merge_boxes = kwargs.get("merge_boxes", False)
         mask_array = self.to_numpy(h=kwargs.get("h"), w=kwargs.get("w"))
+        boxes = masks_to_boxes(torch.from_numpy(mask_array).unsqueeze(0))
         if merge_boxes:
-            pts = np.column_stack(np.where(mask_array > 0))
-            if pts.size == 0:
-                raise ValueError("Mask is empty; cannot compute bounding box.")
-            x, y, w_box, h_box = cv2.boundingRect(pts)
-            return Box(x_min=x, y_min=y, x_max=x + w_box, y_max=y + h_box, angle=0)
+            if boxes is not None:
+                x_min = boxes[:, 0].min().item()
+                y_min = boxes[:, 1].min().item()
+                x_max = boxes[:, 2].max().item()
+                y_max = boxes[:, 3].max().item()
+            else:
+                raise ValueError("No boxes found in the mask for merging.")
+            return Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max, angle=0)
         else:
-            boxes = []
-            for poly in self.to_polygon(h=kwargs.get("h"), w=kwargs.get("w")):
-                xs, ys = poly.coords()
-                pts = np.array(list(zip(xs, ys)), dtype=np.int32)
-                if pts.size == 0:
-                    continue
-                x, y, w_box, h_box = cv2.boundingRect(pts)
-                boxes.append(Box(x_min=x, y_min=y, x_max=x + w_box, y_max=y + h_box, angle=0))
-            return boxes
+            if boxes is None or boxes.numel() == 0:
+                raise ValueError("No boxes found in the mask.")
+            bboxes = []
+            for box in boxes:
+                x_min, y_min, x_max, y_max = box.tolist()
+                bboxes.append(Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max, angle=0))
+            return bboxes if len(bboxes) > 1 else bboxes[0]  # Return a list if multiple boxes, otherwise a single box
 
 @dataclass
 class Label(Base):
