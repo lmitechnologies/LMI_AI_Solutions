@@ -562,6 +562,20 @@ class Detectron2PT(Detectron2ModelBase):
             NotImplementedError: If operators is not None, indicating that the feature is not yet supported.
         """
         t0 = time.time()
+        iou = kwargs.get("iou", 0.0) # dont use iou for PT models if set 0.0
+        max_detections = kwargs.get("max_det", 500)
+        
+        # set the nms threshold and topk for the model
+        if iou > 0.0:
+            if iou != self.model.model.roi_heads.box_predictor.test_nms_thresh:
+                self.model.model.roi_heads.box_predictor.test_nms_thresh = iou
+                self.logger.info(f"Using the following nms threshold: {self.model.model.roi_heads.box_predictor.test_nms_thresh}")
+        if max_detections>0:
+            if max_detections != self.model.model.roi_heads.box_predictor.test_topk_per_image:
+                self.model.model.roi_heads.box_predictor.test_topk_per_image = max_detections
+                self.logger.info(f"Using the following topk {self.model.model.roi_heads.box_predictor.test_topk_per_image}")
+            
+        
         if isinstance(images, np.ndarray):
             # if the input is a single image
             shp = images.shape
