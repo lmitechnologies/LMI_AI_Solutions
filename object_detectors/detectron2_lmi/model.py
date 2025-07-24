@@ -80,7 +80,7 @@ class Detectron2ModelBase(ODBase):
             configs = {k if isinstance(k,str) else v: configs for k,v in self.class_map.items()}
         else:
             self.logger.warning("configs should be a dictionary of class confidence thresholds. Using default value of 1.0 for all classes.")
-            
+        run_post_nms = kwargs.get("run_post_nms", False)
         max_detections = kwargs.get("max_det", 300)
         mask_threshold = kwargs.get("mask_threshold", 0.5)
         process_masks = kwargs.get("process_masks", True)
@@ -100,7 +100,7 @@ class Detectron2ModelBase(ODBase):
             self.logger.warning("No detections found.")
             return results
 
-        if iou_threshold > 0.0:
+        if iou_threshold > 0.0 and run_post_nms:
             keep_indices = torchvision.ops.nms(prediction["boxes"], prediction["scores"], iou_threshold)
             scores = prediction["scores"][keep_indices]
             pred_boxes = prediction["boxes"][keep_indices]
@@ -128,7 +128,7 @@ class Detectron2ModelBase(ODBase):
             final_masks = pred_masks[keep_conf_mask] if pred_masks.numel() > 0 else []
 
         # max_detections: limit the number of detections per image.
-        if len(final_scores) > max_detections:
+        if len(final_scores) > max_detections and run_post_nms:
             top_k_indices =  np.argsort(final_scores)[::-1][:max_detections].copy()
             
             # filter all result arrays using the top indices
@@ -320,6 +320,8 @@ class Detectron2TRT(Detectron2ModelBase):
         
         if len(predictions) == 0:
             return results
+        
+        kwargs['run_post_nms'] = kwargs.get("run_post_nms", True)
         
         if len(predictions) == 5:
             num_preds, boxes, scores, classes, masks = predictions[:5]
@@ -575,6 +577,7 @@ class Detectron2PT(Detectron2ModelBase):
         t0 = time.time()
         iou = kwargs.get("iou", 0.0) # dont use iou for PT models if set 0.0
         max_detections = kwargs.get("max_det", 500)
+        kwargs['run_post_nms'] = kwargs.get("run_post_nms", False)
         
         # set the nms threshold and topk for the model
         if iou > 0.0:
