@@ -4,6 +4,7 @@ from dataset_utils.file_utils import load_and_update, copy_images_in_folder
 import argparse
 import os
 import logging
+import json
 
 
 logging.basicConfig()
@@ -114,7 +115,12 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:
                     coco_dataset.images.remove(coco_image)
                     # removing annotations for this image
                     break
-    return coco_dataset, fnames,file_id_map
+    dataset.files = [
+        file for file in dataset.files if os.path.basename(file.path) in fnames
+    ]
+    
+    
+    return dataset, coco_dataset, fnames,file_id_map
 
 
 def convert_to_json(args):
@@ -164,15 +170,16 @@ def convert_to_json(args):
 
         
     # create coco datasets
-    coco_train_dataset, train_files,train_file_id_map = create_coco_dataset(train_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
+    train_ais_dataset, coco_train_dataset, train_files,train_file_id_map = create_coco_dataset(train_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
     if use_train_for_val:
         logger.info('Creating validation dataset from train dataset')
         val_file_id_map = train_file_id_map
         coco_val_dataset = coco_train_dataset
     else:
         logger.info('Creating validation dataset from val dataset')
-        coco_val_dataset,val_files,val_file_id_map = create_coco_dataset(val_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
-
+        val_ais_dataset, coco_val_dataset,val_files,val_file_id_map = create_coco_dataset(val_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
+    # save ais datasets
+    train_ais_dataset.save(os.path.join(path_out, 'train', 'ais.train.dataset.json'))
     # save coco datasets
     coco_train_dataset.save_to_json(file_path=os.path.join(path_out, 'train', 'annotations.json'))
     if not use_train_for_val:

@@ -71,6 +71,7 @@ def export_scripting(torch_model, args):
                 instances = self.model(inputs)
                 return [i.get_fields() for i in instances]
     ts_model = scripting_with_instances(ScriptableAdapter(), fields)
+    print(ts_model.model.roi_heads.box_predictor.test_score_thresh)
     with PathManager.open(args.get(f'pt_file_path'), "wb") as f:
         torch.jit.save(ts_model, f)
     return None

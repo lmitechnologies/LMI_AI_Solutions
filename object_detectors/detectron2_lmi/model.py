@@ -72,7 +72,15 @@ class Detectron2ModelBase(ODBase):
         
     def postprocess_batch(self, image, prediction, **kwargs):
         iou_threshold = kwargs.get("iou", 0.0)
-        confs = kwargs.get("confs", {})
+        configs = kwargs.get("configs")
+        if configs is None:
+            self.logger.warning("configs is None. Using default value of 1.0 for all classes.")
+            configs = {k if isinstance(k,str) else v: 1.0 for k,v in self.class_map.items()}
+        if isinstance(configs, dict) is False and isinstance(configs, (int, float)):
+            configs = {k if isinstance(k,str) else v: configs for k,v in self.class_map.items()}
+        else:
+            self.logger.warning("configs should be a dictionary of class confidence thresholds. Using default value of 1.0 for all classes.")
+            
         max_detections = kwargs.get("max_det", 300)
         mask_threshold = kwargs.get("mask_threshold", 0.5)
         process_masks = kwargs.get("process_masks", True)
@@ -105,10 +113,13 @@ class Detectron2ModelBase(ODBase):
             pred_classes = prediction["classes"]
             if use_masks:
                 pred_masks = prediction.get("masks", torch.empty(0))
+        
+        if len(scores) == 0:
+            self.logger.warning("No detections after NMS.")
         # confidence filtering
         scores_np = scores.cpu().numpy()
         classes_np = self.class_map_func(pred_classes.cpu().numpy())
-        keep_conf_mask = scores_np >= np.vectorize(confs.get)(classes_np, 1.0)
+        keep_conf_mask = scores_np >= np.vectorize(configs.get)(classes_np, 1.0)
             
         final_scores = scores_np[keep_conf_mask]
         final_classes = classes_np[keep_conf_mask]
@@ -290,7 +301,7 @@ class Detectron2TRT(Detectron2ModelBase):
             images (list): List of input images.
             predictions (tuple): Tuple containing the number of predictions, bounding boxes, scores, classes, and masks.
             **kwargs: Additional keyword arguments for processing.
-                - confs (dict): Dictionary of confidence thresholds for each class.
+                - configs (dict): Dictionary of confidence thresholds for each class.
                 - mask_threshold (float): Threshold for mask binarization.
                 - process_masks (bool): Flag to indicate whether to process masks.
         Returns:
@@ -491,7 +502,7 @@ class Detectron2PT(Detectron2ModelBase):
             images (list): A list of input images in the batch.
             predictions (list): A list of prediction dicts, one for each image.
             **kwargs:
-                - confs (dict): Confidence thresholds per class.
+                - configs (dict): Confidence thresholds per class.
                 - iou (float): IoU threshold for NMS.
                 - max_detections (int): Max detections to return per image.
         Returns:
