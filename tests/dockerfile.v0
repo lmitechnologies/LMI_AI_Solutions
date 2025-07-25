@@ -28,5 +28,7 @@ RUN pip install --user 'git+https://github.com/facebookresearch/fvcore'
 RUN git clone https://github.com/facebookresearch/detectron2 detectron2
 RUN pip install --user -e detectron2 
 RUN pip install opencv-python==4.8.0.74
+RUN pip install numpy==1.23.5
+
 # report generation
 RUN pip install pytest-html 
