@@ -3,6 +3,10 @@ from .od_base import ODBase
 from .object_detector_registry import ObjectDetectorRegistry
 import logging
 
+# register models automatically
+ObjectDetectorRegistry.auto_register_models()
+
+
 class ObjectDetector(ODBase):
 
     def __new__(cls, metadata: Dict[str, Any], *args, **kwargs):
