@@ -1,26 +1,20 @@
 import pytest
 import os
-import pathlib
-import sys
 import tempfile
 import logging
 import torch
 import torchvision
 import subprocess
 
-# path to the repo
-PATH = pathlib.Path(__file__)
-ROOT = PATH.parents[3]
+from image_utils.img_tile import to_tiles,to_images,ScaleMode
+from system_utils import path_utils
 
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
-from image_utils.img_tile import to_tiles,to_images,ScaleMode
-from system_utils import path_utils
-
-PATH_IMG = ROOT/'tests/assets/images/dota'
+PATH_IMG = 'tests/assets/images/dota'
 
 
 def load_imgs(im_dir, recursive=True):
@@ -80,7 +74,6 @@ def test_interpolation(tile,stride):
 def test_cmds():
     imgs = load_imgs(PATH_IMG)
     my_env = os.environ.copy()
-    my_env['PYTHONPATH'] = f'$PYTHONPATH:{str(ROOT)}/lmi_utils'
     with tempfile.TemporaryDirectory() as tmpdir:
         cmd = f'python -m image_utils.img_tile --option tile -i {str(PATH_IMG)} -o {str(tmpdir)} --tile 224 224 --stride 112 112'
         out = subprocess.run(cmd,check=True,shell=True,env=my_env,capture_output=True,text=True)

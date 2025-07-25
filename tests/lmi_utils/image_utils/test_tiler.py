@@ -1,14 +1,8 @@
 import pytest
 import os
-import pathlib
-import sys
 import logging
 import torch
 import torchvision
-
-# path to the repo
-PATH = pathlib.Path(__file__)
-ROOT = PATH.parents[3]
 
 from image_utils.tiler import Tiler, ScaleMode
 from system_utils import path_utils
@@ -17,7 +11,7 @@ logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-PATH_IMG = ROOT/'tests/assets/images/dota'
+PATH_IMG = 'tests/assets/images/dota'
 
 
 def load_imgs(im_dir, recursive=True):

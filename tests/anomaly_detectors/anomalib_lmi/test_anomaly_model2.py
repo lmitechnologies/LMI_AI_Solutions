@@ -9,13 +9,8 @@ import numpy as np
 import torch
 import subprocess
 import time
-from pathlib import Path
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
 from anomalib.data.utils import read_image
-
-# path to the repo
-PATH = Path(__file__).resolve()
-ROOT = PATH.parents[3]
 
 
 from anomalib_lmi.anomaly_model2 import AnomalyModel2
@@ -200,7 +195,6 @@ def test_cmds():
     """
     with tempfile.TemporaryDirectory() as t:
         my_env = os.environ.copy()
-        my_env['PYTHONPATH'] = f'$PYTHONPATH:{ROOT}/lmi_utils:{ROOT}/anomaly_detectors'
         cmd = f'python -m anomalib_lmi.anomaly_model2 test -i {MODEL_PATH} -d {DATA_PATH} -o {str(t)} -g -p --tile 224 224 --stride 224 224 --resize'
         logger.info(f'running cmd: {cmd}')
         result = subprocess.run(cmd,shell=True,env=my_env,capture_output=True,text=True)

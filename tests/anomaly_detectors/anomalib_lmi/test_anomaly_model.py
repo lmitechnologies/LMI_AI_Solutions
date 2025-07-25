@@ -1,13 +1,7 @@
-import pytest
 import logging
 import os
 import tempfile
 import subprocess
-from pathlib import Path
-
-# path to the repo
-PATH = Path(__file__).resolve()
-ROOT = PATH.parents[3]
 
 from anomalib_lmi.anomaly_model import AnomalyModel
 from ad_core.anomaly_detector import AnomalyDetector
@@ -35,7 +29,6 @@ def test_model_api():
 def test_cmds():
     with tempfile.TemporaryDirectory() as t:
         my_env = os.environ.copy()
-        my_env['PYTHONPATH'] = f'$PYTHONPATH:{ROOT}/lmi_utils:{ROOT}/anomaly_detectors'
         cmd = f'python -m anomalib_lmi.anomaly_model -i {MODEL_PATH} -d {DATA_PATH} -o {str(t)} -g -p'
         logger.info(f'running cmd: {cmd}')
         result = subprocess.run(cmd,shell=True,env=my_env,capture_output=True,text=True)
