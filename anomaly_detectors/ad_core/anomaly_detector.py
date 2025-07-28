@@ -2,6 +2,9 @@ from typing import Dict, Any
 from .anomaly_detector_registry import AnomalyDetectorRegistry
 import logging
 
+# auto register anomaly detectors
+AnomalyDetectorRegistry.auto_register_models()
+
 class AnomalyDetector:
 
     def __new__(cls, metadata: Dict[str, Any], *args, **kwargs):
