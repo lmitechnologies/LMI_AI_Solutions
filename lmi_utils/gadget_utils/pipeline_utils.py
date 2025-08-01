@@ -504,8 +504,12 @@ def revert_to_origin(pts, operations:list):
             idy = [1,3] if c==4 else [1]
             if lr:
                 pts[:,idx] = im_w - pts[:,idx]
+                if c==4:
+                    pts[:,[0,2]] = pts[:,[2,0]]
             if ud:
                 pts[:,idy] = im_h - pts[:,idy]
+                if c==4:
+                    pts[:,[1,3]] = pts[:,[3,1]]
         else:
             raise Exception(f'unsupported operation: {op}')
             
