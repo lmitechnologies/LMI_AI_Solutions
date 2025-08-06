@@ -25,24 +25,24 @@ ARGUMENT=$1
 if [ "$ARGUMENT" == "v1-all" ]; then
     pytest --html=$outpath/lmi_utils_v1.html tests/lmi_utils/
     pytest --html=$outpath/object_detectors_v1.html tests/object_detectors/
-    pytest --html=$outpath/anomaly_detectors_v1.html tests/anomaly_detectors/anomalib_lmi/test_anomaly_model2.py
+    pytest --html=$outpath/anomaly_detectors_v1.html --ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py tests/anomaly_detectors
     exit 0
 elif [ "$ARGUMENT" == "v0-all" ]; then
     pytest --html=$outpath/lmi_utils_v0.html tests/lmi_utils/
     pytest --html=$outpath/object_detectors_v0.html tests/object_detectors/
-    pytest --html=$outpath/anomaly_detectors_v0.html tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py
-    exit 0
-elif [ "$ARGUMENT" == "object_detectors" ]; then
-    pytest --html=$outpath/object_detectors.html tests/object_detectors/
-    exit 0
-elif [ "$ARGUMENT" == "lmi_utils" ]; then
-    pytest --html=$outpath/lmi_utils.html tests/lmi_utils/
-    exit 0
-elif [ "$ARGUMENT" == "anomaly_detectors-v0" ]; then
     pytest --html=$outpath/anomaly_detectors_v0.html --ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model2.py tests/anomaly_detectors
     exit 0
-elif [ "$ARGUMENT" == "anomaly_detectors-v1" ]; then
+elif [ "$ARGUMENT" == "od" ]; then
+    pytest --html=$outpath/object_detectors.html tests/object_detectors/
+    exit 0
+elif [ "$ARGUMENT" == "utils" ]; then
+    pytest --html=$outpath/lmi_utils.html tests/lmi_utils/
+    exit 0
+elif [ "$ARGUMENT" == "ad-v0" ]; then
+    pytest --html=$outpath/anomaly_detectors_v0.html --ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model2.py tests/anomaly_detectors
+    exit 0
+elif [ "$ARGUMENT" == "ad-v1" ]; then
     pytest --html=$outpath/anomaly_detectors_v1.html --ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py tests/anomaly_detectors
     exit 0
 fi
-echo "Invalid argument. Please use 'v1-all' 'v0-all' 'object_detectors' 'lmi_utils' 'anomaly_detectors-v0' 'anomaly_detectors-v1'. "
+echo "Invalid argument. Please use 'v1-all' 'v0-all' 'od' 'utils' 'ad-v0' 'ad-v1'. "
