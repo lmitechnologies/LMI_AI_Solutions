@@ -65,11 +65,12 @@ class AnomalyModel(Anomalib_Base):
             self.model_shape = list(shape[-2:])
             self.image_size = list(shape[-2:])
             self.inference_mode='TRT'
-        elif ext=='.pt':     
-            model = torch.load(model_path,map_location=self.device)["model"]
+        elif ext=='.pt':
+            ckpt = torch.load(model_path, map_location=self.device, weights_only=False)
+            model = ckpt["model"]
             model.eval()
             self.pt_model=model.to(self.device)
-            self.pt_metadata = torch.load(model_path, map_location=self.device)["metadata"] if model_path else {}
+            self.pt_metadata = ckpt["metadata"] if model_path else {}
             self.pt_transform=A.from_dict(self.pt_metadata["transform"])
             for d in self.pt_metadata['transform']['transform']['transforms']:
                 if d['__class_fullname__']=='Resize':
