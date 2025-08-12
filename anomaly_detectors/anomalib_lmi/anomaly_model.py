@@ -18,7 +18,7 @@ FAIL = 'FAIL'
 MINIMUM_QUANT=1e-12
 
 Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
-@AnomalyDetectorRegistry.register(metadata=dict(frameworks=['anomalib', 'anomalib0'], model_names=['patchcore', 'padim'], tasks=['anomalydetection','seg'], versions=['v0']))
+@AnomalyDetectorRegistry.register(metadata=dict(frameworks=['anomalib', 'anomalib0'], model_names=['patchcore', 'padim'], tasks=['anomalydetection','seg'], versions=['v0', 'v1']))
 class AnomalyModel(Anomalib_Base):
     '''
     Desc: Class used for AD model inference.  
