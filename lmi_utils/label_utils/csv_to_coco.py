@@ -334,7 +334,7 @@ if __name__ == '__main__':
     if not os.path.isfile(path_csv):
         raise Exception(f'Not found file: {path_csv}')
     
-    data = Dataset(path_imgs, path_csv, plot=args['plot'], selected_classes=args['classes'].split(',').replace(' ','') if args['classes'] else [])
+    data = Dataset(path_imgs, path_csv, plot=args['plot'], selected_classes=args['classes'].split(',') if args['classes'] else [])
     
     # write the images to the given directory
     
@@ -343,10 +343,21 @@ if __name__ == '__main__':
             path_out
         )
     
+      # Create dict {id: name}
+    class_map = {cat['id']: cat['name'] for cat in data.categories}
+
+    # Save to JSON
+    class_map_file=os.path.join(path_out, 'class_map.json')
+    with open(class_map_file, "w") as f:
+        json.dump(class_map, f, indent=4)
+
+    print("class_map.json written successfully.")
+    
     # write the json file to the directory
     data.write_to_json(
         json_out_path=os.path.join(path_out, 'annotations.json')
     )
+    print("annotations.json written successfully.")
     images_path = os.path.join(
         path_out,'images'
     )
@@ -360,5 +371,4 @@ if __name__ == '__main__':
         path_img=path_imgs,
         path_out=images_path
     )
-    
-    
+    print("Images copied successfully.")
