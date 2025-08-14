@@ -21,7 +21,7 @@ def get_distinct_colors(n):
     colors = []
     for i in range(n):
         hue = i / n  # Equally spaced hue values
-        saturation = 0.9  # High saturation
+        saturation = 0.5  # High saturation
         value = 0.9  # High value
         rgb = colorsys.hsv_to_rgb(hue, saturation, value)
         colors.append(tuple(int(255 * x) for x in rgb))
