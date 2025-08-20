@@ -36,7 +36,7 @@ class AnomalyDetector:
                 )
             instance = wrapper_cls(
                 model_path,
-                tile_size=tile_size,
+                tile=tile_size,
                 stride=stride,
                 tile_mode=tile_mode,
                 **kwargs
