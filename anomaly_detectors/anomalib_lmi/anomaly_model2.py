@@ -145,6 +145,7 @@ class AnomalyModel2(Anomalib_Base):
         
         if self.tiler is not None:
             img = self.tiler.tile(img,self.tile_mode)
+            self.logger.info(f'img shape after using tiling: {img.shape}')
         
         
         batch = img.shape[0]
@@ -213,7 +214,8 @@ class AnomalyModel2(Anomalib_Base):
             tiling_settings['overlap_mode'] = current_overlap_mode
             tiling_settings['scale_mode'] = self.tile_mode
 
-        input_batch = self.preprocess(image) 
+        input_batch = self.preprocess(image)
+        self.logger.info(f'Final input batch shape: {input_batch.shape}')
         
         num_samples_in_input = input_batch.shape[0]
 
