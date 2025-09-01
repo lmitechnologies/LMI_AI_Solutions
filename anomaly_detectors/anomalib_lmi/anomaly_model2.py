@@ -142,11 +142,8 @@ class AnomalyModel2(Anomalib_Base):
         img = img.permute((2, 0, 1)).unsqueeze(0)
         img = img / 255.0
         
-        
         if self.tiler is not None:
             img = self.tiler.tile(img,self.tile_mode)
-            self.logger.info(f'img shape after using tiling: {img.shape}')
-        
         
         batch = img.shape[0]
         if self.inference_mode=='TRT' and batch != self.batch_size:
@@ -161,6 +158,7 @@ class AnomalyModel2(Anomalib_Base):
         
         img = img.contiguous()
         return img.half() if self.fp16 else img
+    
     
     def _infer(self, input_batch):
         '''
@@ -215,22 +213,21 @@ class AnomalyModel2(Anomalib_Base):
             tiling_settings['scale_mode'] = self.tile_mode
 
         input_batch = self.preprocess(image)
-        self.logger.info(f'Final input batch shape: {input_batch.shape}')
-        
+        if kwargs.get('verbose', False):
+            self.logger.info(f'Final input batch shape: {input_batch.shape}')
+            
         num_samples_in_input = input_batch.shape[0]
-
         if num_samples_in_input == 0:
             return np.array([])
+        
         inference_settings = kwargs.get('inference_settings', {})
         user_inference_batch_size = inference_settings.get('inference_batch_size', None)
-        
-        aggregated_output_tensor = None
-        
         perform_mini_batch_inference = (
             user_inference_batch_size is not None and \
             user_inference_batch_size > 0
         )
         
+        aggregated_output_tensor = None
         if perform_mini_batch_inference:
             all_mini_batch_outputs = []
             for i in range(0, num_samples_in_input, user_inference_batch_size):
