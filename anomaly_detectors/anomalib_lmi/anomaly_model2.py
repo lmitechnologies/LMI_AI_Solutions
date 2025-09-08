@@ -214,6 +214,7 @@ class AnomalyModel2(Anomalib_Base):
 
         input_batch = self.preprocess(image)
         if kwargs.get('verbose', False):
+            self.logger.info(f'Using overlap mode: {overlap_mode_str}')
             self.logger.info(f'Final input batch shape: {input_batch.shape}')
             
         num_samples_in_input = input_batch.shape[0]
@@ -306,6 +307,7 @@ if __name__ == '__main__':
     test_ap.add_argument('--tile',type=int,nargs=2,default=None,help='tile size (h,w)')
     test_ap.add_argument('--stride',type=int,nargs=2,default=None,help='stride size (h,w)')
     test_ap.add_argument('--resize',action='store_true',help='use resize for tiling')
+    test_ap.add_argument('-om', '--overlap_mode', default="gaussian", help='overlap mode for tiling, can be "average", "max", "cosine", "linear", "gaussian"')
     
     convert_ap = subs.add_parser('convert',help='convert model to trt engine')
     convert_ap.add_argument('-i','--model_path', default="/app/model/model.pt", help='Input model file path.')
@@ -334,4 +336,4 @@ if __name__ == '__main__':
     elif action=='test':
         os.makedirs(args['annot_dir'], exist_ok=True)
         ad.test(args['data_dir'],args['annot_dir'],args['generate_stats'],
-                args['plot'],args['ad_threshold'],args['ad_max'])
+                args['plot'],args['ad_threshold'],args['ad_max'], args['overlap_mode'])

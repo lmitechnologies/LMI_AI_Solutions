@@ -129,7 +129,7 @@ class AnomalyModel(Anomalib_Base):
         
         
     @torch.inference_mode()
-    def predict(self, image):
+    def predict(self, image, **kwargs):
         '''
         Desc: Model prediction 
         Args: image: numpy array [H,W,Ch]
