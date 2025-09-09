@@ -7,7 +7,7 @@ import logging
 from typing import Union
 import time
 
-from ultralytics.utils import ops
+from ultralytics.utils import ops, nms
 from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.utils.torch_utils import smart_inference_mode
 
@@ -213,7 +213,7 @@ class Yolov8(ODBase):
             preds = preds[0]
         
         conf2 = self.get_min_conf(conf)
-        preds2 = ops.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
+        preds2 = nms.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
             
         results = collections.defaultdict(list)
         for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, mask1, mask2 ...]
@@ -424,7 +424,7 @@ class Yolov8Obb(Yolov8):
         
         # run non-max suppression in xywhr format
         conf2 = self.get_min_conf(conf)
-        preds2 = ops.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names), rotated=True)
+        preds2 = nms.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names), rotated=True)
         
         # create a collections dictionary to store the results
         results = collections.defaultdict(list)
@@ -556,7 +556,7 @@ class Yolov8Pose(Yolov8):
         """
         
         conf2 = self.get_min_conf(conf)
-        preds2 = ops.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
+        preds2 = nms.non_max_suppression(preds,conf2,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
             
         results = collections.defaultdict(list)
         for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, ...]
