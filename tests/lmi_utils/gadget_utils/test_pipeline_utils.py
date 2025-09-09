@@ -321,43 +321,41 @@ class Test_pts_to_3d:
 
 class Test_apply_operations:
     def np_func(self, pts:np.ndarray, operations:list):
-        def apply(x,y, operations):
-            nx,ny = x,y
-            for operator in operations:
-                if 'resize' in operator:
-                    tw,th,orig_w,orig_h = operator['resize']
-                    r = [tw/orig_w,th/orig_h]
-                    nx,ny = nx*r[0], ny*r[1]
-                if 'pad' in operator:
-                    pad_L,pad_R,pad_T,pad_B = operator['pad']
-                    nx,ny = nx+pad_L,ny+pad_T
-                if 'stretch' in operator:
-                    s = operator['stretch']
-                    nx,ny = nx*s[0], ny*s[1]
-                if 'flip' in operator:
-                    lr,ud,im_w,im_h = operator['flip']
-                    if lr:
-                        nx = im_w-nx
-                    if ud:
-                        ny = im_h-ny
-            nx,ny = round(nx),round(ny)
-            return [max(nx,0),max(ny,0)]
-
-        pts2 = []
-        if isinstance(pts, list):
-            pts = np.array(pts)
-        for pt in pts:
-            if len(pt)==0:
-                continue
-            if len(pt)==2:
-                x,y = pt
-                pts2.append(apply(x,y,operations))
-            elif len(pt)==4:
-                x1,y1,x2,y2 = pt
-                pts2.append(apply(x1,y1,operations)+apply(x2,y2,operations))
-            else:
-                raise Exception(f'does not support pts neither Nx2 nor Nx4. Got shape: {pt.shape} with val: {pt}')
-        return pts2
+        pts = np.array(pts).astype(np.float32)
+        r,c = pts.shape
+        if c not in [2,4]:
+            raise Exception(f'pts should be Nx2 or Nx4, got shape: {pts.shape}')
+        for op in operations:
+            if 'resize' in op:
+                tw,th,orig_w,orig_h = op['resize']
+                r = np.array([tw/orig_w,th/orig_h])
+                pts[:,:2] = pts[:,:2] * r
+                if c==4:
+                    pts[:,2:] = pts[:,2:] * r
+            elif 'pad' in op:
+                pad_L,pad_R,pad_T,pad_B = op['pad']
+                t = np.array([pad_L, pad_T])
+                pts[:,:2] = pts[:,:2] + t
+                if c==4:
+                    pts[:,2:] = pts[:,2:] + t
+            elif 'stretch' in op:
+                s = np.array(op['stretch'])
+                pts[:,:2] = pts[:,:2] * s
+                if c==4:
+                    pts[:,2:] = pts[:,2:] * s
+            elif 'flip' in op:
+                lr,ud,im_w,im_h = op['flip']
+                idx = [0,2] if c==4 else [0]
+                idy = [1,3] if c==4 else [1]
+                if lr:
+                    pts[:,idx] = im_w - pts[:,idx]
+                    if c==4:
+                        pts[:,[0,2]] = pts[:,[2,0]]
+                if ud:
+                    pts[:,idy] = im_h - pts[:,idy]
+                    if c==4:
+                        pts[:,[1,3]] = pts[:,[3,1]]
+        return pts.round().clip(min=0)
     
     
     @pytest.mark.parametrize(
