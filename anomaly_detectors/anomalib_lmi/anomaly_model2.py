@@ -193,7 +193,7 @@ class AnomalyModel2(Anomalib_Base):
         Desc: Model prediction
         Args: image: numpy array [H,W,Ch] or [N,H,W,Ch]
         kwargs:
-            overlap_mode (str): 'average' or 'max'. Default 'average'.
+            overlap_mode (str): "average", "max", "cosine", "linear", "gaussian". Default 'average'.
             batch_size (int, optional): If provided and the input batch contains more
                                         samples than this size, the input batch will be
                                         split and processed in chunks of this size.
