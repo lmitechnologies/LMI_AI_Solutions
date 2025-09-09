@@ -142,10 +142,8 @@ class AnomalyModel2(Anomalib_Base):
         img = img.permute((2, 0, 1)).unsqueeze(0)
         img = img / 255.0
         
-        
         if self.tiler is not None:
             img = self.tiler.tile(img,self.tile_mode)
-        
         
         batch = img.shape[0]
         if self.inference_mode=='TRT' and batch != self.batch_size:
@@ -160,6 +158,7 @@ class AnomalyModel2(Anomalib_Base):
         
         img = img.contiguous()
         return img.half() if self.fp16 else img
+    
     
     def _infer(self, input_batch):
         '''
@@ -194,7 +193,7 @@ class AnomalyModel2(Anomalib_Base):
         Desc: Model prediction
         Args: image: numpy array [H,W,Ch] or [N,H,W,Ch]
         kwargs:
-            overlap_mode (str): 'average' or 'max'. Default 'average'.
+            overlap_mode (str): "average", "max", "cosine", "linear", "gaussian". Default 'average'.
             batch_size (int, optional): If provided and the input batch contains more
                                         samples than this size, the input batch will be
                                         split and processed in chunks of this size.
@@ -213,22 +212,23 @@ class AnomalyModel2(Anomalib_Base):
             tiling_settings['overlap_mode'] = current_overlap_mode
             tiling_settings['scale_mode'] = self.tile_mode
 
-        input_batch = self.preprocess(image) 
-        
+        input_batch = self.preprocess(image)
+        if kwargs.get('verbose', False):
+            self.logger.info(f'Using overlap mode: {overlap_mode_str}')
+            self.logger.info(f'Final input batch shape: {input_batch.shape}')
+            
         num_samples_in_input = input_batch.shape[0]
-
         if num_samples_in_input == 0:
             return np.array([])
+        
         inference_settings = kwargs.get('inference_settings', {})
         user_inference_batch_size = inference_settings.get('inference_batch_size', None)
-        
-        aggregated_output_tensor = None
-        
         perform_mini_batch_inference = (
             user_inference_batch_size is not None and \
             user_inference_batch_size > 0
         )
         
+        aggregated_output_tensor = None
         if perform_mini_batch_inference:
             all_mini_batch_outputs = []
             for i in range(0, num_samples_in_input, user_inference_batch_size):
@@ -307,6 +307,7 @@ if __name__ == '__main__':
     test_ap.add_argument('--tile',type=int,nargs=2,default=None,help='tile size (h,w)')
     test_ap.add_argument('--stride',type=int,nargs=2,default=None,help='stride size (h,w)')
     test_ap.add_argument('--resize',action='store_true',help='use resize for tiling')
+    test_ap.add_argument('-om', '--overlap_mode', default="gaussian", help='overlap mode for tiling, can be "average", "max", "cosine", "linear", "gaussian"')
     
     convert_ap = subs.add_parser('convert',help='convert model to trt engine')
     convert_ap.add_argument('-i','--model_path', default="/app/model/model.pt", help='Input model file path.')
@@ -335,4 +336,4 @@ if __name__ == '__main__':
     elif action=='test':
         os.makedirs(args['annot_dir'], exist_ok=True)
         ad.test(args['data_dir'],args['annot_dir'],args['generate_stats'],
-                args['plot'],args['ad_threshold'],args['ad_max'])
+                args['plot'],args['ad_threshold'],args['ad_max'], args['overlap_mode'])

@@ -203,7 +203,7 @@ class Anomalib_Base(ABC):
         return sorted_contours, bboxes
     
     
-    def test(self, images_path, annot_dir,generate_stats=True,annotate_inputs=True,anom_threshold=None,anom_max=None):
+    def test(self, images_path, annot_dir,generate_stats=True,annotate_inputs=True,anom_threshold=None,anom_max=None,overlap_mode='average'):
         """
         Desc: test model performance
         Args:
@@ -214,6 +214,7 @@ class Anomalib_Base(ABC):
             - annotate_inputs: option to show anomaly score histogram and heat map for each image in thd dataset (def: True)
             - anom_threshold: user defined anomaly threshold (sets beginning of heat map)
             - anom_max: user defined anomaly max (sets end of the heat map)
+            - overlap_mode: for tiling, can be "average", "max", "cosine", "linear", "gaussian"
         """
         from pathlib import Path
         import time
@@ -258,7 +259,12 @@ class Anomalib_Base(ABC):
         out_path = annot_dir
         if not os.path.exists(out_path):
             os.makedirs(out_path)
-
+            
+        kwargs = {
+            'tiling_settings':{
+                'overlap_mode': overlap_mode
+            }
+        }
         proctime = []
         img_all,anom_all,fname_all,path_all=[],[],[],[]
         for image_path in images:
@@ -266,7 +272,7 @@ class Anomalib_Base(ABC):
             image_path=str(image_path)
             img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
             t0 = time.time()
-            anom_map = self.predict(img)
+            anom_map = self.predict(img, **kwargs)
             proctime.append(time.time() - t0)
             fname=os.path.split(image_path)[1]
             if self.tiler is None:
