@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 import json
 import cv2
 import logging
@@ -121,7 +121,7 @@ def write_xml(out_path, box_class, polygon_class):
         file.write(str)
 
 
-def write_to_lst(shapes, out_path, images_path, gs_path, width, height, is_pred):
+def write_to_lst(shapes:dict, out_path:Path, images_path:Path, gs_path:str, width:int, height:int, is_pred:bool):
     if not gs_path.startswith('gs://'):
         if not gs_path.startswith('/'):
             raise Exception('The local storage path must be absolute path starting with /')
@@ -141,10 +141,11 @@ def write_to_lst(shapes, out_path, images_path, gs_path, width, height, is_pred)
     shapes = {k: v for k, v in sorted(shapes.items(), key=lambda item: item[0])}
     for fname in shapes:
         if images_path is not None:
-            im = cv2.imread(os.path.join(images_path, fname))
+            im = cv2.imread(images_path / fname)
             height,width = im.shape[:2]
 
-        label_obj = init_label_obj(os.path.join(gs_path, fname), is_pred)
+        gs_fname = f"{gs_path}/{fname}"
+        label_obj = init_label_obj(gs_fname, is_pred)
         target = 'predictions' if is_pred else 'annotations'
         
         for shape in shapes[fname]:
@@ -163,7 +164,7 @@ def write_to_lst(shapes, out_path, images_path, gs_path, width, height, is_pred)
         labels.append(label_obj)
 
     # save to json
-    with open(os.path.join(out_path,OUT_NAME), 'w') as f:
+    with open(out_path/OUT_NAME, 'w') as f:
         json.dump(labels, f, indent=4)
         
     # write the xml file
@@ -179,11 +180,11 @@ if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser(description='This script requires either --path_imgs or --wh, but not both.')
     group = ap.add_mutually_exclusive_group(required=True)
-    group.add_argument('--path_imgs', help='path to the images, where images have different dimensions')
+    group.add_argument('--path_imgs', type=Path, help='path to the images, where images have different dimensions')
     group.add_argument('--wh', help='width and height of the images separated by a comma, if they are the same dimension')
-    ap.add_argument('--csv', required=True, help='path to the csv file')
-    ap.add_argument('--lst_img_dir', required=True, help='the image directory will be output in the label studio json. Either a gs path (start with gs://) or local absolute path (start with /)')
-    ap.add_argument('--out_dir', '-o', required=True, help='the output directory')
+    ap.add_argument('--csv', required=True, type=Path, help='path to the csv file')
+    ap.add_argument('--lst_img_dir', type=str, required=True, help='the image directory will be output in the label studio json. Either a gs path (start with gs://) or local absolute path (start with /)')
+    ap.add_argument('--out_dir', '-o', type=Path, required=True, help='the output directory')
     ap.add_argument('--pred', action='store_true', help='if the csv file is a prediction file')
     args = ap.parse_args()
     
@@ -193,10 +194,9 @@ if __name__ == '__main__':
         width = int(wh[0])
         height = int(wh[1])
 
-    if os.path.isfile(args.out_dir):
+    if args.out_dir.is_file():
         raise Exception('The output path should be a directory')
-    if not os.path.isdir(args.out_dir):
-        os.makedirs(args.out_dir)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
 
     shapes = load_csv(args.csv)[0]
     write_to_lst(shapes, args.out_dir, args.path_imgs, args.lst_img_dir, width, height, args.pred)
