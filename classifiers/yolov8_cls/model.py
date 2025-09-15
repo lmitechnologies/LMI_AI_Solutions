@@ -12,13 +12,17 @@ from ultralytics.data.augment import classify_transforms
 from ultralytics.utils.torch_utils import smart_inference_mode
 
 from yolov8_lmi.model import Yolov8
+from cls_core.classifier_registry import ClassifierRegistry
 
 
+@ClassifierRegistry.register(
+    metadata=dict(versions=['v0'], model_names=['yolov8'], tasks=["classification"], frameworks=['ultralytics'])
+)
 class Yolov8_cls(Yolov8):
     
     logger = logging.getLogger(__name__)
-    
-    def __init__(self, weights:str, device='gpu', data=None, fp16=False, imgsz=[224,224], crop_fraction=1) -> None:
+
+    def __init__(self, weights:str, device='gpu', data=None, fp16=False, imgsz=[224,224], **kwargs) -> None:
         """init the model
 
         Args:
@@ -42,6 +46,7 @@ class Yolov8_cls(Yolov8):
             )
         )
         self._legacy_transform_name = "ultralytics.yolo.data.augment.ToTensor"
+        self.image_size = kwargs.get('image_size', [224,224])
         
         
     @smart_inference_mode()
