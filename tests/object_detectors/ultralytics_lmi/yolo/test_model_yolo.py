@@ -19,7 +19,7 @@ logger.setLevel(logging.DEBUG)
 COCO_DIR = 'tests/assets/images/coco'
 DOTA8_DIR = 'tests/assets/images/dota8'
 DOTA_DIR = 'tests/assets/images/dota'
-OUT_DIR = 'tests/assets/validation'
+OUT_DIR = 'tests/outputs/od/ultralytics/yolo'
 
 OD_DET_MODELS = [
     "tests/assets/models/od/yolo11n.pt",
