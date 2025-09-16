@@ -14,7 +14,7 @@ logger.setLevel(logging.DEBUG)
 
 
 IMG_DIR = 'tests/assets/images/coco'
-OUT_DIR = 'tests/assets/validation/cls'
+OUT_DIR = 'tests/outputs/cls/yolov8'
 MODEL_SZ = 224
 
 CLS_MODELS = [

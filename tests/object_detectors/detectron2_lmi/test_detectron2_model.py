@@ -27,7 +27,7 @@ MASKRCNN_MODEL_CONFIG = "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
 COCO_CLASSMAP = 'tests/assets/models/od/detectron2/class_map.json'
 MODEL_PATH = 'tests/assets/models/od/detectron2/model.pt'
 SAMPLE_IMAGE = 'tests/assets/images/detectron2/sample_image.jpg'
-OUT_DIR = 'tests/assets/validation'
+OUT_DIR = 'tests/outputs/od/detectron2'
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -76,6 +76,7 @@ class TestDetectron2ModelPT:
         annotated_image = model.annotate_image(
            outputs, image, show_segments=True
         )
+        os.makedirs(OUT_DIR, exist_ok=True)
         cv2.imwrite(os.path.join(OUT_DIR, os.path.basename(SAMPLE_IMAGE)), annotated_image)
         
     def test_operators(self):

@@ -20,7 +20,7 @@ MODEL_DET = 'tests/assets/models/od/yolov8n.pt'
 MODEL_SEG = 'tests/assets/models/od/yolov8n-seg.pt'
 MODEL_OBB = 'tests/assets/models/od/yolov8n-obb.pt'
 MODEL_POSE = 'tests/assets/models/od/yolov8n-pose.pt'
-OUT_DIR = 'tests/assets/validation'
+OUT_DIR = 'tests/outputs/od/yolov8'
 
 
 @pytest.fixture

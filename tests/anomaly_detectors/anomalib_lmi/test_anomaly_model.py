@@ -14,7 +14,7 @@ logger.setLevel(logging.DEBUG)
 
 DATA_PATH = 'tests/assets/images/nvtec-ad'
 MODEL_PATH = 'tests/assets/models/ad/model_v0.pt'
-OUTPUT_PATH = 'tests/assets/validation/ad_v0'
+OUTPUT_PATH = 'tests/outputs/ad/anomalib_v0'
 
 
 
