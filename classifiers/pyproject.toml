@@ -9,4 +9,4 @@ description = "LMI AI Solutions classifiers"
 
 
 [tool.setuptools]
-packages = ["yolov8_cls"]
+packages = ["yolov8_cls", "cls_core"]
