@@ -179,6 +179,27 @@ class Yolo(ODBase):
         return conf2
     
     
+    def get_thresholds(self, conf:Union[float, dict], num_preds:int, classes:list):
+        """Get the thresholds for each class.
+
+        Args:
+            conf (float | dict): int or dictionary of <class: confidence level>.
+            num_preds (int): the number of predictions.
+            classes (list): the list of class names for each prediction.
+            
+        Returns:
+            (torch.Tensor): the thresholds for each prediction.
+        """
+        if isinstance(conf, float):
+            thres = np.array([conf]*num_preds)
+        elif isinstance(conf, dict):
+            # set to 1 if c is not in conf
+            thres = np.array([conf.get(c,1) for c in classes])
+        else:
+            raise TypeError(f'Confidence type {type(conf)} not supported')
+        return self.from_numpy(thres)
+    
+    
     @smart_inference_mode()
     def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
         """Postprocesses predictions and returns a list of Results objects.
@@ -210,7 +231,7 @@ class Yolo(ODBase):
         
         proto = None
         if predict_mask:
-            proto = preds[1][-1] if len(preds[1]) == 3 else preds[1]
+            proto = preds[1][-1] if isinstance(preds[1], tuple) else preds[1]
             preds = preds[0]
         
         conf2 = self.get_min_conf(conf)
@@ -229,12 +250,8 @@ class Yolo(ODBase):
             classes = np.array([self.model.names[c.item()] for c in clss])
             
             # filter based on conf
-            if isinstance(conf, float):
-                thres = np.array([conf]*len(clss))
-            if isinstance(conf, dict):
-                # set to 1 if c is not in conf
-                thres = np.array([conf.get(c,1) for c in classes])
-            M = confs > self.from_numpy(thres)
+            thres = self.get_thresholds(conf, len(clss), classes)
+            M = confs > thres
             
             if predict_mask:
                 masks = ops.process_mask_native(proto[i], pred[:, 6:], pred[:, :4], orig_img.shape[:2])
@@ -439,25 +456,16 @@ class YoloObb(Yolo):
             
             # makes sure to regularize the bounding boxes to xywhr format (range [0, pi/2])
             bboxs = ops.regularize_rboxes(torch.cat([pred[:, :4], pred[:, -1:]], dim=-1))
-            # scale the bounding boxes to original image size
             bboxs[:,:4] = ops.scale_boxes(img.shape[2:], bboxs[:, :4], orig_img.shape, xywh=True)
-
-            # get the confidence, class
             confs, clss = pred[:, 4], pred[:, 5]
-            # get the class names for the predictions
             classes = np.array([self.model.names[c.item()] for c in clss])
         
             # covert the boxes from xywhr xyxyxyxy format
             bboxs = ops.xywhr2xyxyxyxy(bboxs)
-            # filter based on confidence
-            if isinstance(conf, float):
-                thres = np.array([conf]*len(clss))
-            if isinstance(conf, dict):
-                # set to 1 if c is not in conf
-                thres = np.array([conf.get(c,1) for c in classes])
             
-            # filter based on confidence
-            M = confs > self.from_numpy(thres)
+            # filter based on conf
+            thres = self.get_thresholds(conf, len(clss), classes)
+            M = confs > thres
             
             # append the results boxes, scores, classes
             if return_tensor:
@@ -572,12 +580,8 @@ class YoloPose(Yolo):
             pred_kpts = ops.scale_coords(img.shape[2:], pred_kpts, orig_img.shape)
 
             # filter based on conf
-            if isinstance(conf, float):
-                thres = np.array([conf]*len(clss))
-            if isinstance(conf, dict):
-                # set to 1 if c is not in conf
-                thres = np.array([conf.get(c,1) for c in classes])
-            M = confs > self.from_numpy(thres)
+            thres = self.get_thresholds(conf, len(clss), classes)
+            M = confs > thres
             
             if return_tensor:
                 results['boxes'].append(xyxy[M])
