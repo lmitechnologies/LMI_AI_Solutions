@@ -7,7 +7,7 @@ import logging
 import json
 
 from ultralytics_lmi.yolo.model import Yolo, YoloPose, YoloObb
-from ultralytics.utils import ops
+from ultralytics.utils import ops, nms
 from dataset_utils.representations import Dataset, Annotation, AnnotationType, Box, Mask, Polygon, Point2d
 from dataset_utils.ops.dataset_resize import resize_annotated_image
 from dataset_utils.ops.dataset_pad import pad_annotated_image
@@ -142,11 +142,11 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
                 ious = box_iou(gt_boxes, pred_boxes)
             ious_kpt = None
             if model_type == 'KeypointDetection':
-                kpt_shape = model.model.kpt_shape
-                labels['points'] = labels['points'].reshape(-1, *kpt_shape) # (N, n_kp, 2)
                 n_gt_kpt = len(labels['points'])
                 n_pred_kpt = len(preds['points'])
                 if n_gt_kpt and n_pred_kpt:
+                    kpt_shape = model.model.kpt_shape
+                    labels['points'] = labels['points'].reshape(-1, *kpt_shape) # (N, n_kp, 2)
                     # add ones to the last dimension for visibility
                     gt_points = torch.from_numpy(labels['points']).to(model.device)
                     gt_points = torch.cat((gt_points, torch.ones_like(gt_points[..., :-1])), dim=-1) # (N, n_kp, 3)
@@ -159,16 +159,16 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
                     sigma = np.ones(nkpt) / nkpt
                     ious_kpt = kpt_iou(gt_points, pred_points, sigma=sigma, area=area)
         elif model_type == 'OrientedObjectDetection':
-            gt = labels['boxes'].astype(np.int32)
-            pred = preds['boxes'].astype(np.int32)
-            n_gt = len(gt)
-            n_pred = len(pred)
+            n_gt = len(labels['boxes'])
+            n_pred = len(preds['boxes'])
             if n_gt and n_pred:
+                gt = labels['boxes'].astype(np.int32)
                 gt = torch.from_numpy(gt).to(model.device)
                 gt2 = ops.xyxyxyxy2xywhr(gt)
+                pred = preds['boxes'].astype(np.int32)
                 pred = torch.from_numpy(pred).to(model.device)
                 pred2 = ops.xyxyxyxy2xywhr(pred)
-                ious = ops.batch_probiou(gt2, pred2)
+                ious = nms.batch_probiou(gt2, pred2)
                 
         # get iou matrixs
         ious_out = [] if ious is None else ious.cpu().numpy().tolist()
