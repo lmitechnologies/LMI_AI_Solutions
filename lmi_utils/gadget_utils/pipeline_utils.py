@@ -456,7 +456,7 @@ def revert_masks_to_origin(masks, operations:list):
 
 
 @torch.inference_mode()
-def revert_to_origin(pts, operations:list):
+def revert_to_origin(pts, operations:list, **kwargs):
     """
     revert the points to original image space.
     This func executes operations in the REVERSED order.
@@ -479,6 +479,7 @@ def revert_to_origin(pts, operations:list):
     if pts.ndim!=2 or (pts.shape[1]!=2 and pts.shape[1]!=4):
         raise Exception(f'pts should be Nx2 or Nx4, got shape: {pts.shape}')
     
+    verbose = kwargs.get('verbose', False)
     r,c = pts.shape
     for op in reversed(operations):
         if 'resize' in op:
@@ -512,8 +513,12 @@ def revert_to_origin(pts, operations:list):
                     pts[:,[1,3]] = pts[:,[3,1]]
         else:
             raise Exception(f'unsupported operation: {op}')
-            
-    pts = pts.round().clamp(min=0)
+        
+        if verbose:
+            logger.info(f'after {op}, pts: {pts}')
+    
+    if kwargs.get('round', True):
+        pts = pts.round().clamp(min=0)
     if is_tensor:
         return pts
     return pts.numpy() if is_numpy else pts.tolist()
