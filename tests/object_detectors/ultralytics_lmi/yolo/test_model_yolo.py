@@ -189,6 +189,12 @@ class Test_Yolo_Det:
             
     def test_warmup_api(self, model_det_api):
         self.test_warmup(model_det_api)
+        
+    def test_predict_empty(self, model_det):
+        operators = [{'resize': (640,640,1920,1080)}]
+        for model in model_det:
+            out,time_info = model.predict(np.zeros((640,640,3), dtype=np.uint8),configs=0.5,operators=operators)
+            assert len(out['boxes'])==0 and len(out['scores'])==0
             
     def test_predict(self, model_det, imgs_coco):
         i = 0
@@ -240,6 +246,12 @@ class Test_Yolo_Seg:
             
     def test_warmup_api(self, model_seg_api):
         self.test_warmup(model_seg_api)
+        
+    def test_predict_empty(self, model_seg):
+        operators = [{'resize': (640,640,1920,1080)}]
+        for model in model_seg:
+            out,time_info = model.predict(np.zeros((640,640,3), dtype=np.uint8),configs=0.5,operators=operators)
+            assert len(out['boxes'])==0 and len(out['masks'])==0 and len(out['segments'])==0 and len(out['scores'])==0
             
     def test_predict(self, model_seg, imgs_coco):
         i = 0
@@ -302,6 +314,12 @@ class Test_Yolo_Obb:
             
     def test_warmup_dota_api(self, model_obb_dota_api):
         self.test_warmup_dota(model_obb_dota_api)
+        
+    def test_predict_empty(self, model_obb_dota8, model_obb_dota):
+        operators = [{'resize': (640,640,1920,1080)}]
+        for model in model_obb_dota8+model_obb_dota:
+            out,time_info = model.predict(np.zeros((640,640,3), dtype=np.uint8),configs=0.5,operators=operators)
+            assert len(out['boxes'])==0 and len(out['scores'])==0
         
     def test_predict_dota8(self, model_obb_dota8, imgs_dota8):
         i = 0
@@ -378,6 +396,12 @@ class Test_Yolo_Pose:
             
     def test_warmup_api(self, model_pose_api):
         self.test_warmup(model_pose_api)
+        
+    def test_predict_empty(self, model_pose):
+        operators = [{'resize': (640,640,1920,1080)}]
+        for model in model_pose:
+            out,time_info = model.predict(np.zeros((640,640,3), dtype=np.uint8),configs=0.5,operators=operators)
+            assert len(out['boxes'])==0 and len(out['points'])==0 and len(out['scores'])==0
         
     def test_predict(self, model_pose, imgs_coco):
         i = 0

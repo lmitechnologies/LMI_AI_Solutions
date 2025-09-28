@@ -268,16 +268,14 @@ class Yolo(ODBase):
                 results['scores'].append(confs[M].cpu().numpy())
             results['classes'].append(classes[M.cpu().numpy()].tolist())
         return results
-    
-    
-    def _revert_coordinates(self, results: Dict, operators: List[Dict]) -> Dict:
-        """Reverts prediction coordinates to the original pre-transform space."""
-        if not operators or not len(results['boxes']):
-            return results
 
+
+    def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
+        """Reverts prediction coordinates to the original pre-transform space."""
         # Assumes single-image batch processing from predict()
-        results['boxes'] = pipeline_utils.revert_to_origin(results['boxes'], operators)
-        
+        if not operators:
+            return results
+        results['boxes'] = pipeline_utils.revert_to_origin(results['boxes'], operators, **kwargs)
         return results
 
 
@@ -340,7 +338,7 @@ class Yolo(ODBase):
             results_dict[k] = v[0]
         
         # Revert coordinates if needed
-        results_dict = self._revert_coordinates(results_dict, operators)
+        results_dict = self._revert_coordinates(results_dict, operators, **kwargs)
         time_info['postproc'] = time.time()-t0
         
         return results_dict, time_info
@@ -496,20 +494,18 @@ class YoloSeg(Yolo):
                 results['scores'].append(confs[M].cpu().numpy())
             results['classes'].append(classes[M.cpu().numpy()].tolist())
         return results
-    
-    
-    def _revert_coordinates(self, results: Dict, operators: List[Dict]) -> Dict:
-        """Reverts prediction coordinates to the original pre-transform space."""
-        if not operators or not len(results['boxes']):
-            return results
 
-        # Assumes single-image batch processing from predict()
-        results['boxes'] = pipeline_utils.revert_to_origin(results['boxes'], operators)
+
+    def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
+        """Reverts prediction coordinates to the original pre-transform space."""
+        if not operators:
+            return results
+        super()._revert_coordinates(results, operators, **kwargs)
         if 'masks' in results:
-            results['masks'] = pipeline_utils.revert_masks_to_origin(results['masks'], operators)
+            results['masks'] = pipeline_utils.revert_masks_to_origin(results['masks'], operators, **kwargs)
         if 'segments' in results:
-            results['segments'] = [pipeline_utils.revert_to_origin(seg, operators) for seg in results['segments']]
-        
+            results['segments'] = [pipeline_utils.revert_to_origin(seg, operators, **kwargs) for seg in results['segments']]
+
         return results
 
 
@@ -578,15 +574,14 @@ class YoloObb(Yolo):
                 results['scores'].append(confs[M].cpu().numpy())
             results['classes'].append(classes[M.cpu().numpy()].tolist())
         return results
-    
-    
-    def _revert_coordinates(self, results: Dict, operators: List[Dict]) -> Dict:
+
+
+    def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
         """Reverts OBB coordinates to the original pre-transform space."""
-        if not operators or not len(results['boxes']):
+        if not operators:
             return results
-        
         boxes = results['boxes']
-        reverted_boxes = [pipeline_utils.revert_to_origin(box, operators) for box in boxes]
+        reverted_boxes = [pipeline_utils.revert_to_origin(box, operators, **kwargs) for box in boxes]
         results['boxes'] = torch.stack(reverted_boxes) if isinstance(boxes, torch.Tensor) else np.array(reverted_boxes)
         return results
     
@@ -647,22 +642,20 @@ class YoloPose(Yolo):
                 results['points'].append(pred_kpts[M].cpu().numpy()) # [n_obj,n_kp,3]
             results['classes'].append(classes[M.cpu().numpy()].tolist())
         return results
-    
-    
-    def _revert_coordinates(self, results: Dict, operators: List[Dict]) -> Dict:
+
+
+    def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
         """Reverts pose coordinates to the original pre-transform space."""
         if not operators:
             return results
-
-        if results.get('boxes') is not None:
-             results['boxes'] = pipeline_utils.revert_to_origin(results['boxes'], operators)
+        super()._revert_coordinates(results, operators, **kwargs)
         if results.get('points') is not None:
             points = results['points']
             visibility = None
             if len(points) and points.shape[-1] == 3:
                 points = points[:,:,:-1]
                 visibility = points[:,:,-1]
-            reverted_points = [pipeline_utils.revert_to_origin(p, operators) for p in points] # each iter: [n_kp,2]
+            reverted_points = [pipeline_utils.revert_to_origin(p, operators, **kwargs) for p in points] # each iter: [n_kp,2]
             # add back the visibility if exists
             is_tensor = isinstance(points, torch.Tensor)
             if visibility is not None:
