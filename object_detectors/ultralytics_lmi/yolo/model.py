@@ -15,6 +15,7 @@ from ultralytics.utils.torch_utils import smart_inference_mode
 # import LMI AI Solutions modules
 from od_core.od_base import ODBase
 from od_core.object_detector_registry import ObjectDetectorRegistry
+from od_core.results import Results
 import gadget_utils.pipeline_utils as pipeline_utils
 
 
@@ -221,8 +222,60 @@ class Yolo(ODBase):
         return self.from_numpy(thres)
     
     
+    def construct_result(self, pred, img, orig_img, conf):
+        """Constructs the result from the model prediction.
+
+        Args:
+            pred (torch.Tensor): Prediction from the model.
+            img (torch.Tensor): the preprocessed image
+            orig_img (np.ndarray | torch.Tensor): Original image. If this is a tensor, this function will return tensor results.
+        """
+        pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
+        xyxy,confs,clss = pred[:, :4],pred[:, 4],pred[:, 5]
+        classes = np.array([self.model.names[c.item()] for c in clss])
+        
+        # filter based on conf
+        M = confs > self._get_thresholds(conf, len(clss), classes)
+        return Results(xyxy[M], confs[M], classes[M.cpu().numpy()].tolist()), M
+    
+    
+    def construct_results(self, preds, img, orig_imgs, conf):
+        """Constructs the results from the model predictions.
+
+        Args:
+            preds (torch.Tensor | list): Predictions from the model.
+            img (torch.Tensor): the preprocessed image
+            orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images. If this is a tensor or a list of tensors, this function will return tensor results.
+        """ 
+        results = collections.defaultdict(list)
+        for i, pred in enumerate(preds):
+            orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
+            use_tensor = isinstance(orig_img, torch.Tensor)
+            if len(pred):
+                result,_ = self.construct_result(pred, img, orig_img, conf)
+                if not use_tensor:
+                    result = result.cpu().numpy()
+                for k in result._all_keys:
+                    v = getattr(result, k)
+                    if v is not None:
+                        results[k].append(v)
+        return results
+    
+    
+    def run_nms(self, preds, conf: float, iou=0.45, agnostic=False, max_det=300):
+        """runs non-maximum suppression on inference results
+
+        Args:
+            preds (torch.Tensor | list): Predictions from the model.
+            conf (float | dict): int or dictionary of <class: confidence level>.
+            iou (float): The IoU threshold below which boxes will be filtered out during NMS.
+            max_det (int): The maximum number of detections to return. defaults to 300.
+        """
+        return nms.non_max_suppression(preds,conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
+    
+    
     @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, **kwargs):
         """Postprocesses predictions and returns a list of Results objects.
         
         Args:
@@ -242,32 +295,8 @@ class Yolo(ODBase):
                     the shape of segments: [ (n1,2), (n2,2), ...]
         """
         min_conf = self._get_min_conf(conf)
-        preds2 = nms.non_max_suppression(preds,min_conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
-            
-        results = collections.defaultdict(list)
-        for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, mask1, mask2 ...]
-            orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
-            return_tensor = isinstance(orig_img, torch.Tensor)
-            
-            if not len(pred):  # skip empty boxes
-                continue
-            
-            pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
-            xyxy,confs,clss = pred[:, :4],pred[:, 4],pred[:, 5]
-            classes = np.array([self.model.names[c.item()] for c in clss])
-            
-            # filter based on conf
-            thres = self._get_thresholds(conf, len(clss), classes)
-            M = confs > thres
-                    
-            if return_tensor:
-                results['boxes'].append(xyxy[M])
-                results['scores'].append(confs[M])
-            else:
-                results['boxes'].append(xyxy[M].cpu().numpy())
-                results['scores'].append(confs[M].cpu().numpy())
-            results['classes'].append(classes[M.cpu().numpy()].tolist())
-        return results
+        preds2 = self.run_nms(preds, min_conf, iou, agnostic, max_det)
+        return self.construct_results(preds2, img, orig_imgs, conf, **kwargs)
 
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
@@ -280,7 +309,7 @@ class Yolo(ODBase):
 
 
     @smart_inference_mode()
-    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, return_segments=True, **kwargs):
+    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, **kwargs):
         """run Yolo object detection inference. It runs the preprocess(), forward(), and postprocess() in sequence.
         It converts the results to the original coordinates space if the operators are provided.
         
@@ -323,8 +352,9 @@ class Yolo(ODBase):
             'iou': iou,
             'agnostic': agnostic,
             'max_det': max_det,
-            'return_segments': return_segments
         }
+        if 'return_segments' in kwargs:
+            post_args['return_segments'] = kwargs['return_segments']
         results = self.postprocess(pred,im,image,**post_args)
         results_dict = collections.defaultdict(list)
         
@@ -415,7 +445,7 @@ class YoloSeg(Yolo):
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.logger = logging.getLogger(__name__)
         
-    @lru_cache(maxsize=1)
+        
     def to_segments(self, masks: torch.Tensor, img_shape: tuple) -> List[np.ndarray]:
         """Convert masks to segments.
 
@@ -429,73 +459,64 @@ class YoloSeg(Yolo):
         segments = [ops.scale_coords(masks.shape[1:], x, img_shape, normalize=False) 
                     for x in ops.masks2segments(masks)]
         return segments
-        
-    @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
-        """Postprocesses predictions and returns a list of Results objects.
-        
+    
+    
+    def construct_result(self, pred, img, orig_img, conf, proto, return_segments=True):
+        """Constructs a Results object from the model prediction.
+
+        Args:
+            pred (torch.Tensor): Prediction from the model.
+            img (torch.Tensor): the preprocessed image
+            orig_img (np.ndarray | torch.Tensor): Original image.
+            conf (float): Confidence threshold for filtering predictions.
+            proto (torch.Tensor): The prototype tensor for the masks.
+            return_segments (bool): If True, return the segments of the masks.
+        """
+        masks = ops.process_mask_native(proto, pred[:, 6:], pred[:, :4], orig_img.shape[:2])
+        if masks is not None:
+            keep = masks.sum((-2, -1)) > 0  # only keep predictions with masks
+            pred, masks = pred[keep], masks[keep]
+            
+        results, M = super().construct_result(pred, img, orig_img, conf)
+        if masks is not None:
+            results.masks = masks[M]
+            if return_segments:
+                segments = self.to_segments(masks[M], orig_img.shape) # list of [ (n1,2), (n2,2), ... ]
+                results.segments = [self.from_numpy(x) for x in segments]
+        return results, M
+    
+    
+    def construct_results(self, preds, img, orig_imgs, conf, proto, return_segments=True):
+        """Constructs the results from the model predictions.
+
         Args:
             preds (torch.Tensor | list): Predictions from the model.
             img (torch.Tensor): the preprocessed image
             orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images. If this is a tensor or a list of tensors, this function will return tensor results.
-            conf (float | dict): int or dictionary of <class: confidence level>.
-            iou (float): The IoU threshold below which boxes will be filtered out during NMS.
-            max_det (int): The maximum number of detections to return. defaults to 300.
-            agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
-            return_segments(bool): If True, return the segments of the masks.
-        Rreturns:
-            (dict): the dictionary contains several keys: boxes, scores, classes, masks, and (masks, segments if use a segmentation model).
-                    the shape of boxes is (B, N, 4), where B is the batch size and N is the number of detected objects.
-                    the shape of classes and scores are both (B, N).
-                    the shape of masks: (B, H, W, 3), where H and W are the height and width of the input image.
-                    the shape of segments: [ (n1,2), (n2,2), ...]
-        """
-        
-        proto = preds[1][-1] if isinstance(preds[1], tuple) else preds[1]
-        preds = preds[0]
-        
-        min_conf = self._get_min_conf(conf)
-        preds2 = nms.non_max_suppression(preds,min_conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
-            
+            proto (torch.Tensor): The prototype tensor for the masks.
+            return_segments (bool): If True, return the segments of the masks.
+        """ 
         results = collections.defaultdict(list)
-        for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, mask1, mask2 ...]
+        for i, pred in enumerate(preds):
             orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
-            return_tensor = isinstance(orig_img, torch.Tensor)
-            
-            if not len(pred):  # skip empty boxes
-                continue
-            
-            masks = ops.process_mask_native(proto[i], pred[:, 6:], pred[:, :4], orig_img.shape[:2])
-            if masks is not None:
-                keep = masks.sum((-2, -1)) > 0  # only keep predictions with masks
-                pred, masks = pred[keep], masks[keep]
-                
-            pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
-            xyxy,confs,clss = pred[:, :4],pred[:, 4],pred[:, 5]
-            classes = np.array([self.model.names[c.item()] for c in clss])
-            
-            # filter based on conf
-            thres = self._get_thresholds(conf, len(clss), classes)
-            M = confs > thres
-            
-            if return_segments:
-                segments = self.to_segments(masks[M], orig_img.shape)
-                if return_tensor:
-                    segments = [self.from_numpy(x) for x in segments]   # list of [ (n1,2), (n2,2), ... ]
-                results['segments'].append(segments)
-                    
-            if return_tensor:
-                results['masks'].append(masks[M])
-                results['boxes'].append(xyxy[M])
-                results['scores'].append(confs[M])
-            else:
-                results['masks'].append(masks[M].cpu().numpy())
-                results['boxes'].append(xyxy[M].cpu().numpy())
-                results['scores'].append(confs[M].cpu().numpy())
-            results['classes'].append(classes[M.cpu().numpy()].tolist())
+            use_tensor = isinstance(orig_img, torch.Tensor)
+            if len(pred):
+                result,_ = self.construct_result(pred, img, orig_img, conf, proto[i], return_segments=return_segments)
+                if not use_tensor:
+                    result = result.cpu().numpy()
+                for k in result._all_keys:
+                    v = getattr(result, k)
+                    if v is not None:
+                        results[k].append(v)
         return results
 
 
+    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
+        """Postprocesses predictions and returns a list of Results objects."""
+        proto = preds[1][-1] if isinstance(preds[1], tuple) else preds[1]
+        return super().postprocess(preds[0], img, orig_imgs, conf, iou=iou, agnostic=agnostic, max_det=max_det, proto=proto, return_segments=return_segments)
+    
+    
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
         """Reverts prediction coordinates to the original pre-transform space."""
         if not operators:
@@ -522,58 +543,38 @@ class YoloObb(Yolo):
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.logger = logging.getLogger(__name__)
         
-    @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, **kwargs):
-        """Postprocesses predictions and returns a list of Results objects.
-        
-        Args:
-            preds (torch.Tensor | list): Predictions from the model.
-            img (torch.Tensor): the preprocessed image
-            orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images. If this is a tensor or a list of tensors, this function will return tensor results.
-            conf_thres (float | dict): int or dictionary of <class: confidence level>.
-            iou_thres (float): The IoU threshold below which boxes will be filtered out during NMS.
-            max_det (int): The maximum number of detections to return. defaults to 300.
-            agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
-        Rreturns:
-            (dict): the dictionary contains several keys: boxes, scores, classes, masks, and (masks, segments if use a segmentation model).
-                    the shape of boxes is (B, N, 4), where B is the batch size and N is the number of detected objects.
-                    the shape of classes and scores are both (B, N).
-                    the shape of masks: (B, H, W, 3), where H and W are the height and width of the input image.
+    
+    def run_nms(self, preds, conf:float, iou=0.45, agnostic=False, max_det=300):
         """
-        # run non-max suppression in xywhr format
-        min_conf = self._get_min_conf(conf)
-        preds2 = nms.non_max_suppression(preds,min_conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names), rotated=True)
+        Postprocesses predictions and returns a list of Results objects.
+        """
+        return nms.non_max_suppression(preds,conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names), rotated=True)
         
-        results = collections.defaultdict(list)
-        for i, pred in enumerate(preds2):
-            orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
-            return_tensor = isinstance(orig_img, torch.Tensor)
-            
-            if not len(pred):  # skip empty boxes
-                continue
-            
-            # makes sure to regularize the bounding boxes to xywhr format (range [0, pi/2])
-            bboxs = ops.regularize_rboxes(torch.cat([pred[:, :4], pred[:, -1:]], dim=-1))
-            bboxs[:,:4] = ops.scale_boxes(img.shape[2:], bboxs[:, :4], orig_img.shape, xywh=True)
-            confs, clss = pred[:, 4], pred[:, 5]
-            classes = np.array([self.model.names[c.item()] for c in clss])
+    
+    def construct_result(self, pred, img, orig_img, conf):
+        """Constructs the result from the model prediction.
+
+        Args:
+            pred (torch.Tensor): Prediction from the model.
+            img (torch.Tensor): the preprocessed image
+            orig_img (torch.Tensor): the original image
+            conf (float): the confidence score
+
+        Returns:
+            dict: the constructed result dictionary
+        """
+        # makes sure to regularize the bounding boxes to xywhr format (range [0, pi/2])
+        bboxs = ops.regularize_rboxes(torch.cat([pred[:, :4], pred[:, -1:]], dim=-1))
+        bboxs[:,:4] = ops.scale_boxes(img.shape[2:], bboxs[:, :4], orig_img.shape, xywh=True)
+        confs, clss = pred[:, 4], pred[:, 5]
+        classes = np.array([self.model.names[c.item()] for c in clss])
+    
+        # covert the boxes from xywhr xyxyxyxy format
+        bboxs = ops.xywhr2xyxyxyxy(bboxs)   # [n_obj, 4, 2]
         
-            # covert the boxes from xywhr xyxyxyxy format
-            bboxs = ops.xywhr2xyxyxyxy(bboxs)
-            
-            # filter based on conf
-            thres = self._get_thresholds(conf, len(clss), classes)
-            M = confs > thres
-            
-            # append the results boxes, scores, classes
-            if return_tensor:
-                results['boxes'].append(bboxs[M])   # [n_obj, 4, 2]
-                results['scores'].append(confs[M])
-            else:
-                results['boxes'].append(bboxs[M].cpu().numpy())
-                results['scores'].append(confs[M].cpu().numpy())
-            results['classes'].append(classes[M.cpu().numpy()].tolist())
-        return results
+        # filter based on conf
+        M = confs > self._get_thresholds(conf, len(clss), classes)
+        return Results(bboxs[M], confs[M], classes[M.cpu().numpy()].tolist()), M
 
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
@@ -598,50 +599,22 @@ class YoloPose(Yolo):
     def __init__(self, model_path:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.logger = logging.getLogger(__name__)
-        
-    @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, **kwargs):
-        """Postprocesses predictions and returns a list of Results objects.
-        
-        Args:
-            preds (torch.Tensor | list): Predictions from the model.
-            img (torch.Tensor): the preprocessed image
-            orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images. If this is a tensor or a list of tensors, this function will return tensor results.
-            conf_thres (float | dict): int or dictionary of <class: confidence>
-            iou (float): The IoU threshold below which boxes will be filtered out during NMS.
-            max_det (int): The maximum number of detections to return. defaults to 300.
-        """
-        min_conf = self._get_min_conf(conf)
-        preds2 = nms.non_max_suppression(preds,min_conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
-            
-        results = collections.defaultdict(list)
-        for i, pred in enumerate(preds2): # pred2: [x1, y1, x2, y2, conf, cls, ...]
-            orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
-            return_tensor = isinstance(orig_img, torch.Tensor)
-            
-            if not len(pred):  # skip empty boxes
-                continue
-            
-            pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
-            xyxy,confs,clss = pred[:, :4],pred[:, 4],pred[:, 5]
-            classes = np.array([self.model.names[c.item()] for c in clss])
-            pred_kpts = pred[:, 6:].view(len(pred), *self.model.kpt_shape) if len(pred) else pred[:, 6:]
-            pred_kpts = ops.scale_coords(img.shape[2:], pred_kpts, orig_img.shape)
 
-            # filter based on conf
-            thres = self._get_thresholds(conf, len(clss), classes)
-            M = confs > thres
-            
-            if return_tensor:
-                results['boxes'].append(xyxy[M])
-                results['scores'].append(confs[M])
-                results['points'].append(pred_kpts[M])
-            else:
-                results['boxes'].append(xyxy[M].cpu().numpy())
-                results['scores'].append(confs[M].cpu().numpy())
-                results['points'].append(pred_kpts[M].cpu().numpy()) # [n_obj,n_kp,3]
-            results['classes'].append(classes[M.cpu().numpy()].tolist())
-        return results
+
+    def construct_result(self, pred, img, orig_img, conf):
+        """Constructs a Results object from the model prediction.
+
+        Args:
+            pred (torch.Tensor): Prediction from the model.
+            img (torch.Tensor): the preprocessed image
+            orig_img (np.ndarray | torch.Tensor): Original image.
+            conf (float): Confidence threshold for filtering predictions.
+        """
+        results,M = super().construct_result(pred, img, orig_img, conf)
+        pred_kpts = pred[:, 6:].view(len(pred), *self.model.kpt_shape) if len(pred) else pred[:, 6:]
+        pred_kpts = ops.scale_coords(img.shape[2:], pred_kpts, orig_img.shape)
+        results.points = pred_kpts[M]   # [n_obj,n_kp,3]
+        return results,M
 
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:

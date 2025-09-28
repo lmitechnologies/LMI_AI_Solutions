@@ -12,7 +12,7 @@ class Results:
         scores: Optional[torch.Tensor] = None,
         classes: Optional[list[str]] = None,
         masks: Optional[torch.Tensor] = None,
-        segments: Optional[List[np.ndarray]] = None,
+        segments: Optional[List[torch.Tensor]] = None,
         points: Optional[torch.Tensor] = None
     ):
         self.boxes = boxes
@@ -21,12 +21,12 @@ class Results:
         self.masks = masks
         self.segments = segments
         self.points = points
-        self._keys = "boxes", "scores", "masks", "points"
-        self._all_keys = self._keys + ("segments", "classes")
+        self._keys = "boxes", "scores", "masks", "points", "segments"
+        self._all_keys = self._keys + ("classes",)
 
 
     def new(self):
-        return Results(self.names)
+        return Results(classes=self.classes)
     
     
     def _apply(self, fn:str, *args, **kwargs):
@@ -36,6 +36,8 @@ class Results:
             v = getattr(self, k)
             if isinstance(v, torch.Tensor):
                 setattr(r, k, getattr(v, fn)(*args, **kwargs))
+            elif k=="segments" and v is not None:
+                setattr(r, k, [getattr(s, fn)(*args, **kwargs) for s in v])
         return r
     
     
@@ -58,8 +60,4 @@ class Results:
         """Move all tensors to GPU."""
         return self._apply("cuda")
     
-    
-    def to_dict(self):
-        """Convert results to a dictionary."""
-        return {k: getattr(self, k) for k in self._all_keys if getattr(self, k) is not None}
         
