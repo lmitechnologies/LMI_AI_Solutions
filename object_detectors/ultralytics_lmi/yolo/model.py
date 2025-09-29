@@ -302,11 +302,12 @@ class Yolo(ODBase):
 
     @smart_inference_mode()
     def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, **kwargs):
-        """run Yolo object detection inference. It runs the preprocess(), forward(), and postprocess() in sequence.
-        It converts the results to the original coordinates space if the operators are provided.
+        """run Yolo inference, where it runs the preprocess(), forward(), and postprocess() in sequence.  
+        It converts the results to the original coordinates space if the operators are provided.  
+        Return tensors if the input image is a tensor, otherwise return numpy arrays.
         
         Args:
-            model (Yolo): the object detection model loaded memory
+            model (Yolo | YoloSeg | YoloPose | YoloObb): one yolo model
             image (np.ndarry | tensor): the input image
             configs (dict | float): a float or a dictionary of the confidence thresholds for each class, e.g., {'classA':0.5, 'classB':0.6}
             operators (list): a list of dictionaries of the image preprocess operators, such as {'resize':[resized_w, resized_h, orig_w, orig_h]}, {'pad':[pad_left, pad_right, pad_top, pad_bot]}
@@ -369,7 +370,7 @@ class Yolo(ODBase):
     @staticmethod
     @smart_inference_mode()
     def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False):
-        """annotate the object dectector results on the image. If colormap is None, it will use the random colors.
+        """annotate model results on the image. If colormap is None, it will use the random colors.
 
         Args:
             results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
