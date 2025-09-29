@@ -239,6 +239,8 @@ class Test_Yolo_Seg:
                     assert np.array_equal(b1, b2)
                 for m1,m2 in zip(out['masks'], ults_out.masks.data):
                     assert np.array_equal(m1, m2)
+                for s1,s2 in zip(out['segments'], results[0].masks.xy):
+                    assert np.array_equal(s1, s2)
     
     def test_warmup(self, model_seg):
         for model in model_seg:
