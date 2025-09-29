@@ -495,6 +495,7 @@ class YoloSeg(Yolo):
                 for pred, orig_img, proto in zip(preds, orig_imgs, protos)]
 
 
+    @smart_inference_mode()
     def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
         """Postprocesses predictions and returns a list of Results objects."""
         protos = preds[1][-1] if isinstance(preds[1], tuple) else preds[1]
