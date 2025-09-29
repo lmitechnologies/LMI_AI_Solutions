@@ -6,7 +6,7 @@ from ultralytics.utils.metrics import box_iou, mask_iou, kpt_iou
 import logging
 import json
 
-from ultralytics_lmi.yolo.model import Yolo, YoloPose, YoloObb
+from ultralytics_lmi.yolo.model import Yolo, YoloSeg, YoloPose, YoloObb
 from ultralytics.utils import ops, nms
 from dataset_utils.representations import Dataset, Annotation, AnnotationType, Box, Mask, Polygon, Point2d
 from dataset_utils.ops.dataset_resize import resize_annotated_image
@@ -83,8 +83,10 @@ def write_json(model_path, model_type, config_path, image_dir, label_path, out_p
         
     """
     # load the model by model type
-    if model_type in ['ObjectDetection','InstanceSegmentation']:
+    if model_type == 'ObjectDetection':
         model = Yolo(model_path)
+    elif model_type == 'InstanceSegmentation':
+        model = YoloSeg(model_path)
     elif model_type == 'OrientedObjectDetection':
         model = YoloObb(model_path)
     elif model_type == 'KeypointDetection':
