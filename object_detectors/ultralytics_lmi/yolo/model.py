@@ -183,7 +183,7 @@ class Yolo(ODBase):
         """Get the minimum confidence level for non-maximum suppression.
 
         Args:
-            conf (float | dict): int or dictionary of <class: confidence level>.
+            conf (float | dict): float or dictionary of <class: confidence level>.
         """
         if isinstance(conf, float):
             min_conf = conf
@@ -205,7 +205,7 @@ class Yolo(ODBase):
         """Get the thresholds for each class.
 
         Args:
-            conf (float | dict): int or dictionary of <class: confidence level>.
+            conf (float | dict): float or dictionary of <class: confidence level>.
             num_preds (int): the number of predictions.
             classes (list): the list of class names for each prediction.
             
@@ -229,6 +229,7 @@ class Yolo(ODBase):
             pred (torch.Tensor): Prediction from the model.
             img (torch.Tensor): the preprocessed image
             orig_img (np.ndarray | torch.Tensor): Original image. If this is a tensor, this function will return tensor results.
+            conf (float | dict): float or dictionary of <class: confidence level>.
         """
         pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
         xyxy,confs,clss = pred[:, :4],pred[:, 4],pred[:, 5]
@@ -243,34 +244,16 @@ class Yolo(ODBase):
         """Constructs the results from the model predictions.
 
         Args:
-            preds (torch.Tensor | list): Predictions from the model.
-            img (torch.Tensor): the preprocessed image
-            orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images. If this is a tensor or a list of tensors, this function will return tensor results.
+            preds (list): Predictions from the model.
+            img (torch.Tensor): the preprocessed image(s)
+            orig_imgs (list): list of original images. If this is a list of tensors, this function will return tensor results.
+            conf (float | dict): float or dictionary of <class: confidence level>.
         """ 
-        results = collections.defaultdict(list)
-        for i, pred in enumerate(preds):
-            orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
-            use_tensor = isinstance(orig_img, torch.Tensor)
-            if len(pred):
-                result,_ = self.construct_result(pred, img, orig_img, conf)
-                if not use_tensor:
-                    result = result.cpu().numpy()
-                for k in result._all_keys:
-                    v = getattr(result, k)
-                    if v is not None:
-                        results[k].append(v)
-        return results
+        return [self.construct_result(pred, img, orig_img, conf)[0] for pred, orig_img in zip(preds, orig_imgs)]
     
     
     def run_nms(self, preds, conf: float, iou=0.45, agnostic=False, max_det=300):
-        """runs non-maximum suppression on inference results
-
-        Args:
-            preds (torch.Tensor | list): Predictions from the model.
-            conf (float | dict): int or dictionary of <class: confidence level>.
-            iou (float): The IoU threshold below which boxes will be filtered out during NMS.
-            max_det (int): The maximum number of detections to return. defaults to 300.
-        """
+        """runs non-maximum suppression on inference results"""
         return nms.non_max_suppression(preds,conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
     
     
@@ -280,14 +263,14 @@ class Yolo(ODBase):
         
         Args:
             preds (torch.Tensor | list): Predictions from the model.
-            img (torch.Tensor): the preprocessed image
+            img (torch.Tensor): the preprocessed image(s)
             orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images. If this is a tensor or a list of tensors, this function will return tensor results.
-            conf (float | dict): int or dictionary of <class: confidence level>.
+            conf (float | dict): float or dictionary of <class: confidence level>.
             iou (float): The IoU threshold below which boxes will be filtered out during NMS.
             max_det (int): The maximum number of detections to return. defaults to 300.
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
-            return_segments(bool): If True, return the segments of the masks.
-        Rreturns:
+            kwargs (dict): Additional keyword arguments, such as return_segments, proto.
+        Returns:
             (dict): the dictionary contains several keys: boxes, scores, classes, masks, and (masks, segments if use a segmentation model).
                     the shape of boxes is (B, N, 4), where B is the batch size and N is the number of detected objects.
                     the shape of classes and scores are both (B, N).
@@ -296,7 +279,16 @@ class Yolo(ODBase):
         """
         min_conf = self._get_min_conf(conf)
         preds2 = self.run_nms(preds, min_conf, iou, agnostic, max_det)
-        return self.construct_results(preds2, img, orig_imgs, conf, **kwargs)
+        orig_imgs = orig_imgs if isinstance(orig_imgs, list) else [orig_imgs]
+        list_results = self.construct_results(preds2, img, orig_imgs, conf, **kwargs)
+        # gather final results
+        results = collections.defaultdict(list)
+        for result, orig_img in zip(list_results, orig_imgs):
+            use_tensor = isinstance(orig_img, torch.Tensor)
+            result = result.to_dict(return_tensor=use_tensor)
+            for k,v in result.items():
+                results[k].append(v)
+        return results
 
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
@@ -321,7 +313,7 @@ class Yolo(ODBase):
             iou (float): the iou threshold for non-maximum suppression. defaults to 0.4
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             max_det (int): The maximum number of detections to return. defaults to 300.
-            return_segments(bool): If True, return the segments of the masks. Defaults to True.
+            kwargs (dict): Additional keyword arguments, such as return_segments.
         Returns:
             list of [results, time info]
             results (dict): a dictionary of the results, e.g., {
@@ -353,7 +345,7 @@ class Yolo(ODBase):
             'agnostic': agnostic,
             'max_det': max_det,
         }
-        if 'return_segments' in kwargs:
+        if kwargs.get('return_segments'):
             post_args['return_segments'] = kwargs['return_segments']
         results = self.postprocess(pred,im,image,**post_args)
         results_dict = collections.defaultdict(list)
@@ -468,12 +460,14 @@ class YoloSeg(Yolo):
             pred (torch.Tensor): Prediction from the model.
             img (torch.Tensor): the preprocessed image
             orig_img (np.ndarray | torch.Tensor): Original image.
-            conf (float): Confidence threshold for filtering predictions.
+            conf (float | dict): Confidence threshold for filtering predictions.
             proto (torch.Tensor): The prototype tensor for the masks.
             return_segments (bool): If True, return the segments of the masks.
         """
-        masks = ops.process_mask_native(proto, pred[:, 6:], pred[:, :4], orig_img.shape[:2])
-        if masks is not None:
+        if pred.shape[0] == 0:
+            masks = None
+        else:
+            masks = ops.process_mask_native(proto, pred[:, 6:], pred[:, :4], orig_img.shape[:2])
             keep = masks.sum((-2, -1)) > 0  # only keep predictions with masks
             pred, masks = pred[keep], masks[keep]
             
@@ -486,35 +480,25 @@ class YoloSeg(Yolo):
         return results, M
     
     
-    def construct_results(self, preds, img, orig_imgs, conf, proto, return_segments=True):
+    def construct_results(self, preds, img, orig_imgs, conf, protos, return_segments=True):
         """Constructs the results from the model predictions.
 
         Args:
             preds (torch.Tensor | list): Predictions from the model.
-            img (torch.Tensor): the preprocessed image
-            orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images. If this is a tensor or a list of tensors, this function will return tensor results.
+            img (torch.Tensor): the preprocessed image(s)
+            orig_imgs (list): A list of original images. If this is a list of tensors, this function will return tensor results.
+            conf (float | dict): float or dictionary of <class: confidence level>.
             proto (torch.Tensor): The prototype tensor for the masks.
             return_segments (bool): If True, return the segments of the masks.
         """ 
-        results = collections.defaultdict(list)
-        for i, pred in enumerate(preds):
-            orig_img = orig_imgs[i] if isinstance(orig_imgs, list) else orig_imgs
-            use_tensor = isinstance(orig_img, torch.Tensor)
-            if len(pred):
-                result,_ = self.construct_result(pred, img, orig_img, conf, proto[i], return_segments=return_segments)
-                if not use_tensor:
-                    result = result.cpu().numpy()
-                for k in result._all_keys:
-                    v = getattr(result, k)
-                    if v is not None:
-                        results[k].append(v)
-        return results
+        return [self.construct_result(pred, img, orig_img, conf, proto=proto, return_segments=return_segments)[0]
+                for pred, orig_img, proto in zip(preds, orig_imgs, protos)]
 
 
     def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
         """Postprocesses predictions and returns a list of Results objects."""
-        proto = preds[1][-1] if isinstance(preds[1], tuple) else preds[1]
-        return super().postprocess(preds[0], img, orig_imgs, conf, iou=iou, agnostic=agnostic, max_det=max_det, proto=proto, return_segments=return_segments)
+        protos = preds[1][-1] if isinstance(preds[1], tuple) else preds[1]
+        return super().postprocess(preds[0], img, orig_imgs, conf, iou=iou, agnostic=agnostic, max_det=max_det, protos=protos, return_segments=return_segments)
     
     
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
@@ -545,9 +529,7 @@ class YoloObb(Yolo):
         
     
     def run_nms(self, preds, conf:float, iou=0.45, agnostic=False, max_det=300):
-        """
-        Postprocesses predictions and returns a list of Results objects.
-        """
+        """Postprocesses predictions and returns a list of Results objects."""
         return nms.non_max_suppression(preds,conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names), rotated=True)
         
     
@@ -558,7 +540,7 @@ class YoloObb(Yolo):
             pred (torch.Tensor): Prediction from the model.
             img (torch.Tensor): the preprocessed image
             orig_img (torch.Tensor): the original image
-            conf (float): the confidence score
+            conf (float | dict): float or dictionary of <class: confidence level>.
 
         Returns:
             dict: the constructed result dictionary
@@ -608,7 +590,7 @@ class YoloPose(Yolo):
             pred (torch.Tensor): Prediction from the model.
             img (torch.Tensor): the preprocessed image
             orig_img (np.ndarray | torch.Tensor): Original image.
-            conf (float): Confidence threshold for filtering predictions.
+            conf (float | dict): Confidence threshold for filtering predictions.
         """
         results,M = super().construct_result(pred, img, orig_img, conf)
         pred_kpts = pred[:, 6:].view(len(pred), *self.model.kpt_shape) if len(pred) else pred[:, 6:]

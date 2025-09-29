@@ -1,6 +1,10 @@
 from typing import List, Optional, Union, Dict
 import numpy as np
 import torch
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class Results:
     """Object detection results for a single image.
@@ -61,3 +65,15 @@ class Results:
         return self._apply("cuda")
     
         
+    def to_dict(self, return_tensor:bool) -> Dict[str, Union[torch.Tensor, List[torch.Tensor]]]:
+        """Convert results to a dictionary.  
+        Return tensors or numpy arrays based on `return_tensor`.
+        """
+        dt = {}
+        r = self if return_tensor else self.cpu().numpy()
+        for k in r._all_keys:
+            v = getattr(r, k)
+            if v is not None and len(v) > 0:
+                dt[k] = v
+        return dt
+    
