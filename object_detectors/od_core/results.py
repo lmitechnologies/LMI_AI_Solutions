@@ -14,7 +14,7 @@ class Results:
         self, 
         boxes: Optional[torch.Tensor] = None,
         scores: Optional[torch.Tensor] = None,
-        classes: Optional[list[str]] = None,
+        classes: Optional[List[str]] = None,
         masks: Optional[torch.Tensor] = None,
         segments: Optional[List[torch.Tensor]] = None,
         points: Optional[torch.Tensor] = None
