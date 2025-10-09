@@ -442,6 +442,7 @@ def revert_mask_to_origin(mask, operations:list):
     return mask
 
 
+@torch.inference_mode()
 def revert_masks_to_origin(masks, operations:list):
     results = []
     if len(masks)==0:
