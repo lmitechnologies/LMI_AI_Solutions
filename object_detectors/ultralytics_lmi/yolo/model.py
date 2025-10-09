@@ -1,4 +1,3 @@
-from functools import lru_cache
 import cv2
 import numpy as np
 import torch
@@ -252,7 +251,7 @@ class Yolo(ODBase):
         return [self.construct_result(pred, img, orig_img, conf)[0] for pred, orig_img in zip(preds, orig_imgs)]
     
     
-    def run_nms(self, preds, conf: float, iou=0.45, agnostic=False, max_det=300):
+    def _run_nms(self, preds, conf: float, iou=0.45, agnostic=False, max_det=300):
         """runs non-maximum suppression on inference results"""
         return nms.non_max_suppression(preds,conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
     
@@ -278,7 +277,7 @@ class Yolo(ODBase):
                     the shape of segments: [ (n1,2), (n2,2), ...]
         """
         min_conf = self._get_min_conf(conf)
-        preds2 = self.run_nms(preds, min_conf, iou, agnostic, max_det)
+        preds2 = self._run_nms(preds, min_conf, iou, agnostic, max_det)
         orig_imgs = orig_imgs if isinstance(orig_imgs, list) else [orig_imgs]
         list_results = self.construct_results(preds2, img, orig_imgs, conf, **kwargs)
         # gather final results
@@ -530,7 +529,7 @@ class YoloObb(Yolo):
         self.logger = logging.getLogger(__name__)
         
     
-    def run_nms(self, preds, conf:float, iou=0.45, agnostic=False, max_det=300):
+    def _run_nms(self, preds, conf:float, iou=0.45, agnostic=False, max_det=300):
         """Postprocesses predictions and returns a list of Results objects."""
         return nms.non_max_suppression(preds,conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names), rotated=True)
         
