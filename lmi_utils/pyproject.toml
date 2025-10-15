@@ -7,17 +7,29 @@ name = "lmi_utils"
 version = "2.3.0.0"
 description = "Utility functions and scripts for LMI AI Solutions."
 dependencies = []
+# Optional but useful:
+requires-python = ">=3.8"
 
-[tool.setuptools]
-packages = ["data_utils", "eval_utils", "gadget_utils", "image_utils", "label_utils", "pcl_utils", "system_utils", "postprocess_utils", "dataset_utils"]
+[tool.setuptools.packages.find]
+# include *all* subpackages under each top-level package
+include = [
+  "data_utils*",
+  "eval_utils*",
+  "gadget_utils*",
+  "image_utils*",
+  "label_utils*",
+  "pcl_utils*",
+  "system_utils*",
+  "postprocess_utils*",
+  "dataset_utils*",
+  "pipeline_base*"
+]
 
 [project.scripts]
 # label utils commands
 labels-preprocess = "label_utils.apply_ops:main"
 labels-convert-yolo = "label_utils.json_to_yolo:main"
 labels-convert-lst = "label_utils.lst_to_json:main"
-# feel free to add more label utils commands here
 # gadget utils commands
 gadget-surface = "gadget_utils.gadget_surface_utils:main"
-gadget-image = "gadget_utils.gadget_surface_utils:main"
-
+gadget-image = "gadget_utils.gadget_image:main"
