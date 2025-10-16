@@ -61,7 +61,7 @@ class PipelineBase(metaclass=ABCMeta):
             version: the gadget version. It determines which model_roles handler to be used.
         """
         self.models = collections.OrderedDict()
-        self.version = kwargs.get('version', '1')
+        self.version = kwargs.get('version', '2')
         self.init_results()
         
         

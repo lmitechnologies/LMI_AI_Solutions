@@ -681,9 +681,12 @@ def get_models_from_static_manifest(manifest_json_path:str):
                 if not os.path.isabs(v['model_path']):
                     v['model_path'] = str((manifest_json_path.parent / v['model_path']).resolve())
         # create object configs
+        model['configs'] = {}
         if model.get('details') and model['details'].get('object_class'):
             for c in model['details']['object_class']:
-                pass
+                model['configs'][c] = {
+                    'confidence': model['details'].get('confidence_threshold', 0.5),
+                }
             
         manifest[model['model_role']] = model
     return manifest
