@@ -673,6 +673,9 @@ def get_models_from_static_manifest(manifest_json_path:str):
         raise Exception(f'manifest file not found: {manifest_json_path}')
     with open(manifest_json_path, 'r') as f:
         models = json.load(f)
+    
+    # create manifest
+    keys_to_copy = ['anomaly_size', 'threshold_max', 'threshold_min', 'iou']
     manifest = {}
     for model in models:
         # update model paths
@@ -682,11 +685,15 @@ def get_models_from_static_manifest(manifest_json_path:str):
                     v['model_path'] = str((manifest_json_path.parent / v['model_path']).resolve())
         # create object configs
         model['configs'] = {}
-        if model.get('details') and model['details'].get('object_class'):
+        if model['details'].get('object_class'):
             for c in model['details']['object_class']:
                 model['configs'][c] = {
                     'confidence': model['details'].get('confidence_threshold', 0.5),
                 }
+        # copy from details to configs
+        for key in keys_to_copy:
+            if model['details'].get(key):
+                model['configs'][key] = model['details'][key]
             
         manifest[model['model_role']] = model
     return manifest
