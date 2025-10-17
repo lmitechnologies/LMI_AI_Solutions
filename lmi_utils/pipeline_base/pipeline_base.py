@@ -81,12 +81,19 @@ class PipelineBase(metaclass=ABCMeta):
         
         if not metadata.get('image_size'):
             raise ValueError(f'image_size is required in metadata for model: {model_name}')
+        
+        # add version to metadata if not provided
+        if 'version' not in metadata:
+            metadata['version'] = 'v1'
+        if metadata.get('package') == 'detectron2':
+            # detectron2 only has v0 models
+            metadata['version'] = 'v0'
 
         model_type = metadata.get('model_type', '').lower()
         # check model type
         if model_type == 'anomalydetection':
             self.models[model_name] = AnomalyDetector(metadata, **kwargs)
-        elif model_type in ['objectdetection', 'instancesegmentation', 'pose', 'obb', 'od', 'seg']:
+        elif model_type in ['objectdetection', 'instancesegmentation', 'keypointdetection', 'orientedobjectdetection']:
             self.models[model_name] = ObjectDetector(metadata, **kwargs)
         elif model_type in ['classification']:
             self.models[model_name] = Classifier(metadata, **kwargs)
