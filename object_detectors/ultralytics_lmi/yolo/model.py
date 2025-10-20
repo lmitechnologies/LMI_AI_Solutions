@@ -519,7 +519,7 @@ class YoloSeg(Yolo):
     metadata=dict(
         versions=['v1'], 
         model_names=['yolo','yolov8', 'yolov11'], 
-        tasks=['obb'], 
+        tasks=['obb', 'orientedobjectdetection'], 
         frameworks=['ultralytics', 'ultralytics8']
     )
 )
@@ -574,7 +574,7 @@ class YoloObb(Yolo):
     metadata=dict(
         versions=['v1'], 
         model_names=['yolo','yolov8', 'yolov11'], 
-        tasks=['pose'], 
+        tasks=['pose', 'keypointdetection'], 
         frameworks=['ultralytics', 'ultralytics8']
     )
 )
