@@ -19,7 +19,10 @@ def test_auto_registration():
         ('detectron2', 'mask_rcnn', 'objectdetection', 'v0'),
         ('ultralytics', 'yolov5', 'objectdetection', 'v0'),
         ('ultralytics', 'yolov8', 'instancesegmentation', 'v0'),
-        ('ultralytics', 'yolo', 'objectdetection', 'v1')
+        ('ultralytics', 'yolo', 'objectdetection', 'v1'),
+        ('ultralytics', 'yolo', 'instancesegmentation', 'v1'),
+        ('ultralytics', 'yolo', 'keypointdetection', 'v1'),
+        ('ultralytics', 'yolo', 'orientedobjectdetection', 'v1'),
     ]
 
     for key in to_be_tested_keys:
