@@ -2,6 +2,7 @@ import logging
 import os
 import tempfile
 import subprocess
+import torch
 
 from anomalib_lmi.anomaly_model import AnomalyModel
 from ad_core.anomaly_detector import AnomalyDetector
@@ -15,7 +16,7 @@ logger.setLevel(logging.DEBUG)
 DATA_PATH = 'tests/assets/images/nvtec-ad'
 MODEL_PATH = 'tests/assets/models/ad/model_v0.pt'
 OUTPUT_PATH = 'tests/outputs/ad/anomalib_v0'
-
+USE_GPU = torch.cuda.is_available()
 
 
 def test_model():
@@ -29,14 +30,15 @@ def test_model_api():
 def test_cmds():
     with tempfile.TemporaryDirectory() as t:
         my_env = os.environ.copy()
-        cmd = f'python -m anomalib_lmi.anomaly_model -i {MODEL_PATH} -d {DATA_PATH} -o {str(t)} -g -p'
+        cmd = f'python -m anomalib_lmi.anomaly_model -a test -i {MODEL_PATH} -d {DATA_PATH} -o {str(t)} -g -p'
         logger.info(f'running cmd: {cmd}')
         result = subprocess.run(cmd,shell=True,env=my_env,capture_output=True,text=True)
         logger.info(result.stdout)
         logger.info(result.stderr)
         
-        cmd = f'python -m anomalib_lmi.anomaly_model -a convert -i {MODEL_PATH} -e {str(t)}'
-        logger.info(f'running cmd: {cmd}')
-        result = subprocess.run(cmd,shell=True,env=my_env,capture_output=True,text=True)
-        logger.info(result.stdout)
-        logger.info(result.stderr)
+        if USE_GPU:
+            cmd = f'python -m anomalib_lmi.anomaly_model -a convert -i {MODEL_PATH} -e {str(t)}'
+            logger.info(f'running cmd: {cmd}')
+            result = subprocess.run(cmd,shell=True,env=my_env,capture_output=True,text=True)
+            logger.info(result.stdout)
+            logger.info(result.stderr)

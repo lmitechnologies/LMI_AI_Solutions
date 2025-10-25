@@ -371,6 +371,8 @@ class Detectron2PT(ODBase):
         except Exception as e:
             self.logger.exception(f"❗ Failed to load model: {e}")
         device = kwargs.get("device", "cuda")
+        if not torch.cuda.is_available():
+            device = "cpu"
         self.device = torch.device(device)
         # move the model to gpu
         self.model.to(self.device)
