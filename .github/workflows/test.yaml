@@ -1,4 +1,4 @@
-name: Build, Test, and Push Docker Image
+name: Test
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
       - name: Install anomalib and detectron2
         run: |
           git clone https://github.com/facebookresearch/detectron2 detectron2
-          pip install -e detectron2
+          pip install --no-build-isolation -e detectron2
           git clone -b v1.1.1 https://github.com/openvinotoolkit/anomalib.git && cd anomalib && pip install -e .
           anomalib install --option core
 
