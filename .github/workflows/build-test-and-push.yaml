@@ -31,6 +31,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: print installed packages
+        run: |
+          pip list
                
       - name: Install anomalib and detectron2
         run: |
