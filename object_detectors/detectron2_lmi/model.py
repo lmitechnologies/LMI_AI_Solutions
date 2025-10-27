@@ -55,7 +55,6 @@ class Detectron2Model(ODBase):
 
 @Detectron2Model.register("engine")
 class Detectron2TRT(ODBase):
-    import detectron2_lmi.utils.common_runtime as common
     
     logger = logging.getLogger('Detectron2TRT')
     logger.setLevel(logging.INFO)
@@ -80,6 +79,7 @@ class Detectron2TRT(ODBase):
         
         import tensorrt as trt
         from cuda import cudart
+        import detectron2_lmi.utils.common_runtime as common
         
         trt_logger = trt.Logger(trt.Logger.ERROR)
         trt.init_libnvinfer_plugins(trt_logger, namespace="")
@@ -105,7 +105,7 @@ class Detectron2TRT(ODBase):
             size = np.dtype(trt.nptype(dtype)).itemsize
             for s in shape:
                 size *= s
-            allocation = self.common.cuda_call(cudart.cudaMalloc(size))
+            allocation = common.cuda_call(cudart.cudaMalloc(size))
             binding = {
                 "index": i,
                 "name": name,
@@ -185,15 +185,17 @@ class Detectron2TRT(ODBase):
         Returns:
             list: A list of numpy arrays containing the model's output data.
         """
+        import detectron2_lmi.utils.common_runtime as common
+        
         outputs = []
         for out in self.model_outputs:
             outputs.append(np.zeros(out["shape"], dtype=out["dtype"]))
-        self.common.memcpy_host_to_device(
+        common.memcpy_host_to_device(
             self.model_inputs[0]["allocation"], np.ascontiguousarray(inputs)
         )
         self.context.execute_v2(self.allocations)
         for o in range(len(outputs)):
-            self.common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
+            common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
         return outputs
     
     def postprocess(self, images, predictions, **kwargs):
