@@ -1,8 +1,6 @@
 from typing import Dict, List
 from od_core.od_base import ODBase
 from od_core.object_detector_registry import ObjectDetectorRegistry
-import tensorrt as trt
-from cuda import cudart
 import numpy as np
 import detectron2_lmi.utils.common_runtime as common
 from gadget_utils.pipeline_utils import plot_one_box, revert_to_origin, revert_mask_to_origin
@@ -79,6 +77,9 @@ class Detectron2TRT(ODBase):
             class_map (dict): Dictionary mapping class IDs to class names.
         """
         """source: https://github.com/NVIDIA/TensorRT/tree/release/10.4/samples/python/detectron2"""
+        
+        import tensorrt as trt
+        from cuda import cudart
         
         trt_logger = trt.Logger(trt.Logger.ERROR)
         trt.init_libnvinfer_plugins(trt_logger, namespace="")
