@@ -137,17 +137,15 @@ class Test_Yolo_Det:
     def test_compare_with_ultralytics(self, imgs_coco):
         for model_path in OD_DET_MODELS:
             ults_model = YOLO(model_path)
-            our_model = Yolo(model_path)
+            our_model = Yolo(model_path, device=DEVICE)
             for img,resized,op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(resized_bgr, conf=0.5, iou=0.4, max_det=300, device='cuda' if torch.cuda.is_available() else 'cpu')
                 ults_out = results[0].cpu().numpy()
 
                 out,time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
-                for sc1,sc2 in zip(out['scores'], ults_out.boxes.conf):
-                    assert sc1==sc2
-                for b1,b2 in zip(out['boxes'], ults_out.boxes.xyxy):
-                    assert np.array_equal(b1, b2)
+                assert np.array_equal(np.array(out['boxes']), ults_out.boxes.xyxy)
+                assert np.array_equal(np.array(out['scores']), ults_out.boxes.conf)
     
     def test_warmup(self, yolo_models, yolo_models_api):
         for model in yolo_models['det'] + yolo_models_api['det']:
@@ -185,19 +183,17 @@ class Test_Yolo_Seg:
     def test_compare_with_ultralytics(self, imgs_coco):
         for model_path in OD_SEG_MODELS:
             ults_model = YOLO(model_path)
-            our_model = Yolo(model_path)
+            our_model = YoloSeg(model_path, device=DEVICE)
             for img,resized,op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
-                results = ults_model(resized_bgr, conf=0.5, iou=0.4, max_det=300, device='cuda' if torch.cuda.is_available() else 'cpu')
+                results = ults_model(resized_bgr, conf=0.5, iou=0.4, max_det=300,  retina_masks=True, device='cuda' if torch.cuda.is_available() else 'cpu')
                 ults_out = results[0].cpu().numpy()
 
-                out,time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300, retina_masks=True)
-                for sc1,sc2 in zip(out['scores'], ults_out.boxes.conf):
-                    assert sc1==sc2
-                for b1,b2 in zip(out['boxes'], ults_out.boxes.xyxy):
-                    assert np.array_equal(b1, b2)
-                for m1,m2 in zip(out['masks'], ults_out.masks.data):
-                    assert np.array_equal(m1, m2)
+                out,time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
+                assert np.array_equal(np.array(out['boxes']), ults_out.boxes.xyxy)
+                assert np.array_equal(np.array(out['scores']), ults_out.boxes.conf)
+                assert np.array_equal(np.array(out['masks']), ults_out.masks.data)
+                assert len(out['segments']) == len(results[0].masks.xy)
                 for s1,s2 in zip(out['segments'], results[0].masks.xy):
                     assert np.array_equal(s1, s2)
     
@@ -237,18 +233,15 @@ class Test_Yolo_Obb:
     def compare_with_ultralytics(self, imgs, model_paths):
         for model_path in model_paths:
             ults_model = YOLO(model_path)
-            our_model = YoloObb(model_path)
+            our_model = YoloObb(model_path, device=DEVICE)
             for img,resized,op in zip(*imgs):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(resized_bgr, conf=0.5, iou=0.4, max_det=300, device='cuda' if torch.cuda.is_available() else 'cpu')
                 ults_out = results[0].cpu().numpy()
 
                 out,time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
-                for sc1,sc2 in zip(out['scores'], ults_out.obb.conf):
-                    assert sc1==sc2
-                for b1,b2 in zip(out['boxes'], ults_out.obb.xyxyxyxy):
-                    assert np.allclose(b1, b2, atol=1e-5)   # for floating point precision issue
-                    # assert np.array_equal(b1, b2)
+                assert np.allclose(np.array(out['boxes']), ults_out.obb.xyxyxyxy, atol=1e-5)    # for floating point precision issue
+                assert np.array_equal(np.array(out['scores']), ults_out.obb.conf)
         
     def test_compare_with_ultralytics_dota8(self, imgs_dota8):
         self.compare_with_ultralytics(imgs_dota8, OD_OBB_DOTA_8)
@@ -318,19 +311,16 @@ class Test_Yolo_Pose:
     def test_compare_with_ultralytics(self, imgs_coco):
         for model_path in OD_POSE_MODELS:
             ults_model = YOLO(model_path)
-            our_model = YoloPose(model_path)
+            our_model = YoloPose(model_path, device=DEVICE)
             for img,resized,op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(resized_bgr, conf=0.5, iou=0.4, max_det=300, device='cuda' if torch.cuda.is_available() else 'cpu')
                 ults_out = results[0].cpu().numpy()
 
                 out,time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
-                for sc1,sc2 in zip(out['scores'], ults_out.boxes.conf):
-                    assert np.array_equal(sc1, sc2)
-                for b1,b2 in zip(out['boxes'], ults_out.boxes.xyxy):
-                    assert np.array_equal(b1, b2)
-                for k1,k2 in zip(out['points'], ults_out.keypoints.data):
-                    assert np.array_equal(k1, k2)
+                assert np.array_equal(np.array(out['boxes']), ults_out.boxes.xyxy)
+                assert np.array_equal(np.array(out['scores']), ults_out.boxes.conf)
+                assert np.array_equal(np.array(out['points']), ults_out.keypoints.data)
     
     def test_warmup(self, yolo_models, yolo_models_api):
         for model in yolo_models['pose'] + yolo_models_api['pose']:

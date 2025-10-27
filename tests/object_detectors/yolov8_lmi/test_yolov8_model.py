@@ -21,39 +21,52 @@ MODEL_SEG = 'tests/assets/models/od/yolov8n-seg.pt'
 MODEL_OBB = 'tests/assets/models/od/yolov8n-obb.pt'
 MODEL_POSE = 'tests/assets/models/od/yolov8n-pose.pt'
 OUT_DIR = 'tests/outputs/od/yolov8'
+DEVICE = 'gpu' if torch.cuda.is_available() else 'cpu'
 
 
 @pytest.fixture
 def model_det():
-    return Yolov8(MODEL_DET)
+    return Yolov8(MODEL_DET, device=DEVICE)
 
 @pytest.fixture
 def model_seg():
-    return Yolov8(MODEL_SEG)
+    return Yolov8(MODEL_SEG, device=DEVICE)
 
 @pytest.fixture
 def model_obb():
-    return Yolov8Obb(MODEL_OBB)
+    return Yolov8Obb(MODEL_OBB, device=DEVICE)
 
 @pytest.fixture
 def model_pose():
-    return Yolov8Pose(MODEL_POSE)
+    return Yolov8Pose(MODEL_POSE, device=DEVICE)
 
 @pytest.fixture
 def model_det_api():
-    return ObjectDetector(metadata=dict(version='v0', model_name='yolov8', task='od', framework='ultralytics', model_path=MODEL_DET, image_size=[640, 640]))
+    return ObjectDetector(
+        metadata=dict(version='v0', model_name='yolov8', task='od', framework='ultralytics', model_path=MODEL_DET, image_size=[640, 640]),
+        device=DEVICE
+    )
 
 @pytest.fixture
 def model_seg_api():
-    return ObjectDetector(metadata=dict(version='v0', model_name='yolov8', task='seg', framework='ultralytics', model_path=MODEL_SEG, image_size=[640, 640]))
+    return ObjectDetector(
+        metadata=dict(version='v0', model_name='yolov8', task='seg', framework='ultralytics', model_path=MODEL_SEG, image_size=[640, 640]),
+        device=DEVICE
+    )
 
 @pytest.fixture
 def model_obb_api():
-    return ObjectDetector(metadata=dict(version='v0', model_name='yolov8', task='obb', framework='ultralytics', model_path=MODEL_OBB, image_size=[640, 640]))
+    return ObjectDetector(
+        metadata=dict(version='v0', model_name='yolov8', task='obb', framework='ultralytics', model_path=MODEL_OBB, image_size=[640, 640]),
+        device=DEVICE
+    )
 
 @pytest.fixture
 def model_pose_api():
-    return ObjectDetector(metadata=dict(version='v0', model_name='yolov8', task='pose', framework='ultralytics', model_path=MODEL_POSE, image_size=[640, 640]))
+    return ObjectDetector(
+        metadata=dict(version='v0', model_name='yolov8', task='pose', framework='ultralytics', model_path=MODEL_POSE, image_size=[640, 640]),
+        device=DEVICE
+    )
 
 def load_image(path):
     im = cv2.imread(path)

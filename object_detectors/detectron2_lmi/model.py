@@ -366,16 +366,16 @@ class Detectron2PT(ODBase):
     logger.setLevel(logging.INFO)
    
     def __init__(self, model_path,**kwargs):
-        try:
-            self.model = torch.jit.load(model_path)
-        except Exception as e:
-            self.logger.exception(f"❗ Failed to load model: {e}")
         device = kwargs.get("device", "cuda")
         if not torch.cuda.is_available():
             device = "cpu"
         self.device = torch.device(device)
-        # move the model to gpu
-        self.model.to(self.device)
+        
+        try:
+            self.model = torch.jit.load(model_path, map_location=self.device)
+        except Exception as e:
+            self.logger.exception(f"❗ Failed to load model: {e}")
+        
         class_map = kwargs.get("class_map", None)
         if class_map is None:
             raise ValueError("class_map is required for [Detectron2PT]")
