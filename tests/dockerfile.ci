@@ -2,7 +2,9 @@ FROM nvcr.io/nvidia/tensorrt:25.04-py3
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies
-RUN apt-get update -y && apt-get install libgl1 -y
+RUN apt-get update && \
+    export DEBIAN_FRONTEND=noninteractive && \
+    apt-get install -y --no-install-recommends libgl1
 # weights_only issue will raise in pytorch>=2.6 when loading anomalib models
 RUN pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
 
