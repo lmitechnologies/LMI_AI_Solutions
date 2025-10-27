@@ -53,6 +53,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: convert to lower case
+        run: |
+          echo "REPO_LOWER=$(echo ${GITHUB_REPOSITORY} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       # 7. Build the Docker image and load it locally
       - name: Build Docker image
         uses: docker/build-push-action@v5
@@ -65,8 +69,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # Caches build layers to speed up future builds
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
+          cache-from: type=registry,ref=ghcr.io/${{ env.REPO_LOWER }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.REPO_LOWER }}:buildcache,mode=max
 
       # 8. NEW STEP: Run tests on the built image
       # This assumes 'pytest' is on the PATH in your Docker image's CMD or ENTRYPOINT.
@@ -75,16 +79,16 @@ jobs:
       - name: Run tests inside the container
         run: |
           echo "Running test lmi_utils..."
-          docker run --rm ghcr.io/${{ github.repository }}:latest pytest /home/gadget/LMI_AI_Solutions/tests/lmi_utils
+          docker run --rm ghcr.io/${{ env.REPO_LOWER }}:latest pytest /home/gadget/LMI_AI_Solutions/tests/lmi_utils
 
           echo "Running test object_detectors..."
-          docker run --rm ghcr.io/${{ github.repository }}:latest pytest LMI_AI_Solutions/tests/object_detectors
+          docker run --rm ghcr.io/${{ env.REPO_LOWER }}:latest pytest LMI_AI_Solutions/tests/object_detectors
 
           echo "Running test classifers..."
-          docker run --rm ghcr.io/${{ github.repository }}:latest pytest /home/gadget/LMI_AI_Solutions/tests/classifiers
+          docker run --rm ghcr.io/${{ env.REPO_LOWER }}:latest pytest /home/gadget/LMI_AI_Solutions/tests/classifiers
 
           echo "Running test anomaly_detectors (excluding anomalib v0 test)..."
-          docker run --rm ghcr.io/${{ github.repository }}:latest pytest \
+          docker run --rm ghcr.io/${{ env.REPO_LOWER }}:latest pytest \
             --ignore=/home/gadget/LMI_AI_Solutions/tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py \
             /home/gadget/LMI_AI_Solutions/tests/anomaly_detectors
 
