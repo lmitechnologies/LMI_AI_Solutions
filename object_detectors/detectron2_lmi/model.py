@@ -2,7 +2,6 @@ from typing import Dict, List
 from od_core.od_base import ODBase
 from od_core.object_detector_registry import ObjectDetectorRegistry
 import numpy as np
-import detectron2_lmi.utils.common_runtime as common
 from gadget_utils.pipeline_utils import plot_one_box, revert_to_origin, revert_mask_to_origin
 from postprocess_utils.mask_utils import rescale_masks,mask_to_polygon_cv2
 import cv2
@@ -56,6 +55,7 @@ class Detectron2Model(ODBase):
 
 @Detectron2Model.register("engine")
 class Detectron2TRT(ODBase):
+    import detectron2_lmi.utils.common_runtime as common
     
     logger = logging.getLogger('Detectron2TRT')
     logger.setLevel(logging.INFO)
@@ -105,7 +105,7 @@ class Detectron2TRT(ODBase):
             size = np.dtype(trt.nptype(dtype)).itemsize
             for s in shape:
                 size *= s
-            allocation = common.cuda_call(cudart.cudaMalloc(size))
+            allocation = self.common.cuda_call(cudart.cudaMalloc(size))
             binding = {
                 "index": i,
                 "name": name,
@@ -188,12 +188,12 @@ class Detectron2TRT(ODBase):
         outputs = []
         for out in self.model_outputs:
             outputs.append(np.zeros(out["shape"], dtype=out["dtype"]))
-        common.memcpy_host_to_device(
+        self.common.memcpy_host_to_device(
             self.model_inputs[0]["allocation"], np.ascontiguousarray(inputs)
         )
         self.context.execute_v2(self.allocations)
         for o in range(len(outputs)):
-            common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
+            self.common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
         return outputs
     
     def postprocess(self, images, predictions, **kwargs):
