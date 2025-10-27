@@ -22,37 +22,27 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
 
-      # 1. Check out the repository's code
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           submodules: 'true'
           # lfs: 'true'
-
-      # 2. Install dependencies for building docker image
+          
       - name: Install dependencies
         run: |
-          pip install --no-cache-dir torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
-          git clone https://github.com/facebookresearch/detectron2 detectron2
-          pip install -e detectron2
-          pip install scikit-learn
-          pip install tensorboard
-          pip install numba
-          pip install cuda-python
-          pip install numpy==1.26.0 ultralytics albumentations
-          git clone -b v1.1.1 https://github.com/openvinotoolkit/anomalib.git && cd anomalib && pip install -e .
+          pip install -r requirements.txt
+          
+      - name: Install anomalib
+        run: |
           anomalib install --option core
-          pip install onnx
 
-      # 3. Install packages
       - name: Install LMI AI Solutions packages
         run: |
           pip install -e object_detectors
           pip install -e anomaly_detectors
           pip install -e lmi_utils
           pip install -e classifiers
-
-      # 4. Run tests
+          
       - name: Run tests
         run: |
           echo "Running test lmi_utils..."
