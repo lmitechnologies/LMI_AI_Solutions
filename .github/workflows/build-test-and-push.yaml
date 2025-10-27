@@ -27,13 +27,16 @@ jobs:
         with:
           submodules: 'true'
           # lfs: 'true'
-          
+
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
-          
-      - name: Install anomalib
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+               
+      - name: Install anomalib and detectron2
         run: |
+          git clone https://github.com/facebookresearch/detectron2 detectron2
+          pip install -e detectron2
+          git clone -b v1.1.1 https://github.com/openvinotoolkit/anomalib.git && cd anomalib && pip install -e .
           anomalib install --option core
 
       - name: Install LMI AI Solutions packages

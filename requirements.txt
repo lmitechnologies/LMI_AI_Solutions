@@ -1,6 +1,5 @@
 torch==2.5.1
 torchvision==0.20.1
-git+https://github.com/facebookresearch/detectron2
 scikit-learn
 tensorboard
 numba
@@ -8,6 +7,5 @@ cuda-python
 numpy==1.26.0
 ultralytics
 albumentations
-git+https://github.com/openvinotoolkit/anomalib.git@v1.1.1
 onnx
 pytest
