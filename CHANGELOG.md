@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.0.0...v1.1.0) (2025-10-28)
+
+
+### Features
+
+* adding pipeline_base to the AIS repo ([#145](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/145)) ([567facf](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/567facf2aed3bd3808f028593ef3e20e21d82937))
+
 # 1.0.0 (2025-10-28)
 
 
