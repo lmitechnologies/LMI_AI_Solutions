@@ -8,6 +8,7 @@ import logging
 import glob
 import tempfile
 import tarfile
+from pathlib import Path
 from torch.nn import functional as F
 
 
@@ -662,3 +663,37 @@ def load_pipeline_def(filepath):
         for dt in l:
             kwargs[dt['name']] = dt['default_value']
     return kwargs
+
+
+def get_models_from_static_manifest(manifest_json_path:str):
+    """create model manifest from a static manifest json file
+    """
+    manifest_json_path = Path(manifest_json_path).resolve()
+    if not manifest_json_path.exists():
+        raise Exception(f'manifest file not found: {manifest_json_path}')
+    with open(manifest_json_path, 'r') as f:
+        models = json.load(f)
+    
+    # create manifest
+    keys_to_copy = ['anomaly_size', 'threshold_max', 'threshold_min', 'iou']
+    manifest = {}
+    for model in models:
+        # update model paths
+        for k,v in model['artifacts'].items():
+            if v.get('model_path'):
+                if not os.path.isabs(v['model_path']):
+                    v['model_path'] = str((manifest_json_path.parent / v['model_path']).resolve())
+        # create object configs
+        model['configs'] = {}
+        if model['details'].get('object_class'):
+            for c in model['details']['object_class']:
+                model['configs'][c] = {
+                    'confidence': model['details'].get('confidence_threshold', 0.5),
+                }
+        # copy from details to configs
+        for key in keys_to_copy:
+            if model['details'].get(key):
+                model['configs'][key] = model['details'][key]
+            
+        manifest[model['model_role']] = model
+    return manifest

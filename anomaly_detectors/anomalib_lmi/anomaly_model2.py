@@ -82,6 +82,10 @@ class AnomalyModel2(Anomalib_Base):
             self.inference_mode='TRT'
         elif ext=='.pt':
             try:  
+                # try loading the model using torchscript
+                self.pt_model = torch.jit.load(model_path).to(self.device)
+                self.model_shape = self.image_size
+            except Exception as e:
                 checkpoint = torch.load(model_path,map_location=self.device,weights_only=False)
                 self.pt_model = checkpoint['model']
                 self.pt_metadata = checkpoint["metadata"]
@@ -91,17 +95,6 @@ class AnomalyModel2(Anomalib_Base):
                         self.model_shape = to_list(d.size)
                         self.image_size = to_list(d.size)
                         self.logger.info(f"Model shape: {self.model_shape}")
-
-            
-            except Exception as e:
-                self.logger.warning(f"Failed to load model: {model_path}. Attempting to load using torchscript.")
-                self.pt_model = None
-            
-            if self.pt_model is None:
-                # try loading the model using torchscript
-                self.pt_model = torch.jit.load(model_path).to(self.device)
-                self.image_size = kwargs.get('image_size', [224,224])
-                self.model_shape = self.image_size
 
                 
             self.pt_model.eval()

@@ -68,7 +68,7 @@ class ObjectDetectorRegistry:
         framework: Optional[str] = metadata.get('framework') or metadata.get('package')
         model_name: Optional[str] = metadata.get('model_name') or metadata.get('algorithm')
         task: Optional[str] = metadata.get('task') or metadata.get('model_type')
-        version: str = metadata.get('version', 'v1') 
+        version: str = metadata.get('version', 'v1')
         info: Dict[str, Any] = metadata.get('info', {})
 
         if not all([framework, model_name, task]):
