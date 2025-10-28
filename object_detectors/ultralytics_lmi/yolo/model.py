@@ -547,17 +547,17 @@ class YoloObb(Yolo):
             dict: the constructed result dictionary
         """
         # makes sure to regularize the bounding boxes to xywhr format (range [0, pi/2])
-        bboxs = ops.regularize_rboxes(torch.cat([pred[:, :4], pred[:, -1:]], dim=-1))
-        bboxs[:,:4] = ops.scale_boxes(img.shape[2:], bboxs[:, :4], orig_img.shape, xywh=True)
+        rboxs = ops.regularize_rboxes(torch.cat([pred[:, :4], pred[:, -1:]], dim=-1))
+        rboxs[:,:4] = ops.scale_boxes(img.shape[2:], rboxs[:, :4], orig_img.shape, xywh=True)
         confs, clss = pred[:, 4], pred[:, 5]
         classes = np.array([self.model.names[c.item()] for c in clss])
     
-        # covert the boxes from xywhr xyxyxyxy format
-        bboxs = ops.xywhr2xyxyxyxy(bboxs)   # [n_obj, 4, 2]
+        # covert the boxes from xywhr to xyxyxyxy format
+        rboxs = ops.xywhr2xyxyxyxy(rboxs)   # [n_obj, 4, 2]
         
         # filter based on conf
         M = confs > self._get_thresholds(conf, len(clss), classes)
-        return Results(bboxs[M], confs[M], classes[M.cpu().numpy()].tolist()), M
+        return Results(rboxs[M], confs[M], classes[M.cpu().numpy()].tolist()), M
 
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:

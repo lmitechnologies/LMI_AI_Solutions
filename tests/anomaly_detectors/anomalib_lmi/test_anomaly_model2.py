@@ -26,6 +26,7 @@ logger.setLevel(logging.DEBUG)
 DATA_PATH = 'tests/assets/images/nvtec-ad'
 MODEL_PATH = 'tests/assets/models/ad/model_v1.pt'
 OUTPUT_PATH = 'tests/outputs/ad/anomalib_v1'
+USE_GPU = torch.cuda.is_available()
 
 
 @pytest.fixture
@@ -67,7 +68,11 @@ def test_compare_results_with_anomalib():
         rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         pred2 = model2.predict(rgb)
         
-        assert np.array_equal(pred, pred2)
+        if USE_GPU:
+            assert np.array_equal(pred, pred2)
+        else:
+            assert np.isclose(pred, pred2, atol=1e-5).all()
+
 
 def test_compare_results_with_anomalib_api():
     """
@@ -95,7 +100,10 @@ def test_compare_results_with_anomalib_api():
         rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         pred2 = model2.predict(rgb)
         
-        assert np.array_equal(pred, pred2)
+        if USE_GPU:
+            assert np.array_equal(pred, pred2)
+        else:
+            assert np.allclose(pred, pred2, atol=1e-5)
 
         
 def test_warmup():
@@ -174,10 +182,12 @@ def test_annotate(test_data, ):
         t1 = time.time() - t0
         
         out2 = ad.annotate(im,pred,mean,max)
+        assert np.array_equal(out1,out2)
+        
         bgr = cv2.cvtColor(out2,cv2.COLOR_RGB2BGR)
         cv2.imwrite(os.path.join(out_path,name),bgr)
-        
-        if torch.cuda.is_available():
+
+        if USE_GPU:
             im = torch.from_numpy(im).cuda()
             pred = torch.from_numpy(pred).cuda()
             
@@ -205,12 +215,13 @@ def test_cmds():
         l2 = glob.glob(os.path.join(t, '*_annot.png'))
         assert len(l1) == len(l2)
         
-        t2 = os.path.join(t,'recon')
-        cmd = f'python -m anomalib_lmi.anomaly_model2 convert -i {MODEL_PATH} -o {t2} --hw 1120 1120 --tile 224 224 --stride 224 224'
-        logger.info(f'running cmd: {cmd}')
-        result = subprocess.run(cmd,shell=True,env=my_env,capture_output=True,text=True)
-        logger.info(result.stdout)
-        logger.info(result.stderr)
-        
-        assert os.path.isfile(os.path.join(t2, 'model.engine'))
+        if USE_GPU:
+            t2 = os.path.join(t,'recon')
+            cmd = f'python -m anomalib_lmi.anomaly_model2 convert -i {MODEL_PATH} -o {t2} --hw 1120 1120 --tile 224 224 --stride 224 224'
+            logger.info(f'running cmd: {cmd}')
+            result = subprocess.run(cmd,shell=True,env=my_env,capture_output=True,text=True)
+            logger.info(result.stdout)
+            logger.info(result.stderr)
+            
+            assert os.path.isfile(os.path.join(t2, 'model.engine'))
         

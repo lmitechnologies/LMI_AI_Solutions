@@ -1,0 +1,12 @@
+torch==2.5.1
+torchvision==0.20.1
+scikit-learn
+tensorboard
+numba
+cuda-python
+numpy==1.26.0
+ultralytics
+albumentations
+onnx
+pytest
+tensorrt
