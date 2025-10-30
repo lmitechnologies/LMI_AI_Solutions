@@ -3,7 +3,7 @@ import cv2
 import os
 import logging
 import argparse
-from gadget_utils.pipeline_utils import fit_array_to_size
+from gadget_utils.pipeline_utils import fit_array_to_size, resize_image
 from system_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
@@ -21,30 +21,35 @@ def is_cuda_cv(): # 1 == using cuda, 0 = not using cuda
     except:
         return False
 
-def resize_and_pad(image, width=None, height=None, maintain_aspect_ratio=False):
+def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwargs):
     h, w = image.shape[:2]
     th, tw  = height, width
-    
+    operators = kwargs.get('operators', [])
     if (tw is None and th is None) or (tw == w and th == h):
         th, tw = h, w
         im_out = image
     else:
-        if maintain_aspect_ratio:
+        if preserve_aspect:
             scale = min(th / h, tw / w)
             tw = np.int32(scale * w)
             th = np.int32(scale * h)
-            im_out = resize(image, width=tw, height=th) 
+            im_out = resize_image(image, W=tw, H=th, mode=kwargs.get('mode', 'bilinear'))
+            operators.append({"resize": [im_out.shape[1], im_out.shape[0], image.shape[1], image.shape[0]]})
             if width is not None and height is not None:
-                im_out, pad_l, _, pad_t, _ = fit_array_to_size(im_out, width, height)           
+                im_out, pad_l, pad_r, pad_t, pad_b = fit_array_to_size(im_out, width, height)
+                operators.append({"pad": [pad_l, pad_r, pad_t, pad_b]})
         else:    
             if tw is None:
                 tw = w
-                im_out = resize(image, height=th)
+                im_out = resize_image(image, H=th, mode=kwargs.get('mode', 'bilinear'))
             elif th is None:
                 th = h
-                im_out = resize(image, width=tw)
+                im_out = resize_image(image, W=tw, mode=kwargs.get('mode', 'bilinear'))
             else:
-                im_out = resize(image, width=tw, height=th)
+                im_out = resize_image(image, W=tw, H=th, mode=kwargs.get('mode', 'bilinear'))
+            operators.append({"resize": [im_out.shape[1], im_out.shape[0], image.shape[1], image.shape[0]]})
+    if kwargs.get('return_operators', False) is True:
+        return im_out, operators
     return im_out
 
 
@@ -122,7 +127,7 @@ def img_resize(input_path, output_path, width=None, height=None, recursive=False
     
     for file in files:
         image = cv2.imread(os.path.join(input_path, file))
-        resized = resize_and_pad(image=image, width=width, height=height, maintain_aspect_ratio=maintain_aspect_ratio)
+        resized = resize_and_pad(image=image, width=width, height=height, preserve_aspect=maintain_aspect_ratio)
         
         fname = os.path.basename(file)
         outname = fname.replace(os.path.splitext(file)[1], '.png')
