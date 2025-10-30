@@ -12,7 +12,7 @@ class Artifact:
         """Creates an Artifact instance from a dictionary."""
         return cls(
             model_path=data.get("model_path", ""),
-            image_size=data.get("image_size", [])
+            image_size=data.get("imageSize", data.get("image_size", []))
         )
 
 @dataclass
