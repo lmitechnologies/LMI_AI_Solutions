@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.1.0...v1.1.1) (2025-10-30)
+
+
+### Bug Fixes
+
+* fixed image_size issue with classifiers ([#149](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/149)) ([a2b621a](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/a2b621a3e7b9fd607830e2d38a60f9fcc3c85fe3))
+
 # [1.1.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.0.0...v1.1.0) (2025-10-28)
 
 
