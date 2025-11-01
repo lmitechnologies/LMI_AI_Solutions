@@ -10,19 +10,20 @@ on:
 
 
 jobs:
-  build-test-and-push:
+  build-and-test:
     strategy:
       matrix:
           os: [ubuntu-latest]
           python: ["3.12"]
+          test_suite: ["lmi_utils", "object_detectors", "classifiers", "anomaly_detectors"]
     runs-on: ${{ matrix.os }}
+    name: Test ${{ matrix.test_suite }} with Python ${{ matrix.python }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           submodules: 'true'
-          # lfs: 'true'
 
       - name: Create Git LFS file list
         run: git lfs ls-files -l |cut -d' ' -f1 |sort >.git/lfs-hashes.txt
@@ -42,12 +43,12 @@ jobs:
       - name: Check out Git LFS content
         run: git lfs checkout
 
-      - name: Set up Python with pip caching
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python }}
-          cache: 'pip'
-          cache-dependency-path: 'requirements.txt'
+      # - name: Set up Python with pip caching
+      #   uses: actions/setup-python@v6
+      #   with:
+      #     python-version: ${{ matrix.python }}
+      #     cache: 'pip'
+      #     cache-dependency-path: 'requirements.txt'
 
       - name: Install dependencies
         run: |
@@ -66,23 +67,16 @@ jobs:
           pip install -e anomaly_detectors
           pip install -e lmi_utils
           pip install -e classifiers
-
-      - name: print installed packages
-        run: |
-          pip list
           
       - name: Run tests
         run: |
-          echo "Running test lmi_utils..."
-          pytest tests/lmi_utils
-
-          echo "Running test object_detectors..."
-          pytest tests/object_detectors
-
-          echo "Running test classifiers..."
-          pytest tests/classifiers
-
-          echo "Running test anomaly_detectors (excluding anomalib v0 test)..."
-          pytest \
-            --ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py \
-            tests/anomaly_detectors
+          if [ "${{ matrix.test_suite }}" == "lmi_utils" ]; then
+            pytest tests/lmi_utils
+          elif [ "${{ matrix.test_suite }}" == "object_detectors" ]; then
+            pytest tests/object_detectors
+          elif [ "${{ matrix.test_suite }}" == "classifiers" ]; then
+            pytest tests/classifiers
+          elif [ "${{ matrix.test_suite }}" == "anomaly_detectors" ]; then
+            pytest \
+              --ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py \
+              tests/anomaly_detectors
