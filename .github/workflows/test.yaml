@@ -10,8 +10,7 @@ on:
 
 
 jobs:
-  build-and-test:
-
+  run-test:
     strategy:
       matrix:
           os: [ubuntu-latest]
@@ -20,7 +19,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     container:
       image: ghcr.io/lmitechnologies/ais-test-env:py${{ matrix.python-version }}
-    name: Test ${{ matrix.test_suite }} with python${{ matrix.python-version }}
 
     steps:
       - name: Check out repository
