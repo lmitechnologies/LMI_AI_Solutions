@@ -2,6 +2,8 @@ name: Build and Publish Test Docker Image
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [ "ais" ]
 
 jobs:
   build-and-push-test-env:
@@ -48,4 +50,3 @@ jobs:
           push: true       # Push the image after building
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          
