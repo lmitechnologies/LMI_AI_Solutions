@@ -1,0 +1,23 @@
+# Use ARG to accept the version from the workflow
+ARG PYTHON_VERSION=3.12
+FROM python:${PYTHON_VERSION}-slim
+
+WORKDIR /app
+
+# Install OS-level dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy and install Python requirements
+COPY requirements.txt .
+RUN pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Clone and install detectron2 and anomalib
+RUN git clone https://github.com/facebookresearch/detectron2 detectron2 && \
+    pip install --no-build-isolation -e detectron2
+
+RUN git clone -b v1.1.1 https://github.com/openvinotoolkit/anomalib.git anomalib && \
+    cd anomalib && pip install -e . && \
+    anomalib install --option core

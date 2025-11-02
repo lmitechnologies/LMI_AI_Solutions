@@ -1,6 +1,8 @@
 name: Build and Publish Test Docker Image
 
 on:
+  pull_request:
+    branches: [ "ais" ]
   workflow_dispatch:
 
 jobs:
@@ -22,27 +24,11 @@ jobs:
       - name: Check out the repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-               
-      - name: Install anomalib and detectron2
-        run: |
-          git clone https://github.com/facebookresearch/detectron2 detectron2
-          pip install --no-build-isolation -e detectron2
-          git clone -b v1.1.1 https://github.com/openvinotoolkit/anomalib.git && cd anomalib && pip install -e .
-          anomalib install --option core
-
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}   # This is your GitHub username
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Docker meta
@@ -58,6 +44,9 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .       # Use the root of the repo for the build context
+          file: ./tests/dockerfile.ci
+          build-args: |
+            PYTHON_VERSION=${{ matrix.python-version }}
           push: true       # Push the image after building
           tags: |          # List of tags
             ghcr.io/${{ github.repository }}:latest
