@@ -48,6 +48,5 @@ jobs:
           build-args: |
             PYTHON_VERSION=${{ matrix.python-version }}
           push: true       # Push the image after building
-          tags: |          # List of tags
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
