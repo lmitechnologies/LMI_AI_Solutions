@@ -8,3 +8,5 @@ ultralytics
 albumentations
 onnx
 pytest
+cuda-python
+tensorrt
