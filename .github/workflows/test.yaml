@@ -18,7 +18,7 @@ jobs:
           test_suite: ["lmi_utils", "object_detectors", "classifiers", "anomaly_detectors"]
     runs-on: ${{ matrix.os }}
     container:
-      image: ghcr.io/lmi-ai-solutions/test-env:py${{ matrix.python }}
+      image: ghcr.io/lmitechnologies/ais-test-env:py${{ matrix.python }}
     name: Test ${{ matrix.test_suite }} with Python ${{ matrix.python }}
 
     steps:

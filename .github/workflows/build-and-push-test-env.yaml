@@ -48,9 +48,4 @@ jobs:
           push: true       # Push the image after building
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Make package public
-        run: |
-          gh package set-visibility ${{ env.IMAGE_NAME }} --public
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
