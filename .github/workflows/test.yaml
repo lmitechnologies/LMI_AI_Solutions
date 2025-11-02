@@ -57,6 +57,7 @@ jobs:
           pip install -e classifiers
           
       - name: Run tests
+        shell: bash
         run: |
           TEST_PATH="tests/${{ matrix.test_suite }}"
           EXTRA_PYTEST_ARGS=""
