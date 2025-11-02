@@ -23,6 +23,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     container:
       image: ghcr.io/lmitechnologies/ais-test-env:py${{ matrix.python }}
+      options: --user root
     name: Test ${{ matrix.test_suite }} with Python ${{ matrix.python }}
 
     steps:
