@@ -1,12 +1,11 @@
-torch==2.5.1
-torchvision==0.20.1
+torch<2.6
+torchvision
 scikit-learn
 tensorboard
 numba
-numpy==1.26.0
+numpy<2.0
 ultralytics
 albumentations
 onnx
 pytest
-cuda-python
-tensorrt
+pytest-html

@@ -15,7 +15,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ['3.12']
+        nv-version: ['25.04'] # nvidia/tensorrt versions to build
 
     env:
       IMAGE_NAME: ghcr.io/lmitechnologies/ais-test-env
@@ -37,8 +37,8 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=py${{ matrix.python-version }}
-            type=raw,value=latest,enable=${{ matrix.python-version == '3.12' }}
+            type=raw,value=${{ matrix.nv-version }}
+            type=raw,value=latest,enable=${{ matrix.nv-version == '25.04' }}
 
       - name: Build and push image
         uses: docker/build-push-action@v5
@@ -46,7 +46,7 @@ jobs:
           context: .       # Use the root of the repo for the build context
           file: ./tests/dockerfile.ci
           build-args: |
-            PYTHON_VERSION=${{ matrix.python-version }}
+            NV_VERSION=${{ matrix.nv-version }}
           push: true       # Push the image after building
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
