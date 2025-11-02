@@ -1,6 +1,6 @@
 # Use ARG to accept the version from the workflow
-ARG NV_VERSION=25.04
-FROM nvcr.io/nvidia/tensorrt:${NV_VERSION}-py3
+ARG PYTHON_VERSION=3.12
+FROM python:${PYTHON_VERSION}
 
 WORKDIR /app
 

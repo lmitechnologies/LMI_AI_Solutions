@@ -2,7 +2,6 @@ import os
 import logging 
 from collections import OrderedDict, namedtuple
 from collections.abc import Sequence
-import tensorrt as trt
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -57,6 +56,7 @@ class AnomalyModel2(Anomalib_Base):
         self.fp16 = False
         self.logger.info(f"Loading model: {model_path}")
         if ext=='.engine':
+            import tensorrt as trt
             with open(model_path, "rb") as f, trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
                 model = runtime.deserialize_cuda_engine(f.read())
             self.context = model.create_execution_context()
