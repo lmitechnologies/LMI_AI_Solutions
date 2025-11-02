@@ -31,13 +31,17 @@ jobs:
         with:
           submodules: 'true'
 
-      - name: DEBUG - Show directories
+      - name: DEBUG - Check user and .git permissions
         run: |
           echo "--- DEBUG INFO ---"
-          echo "Current directory (pwd): $(pwd)"
+          echo "Current user: $(whoami)"
+          echo "Workspace path: $(pwd)"
           echo ""
-          echo "Listing /github/workspace (where code should be):"
-          ls -la /github/workspace
+          echo "--- Listing workspace (ls -la) ---"
+          ls -la
+          echo ""
+          echo "--- Listing .git dir (ls -la .git) ---"
+          ls -la .git
           echo "--- END DEBUG ---"
 
       - name: Create Git LFS file list
