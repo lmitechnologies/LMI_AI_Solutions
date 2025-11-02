@@ -16,7 +16,7 @@ jobs:
       matrix:
           os: [ubuntu-latest]
           python-version: ['3.12']
-          test_suite: ["lmi_utils", "object_detectors", "classifiers", "anomaly_detectors"]
+          test_suite: ["no-AD", "AD"]
     runs-on: ${{ matrix.os }}
     container:
       image: ghcr.io/lmitechnologies/ais-test-env:py${{ matrix.python-version }}
@@ -59,12 +59,12 @@ jobs:
       - name: Run tests
         shell: bash
         run: |
-          TEST_PATH="tests/${{ matrix.test_suite }}"
-          EXTRA_PYTEST_ARGS=""
+          OTHER_TEST_SUITE=(lmi_utils object_detectors classifiers)
           
-          if [ "${{ matrix.test_suite }}" == "anomaly_detectors" ]; then
-            EXTRA_PYTEST_ARGS="--ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py"
+          if [ "${{ matrix.test_suite }}" == "AD" ]; then
+            pytest --ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py tests/anomaly_detectors
+          else
+            for suite in "${OTHER_TEST_SUITE[@]}"; do
+              pytest tests/${suite}
+            done
           fi
-          
-          echo running command:  pytest $EXTRA_PYTEST_ARGS $TEST_PATH
-          pytest $EXTRA_PYTEST_ARGS $TEST_PATH
