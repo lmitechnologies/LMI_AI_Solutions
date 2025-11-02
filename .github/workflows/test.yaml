@@ -31,19 +31,6 @@ jobs:
       - name: Mark workspace as safe
         run: git config --global --add safe.directory $(pwd)
 
-      - name: DEBUG - Check user and .git permissions
-        run: |
-          echo "--- DEBUG INFO ---"
-          echo "Current user: $(whoami)"
-          echo "Workspace path: $(pwd)"
-          echo ""
-          echo "--- Listing workspace (ls -la) ---"
-          ls -la
-          echo ""
-          echo "--- Listing .git dir (ls -la .git) ---"
-          ls -la .git
-          echo "--- END DEBUG ---"
-
       - name: Create Git LFS file list
         run: git lfs ls-files -l |cut -d' ' -f1 |sort >.git/lfs-hashes.txt
 
@@ -78,4 +65,5 @@ jobs:
             EXTRA_PYTEST_ARGS="--ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py"
           fi
           
+          echo running command:  pytest $EXTRA_PYTEST_ARGS $TEST_PATH
           pytest $EXTRA_PYTEST_ARGS $TEST_PATH
