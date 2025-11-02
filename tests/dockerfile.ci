@@ -13,15 +13,18 @@ RUN apt-get update && apt-get install -y \
 RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
 RUN apt-get install git-lfs
 
+# Install nvidia-pyindex
+RUN pip install nvidia-pyindex
+
 # Copy and install Python requirements
 COPY ./tests/requirements-ci.txt .
 RUN pip install -r requirements-ci.txt --extra-index-url https://download.pytorch.org/whl/cpu \
-    --extra-index-url https://pypi.nvidia.com
+    --extra-index-url https://pypi.ngc.nvidia.com
 
 # Clone and install detectron2 and anomalib
 RUN git clone https://github.com/facebookresearch/detectron2 detectron2 && \
     pip install --no-build-isolation -e detectron2
-
+    
 RUN git clone -b v1.1.1 https://github.com/openvinotoolkit/anomalib.git anomalib && \
     cd anomalib && pip install -e . && \
     anomalib install --option core
