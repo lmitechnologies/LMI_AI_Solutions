@@ -18,7 +18,7 @@ jobs:
         python-version: ['3.12']
 
     env:
-      IMAGE_NAME: ghcr.io/lmi-ai-solutions/test-env
+      IMAGE_NAME: ghcr.io/lmitechnologies/ais-test-env
 
     steps:
       - name: Check out the repo
