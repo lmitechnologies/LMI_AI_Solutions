@@ -17,6 +17,8 @@ jobs:
           python: ["3.12"]
           test_suite: ["lmi_utils", "object_detectors", "classifiers", "anomaly_detectors"]
     runs-on: ${{ matrix.os }}
+    container:
+      image: ghcr.io/lmi-ai-solutions/test-env:py${{ matrix.python }}
     name: Test ${{ matrix.test_suite }} with Python ${{ matrix.python }}
 
     steps:
@@ -43,24 +45,6 @@ jobs:
       - name: Check out Git LFS content
         run: git lfs checkout
 
-      # - name: Set up Python with pip caching
-      #   uses: actions/setup-python@v6
-      #   with:
-      #     python-version: ${{ matrix.python }}
-      #     cache: 'pip'
-      #     cache-dependency-path: 'requirements.txt'
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-               
-      - name: Install anomalib and detectron2
-        run: |
-          git clone https://github.com/facebookresearch/detectron2 detectron2
-          pip install --no-build-isolation -e detectron2
-          git clone -b v1.1.1 https://github.com/openvinotoolkit/anomalib.git && cd anomalib && pip install -e .
-          anomalib install --option core
-
       - name: Install LMI AI Solutions packages
         run: |
           pip install -e object_detectors
@@ -70,13 +54,11 @@ jobs:
           
       - name: Run tests
         run: |
-          if [ "${{ matrix.test_suite }}" == "lmi_utils" ]; then
-            pytest tests/lmi_utils
-          elif [ "${{ matrix.test_suite }}" == "object_detectors" ]; then
-            pytest tests/object_detectors
-          elif [ "${{ matrix.test_suite }}" == "classifiers" ]; then
-            pytest tests/classifiers
-          elif [ "${{ matrix.test_suite }}" == "anomaly_detectors" ]; then
-            pytest \
-              --ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py \
-              tests/anomaly_detectors
+          TEST_PATH="tests/${{ matrix.test_suite }}"
+          EXTRA_PYTEST_ARGS=""
+          
+          if [ "${{ matrix.test_suite }}" == "anomaly_detectors" ]; then
+            EXTRA_PYTEST_ARGS="--ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py"
+          fi
+          
+          pytest $EXTRA_PYTEST_ARGS $TEST_PATH
