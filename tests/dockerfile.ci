@@ -14,8 +14,7 @@ RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.d
 RUN apt-get install git-lfs
 
 # Install nvidia-pyindex
-RUN pip list
-RUN pip install nvidia-pyindex
+RUN pip install setuptools wheel nvidia-pyindex
 
 # Copy and install Python requirements
 COPY ./tests/requirements-ci.txt .
