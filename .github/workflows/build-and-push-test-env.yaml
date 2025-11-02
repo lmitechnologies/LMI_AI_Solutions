@@ -1,8 +1,6 @@
 name: Build and Publish Test Docker Image
 
 on:
-  pull_request:
-    branches: [ "ais" ]
   workflow_dispatch:
 
 jobs:
