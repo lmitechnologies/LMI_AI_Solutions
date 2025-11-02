@@ -31,6 +31,15 @@ jobs:
         with:
           submodules: 'true'
 
+      - name: DEBUG - Show directories
+        run: |
+          echo "--- DEBUG INFO ---"
+          echo "Current directory (pwd): $(pwd)"
+          echo ""
+          echo "Listing /github/workspace (where code should be):"
+          ls -la /github/workspace
+          echo "--- END DEBUG ---"
+
       - name: Create Git LFS file list
         run: git lfs ls-files -l |cut -d' ' -f1 |sort >.git/lfs-hashes.txt
 
