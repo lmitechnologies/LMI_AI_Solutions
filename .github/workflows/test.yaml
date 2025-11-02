@@ -11,9 +11,6 @@ on:
 
 jobs:
   build-and-test:
-    defaults:
-      run:
-        working-directory: ${{ github.workspace }}
 
     strategy:
       matrix:
@@ -32,7 +29,7 @@ jobs:
           submodules: 'true'
 
       - name: Mark workspace as safe
-        run: git config --global --add safe.directory ${{ github.workspace }}
+        run: git config --global --add safe.directory $(pwd)
 
       - name: DEBUG - Check user and .git permissions
         run: |
