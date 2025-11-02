@@ -2,6 +2,8 @@ name: Build and Publish Test Docker Image
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [ "ais" ]
 
 jobs:
   build-and-push-test-env:

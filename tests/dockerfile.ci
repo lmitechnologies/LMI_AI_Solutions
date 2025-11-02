@@ -6,7 +6,7 @@ WORKDIR /app
 
 # Install OS-level dependencies
 RUN apt-get update && apt-get install -y \
-    git curl gnupg build-essential \
+    git curl gnupg build-essential libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install git lfs
