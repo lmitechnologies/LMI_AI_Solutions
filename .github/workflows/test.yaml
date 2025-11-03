@@ -10,19 +10,24 @@ on:
 
 
 jobs:
-  build-test-and-push:
+  run-test:
     strategy:
       matrix:
           os: [ubuntu-latest]
-          python: ["3.12"]
+          python-version: ['3.12']
+          test_suite: ["no-AD", "AD"]
     runs-on: ${{ matrix.os }}
+    container:
+      image: ghcr.io/lmitechnologies/ais-test-env:py${{ matrix.python-version }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           submodules: 'true'
-          # lfs: 'true'
+
+      - name: Mark workspace as safe
+        run: git config --global --add safe.directory $(pwd)
 
       - name: Create Git LFS file list
         run: git lfs ls-files -l |cut -d' ' -f1 |sort >.git/lfs-hashes.txt
@@ -42,47 +47,22 @@ jobs:
       - name: Check out Git LFS content
         run: git lfs checkout
 
-      - name: Set up Python with pip caching
-        uses: actions/setup-python@v6
-        with:
-          python-version: ${{ matrix.python }}
-          cache: 'pip'
-          cache-dependency-path: 'requirements.txt'
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
-               
-      - name: Install anomalib and detectron2
-        run: |
-          git clone https://github.com/facebookresearch/detectron2 detectron2
-          pip install --no-build-isolation -e detectron2
-          git clone -b v1.1.1 https://github.com/openvinotoolkit/anomalib.git && cd anomalib && pip install -e .
-          anomalib install --option core
-
       - name: Install LMI AI Solutions packages
         run: |
           pip install -e object_detectors
           pip install -e anomaly_detectors
           pip install -e lmi_utils
           pip install -e classifiers
-
-      - name: print installed packages
-        run: |
-          pip list
           
       - name: Run tests
+        shell: bash
         run: |
-          echo "Running test lmi_utils..."
-          pytest tests/lmi_utils
-
-          echo "Running test object_detectors..."
-          pytest tests/object_detectors
-
-          echo "Running test classifiers..."
-          pytest tests/classifiers
-
-          echo "Running test anomaly_detectors (excluding anomalib v0 test)..."
-          pytest \
-            --ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py \
-            tests/anomaly_detectors
+          OTHER_TEST_SUITE=(lmi_utils object_detectors classifiers)
+          
+          if [ "${{ matrix.test_suite }}" == "AD" ]; then
+            pytest --ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py tests/anomaly_detectors
+          else
+            for suite in "${OTHER_TEST_SUITE[@]}"; do
+              pytest tests/${suite}
+            done
+          fi

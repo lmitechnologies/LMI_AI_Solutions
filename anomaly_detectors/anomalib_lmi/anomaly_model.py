@@ -1,7 +1,6 @@
 import os
 import logging 
 from collections import OrderedDict, namedtuple
-import tensorrt as trt
 import torch
 import numpy as np
 import albumentations as A
@@ -43,6 +42,7 @@ class AnomalyModel(Anomalib_Base):
         _,ext=os.path.splitext(model_path)
         self.logger.info(f"Loading model: {model_path}")
         if ext=='.engine':
+            import tensorrt as trt
             with open(model_path, "rb") as f, trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
                 model = runtime.deserialize_cuda_engine(f.read())
             self.context = model.create_execution_context()

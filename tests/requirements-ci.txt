@@ -3,10 +3,9 @@ torchvision==0.20.1
 scikit-learn
 tensorboard
 numba
-cuda-python
-numpy==1.26.0
+numpy<2.0
 ultralytics
 albumentations
 onnx
 pytest
-tensorrt
+pytest-html
