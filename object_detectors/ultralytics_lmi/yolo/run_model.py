@@ -6,7 +6,7 @@ import numpy as np
 import collections
 from tqdm import tqdm
 
-from ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose
+from ultralytics_lmi.yolo.model import Yolo, YoloSeg, YoloObb, YoloPose
 from gadget_utils.pipeline_utils import plot_one_rbox, get_img_path_batches, plot_one_box, resize_image, fit_im_to_size, revert_to_origin, revert_masks_to_origin
 from label_utils.shapes import Rect, Mask
 from label_utils.csv_utils import write_to_csv
@@ -29,9 +29,11 @@ if __name__ == '__main__':
     parser.add_argument('--csv', action='store_true', help='[optional] whether to save the results to csv file')
     parser.add_argument('--obb', action='store_true', help='[optional] whether to run Oriented Bounding Box model')
     parser.add_argument('--pose', action='store_true', help='[optional] whether to run Pose model')
+    parser.add_argument('--seg', action='store_true', help='[optional] whether to run Segmentation model')
     parser.add_argument('--el', action='store_false', help='[optional] log level default is ERROR', default=False)
     parser.add_argument('--resize', required=False, nargs=2, type=int, help='resize')
     parser.add_argument('--no-label', action='store_true', help='[optional] do not show label')
+    parser.add_argument('--no-box', action='store_true', help='[optional] do not show bounding box')
     parser.add_argument('--pad', required=False, nargs=2, type=int, help='pad')
     args = parser.parse_args()
     
@@ -45,6 +47,8 @@ if __name__ == '__main__':
         model = YoloPose(args.wts_file)
     elif args.obb:
         model = YoloObb(args.wts_file)
+    elif args.seg:
+        model = YoloSeg(args.wts_file)
     else:
         model = Yolo(args.wts_file)
     
@@ -158,9 +162,9 @@ if __name__ == '__main__':
                     color = color_map[classes[j]]
                     label = None if args.no_label else f'{classes[j]}: {scores[j]:.2f}'
                     if args.obb:
-                        plot_one_rbox(box,im_out,color=color,label=label)
+                        plot_one_rbox(box,im_out,color=color,label=label, hide_bbox=args.no_box)
                     else:
-                        plot_one_box(box,im_out,mask,color=color,label=label)
+                        plot_one_box(box,im_out,mask,color=color,label=label, hide_bbox=args.no_box)
                     
                     if segments and len(segments[j]):
                         seg = segments[j]
