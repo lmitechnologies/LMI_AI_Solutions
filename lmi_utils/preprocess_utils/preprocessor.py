@@ -46,7 +46,7 @@ class Preprocessor:
         im_out = image
         operators = []
         for step in processing_steps:
-            op_name = step.get("name")
+            op_name = step.get("type")
             config = step.get("configuration", {})
             if op_name not in self._handlers:
                 raise ValueError(f"Handler for '{op_name}' is not registered.")
