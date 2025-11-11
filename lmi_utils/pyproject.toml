@@ -22,7 +22,8 @@ include = [
   "system_utils*",
   "postprocess_utils*",
   "dataset_utils*",
-  "pipeline_base*"
+  "pipeline_base*",
+  "preprocess_utils*"
 ]
 
 [project.scripts]
