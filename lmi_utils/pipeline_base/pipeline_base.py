@@ -205,15 +205,14 @@ class PipelineBase(metaclass=ABCMeta):
         for model_key in target_model_keys:
             config_to_use = parsed_model_roles[model_key]
             model_source = "Static" if 'static' in config_to_use['model_path'].split('/') else "GoFactory"
-            # TODO: handle tile configs
-            # keys_to_inherit = ['tile_size', 'stride']
-            # for key in keys_to_inherit:
-            #     if key not in config_to_use and key in configs[model_key]['metadata']:
-            #         self.logger.warning(
-            #             f"'{key}' not found in GoFactory config for '{model_key}'. Inheriting value from local config."
-            #         )
-            #         config_to_use[key] = configs[model_key]['metadata'][key]
-                
+
+            # Add initialization artifacts not parsed by Schema (tile, stride for AD)
+            model_format = model_roles[model_key]["format"]
+            expected_artifacts = model_roles[model_key]["artifacts"][model_format]
+            for init_artifact in expected_artifacts:
+                if init_artifact not in config_to_use:
+                    config_to_use[init_artifact] = expected_artifacts[init_artifact]
+            
             self._load_model(model_key, config_to_use, **kwargs)
             self.logger.info(f'Successfully loaded {model_source} model: {model_key}\n')
         self.logger.info(f'Final loaded models: {list(self.models.keys())}\n')

@@ -55,6 +55,11 @@ class AnomalyModel2(Anomalib_Base):
             
         _,ext = os.path.splitext(model_path)
         self.fp16 = False
+        self.tiler_initialized = False
+        self.tile = tile
+        self.stride = stride
+        self.tile_mode = tile_mode
+
         self.logger.info(f"Loading model: {model_path}")
         if ext=='.engine':
             with open(model_path, "rb") as f, trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
@@ -101,8 +106,18 @@ class AnomalyModel2(Anomalib_Base):
             self.inference_mode='PT'
         else:
             raise Exception(f'Unknown model format: {ext}')
-        
+        self.init_tiler()
+    
+    
+    def init_tiler(self, tile=None, stride=None, tile_mode=None, **kwargs):
+        if self.tiler or self.tiler_initialized:
+            return
         # init tiler
+        tile, stride, tile_mode = (
+            tile or self.tile,
+            stride or self.stride,
+            tile_mode or self.tile_mode
+        )
         if tile is not None:
             self.logger.info('Tiling is enabled.')
             if stride is None:
@@ -115,8 +130,9 @@ class AnomalyModel2(Anomalib_Base):
             self.tiler = Tiler(tile,stride)
             self.tile_mode = ScaleMode.PADDING if tile_mode=='padding' else ScaleMode.INTERPOLATION
             self.logger.info(f'init tiler with tile={tile}, stride={stride}, mode={self.tile_mode}')
-            
-            
+            self.tiler_initialized = True
+            return True
+        return False
     
     @torch.inference_mode()
     def preprocess(self, image):
@@ -198,6 +214,7 @@ class AnomalyModel2(Anomalib_Base):
                       If tiling is used, this is the untilled output.
                       The output is squeezed.
         '''
+        self.init_tiler(**kwargs)
         if self.tiler is not None:
             tiling_settings = kwargs.get('tiling_settings', {})
             overlap_mode_str = tiling_settings.get('overlap_mode', 'average')
@@ -251,6 +268,7 @@ class AnomalyModel2(Anomalib_Base):
         processed_output = aggregated_output_tensor
         
         if self.tiler is not None:
+            print("untiling...")
             processed_output = self.tiler.untile(processed_output, **tiling_settings)
     
         output_numpy = None
@@ -265,7 +283,6 @@ class AnomalyModel2(Anomalib_Base):
         
         return final_squeezed_output
 
-        
 
     def warmup(self,input_hw=None):
         '''
