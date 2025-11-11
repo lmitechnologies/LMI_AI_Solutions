@@ -22,7 +22,7 @@ class Yolov8_cls(Yolov8):
     
     logger = logging.getLogger(__name__)
 
-    def __init__(self, weights:str, device='gpu', data=None, fp16=False, imgsz=[224,224], **kwargs) -> None:
+    def __init__(self, weights:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
         """init the model
 
         Args:
@@ -36,17 +36,16 @@ class Yolov8_cls(Yolov8):
         Raises:
             FileNotFoundError: _description_
         """
-        super().__init__(weights, device, data, fp16,image_size=imgsz)
-        
+        super().__init__(weights, device, data, fp16, **kwargs)
+        self.image_size = kwargs.get('image_size', [224,224])
         self.transforms = (
             getattr(
                 self.model.model,
                 "transforms",
-                classify_transforms(imgsz[0]),
+                classify_transforms(self.image_size[0]),
             )
         )
         self._legacy_transform_name = "ultralytics.yolo.data.augment.ToTensor"
-        self.image_size = kwargs.get('image_size', [224,224])
         
         
     @smart_inference_mode()

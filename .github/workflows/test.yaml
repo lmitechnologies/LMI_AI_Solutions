@@ -1,0 +1,68 @@
+name: Test
+
+on:
+  push:
+    branches: [ "ais" ]
+  pull_request:
+    branches: [ "ais" ]
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+
+jobs:
+  run-test:
+    strategy:
+      matrix:
+          os: [ubuntu-latest]
+          python-version: ['3.12']
+          test_suite: ["no-AD", "AD"]
+    runs-on: ${{ matrix.os }}
+    container:
+      image: ghcr.io/lmitechnologies/ais-test-env:py${{ matrix.python-version }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: Mark workspace as safe
+        run: git config --global --add safe.directory $(pwd)
+
+      - name: Create Git LFS file list
+        run: git lfs ls-files -l |cut -d' ' -f1 |sort >.git/lfs-hashes.txt
+
+      - name: Restore Git LFS object cache
+        uses: actions/cache@v4
+        with:
+          path: .git/lfs
+          key: ${{ runner.os }}-lfsdata-v1-${{ hashFiles('.git/lfs-hashes.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-lfsdata-v1-
+            ${{ runner.os }}-lfsdata
+
+      - name: Fetch any needed Git LFS objects and prune extraneous ones
+        run: git lfs fetch --prune
+
+      - name: Check out Git LFS content
+        run: git lfs checkout
+
+      - name: Install LMI AI Solutions packages
+        run: |
+          pip install -e object_detectors
+          pip install -e anomaly_detectors
+          pip install -e lmi_utils
+          pip install -e classifiers
+          
+      - name: Run tests
+        shell: bash
+        run: |
+          OTHER_TEST_SUITE=(lmi_utils object_detectors classifiers)
+          
+          if [ "${{ matrix.test_suite }}" == "AD" ]; then
+            pytest --ignore=tests/anomaly_detectors/anomalib_lmi/test_anomaly_model.py tests/anomaly_detectors
+          else
+            for suite in "${OTHER_TEST_SUITE[@]}"; do
+              pytest tests/${suite}
+            done
+          fi

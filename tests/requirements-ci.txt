@@ -1,0 +1,11 @@
+torch==2.5.1
+torchvision==0.20.1
+scikit-learn
+tensorboard
+numba
+numpy<2.0
+ultralytics
+albumentations
+onnx
+pytest
+pytest-html

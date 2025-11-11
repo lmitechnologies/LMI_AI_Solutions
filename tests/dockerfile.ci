@@ -1,0 +1,25 @@
+# Use ARG to accept the version from the workflow
+ARG PYTHON_VERSION=3.12
+FROM python:${PYTHON_VERSION}
+
+WORKDIR /app
+
+# Install OS-level dependencies
+RUN apt-get update && apt-get install -y libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install git lfs
+RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
+RUN apt-get install git-lfs
+
+# Copy and install Python requirements
+COPY ./tests/requirements-ci.txt .
+RUN pip install -r requirements-ci.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Clone and install detectron2 and anomalib
+RUN git clone https://github.com/facebookresearch/detectron2 detectron2 && \
+    pip install --no-build-isolation -e detectron2
+
+RUN git clone -b v1.1.1 https://github.com/openvinotoolkit/anomalib.git anomalib && \
+    cd anomalib && pip install -e . && \
+    anomalib install --option core
