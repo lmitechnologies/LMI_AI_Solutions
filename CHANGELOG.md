@@ -1,3 +1,15 @@
+# [1.2.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.1.1...v1.2.0) (2025-11-12)
+
+
+### Bug Fixes
+
+* fix the bug where run_model does not load correct yolo seg models ([#152](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/152)) ([ad83e05](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/ad83e051b23774e97696ce28f350aa1a4b48680d))
+
+
+### Features
+
+* Preprocessor module for automatic preprocessing ([402da43](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/402da43e26d1d998e2206d2faaa68d4797330d22))
+
 ## [1.1.1](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.1.0...v1.1.1) (2025-10-30)
 
 
