@@ -41,6 +41,7 @@ class AnomalyModel2(Anomalib_Base):
             - self.inference_mode: model inference mode (TRT or PT)
             - self.tiler: tiling object
         """
+        self.logger.info(f'tile: {tile}, stride: {stride}, tile_mode: {tile_mode}')
         if not os.path.isfile(model_path):
             raise Exception(f'Cannot find the model file: {model_path}')
         
