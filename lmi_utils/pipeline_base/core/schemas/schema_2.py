@@ -34,6 +34,13 @@ class Details:
             base_model=data.get("base_model", ""),
             defect_class_list=data.get("defect_class_list")
         )
+    
+    def get_preprocessing_by_type(self,preprocessing_type: str) -> Optional[Dict[str, Any]]:
+        for step in self.global_preprocessing:
+            if step.get('type') == preprocessing_type:
+                return step
+        return None
+
 
 @dataclass
 class Configs:
@@ -98,6 +105,8 @@ class Model:
         )
     def get_metadata(self) -> Dict[str, Any]:
         """Returns the metadata of the model as a dictionary."""
+        # check for tiling preprocessing
+        tiling_config = self.details.get_preprocessing_by_type('tile')
         metadata = {
             "model_path": self.artifacts.get(self.format, {}).model_path if self.format in self.artifacts else "",
             "image_size": self.artifacts.get(self.format, {}).image_size if self.format in self.artifacts else [],
@@ -105,6 +114,9 @@ class Model:
             "algorithm": self.details.training_algorithm.lower(),
             "package": self.details.training_package.lower(),
         }
+        if tiling_config:
+            metadata['tile_size'] = [tiling_config.get(f'configuration', {}).get('height', None), tiling_config.get(f'configuration', {}).get('width', None)]
+            metadata['stride'] = [tiling_config.get(f'configuration', {}).get('y_stride', None), tiling_config.get(f'configuration', {}).get('x_stride', None)]
         return metadata
 
 @dataclass
