@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.2.0...v1.3.0) (2025-11-25)
+
+
+### Features
+
+* tilling initialization for ad ([aee673c](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/aee673c6518e0d3e58fb6b0096cc3066af7ce268))
+
 # [1.2.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.1.1...v1.2.0) (2025-11-12)
 
 
