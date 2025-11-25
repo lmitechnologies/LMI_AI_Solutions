@@ -665,8 +665,8 @@ def load_pipeline_def(filepath):
     return kwargs
 
 
-def get_models_from_static_manifest(manifest_json_path:str):
-    """create model manifest from a static manifest json file
+def get_models_from_static_manifest(manifest_json_path:str, **kwargs):
+    """create models manifest from a static manifest json file
     """
     manifest_json_path = Path(manifest_json_path).resolve()
     if not manifest_json_path.exists():
@@ -674,8 +674,9 @@ def get_models_from_static_manifest(manifest_json_path:str):
     with open(manifest_json_path, 'r') as f:
         models = json.load(f)
     
-    # create manifest
+    # create models manifest
     keys_to_copy = ['anomaly_size', 'threshold_max', 'threshold_min', 'iou']
+    config_keys = ['to-fail', 'size', 'confidence']
     manifest = {}
     for model in models:
         # update model paths
@@ -683,13 +684,21 @@ def get_models_from_static_manifest(manifest_json_path:str):
             if v.get('model_path'):
                 if not os.path.isabs(v['model_path']):
                     v['model_path'] = str((manifest_json_path.parent / v['model_path']).resolve())
+                    
         # create object configs
         model['configs'] = {}
         if model['details'].get('object_class'):
-            for c in model['details']['object_class']:
-                model['configs'][c] = {
-                    'confidence': model['details'].get('confidence_threshold', 0.5),
-                }
+            conf = model['details'].get('confidence_threshold', 0.5)
+            size = model['details'].get('object_size', 1)
+            to_fail = model['details'].get('to_fail', True)
+            for key in config_keys:
+                if key == 'to-fail':
+                    model['configs'][key] = {k: to_fail for k in model['details']['object_class']}
+                if key == 'size':
+                    model['configs'][key] = {k: size for k in model['details']['object_class']}
+                if key == 'confidence':
+                    model['configs'][key] = {k: conf for k in model['details']['object_class']}
+                    
         # copy from details to configs
         for key in keys_to_copy:
             if model['details'].get(key):
