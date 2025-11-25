@@ -1,3 +1,15 @@
+# [1.4.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.3.1...v1.4.0) (2025-11-25)
+
+
+### Features
+
+* update pipeline base class to 2.4.145 ([d2e78ac](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/d2e78ac524daab9d44392c758c239ff15633fb9d))
+
+
+### Reverts
+
+* Revert "upgrade pipeline base class to 2.4.145 ([#156](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/156))" ([dca47f6](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/dca47f61348f85ea1acae39bf8ad70d6238795ab))
+
 ## [1.3.1](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.3.0...v1.3.1) (2025-11-25)
 
 
