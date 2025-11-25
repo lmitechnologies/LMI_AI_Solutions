@@ -10,6 +10,7 @@ import tempfile
 import tarfile
 from pathlib import Path
 from torch.nn import functional as F
+from typing import Dict, Any, List
 
 
 BLACK=(0,0,0)
@@ -666,43 +667,57 @@ def load_pipeline_def(filepath):
 
 
 def get_models_from_static_manifest(manifest_json_path:str, **kwargs):
-    """create models manifest from a static manifest json file
     """
-    manifest_json_path = Path(manifest_json_path).resolve()
-    if not manifest_json_path.exists():
-        raise Exception(f'manifest file not found: {manifest_json_path}')
-    with open(manifest_json_path, 'r') as f:
-        models = json.load(f)
-    
-    # create models manifest
-    keys_to_copy = ['anomaly_size', 'threshold_max', 'threshold_min', 'iou']
-    config_keys = ['to-fail', 'size', 'confidence']
+    Create models manifest from a static manifest json file.
+    """
+    manifest_path = Path(manifest_json_path).resolve()
+    if not manifest_path.exists():
+        raise FileNotFoundError(f'Manifest file not found: {manifest_path}')
+
+    with open(manifest_path, 'r') as f:
+        models: List[Dict[str, Any]] = json.load(f)
+
     manifest = {}
+    keys_to_copy = ['anomaly_size', 'threshold_max', 'threshold_min', 'iou']
+    
     for model in models:
-        # update model paths
-        for k,v in model['artifacts'].items():
-            if v.get('model_path'):
-                if not os.path.isabs(v['model_path']):
-                    v['model_path'] = str((manifest_json_path.parent / v['model_path']).resolve())
-                    
-        # create object configs
+        role = model.get('model_role')
+        if role is None:
+            continue
+        
+        # Update model paths
+        artifacts = model.get('artifacts', {})
+        for _, artifact_data in artifacts.items():
+            raw_path = artifact_data.get('model_path')
+            if raw_path:
+                path_obj = Path(raw_path)
+                # Resolve relative paths against the JSON file's directory
+                if not path_obj.is_absolute():
+                    artifact_data['model_path'] = str((manifest_path.parent / path_obj).resolve())
+
+        # Create object configs
         model['configs'] = {}
-        if model['details'].get('object_class'):
-            conf = model['details'].get('confidence_threshold', 0.5)
-            size = model['details'].get('object_size', 1)
-            to_fail = model['details'].get('to_fail', True)
-            for key in config_keys:
-                if key == 'to-fail':
-                    model['configs'][key] = {k: to_fail for k in model['details']['object_class']}
-                if key == 'size':
-                    model['configs'][key] = {k: size for k in model['details']['object_class']}
-                if key == 'confidence':
-                    model['configs'][key] = {k: conf for k in model['details']['object_class']}
-                    
-        # copy from details to configs
+        details = model.get('details', {})
+        object_classes = details.get('object_class', [])
+
+        if object_classes:
+            # Map config keys to their default values from details
+            config_defaults = {
+                'confidence': details.get('confidence_threshold', 0.5),
+                'size': details.get('object_size', 1),
+                'to-fail': details.get('to_fail', True)
+            }
+
+            # Generate the dictionary for each config key
+            for config_key, default_val in config_defaults.items():
+                model['configs'][config_key] = {cls: default_val for cls in object_classes}
+
+        # Copy specific keys from details to configs
         for key in keys_to_copy:
-            if model['details'].get(key):
-                model['configs'][key] = model['details'][key]
-            
-        manifest[model['model_role']] = model
+            if key in details:
+                model['configs'][key] = details[key]
+
+        # Add to the manifest
+        manifest[role] = model
+
     return manifest
