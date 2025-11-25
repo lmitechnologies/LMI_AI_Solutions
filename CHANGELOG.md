@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.3.0...v1.3.1) (2025-11-25)
+
+
+### Reverts
+
+* Revert "update base class to match with gadget version 2.4.145 ([#155](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/155))" ([c352a4c](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/c352a4c2b09f5b2e86c11c574bbd2aa6fd0ecc21))
+
 # [1.3.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.2.0...v1.3.0) (2025-11-25)
 
 
