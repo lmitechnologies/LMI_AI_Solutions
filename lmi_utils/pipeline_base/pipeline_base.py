@@ -116,28 +116,6 @@ class PipelineBase(metaclass=ABCMeta):
         Returns:
             dict: The parsed model roles.
         """
-        version = kwargs.get('version', self.version)
-        if version not in self._MODEL_ROLES_HANDLERS:
-            raise ValueError(f'Unsupported version: {version}. Supported versions are: {list(self._MODEL_ROLES_HANDLERS.keys())}')
-        handler = self._MODEL_ROLES_HANDLERS[version]
-        if handler is None:
-            return model_roles
-        else:
-            return handler(model_roles).get_metadata()
-        
-        
-    def load_models(self, model_roles: dict, configs: dict, filter: str = '-model', **kwargs):
-        """load multiple models based on the provided model_roles, configs and filter.  
-        The model_roles are used for loading models from the GoFactory, while the configs are used for local models.  
-        This function loads models from the GoFactory if their "use_factory" flags are set to true in the configs.  
-        Otherwise, it uses local models defined in the pipeline_def.json.  
-        It also filters out not relevant models based on the provided filter string.
-
-        Args:
-            model_roles (dict): a dictionary from gofactory or static_models.
-            configs (dict): the configs from pipeline_def.json or the runtime.
-            filter (str, optional): filter models by name. Defaults to '-model'.
-        """
         
         # the format of model_roles from factory is:
         # {
@@ -176,29 +154,48 @@ class PipelineBase(metaclass=ABCMeta):
         
         # However, the required format for initializing AIS repo models is:
         # {
-        #     "name": "foreground-od",
-        #     "default_value": {
-        #         "use_factory": false,
-        #         "metadata":{
-        #             "version": "v1",
-        #             "model_name": "yolov8",
-        #             "model_type": "instancesegmentation",
-        #             "framework": "ultralytics",
-        #             "image_size": [640, 640],
-        #             "model_path": "/home/gadget/pipeline/trt-engines/yolo11n-seg.pt"
-        #         },
-        #         "iou": 0.45,
-        #         "object_configs": {
-        #             "person": {"confidence": 0.5},
-        #             "bicycle": {"confidence": 0.5},
-        #         }
+        #     "top-od-model": {
+        #     "model_path": "/app/models/top-od-model/ObjectDetection/yolo/1/model.pt",
+        #     "image_size": [
+        #         640,
+        #         640
+        #     ],
+        #     "model_type": "objectdetection",
+        #     "algorithm": "yolo",
+        #     "package": "ultralytics"
         #     }
         # }
         
+        version = kwargs.get('version', self.version)
+        if version not in self._MODEL_ROLES_HANDLERS:
+            raise ValueError(f'Unsupported version: {version}. Supported versions are: {list(self._MODEL_ROLES_HANDLERS.keys())}')
+        
+        # convert model_roles to the required format
+        handler = self._MODEL_ROLES_HANDLERS[version]
+        if handler is None:
+            return model_roles
+        else:
+            return handler(model_roles).get_metadata()
+        
+        
+    def load_models(self, model_roles: dict, configs: dict, filter: str = '-model', **kwargs):
+        """load multiple models based on the provided model_roles, configs and filter.  
+        The model_roles are used for loading models from the GoFactory or static models.  
+        The configs are used for loading pipeline configs from pipeline_def.json or the runtime.  
+        It also filters out not relevant models based on the provided filter string.  
+
+        Args:
+            model_roles (dict): a dictionary from gofactory or static_models.
+            configs (dict): the configs from pipeline_def.json or the runtime.
+            filter (str, optional): filter models by name. Defaults to '-model'.
+            verbose (bool, optional): whether to log the original and parsed model roles. Defaults to False.
+        """
         # parse model_roles to match the required format for initializing AIS repo models
         parsed_model_roles = self._parse_model_roles(model_roles, **kwargs)
-        self.logger.info(f'Original Model Roles: {model_roles}\n')
-        self.logger.info(f'Parsed Model Roles: {parsed_model_roles}\n')
+        
+        if kwargs.get('verbose', False):
+            self.logger.info(f'Original Model Roles: {json.dumps(model_roles, indent=4)}\n')
+            self.logger.info(f'Parsed Model Roles: {json.dumps(parsed_model_roles, indent=4)}\n')
 
         # filter configs to get target model keys
         target_model_keys = [k for k in model_roles.keys() if f'{filter}' in k]
@@ -364,7 +361,7 @@ class PipelineBase(metaclass=ABCMeta):
         self.logger.info('pipeline is cleaned up')
         
     
-    def update_results(self, key:str, value, sub_key=None, to_factory=False, to_automation=False, overwrite=False):
+    def update_results(self, key:str, value, sub_key=None, **kwargs):
         """ 
         modifies self.results by applying rules for creation and updates.
 
@@ -375,19 +372,19 @@ class PipelineBase(metaclass=ABCMeta):
             to_factory (bool, optional): add the key to the gofactory. Defaults to False.
             to_automation (bool, optional): add the key to the automation. Defaults to False.
             overwrite (bool, optional): if self.results[key] is a list, overwrite it with value. Defaults to False.
-        """
+        """        
         # Handle appending to an existing list.
-        if key in self.results and isinstance(self.results[key], list) and not overwrite:
+        if key in self.results and isinstance(self.results[key], list) and not kwargs.get('overwrite', False):
             self.results[key].append(value)
         elif sub_key is not None:
             self.results.setdefault(key, {})[sub_key] = value
         else:
             self.results[key] = value
             
-        if to_factory and key not in self.results['factory_keys']:
+        if kwargs.get('to_factory', False) and key not in self.results['factory_keys']:
             self.results['factory_keys'].append(key)
             
-        if to_automation and key not in self.results['automation_keys']:
+        if kwargs.get('to_automation', False) and key not in self.results['automation_keys']:
             self.results['automation_keys'].append(key)
             
     
