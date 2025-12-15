@@ -96,7 +96,7 @@ def get_annotations_from_json(path_json, images_dir, background=False):
         if path_json.endswith(LABEL_NAME) or path_json.endswith(PRED_NAME):
             continue
         logger.info(f'Extracting labels from: {path_json}')
-        logger.info(f'dir_path : {images_dir}')
+        logger.info(f'Images Directory Path : {images_dir}')
         with open(path_json) as f:    
             l = json.load(f)
 
@@ -110,7 +110,7 @@ def get_annotations_from_json(path_json, images_dir, background=False):
             dt['data']['image'] for dt in l if 'data' in dt
         ]
         common_prefix = os.path.dirname(os.path.commonprefix(files))
-        logger.info(f'base_path: {common_prefix}')
+        logger.info(f'Base Path: {common_prefix}')
         
         # find the common prefix between the image path
         

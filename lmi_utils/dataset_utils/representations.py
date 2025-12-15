@@ -156,7 +156,7 @@ class Box(Base):
         """Calculate the area of the bounding box."""
         return (self.x_max - self.x_min) * (self.y_max - self.y_min)
 
-    def to_coco(self):
+    def to_coco(self, **kwargs):
         """Convert to COCO format (x_min, y_min, width, height)."""
         return self.to_xywh().tolist()[:4]  # Exclude angle for COCO format
 

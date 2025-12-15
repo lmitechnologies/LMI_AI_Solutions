@@ -21,6 +21,8 @@ def get_args():
     ap.add_argument('--target_classes',default='all', help='[optional] the comma separated target classes, default=all')
     ap.add_argument('--bg', action='store_true', help='save images with no labels, where yolo models treat them as background')
     ap.add_argument('--merge_box', action='store_true', help='merge multiple instances of same class boxes into one. Brush labels only!')
+    ap.add_argument('--idx0', action='store_true', help='start index from 0 instead of 1')
+
     args = vars(ap.parse_args())
     return args
 
@@ -34,8 +36,9 @@ def get_coco_annotation(annotation, **kwargs):
         bbox = annotation.value.to_box()
         return annotation.value.to_coco(), bbox.to_coco()
     elif isinstance(annotation, BoxAnnotation):
-        poly = annotation.value.to_polygon()
-        return poly.to_coco(), annotation.value.to_coco()
+        poly = annotation.value.to_polygon(**kwargs)
+        segm = poly.to_coco(**kwargs)
+        return segm, annotation.value.to_coco(**kwargs)
     else:
         raise ValueError(f"Unsupported annotation type: {type(annotation)}")
 
@@ -57,7 +60,7 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:
     labels = dataset.labels
     for label_id, label in enumerate(labels):
         coco_dataset.add_category(CocoCategory(
-            id=label_id + 1,
+            id=label_id + (0 if kwargs.get('idx0', False) is True else 1),
             name=label.id,
             supercategory='',
         ))
@@ -85,6 +88,8 @@ def create_coco_dataset(dataset: Dataset, is_crowd:bool = False, target_classes:
         ))
         added_annotations = 0
         for annotation in file.annotations:
+            annotation_id += 1
+            # both segmentation and bbox are required for COCO format
             try:
                 annotation_id += 1
                 # both segmentation and bbox are required for COCO format
@@ -170,15 +175,18 @@ def convert_to_json(args):
 
         
     # create coco datasets
-    train_ais_dataset, coco_train_dataset, train_files,train_file_id_map = create_coco_dataset(train_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
+    train_ais_dataset, coco_train_dataset, train_files,train_file_id_map = create_coco_dataset(train_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box, idx0=args.get('idx0', False))
     if use_train_for_val:
         logger.info('Creating validation dataset from train dataset')
         val_file_id_map = train_file_id_map
         coco_val_dataset = coco_train_dataset
     else:
         logger.info('Creating validation dataset from val dataset')
-        val_ais_dataset, coco_val_dataset,val_files,val_file_id_map = create_coco_dataset(val_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box)
+        val_ais_dataset, coco_val_dataset,val_files,val_file_id_map = create_coco_dataset(val_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box, idx0=args.get('idx0', False))
     # save ais datasets
+    if not os.path.isdir(os.path.join(path_out, 'train')):
+        os.makedirs(os.path.join(path_out, 'train'), exist_ok=True)
+
     train_ais_dataset.save(os.path.join(path_out, 'train', 'ais.train.dataset.json'))
     # save coco datasets
     coco_train_dataset.save_to_json(file_path=os.path.join(path_out, 'train', 'annotations.json'))
