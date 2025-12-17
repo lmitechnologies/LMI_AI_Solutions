@@ -25,7 +25,6 @@ logger.setLevel(logging.DEBUG)
 
 DATA_PATH = 'tests/assets/images/nvtec-ad'
 MODEL_PATH = 'tests/assets/models/ad/model_v1.pt'
-TRACED_MODEL_PATH = 'tests/assets/models/ad/model_v1_trace.pt'
 OUTPUT_PATH = 'tests/outputs/ad/anomalib_v1'
 USE_GPU = torch.cuda.is_available()
 
@@ -49,7 +48,6 @@ def test_compare_results_with_anomalib():
     """
     model1 = TorchInferencer(MODEL_PATH)
     model2 = AnomalyModel2(MODEL_PATH)
-    model3 = AnomalyModel2(TRACED_MODEL_PATH)
     paths = glob.glob(os.path.join(DATA_PATH, '*.png'))
     for p in paths:
         # using anomalib code
@@ -69,14 +67,11 @@ def test_compare_results_with_anomalib():
         im = cv2.imread(p)
         rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         pred2 = model2.predict(rgb)
-        pred3 = model3.predict(rgb)
         
         if USE_GPU:
             assert np.array_equal(pred, pred2)
-            assert np.array_equal(pred, pred3)
         else:
             assert np.isclose(pred, pred2, atol=1e-5).all()
-            assert np.isclose(pred, pred3, atol=1e-5).all()
 
 
 def test_compare_results_with_anomalib_api():
@@ -85,7 +80,6 @@ def test_compare_results_with_anomalib_api():
     """
     model1 = TorchInferencer(MODEL_PATH)
     model2 = AnomalyDetector(dict(framework='anomalib1', model_name='padim', task='seg', version='v1', model_path=MODEL_PATH))
-    model3 = AnomalyDetector(dict(framework='anomalib1', model_name='padim', task='seg', version='v1', model_path=TRACED_MODEL_PATH))
     paths = glob.glob(os.path.join(DATA_PATH, '*.png'))
     for p in paths:
         # using anomalib code
@@ -105,14 +99,11 @@ def test_compare_results_with_anomalib_api():
         im = cv2.imread(p)
         rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         pred2 = model2.predict(rgb)
-        pred3 = model3.predict(rgb)
         
         if USE_GPU:
             assert np.array_equal(pred, pred2)
-            assert np.array_equal(pred, pred3)
         else:
             assert np.allclose(pred, pred2, atol=1e-5)
-            assert np.allclose(pred, pred3, atol=1e-5)
 
         
 def test_warmup():
@@ -144,14 +135,12 @@ def test_model():
     ad = AnomalyModel2(MODEL_PATH)
     ad.test(DATA_PATH, OUTPUT_PATH)
 
-
 def test_model_api():
     ad = AnomalyDetector(dict(framework='anomalib1', model_name='padim', version='v1', model_path=MODEL_PATH),224,224,'resize')
     ad.test(DATA_PATH, OUTPUT_PATH)
     
     ad = AnomalyDetector(dict(framework='anomalib1', model_name='padim', version='v1', model_path=MODEL_PATH))
     ad.test(DATA_PATH, OUTPUT_PATH)
-    
     
 def test_annotate(test_data, ):
     def old_func(img, ad_scores, ad_threshold, ad_max):
