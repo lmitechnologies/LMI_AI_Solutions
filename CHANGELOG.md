@@ -1,3 +1,10 @@
+# [1.5.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.4.0...v1.5.0) (2025-12-17)
+
+
+### Features
+
+* Support running torch trace AD models on CPU ([#159](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/159)) ([b2dfc66](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/b2dfc66536ee96fc46d545fc2f5e56bc49eed304))
+
 # [1.4.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.3.1...v1.4.0) (2025-11-25)
 
 
