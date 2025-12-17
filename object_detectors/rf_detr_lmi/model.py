@@ -42,10 +42,9 @@ class RFDETR(ODBase):
             else:
                 self.logger.warning('GPU not available, falling back to CPU')
         
-    def warmup():
+    def warmup(self):
         """Warm up the model by running a dummy inference."""
-        dummy_input = torch.zeros(1, 3, self.image_size[0], self.image_size[1]).to(self.device)
-        self.model.infer(dummy_input)
+        self.model.infer(torch.zeros(1, 3, self.image_size[0], self.image_size[1]).to(self.device))
     
     def preprocess(self, image: np.ndarray, **kwargs):
         """Preprocess the input image for the model.
@@ -66,6 +65,13 @@ class RFDETR(ODBase):
         """
 
         return self.model.infer(image)
+    
+    def _construct_results(self, preds, **kwargs) -> dict:
+        return Results(
+            boxes = preds.xyxy,
+            scores = preds.confidence,
+            classes = preds.class_id
+        )
 
     def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, **kwargs):
         """Perform object detection on a list of images.
@@ -81,9 +87,8 @@ class RFDETR(ODBase):
         Returns:
             Results: Object containing detection results.
         """
-        
-        
-        return results
+        outputs = self.forward(image, **kwargs)
+        return self._construct_results(outputs)
         
         
 
