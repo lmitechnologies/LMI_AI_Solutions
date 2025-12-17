@@ -83,8 +83,9 @@ class AnomalyModel2(Anomalib_Base):
         elif ext=='.pt':
             try:  
                 # try loading the model using torchscript
-                self.pt_model = torch.jit.load(model_path).to(self.device)
+                self.pt_model = torch.jit.load(model_path,map_location=self.device)
                 self.model_shape = self.image_size
+                self.logger.info(f"Traced model shape: {self.model_shape}")
             except Exception as e:
                 checkpoint = torch.load(model_path,map_location=self.device,weights_only=False)
                 self.pt_model = checkpoint['model']
@@ -95,7 +96,6 @@ class AnomalyModel2(Anomalib_Base):
                         self.model_shape = to_list(d.size)
                         self.image_size = to_list(d.size)
                         self.logger.info(f"Model shape: {self.model_shape}")
-
                 
             self.pt_model.eval()
             self.inference_mode='PT'
