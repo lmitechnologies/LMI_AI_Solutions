@@ -1,15 +1,25 @@
-from rf_detr_lmi.model import RFDETR
 import glob
 import os
 import cv2
 import numpy as np
 import json
 import logging
+from rf_detr_lmi.model import RFDETR
+import argparse
+import time
+
 
 # setup the logger
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('RFDETR-INFER')
+logger.setLevel(logging.INFO)
 
+def setup_parser():
+    parser = argparse.ArgumentParser(description="RF-DETR-LMI Inference")
+    parser.add_argument('--weights', type=str, required=True, help='Path to model weights')
+    parser.add_argument('--input', type=str, required=True, help='Path to input images')
+    parser.add_argument('--output', type=str, required=True, help='Path to save output results')
+    parser.add_argument('--conf', type=float, default=0.5, help='Confidence threshold for detections')
+    return parser
 
 def find_images(path:str, exts=['jpg','jpeg','png']):
     """find all images with the given extensions in the path
@@ -33,7 +43,7 @@ def inference_run(args):
     out_path = args.get('output')
 
     if not os.path.exists(out_path):
-        os.makedirs(args.output)
+        os.makedirs(out_path)
     
     # load model
     model = RFDETR(model_path)
@@ -42,21 +52,34 @@ def inference_run(args):
     # find images
     img_list = find_images(imgs_path)
     logger.info(f'Found {len(img_list)} images in {imgs_path}')
-
+    inference_times = []
     for img_path in img_list:
         img_name = os.path.basename(img_path)
-        logger.info(f'Processing image: {img_name}')
         image = cv2.imread(img_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        outputs = model.predict(image)
+        t0 = time.time()
+        outputs = model.predict(image, configs=args.get('conf', 0.5))
+        t1 = time.time()
+        inference_times.append(t1 - t0)
+        logger.info(f'Processed image: {img_name}, found {outputs} objects')
+        annotated_image = model.annotate_image(outputs, image)
+
+        output_image_path = os.path.join(out_path, img_name)
+        annotated_image_bgr = cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(output_image_path, annotated_image_bgr)
+        logger.info(f'Saved annotated image to {output_image_path}')
+
+    avg_time = sum(inference_times) / len(inference_times) if inference_times else 0
+    logger.info(f'Average inference time per image: {avg_time:.4f} seconds | in ms: {avg_time*1000:.2f} ms')
+    max_time = max(inference_times) if inference_times else 0
+    logger.info(f'Max inference time for an image: {max_time:.4f} seconds | in ms: {max_time*1000:.2f} ms')
+    min_time = min(inference_times) if inference_times else 0
+    logger.info(f'Min inference time for an image: {min_time:.4f} seconds | in ms: {min_time*1000:.2f} ms')
 
 def main ():
-    import argparse
-    parser = argparse.ArgumentParser(description="RF-DETR-LMI Inference")
-    parser.add_argument('--weights', type=str, required=True, help='Path to model weights')
-    parser.add_argument('--input', type=str, required=True, help='Path to input images')
-    parser.add_argument('--output', type=str, required=True, help='Path to save output results')
+    parser = setup_parser()
     args = parser.parse_args()
+    logger.info(f'Arguments: {args}')
     
     inference_run(vars(args))
 
