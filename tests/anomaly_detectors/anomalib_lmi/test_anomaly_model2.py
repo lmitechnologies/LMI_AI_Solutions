@@ -1,3 +1,4 @@
+from typing import List, Tuple
 import pytest
 import logging
 from collections.abc import Sequence
@@ -14,6 +15,7 @@ from anomalib.data.utils import read_image
 
 
 from anomalib_lmi.anomaly_model2 import AnomalyModel2
+from anomalib_lmi.convert_to_torchscript import convert_v1_torchscript
 from ad_core.anomaly_detector import AnomalyDetector
 from gadget_utils import pipeline_utils
 
@@ -28,6 +30,13 @@ MODEL_PATH = 'tests/assets/models/ad/model_v1.pt'
 TRACED_MODEL_PATH = 'tests/assets/models/ad/model_v1_trace.pt'
 OUTPUT_PATH = 'tests/outputs/ad/anomalib_v1'
 USE_GPU = torch.cuda.is_available()
+BASE_CONFIG = {
+    'framework': 'anomalib1',
+    'model_name': 'padim',
+    'version': 'v1',
+    'model_path': MODEL_PATH,
+    'task': 'seg'
+}
 
 
 @pytest.fixture
@@ -43,6 +52,34 @@ def test_data():
     return out,names
 
 
+def compare_results(anomalib_model:TorchInferencer, ais_models:List[AnomalyModel2]):
+    paths = glob.glob(os.path.join(DATA_PATH, '*.png'))
+    for p in paths:
+        # using anomalib code
+        tensor = read_image(p,as_tensor=True)
+        pred = anomalib_model.forward(anomalib_model.pre_process(tensor))
+        if isinstance(pred, dict):
+            pred = pred['anomaly_map']
+        elif isinstance(pred, Sequence):
+            pred = pred[1]
+        elif isinstance(pred, torch.Tensor):
+            pass
+        else:
+            raise Exception(f'Not supported output: {type(pred)}')
+        pred = pred.cpu().numpy().squeeze()
+        
+        # using AIS code
+        im = cv2.imread(p)
+        rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+        preds = [model.predict(rgb) for model in ais_models]
+        
+        for pred2 in preds:
+            if USE_GPU:
+                assert np.array_equal(pred, pred2)
+            else:
+                assert np.allclose(pred, pred2, atol=1e-5)
+
+
 def test_compare_results_with_anomalib():
     """
     compare prediction results between current implementation and anomalib
@@ -50,106 +87,72 @@ def test_compare_results_with_anomalib():
     model1 = TorchInferencer(MODEL_PATH)
     model2 = AnomalyModel2(MODEL_PATH)
     model3 = AnomalyModel2(TRACED_MODEL_PATH)
-    paths = glob.glob(os.path.join(DATA_PATH, '*.png'))
-    for p in paths:
-        # using anomalib code
-        tensor = read_image(p,as_tensor=True)
-        pred = model1.forward(model1.pre_process(tensor))
-        if isinstance(pred, dict):
-            pred = pred['anomaly_map']
-        elif isinstance(pred, Sequence):
-            pred = pred[1]
-        elif isinstance(pred, torch.Tensor):
-            pass
-        else:
-            raise Exception(f'Not supported output: {type(pred)}')
-        pred = pred.cpu().numpy().squeeze()
-        
-        # using AIS code
-        im = cv2.imread(p)
-        rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        pred2 = model2.predict(rgb)
-        pred3 = model3.predict(rgb)
-        
-        if USE_GPU:
-            assert np.array_equal(pred, pred2)
-            assert np.array_equal(pred, pred3)
-        else:
-            assert np.isclose(pred, pred2, atol=1e-5).all()
-            assert np.isclose(pred, pred3, atol=1e-5).all()
-
-
+    compare_results(model1,[model2,model3])
+    
+    
 def test_compare_results_with_anomalib_api():
     """
     compare prediction results between current implementation and anomalib
     """
     model1 = TorchInferencer(MODEL_PATH)
-    model2 = AnomalyDetector(dict(framework='anomalib1', model_name='padim', task='seg', version='v1', model_path=MODEL_PATH))
-    model3 = AnomalyDetector(dict(framework='anomalib1', model_name='padim', task='seg', version='v1', model_path=TRACED_MODEL_PATH))
-    paths = glob.glob(os.path.join(DATA_PATH, '*.png'))
-    for p in paths:
-        # using anomalib code
-        tensor = read_image(p,as_tensor=True)
-        pred = model1.forward(model1.pre_process(tensor))
-        if isinstance(pred, dict):
-            pred = pred['anomaly_map']
-        elif isinstance(pred, Sequence):
-            pred = pred[1]
-        elif isinstance(pred, torch.Tensor):
-            pass
-        else:
-            raise Exception(f'Not supported output: {type(pred)}')
-        pred = pred.cpu().numpy().squeeze()
-        
-        # using AIS code
-        im = cv2.imread(p)
-        rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        pred2 = model2.predict(rgb)
-        pred3 = model3.predict(rgb)
-        
-        if USE_GPU:
-            assert np.array_equal(pred, pred2)
-            assert np.array_equal(pred, pred3)
-        else:
-            assert np.allclose(pred, pred2, atol=1e-5)
-            assert np.allclose(pred, pred3, atol=1e-5)
+    model2 = AnomalyDetector(BASE_CONFIG)
+    config = {**BASE_CONFIG, 'model_path': TRACED_MODEL_PATH} # replace model path with traced model path
+    logger.info(config)
+    model3 = AnomalyDetector(config)
+    compare_results(model1,[model2,model3])
 
-        
-def test_warmup():
-    ad = AnomalyModel2(MODEL_PATH,224,112)
+
+@pytest.mark.parametrize("init_args, warmup_size", [
+    ((224, 112), [672, 640]),
+    ((),         [256, 224])
+])
+def test_warmup(init_args: Tuple, warmup_size: List[int]):
+    """
+    Test AnomalyModel2 warmup with default and specific sizes.
+    """
+    ad = AnomalyModel2(MODEL_PATH, *init_args)
     ad.warmup()
-    ad.warmup([672,640])
+    ad.warmup(warmup_size)
+
     
-    ad = AnomalyModel2(MODEL_PATH)
+@pytest.mark.parametrize("warmup_size", [
+    [672, 640],
+    [256, 224]
+])
+def test_warmup_api(warmup_size: List[int]):
+    """
+    Test warmup with different input dimensions.
+    """
+    ad = AnomalyDetector(BASE_CONFIG, 224, 112)
     ad.warmup()
-    ad.warmup([256,224])
-
-def test_warmup_api():
-    ad = AnomalyDetector(dict(framework='anomalib1', model_name='padim', task='seg', version='v1', model_path=MODEL_PATH),224,112)
-    ad.warmup()
-    ad.warmup([672,640])
+    ad.warmup(warmup_size)
     
-    ad = AnomalyDetector(dict(framework='anomalib1', model_name='padim', task='seg', version='v1', model_path=MODEL_PATH),224,112)
-    ad.warmup()
-    ad.warmup([256,224])
     
-
-def test_model():
-    ad = AnomalyModel2(MODEL_PATH,224,224,'resize')
-    ad.test(DATA_PATH, os.path.join(OUTPUT_PATH,'tile-resize'))
+@pytest.mark.parametrize("init_args, sub_dir", [
+    ((MODEL_PATH, 224, 224, 'resize'), 'tile-resize'),
+    ((MODEL_PATH, 224, 224),           'tile-pad'),
+    ((MODEL_PATH,),                    None)
+])
+def test_model(init_args: Tuple, sub_dir: str):
+    """
+    Test AnomalyModel2 with various initialization parameters.
+    """
+    model = AnomalyModel2(*init_args)
     
-    ad = AnomalyModel2(MODEL_PATH,224,224)
-    ad.test(DATA_PATH, os.path.join(OUTPUT_PATH,'tile-pad'))
+    # specific output path if sub_dir exists, else default OUTPUT_PATH
+    save_path = os.path.join(OUTPUT_PATH, sub_dir) if sub_dir else OUTPUT_PATH
+    model.test(DATA_PATH, save_path)
     
-    ad = AnomalyModel2(MODEL_PATH)
-    ad.test(DATA_PATH, OUTPUT_PATH)
-
-
-def test_model_api():
-    ad = AnomalyDetector(dict(framework='anomalib1', model_name='padim', version='v1', model_path=MODEL_PATH),224,224,'resize')
-    ad.test(DATA_PATH, OUTPUT_PATH)
     
-    ad = AnomalyDetector(dict(framework='anomalib1', model_name='padim', version='v1', model_path=MODEL_PATH))
+@pytest.mark.parametrize("extra_args", [
+    (224, 224, 'resize'),
+    ()
+])
+def test_model_api(extra_args: Tuple):
+    """
+    Test AnomalyDetector API with and without resize arguments.
+    """
+    ad = AnomalyDetector(BASE_CONFIG, *extra_args)
     ad.test(DATA_PATH, OUTPUT_PATH)
     
     
@@ -177,7 +180,7 @@ def test_annotate(test_data, ):
     
     
     ad = AnomalyModel2(MODEL_PATH)
-    for _ in range(10):
+    for _ in range(1):
         ad.warmup()
     
     out_path = os.path.join(OUTPUT_PATH,'annotate')
@@ -209,6 +212,23 @@ def test_annotate(test_data, ):
             
             assert np.array_equal(out1,out2)
             assert np.array_equal(out2,out3)
+            
+            
+def test_convert_to_torchscript():
+    with tempfile.TemporaryDirectory() as t:
+        outpath = os.path.join(t, 'trace.pt')
+        convert_v1_torchscript(MODEL_PATH, outpath)
+        assert os.path.isfile(outpath)
+        
+        # test on cpu and gpu
+        model = AnomalyModel2(outpath, device='cpu')
+        inp = torch.randint(0, 255, (256, 256, 3), dtype=torch.uint8)
+        model.predict(inp)
+        
+        if USE_GPU:
+            model = AnomalyModel2(outpath, device='cuda')
+            model.predict(inp.cuda())
+        
     
     
 def test_cmds():
