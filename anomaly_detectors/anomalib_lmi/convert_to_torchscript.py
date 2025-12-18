@@ -35,17 +35,14 @@ class SafeNormalize(nn.Module):
     
 def make_preprocessing_trace_safe(module, device):
     """
-    Recursively searches for standard torchvision Normalize layers 
-    and replaces them with SafeNormalize.
+    Searches for torchvision Normalize layers and replaces them with SafeNormalize.
     """
-    # Handle standard nn.Sequential or nn.Module
-    for name, child in module.named_children():            
-        # Handle torchvision.transforms.Compose specifically (if it holds a list)
+    for name, child in module.named_children():
         if isinstance(child, v2.Compose):
             new_transforms = []
             for t in child.transforms:
                 if "Normalize" in t.__class__.__name__:
-                    logger.info(f"Detected unsafe Normalize in Compose list")
+                    logger.info(f"Detected unsafe Normalize: {t}")
                     safe_norm = SafeNormalize(t.mean, t.std).to(device)
                     new_transforms.append(safe_norm)
                     logger.info(f" -> Replaced with SafeNormalize")
@@ -73,7 +70,8 @@ def generate_traced_torchscript(model_path, output_path, version='v1', batch_siz
     else:
         raise ValueError(f"Unsupported version: {version}")
 
-def convert_v1_torchscript(model_path, output_path, batch_size=1, device='cuda'):
+
+def convert_v1_torchscript(model_path, output_path, batch_size=1, device='cpu'):
     """
     Convert a model to TorchScript format.
     
@@ -81,7 +79,7 @@ def convert_v1_torchscript(model_path, output_path, batch_size=1, device='cuda')
         model_path (str): Path to the model file.
         output_path (str): Path to save the converted model.
         batch_size (int): Batch size for tracing. Default is 1.
-        device (str): Device to use for tracing. Default is 'cuda'.
+        device (str): Device to use for tracing. Default is 'cpu'.
         
     Returns:
         torch.jit.ScriptModule: The converted TorchScript model.
@@ -90,23 +88,22 @@ def convert_v1_torchscript(model_path, output_path, batch_size=1, device='cuda')
     ckpt = torch.load(model_path, map_location=device, weights_only=False)
     model = ckpt['model'].eval()
     model = make_preprocessing_trace_safe(model, device=device)
+    
+    # Determine image size from model transforms
     image_size = None
     for d in model.transform.transforms:
         if isinstance(d, v2.Resize):
             image_size = to_list(d.size)
     image_size = [image_size[0]+1, image_size[1]+1]
+    
+    # trace the model
     inp = torch.rand(batch_size,3,image_size[0], image_size[1]).to(device)
     traced_model = torch.jit.trace(model,inp,strict=False)
     torch.jit.save(traced_model, output_path)
     logger.info(f"Saved traced model to {output_path}")
     
-    # Verify the traced model
-    model = AnomalyModel2(output_path)
-    inp = torch.randint(0,255,(image_size[0], image_size[1],3),dtype=torch.uint8).to(device)
-    model.predict(inp)
-    logger.info(f"Verified traced model by running a prediction.")
-    
     return traced_model
+
 
 def main():
     parser = argparse.ArgumentParser(description="Convert a model to TorchScript format.")

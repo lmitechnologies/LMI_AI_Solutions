@@ -44,17 +44,20 @@ class AnomalyModel2(Anomalib_Base):
         if not os.path.isfile(model_path):
             raise Exception(f'Cannot find the model file: {model_path}')
         
-        if torch.cuda.is_available():
-            self.device = torch.device('cuda:0')
-        else:
+        # set device
+        device = kwargs.get('device', 'cuda').lower()
+        if device not in ['cuda', 'cpu']:
+            raise ValueError(f"Unsupported device: {device}. Choose either 'cuda' or 'cpu'.")
+        self.device = torch.device(device)
+        if device == 'cuda' and not torch.cuda.is_available():
             self.logger.warning('GPU device unavailable. Use CPU instead.')
             self.device = torch.device('cpu')
-        self.pt_metadata = {}
+            
         self.image_size = kwargs.get('image_size', [224,224])
             
         _,ext = os.path.splitext(model_path)
         self.fp16 = False
-        self.logger.info(f"Loading model: {model_path}")
+        self.logger.info(f"Loading model using {self.device}: {model_path}")
         if ext=='.engine':
             import tensorrt as trt
             with open(model_path, "rb") as f, trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
