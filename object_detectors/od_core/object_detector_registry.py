@@ -5,7 +5,7 @@ import importlib
 import pkgutil
 
 
-PACKAGES = ["ultralytics_lmi", "yolov8_lmi", "detectron2_lmi", "yolov5_lmi"]
+PACKAGES = ["ultralytics_lmi", "yolov8_lmi", "detectron2_lmi", "yolov5_lmi", "rf_detr_lmi"]  # List of packages to search for object detector models
 TARGET_MODULE_SUFFIXES = ['.model'] # Target suffixes to look for in the packages
 
 

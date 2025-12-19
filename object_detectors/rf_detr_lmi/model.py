@@ -7,6 +7,9 @@ import os
 import torch
 import numpy as np
 from rfdetr import RFDETRMedium, RFDETRLarge, RFDETRSmall, RFDETRNano, RFDETRBase
+import tensorrt as trt
+import pycuda.driver as cuda
+import pycuda.autoinit
 
 
 def to_numpy(data):
@@ -27,8 +30,57 @@ def to_numpy(data):
     else:
         raise TypeError(f'Data type {type(data)} not supported')
 
-class RfdetrTRT(ODBase):
+
+
+
+@ObjectDetectorRegistry.register(metadata=dict(versions=["v1"], model_names=["rfdetr"], tasks=["od","seg", "instancesegmentation", "objectdetection"], frameworks=["rfdetr"]))
+class RfdetrModel(ODBase):
+    """
+    RfdetrModel is a factory class for creating object detection models based on the Rfdetr framework.
+    Attributes:
+        _registry (dict): A dictionary that maps file extensions to their corresponding model wrapper classes.
+    Methods:
+        register(format):
+            Registers a model wrapper class for a specific file format.
+            Args:
+                format (str): The file extension format to register the wrapper class for.
+            Returns:
+                function: A decorator function that registers the wrapper class.
+        __new__(cls, model_path, class_map, *args, **kwargs):
+            Creates an instance of the appropriate model wrapper class based on the file extension of the model_path.
+            Args:
+                model_path (str): The file path to the model file.
+                class_map (dict): A dictionary mapping class IDs to class names.
+                *args: Additional positional arguments to pass to the model wrapper class.
+                **kwargs: Additional keyword arguments to pass to the model wrapper class.
+            Returns:
+                object: An instance of the appropriate model wrapper class.
+            Raises:
+                ValueError: If the file extension of model_path is not registered.
+    """
+    _registry = {}
+
+    @classmethod
+    def register(cls, format):
+        def decorator(wrapper_cls):
+            cls._registry[format] = wrapper_cls
+            return wrapper_cls
+        return decorator
+    
+    def __new__(cls, model_path, *args,**kwargs):
+        ext = model_path.split(".")[-1]
+        wrapper_cls = cls._registry.get(ext)
+        if wrapper_cls is None:
+            raise ValueError("Invalid model file extension")
+        
+        return wrapper_cls(model_path, *args, **kwargs)
+
+@RfdetrModel.register('engine')
+class RfdetrTRT(RfdetrModel):
     def __init__(self, model_path: str, device='cuda', fp16=False, **kwargs) -> None:
+        self.image_size = kwargs.get('image_size', (640, 640))
+        self.means = [0.485, 0.456, 0.406]
+        self.stds = [0.229, 0.224, 0.225]
         self.logger = trt.Logger(trt.Logger.INFO)
         self.runtime = trt.Runtime(self.logger)
         
@@ -44,6 +96,15 @@ class RfdetrTRT(ODBase):
         
         self.input_shape = self.buffer_sets[0]['inputs'][0]["shape"]
         self.input_dtype = self.buffer_sets[0]['inputs'][0]["dtype"]
+        self.num_classes = self.buffer_sets[0]['outputs'][1]["shape"][-1]
+
+        class_map = kwargs.get("class_map", None)
+        if class_map is None:
+            raise ValueError("class_map is required for [Detectron2TRT]")
+        self.class_map = {
+            int(k): str(v) for k, v in class_map.items()
+        }
+        self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)))
 
     def _allocate_buffers(self):
         """Allocates one set of pinned host memory and device memory."""
@@ -76,7 +137,7 @@ class RfdetrTRT(ODBase):
         
         return {"inputs": inputs, "outputs": outputs, "all": all_bindings}
 
-        def warmup(self):
+    def warmup(self):
         """Warm up the model by running a dummy inference."""
         dummy_input = np.zeros(self.input_shape, dtype=self.input_dtype)
         self.forward(np.ascontiguousarray(dummy_input, dtype=self.input_dtype))
@@ -88,10 +149,20 @@ class RfdetrTRT(ODBase):
         Args:
             image (np.ndarray): Input image in numpy array format.
         """
-        image /= 255.0
-        image = np.transpose(image, (2, 0, 1))  # HWC to CHW
-        image = np.expand_dims(image, axis=0)  # Add batch dimension
-        return np.ascontiguousarray(image, dtype=self.input_dtype)       
+        # Convert to float and Normalize (0.0 to 1.0)
+        input_img = image.astype(np.float32) / 255.0
+
+        # HWC to CHW (C++ memcpy logic equivalent)
+        # Apply normalization: (val - mean) / std
+        means = np.array(self.means, dtype=np.float32)
+        stds = np.array(self.stds, dtype=np.float32)
+        input_img = (input_img - means) / stds
+        
+        # Transpose to NCHW
+        input_img = input_img.transpose(2, 0, 1)
+        input_img = np.expand_dims(input_img, axis=0)
+        
+        return np.array([input_img], dtype=self.input_dtype)
 
     def forward(self, image: np.ndarray, **kwargs) -> list:
         """
@@ -117,42 +188,61 @@ class RfdetrTRT(ODBase):
         self.current_idx = 1 - self.current_idx
         return [r['host'].reshape(r['shape']) for r in results]
     
-    def postprocess(outputs, **kwargs) -> dict:
-        # outputs[0]: boxes (1, N, 4), outputs[1]: logits (1, N, classes)
+    def sigmoid(x):
+        return 1 / (1 + np.exp(-x))
+    
+    def postprocess(self,outputs,image, **kwargs) -> Results:
+        orig_h, orig_w = image.shape[:2]
+        configs = kwargs.get("configs")
+        if configs is None:
+            self.logger.warning("configs is None. Using default value of 1.0 for all classes.")
+            configs = {k if isinstance(k,str) else v: 1.0 for k,v in self.class_map.items()}
+        if isinstance(configs, dict) is False and isinstance(configs, (int, float)):
+            configs = {k if isinstance(k,str) else v: configs for k,v in self.class_map.items()}
+        else:
+            self.logger.warning("configs should be a dictionary of class confidence thresholds. Using default value of 1.0 for all classes.")
+        
+        if len(outputs) < 2:
+            raise RuntimeError(f"Expected at least 2 output tensors, got {len(outputs)}")
+
         dets_data = outputs[0][0]
         labels_data = outputs[1][0]
-            
-        res = self.input_shape[2]  # assuming square input
-        orig_h, orig_w = kwargs.get('original_size', (res, res))
-        scale_w, scale_h = orig_w / res, orig_h / res
-            
-        final_boxes, final_scores, final_ids = [], [], []
-            
-        # sigmoid and max
-        scores = 1 / (1 + np.exp(-labels_data))  # sigmoid
-        max_scores = np.max(scores, axis=1)
-        max_ids = np.argmax(scores, axis=1) 
-            
-        mask = (max_scores > 0.5) & (max_ids >= 0)
-            
-        for i in np.where(mask)[0]:
-            # CXCYWH to XYXY
-            cx, cy, w, h = dets_data[i] * res
-            x1, y1 = (cx - w/2) * scale_w, (cy - h/2) * scale_h
-            x2, y2 = (cx + w/2) * scale_w, (cy + h/2) * scale_h
-                
-            final_boxes.append([x1, y1, x2, y2])
-            final_scores.append(max_scores[i])
-            final_ids.append(max_ids[i])
-       
-        final_boxes = np.array(final_boxes)
-        final_scores = np.array(final_scores)
-        final_ids = np.array(final_ids)
+        logger.info(labels_data.shape)
+        scores_all = sigmoid(labels_data)
         
+        max_scores = np.max(scores_all, axis=1)
+        max_class_indices = np.argmax(scores_all, axis=1)
+        
+        max_class_indices = self.class_map_func(max_class_indices)
+
+        mask = max_scores >= np.vectorize(configs.get)(max_class_indices, 1.0)
+        
+        filtered_scores = max_scores[mask]
+        filtered_classes = max_class_indices[mask]
+        filtered_dets = dets_data[mask] # shape (N, 4)
+
+        if filtered_dets.shape[0] == 0:
+            return Results(
+                boxes = [],
+                scores = [],
+                classes = []
+            )
+
+        cx = filtered_dets[:, 0] * orig_w
+        cy = filtered_dets[:, 1] * orig_h
+        w  = filtered_dets[:, 2] * orig_w
+        h  = filtered_dets[:, 3] * orig_h
+
+        x_min = cx - w / 2.0
+        y_min = cy - h / 2.0
+        x_max = cx + w / 2.0
+        y_max = cy + h / 2.0
+        final_boxes = np.stack([x_min, y_min, x_max, y_max], axis=1)
+
         return Results(
-            boxes = torch.from_numpy(final_boxes) if len(final_boxes) > 0 else [],
-            scores = torch.from_numpy(final_scores) if len(final_scores) > 0 else [],
-            classes = final_ids if len(final_ids) > 0 else []
+            boxes = torch.from_numpy(final_boxes),
+            scores = torch.from_numpy(filtered_scores),
+            classes = filtered_classes
         )
 
     def predict(self, image, configs={}, operators=[], **kwargs):
@@ -223,20 +313,19 @@ class RfdetrTRT(ODBase):
                 
         return image
         
-
+@RfdetrModel.register('pth')
 class RfdetrPT(ODBase):
     
     logger = logging.getLogger('RFDETR')
     logger.setLevel(logging.INFO)
     
-    def __init__(self, model_path:str, device='cuda', data=None, fp16=False,**kwargs) -> None:
-        self.image_size = kwargs.get('image_size', [640, 640])
+    def __init__(self, model_path:str, **kwargs) -> None:
+        print(f"kwargs: {kwargs}")
         
-        if torch.cuda.is_available() and device == 'cuda':
+        if torch.cuda.is_available() and kwargs.get('device', 'cuda') == 'cuda':
             self.device = 'cuda'
         else:
             self.device = 'cpu'
-            device = 'cpu'
 
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f'File not found: {model_path}')
@@ -246,14 +335,25 @@ class RfdetrPT(ODBase):
         self.class_names = {}
         self.model = None
         if model_type == 'medium':
+            self.image_size = (kwargs.get('image_size')[0] if kwargs.get('image_size') is not None else 576,
+                               kwargs.get('image_size')[1] if kwargs.get('image_size') is not None else 576)
             self.model = RFDETRMedium(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
         elif model_type == 'large':
+            self.image_size = (kwargs.get('image_size')[0] if kwargs.get('image_size') is not None else 560,
+                               kwargs.get('image_size')[1] if kwargs.get('image_size') is not None else 560)
             self.model = RFDETRLarge(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
         elif model_type == 'small':
+            self.image_size = (kwargs.get('image_size')[0] if kwargs.get('image_size') is not None else 512,
+                               kwargs.get('image_size')[1] if kwargs.get('image_size') is not None else 512)
+
             self.model = RFDETRSmall(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
         elif model_type == 'nano':
+            self.image_size = (kwargs.get('image_size')[0] if kwargs.get('image_size') is not None else 384,
+                               kwargs.get('image_size')[1] if kwargs.get('image_size') is not None else 384)
             self.model = RFDETRNano(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
         elif model_type == 'base':
+            self.image_size = (kwargs.get('image_size')[0] if kwargs.get('image_size') is not None else 560,
+                               kwargs.get('image_size')[1] if kwargs.get('image_size') is not None else 560)
             self.model = RFDETRBase(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
         else:
             raise ValueError(f'Unsupported model type: {model_type}. Supported types are "medium".')
@@ -303,7 +403,7 @@ class RfdetrPT(ODBase):
         Returns:
             dict: Postprocessed outputs.
         """
-        conf = kwargs.get('conf', 0.5)
+        conf = kwargs.get('configs', 0.5)
         if isinstance(conf, float):
             conf_thresholds = {cls_name: conf for cls_name in self.class_names.values()}
         elif isinstance(conf, dict):
@@ -316,7 +416,13 @@ class RfdetrPT(ODBase):
         scores = np.array(preds.confidence)
         classes = preds.class_id
         # convert class ids to names
-        classes = np.array([self.class_names[int(c)+1] for c in classes])
+        classes = np.array([self.class_names[int(c)] for c in classes])
+        if len(boxes) == 0:
+            return Results(
+                boxes = [],
+                scores = [],
+                classes = []
+            )
         mask = scores >= np.vectorize(conf_thresholds.get)(classes, 1.0)
 
         boxes = boxes[mask]
