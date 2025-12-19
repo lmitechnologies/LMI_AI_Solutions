@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import json
 import logging
-from rf_detr_lmi.model import RFDETR
+from rf_detr_lmi.model import RfdetrModel
 import argparse
 import time
 
@@ -46,7 +46,7 @@ def inference_run(args):
         os.makedirs(out_path)
     
     # load model
-    model = RFDETR(model_path)
+    model = RfdetrModel(model_path)
     # model warmup
     model.warmup()
     # find images
