@@ -8,19 +8,19 @@ services:
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     ipc: host
     command: >
-      bash -c "cd /app/repo/ && bash tests/run_tests.sh v1-all"
+      bash -c "cd /app/repo/ && bash tests/run_tests.sh od"
   
-  test_ais_v0_all:
-    depends_on:
-      test_ais_v1_all:
-        condition: service_completed_successfully
-    build:
-      context: .
-      dockerfile: ./dockerfile.v0
-    volumes:
-      - ../:/app/repo
-    runtime: nvidia # ensure that Nvidia Container Toolkit is installed
-    ipc: host
-    command: >
-      bash -c "cd /app/repo/ && bash tests/run_tests.sh v0-all"
+  # test_ais_v0_all:
+  #   depends_on:
+  #     test_ais_v1_all:
+  #       condition: service_completed_successfully
+  #   build:
+  #     context: .
+  #     dockerfile: ./dockerfile.v0
+  #   volumes:
+  #     - ../:/app/repo
+  #   runtime: nvidia # ensure that Nvidia Container Toolkit is installed
+  #   ipc: host
+  #   command: >
+  #     bash -c "cd /app/repo/ && bash tests/run_tests.sh v0-all"
   

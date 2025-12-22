@@ -18,6 +18,9 @@ RUN pip install 'numpy<2' ultralytics albumentations onnx
 
 # Installing from anomalib src
 RUN pip install anomalib==1.1.1 && anomalib install --option core
+RUN git clone https://github.com/roboflow/rf-detr.git
+RUN pip install -e rf-detr
+# RUN pip install onnxsim onnx-graphsurgeon pycuda
 
 # clone LMI AI Solutions repository
 RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git

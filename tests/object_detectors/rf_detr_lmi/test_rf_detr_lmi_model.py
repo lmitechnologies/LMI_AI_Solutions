@@ -84,4 +84,15 @@ class Test_Rfdetr_Model:
         assert len(outputs['boxes']) == 0
         assert len(outputs['scores']) == 0
         assert len(outputs['classes']) == 0
+    
+    def test_confidence(self, imgs_coco):
+        object_detector = ObjectDetector(
+            metadata=dict(version='v1', model_name='rfdetr', task='od', framework='rfdetr'), 
+            model_path=OD_MODEL, 
+            device=DEVICE,
+            model_type='nano'
+        )
+        img = imgs_coco[0]
+        outputs_05 = object_detector.predict(img, configs=1.0)
+        assert len(outputs_05['boxes']) == 0
        
