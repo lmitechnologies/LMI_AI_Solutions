@@ -10,6 +10,7 @@ from rfdetr import RFDETRMedium, RFDETRLarge, RFDETRSmall, RFDETRNano, RFDETRBas
 import tensorrt as trt
 import pycuda.driver as cuda
 import pycuda.autoinit
+import cv2
 
 
 def to_numpy(data):
@@ -76,7 +77,7 @@ class RfdetrModel(ODBase):
         return wrapper_cls(model_path, *args, **kwargs)
 
 @RfdetrModel.register('engine')
-class RfdetrTRT(RfdetrModel):
+class RfdetrTRT(ODBase):
 
     logger = logging.getLogger('RFDETR')
     logger.setLevel(logging.INFO)
@@ -104,7 +105,7 @@ class RfdetrTRT(RfdetrModel):
 
         class_map = kwargs.get("class_map", None)
         if class_map is None:
-            raise ValueError("class_map is required for [Detectron2TRT]")
+            raise ValueError("class_map is required for [RfdetrTRT]")
         self.class_map = {
             int(k): str(v) for k, v in class_map.items()
         }
@@ -192,7 +193,7 @@ class RfdetrTRT(RfdetrModel):
         self.current_idx = 1 - self.current_idx
         return [r['host'].reshape(r['shape']) for r in results]
     
-    def sigmoid(x):
+    def sigmoid(self,x):
         return 1 / (1 + np.exp(-x))
     
     def postprocess(self,outputs,image, **kwargs) -> Results:
@@ -211,8 +212,7 @@ class RfdetrTRT(RfdetrModel):
 
         dets_data = outputs[0][0]
         labels_data = outputs[1][0]
-        logger.info(labels_data.shape)
-        scores_all = sigmoid(labels_data)
+        scores_all = self.sigmoid(labels_data)
         
         max_scores = np.max(scores_all, axis=1)
         max_class_indices = np.argmax(scores_all, axis=1)
@@ -267,7 +267,7 @@ class RfdetrTRT(RfdetrModel):
         # inference
         outputs = self.forward(preprocessed_image, **kwargs)
         # postprocess
-        results = self.postprocess(outputs, configs=configs, operators=operators, **kwargs)
+        results = self.postprocess(outputs, image=image,configs=configs, operators=operators, **kwargs)
         results = results.to_dict(return_tensor=False)
         if results == {}:
             results = {
@@ -420,7 +420,7 @@ class RfdetrPT(ODBase):
         scores = np.array(preds.confidence)
         classes = preds.class_id
         # convert class ids to names
-        classes = np.array([self.class_names[int(c)] for c in classes])
+        classes = np.array([self.class_names[c+1] for c in classes])
         if len(boxes) == 0:
             return Results(
                 boxes = [],

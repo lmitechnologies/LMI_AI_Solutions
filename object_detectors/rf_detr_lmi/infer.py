@@ -2,11 +2,11 @@ import glob
 import os
 import cv2
 import numpy as np
-import json
 import logging
 from rf_detr_lmi.model import RfdetrModel
 import argparse
 import time
+import json
 
 
 # setup the logger
@@ -19,6 +19,7 @@ def setup_parser():
     parser.add_argument('--input', type=str, required=True, help='Path to input images')
     parser.add_argument('--output', type=str, required=True, help='Path to save output results')
     parser.add_argument('--conf', type=float, default=0.5, help='Confidence threshold for detections')
+    parser.add_argument('--class_map', type=str, required=False, help='Path to class map JSON file')
     return parser
 
 def find_images(path:str, exts=['jpg','jpeg','png']):
@@ -41,12 +42,20 @@ def inference_run(args):
     model_path = args.get('weights')
     imgs_path = args.get('input')
     out_path = args.get('output')
+    class_map_path = args.get('class_map', None)
 
     if not os.path.exists(out_path):
         os.makedirs(out_path)
-    
+    class_map = None
+    if class_map_path:
+        
+        with open(class_map_path, "r") as f:
+            class_map = json.load(f)
+        logger.info(f'Loaded class map with {len(class_map)} classes from {class_map_path}')
+        class_map = {int(k):v for k,v in class_map.items()}
+
     # load model
-    model = RfdetrModel(model_path)
+    model = RfdetrModel(model_path, class_map=class_map)
     # model warmup
     model.warmup()
     # find images
