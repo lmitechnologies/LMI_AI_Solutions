@@ -75,8 +75,8 @@ class Yolov8(ODBase):
         
         # load model
         self.model = AutoBackend(YOLO(weights), self.device, data=data, fp16=fp16, fuse=False)
-        if hasattr(self.model, "fuse"):
-            self.model.fuse()
+        if weights.endswith('.pt') and hasattr(self.model.model, "fuse"):
+            self.model.model.fuse()
         self.model.eval()
         
         # class map < id: class name >

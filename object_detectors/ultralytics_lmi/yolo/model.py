@@ -70,8 +70,8 @@ class Yolo(ODBase):
         
         # load model
         self.model = AutoBackend(model_path, self.device, data=data, fp16=fp16, fuse=False)
-        if hasattr(self.model, "fuse"):
-            self.model.fuse()
+        if model_path.endswith('.pt') and hasattr(self.model.model, "fuse"):
+            self.model.model.fuse()
         self.model.eval()
         
         # class map < id: class name >
