@@ -9,7 +9,6 @@ import time
 
 from ultralytics.utils import ops, nms
 from ultralytics.nn.autobackend import AutoBackend
-from ultralytics import YOLO
 from ultralytics.utils.torch_utils import smart_inference_mode
 
 # import LMI AI Solutions modules
