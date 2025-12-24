@@ -9,6 +9,7 @@ import time
 
 from ultralytics.utils import ops, nms
 from ultralytics.nn.autobackend import AutoBackend
+from ultralytics import YOLO
 from ultralytics.utils.torch_utils import smart_inference_mode
 
 # import LMI AI Solutions modules
@@ -73,7 +74,9 @@ class Yolov8(ODBase):
                 self.logger.warning('GPU not available, using CPU')
         
         # load model
-        self.model = AutoBackend(weights, self.device, data=data, fp16=fp16)
+        self.model = AutoBackend(YOLO(weights), self.device, data=data, fp16=fp16, fuse=False)
+        if hasattr(self.model, "fuse"):
+            self.model.fuse()
         self.model.eval()
         
         # class map < id: class name >
