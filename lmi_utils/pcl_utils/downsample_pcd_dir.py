@@ -1,5 +1,3 @@
-import numpy as np
-import cv2
 from tqdm import tqdm
 import open3d
 from pcl_utils.point_cloud import PointCloud

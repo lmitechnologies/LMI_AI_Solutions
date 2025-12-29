@@ -8,7 +8,6 @@ import copy
 import numpy as np
 import tensorflow as tf
 
-import matplotlib
 from matplotlib import pyplot as plt
 
 # 3. Own modules
@@ -59,7 +58,7 @@ def plot_fig(predict_results, err_mean, err_std, save_dir, err_thresh=None):
         os.mkdir(save_dir)
 
     # Assume normalized error distance
-    ERR_FLOOR = 0
+    # ERR_FLOOR = 0
 
     for img,err_dist,fname in predict_results:
         fname=fname.decode('ascii')
@@ -138,8 +137,8 @@ class PaDiM(object):
         try:
             import tensorflow_addons as tfa
             self.tfa_gaussian_filter2d = tfa.image.gaussian_filter2d
-        except:
-            logging.warning(f'Failed to import tensorflow_addons, will use scipy for gaussian filter. You should expect a performance penalty.')
+        except Exception:
+            logging.warning('Failed to import tensorflow_addons, will use scipy for gaussian filter. You should expect a performance penalty.')
             from scipy.ndimage import gaussian_filter
             self.scipy_gaussian_filter = gaussian_filter
         
@@ -326,23 +325,23 @@ class PaDiM(object):
         training_mean_dist=self.training_mean_dist
         training_std_dist=self.training_std_dist
 
-        logging.debug(f'Convert image h to feature.')
+        logging.debug('Convert image h to feature.')
         intfeature_img_h=_int64_feature(img_h)
-        logging.debug(f'Convert image w to feature.')
+        logging.debug('Convert image w to feature.')
         intfeature_img_w=_int64_feature(img_w)
-        logging.debug(f'Convert ncells to feature.')
+        logging.debug('Convert ncells to feature.')
         intfeature_ncells=_int64_feature(ncells)
-        logging.debug(f'Convert c to feature.')
+        logging.debug('Convert c to feature.')
         intfeature_c=_int64_feature(ev_w)
-        logging.debug(f'Convert inverse covariance matrix to feature.')
+        logging.debug('Convert inverse covariance matrix to feature.')
         floatfeature_cov_inv=_float_feature(cov_inv_preproc)
-        logging.debug(f'Convert mean to feature.')
+        logging.debug('Convert mean to feature.')
         floatfeature_mean=_float_feature(mean_preproc)
-        logging.debug(f'Convert random_ind to feature.')
+        logging.debug('Convert random_ind to feature.')
         intfeature_randind=_int64_feature(random_ind_preproc)
-        logging.debug(f'Convert training mean distance to feature.')
+        logging.debug('Convert training mean distance to feature.')
         floatfeature_tr_err_mean=_float_feature(training_mean_dist)
-        logging.debug(f'Convert training std distance to feature.')
+        logging.debug('Convert training std distance to feature.')
         floatfeature_tr_err_std=_float_feature(training_std_dist)
 
         feature={
@@ -357,12 +356,12 @@ class PaDiM(object):
             "tr_std_dist":floatfeature_tr_err_std,
         }
 
-        logging.debug(f'Combining features.')
+        logging.debug('Combining features.')
         features=tf.train.Features(feature=feature)
         proto=tf.train.Example(features=features)
-        logging.debug(f'Serializing features.')
+        logging.debug('Serializing features.')
         record_bytes=proto.SerializeToString()
-        logging.debug(f'Writing tfrecord.')
+        logging.debug('Writing tfrecord.')
         with tf.io.TFRecordWriter(fname) as file_writer:
             file_writer.write(record_bytes)
 
@@ -444,7 +443,7 @@ class PaDiM(object):
         import tensorflow_probability as tfp
 
         # Preprocess training data
-        logging.info(f'Preprocessing dataset for training.')
+        logging.info('Preprocessing dataset for training.')
         
         trainingdataset = trainingdata_obj.dataset
 
@@ -454,7 +453,7 @@ class PaDiM(object):
         embedding_vectors_train = []
         training_images=[]
         
-        logging.info(f'Extracting embedding vectors from training data.')
+        logging.info('Extracting embedding vectors from training data.')
         for x,fname in trainingdataset:
             fname_str=' '.join([elem.decode('ascii') for elem in fname.numpy()])
             logging.info(f'Generating embedding vector for: {fname_str}')
@@ -485,11 +484,11 @@ class PaDiM(object):
 
         # get the mean and covariance matrix for the reference data
         mean = tf.reduce_mean(embedding_flat_vectors_train_rd, axis=0) # shape (H*W, C)
-        I = tf.eye(self.c)
+        I_eye = tf.eye(self.c)
 
         # Calculate the covariance of feature vectors for each patch
         mult = 1 if B==1 else B/(B-1)
-        cov = mult*tfp.stats.covariance(embedding_flat_vectors_train_rd) + 0.01*I  # shape (H*W, C, C)
+        cov = mult*tfp.stats.covariance(embedding_flat_vectors_train_rd) + 0.01*I_eye  # shape (H*W, C, C)
 
         # Inverse of covariance matrix
         # Mahalanobis distance calculation needs inverse of covariance matrix
@@ -547,7 +546,7 @@ class PaDiM(object):
         dist_list=[]
         fname_list=[]  
         for x,fname in dataset:
-            if type(fname.numpy())==type(np.asarray(0)):
+            if isinstance(fname.numpy(), np.ndarray):
                 fname_decode=[elem.numpy().decode('ascii') for elem in fname]
             else:
                 fname_decode=fname.numpy().decode('ascii')

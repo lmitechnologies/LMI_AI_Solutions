@@ -4,13 +4,14 @@ import collections
 from logging import warning
 import os
 import logging
+#LMI packages
+from label_utils.shapes import Rect, Mask, Keypoint, Brush
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-#LMI packages
-from label_utils.shapes import Rect, Mask, Keypoint, Brush
+
 
 
 def load_csv(fname:str, path_img:str='', class_map:dict=None, zero_index:bool=True):

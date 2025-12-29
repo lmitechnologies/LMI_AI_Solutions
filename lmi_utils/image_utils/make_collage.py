@@ -4,7 +4,6 @@ import cv2
 import os
 import numpy as np
 from image_utils.img_resize import resize
-from gadget_utils.pipeline_utils import fit_array_to_size
 import logging
 
 logging.basicConfig(level=logging.INFO)

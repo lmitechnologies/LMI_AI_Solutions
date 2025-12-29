@@ -35,7 +35,7 @@ def rect_gui(wName, crop, bbox, rect_gui_event, cmd_line_event, image_display):
     while (not rect_gui_event.is_set()) and (not cmd_line_event.is_set()):
         time.sleep(0.002)
         image_display['runtime_image'] = roi.image_runtime
-        if roi.returnflag == True:
+        if roi.returnflag:
             rect_gui_event.set()
     # extract bounding box parameters
     x = roi.outRect.x
@@ -90,7 +90,7 @@ def cmd_line(change_str, replacement_labels, current_label, rect_gui_event, cmd_
                     print(
                         f'Reassigning label:{current_label} to {change_label}')
                     cmd_line_event.set()
-                except:
+                except Exception:
                     print('Invalid input.')
 
     finally:
@@ -138,8 +138,8 @@ def check_labels(data_path, input_json_path, output_json_path, target_label, rep
                 y0 = region['shape_attributes']['y']
                 width = region['shape_attributes']['width']
                 height = region['shape_attributes']['height']
-                ul = (x0, y0)
-                lr = ((x0+width, y0+height))
+                # ul = (x0, y0)
+                # lr = ((x0+width, y0+height))
                 # crop roi + border region
                 render = img.copy()
                 dy0=y0 if (y0-render_delta)<0 else render_delta

@@ -2,9 +2,8 @@ from detectron2_lmi.model import Detectron2Model
 import glob
 import os
 import cv2
-import numpy as np
 import json
-from label_utils.shapes import Rect, Mask, Keypoint
+from label_utils.shapes import Rect, Mask
 from label_utils.csv_utils import write_to_csv
 import logging
 
@@ -25,7 +24,6 @@ def find_images(path:str, exts=['jpg','jpeg','png']):
         list: the list of image paths
     """
     import os
-    import glob
     imgs = []
     for ext in exts:
         imgs.extend(glob.glob(os.path.join(path,f'*.{ext}')))
@@ -98,7 +96,7 @@ def inference_run(args):
                 csv_results.append(Mask(im_name=fname, category=outputs['classes'][idx], x_vals=segments[:,0].tolist(), y_vals=segments[:,1].tolist(), confidence=score))
         
         results[fname] = csv_results
-    write_to_csv(results, os.path.join(out_path, f"predictions.csv"), overwrite=True)
+    write_to_csv(results, os.path.join(out_path, "predictions.csv"), overwrite=True)
 
     
     

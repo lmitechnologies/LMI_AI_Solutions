@@ -4,7 +4,6 @@ import collections
 import matplotlib.pyplot as plt
 from shapely.geometry import Polygon
 from shapely.validation import make_valid
-import sys
 
 #LMI packages
 from label_utils import csv_utils
@@ -55,7 +54,7 @@ def polygon_iou(polygon_1, polygon_2):
     try:
         poly_1 = Polygon(polygon_1)
         poly_2 = Polygon(polygon_2)
-    except Exception as e:
+    except Exception:
         #usually less than 3 points for creating the polygons
         #print(e)
         return 0
@@ -203,9 +202,9 @@ def precision_recall(label_dt:dict, pred_dt:dict, class_map:dict, iou=0.5, thres
         if c in skip_classes:
             continue
         if image_level:
-            tp,fp,gt,fn = TP_im[c],FP_im[c],GT_im[c],FN_im[c]
+            tp,fp,gt,_ = TP_im[c],FP_im[c],GT_im[c],FN_im[c]
         else:
-            tp,fp,gt,fn = TP[c],FP[c],GT[c],FN[c]
+            tp,fp,gt,_ = TP[c],FP[c],GT[c],FN[c]
         
         P[c] = min(1, tp / (tp + fp + epsilon))
         R[c] = min(1, tp / (gt + epsilon))

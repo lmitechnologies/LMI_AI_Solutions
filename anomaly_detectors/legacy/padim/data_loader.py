@@ -51,10 +51,11 @@ class DataLoader(object):
         if shuffle:
             dataset = dataset.shuffle(self.n_samples, reshuffle_each_iteration=True)
 
-        lambda_parse=lambda path_file, file_name: self._parse_function(path_file, file_name,random_flip_h, random_flip_v)
+        def parse_fn(path_file, file_name):
+            return self._parse_function(path_file, file_name, random_flip_h, random_flip_v)
 
         #apply the parse function to each element in the dataset
-        dataset = dataset.map(lambda_parse, num_parallel_calls=tf.data.AUTOTUNE)
+        dataset = dataset.map(parse_fn, num_parallel_calls=tf.data.AUTOTUNE)
 
         #set batch size
         dataset = dataset.batch(batch_size)
@@ -85,7 +86,7 @@ class DataLoader(object):
             cur_list = []
             for img_type in img_types:
                 cur_list.extend(glob.glob(os.path.join(path, f'*.{img_type}')))
-            fnames = [os.path.basename(l) for l in cur_list]
+            fnames = [os.path.basename(li) for li in cur_list]
             file_list += cur_list
             file_names += fnames
         return file_list, file_names

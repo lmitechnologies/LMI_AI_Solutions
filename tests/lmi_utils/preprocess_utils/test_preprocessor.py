@@ -1,8 +1,6 @@
 import pytest
-import os
 import logging
 import torch
-import torchvision
 
 from preprocess_utils.preprocessor import Preprocessor
 

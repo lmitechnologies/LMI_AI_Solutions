@@ -75,7 +75,7 @@ with model.as_default():
             boxesTensor=model.get_tensor_by_name('detection_boxes:0')
             try:
                 masksTensor=model.get_tensor_by_name('detection_masks:0')
-            except:
+            except Exception:
                 masksTensor=None
                 print('[INFO] No masks found.  Proceeding with Faster R-CNN.')
 
@@ -168,7 +168,7 @@ with model.as_default():
                             csv_out.append([os.path.split(image_file)[1],label['name'],'polygon','y values'] + yval)
 
                 # draw the prediction on the output image 1 box at a time
-                if (draw==True) or (args['save'] is not None):
+                if draw or (args['save'] is not None):
                     #scale bounding box from [0,1] to [W,H]
                     startX=int(startX*W)
                     startY=int(startY*H)
@@ -200,11 +200,11 @@ with model.as_default():
                     cv2.putText(output, label, (startX, y),cv2.FONT_HERSHEY_SIMPLEX, 0.3, COLORS[idx], 1)
                     # show the output image, 1 found image at a time
 
-                    if draw==True:
+                    if draw:
                         cv2.imshow("Output", output)
-                        if single_image==True:
+                        if single_image:
                             cv2.waitKey(0)
-                        elif single_image==False:
+                        elif not single_image:
                             cv2.waitKey(500)
 
             # save the output image with all boxes        

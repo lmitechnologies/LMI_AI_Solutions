@@ -1,5 +1,3 @@
-import tensorflow as tf
-import numpy as np
 import argparse
 from pathlib import Path, PurePath
 import cv2

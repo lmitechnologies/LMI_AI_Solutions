@@ -16,9 +16,7 @@
 #
 
 import os
-import re
 import sys
-import argparse
 import logging
 import cv2
 import onnx_graphsurgeon as gs
@@ -39,7 +37,6 @@ except ImportError:
     )
     sys.exit(1)
 
-import detectron2_lmi.converter.onnx_utils
 
 logging.basicConfig(level=logging.INFO)
 logging.getLogger("ModelHelper").setLevel(logging.INFO)
@@ -300,7 +297,7 @@ class DET2GraphSurgeon:
 
         # Reshape nodes tend to update the batch dimension to a fixed value of 1, they should use the batch size instead.
         for node in [node for node in self.graph.nodes if node.op == "Reshape"]:
-            if type(node.inputs[1]) == gs.Constant and node.inputs[1].values[0] == 1:
+            if isinstance(node.inputs[1], gs.Constant) and node.inputs[1].values[0] == 1:
                 node.inputs[1].values[0] = self.batch_size
 
     def NMS(

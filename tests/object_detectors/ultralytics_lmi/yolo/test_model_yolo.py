@@ -6,7 +6,6 @@ import os
 import cv2
 from ultralytics import YOLO
 
-import gadget_utils.pipeline_utils as pipeline_utils
 from ultralytics_lmi.yolo.model import Yolo, YoloSeg, YoloObb, YoloPose
 from od_core.object_detector import ObjectDetector
 

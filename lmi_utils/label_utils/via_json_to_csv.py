@@ -1,6 +1,5 @@
 #%% extract bbox regions from JSON file
 import json
-import pandas as pd
 import argparse
 import csv
 import os

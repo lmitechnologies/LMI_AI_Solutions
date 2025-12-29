@@ -6,8 +6,6 @@ import numpy as np
 from label_utils.plot_utils import plot_one_polygon, plot_one_pt
 import json
 
-import os
-import numpy as np
 import logging
 
 logger = logging.getLogger(__name__)

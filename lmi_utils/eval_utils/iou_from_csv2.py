@@ -61,7 +61,7 @@ def polygon_iou(polygon_1, polygon_2):
     try:
         poly_1 = Polygon(polygon_1)
         poly_2 = Polygon(polygon_2)
-    except Exception as e:
+    except Exception:
         logger.exception('Failed to create shapely.polygon. It might contain less than 3 points to create the polygon')
         return 0
 
@@ -160,7 +160,7 @@ def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, skip_classe
     fnames = set([f for f in label_dt]+[f for f in pred_dt])
     for fname in fnames:
         is_mask = 0
-        I = cv2.imread(os.path.join(path_imgs,fname))
+        im = cv2.imread(os.path.join(path_imgs,fname))
         if not label_dt[fname]:
             logger.warning(f'Not found corresponding labels for the file: {fname}. skip')
             bbox_label = np.empty((0,4))
@@ -188,14 +188,14 @@ def get_ious(path_imgs:str,path_out:str,label_dt:dict, pred_dt:dict, skip_classe
 
         # plot shapes
         if is_mask:
-            plot_shapes(I, mask_label, class_label, mask_pred, class_pred, is_mask=True, skip_classes=skip_classes)
+            plot_shapes(im, mask_label, class_label, mask_pred, class_pred, is_mask=True, skip_classes=skip_classes)
         else:
-            plot_shapes(I, bbox_label, class_label, bbox_pred, class_pred, is_mask=False, skip_classes=skip_classes)
+            plot_shapes(im, bbox_label, class_label, bbox_pred, class_pred, is_mask=False, skip_classes=skip_classes)
         
         # write image
         outname = os.path.splitext(fname)[0]+'_iou.png'
-        if I is not None:
-            cv2.imwrite(os.path.join(path_out,outname),I)
+        if im is not None:
+            cv2.imwrite(os.path.join(path_out,outname),im)
         else:
             logger.warning(f'Not found image: {fname}')
 
@@ -246,8 +246,8 @@ def write_to_csv(all_ious:dict, mean_ious:dict, filename:str):
         writer = csv.writer(f, delimiter=';')
         for im_name in all_ious:
             for category in all_ious[im_name]:
-                l = all_ious[im_name][category].tolist()
-                l2 = ['fn' if np.isnan(x) else 'fp' if x==0 else x for x in l]
+                li = all_ious[im_name][category].tolist()
+                l2 = ['fn' if np.isnan(x) else 'fp' if x==0 else x for x in li]
                 writer.writerow([im_name, category] + l2)
                     
         for c in mean_ious:
@@ -297,10 +297,10 @@ if __name__ == '__main__':
     total = 0
     cnt = 0
     for c in all_not_nan_ious:
-        l = all_not_nan_ious[c]
-        mean_ious[c] = sum(l)/len(l)
-        total += sum(l)
-        cnt += len(l)    
+        li = all_not_nan_ious[c]
+        mean_ious[c] = sum(li)/len(li)
+        total += sum(li)
+        cnt += len(li)    
     mean_ious['all'] = total/cnt
         
     write_to_csv(all_ious, mean_ious, os.path.join(path_out,'ious.csv'))

@@ -1,7 +1,6 @@
 import glob
 import os
 import argparse
-import numpy as np
 from pcl_utils.point_cloud import PointCloud
 import open3d
 
@@ -11,8 +10,6 @@ def convert_npy_to_pcd(path_in,path_out):
     files=glob.glob(os.path.join(path_in,'*.npy'))
 
     pointcloud=PointCloud()
-    hmax=[]
-    hmin=[]
     for file in files:
         pointcloud.read_points(file,zmin=None,zmax=None,clip_mode=False)
         pcd=pointcloud.get_PCD()

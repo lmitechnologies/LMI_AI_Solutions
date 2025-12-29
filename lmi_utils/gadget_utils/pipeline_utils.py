@@ -284,7 +284,7 @@ def pts_to_3d(pts, profile, resolution, offset):
         resolution(tuple): (x_resolution, y_resolution, z_resolution)
         offset(tuple): (x_offset, y_offset, z_offset)
     """
-    if type(pts) != type(profile):
+    if type(pts) is not type(profile):
         raise Exception(f'pts and profile should have the same type, got {type(pts)} and {type(profile)}')
     
     is_numpy = isinstance(pts, np.ndarray)
@@ -659,9 +659,9 @@ def get_gadget_inputs(path_im, path_surface_tar):
 def load_pipeline_def(filepath):
     with open(filepath) as f:
         dt_all = json.load(f)
-        l = dt_all['configs_def']
+        li = dt_all['configs_def']
         kwargs = {}
-        for dt in l:
+        for dt in li:
             kwargs[dt['name']] = dt['default_value']
     return kwargs
 

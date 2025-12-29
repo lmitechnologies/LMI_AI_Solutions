@@ -128,7 +128,7 @@ def crop_dataset_by_label(dataset, images,target_label, crop_warning_level=loggi
             raise ValueError(f'failed to read {file.path}')
         image_height, image_width = image.shape[:2]
         if cangle > 0:
-            raise Exception(f'Obb is not supported')
+            raise Exception('Obb is not supported')
         
         cx1, cy1, cx2, cy2 = crop_box   
         

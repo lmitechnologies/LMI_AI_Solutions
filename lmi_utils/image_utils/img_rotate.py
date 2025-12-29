@@ -1,4 +1,3 @@
-import numpy as np
 import cv2
 
 def rotate(image, angle, center=None, scale=1.0):

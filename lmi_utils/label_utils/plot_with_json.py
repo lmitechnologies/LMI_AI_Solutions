@@ -95,7 +95,7 @@ if __name__ == '__main__':
             fname = f'id{f.id}_{fname}'
 
         #create output fname and save it
-        out_name = os.path.splitext(fname)[0] + f'_annot' + '.png'
+        out_name = os.path.splitext(fname)[0] + '_annot' + '.png'
         output_file=os.path.join(output_path, out_name)
         cv2.imwrite(output_file, im_annot)
         
@@ -107,7 +107,7 @@ if __name__ == '__main__':
             root,ext = os.path.splitext(fname)
 
             #create output fname and save it
-            out_name = os.path.splitext(fname)[0] + f'_pred' + '.png'
+            out_name = os.path.splitext(fname)[0] + '_pred' + '.png'
             output_file=os.path.join(output_path, out_name)
             cv2.imwrite(output_file, im_pred)
             

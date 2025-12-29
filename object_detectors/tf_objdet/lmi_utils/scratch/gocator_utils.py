@@ -1,8 +1,6 @@
 import numpy as np
 import open3d
 import cv2
-import xml.etree.ElementTree as ET
-import argparse
 
 def make_intensity_image(input_path,output_path):
     pcddata=open3d.read_point_cloud(input_path)

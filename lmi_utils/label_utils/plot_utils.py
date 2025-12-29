@@ -157,7 +157,7 @@ def plot_one_brush(xs, ys, img, color=None, label=None, line_thickness=None):
     xs,ys = list(map(round,xs)),list(map(round,ys))
     colors = np.array([color]*len(xs),dtype=img.dtype)
     if img[ys,xs].shape[0]==0:
-        logger.warning(f'Got an invalid polygon. Skip')
+        logger.warning('Got an invalid polygon. Skip')
         return
     img[ys,xs] = cv2.addWeighted(img[ys,xs],0.6,colors,0.4,0)
     

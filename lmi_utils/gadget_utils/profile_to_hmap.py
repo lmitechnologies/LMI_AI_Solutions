@@ -65,7 +65,7 @@ def preprocess_hmap(img,map_choice='rainbow-med',global_max=None,remove_outliers
         img[int_outlier]=0
 
     # Normalize image
-    if global_max==None:
+    if global_max is None:
         img_max=img.max()
     else:
         img_max=global_max-(level_1-1)

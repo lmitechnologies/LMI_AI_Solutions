@@ -34,7 +34,7 @@ def get_annotations_from_json(path_json, path_imgs, path_out):
             raise Exception(f'Cannot find the file: {path_img}')
         
         # load img
-        I = cv2.imread(path_img)
+        im = cv2.imread(path_img)
         
         # get annotations
         img_id = m['id']
@@ -46,7 +46,7 @@ def get_annotations_from_json(path_json, path_imgs, path_out):
             img_id = annot['image_id']
             segs = annot['segmentation']
             if 'keypoints' in annot:
-                logger.warning(f'Does not support keypoints')
+                logger.warning('Does not support keypoints')
 
             if len(bbox) == 5:
                 x,y,w,h,angle = bbox
@@ -59,25 +59,25 @@ def get_annotations_from_json(path_json, path_imgs, path_out):
             x,y,w,h = list(map(int,[x,y,w,h]))
             pts = rotate(x,y,w,h,angle,unit='radian',rot_center='center')
             pts = pts.reshape((-1, 1, 2))
-            plot_one_polygon(pts, I, label=f'{cat_name}', color=colormap[cat_id])
+            plot_one_polygon(pts, im, label=f'{cat_name}', color=colormap[cat_id])
 
             # plot segments
             if isinstance(segs, list):
                 for seg in segs:
                     pts = np.array(list(map(int, seg)))
                     pts = pts.reshape((-1, 1, 2))
-                    plot_one_polygon(pts, I, label=f'{cat_name}', color=colormap[cat_id])
+                    plot_one_polygon(pts, im, label=f'{cat_name}', color=colormap[cat_id])
             elif isinstance(segs, dict):
                 mask = coco_mask.decode(segs)
                 ys,xs = np.where(mask)
-                plot_one_brush(xs, ys, I, label=f'{cat_name}', color=colormap[cat_id])
+                plot_one_brush(xs, ys, im, label=f'{cat_name}', color=colormap[cat_id])
             else:
                 raise Exception(f'Unknown segmentation type: {type(segs)}')
 
         # write the annotated image
         path = os.path.join(path_out,fname)
         logger.info(f'writing to {path}')
-        cv2.imwrite(path,I)
+        cv2.imwrite(path,im)
         
 
 

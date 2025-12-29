@@ -1,5 +1,4 @@
 from typing import List, Optional, Union, Dict
-import numpy as np
 import torch
 import logging
 

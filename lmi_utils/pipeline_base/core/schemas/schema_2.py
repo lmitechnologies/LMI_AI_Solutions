@@ -115,8 +115,8 @@ class Model:
             "package": self.details.training_package.lower(),
         }
         if tiling_config:
-            metadata['tile_size'] = [tiling_config.get(f'configuration', {}).get('height', None), tiling_config.get(f'configuration', {}).get('width', None)]
-            metadata['stride'] = [tiling_config.get(f'configuration', {}).get('y_stride', None), tiling_config.get(f'configuration', {}).get('x_stride', None)]
+            metadata['tile_size'] = [tiling_config.get('configuration', {}).get('height', None), tiling_config.get('configuration', {}).get('width', None)]
+            metadata['stride'] = [tiling_config.get('configuration', {}).get('y_stride', None), tiling_config.get('configuration', {}).get('x_stride', None)]
         return metadata
 
 @dataclass

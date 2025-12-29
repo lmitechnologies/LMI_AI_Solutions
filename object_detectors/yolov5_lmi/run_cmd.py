@@ -147,12 +147,12 @@ if __name__=='__main__':
         if k in hyp:
             hyp.pop(k)
             
-    l = []
+    cmd_list = []
     # keys with no values
     for k in NO_VAL_KEYS:
         if k in hyp:
-            if hyp[k]==True:
-                l.append(f'--{k}')
+            if hyp[k]:
+                cmd_list.append(f'--{k}')
             hyp.pop(k)
             
     # special keys
@@ -166,13 +166,13 @@ if __name__=='__main__':
             
     # get final command
     for k,v in hyp.items():
-        l.append(f'--{k}')
-        if isinstance(v, list) or isinstance(v, tuple):
+        cmd_list.append(f'--{k}')
+        if isinstance(v, (list, tuple)):
             for v2 in v:
-                l.append(v2)
+                cmd_list.append(v2)
         else:
-            l.append(f'{v}')
-    final_cmd = ['python3', target_file] + l
+            cmd_list.append(f'{v}')
+    final_cmd = ['python3', target_file] + cmd_list
 
     logger.info(f'cmd: {final_cmd}')
     

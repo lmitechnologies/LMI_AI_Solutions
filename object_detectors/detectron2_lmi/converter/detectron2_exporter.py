@@ -1,20 +1,17 @@
 #!/usr/bin/env python
 # Copyright (c) Facebook, Inc. and its affiliates.
 import argparse
-import os
-from typing import Dict, List, Tuple
+from typing import Dict, List
 import torch
 from torch import Tensor, nn
 
 import detectron2.data.transforms as T
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
-from detectron2.data import build_detection_test_loader, detection_utils
-from detectron2.evaluation import COCOEvaluator, inference_on_dataset, print_csv_format
+from detectron2.data import build_detection_test_loader
 from detectron2.export import (
     STABLE_ONNX_OPSET_VERSION,
     TracingAdapter,
-    dump_torchscript_IR,
     scripting_with_instances,
 )
 from detectron2.modeling import GeneralizedRCNN, RetinaNet, build_model
@@ -75,7 +72,7 @@ def export_scripting(torch_model, args):
                 return [i.get_fields() for i in instances]
 
     ts_model = scripting_with_instances(ScriptableAdapter(), fields)
-    with PathManager.open(args.get(f'pt_file_path'), "wb") as f:
+    with PathManager.open(args.get('pt_file_path'), "wb") as f:
         torch.jit.save(ts_model, f)
     # dump_torchscript_IR(ts_model, args.get('output'))
     # TODO inference in Python now missing postprocessing glue code
@@ -170,10 +167,10 @@ def det2export(args) -> None:
 
     # convert and save model
     if args.get('format') == "pt":
-        exported_model = export_scripting(torch_model, args)
+        export_scripting(torch_model, args)
     elif args.get('format') == "onnx":
         sample_inputs = get_sample_inputs(args, cfg)
-        exported_model = export_tracing(torch_model, sample_inputs, args)
+        export_tracing(torch_model, sample_inputs, args)
 
     logger.info("Success.")
     return None

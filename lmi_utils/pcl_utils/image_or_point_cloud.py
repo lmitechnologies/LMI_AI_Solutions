@@ -16,10 +16,6 @@ class ImageOrPointCloud(ABC):
     def read_points(self, path, mode="open_3d"):
         pass
 
-    @abstractmethod
-    def extract_patches_from_img(self, m, s):
-        pass
-
     def extract_patches_from_img(self, m, s):
         """
         Notation from DOI: 10.1109/TCYB.2017.2668395

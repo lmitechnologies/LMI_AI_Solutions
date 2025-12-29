@@ -1,4 +1,3 @@
-from genericpath import isdir
 import glob
 import os
 import argparse

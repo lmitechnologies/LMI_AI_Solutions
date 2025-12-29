@@ -4,11 +4,8 @@ from sklearn.model_selection import train_test_split
 from PIL import Image
 import tensorflow as tf 
 import os
-import sys
 import argparse
-from runpy import run_path
 import importlib.util
-import ast
 import numpy as np
 import cv2
 import io
@@ -16,7 +13,8 @@ from image_utils.img_resize import resize
 
 # get item in a recursive dictionary 
 def _finditem(obj, key):
-    if key in obj: return obj[key]
+    if key in obj: 
+        return obj[key]
     for k, v in obj.items():
         if isinstance(v,dict):
             item = _finditem(v, key)
@@ -34,8 +32,8 @@ def main(config):
     # masks
     try:
         MASK_OPTION=config.MASK_OPTION
-    except:
-        print(f'[INFO] MASK_OPTION is not defined in config file.  Finding bounding boxes.')
+    except Exception:
+        print('[INFO] MASK_OPTION is not defined in config file.  Finding bounding boxes.')
         MASK_OPTION=False
     # keypoints
     keypoints=None
@@ -44,8 +42,8 @@ def main(config):
     keypoint_names=None
     try:
         KEYPOINT_OPTION=config.KEYPOINT_OPTION
-    except:
-        print(f'[INFO] KEYPOINT_OPTION is not defined in config file.  Ignoring keypoints.')
+    except Exception:
+        print('[INFO] KEYPOINT_OPTION is not defined in config file.  Ignoring keypoints.')
         KEYPOINT_OPTION=False 
     if KEYPOINT_OPTION:
         try:
@@ -53,20 +51,20 @@ def main(config):
             keypoint_num=0
             keypoint_ids=[]
             keypoint_names=[]
-        except:
-            print(f'[INFO] KEYPOINTS not defined in config file.  Ignoring keypoints.')
+        except Exception:
+            print('[INFO] KEYPOINTS not defined in config file.  Ignoring keypoints.')
             KEYPOINT_OPTION=False
     
     # resize
     try:
         RESIZE_OPTION=config.RESIZE_OPTION
-    except:
-        print(f'[INFO] RESIZE_OPTION is not defined in config file.  No resizing applied.')
+    except Exception:
+        print('[INFO] RESIZE_OPTION is not defined in config file.  No resizing applied.')
     if RESIZE_OPTION:
         try:
             MAX_W=config.MAX_W
-        except:
-            print(f'[INFO] MAX_W is not defined in config file.  No resizing applied.')
+        except Exception:
+            print('[INFO] MAX_W is not defined in config file.  No resizing applied.')
             RESIZE_OPTION=False
 
 
@@ -139,7 +137,7 @@ def main(config):
                     cy=float(row[5])
                     is_keypoint=True
             else:
-                print(f'[INFO] KEYPOINT_OPTION set to false in config file.  Skipping Keypoint.')
+                print('[INFO] KEYPOINT_OPTION set to false in config file.  Skipping Keypoint.')
                 continue
         else:
             raise Exception(f'Unregonized feature: {row[3]}.  This conversion only supports: polygon,rect,point')
@@ -198,8 +196,8 @@ def main(config):
                         print(f'[INFO] Image w={w0} is less than MAX_W={MAX_W}.  Skipping resize.')
                         encoded=tf.io.gfile.GFile(k,'rb').read()
                         encoded=bytes(encoded)              
-                except:
-                    print(f'[INFO] No resizing because MAX_W is not correctly defined in config file.')
+                except Exception:
+                    print('[INFO] No resizing because MAX_W is not correctly defined in config file.')
                     # if MAX_W is undefined, then skip resize
                     RESIZE_OPTION=False
                     encoded=tf.io.gfile.GFile(k,'rb').read()
@@ -240,7 +238,7 @@ def main(config):
                 try:
                     tfAnnot.classes.append(config.CLASSES[label])
                     tfAnnot.textLabels.append(label.encode('utf8'))
-                except:
+                except Exception:
                     assert (label in keypoint_names)
                     
                 if annot[0]=='bbox' or annot[0]=='mask':

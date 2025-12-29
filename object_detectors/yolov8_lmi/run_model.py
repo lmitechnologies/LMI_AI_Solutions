@@ -3,7 +3,6 @@ import logging
 import os
 import random
 import numpy as np
-import torch
 import collections
 from tqdm import tqdm
 

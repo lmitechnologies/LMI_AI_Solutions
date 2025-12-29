@@ -93,11 +93,11 @@ def convert_to_txt(fname_to_shapes, target_classes, is_seg=False, is_convert=Fal
             class_name = shape.category
             #get the image H,W
             if not os.path.isfile(shape.fullpath):
-                logger.warning(f'Not found file, skip')
+                logger.warning('Not found file, skip')
                 del_names.append(fname)
                 continue
-            I = cv2.imread(shape.fullpath)
-            H,W = I.shape[:2]
+            im = cv2.imread(shape.fullpath)
+            H,W = im.shape[:2]
             if isinstance(shape, Rect):
                 #get bbox w,h
                 x0,y0 = shape.up_left
@@ -263,10 +263,10 @@ def copy_images_in_folder(path_img, path_out, fnames=None):
     """
     os.makedirs(path_out, exist_ok=True)
     if not fnames:
-        l = glob.glob(os.path.join(path_img, '*.png')) + glob.glob(os.path.join(path_img, '*.jpg'))
+        image_files = glob.glob(os.path.join(path_img, '*.png')) + glob.glob(os.path.join(path_img, '*.jpg'))
     else:
-        l = [f"{path_img}/{fname}" for fname in fnames]
-    for f in l:
+        image_files = [f"{path_img}/{fname}" for fname in fnames]
+    for f in image_files:
         shutil.copy(f, path_out)
 
 

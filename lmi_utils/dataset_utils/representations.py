@@ -710,7 +710,7 @@ class Dataset(Base):
 
     @classmethod
     def from_dict(cls, data: dict) -> "Dataset":
-        labels = [Label.from_dict(l) for l in data.get("labels", [])]
+        labels = [Label.from_dict(li) for li in data.get("labels", [])]
         files = [FileAnnotations.from_dict(f) for f in data.get("files", [])]
         return cls(labels=labels, files=files)
 

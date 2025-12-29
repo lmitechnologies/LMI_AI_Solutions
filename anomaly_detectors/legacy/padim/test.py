@@ -1,9 +1,7 @@
 import argparse
 import os
-import yaml
 import tensorflow as tf
 from padim.padim import PaDiM, plot_fig
-from padim.data_loader import DataLoader
 
 
 def test_padim(testdata_path:str, outpath:str, modelpath:str, err_thresh:float, gpu_mem:int):

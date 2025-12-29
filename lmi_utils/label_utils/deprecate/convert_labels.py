@@ -1,5 +1,4 @@
 from PIL import Image
-import tarfile
 from pathlib import Path
 import shutil
 import json

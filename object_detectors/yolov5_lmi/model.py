@@ -1,4 +1,3 @@
-from collections import OrderedDict, namedtuple
 import cv2
 import logging
 import os
@@ -8,6 +7,10 @@ import sys
 from typing import Union
 import collections
 import time
+from od_core.od_base import ODBase
+import gadget_utils.pipeline_utils as pipeline_utils
+from yolov8_lmi.model import Yolov8
+from od_core.object_detector_registry import ObjectDetectorRegistry
 
 # add yolov5 submodule to the path
 YOLO_PATH = os.path.join(os.path.dirname(__file__), '../submodules/yolov5')
@@ -15,15 +18,10 @@ if not os.path.exists(YOLO_PATH):
     raise FileNotFoundError(f'Cannot find yolov5 submodule at {YOLO_PATH}')
 sys.path.insert(0, YOLO_PATH)
 
-from utils.general import non_max_suppression, scale_boxes, scale_segments
-from utils.segment.general import masks2segments, process_mask, process_mask_native
-from models.common import DetectMultiBackend
-from utils.torch_utils import smart_inference_mode
-
-from od_core.od_base import ODBase
-import gadget_utils.pipeline_utils as pipeline_utils
-from yolov8_lmi.model import Yolov8
-from od_core.object_detector_registry import ObjectDetectorRegistry
+from utils.general import non_max_suppression, scale_boxes, scale_segments  # noqa: E402
+from utils.segment.general import masks2segments, process_mask_native   # noqa: E402
+from models.common import DetectMultiBackend    # noqa: E402
+from utils.torch_utils import smart_inference_mode  # noqa: E402
 
 
 @ObjectDetectorRegistry.register(metadata=dict(versions=['v0'], model_names=['yolov5'], tasks=['od', 'seg', "instancesegmentation", "objectdetection"], frameworks=['ultralytics']))

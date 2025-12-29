@@ -1,5 +1,4 @@
 import os
-import cv2
 import glob
 import shutil
 import argparse

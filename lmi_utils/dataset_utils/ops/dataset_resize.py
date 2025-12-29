@@ -1,6 +1,5 @@
 import logging
 import numpy as np
-import cv2
 
 #LMI packages
 from dataset_utils.representations import Annotation

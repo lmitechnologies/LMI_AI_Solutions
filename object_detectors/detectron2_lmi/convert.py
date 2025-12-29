@@ -1,4 +1,3 @@
-import os
 import subprocess
 from detectron2_lmi.converter.detectron2_exporter import det2export
 from detectron2_lmi.converter.detectron2_onnx_trtonnx import onnx_gs

@@ -1,8 +1,6 @@
 import random
 import time
-import cv2
 import numpy as np
-import pycuda.autoinit
 import pycuda.driver as cuda
 
 from yolov5_lmi.trt.old.base_trt_model import TRT_Model

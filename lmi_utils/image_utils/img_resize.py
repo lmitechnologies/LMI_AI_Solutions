@@ -18,7 +18,7 @@ def is_cuda_cv(): # 1 == using cuda, 0 = not using cuda
             return True
         else:
             return False
-    except:
+    except Exception:
         return False
 
 def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwargs):
@@ -68,7 +68,7 @@ def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
     if height == 0:
         height = None
     
-    if height == None and width == None:
+    if height is None and width is None:
         return image
     
     (h, w) = image.shape[:2]

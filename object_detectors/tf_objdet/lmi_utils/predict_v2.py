@@ -10,8 +10,6 @@ import os
 import glob
 import time
 import csv
-from tensorflow.python.saved_model.signature_constants import \
-    DEFAULT_SERVING_SIGNATURE_DEF_KEY
 
 
 # TODO:
@@ -246,7 +244,7 @@ for i,image_file in enumerate(images):
                     csv_out.append([os.path.split(image_file)[1],label['name'],score,'point','cy'] + yval)
 
         # draw the prediction on the output image 1 box at a time
-        if (draw==True) or (args['save'] is not None):
+        if draw or (args['save'] is not None):
             #scale bounding box from [0,1] to [W,H]
             startX=int(startX*W)
             startY=int(startY*H)
@@ -287,11 +285,11 @@ for i,image_file in enumerate(images):
                 # except:
                 #     print('[INFO] could not generate segment between points.')
 
-            if draw==True:
+            if draw:
                 cv2.imshow("Output", output)
-                if single_image==True:
+                if single_image:
                     cv2.waitKey(0)
-                elif single_image==False:
+                elif not single_image:
                     cv2.waitKey(500)
 
     # save the output image with all boxes        

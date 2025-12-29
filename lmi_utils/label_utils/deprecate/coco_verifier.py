@@ -1,19 +1,11 @@
 import torch
 import os
-
-# Some basic setup:
-# Setup detectron2 logger
-import detectron2
-from detectron2.utils.logger import setup_logger
-setup_logger()
-
-# import some common libraries
-import cv2, random
-
-# import some common detectron2 utilities
+import cv2
 from detectron2.utils.visualizer import Visualizer
 from detectron2.data import MetadataCatalog, DatasetCatalog
 from detectron2.data.datasets import register_coco_instances
+from detectron2.utils.logger import setup_logger
+setup_logger()
 
 
 def plot(path_img, path_json, path_out, plot=False):

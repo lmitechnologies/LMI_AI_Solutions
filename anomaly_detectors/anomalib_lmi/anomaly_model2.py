@@ -9,7 +9,6 @@ from torchvision.transforms import v2
 
 from .base import Anomalib_Base, to_list
 from image_utils.tiler import Tiler, ScaleMode, OverlapMode
-import gadget_utils.pipeline_utils as pipeline_utils
 from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 logging.basicConfig()
 
@@ -89,7 +88,7 @@ class AnomalyModel2(Anomalib_Base):
                 self.pt_model = torch.jit.load(model_path,map_location=self.device)
                 self.model_shape = self.image_size
                 self.logger.info(f"Traced model shape: {self.model_shape}")
-            except Exception as e:
+            except Exception:
                 checkpoint = torch.load(model_path,map_location=self.device,weights_only=False)
                 self.pt_model = checkpoint['model']
                 self.pt_metadata = checkpoint["metadata"]
@@ -235,7 +234,7 @@ class AnomalyModel2(Anomalib_Base):
                 if current_mini_batch_output_tensor is not None:
                     all_mini_batch_outputs.append(current_mini_batch_output_tensor)
                 else:
-                    raise Exception(f"Model failed to produce an output for a mini-batch.")
+                    raise Exception("Model failed to produce an output for a mini-batch.")
 
             if not all_mini_batch_outputs:
                 raise Exception("Batched inference was performed, but no outputs were collected.")

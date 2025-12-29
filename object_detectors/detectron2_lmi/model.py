@@ -4,10 +4,8 @@ from od_core.object_detector_registry import ObjectDetectorRegistry
 import numpy as np
 from gadget_utils.pipeline_utils import plot_one_box, revert_to_origin, revert_mask_to_origin
 from postprocess_utils.mask_utils import rescale_masks,mask_to_polygon_cv2
-import cv2
 import logging
 import torch
-import torchvision
 import time
 
 @ObjectDetectorRegistry.register(metadata=dict(versions=["v0"], model_names=["mask_rcnn", "faster_rcnn"], tasks=["od","seg", "instancesegmentation", "objectdetection"], frameworks=["detectron2"]))
@@ -130,7 +128,7 @@ class Detectron2TRT(ODBase):
             self.class_map = {
                 int(k): str(v) for k, v in class_map.items()
             }
-        except Exception as e:
+        except Exception:
             self.class_map = {
                 int(v): str(k) for k, v in class_map.items()
             }
@@ -251,7 +249,6 @@ class Detectron2TRT(ODBase):
         processed_segments = []
 
 
-        t0 = time.time()
         for idx in range(self.batch_size):
             valid_scores = scores[idx] >= np.vectorize(confs.get)(classes[idx], 1.0)
             batch_boxes, batch_scores = boxes[idx][valid_scores], scores[idx][valid_scores]
@@ -294,8 +291,6 @@ class Detectron2TRT(ODBase):
             processed_masks.append(batch_masks)
             processed_segments.append(batch_segments)
             
-        t1 = time.time()
-        proc_time = (t1-t0)
         results = {
             "boxes": processed_boxes,
             "scores": processed_scores,
@@ -386,7 +381,7 @@ class Detectron2PT(ODBase):
             self.class_map = {
                 int(k): str(v) for k, v in class_map.items()
             }
-        except Exception as e:
+        except Exception:
             # handle the case where class_map is in reverse order
             self.class_map = {
                 int(v): str(k) for k, v in class_map.items()

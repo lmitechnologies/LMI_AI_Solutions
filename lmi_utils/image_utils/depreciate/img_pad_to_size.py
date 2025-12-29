@@ -1,7 +1,6 @@
 import cv2
 import os
 import argparse
-import numpy as np
 import glob
 
 BLACK=(0,0,0)

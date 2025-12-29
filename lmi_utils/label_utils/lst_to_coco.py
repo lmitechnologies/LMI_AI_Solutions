@@ -16,8 +16,8 @@ def get_annotations_from_json(path_json, path_imgs, plot=False):
     dt_category = {}
     id = 1
     with open(path_json) as f:
-        l = json.load(f)
-        for dt in l:
+        li = json.load(f)
+        for dt in li:
             # get rid of first '-'
             f = dt['file_upload'].split('-')[1:]
             fname = '-'.join(f)

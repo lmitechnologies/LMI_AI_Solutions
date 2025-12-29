@@ -1,8 +1,5 @@
 # conftest.py
-import subprocess
-import pytest
 import logging
-import os
 import sys
 
 logging.basicConfig()

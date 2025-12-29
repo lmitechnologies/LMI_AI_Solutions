@@ -1,6 +1,5 @@
 import os
 import logging
-import matplotlib
 from matplotlib import pyplot as plt
 from scipy.stats import kstest
 import numpy as np
@@ -62,7 +61,7 @@ def plot_fig(predict_results, save_dir, err_thresh=None, err_max=None):
         os.mkdir(save_dir)
 
     # Assume normalized error distance
-    ERR_FLOOR = 0
+    # ERR_FLOOR = 0
 
     for img,err_dist,fname in predict_results:
         # fname=fname.decode('ascii')
@@ -256,7 +255,7 @@ def postprocess(self, orig_image, anomaly_map, err_thresh, err_size, mask=None, 
         anomaly_map_fp32 = anomaly_map.astype(np.float32)
         anomaly_map = cv2.bitwise_and(anomaly_map_fp32, anomaly_map_fp32, mask=mask)
     ind = anomaly_map<err_thresh
-    err_count = np.count_nonzero(ind==False)
+    err_count = np.count_nonzero(~ind)
     
     max_error = {'emax':round(anomaly_map.max().tolist(), 1), 'ecnt':err_count}
     anomaly_map[ind] = 0

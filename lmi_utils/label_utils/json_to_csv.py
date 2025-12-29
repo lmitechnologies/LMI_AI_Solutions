@@ -1,6 +1,4 @@
-from label_utils import csv_utils
 from label_utils.shapes import Rect, Mask, Keypoint, Brush
-from system_utils.path_utils import get_relative_paths
 from dataset_utils.representations import Dataset, AnnotationType
 import collections
 from label_utils.csv_utils import write_to_csv

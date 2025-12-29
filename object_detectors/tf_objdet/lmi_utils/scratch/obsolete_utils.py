@@ -4,6 +4,7 @@ import cv2
 import imutils
 import math
 import os
+import json
 
 #%% convert intensity pcd to png
 def intensitypcd_2_png():
@@ -101,7 +102,6 @@ def cropByBB(image,contour,delta=0):
     return newImage
 
 #%% extract box regions from JSON file
-import json
 def extract_UniformBox_ROI_from_JSON(json_file_path,input_image_dir_path,output_image_dir_path,render_defects=False):
     # computes the max of a list of lists
     def max_list_of_lists(myList):

@@ -1,7 +1,5 @@
 #built-in packages
 import os
-import glob
-import shutil
 import logging
 import numpy as np
 
@@ -76,7 +74,7 @@ def rot90_imgs_with_csv(path_imgs, path_csv, recursive):
         p = os.path.join(path_imgs,p)
         im = cv2.imread(p)
         h,w = im.shape[:2]
-        out_name = os.path.splitext(im_name)[0] + f'_rot90' + '.png'
+        out_name = os.path.splitext(im_name)[0] + '_rot90' + '.png'
         
         im2 = np.rot90(im)
         name_to_im[out_name] = im2

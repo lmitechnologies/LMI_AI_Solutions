@@ -82,13 +82,13 @@ def get_annotations_from_json(path_json):
     for path_json in json_files:
         logger.info(f'Extracting labels from: {path_json}')
         with open(path_json) as f:    
-            l = json.load(f)
+            li = json.load(f)
 
         cnt_anno = 0
         cnt_image = 0
         cnt_pred = 0
         cnt_wrong = 0
-        for dt in l:
+        for dt in li:
             # load file name
             if 'data' not in dt:
                 raise Exception('missing "data" in json file. Ensure that the label studio export format is not JSON-MIN.')
@@ -128,7 +128,7 @@ def get_annotations_from_json(path_json):
                                 preds[fname].append(shape)
                                 cnt_pred += 1
 
-        logger.info(f'{cnt_image} out of {len(l)} images have annotations')
+        logger.info(f'{cnt_image} out of {len(li)} images have annotations')
         if cnt_wrong>0:
             logger.info(f'{cnt_wrong} images with total_annotations > 0, but found 0 annotation')
         logger.info(f'total {cnt_anno} annotations')

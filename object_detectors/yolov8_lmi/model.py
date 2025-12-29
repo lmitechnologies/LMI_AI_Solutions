@@ -434,7 +434,7 @@ class Yolov8Obb(Yolov8):
         """
         
         # check the datatype of the predictions
-        if isinstance(preds, torch.Tensor) != True and isinstance(preds, list) != True:
+        if not isinstance(preds, (torch.Tensor, list)):
             self.logger.error(f'Prediction type {type(preds)} not supported expected torch.Tensor or list')
             raise TypeError(f'Prediction type {type(preds)} not supported expected torch.Tensor or list')
         

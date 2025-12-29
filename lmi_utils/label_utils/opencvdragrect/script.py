@@ -1,11 +1,10 @@
 import cv2 # Opencv ver 3.1.0 used
-import numpy as np
-
+import selectinwindow
 import sys
 # Set recursion limit
 sys.setrecursionlimit(10 ** 9)
 
-import selectinwindow
+
 
 # Define the drag object
 rectI = selectinwindow.dragRect
@@ -33,7 +32,7 @@ while True:
     key = cv2.waitKey(1) & 0xFF
 
     # if returnflag is True, break from the loop
-    if rectI.returnflag == True:
+    if rectI.returnflag:
         print('I got here.')
         break
 

@@ -1,7 +1,6 @@
 import glob
 import random
 import os
-import random
 import shutil
 import cv2
 
@@ -14,7 +13,7 @@ def get_files(dir):
     return files_grabbed
 
 def randomize(files_list,seed=42):
-    print(f'Randomizing source data.')
+    print('Randomizing source data.')
     random.seed(seed)
     random.shuffle(files_list)
     return files_list

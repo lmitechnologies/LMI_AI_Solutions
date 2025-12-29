@@ -39,10 +39,10 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
     logger.info(f"Loading model: {model_path}.")
     model = AnomalyModel2(model_path, image_size=image_size, 
                           tile=tile, stride=stride, tile_mode='resize' if resize else 'padding')
-    logger.info(f"Model loaded.")
+    logger.info("Model loaded.")
     model.warmup()
 
-    logger.info(f"Processing images")
+    logger.info("Processing images")
     proctime = []
     anom_all,path_all = [],[]
     for idx, image_path in enumerate(images, 1):
@@ -63,7 +63,7 @@ def predict(model_path, images_path, image_size, out_path, recursive=True, tile=
         path_all.append(image_path)
     
     # Compute histogram
-    logger.info(f"Computing anomaly score histogram for all data.")
+    logger.info("Computing anomaly score histogram for all data.")
     all_data_raveled = []
     for anom_map in anom_all:
         all_data_raveled.extend(np.squeeze(anom_map).ravel().tolist())

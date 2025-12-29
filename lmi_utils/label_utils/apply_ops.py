@@ -1,7 +1,6 @@
 import cv2
 import argparse
 import os
-import argparse
 import logging
 
 #LMI packages
@@ -124,7 +123,7 @@ def parse_args():
         '--par', '-par', action='store_true',
         help='Maintain aspect ratio when resizing and pad when needed.'
     )
-    pad_parser = subparsers.add_parser('pad', parents=[dim_parser],
+    subparsers.add_parser('pad', parents=[dim_parser],
                                        help='Pad images')
     rotate_parser = subparsers.add_parser('rotate', help='Rotate images')
     rotate_parser.add_argument(

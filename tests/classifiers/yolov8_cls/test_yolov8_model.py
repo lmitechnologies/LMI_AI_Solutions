@@ -3,7 +3,6 @@ import logging
 import os
 import cv2
 
-import gadget_utils.pipeline_utils as pipeline_utils
 from yolov8_cls.model import Yolov8_cls
 from cls_core.classifier import Classifier
 

@@ -4,7 +4,6 @@ import cv2
 import random
 import tarfile
 import logging
-import numpy as np
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -72,7 +71,7 @@ def extract_imgs(input_path, out_path, target_cam='all', num_imgs=20, first_dir=
             tar_cam = l_c[0]
             tar_cam_id = ''
         else:
-            raise Exception(f'The target camera argument is not correct. Should be either "avt_1", "avt" or "all"')
+            raise Exception('The target camera argument is not correct. Should be either "avt_1", "avt" or "all"')
         logger.info(f'target camera: "{tar_cam}", target sensor id: "{tar_cam_id}"')
         tar_cam = tar_cam.lower()
         if tar_cam!='all' and camera != tar_cam:

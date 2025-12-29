@@ -3,7 +3,7 @@ import os
 import cv2
 import numpy as np
 
-from dataset_utils.representations import Box, Mask, Polygon, Point2d, Label, Annotation, AnnotationType, Dataset, FileAnnotations
+from dataset_utils.representations import Box, Polygon, Point2d, Label, Annotation, AnnotationType, Dataset, FileAnnotations
 
 
 def read_one_row(row):

@@ -95,7 +95,7 @@ class Anomalib_Base(ABC):
             - workspace: conversion memory size in MB
         """
         if not out_engine_path.endswith(".engine"):
-            raise Exception(f"trt engine file must end with '.engine'")
+            raise Exception("trt engine file must end with '.engine'")
         
         out_dir = os.path.dirname(out_engine_path)
         os.makedirs(out_dir, exist_ok=True)
@@ -285,7 +285,7 @@ class Anomalib_Base(ABC):
         
         if generate_stats:
             # Compute & Validate pdf
-            self.logger.info(f"Computing anomaly score PDF for all data.")
+            self.logger.info("Computing anomaly score PDF for all data.")
             anom_sq=np.squeeze(np.array(anom_all))
             data=np.ravel(anom_sq)
             # Fit gamma distribution to anomaly data across entire data set
@@ -294,7 +294,7 @@ class Anomalib_Base(ABC):
             x = np.linspace(min(data), max(data), 1000)
             pdf_fitted = gamma.pdf(x, alpha_hat, loc=loc_hat, scale=beta_hat)
             plt.hist(data, bins=100, density=True, alpha=0.7, label='Observed Data')
-            plt.plot(x, pdf_fitted, 'r-', label=f'Fitted Gamma')
+            plt.plot(x, pdf_fitted, 'r-', label='Fitted Gamma')
             plt.legend()
             plt.savefig(os.path.join(annot_dir,'gamma_pdf_fit.png'))
             max_data=max(data)

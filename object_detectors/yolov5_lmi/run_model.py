@@ -96,7 +96,7 @@ if __name__ == '__main__':
             results = engine.postprocess(preds,im,im0,args.confidence)
             # batch of 1
             if not len(results['boxes']):
-                logger.info(f'no object detected')
+                logger.info('no object detected')
                 continue
             
             boxes, scores, classes = results['boxes'][0],results['scores'][0],results['classes'][0]

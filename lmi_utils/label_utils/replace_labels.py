@@ -2,7 +2,6 @@ import argparse
 import copy
 from pathlib import Path
 from label_utils.csv_utils import load_csv, write_to_csv
-from label_utils.shapes.shape import Shape
 import logging
 
 logging.basicConfig(level=logging.INFO)

@@ -1,6 +1,5 @@
 #built-in packages
 import os
-import glob
 import shutil
 import logging
 import numpy as np

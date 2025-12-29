@@ -1,4 +1,3 @@
-import pytest
 import logging
 from od_core.object_detector_registry import ObjectDetectorRegistry
 

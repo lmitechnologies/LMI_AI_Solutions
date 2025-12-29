@@ -1,27 +1,16 @@
-import itertools
 import os
 import io
 import cv2
 from PIL import Image
 import tensorflow as tf
 import numpy as np
-import pandas as pd
-import time
 from tqdm import tqdm
 import argparse
-from object_detection.inference import detection_inference
-from object_detection.utils.dataset_util import bytes_list_feature
-from object_detection.utils.dataset_util import float_list_feature
-from object_detection.utils.dataset_util import int64_list_feature
-from object_detection.utils.dataset_util import int64_feature
 
-from object_detection.utils.dataset_util import bytes_feature
-from object_detection.utils import label_map_util
-from object_detection.utils import visualization_utils as viz_utils
 from object_detection.core import data_parser
 from object_detection.core import standard_fields as fields
 
-from object_detection.metrics.tf_example_parser import BoundingBoxParser, StringParser, Int64Parser, FloatParser
+from object_detection.metrics.tf_example_parser import BoundingBoxParser, StringParser, Int64Parser
 
 # TODO: 1/18/2021 need testing for classifier and segmentation versions
 class CustomParser(data_parser.DataToNumpyParser):

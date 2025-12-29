@@ -2,7 +2,6 @@ import logging
 import torch
 import torch.nn as nn
 from anomalib_lmi.base import to_list
-from anomalib_lmi.anomaly_model2 import AnomalyModel2
 import argparse
 from torchvision.transforms import v2
 
@@ -45,7 +44,7 @@ def make_preprocessing_trace_safe(module, device):
                     logger.info(f"Detected unsafe Normalize: {t}")
                     safe_norm = SafeNormalize(t.mean, t.std).to(device)
                     new_transforms.append(safe_norm)
-                    logger.info(f" -> Replaced with SafeNormalize")
+                    logger.info(" -> Replaced with SafeNormalize")
                 else:
                     new_transforms.append(t)
             child.transforms = new_transforms

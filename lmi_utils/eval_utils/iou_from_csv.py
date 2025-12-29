@@ -140,7 +140,7 @@ def main(model_path:str,manual_path:str,data_dir:str,labels:str,output_dir:str,r
     else:
         try:
             obj_classes=labels.split(",")
-        except:
+        except Exception:
             print(f'Incorrect labels definition: {labels}')
 
     manual_data=csv_to_dictionary(manual_path,obj_classes)

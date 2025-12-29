@@ -3,14 +3,11 @@ import argparse
 import logging
 import json
 import numpy as np
-import collections
 import glob
 from label_studio_sdk.converter.brush import decode_rle
 from dataset_utils.representations import Box, Mask, Label, AnnotationType, Dataset, FileAnnotations, Polygon, Point2d, Annotation
-from dataset_utils.mask_encoder import mask2rle, rle2mask
 from system_utils.path_utils import get_relative_paths
 import cv2
-import shutil
 
 
 from label_utils.bbox_utils import convert_from_ls
@@ -98,7 +95,7 @@ def get_annotations_from_json(path_json, images_dir, background=False):
         logger.info(f'Extracting labels from: {path_json}')
         logger.info(f'dir_path : {images_dir}')
         with open(path_json) as f:    
-            l = json.load(f)
+            li = json.load(f)
 
         cnt_anno = 0
         cnt_image = 0
@@ -107,7 +104,7 @@ def get_annotations_from_json(path_json, images_dir, background=False):
         
         # collect all the files
         files = [
-            dt['data']['image'] for dt in l if 'data' in dt
+            dt['data']['image'] for dt in li if 'data' in dt
         ]
         common_prefix = os.path.dirname(os.path.commonprefix(files))
         logger.info(f'base_path: {common_prefix}')
@@ -115,7 +112,7 @@ def get_annotations_from_json(path_json, images_dir, background=False):
         # find the common prefix between the image path
         
         
-        for dt in l:
+        for dt in li:
             # load file name
             if 'data' not in dt:
                 raise Exception('missing "data" in json file. Ensure that the label studio export format is not JSON-MIN.')
@@ -198,7 +195,7 @@ def get_annotations_from_json(path_json, images_dir, background=False):
                     annotations.append(FileAnnotations(id=str(file_id),path=f, height=height,width=width))
                 
 
-        logger.info(f'{cnt_image} out of {len(l)} images have annotations')
+        logger.info(f'{cnt_image} out of {len(li)} images have annotations')
         if cnt_wrong>0:
             logger.info(f'{cnt_wrong} images with total_annotations > 0, but found 0 annotation')
         logger.info(f'total {cnt_anno} annotations')

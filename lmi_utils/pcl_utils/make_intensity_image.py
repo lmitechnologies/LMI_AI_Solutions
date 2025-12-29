@@ -1,7 +1,6 @@
 import numpy as np
 import open3d
 import cv2
-import xml.etree.ElementTree as ET
 import argparse
 import os
 import glob
@@ -52,7 +51,7 @@ if __name__ == "__main__":
     if not os.path.isdir(input_path):
         make_intensity_image(input_path,output_path)
     else:
-        print(f'[INFO] converting directory of pcds.')
+        print('[INFO] converting directory of pcds.')
         files=glob.glob(os.path.join(input_path,'*.pcd'))
         for current_file in files:
             print(f'[INFO] Reading: {current_file}')

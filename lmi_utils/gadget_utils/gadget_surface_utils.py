@@ -111,8 +111,8 @@ class GadgetSurfaceUtils():
                     img_intensity=Image.open(path_intensity)
                     img_intensity=img_intensity.convert('RGB') #convert to color
                     img_intensity=numpy.array(img_intensity).astype(numpy.float32)
-                except:
-                    print(f'[WARNING] Failed to load intensity image.')
+                except Exception:
+                    print('[WARNING] Failed to load intensity image.')
                     use_intensity=False
 
             profile = content["profile_array"]
@@ -153,8 +153,8 @@ class GadgetSurfaceUtils():
                         img_intensity=Image.open(path_intensity)
                         img_intensity=img_intensity.convert('RGB') #convert to color
                         img_intensity=numpy.array(img_intensity).astype(numpy.float32)
-                    except:
-                        print(f'[WARNING] Failed to load intensity image.')
+                    except Exception:
+                        print('[WARNING] Failed to load intensity image.')
                         use_intensity=False
                         
                 metadata = None
@@ -203,8 +203,8 @@ class GadgetSurfaceUtils():
                         # print(f'[INFO] Loading intensity image from:{path_intensity}')
                         img_intensity=numpy.array(Image.open(path_intensity))
                         
-                    except:
-                        print(f'[WARNING] Failed to load intensity image.')
+                    except Exception:
+                        print('[WARNING] Failed to load intensity image.')
                         use_intensity=False
                         
                 metadata = None

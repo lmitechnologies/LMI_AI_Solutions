@@ -175,7 +175,7 @@ def quickhull(S: np.ndarray) -> np.ndarray:
     Returns:
     np.ndarray: A 2D numpy array representing the vertices of the convex hull in counter-clockwise order.
     """
-    a, b = np.argmin(S[:, 0]), np.argmax(S[:, 0])
+    a = np.argmin(S[:, 0])
     max_index = np.argmax(S[:, 0])
     return process(S, np.arange(S.shape[0]), a, max_index)[:-1] + process(S, np.arange(S.shape[0]), max_index, a)[:-1]
 

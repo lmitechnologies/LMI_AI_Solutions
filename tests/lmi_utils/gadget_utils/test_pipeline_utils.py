@@ -2,16 +2,15 @@ import pytest
 import torch
 import numpy as np
 import logging
-import sys
-import os
 import cv2
+import gadget_utils.pipeline_utils as pipeline_utils
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
     
 
-import gadget_utils.pipeline_utils as pipeline_utils
+
     
 
 class Test_resize_image:
@@ -32,13 +31,13 @@ class Test_resize_image:
         
         im2 = pipeline_utils.resize_image(torch.from_numpy(im), **resize_args)
         assert im2.shape == expected_shape
-        assert type(im2) == torch.Tensor
+        assert isinstance(im2, torch.Tensor)
         
         if torch.cuda.is_available():
             tmp = torch.from_numpy(im).cuda()
             im2 = pipeline_utils.resize_image(tmp, **resize_args)
             assert im2.shape == expected_shape
-            assert type(im2) == torch.Tensor
+            assert isinstance(im2, torch.Tensor)
             assert im2.is_cuda
 
             

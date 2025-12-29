@@ -73,7 +73,7 @@ def convert_to_rainbow(an_int,full_scale_range=24):
             blue=255
             green=x*slope
             red=255
-    except:
+    except Exception:
         print('Invald range.')
 
     return np.uint8(red), np.uint8(green), np.uint8(blue)
@@ -122,7 +122,7 @@ def convert_array_to_rainbow(an_array_of_ints,full_scale_range=24):
         blue[bin7_index]=255
         green[bin7_index]=(an_array_of_ints[bin7_index]-6*color_bin)*slope
         red[bin7_index]=255
-    except:
+    except Exception:
         raise Exception('Invald range.')
 
     rgb_image=np.dstack((red,green,blue)).astype(np.uint8)

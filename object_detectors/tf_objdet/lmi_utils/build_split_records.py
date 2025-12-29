@@ -1,10 +1,8 @@
 #%% import packages
 from tf_objdet.lmi_utils.tfannotation import TFAnnotation
-from sklearn.model_selection import train_test_split
 from PIL import Image
 import tensorflow as tf 
 import os
-import json
 import csv
 import argparse
 import importlib.util
@@ -98,12 +96,12 @@ def main():
     # Catch errors for unspecified config parameters
     try:
         MASK_OPTION=config.MASK_OPTION
-    except:
+    except Exception:
         print('[INFO] Faster R-CNN by default since MASK_OPTION is not defined in ',args['config_path'])
         MASK_OPTION=False   
     try:
         RESIZE_OPTION=config.RESIZE_OPTION
-    except:
+    except Exception:
         print('[INFO] No resizing because RESIZE_OPTION is not defined in ',args['config_path'])
         RESIZE_OPTION=False
 
@@ -171,7 +169,7 @@ def main():
                         RESIZE_OPTION=False
                         encoded=tf.io.gfile.GFile(k,'rb').read()
                         encoded=bytes(encoded)              
-                except:
+                except Exception:
                     print('[INFO] No resizing because MAX_W is not defined in ',args['config_path'])
                     # if MAX_W is undefined, then skip resize
                     RESIZE_OPTION=False

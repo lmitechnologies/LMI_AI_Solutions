@@ -3,8 +3,6 @@ import glob
 import os
 import pcl_utils.point_cloud as pcloud
 
-import matplotlib.pyplot as plt
-import scipy.interpolate as interp
 import numpy as np
 
 #%%

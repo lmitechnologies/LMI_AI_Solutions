@@ -3,7 +3,6 @@ import os
 import argparse
 import glob
 
-import gadget_utils.pipeline_utils as pipeline_utils
 
 
 BLACK=(0,0,0)

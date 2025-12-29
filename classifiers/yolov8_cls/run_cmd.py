@@ -2,7 +2,6 @@ import subprocess
 from datetime import date
 import logging
 import yaml
-import os
 
 from yolov8_lmi.run_cmd import check_path_exist, sanity_check, get_model_path, add_configs
 

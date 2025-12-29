@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 
@@ -266,7 +265,7 @@ class PointCloud():
                 zkeep=self.z[ind]
             else:
                 zkeep=self.z
-        except:
+        except Exception:
             zkeep=self.z
         
         self.zmin=zkeep.min()
@@ -282,24 +281,28 @@ class PointCloud():
         zmax_color=self.zmax if zmax_color is None else zmax_color
         img_norm=self.__normalize_img(zmin_color,zmax_color)
         img_norm[np.isnan(img_norm)]=0.0
-        if verbose: print(f'[INFO] Normalizing data between {zmin_color} and {zmax_color}')
+        if verbose: 
+            print(f'[INFO] Normalizing data between {zmin_color} and {zmax_color}')
         try:
             if color_mapping == 'rainbow':
-                if verbose: print('[INFO] Converting to rainbow color map.')
+                if verbose: 
+                    print('[INFO] Converting to rainbow color map.')
                 #discretize range
                 img_int = (img_norm *self.TWO_TO_TWENTYFOURTH_MINUS_ONE).astype(np.int)
                 img = rbg_converter.convert_array_to_rainbow(img_int)
                 img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             elif color_mapping == 'rgb':
-                if verbose: print('[INFO] Converting to high-res color map.')
+                if verbose: 
+                    print('[INFO] Converting to high-res color map.')
                 img_int = (img_norm *self.TWO_TO_TWENTYFOURTH_MINUS_ONE).astype(np.int)
                 img = rbg_converter.convert_array_to_rgb(img_int)
                 img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             elif color_mapping == 'gray':
-                if verbose: print('[INFO] Converting to grayscale')
+                if verbose: 
+                    print('[INFO] Converting to grayscale')
                 img = (img_norm *255).astype(np.uint8)
                 img_bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        except:
+        except Exception:
             raise Exception('Invalid color mapping.')
         
         self.img = img_bgr
@@ -317,7 +320,7 @@ class PointCloud():
         try:
             arr = np.column_stack((self.x, self.y, self.z))
             np.save(fname, arr)
-        except:
+        except Exception:
             print('Could not write the .npy file.')
 
 
@@ -331,7 +334,7 @@ def main():
     pc = PointCloud()
     try:
         pc.read_points(input_cloud_path, zmin=0, zmax=40, clip_mode=1)
-    except:
+    except Exception:
         print('Bad path.')
         sys.exit(1)
     tstart = time.time()

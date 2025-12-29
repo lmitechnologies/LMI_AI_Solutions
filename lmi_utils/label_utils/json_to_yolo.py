@@ -4,8 +4,6 @@ from dataset_utils.representations import Dataset
 import logging
 import yaml
 import argparse
-import random
-import glob
 import cv2
 import shutil
 

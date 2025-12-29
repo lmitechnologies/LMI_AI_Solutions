@@ -1,4 +1,3 @@
-import itertools
 import os
 from PIL import Image
 import io
@@ -6,19 +5,13 @@ import cv2
 import tensorflow as tf
 import numpy as np
 import pandas as pd
-import time, progressbar
-from object_detection.inference import detection_inference
-from object_detection.utils.dataset_util import bytes_list_feature
-from object_detection.utils.dataset_util import float_list_feature
-from object_detection.utils.dataset_util import int64_list_feature
-from object_detection.utils.dataset_util import int64_feature
-from object_detection.utils.dataset_util import bytes_feature
+import progressbar
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as viz_utils
 from object_detection.core import data_parser
 from object_detection.core import standard_fields as fields
 
-from object_detection.metrics.tf_example_parser import BoundingBoxParser, StringParser, Int64Parser, FloatParser
+from object_detection.metrics.tf_example_parser import BoundingBoxParser, StringParser, Int64Parser
 
 tf.compat.v1.flags.DEFINE_string('input_tfrecord_path', None,
                                  'Input tf record path')

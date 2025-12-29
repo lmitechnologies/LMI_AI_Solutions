@@ -311,10 +311,10 @@ def copy_images_in_folder(path_img, path_out, fnames=None):
     """
     os.makedirs(path_out, exist_ok=True)
     if not fnames:
-        l = glob.glob(os.path.join(path_img, '*.png')) + glob.glob(os.path.join(path_img, '*.jpg'))
+        file_list = glob.glob(os.path.join(path_img, '*.png')) + glob.glob(os.path.join(path_img, '*.jpg'))
     else:
-        l = [f"{path_img}/{fname}" for fname in fnames]
-    for f in l:
+        file_list = [f"{path_img}/{fname}" for fname in fnames]
+    for f in file_list:
         shutil.copy(f, path_out)
 
 if __name__ == '__main__':

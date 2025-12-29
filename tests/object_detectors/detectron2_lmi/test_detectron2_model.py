@@ -3,7 +3,6 @@ import pytest
 import json 
 import cv2
 import torch
-from torch import Tensor, nn
 from detectron2 import model_zoo
 from detectron2.utils.testing import (
     get_sample_coco_image,

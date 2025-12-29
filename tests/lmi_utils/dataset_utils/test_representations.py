@@ -3,14 +3,7 @@ import json
 import numpy as np
 import cv2
 import pytest
-import sys
 import logging
-
-
-logging.basicConfig()
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
 from dataset_utils.representations import (
     Point2d,
     Box,
@@ -27,6 +20,13 @@ from dataset_utils.representations import (
 )
 from dataset_utils.mask_encoder import mask2rle
 from lmi_utils.label_utils.bbox_utils import rotate
+
+
+logging.basicConfig()
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+
 
 
 # ============================
@@ -350,4 +350,5 @@ def test_base_to_dict_and_to_json(dummy_dataset):
     # Check that the JSON string is parseable.
     loaded = json.loads(j)
     assert isinstance(loaded, dict)
+    assert isinstance(d, dict)
     

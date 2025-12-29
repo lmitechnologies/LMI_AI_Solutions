@@ -125,10 +125,10 @@ def write_to_lst(shapes:dict, out_path:Path, img_dir:Path, gs_path:str, is_pred:
     if not gs_path.startswith('gs://'):
         if not gs_path.startswith('/'):
             raise Exception('The local storage path must be absolute path starting with /')
-        l = gs_path.split('/')[1:]
+        li = gs_path.split('/')[1:]
         logger.info(f'found local path: {gs_path}.')
-        logger.info(f'Assume that LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT is /{l[0]}')
-        gs_path = f"/data/local-files/?d={str('/').join(l[1:])}"
+        logger.info(f'Assume that LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT is /{li[0]}')
+        gs_path = f"/data/local-files/?d={str('/').join(li[1:])}"
         logger.info(f'converted to local path: {gs_path}')
         
     labels = []

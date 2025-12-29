@@ -1,4 +1,3 @@
-import csv
 import argparse
 import pandas as pd
 import os
@@ -108,7 +107,7 @@ def prune_ROIs(csv_file_path,data_path,output_path,zmin=-100,zmax=100,extra_str=
         pcd_file=data_path+'/'+img_file[0:ind]+'.pcd'
         try: 
             pcd.read_points(pcd_file)
-        except:
+        except Exception:
             print('[Error] Could not open .pcd file: ',pcd_file)
         region_id=0
         # check bounding box shape
@@ -118,7 +117,8 @@ def prune_ROIs(csv_file_path,data_path,output_path,zmin=-100,zmax=100,extra_str=
             if row.Shape != "rect":
                 #TODO: support masks
                 raise Exception('Only bounding boxes are supported.')
-            #
+            x_ul, y_ul = 0, 0
+            x_lr, y_lr = 1e6, 1e6
             if row.Position == 'upper left':
                 x_ul=row.X
                 y_ul=row.Y

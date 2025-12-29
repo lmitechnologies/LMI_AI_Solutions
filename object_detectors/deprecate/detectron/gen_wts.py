@@ -1,4 +1,9 @@
 from detectron2.layers import Conv2d
+from detectron2 import model_zoo
+from detectron2.config import get_cfg
+from detectron2.modeling import build_model
+from detectron2.checkpoint import DetectionCheckpointer
+import argparse
 from torch import nn
 import torch
 import struct
@@ -52,13 +57,6 @@ def gen_wts(model, filename):
         f.write('\n')
     f.close()
 
-
-# construct model
-from detectron2 import model_zoo
-from detectron2.config import get_cfg
-from detectron2.modeling import build_model
-from detectron2.checkpoint import DetectionCheckpointer
-import argparse
 
 
 if __name__ == '__main__':

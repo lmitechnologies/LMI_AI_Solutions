@@ -6,8 +6,6 @@ import logging
 from PIL import Image
 import time
 
-from ultralytics.utils import ops
-from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.data.augment import classify_transforms
 from ultralytics.utils.torch_utils import smart_inference_mode
 
