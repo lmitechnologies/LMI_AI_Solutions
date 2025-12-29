@@ -1,6 +1,7 @@
-from typing import Dict, Any
-from .anomaly_detector_registry import AnomalyDetectorRegistry
 import logging
+from typing import Any, Dict
+
+from .anomaly_detector_registry import AnomalyDetectorRegistry
 
 # auto register anomaly detectors
 AnomalyDetectorRegistry.auto_register_models()

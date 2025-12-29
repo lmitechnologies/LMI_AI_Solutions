@@ -1,8 +1,9 @@
-from PIL import Image
 import pickle
-import numpy
 from os import listdir, makedirs
-from os.path import isfile, join, isdir
+from os.path import isdir, isfile, join
+
+import numpy
+from PIL import Image
 
 
 class GadgetImageUtils:

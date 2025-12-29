@@ -82,12 +82,10 @@ If side inputs are desired, the following arguments could be appended
    --side_input_types tf.float32,tf.int32
 """
 
-from absl import app
-from absl import flags
-
-import tensorflow.compat.v2 as tf
-from google.protobuf import text_format
 import exporter_lib_v2
+import tensorflow.compat.v2 as tf
+from absl import app, flags
+from google.protobuf import text_format
 from object_detection.protos import pipeline_pb2
 
 tf.enable_v2_behavior()

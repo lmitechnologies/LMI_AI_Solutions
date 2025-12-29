@@ -1,8 +1,9 @@
-from label_utils.shapes import Rect, Mask, Keypoint, Brush
-from dataset_utils.representations import Dataset, AnnotationType
 import collections
-from label_utils.csv_utils import write_to_csv
 import os
+
+from dataset_utils.representations import AnnotationType, Dataset
+from label_utils.csv_utils import write_to_csv
+from label_utils.shapes import Brush, Keypoint, Mask, Rect
 
 
 def json_to_csv(path_json, path_out):

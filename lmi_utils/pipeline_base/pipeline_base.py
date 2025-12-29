@@ -1,26 +1,27 @@
 import collections
 import functools
+import json
 import logging
 import traceback
 from abc import ABCMeta, abstractmethod
-import json
+
+from ad_core.anomaly_detector import AnomalyDetector
+from cls_core.classifier import Classifier
+from dataset_utils.representations import (
+    Annotation,
+    AnnotationType,
+    Box,
+    Mask,
+    Point2d,
+    Polygon,
+)
+
+# LMI AIS repo's modules
+from od_core.object_detector import ObjectDetector
 
 # local module
 # handle different model_roles schema according to gadget version
 from .core.schemas.schema_2 import ModelSchemaV_2
-
-# LMI AIS repo's modules
-from od_core.object_detector import ObjectDetector
-from ad_core.anomaly_detector import AnomalyDetector
-from cls_core.classifier import Classifier
-from dataset_utils.representations import (
-    Box,
-    Polygon,
-    Mask,
-    Point2d,
-    AnnotationType,
-    Annotation,
-)
 
 
 class PipelineBase(metaclass=ABCMeta):
@@ -68,7 +69,8 @@ class PipelineBase(metaclass=ABCMeta):
         it has the following attributes:
 
             models: a dictionary of model instances, e.g., {model_name: model_instance}
-            results: a dictionary of the results, e.g., {'outputs':{}, 'automation_keys':[], 'factory_keys':[], 'tags':[], 'should_archive':True, 'decision':None}
+            results: a dictionary of the results, e.g.,
+                {'outputs':{}, 'automation_keys':[], 'factory_keys':[], 'tags':[], 'should_archive':True, 'decision':None}
             version: the gadget version. It determines which model_roles handler to be used.
         """
         self.models = collections.OrderedDict()
@@ -266,7 +268,8 @@ class PipelineBase(metaclass=ABCMeta):
         """a helper functiomn to add a batch of predictions to results for Label Studio.
 
         Args:
-            predictions (dict): a dictionary of predictions with one of these keys: boxes, polygons, masks and keypoints. e.g., {"boxes": {"classes": [], "objects": [], "confidences": []}}.
+            predictions (dict): a dictionary of predictions with one of these keys: boxes, polygons, masks and keypoints. e.g.,
+                {"boxes": {"classes": [], "objects": [], "confidences": []}}.
             image_height (int): the height of the image.
             image_width (int): the width of the image.
             key (str, optional): the key of the self.results. Defaults to 'outputs'.
@@ -320,12 +323,13 @@ class PipelineBase(metaclass=ABCMeta):
         }
 
     @classmethod
-    def track_exception(cls, logger=logging.getLogger(__name__)):
+    def track_exception(cls, logger=None):
         """track exceptions and log the error message to GoFactory.
 
         Args:
             logger (Logger, optional): the logger to use. Defaults to logging.getLogger(__name__).
         """
+        logger = logger or logging.getLogger(__name__)
 
         def deco(func):
             @functools.wraps(func)
@@ -404,11 +408,12 @@ class PipelineBase(metaclass=ABCMeta):
         if kwargs.get("to_automation", False) and key not in self.results["automation_keys"]:
             self.results["automation_keys"].append(key)
 
-    def check_return_types(self, check_sub_keys=[]) -> bool:
+    def check_return_types(self, check_sub_keys=None) -> bool:
         """check if the result dictionary is json serializable
 
         Args:
-            check_sub_keys (list, optional): a list of sub keys to check in 'outputs'. Defaults to []. It checks the default sub key 'labels' anyway.
+            check_sub_keys (list, optional): a list of sub keys to check in 'outputs'. Defaults to [].
+                It checks the default sub key 'labels' anyway.
         """
 
         def is_json_serializable(obj, key):
@@ -420,6 +425,7 @@ class PipelineBase(metaclass=ABCMeta):
                 self.logger.error(f"{key} is not json serializable.")
                 return False
 
+        check_sub_keys = check_sub_keys or []
         # check the default subkey in 'outputs', i.e., 'labels'
         DEFAULT_SUB_KEY = "labels"
         for k, v in self.results.items():

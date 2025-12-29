@@ -1,9 +1,10 @@
-import cv2
-import os
 import argparse
 import glob
-import numpy as np
 import logging
+import os
+
+import cv2
+import numpy as np
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

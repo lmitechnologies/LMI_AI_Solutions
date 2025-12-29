@@ -1,15 +1,14 @@
-from detectron2.engine import DefaultTrainer
-import os
-from detectron2_lmi.utils.det_utils import create_config, register_datasets
-from detectron2.data import build_detection_train_loader
-import detectron2.data.transforms as T
-from detectron2.utils.logger import setup_logger
-import sys
-import signal
-import yaml
 import glob
-from detectron2.data import DatasetMapper
+import os
+import signal
+import sys
 
+import detectron2.data.transforms as T
+import yaml
+from detectron2.data import DatasetMapper, build_detection_train_loader
+from detectron2.engine import DefaultTrainer
+from detectron2.utils.logger import setup_logger
+from detectron2_lmi.utils.det_utils import create_config, register_datasets
 
 logger = setup_logger()
 
@@ -121,7 +120,8 @@ def training_run(args):
         if not os.path.isfile(os.path.join(cfg.OUTPUT_DIR, "sample_image.png")):
             images_in_folder = glob.glob(os.path.join(args.get("dataset_dir"), f"{dataset_name}/images/*"))
             os.system(
-                f"cp {os.path.join(args.get('dataset_dir'), f'{dataset_name}/images/{os.path.basename(images_in_folder[-1])}')} {cfg.OUTPUT_DIR}/sample_image.png"
+                f"cp {os.path.join(args.get('dataset_dir'), dataset_name, 'images', os.path.basename(images_in_folder[-1]))} "
+                f"{cfg.OUTPUT_DIR}/sample_image.png"
             )
         logger.info(f"registered dataset: {dataset_name}")
 
@@ -150,7 +150,8 @@ def training_run(args):
 #     import argparse
 #     parser = argparse.ArgumentParser()
 #     parser.add_argument("--config-file", type=str, help="Path to the config file", default="/home/config.yaml")
-#     parser.add_argument("--detectron2-config", type=str, help="Detectron2 config file", default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
+#     parser.add_argument("--detectron2-config", type=str, help="Detectron2 config file",
+#           default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
 #     parser.add_argument("--dataset-dir", type=str, help="Dataset dir", default="/home/data")
 #     parser.add_argument("--output-dir", type=str, help="Path to the output directory", default="/home/weights/")
 #     args = parser.parse_args()

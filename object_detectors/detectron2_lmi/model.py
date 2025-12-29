@@ -1,16 +1,17 @@
+import logging
+import time
 from typing import Dict, List
-from od_core.od_base import ODBase
-from od_core.object_detector_registry import ObjectDetectorRegistry
+
 import numpy as np
+import torch
 from gadget_utils.pipeline_utils import (
     plot_one_box,
-    revert_to_origin,
     revert_mask_to_origin,
+    revert_to_origin,
 )
-from postprocess_utils.mask_utils import rescale_masks, mask_to_polygon_cv2
-import logging
-import torch
-import time
+from od_core.object_detector_registry import ObjectDetectorRegistry
+from od_core.od_base import ODBase
+from postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_masks
 
 
 @ObjectDetectorRegistry.register(
@@ -88,9 +89,9 @@ class Detectron2TRT(ODBase):
         """
         """source: https://github.com/NVIDIA/TensorRT/tree/release/10.4/samples/python/detectron2"""
 
+        import detectron2_lmi.utils.common_runtime as common
         import tensorrt as trt
         from cuda import cudart
-        import detectron2_lmi.utils.common_runtime as common
 
         trt_logger = trt.Logger(trt.Logger.ERROR)
         trt.init_libnvinfer_plugins(trt_logger, namespace="")

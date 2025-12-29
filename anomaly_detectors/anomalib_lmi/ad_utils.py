@@ -1,9 +1,10 @@
-import os
 import logging
+import os
+
+import cv2
+import numpy as np
 from matplotlib import pyplot as plt
 from scipy.stats import kstest
-import numpy as np
-import cv2
 
 logging.basicConfig(level=logging.INFO)
 
@@ -141,7 +142,8 @@ def processContours(self, heatMap, err_dist, color_threshold, size_fail, size_ig
                 - float32 residual_bgr image (heatmap)
                 - passed in to generate contours
                 - turned into grayscale, colors are inverted (so the anomaly areas are selected for contour detection,
-                and then turned into a binary image... excess large white spots are filled in from fill_start to prevent false-positive contours
+                and then turned into a binary image... excess large white spots are filled in from fill_start 
+                to prevent false-positive contours
                 - resulting image is then passed into findContours, which returns a list of contours
         err_dist: 
                 - numpy array (usually the anomaly_map variable)
@@ -155,11 +157,13 @@ def processContours(self, heatMap, err_dist, color_threshold, size_fail, size_ig
         size_fail:
                 - integer (number of pixels)
                 - threshold for failing contours
-                - passed into conditional (if the contour_area is greater than the size_fail, then that anomaly is considered too big to pass)
+                - passed into conditional (if the contour_area is greater than the size_fail, 
+                    then that anomaly is considered too big to pass)
         size_ignore:
                 - integer (number of pixels)
                 - threshold for ignoring contours
-                - passed into conditional at the start of contour loop (if contour_area is greater than size_ignore, it's too big to be an actual anomaly)
+                - passed into conditional at the start of contour loop (if contour_area is greater than size_ignore, 
+                it's too big to be an actual anomaly)
                 this assumes detected anomalies are usually a certain size
     RETURNS:
         decision:

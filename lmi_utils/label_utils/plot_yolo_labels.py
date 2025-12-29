@@ -1,12 +1,12 @@
-import cv2
 import argparse
 import glob
+import json
+import logging
 import os
+
+import cv2
 import numpy as np
 from label_utils.plot_utils import plot_one_polygon, plot_one_pt
-import json
-
-import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)

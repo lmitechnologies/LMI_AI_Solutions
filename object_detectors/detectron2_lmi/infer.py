@@ -1,18 +1,19 @@
-from detectron2_lmi.model import Detectron2Model
 import glob
-import os
-import cv2
 import json
-from label_utils.shapes import Rect, Mask
-from label_utils.csv_utils import write_to_csv
 import logging
+import os
+
+import cv2
+from detectron2_lmi.model import Detectron2Model
+from label_utils.csv_utils import write_to_csv
+from label_utils.shapes import Mask, Rect
 
 # setup the logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def find_images(path: str, exts=["jpg", "jpeg", "png"]):
+def find_images(path: str, exts=("jpg", "jpeg", "png")):
     """find all images with the given extensions in the path
 
     Args:

@@ -1,14 +1,14 @@
-import os
 import logging
+import os
 from collections import OrderedDict, namedtuple
-import torch
-import numpy as np
-import albumentations as A
 
-from .base import Anomalib_Base
+import albumentations as A
 import gadget_utils.pipeline_utils as pipeline_utils
+import numpy as np
+import torch
 from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 
+from .base import Anomalib_Base
 
 logging.basicConfig()
 
@@ -54,11 +54,9 @@ class AnomalyModel(Anomalib_Base):
         if ext == ".engine":
             import tensorrt as trt
 
-            with (
-                open(model_path, "rb") as f,
-                trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime,
-            ):
-                model = runtime.deserialize_cuda_engine(f.read())
+            with open(model_path, "rb") as f:
+                with trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
+                    model = runtime.deserialize_cuda_engine(f.read())
             self.context = model.create_execution_context()
             self.bindings = OrderedDict()
             self.output_names = []

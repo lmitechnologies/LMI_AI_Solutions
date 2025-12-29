@@ -1,12 +1,12 @@
 # built-in packages
-import csv
 import collections
-from logging import warning
-import os
+import csv
 import logging
+import os
+from logging import warning
 
 # LMI packages
-from label_utils.shapes import Rect, Mask, Keypoint, Brush
+from label_utils.shapes import Brush, Keypoint, Mask, Rect
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

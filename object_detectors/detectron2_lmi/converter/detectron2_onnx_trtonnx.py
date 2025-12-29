@@ -15,20 +15,21 @@
 # limitations under the License.
 #
 
+import logging
 import os
 import sys
-import logging
+
 import cv2
-import onnx_graphsurgeon as gs
 import numpy as np
 import onnx
-from onnx import shape_inference
+import onnx_graphsurgeon as gs
 import torch
+from onnx import shape_inference
 
 try:
+    from detectron2.config import get_cfg
     from detectron2.engine.defaults import DefaultPredictor
     from detectron2.modeling import build_model
-    from detectron2.config import get_cfg
     from detectron2.structures import ImageList
 except ImportError:
     print("Could not import Detectron 2 modules. Maybe you did not install Detectron 2")
@@ -115,7 +116,7 @@ class DET2GraphSurgeon:
         When possible, run shape inference on the ONNX graph to determine tensor shapes.
         """
 
-        for i in range(3):
+        for _i in range(3):
             count_before = len(self.graph.nodes)
             self.graph.cleanup().toposort()
             try:
@@ -354,7 +355,8 @@ class DET2GraphSurgeon:
         # :param p4: Output of p4 feature map.
         # :param p5: Output of p5 feature map.
         # :param pooled_size: Pooled output dimensions.
-        # :param sampling_ratio: Number of sampling points in the interpolation grid used to compute the output value of each pooled output bin.
+        # :param sampling_ratio: Number of sampling points in the interpolation grid
+        #                        used to compute the output value of each pooled output bin.
         # :param roi_align_type: Type of Detectron 2 ROIAlign op, either ROIAlign (vanilla) or ROIAlignV2 (0.5 coordinate offset).
         # :param num_rois: Number of ROIs resulting from ROIAlign operation.
         # :param ra_name: Name of ROIAlign node in a graph, renames ROIAlign elements accordingly in order to eliminate cycles.

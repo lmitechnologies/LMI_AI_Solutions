@@ -1,15 +1,16 @@
-from dataclasses import dataclass, asdict
 import enum
 import json
-from typing import Optional, Union, List
-import os
-import numpy as np
 import logging
+import os
+from dataclasses import asdict, dataclass
+from typing import List, Optional, Union
+
 import cv2
-from dataset_utils.mask_encoder import rle2mask, mask2rle
-from image_utils.img_resize import resize
+import numpy as np
+from dataset_utils.mask_encoder import mask2rle, rle2mask
 from gadget_utils.pipeline_utils import fit_array_to_size
-from label_utils.bbox_utils import rotate, get_rotated_bbox
+from image_utils.img_resize import resize
+from label_utils.bbox_utils import get_rotated_bbox, rotate
 
 logger = logging.getLogger(__name__)
 
@@ -233,8 +234,10 @@ class Box(Base):
 class Polygon(Base):
     points: Union[List[List[int]], List[List[float]], np.ndarray]
 
-    def __init__(self, points: Union[List[List[int]], List[List[float]], np.ndarray] = []):
+    def __init__(self, points: Union[List[List[int]], List[List[float]], np.ndarray] = None):
         super().__init__()
+        if points is None:
+            points = []
         if isinstance(points, np.ndarray):
             points = points.astype(float).tolist()
         self.points = points
@@ -614,16 +617,16 @@ class FileAnnotations(Base):
         path: str,
         height: int,
         width: int,
-        annotations: List[Annotation] = [],
-        predictions: List[Annotation] = [],
+        annotations: List[Annotation] = None,
+        predictions: List[Annotation] = None,
     ):
         super().__init__()
         self.id = id
         self.path = path
         self.height = height
         self.width = width
-        self.annotations = annotations
-        self.predictions = predictions
+        self.annotations = annotations or []
+        self.predictions = predictions or []
 
     @classmethod
     def from_dict(cls, data: dict) -> "FileAnnotations":
@@ -678,7 +681,8 @@ class FileAnnotations(Base):
         else:
             self.predictions = annotations
 
-    def assign_keypoints(self, target_ids=[]):
+    def assign_keypoints(self, target_ids=None):
+        target_ids = target_ids or []
         for annotation in self.annotations:
             if annotation.type == AnnotationType.KEYPOINT:
                 assigned = False
@@ -702,12 +706,13 @@ class FileAnnotations(Base):
         to_segmentation=False,
         to_object_detection=False,
         merge_boxes=False,
-        target_classes=[],
+        target_classes=None,
         use_obb=False,
     ):
         """Convert this file's annotations to YOLO format.
         `label_to_index` is a function mapping a label id to an integer index.
         """
+        target_classes = target_classes or []
         yolo_annotations = []
         h = self.height
         w = self.width

@@ -1,12 +1,12 @@
-import os
-import logging
 import argparse
+import logging
+import os
 import random
+
 import cv2
 
 from .csv_utils import load_csv
 from .plot_with_json import plot_shape
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

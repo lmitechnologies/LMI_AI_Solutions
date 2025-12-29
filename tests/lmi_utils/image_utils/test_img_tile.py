@@ -1,14 +1,13 @@
-import pytest
-import os
-import tempfile
 import logging
+import os
+import subprocess
+import tempfile
+
+import pytest
 import torch
 import torchvision
-import subprocess
-
-from image_utils.img_tile import to_tiles, to_images, ScaleMode
+from image_utils.img_tile import ScaleMode, to_images, to_tiles
 from system_utils import path_utils
-
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

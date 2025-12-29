@@ -1,9 +1,10 @@
-import subprocess
-from datetime import date
 import logging
-import yaml
 import os
+import subprocess
 import sys
+from datetime import date
+
+import yaml
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

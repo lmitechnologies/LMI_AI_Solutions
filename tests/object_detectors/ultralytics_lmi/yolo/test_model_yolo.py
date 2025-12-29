@@ -1,14 +1,13 @@
-import pytest
-import torch
-import numpy as np
 import logging
 import os
+
 import cv2
-from ultralytics import YOLO
-
-from ultralytics_lmi.yolo.model import Yolo, YoloSeg, YoloObb, YoloPose
+import numpy as np
+import pytest
+import torch
 from od_core.object_detector import ObjectDetector
-
+from ultralytics import YOLO
+from ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -157,7 +156,7 @@ class Test_Yolo_Det:
         for model_path in OD_DET_MODELS:
             ults_model = YOLO(model_path)
             our_model = Yolo(model_path, device=DEVICE)
-            for img, resized, op in zip(*imgs_coco):
+            for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
                     resized_bgr,
@@ -209,7 +208,7 @@ class Test_Yolo_Seg:
         for model_path in OD_SEG_MODELS:
             ults_model = YOLO(model_path)
             our_model = YoloSeg(model_path, device=DEVICE)
-            for img, resized, op in zip(*imgs_coco):
+            for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
                     resized_bgr,
@@ -266,7 +265,7 @@ class Test_Yolo_Obb:
         for model_path in model_paths:
             ults_model = YOLO(model_path)
             our_model = YoloObb(model_path, device=DEVICE)
-            for img, resized, op in zip(*imgs):
+            for _img, resized, _op in zip(*imgs):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
                     resized_bgr,
@@ -350,7 +349,7 @@ class Test_Yolo_Pose:
         for model_path in OD_POSE_MODELS:
             ults_model = YOLO(model_path)
             our_model = YoloPose(model_path, device=DEVICE)
-            for img, resized, op in zip(*imgs_coco):
+            for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
                     resized_bgr,

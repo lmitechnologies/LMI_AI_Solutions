@@ -1,4 +1,5 @@
 [tool.ruff]
+target-version = "py38"
 line-length = 140
 exclude = [
     "submodules",
@@ -6,10 +7,11 @@ exclude = [
     "__pycache__",
     "build",
     "dist",
+    "legacy",
+    "deprecated",
 ]
 
 [tool.ruff.lint]
-# Enable specific rule sets (e.g., Pyflakes, Isort, Flake8-bugbear)
 select = ["E", "F", "I", "B"]
 fixable = ["ALL"]
 

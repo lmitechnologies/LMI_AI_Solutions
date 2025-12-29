@@ -1,12 +1,12 @@
+import json
+import logging
+import os
 from enum import Enum
 from itertools import product
 from math import ceil
-import os
-import logging
-import json
+
 import torch
 from torch.nn import functional as F
-
 
 logging.basicConfig()
 logger = logging.getLogger()

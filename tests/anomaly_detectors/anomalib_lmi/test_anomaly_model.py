@@ -1,12 +1,11 @@
 import logging
 import os
-import tempfile
 import subprocess
+import tempfile
+
 import torch
-
-from anomalib_lmi.anomaly_model import AnomalyModel
 from ad_core.anomaly_detector import AnomalyDetector
-
+from anomalib_lmi.anomaly_model import AnomalyModel
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

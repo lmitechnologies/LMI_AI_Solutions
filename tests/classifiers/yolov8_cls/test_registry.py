@@ -1,5 +1,6 @@
-from cls_core.classifier_registry import ClassifierRegistry
 import logging
+
+from cls_core.classifier_registry import ClassifierRegistry
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

@@ -1,21 +1,21 @@
-import cv2
-import numpy as np
-import torch
-import os
 import collections
 import logging
-from typing import Dict, Union, List
+import os
 import time
+from typing import Dict, List, Union
 
-from ultralytics.utils import nms, ops
-from ultralytics.nn.autobackend import AutoBackend
-from ultralytics.utils.torch_utils import smart_inference_mode
+import cv2
+import gadget_utils.pipeline_utils as pipeline_utils
+import numpy as np
+import torch
+from od_core.object_detector_registry import ObjectDetectorRegistry
 
 # import LMI AI Solutions modules
 from od_core.od_base import ODBase
-from od_core.object_detector_registry import ObjectDetectorRegistry
 from od_core.results import Results
-import gadget_utils.pipeline_utils as pipeline_utils
+from ultralytics.nn.autobackend import AutoBackend
+from ultralytics.utils import nms, ops
+from ultralytics.utils.torch_utils import smart_inference_mode
 
 
 @smart_inference_mode()
@@ -264,7 +264,8 @@ class Yolo(ODBase):
         Args:
             preds (torch.Tensor | list): Predictions from the model.
             img (torch.Tensor): the preprocessed image(s)
-            orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images. If this is a tensor or a list of tensors, this function will return tensor results.
+            orig_imgs (np.ndarray | torch.Tensor | list): Original image or list of original images.
+                If this is a tensor or a list of tensors, this function will return tensor results.
             conf (float | dict): float or dictionary of <class: confidence level>.
             iou (float): The IoU threshold below which boxes will be filtered out during NMS.
             max_det (int): The maximum number of detections to return. defaults to 300.
@@ -299,7 +300,7 @@ class Yolo(ODBase):
         return results
 
     @smart_inference_mode()
-    def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, **kwargs):
+    def predict(self, image, configs, operators=None, iou=0.4, agnostic=False, max_det=300, **kwargs):
         """run Yolo inference, where it runs the preprocess(), forward(), and postprocess() in sequence.
         It converts the results to the original coordinates space if the operators are provided.
         Return tensors if the input image is a tensor, otherwise return numpy arrays.
@@ -308,7 +309,8 @@ class Yolo(ODBase):
             model (Yolo | YoloSeg | YoloPose | YoloObb): one yolo model
             image (np.ndarry | tensor): the input image
             configs (dict | float): a float or a dictionary of the confidence thresholds for each class, e.g., {'classA':0.5, 'classB':0.6}
-            operators (list): a list of dictionaries of the image preprocess operators, such as {'resize':[resized_w, resized_h, orig_w, orig_h]}, {'pad':[pad_left, pad_right, pad_top, pad_bot]}
+            operators (list): a list of dictionaries of the image preprocess operators,
+                such as {'resize':[resized_w, resized_h, orig_w, orig_h]}, {'pad':[pad_left, pad_right, pad_top, pad_bot]}
             iou (float): the iou threshold for non-maximum suppression. defaults to 0.4
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             max_det (int): The maximum number of detections to return. defaults to 300.
@@ -325,6 +327,8 @@ class Yolo(ODBase):
             time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
         """
         time_info = {}
+        if operators is None:
+            operators = []
 
         # preprocess
         t0 = time.time()

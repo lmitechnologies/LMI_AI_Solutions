@@ -1,9 +1,10 @@
-import os
-import subprocess
-import cv2
-import random
-import tarfile
 import logging
+import os
+import random
+import subprocess
+import tarfile
+
+import cv2
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

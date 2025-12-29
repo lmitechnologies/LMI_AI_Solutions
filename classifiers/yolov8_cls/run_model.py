@@ -1,12 +1,11 @@
-import cv2
+import collections
 import logging
 import os
+
+import cv2
 import numpy as np
-import collections
-
-from yolov8_cls.model import Yolov8_cls
 from gadget_utils.pipeline_utils import get_img_path_batches
-
+from yolov8_cls.model import Yolov8_cls
 
 BATCH_SIZE = 1
 

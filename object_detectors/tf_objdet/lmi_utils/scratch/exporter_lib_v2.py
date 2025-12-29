@@ -25,7 +25,6 @@ from object_detection.core import standard_fields as fields
 from object_detection.data_decoders import tf_example_decoder
 from object_detection.utils import config_util
 
-
 INPUT_BUILDER_UTIL_MAP = {
     "model_build": model_builder.build,
 }

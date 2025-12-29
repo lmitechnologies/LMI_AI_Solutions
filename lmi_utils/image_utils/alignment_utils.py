@@ -1,10 +1,10 @@
 # %% modules
 import json
-import numpy as np
-import cv2
 import math
 import os
 
+import cv2
+import numpy as np
 from image_utils.img_rotate import rotate
 
 # %% convert intensity pcd to png
@@ -148,7 +148,7 @@ def extract_UniformBox_ROI_from_JSON(json_file_path, input_image_dir_path, outpu
         yj = [None] * len(regions)
         wj = [None] * len(regions)
         hj = [None] * len(regions)
-        for j, region in enumerate(regions):
+        for j, _region in enumerate(regions):
             xj[j] = regions[j]["shape_attributes"]["x"]
             yj[j] = regions[j]["shape_attributes"]["y"]
             wj[j] = regions[j]["shape_attributes"]["width"]

@@ -1,6 +1,6 @@
+import cv2
 import numpy as np
 import open3d
-import cv2
 
 
 def make_intensity_image(input_path, output_path):

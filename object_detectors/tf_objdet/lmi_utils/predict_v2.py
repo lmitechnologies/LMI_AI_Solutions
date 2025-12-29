@@ -1,16 +1,16 @@
 # %% import modules
-import cv2
-from object_detection.utils import label_map_util
-import tensorflow as tf
-import numpy as np
 import argparse
-from image_utils.img_resize import resize
 import ast
-import os
-import glob
-import time
 import csv
+import glob
+import os
+import time
 
+import cv2
+import numpy as np
+import tensorflow as tf
+from image_utils.img_resize import resize
+from object_detection.utils import label_map_util
 
 # TODO:
 # conform to if __name__==main() convention
@@ -214,13 +214,6 @@ for i, image_file in enumerate(images):
 
     # perform inference and compute bounding boxes, probabilities, and labels
 
-    # skip masks if Faster R-CNN
-    # if masksTensor is not None:
-    #     (boxes,masks,scores,labels,N)=sess.run([boxesTensor,masksTensor,scoresTensor,classesTensor,numDetections],feed_dict={imageTensor:image})
-    # else:
-    #     (boxes,scores,labels,N)=sess.run([boxesTensor,scoresTensor,classesTensor,numDetections],feed_dict={imageTensor:image})
-    #     masks=np.zeros(boxes.shape)
-
     print("[INFO] Processing Time: ", proc_time[i], "s.")
     # recast to 1-D array
     boxes = np.squeeze(boxes)
@@ -364,11 +357,6 @@ for i, image_file in enumerate(images):
             if not np.isnan(keypoint_pairs).any():
                 for pair in keypoint_pairs:
                     cv2.circle(output, (int(pair[1] * W), int(pair[0] * H)), 3, (0, 255, 0), -1)
-                # try:
-                #     cv2.line(output, (int(keypoint_pairs[0][1]*W), int(keypoint_pairs[0][0]*H)), (int(keypoint_pairs[2][1]*W), int(keypoint_pairs[2][0]*H)), (0, 255, 0), thickness=1)
-                #     cv2.line(output, (int(keypoint_pairs[2][1]*W), int(keypoint_pairs[2][0]*H)), (int(keypoint_pairs[1][1]*W), int(keypoint_pairs[1][0]*H)), (0, 255, 0), thickness=1)
-                # except:
-                #     print('[INFO] could not generate segment between points.')
 
             if draw:
                 cv2.imshow("Output", output)

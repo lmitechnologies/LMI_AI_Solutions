@@ -1,9 +1,10 @@
-from PIL import Image
 import pickle
-import numpy
 from os import listdir, makedirs
-from os.path import isfile, join, isdir
+from os.path import isdir, isfile, join
+
 import cv2
+import numpy
+from PIL import Image
 
 TWO_TO_FIFTEEN = 32768
 
@@ -139,9 +140,10 @@ class GadgetSurfaceUtils:
             open3d.io.write_point_cloud(join(destination_path, file.replace(".gadget3d.pickle", ".pcd")), pcd)
 
     def tar_2_pcd(self, source_path, destination_path, source_path_intensity=None):
-        import open3d
-        import tarfile
         import json
+        import tarfile
+
+        import open3d
 
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".gadget3d.tar" in f]
 
@@ -185,8 +187,9 @@ class GadgetSurfaceUtils:
                 open3d.io.write_point_cloud(join(destination_path, file.replace(".gadget3d.tar", ".pcd")), pcd)
 
     def tar_2_pkl(self, source_path, destination_path, source_path_intensity=None):
-        import tarfile
         import json
+        import tarfile
+
         import tqdm
 
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".gadget3d.tar" in f]

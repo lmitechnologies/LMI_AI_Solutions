@@ -1,19 +1,20 @@
-from detectron2 import model_zoo
-from detectron2.config import get_cfg
-import detectron2.data.transforms as T
-from detectron2.modeling import build_model, detector_postprocess
-import torch
-from detectron2.checkpoint import DetectionCheckpointer
-from detectron2.utils.visualizer import GenericMask
-from od_base import ODBase
+import json
 import logging
 import time
+
 import cv2
+import detectron2.data.transforms as T
 import numpy as np
+import torch
+from detectron2 import model_zoo
+from detectron2.checkpoint import DetectionCheckpointer
+from detectron2.config import get_cfg
+from detectron2.modeling import build_model, detector_postprocess
+from detectron2.utils.visualizer import GenericMask
 from gadget_utils.pipeline_utils import plot_one_box
-from label_utils.shapes import Rect, Mask
 from label_utils.csv_utils import write_to_csv
-import json
+from label_utils.shapes import Mask, Rect
+from od_base import ODBase
 
 """
 TODO Update for deploying to LMI AISolutions
@@ -179,7 +180,7 @@ class Detectron2Model(ODBase):
 
         return postprocessed_results
 
-    def predict(self, image, confs, operators=[], **kwargs):
+    def predict(self, image, confs, operators=None, **kwargs):
         """
         The `predict` function preprocesses an image and then passes it through a neural network for forward
         propagation to make a prediction.
@@ -189,6 +190,8 @@ class Detectron2Model(ODBase):
         :return: The `predict` method is returning the output of the `forward` method applied to the
         preprocessed input image.
         """
+        if operators is None:
+            operators = []
         input = self.preprocess(image)
         orig_height, orig_width = input["height"], input["width"]
         predictions = self.forward(input)
@@ -233,10 +236,11 @@ class Detectron2Model(ODBase):
 if __name__ == "__main__":
     import argparse
     import glob
-    import cv2
     import os
-    import tqdm
     import time
+
+    import cv2
+    import tqdm
 
     parser = argparse.ArgumentParser()
     parser.add_argument(

@@ -1,26 +1,25 @@
-import os
 import argparse
-import logging
-import json
-import numpy as np
 import glob
-from label_studio_sdk.converter.brush import decode_rle
+import json
+import logging
+import os
+
+import cv2
+import numpy as np
 from dataset_utils.representations import (
-    Box,
-    Mask,
-    Label,
+    Annotation,
     AnnotationType,
+    Box,
     Dataset,
     FileAnnotations,
-    Polygon,
+    Label,
+    Mask,
     Point2d,
-    Annotation,
+    Polygon,
 )
-from system_utils.path_utils import get_relative_paths
-import cv2
-
-
+from label_studio_sdk.converter.brush import decode_rle
 from label_utils.bbox_utils import convert_from_ls
+from system_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

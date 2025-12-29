@@ -1,14 +1,13 @@
-import os
-import cv2
-import numpy as np
-import logging
-import torch
 import json
+import logging
+import os
 import subprocess
 from abc import ABC, abstractmethod
 
+import cv2
 import gadget_utils.pipeline_utils as pipeline_utils
-
+import numpy as np
+import torch
 
 logging.basicConfig()
 
@@ -221,18 +220,20 @@ class Anomalib_Base(ABC):
             - anom_max: user defined anomaly max (sets end of the heat map)
             - overlap_mode: for tiling, can be "average", "max", "cosine", "linear", "gaussian"
         """
-        from pathlib import Path
-        import time
-        from scipy.stats import gamma
-        from scipy import interpolate
-        import matplotlib.pyplot as plt
-        from tabulate import tabulate
         import csv
+        import time
+        from pathlib import Path
+
+        import matplotlib.pyplot as plt
         from anomalib_lmi.ad_utils import plot_fig
+        from scipy import interpolate
+        from scipy.stats import gamma
+        from tabulate import tabulate
 
         def find_p(thresh_array, p_patch_array, p_sample_array, p_sample_target):
             """
-            Desc: Find the p-value that acheives the desired sample failure rate.  We start by estimating the threshold from the empiracal p_sample_array.  Then we use that threshold to estimate the corresponding p_patch.
+            Desc: Find the p-value that acheives the desired sample failure rate.  We start by estimating the threshold
+                from the empiracal p_sample_array.  Then we use that threshold to estimate the corresponding p_patch.
 
             Args:
                 - thresh_array: input threshold array
@@ -346,7 +347,8 @@ class Anomalib_Base(ABC):
                 else:
                     anom_max = threshold.max()
                     self.logger.warning(
-                        f"Anomaly patch max set to minimum discernable value: {anom_max} due to vanishing gradient in the patch quantile.  Sample failure rate: {quantile_sample.min() * 100:.2e}"
+                        f"Anomaly patch max set to minimum discernable value: {anom_max} due to vanishing gradient in the patch quantile.  \
+                            Sample failure rate: {quantile_sample.min() * 100:.2e}"
                     )
 
             results = zip(img_all, anom_all, fname_all)

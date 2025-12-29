@@ -9,7 +9,14 @@ def import_json(json_path, swap_kvp=False, training_script_init=None):
         swapped_class_map = {value: key for key, value in class_map.items()}
         class_map = swapped_class_map
     if training_script_init is not None:
-        header = "path: /app/data # dataset root dir (must use absolute path!)\ntrain: images  # train images (relative to 'path')\nval: images  # val images (relative to 'path')\ntest:  # test images (optional)\n\nnames:  # class names must match with the names in class_map.json\n"
+        header = """path: /app/data # dataset root dir (must use absolute path!)
+        train: images  # train images (relative to 'path')
+        val: images  # val images (relative to 'path')
+        test:  # test images (optional)
+
+        names:  # class names must match with the names in class_map.json
+        
+        """
         with open(training_script_init, "w") as file:
             file.write(header)
             for key in class_map.keys():

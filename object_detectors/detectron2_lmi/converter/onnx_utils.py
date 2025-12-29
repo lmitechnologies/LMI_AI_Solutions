@@ -16,6 +16,7 @@
 #
 
 import logging
+
 import numpy as np
 import onnx_graphsurgeon as gs
 
@@ -100,7 +101,7 @@ def slice(self, name, input, starts, ends, axes):
 
 
 @gs.Graph.register()
-def unsqueeze(self, name, input, axes=[3]):
+def unsqueeze(self, name, input, axes=(3,)):
     """
     Adds to the graph an Unsqueeze node for the given axes and to the given input.
     :param self: The gs.Graph object being extended.
@@ -121,7 +122,7 @@ def unsqueeze(self, name, input, axes=[3]):
 
 
 @gs.Graph.register()
-def squeeze(self, name, input, axes=[2]):
+def squeeze(self, name, input, axes=(2,)):
     """
     Adds to the graph an Squeeze node for the given axes and to the given input.
     :param self: The gs.Graph object being extended.
@@ -275,7 +276,7 @@ def find_descendant_by_op(self, node, op, depth=10):
     :return: The first descendant node matching that performs that op.
     """
     queue = []
-    for i in range(depth):
+    for _i in range(depth):
         queue.append(node.o())
         while queue:
             node = queue.pop(0)
@@ -299,7 +300,7 @@ def find_ancestor_by_op(self, node, op, depth=10):
     :return: The first ancestor node matching that performs that op.
     """
     queue = []
-    for i in range(depth):
+    for _i in range(depth):
         queue.append(node.i())
         while queue:
             node = queue.pop(0)

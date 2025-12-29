@@ -1,8 +1,8 @@
-import cv2
-import os
 import argparse
 import glob
+import os
 
+import cv2
 
 BLACK = (0, 0, 0)
 

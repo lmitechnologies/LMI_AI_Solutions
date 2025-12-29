@@ -1,13 +1,12 @@
 # 1. Built-in modules
-import os
-import logging
-import time
 import copy
+import logging
+import os
+import time
 
 # 2. Third-party modules
 import numpy as np
 import tensorflow as tf
-
 from matplotlib import pyplot as plt
 
 # 3. Own modules

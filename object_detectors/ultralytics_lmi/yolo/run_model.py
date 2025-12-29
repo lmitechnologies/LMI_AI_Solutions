@@ -1,25 +1,24 @@
-import cv2
+import collections
 import logging
 import os
 import random
-import numpy as np
-import collections
-from tqdm import tqdm
 
-from ultralytics_lmi.yolo.model import Yolo, YoloSeg, YoloObb, YoloPose
+import cv2
+import numpy as np
 from gadget_utils.pipeline_utils import (
-    plot_one_rbox,
+    fit_im_to_size,
     get_img_path_batches,
     plot_one_box,
+    plot_one_rbox,
     resize_image,
-    fit_im_to_size,
-    revert_to_origin,
     revert_masks_to_origin,
+    revert_to_origin,
 )
-from label_utils.shapes import Rect, Mask
-from label_utils.csv_utils import write_to_csv
 from label_utils.bbox_utils import get_rotated_bbox
-
+from label_utils.csv_utils import write_to_csv
+from label_utils.shapes import Mask, Rect
+from tqdm import tqdm
+from ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
 
 BATCH_SIZE = 1
 COLORS = [

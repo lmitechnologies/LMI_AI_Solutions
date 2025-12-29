@@ -1,17 +1,16 @@
-import cv2
+import collections
 import logging
 import os
 import random
+
+import cv2
 import numpy as np
-import collections
-from tqdm import tqdm
-
-from yolov8_lmi.model import Yolov8, Yolov8Obb, Yolov8Pose
-from gadget_utils.pipeline_utils import plot_one_rbox, get_img_path_batches, plot_one_box
-from label_utils.shapes import Rect, Mask
-from label_utils.csv_utils import write_to_csv
+from gadget_utils.pipeline_utils import get_img_path_batches, plot_one_box, plot_one_rbox
 from label_utils.bbox_utils import get_rotated_bbox
-
+from label_utils.csv_utils import write_to_csv
+from label_utils.shapes import Mask, Rect
+from tqdm import tqdm
+from yolov8_lmi.model import Yolov8, Yolov8Obb, Yolov8Pose
 
 BATCH_SIZE = 1
 COLORS = [

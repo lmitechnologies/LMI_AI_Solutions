@@ -7,8 +7,8 @@ USAGE:
 """
 
 # 1. Built-in modules
-import os
 import glob
+import os
 
 # 2. Third-party modules
 import tensorflow as tf
@@ -150,6 +150,7 @@ class DataLoader(object):
 
 if __name__ == "__main__":
     import argparse as ap
+
     import cv2
     import numpy as np
 

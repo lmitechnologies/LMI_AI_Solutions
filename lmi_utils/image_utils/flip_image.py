@@ -1,7 +1,8 @@
-import cv2
-import os
 import argparse
 import glob
+import os
+
+import cv2
 import numpy as np
 
 BLACK = (0, 0, 0)

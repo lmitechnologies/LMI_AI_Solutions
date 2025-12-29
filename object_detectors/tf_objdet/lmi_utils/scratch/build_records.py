@@ -1,15 +1,16 @@
 # %% import packages
-from tfannotation import TFAnnotation
-from sklearn.model_selection import train_test_split
-from PIL import Image
-import tensorflow as tf
-import os
 import argparse
 import importlib.util
-import numpy as np
-import cv2
 import io
+import os
+
+import cv2
 import imutils
+import numpy as np
+import tensorflow as tf
+from PIL import Image
+from sklearn.model_selection import train_test_split
+from tfannotation import TFAnnotation
 
 
 # %%
@@ -54,7 +55,8 @@ def main(_):
         f.write(item)
     f.close()
 
-    # initialize a data dictionary used to map each image filename to all bounding boxes associated with the image, then load the contents of the annotations file
+    # initialize a data dictionary used to map each image filename to all bounding boxes associated with the image,
+    # then load the contents of the annotations file
     D = {}
     # parse .csv file
     # create dictionary, keys=images, value=payload:label, bounding box
@@ -106,7 +108,8 @@ def main(_):
             print("[INFO] Skipping class: ", label)
             continue
 
-        # build path to input image, then grab any other bounding boxes + labels associated with the image path, labels, bounding box lists, respectively
+        # build path to input image, then grab any other bounding boxes + labels associated with the image path,
+        # labels, bounding box lists, respectively
         p = os.path.sep.join([config.DATA_PATH, imagePath])
         b = D.get(p, [])
 

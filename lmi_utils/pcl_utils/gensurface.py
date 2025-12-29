@@ -1,9 +1,9 @@
 # %%
 import glob
 import os
-import pcl_utils.point_cloud as pcloud
 
 import numpy as np
+import pcl_utils.point_cloud as pcloud
 
 
 # %%

@@ -1,8 +1,8 @@
 import argparse
 from pathlib import Path, PurePath
+
 import cv2
 from tqdm import tqdm
-
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()

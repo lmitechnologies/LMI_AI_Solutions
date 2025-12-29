@@ -1,18 +1,19 @@
 # %%
-import json
-import cv2
-import os
-import numpy as np
 import argparse
-from concurrent.futures import ThreadPoolExecutor
-import threading
-import sys
+import json
+import os
 import select
-import tty
+import sys
 import termios
-import label_utils.opencvdragrect.selectinwindow as selectinwindow
-from image_utils.img_resize import resize
+import threading
 import time
+import tty
+from concurrent.futures import ThreadPoolExecutor
+
+import cv2
+import label_utils.opencvdragrect.selectinwindow as selectinwindow
+import numpy as np
+from image_utils.img_resize import resize
 
 WINDOW_NAME = "Label Editor"
 

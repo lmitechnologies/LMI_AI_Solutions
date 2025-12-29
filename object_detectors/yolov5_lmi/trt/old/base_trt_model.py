@@ -1,9 +1,10 @@
+import abc
+import ctypes
+import logging
+
+import numpy as np
 import pycuda.driver as cuda
 import tensorrt as trt
-import logging
-import numpy as np
-import ctypes
-import abc
 
 
 class TRT_Model:
@@ -19,7 +20,8 @@ class TRT_Model:
         Args:
             engine_file_path (str): the path to the tensorRT engine
             plugin_path (str, optional): the path to the tensorRT engine plugin. Defaults to ''.
-            channel_first (bool, optional): use the channel first format: [C,H,W], otherwise use channel last format: [H,W,C]. Defaults to True.
+            channel_first (bool, optional): use the channel first format: [C,H,W], otherwise use channel last format: [H,W,C].
+                Defaults to True.
         """
         self.name = self.__class__.__name__
 

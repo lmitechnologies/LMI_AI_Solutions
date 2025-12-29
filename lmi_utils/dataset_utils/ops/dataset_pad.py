@@ -1,18 +1,18 @@
+import logging
+
 import cv2
 import numpy as np
-import logging
 
 # LMI packages
 from dataset_utils.representations import (
+    Annotation,
     AnnotationType,
     Box,
     Mask,
-    Polygon,
     Point2d,
-    Annotation,
+    Polygon,
 )
 from gadget_utils.pipeline_utils import fit_array_to_size
-
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +111,7 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
     is_warning = False
     shapes = np.array(shapes)
     delete_ids = []
-    for i, shape in enumerate(shapes):
+    for _i, shape in enumerate(shapes):
         is_del = 0
         if shape.type == AnnotationType.BOX:
             box = shape.value.to_numpy()[:-1]

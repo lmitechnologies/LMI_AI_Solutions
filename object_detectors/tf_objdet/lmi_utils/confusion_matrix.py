@@ -1,21 +1,21 @@
-import os
-from PIL import Image
 import io
+import os
+
 import cv2
-import tensorflow as tf
 import numpy as np
 import pandas as pd
 import progressbar
-from object_detection.utils import label_map_util
-from object_detection.utils import visualization_utils as viz_utils
+import tensorflow as tf
 from object_detection.core import data_parser
 from object_detection.core import standard_fields as fields
-
 from object_detection.metrics.tf_example_parser import (
     BoundingBoxParser,
-    StringParser,
     Int64Parser,
+    StringParser,
 )
+from object_detection.utils import label_map_util
+from object_detection.utils import visualization_utils as viz_utils
+from PIL import Image
 
 tf.compat.v1.flags.DEFINE_string("input_tfrecord_path", None, "Input tf record path")
 tf.compat.v1.flags.DEFINE_string("output_path", None, "Path to the output CSV.")

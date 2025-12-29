@@ -1,8 +1,7 @@
-import shutil
-import os
 import argparse
 import logging
-
+import os
+import shutil
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -36,7 +35,7 @@ if __name__ == "__main__":
     if not os.path.exists(args.dest):
         os.makedirs(args.dest)
 
-    for root, dirs, files in os.walk(args.src):
+    for root, _dirs, files in os.walk(args.src):
         for file in files:
             if file in to_be_moved:
                 path = os.path.join(root, file)

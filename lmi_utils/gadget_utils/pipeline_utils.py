@@ -1,17 +1,17 @@
-import numpy as np
-import cv2
-import random
-import os
-import json
-import torch
-import logging
 import glob
-import tempfile
+import json
+import logging
+import os
+import random
 import tarfile
+import tempfile
 from pathlib import Path
-from torch.nn import functional as F
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
+import cv2
+import numpy as np
+import torch
+from torch.nn import functional as F
 
 BLACK = (0, 0, 0)
 TWO_TO_FIFTEEN = 2**15
@@ -586,7 +586,7 @@ def get_img_path_batches(batch_size, img_dir, fmt="png"):
     ret = []
     batch = []
     cnt_images = 0
-    for root, dirs, files in os.walk(img_dir):
+    for root, _dirs, files in os.walk(img_dir):
         for name in files:
             if name.find(f".{fmt}") == -1:
                 continue

@@ -1,15 +1,15 @@
-import cv2
 import argparse
-import os
 import logging
+import os
+
+import cv2
+from dataset_utils.ops.dataset_crop_by_label import crop_dataset_by_label
+from dataset_utils.ops.dataset_pad import pad_dataset
+from dataset_utils.ops.dataset_resize import resize_dataset
+from dataset_utils.ops.dataset_rotate import rotate_dataset
 
 # LMI packages
 from dataset_utils.representations import Dataset
-from dataset_utils.ops.dataset_resize import resize_dataset
-from dataset_utils.ops.dataset_pad import pad_dataset
-from dataset_utils.ops.dataset_rotate import rotate_dataset
-from dataset_utils.ops.dataset_crop_by_label import crop_dataset_by_label
-
 
 logger = logging.getLogger(__name__)
 

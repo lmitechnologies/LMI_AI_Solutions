@@ -2,27 +2,29 @@
 Usage:
 
 # Create train data:
-python generate_tfrecord.py --label=<LABEL> --csv_input=<PATH_TO_ANNOTATIONS_FOLDER>/train_labels.csv  --output_path=<PATH_TO_ANNOTATIONS_FOLDER>/train.record
+python generate_tfrecord.py --label=<LABEL> --csv_input=<PATH_TO_ANNOTATIONS_FOLDER>/train_labels.csv
+                            --output_path=<PATH_TO_ANNOTATIONS_FOLDER>/train.record
 
 # Create test data:
-python generate_tfrecord.py --label=<LABEL> --csv_input=<PATH_TO_ANNOTATIONS_FOLDER>/test_labels.csv  --output_path=<PATH_TO_ANNOTATIONS_FOLDER>/test.record
+python generate_tfrecord.py --label=<LABEL> --csv_input=<PATH_TO_ANNOTATIONS_FOLDER>/test_labels.csv
+                            --output_path=<PATH_TO_ANNOTATIONS_FOLDER>/test.record
 """
 
-from __future__ import division
-from __future__ import print_function
-from __future__ import absolute_import
+from __future__ import absolute_import, division, print_function
 
-import os
 import io
+import os
+import sys
+
 import pandas as pd
 import tensorflow as tf
-import sys
 
 sys.path.append("../../models/research")
 
-from PIL import Image
-from object_detection.utils import dataset_util
 from collections import namedtuple
+
+from object_detection.utils import dataset_util
+from PIL import Image
 
 flags = tf.app.flags
 flags.DEFINE_string("csv_input", "", "Path to the CSV input")
@@ -47,7 +49,7 @@ def class_text_to_int(row_label):
     # elif row_label == FLAGS.label1:
     #   return 0
     else:
-        None
+        return None
 
 
 def split(df, group):
@@ -73,7 +75,7 @@ def create_tf_example(group, path):
     classes_text = []
     classes = []
 
-    for index, row in group.object.iterrows():
+    for _index, row in group.object.iterrows():
         xmins.append(row["xmin"] / width)
         xmaxs.append(row["xmax"] / width)
         ymins.append(row["ymin"] / height)

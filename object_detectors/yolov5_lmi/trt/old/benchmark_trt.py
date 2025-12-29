@@ -2,14 +2,14 @@
 An example that uses TensorRT's Python api to make inferences.
 """
 
+import argparse
 import ctypes
 import os
-import argparse
 import time
+
 import numpy as np
 import pycuda.driver as cuda
 import tensorrt as trt
-
 
 MAX_OUTPUT_BBOX_COUNT = 1000  # must match with 'MAX_OUTPUT_BBOX_COUNT' in the yololayer.h
 
@@ -316,7 +316,7 @@ if __name__ == "__main__":
 
         proc_times = []
         # warm up 10 times
-        for i in range(10):
+        for _ in range(10):
             batch_image_raw, use_time = yolov5_wrapper.infer(yolov5_wrapper.get_raw_image_zeros())
             proc_times.append(use_time["exec"])
             print("warm_up->{}, time->{:.2f}ms".format(batch_image_raw[0].shape, use_time["exec"]))

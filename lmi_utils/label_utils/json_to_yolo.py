@@ -1,11 +1,12 @@
-import os
-import json
-from dataset_utils.representations import Dataset
-import logging
-import yaml
 import argparse
-import cv2
+import json
+import logging
+import os
 import shutil
+
+import cv2
+import yaml
+from dataset_utils.representations import Dataset
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

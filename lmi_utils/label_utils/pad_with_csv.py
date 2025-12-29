@@ -1,15 +1,15 @@
-import cv2
-import os
 import argparse
-import numpy as np
 import logging
+import os
+
+import cv2
+import numpy as np
+from gadget_utils.pipeline_utils import fit_array_to_size
+from label_utils.csv_utils import load_csv, write_to_csv
 
 # LMI packages
-from label_utils.shapes import Rect, Mask, Keypoint, Brush
-from label_utils.csv_utils import load_csv, write_to_csv
-from gadget_utils.pipeline_utils import fit_array_to_size
+from label_utils.shapes import Brush, Keypoint, Mask, Rect
 from system_utils.path_utils import get_relative_paths
-
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

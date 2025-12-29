@@ -1,6 +1,7 @@
+import argparse
 import glob
 import os
-import argparse
+
 import numpy as np
 from pcl_utils.point_cloud import PointCloud
 

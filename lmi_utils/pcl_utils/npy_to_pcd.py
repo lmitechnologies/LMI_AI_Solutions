@@ -1,8 +1,9 @@
+import argparse
 import glob
 import os
-import argparse
-from pcl_utils.point_cloud import PointCloud
+
 import open3d
+from pcl_utils.point_cloud import PointCloud
 
 
 def convert_npy_to_pcd(path_in, path_out):

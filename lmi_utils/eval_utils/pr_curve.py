@@ -1,13 +1,14 @@
-import os
-import numpy as np
 import collections
+import os
+
 import matplotlib.pyplot as plt
-from shapely.geometry import Polygon
-from shapely.validation import make_valid
+import numpy as np
 
 # LMI packages
 from label_utils import csv_utils
-from label_utils.shapes import Rect, Mask
+from label_utils.shapes import Mask, Rect
+from shapely.geometry import Polygon
+from shapely.validation import make_valid
 
 
 def bbox_iou(bbox1, bbox2):
@@ -93,7 +94,7 @@ def precision_recall(
     class_map: dict,
     iou=0.5,
     threshold_conf=0.1,
-    skip_classes=[],
+    skip_classes=None,
     image_level=False,
 ):
     """
@@ -108,6 +109,7 @@ def precision_recall(
         P: the map <class: class's precision>
         R: the map <class: class's recall>
     """
+    skip_classes = skip_classes or []
 
     def mask_to_np(shapes):
         masks = []
@@ -259,10 +261,11 @@ def plot_curve(
     save_dir="my_curve.png",
     xlabel="Confidence",
     ylabel="Metric",
-    y_range=[0, 1.1],
+    y_range=None,
     step=0.1,
     iou=0.5,
 ):
+    y_range = y_range or [0, 1.1]
     # Metric-confidence curve
     fig, ax = plt.subplots(1, 1, figsize=(9, 6), tight_layout=True)
 
@@ -366,5 +369,13 @@ if __name__ == "__main__":
         iou=iou,
         step=0.05,
     )
-    # plot_curve(X, Errs, save_dir=os.path.join(out_path,'error_rate_im_level.png'), ylabel='Error Rate (%) on image level', iou=iou, y_range=[0,20.1], step=1)
+    # plot_curve(
+    #     X,
+    #     Errs,
+    #     save_dir=os.path.join(out_path, "error_rate_im_level.png"),
+    #     ylabel="Error Rate (%) on image level",
+    #     iou=iou,
+    #     y_range=[0, 20.1],
+    #     step=1,
+    # )
     print(f"Precision and Recall figures are saved in {out_path}")

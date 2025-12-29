@@ -1,8 +1,9 @@
-from tqdm import tqdm
-import open3d
-from pcl_utils.point_cloud import PointCloud
 import argparse
 import os
+
+import open3d
+from pcl_utils.point_cloud import PointCloud
+from tqdm import tqdm
 
 
 def main(inp, out, rate):

@@ -1,20 +1,22 @@
 # %% import packages
-from tf_objdet.lmi_utils.tfannotation import TFAnnotation
-from PIL import Image
-import tensorflow as tf
-import os
-import csv
 import argparse
+import csv
 import importlib.util
-import numpy as np
-import cv2
 import io
+import os
+
+import cv2
+import numpy as np
+import tensorflow as tf
 from image_utils.img_resize import resize
+from PIL import Image
+from tf_objdet.lmi_utils.tfannotation import TFAnnotation
 
 
 # %%
 def load_csv(path_imgs, path_csv, CLASSES, MASK_OPTION):
-    # initialize a data dictionary used to map each image filename to all bounding boxes associated with the image, then load the contents of the annotations file
+    # initialize a data dictionary used to map each image filename to all bounding boxes associated with the image,
+    # then load the contents of the annotations file
     D = {}
     # parse .csv file
     # create dictionary, keys=images, value=payload:label, bounding box
@@ -66,7 +68,8 @@ def load_csv(path_imgs, path_csv, CLASSES, MASK_OPTION):
                 print("[INFO] Skipping class: ", label)
                 continue
 
-            # build path to input image, then grab any other bounding boxes + labels associated with the image path, labels, bounding box lists, respectively
+            # build path to input image, then grab any other bounding boxes + labels associated with the image path,
+            # labels, bounding box lists, respectively
             p = os.path.join(path_imgs, imagePath)
             b = D.get(p, [])
 

@@ -1,8 +1,9 @@
 # %%
-from eval_utils.iou_from_csv import csv_to_dictionary
-import json
 import argparse
+import json
+
 import numpy as np
+from eval_utils.iou_from_csv import csv_to_dictionary
 
 
 # %% read csv

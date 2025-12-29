@@ -1,8 +1,9 @@
 import argparse
 import copy
-from pathlib import Path
-from label_utils.csv_utils import load_csv, write_to_csv
 import logging
+from pathlib import Path
+
+from label_utils.csv_utils import load_csv, write_to_csv
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

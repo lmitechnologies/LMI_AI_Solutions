@@ -1,13 +1,12 @@
 import argparse
-import logging
-from pathlib import Path
-import os
 import collections
+import logging
+import os
+from pathlib import Path
+
 import torch
 import torchvision
-
-from image_utils.tiler import Tiler, ScaleMode
-
+from image_utils.tiler import ScaleMode, Tiler
 
 logging.basicConfig()
 logger = logging.getLogger()

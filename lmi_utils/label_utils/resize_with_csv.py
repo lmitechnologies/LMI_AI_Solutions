@@ -1,14 +1,14 @@
 # built-in packages
-import os
 import logging
+import os
+
 import cv2
+from image_utils.img_resize import resize
 
 # LMI packages
 from label_utils import csv_utils
-from label_utils.shapes import Rect, Mask, Keypoint, Brush
+from label_utils.shapes import Brush, Keypoint, Mask, Rect
 from system_utils.path_utils import get_relative_paths
-from image_utils.img_resize import resize
-
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

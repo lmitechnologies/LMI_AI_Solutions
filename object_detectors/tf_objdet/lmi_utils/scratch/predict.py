@@ -1,15 +1,16 @@
 # %% import modules
-from object_detection.utils import label_map_util
-import tensorflow as tf
-import numpy as np
 import argparse
-import imutils
-import cv2
 import ast
-import os
-import glob
-import time
 import csv
+import glob
+import os
+import time
+
+import cv2
+import imutils
+import numpy as np
+import tensorflow as tf
+from object_detection.utils import label_map_util
 
 tf_config = tf.compat.v1.ConfigProto()
 # tf_config.gpu_options.per_process_gpu_memory_fraction = 0.9

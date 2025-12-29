@@ -1,8 +1,8 @@
 import random
 import time
+
 import numpy as np
 import pycuda.driver as cuda
-
 from yolov5_lmi.trt.old.base_trt_model import TRT_Model
 
 
@@ -49,10 +49,10 @@ class YoLov5TRT(TRT_Model):
             else:
                 self.color_map[cls_name] = tuple([random.randint(0, 255) for _ in range(3)])
 
-    def infer(self, images_raw: list, conf_thres: dict = {}, nms_iou_thres=None):
+    def infer(self, images_raw: list, conf_thres: dict = None, nms_iou_thres=None):
         start = time.time()
         # loading default thresholds
-        if not conf_thres:
+        if conf_thres is None:
             conf_thres = self.conf_thres
         if nms_iou_thres is None:
             nms_iou_thres = self.nms_iou_thres

@@ -1,12 +1,13 @@
-from collections import OrderedDict, namedtuple
-import cv2
 import logging
 import os
+from collections import OrderedDict, namedtuple
+
+import cv2
 import numpy as np
+import tensorrt as trt
 import torch
 import torch.nn.functional as F
 import torchvision
-import tensorrt as trt
 
 # from ..utils.general import xywh2xyxy, clip_boxes, scale_boxes, clip_segments, scale_segments
 # from ..utils.metrics import box_iou

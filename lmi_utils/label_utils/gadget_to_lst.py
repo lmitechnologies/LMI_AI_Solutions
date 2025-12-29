@@ -1,9 +1,10 @@
-from pathlib import Path
 import json
-import subprocess
-import os
 import logging
-from label_utils.csv_to_lst import write_xml, RECT_NAME, POLYGON_NAME
+import os
+import subprocess
+from pathlib import Path
+
+from label_utils.csv_to_lst import POLYGON_NAME, RECT_NAME, write_xml
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

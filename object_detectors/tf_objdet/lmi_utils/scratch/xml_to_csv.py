@@ -7,11 +7,12 @@ python xml_to_csv.py -i [PATH_TO_IMAGES_FOLDER]/train -o [PATH_TO_ANNOTATIONS_FO
 python xml_to_csv.py -i [PATH_TO_IMAGES_FOLDER]/test -o [PATH_TO_ANNOTATIONS_FOLDER]/test_labels.csv
 """
 
-import os
-import glob
-import pandas as pd
 import argparse
+import glob
+import os
 import xml.etree.ElementTree as ET
+
+import pandas as pd
 
 
 def xml_to_csv(path):

@@ -557,22 +557,27 @@ def clearCanvasNDraw(dragObj):
 
 
 def drawSelectMarkers(image, dragObj):
-    # # Top-Left
-    # cv2.rectangle(image, (dragObj.outRect.x - dragObj.sBlk, dragObj.outRect.y - dragObj.sBlk),(int(dragObj.outRect.x - dragObj.sBlk + dragObj.sBlk * 2), int(dragObj.outRect.y - dragObj.sBlk + dragObj.sBlk * 2) ),(0, 255, 0), 1)
-    # # Top-Right
-    # cv2.rectangle(image, (dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk, dragObj.outRect.y - dragObj.sBlk), ( int(dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk + dragObj.sBlk * 2), int(dragObj.outRect.y - dragObj.sBlk + dragObj.sBlk * 2)), (0, 255, 0), 1)
-    # # Bottom-Left
-    # cv2.rectangle(image, (dragObj.outRect.x - dragObj.sBlk, dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk), (int(dragObj.outRect.x - dragObj.sBlk + dragObj.sBlk * 2), int(dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk + dragObj.sBlk * 2)), (0, 255, 0), 1)
-    # # Bottom-Right
-    # cv2.rectangle(image, (dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk, dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk), (int(dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk + dragObj.sBlk * 2), int(dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk + dragObj.sBlk * 2)), (0, 255, 0), 1)
-    # # Top-Mid
-    # cv2.rectangle(image, (int(dragObj.outRect.x + dragObj.outRect.w / 2 - dragObj.sBlk), dragObj.outRect.y - dragObj.sBlk), (int(dragObj.outRect.x + dragObj.outRect.w / 2 - dragObj.sBlk + dragObj.sBlk * 2), int(dragObj.outRect.y - dragObj.sBlk + dragObj.sBlk * 2)), (0, 255, 0), 1)
-    # # Bottom-Mid
-    # cv2.rectangle(image, (int(dragObj.outRect.x + dragObj.outRect.w / 2 - dragObj.sBlk), dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk), (int(dragObj.outRect.x + dragObj.outRect.w / 2 - dragObj.sBlk + dragObj.sBlk * 2), int(dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk + dragObj.sBlk * 2)), (0, 255, 0), 1)
-    # # Left-Mid
-    # cv2.rectangle(image, (dragObj.outRect.x - dragObj.sBlk, int(dragObj.outRect.y + dragObj.outRect.h / 2 - dragObj.sBlk)), (int(dragObj.outRect.x - dragObj.sBlk + dragObj.sBlk * 2),int(dragObj.outRect.y + dragObj.outRect.h / 2 - dragObj.sBlk + dragObj.sBlk * 2)), (0, 255, 0), 1)
-    # # Right-Mid
-    # cv2.rectangle(image, (dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk,int(dragObj.outRect.y + dragObj.outRect.h / 2 - dragObj.sBlk)), (int(dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk + dragObj.sBlk * 2),int(dragObj.outRect.y + dragObj.outRect.h / 2 - dragObj.sBlk + dragObj.sBlk * 2)),(0, 255, 0), 1)
+    # # Extract common variables for readability
+    # x, y, w, h = dragObj.outRect.x, dragObj.outRect.y, dragObj.outRect.w, dragObj.outRect.h
+    # s = dragObj.sBlk  # handle half-size
+
+    # # Define the centers of the 8 handles: (x, y)
+    # handle_centers = [
+    #     (x, y),           # Top-Left
+    #     (x + w, y),       # Top-Right
+    #     (x, y + h),       # Bottom-Left
+    #     (x + w, y + h),   # Bottom-Right
+    #     (x + w // 2, y),  # Top-Mid
+    #     (x + w // 2, y + h), # Bottom-Mid
+    #     (x, y + h // 2),  # Left-Mid
+    #     (x + w, y + h // 2)  # Right-Mid
+    # ]
+
+    # for cx, cy in handle_centers:
+    #     # Calculate top-left and bottom-right of the small handle box
+    #     p1 = (int(cx - s), int(cy - s))
+    #     p2 = (int(cx + s), int(cy + s))
+    #     cv2.rectangle(image, p1, p2, (0, 255, 0), 1)
     pass
 
 

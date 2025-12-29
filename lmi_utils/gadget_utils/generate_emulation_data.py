@@ -1,11 +1,11 @@
-from pathlib import Path
-import pickle
-import numpy as np
-import cv2
-import tempfile
 import json
+import pickle
 import tarfile
+import tempfile
+from pathlib import Path
 
+import cv2
+import numpy as np
 
 SCHEMA_ID: str = "gadget3d"
 VERSION: int = 1

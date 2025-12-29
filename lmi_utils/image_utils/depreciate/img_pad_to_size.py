@@ -1,7 +1,8 @@
-import cv2
-import os
 import argparse
 import glob
+import os
+
+import cv2
 
 BLACK = (0, 0, 0)
 
@@ -12,7 +13,7 @@ def pad_image(input_path, output_path, W, H):
     else:
         input_files = [input_path]
 
-    for cnt, input_file in enumerate(input_files):
+    for _cnt, input_file in enumerate(input_files):
         print(f"Input file: {input_file}")
         im = cv2.imread(input_file)
         im_out = pad_array(im, W, H)

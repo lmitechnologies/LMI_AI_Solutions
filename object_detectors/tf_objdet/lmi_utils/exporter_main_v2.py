@@ -1,6 +1,6 @@
-import sys
 import os
 import runpy
+import sys
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 target_dir = os.path.abspath(os.path.join(current_dir, "../models/research/object_detection"))

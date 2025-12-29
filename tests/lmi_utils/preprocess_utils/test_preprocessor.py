@@ -1,9 +1,8 @@
-import pytest
 import logging
+
+import pytest
 import torch
-
 from preprocess_utils.preprocessor import Preprocessor
-
 
 logging.basicConfig()
 logger = logging.getLogger()

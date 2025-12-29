@@ -1,25 +1,24 @@
+import json
+import logging
 import os
+
 import cv2
 import numpy as np
 import torch
-from ultralytics.utils.metrics import box_iou, mask_iou, kpt_iou
-import logging
-import json
-
-from ultralytics_lmi.yolo.model import Yolo, YoloSeg, YoloPose, YoloObb
-from ultralytics.utils import ops, nms
+from dataset_utils.ops.dataset_pad import pad_annotated_image
+from dataset_utils.ops.dataset_resize import resize_annotated_image
 from dataset_utils.representations import (
-    Dataset,
     Annotation,
     AnnotationType,
     Box,
+    Dataset,
     Mask,
-    Polygon,
     Point2d,
+    Polygon,
 )
-from dataset_utils.ops.dataset_resize import resize_annotated_image
-from dataset_utils.ops.dataset_pad import pad_annotated_image
-
+from ultralytics.utils import nms, ops
+from ultralytics.utils.metrics import box_iou, kpt_iou, mask_iou
+from ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -89,7 +88,8 @@ def write_json(
 
     Args:
         model_path (str): a path to a model weights file
-        model_type (str): a type of the model, either "ObjectDetection", "OrientedObjectDetection", "InstanceSegmentation", "KeypointDetection"
+        model_type (str): a type of the model, either "ObjectDetection", "OrientedObjectDetection",
+            "InstanceSegmentation", "KeypointDetection"
         config_path (str): a path to a model configuration file
         image_dir (str): a input image directory, where each image should have the same dimension as training images
         label_path (str): a path to a label json file

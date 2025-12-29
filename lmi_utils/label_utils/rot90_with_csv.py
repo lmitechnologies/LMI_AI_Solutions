@@ -1,16 +1,15 @@
 # built-in packages
-import os
 import logging
-import numpy as np
+import os
 
 # 3rd party packages
 import cv2
+import numpy as np
 
 # LMI packages
 from label_utils import csv_utils
-from label_utils.shapes import Rect, Mask
+from label_utils.shapes import Mask, Rect
 from system_utils.path_utils import get_relative_paths
-
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

@@ -1,6 +1,7 @@
+import sys
+
 import cv2  # Opencv ver 3.1.0 used
 import selectinwindow
-import sys
 
 # Set recursion limit
 sys.setrecursionlimit(10**9)

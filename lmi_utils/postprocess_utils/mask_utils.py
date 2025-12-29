@@ -1,10 +1,11 @@
+from typing import Tuple
+
+import cv2
 import numpy as np
 import torch
-from typing import Tuple
+import torch.nn.functional as F
 from numba import njit
 from numba.np.extensions import cross2d
-import torch.nn.functional as F
-import cv2
 
 BYTES_PER_FLOAT = 4
 GPU_MEM_LIMIT = 1024**3  # 1 GB memory limit

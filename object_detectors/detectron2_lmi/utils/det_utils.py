@@ -1,12 +1,12 @@
-from detectron2 import model_zoo
-from detectron2.config import get_cfg
 import os
 from datetime import date
-import yaml
 from typing import Any, Dict
-from detectron2.utils.logger import setup_logger
-from detectron2.data.datasets import register_coco_instances
 
+import yaml
+from detectron2 import model_zoo
+from detectron2.config import get_cfg
+from detectron2.data.datasets import register_coco_instances
+from detectron2.utils.logger import setup_logger
 
 logger = setup_logger()
 

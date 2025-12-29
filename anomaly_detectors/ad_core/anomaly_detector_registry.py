@@ -1,9 +1,8 @@
-import json
-from typing import Type, Dict, Tuple, Any, Optional, List
-import logging
 import importlib
+import json
+import logging
 import pkgutil
-
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 PACKAGES = ["anomalib_lmi", "ad_core"]
 TARGET_MODULE_SUFFIXES = [

@@ -1,15 +1,16 @@
-import os
 import logging
+import os
 from collections import OrderedDict, namedtuple
 from collections.abc import Sequence
+
 import numpy as np
 import torch
 import torch.nn.functional as F
+from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
+from image_utils.tiler import OverlapMode, ScaleMode, Tiler
 from torchvision.transforms import v2
 
 from .base import Anomalib_Base, to_list
-from image_utils.tiler import Tiler, ScaleMode, OverlapMode
-from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 
 logging.basicConfig()
 
@@ -69,11 +70,9 @@ class AnomalyModel2(Anomalib_Base):
         if ext == ".engine":
             import tensorrt as trt
 
-            with (
-                open(model_path, "rb") as f,
-                trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime,
-            ):
-                model = runtime.deserialize_cuda_engine(f.read())
+            with open(model_path, "rb") as f:
+                with trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
+                    model = runtime.deserialize_cuda_engine(f.read())
             self.context = model.create_execution_context()
             self.bindings = OrderedDict()
             self.output_names = []
@@ -280,7 +279,8 @@ class AnomalyModel2(Anomalib_Base):
         Desc:
             Warm up model using a np zeros array with shape matching model input size.
         Args:
-            input_hw(int | list, optional): a int if h equals to w, or a list of [h,w]. Need to specify this if using tiling. Otherwise, use model's built-in shape.
+            input_hw(int | list, optional): a int if h equals to w, or a list of [h,w]. Need to specify this if using tiling.
+                Otherwise, use model's built-in shape.
         """
         if input_hw is None:
             input_hw = self.model_shape

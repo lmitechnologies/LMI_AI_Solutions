@@ -1,11 +1,11 @@
 # built-in packagesprint
-import os
 import glob
 import logging
+import os
+import random
 
 # 3rd party packages
 import shutil
-import random
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

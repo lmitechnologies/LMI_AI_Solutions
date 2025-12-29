@@ -1,12 +1,12 @@
 # %% load modules
-import csv
-from eval_utils.iou_from_csv import csv_to_dictionary
-from eval_utils.iou_from_csv import find_class_index
-from label_utils.crop_scale_labeled_image import crop_scale_labeled_image
-import os
-import cv2
 import argparse
+import csv
+import os
+
+import cv2
 import numpy as np
+from eval_utils.iou_from_csv import csv_to_dictionary, find_class_index
+from label_utils.crop_scale_labeled_image import crop_scale_labeled_image
 
 NAN_INT = -999999
 

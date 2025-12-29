@@ -1,6 +1,7 @@
-import numpy as np
-import cv2
 import random
+
+import cv2
+import numpy as np
 
 
 def pad_crop_array_to_size(im, W, H):

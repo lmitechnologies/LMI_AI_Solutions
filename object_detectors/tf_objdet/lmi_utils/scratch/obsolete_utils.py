@@ -1,10 +1,11 @@
 # %% modules
-import numpy as np
-import cv2
-import imutils
+import json
 import math
 import os
-import json
+
+import cv2
+import imutils
+import numpy as np
 
 
 # %% convert intensity pcd to png
@@ -23,7 +24,7 @@ def getContours(img, minArea=200000, blur=(17, 17), threshold=(20, 150)):
     dilated = cv2.dilate(canny, kernel)
     (contours, _) = cv2.findContours(dilated.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     cntPrune = []
-    for i, c in enumerate(contours):
+    for _i, c in enumerate(contours):
         area = cv2.contourArea(c)
         if area > minArea:
             print("Area = {}".format(area))
@@ -137,7 +138,7 @@ def extract_UniformBox_ROI_from_JSON(json_file_path, input_image_dir_path, outpu
         yj = [None] * len(regions)
         wj = [None] * len(regions)
         hj = [None] * len(regions)
-        for j, region in enumerate(regions):
+        for j, _region in enumerate(regions):
             xj[j] = regions[j]["shape_attributes"]["x"]
             yj[j] = regions[j]["shape_attributes"]["y"]
             wj[j] = regions[j]["shape_attributes"]["width"]

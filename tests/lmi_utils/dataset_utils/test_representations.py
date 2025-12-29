@@ -1,26 +1,27 @@
-import os
 import json
-import numpy as np
-import cv2
-import pytest
 import logging
-from dataset_utils.representations import (
-    Point2d,
-    Box,
-    Polygon,
-    Mask,
-    Label,
-    BoxAnnotation,
-    MaskAnnotation,
-    KeypointAnnotation,
-    PolygonAnnotation,
-    FileAnnotations,
-    Dataset,
-    AnnotationType,
-)
-from dataset_utils.mask_encoder import mask2rle
-from lmi_utils.label_utils.bbox_utils import rotate
+import os
 
+import cv2
+import numpy as np
+import pytest
+from dataset_utils.mask_encoder import mask2rle
+from dataset_utils.representations import (
+    AnnotationType,
+    Box,
+    BoxAnnotation,
+    Dataset,
+    FileAnnotations,
+    KeypointAnnotation,
+    Label,
+    Mask,
+    MaskAnnotation,
+    Point2d,
+    Polygon,
+    PolygonAnnotation,
+)
+
+from lmi_utils.label_utils.bbox_utils import rotate
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -375,7 +376,7 @@ def test_dataset_to_yolo(dummy_dataset):
     assert "image_labels" in yolo_data
     assert "class_map" in yolo_data
     assert "n_kpts" in yolo_data
-    for key, annotations in yolo_data["image_labels"].items():
+    for _key, annotations in yolo_data["image_labels"].items():
         assert len(annotations) > 0
 
 

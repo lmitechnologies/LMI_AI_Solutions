@@ -1,9 +1,10 @@
-from PIL import Image
-from pathlib import Path
-import shutil
 import json
-import subprocess
 import os
+import shutil
+import subprocess
+from pathlib import Path
+
+from PIL import Image
 
 """
 Label data should be formatted like this:

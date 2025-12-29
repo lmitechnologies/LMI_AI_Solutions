@@ -1,14 +1,15 @@
-import torch
-import numpy as np
 import os
+
 import cv2
+import numpy as np
+import torch
 from detectron2 import model_zoo
-from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
-from detectron2.utils.visualizer import Visualizer
-from detectron2.data import MetadataCatalog, DatasetCatalog
+from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.data.datasets import register_coco_instances
+from detectron2.engine import DefaultPredictor
 from detectron2.utils.logger import setup_logger
+from detectron2.utils.visualizer import Visualizer
 
 setup_logger()
 
@@ -32,6 +33,7 @@ def test(cfg, save_img):
     predictor = DefaultPredictor(cfg)
     # inference
     import time
+
     from detectron2.utils.visualizer import ColorMode, GenericMask
 
     for dataset_name in cfg.DATASETS.TEST:

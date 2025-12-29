@@ -1,12 +1,11 @@
-import pytest
-import torch
 import logging
 import os
+
 import cv2
-
-from yolov8_lmi.model import Yolov8, Yolov8Obb, Yolov8Pose
+import pytest
+import torch
 from od_core.object_detector import ObjectDetector
-
+from yolov8_lmi.model import Yolov8, Yolov8Obb, Yolov8Pose
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

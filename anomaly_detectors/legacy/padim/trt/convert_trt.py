@@ -6,7 +6,6 @@ sys.path.append("/app/LMI_AI_Solutions/anomaly_detectors")
 
 from padim.padim import PaDiM
 
-
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--input_path", "-i", required=True, help='the path to the tf "saved_model"')

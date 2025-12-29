@@ -1,5 +1,5 @@
-import os
 import logging
+import os
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -22,7 +22,7 @@ def get_relative_paths(inpath, recursive=True, formats=IMG_FORMATS):
         raise Exception(f"formats must be a list of strings. But got the type: {type(formats)}")
 
     files = []
-    for root, dirs, fs in os.walk(inpath):
+    for root, _dirs, fs in os.walk(inpath):
         cnt = 0
         for file in fs:
             if os.path.splitext(file)[1] in formats:

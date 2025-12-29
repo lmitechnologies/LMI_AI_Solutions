@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 
 import numpy
-
 from fringe_ds_utils.geometry.primitives import Box, Patch
 
 

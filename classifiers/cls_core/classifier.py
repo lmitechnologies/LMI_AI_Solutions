@@ -1,7 +1,8 @@
-from typing import Dict, Any
-from .cls_base import ClassifierBase
-from .classifier_registry import ClassifierRegistry
 import logging
+from typing import Any, Dict
+
+from .classifier_registry import ClassifierRegistry
+from .cls_base import ClassifierBase
 
 # register models automatically
 ClassifierRegistry.auto_register_models()

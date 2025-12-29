@@ -1,16 +1,16 @@
 # built-in packages
 import collections
-import os
-import glob
-import random
 import copy
+import glob
+import os
+import random
 
 # 3rd party packages
 import cv2
 
 # LMI packages
 from label_utils import csv_utils
-from label_utils.shapes import Rect, Mask
+from label_utils.shapes import Mask, Rect
 
 
 def augment_imgs_with_csv(path_imgs: str, path_csv: str, path_out: str, pixel_mul: float, size_mul: int):

@@ -1,13 +1,14 @@
-from detectron2.layers import Conv2d
-from detectron2 import model_zoo
-from detectron2.config import get_cfg
-from detectron2.modeling import build_model
-from detectron2.checkpoint import DetectionCheckpointer
 import argparse
-from torch import nn
-import torch
-import struct
 import os
+import struct
+
+import torch
+from detectron2 import model_zoo
+from detectron2.checkpoint import DetectionCheckpointer
+from detectron2.config import get_cfg
+from detectron2.layers import Conv2d
+from detectron2.modeling import build_model
+from torch import nn
 
 
 def fuse_conv_and_bn(conv):

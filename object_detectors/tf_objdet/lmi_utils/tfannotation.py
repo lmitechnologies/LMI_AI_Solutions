@@ -1,15 +1,11 @@
 # import the necessary packages
 from tf_objdet.models.research.object_detection.utils.dataset_util import (
+    bytes_feature,
     bytes_list_feature,
-)
-from tf_objdet.models.research.object_detection.utils.dataset_util import (
     float_list_feature,
-)
-from tf_objdet.models.research.object_detection.utils.dataset_util import (
+    int64_feature,
     int64_list_feature,
 )
-from tf_objdet.models.research.object_detection.utils.dataset_util import int64_feature
-from tf_objdet.models.research.object_detection.utils.dataset_util import bytes_feature
 
 
 class TFAnnotation:

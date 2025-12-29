@@ -1,15 +1,15 @@
-import os
-import pytest
 import json
+import logging
+import os
+
 import cv2
+import numpy as np
+import pytest
 import torch
 from detectron2 import model_zoo
 from detectron2.utils.testing import (
     get_sample_coco_image,
 )
-import logging
-import numpy as np
-
 from detectron2_lmi.model import Detectron2Model
 from od_core.object_detector import ObjectDetector
 

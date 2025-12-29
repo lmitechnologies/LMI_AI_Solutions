@@ -1,10 +1,11 @@
-import os
-import glob
 import argparse
+import glob
 import logging
+import os
+
+import cv2
 import numpy as np
 import open3d
-import cv2
 
 
 def merge_intensity_to_depth(path_pcd_intensity: str, path_pcd_depth: str, colormap="hot"):
@@ -39,7 +40,7 @@ def merge_intensity_to_depth(path_pcd_intensity: str, path_pcd_depth: str, color
 
     # map color to depth x,y
     colors = []
-    for x, y, d in pcd_depth:
+    for x, y, _d in pcd_depth:
         xy = (x, y)
         if xy in xy_2_intensity:
             colors += [xy_2_intensity[xy]]

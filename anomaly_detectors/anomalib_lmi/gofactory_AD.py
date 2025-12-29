@@ -1,10 +1,11 @@
+import json
+import logging
 import os
+import time
+from pathlib import Path
+
 import cv2
 import numpy as np
-import logging
-from pathlib import Path
-import time
-import json
 from anomalib_lmi.anomaly_model2 import AnomalyModel2
 
 MAX_UINT16 = 65535

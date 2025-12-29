@@ -1,16 +1,17 @@
-import cv2
+import collections
 import logging
 import os
+import sys
+import time
+from typing import Union
+
+import cv2
+import gadget_utils.pipeline_utils as pipeline_utils
 import numpy as np
 import torch
-import sys
-from typing import Union
-import collections
-import time
-from od_core.od_base import ODBase
-import gadget_utils.pipeline_utils as pipeline_utils
-from yolov8_lmi.model import Yolov8
 from od_core.object_detector_registry import ObjectDetectorRegistry
+from od_core.od_base import ODBase
+from yolov8_lmi.model import Yolov8
 
 # add yolov5 submodule to the path
 YOLO_PATH = os.path.join(os.path.dirname(__file__), "../submodules/yolov5")
@@ -18,9 +19,9 @@ if not os.path.exists(YOLO_PATH):
     raise FileNotFoundError(f"Cannot find yolov5 submodule at {YOLO_PATH}")
 sys.path.insert(0, YOLO_PATH)
 
+from models.common import DetectMultiBackend  # noqa: E402
 from utils.general import non_max_suppression, scale_boxes, scale_segments  # noqa: E402
 from utils.segment.general import masks2segments, process_mask_native  # noqa: E402
-from models.common import DetectMultiBackend  # noqa: E402
 from utils.torch_utils import smart_inference_mode  # noqa: E402
 
 
@@ -218,7 +219,7 @@ class Yolov5(ODBase):
         self,
         image,
         configs,
-        operators=[],
+        operators=None,
         iou=0.4,
         agnostic=False,
         max_det=300,
@@ -230,7 +231,8 @@ class Yolov5(ODBase):
         Args:
             image (np.ndarry): the input image
             configs (dict): a dictionary of the confidence thresholds for each class, e.g., {'classA':0.5, 'classB':0.6}
-            operators (list): a list of dictionaries of the image preprocess operators, such as {'resize':[resized_w, resized_h, orig_w, orig_h]}, {'pad':[pad_left, pad_right, pad_top, pad_bot]}
+            operators (list): a list of dictionaries of the image preprocess operators,
+                such as {'resize':[resized_w, resized_h, orig_w, orig_h]}, {'pad':[pad_left, pad_right, pad_top, pad_bot]}
             iou (float): the iou threshold for non-maximum suppression. defaults to 0.4
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             max_det (int): The maximum number of detections to return. defaults to 300.
@@ -242,6 +244,8 @@ class Yolov5(ODBase):
             time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
         """
         time_info = {}
+        if operators is None:
+            operators = []
 
         # preprocess
         t0 = time.time()

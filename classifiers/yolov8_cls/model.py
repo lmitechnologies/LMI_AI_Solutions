@@ -1,16 +1,15 @@
+import logging
+import time
+from collections import defaultdict
+
 import cv2
 import numpy as np
 import torch
-from collections import defaultdict
-import logging
+from cls_core.classifier_registry import ClassifierRegistry
 from PIL import Image
-import time
-
 from ultralytics.data.augment import classify_transforms
 from ultralytics.utils.torch_utils import smart_inference_mode
-
 from yolov8_lmi.model import Yolov8
-from cls_core.classifier_registry import ClassifierRegistry
 
 
 @ClassifierRegistry.register(

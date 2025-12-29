@@ -1,12 +1,12 @@
-import cv2
 import logging
 import os
 import random
+
+import cv2
 import numpy as np
 import torch
-
-from yolov5_lmi.trt.yolov5_trt import YoLov5TRT
 from gadget_utils.pipeline_utils import get_img_path_batches
+from yolov5_lmi.trt.yolov5_trt import YoLov5TRT
 
 BATCH_SIZE = 1
 

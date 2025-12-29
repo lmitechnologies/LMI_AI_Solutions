@@ -1,5 +1,6 @@
 import argparse
 import os
+
 import tensorflow as tf
 from padim.padim import PaDiM, plot_fig
 

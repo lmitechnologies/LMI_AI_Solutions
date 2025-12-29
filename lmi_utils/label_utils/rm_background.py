@@ -1,8 +1,8 @@
-import os
-import glob
-import shutil
 import argparse
+import glob
 import logging
+import os
+import shutil
 
 import label_utils.csv_utils as csv_utils
 

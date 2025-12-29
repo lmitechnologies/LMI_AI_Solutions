@@ -1,15 +1,16 @@
-import os
-import glob
-import cv2
-import csv
-import json
 import collections
+import csv
+import glob
+import json
+import os
+import shutil
+
+import cv2
 import numpy as np
-from shapely.geometry import Polygon
 from label_utils.csv_utils import load_csv
 from PIL import Image, ImageDraw
-import shutil
 from pycocotools import mask as coco_mask
+from shapely.geometry import Polygon
 
 
 class Dataset(object):
@@ -17,7 +18,8 @@ class Dataset(object):
     create a coco format dataset from csv file
     """
 
-    def __init__(self, path_pngs: str, path_csv: str, plot=True, selected_classes=[]):
+    def __init__(self, path_pngs: str, path_csv: str, plot=True, selected_classes=None):
+        selected_classes = selected_classes or []
         super().__init__()
         self.info = {
             "description": "Custom Dataset",
@@ -37,7 +39,7 @@ class Dataset(object):
         class_map = {}
         idx = 1  # 0 is reserved
 
-        for k, v in shapes.items():
+        for _k, v in shapes.items():
             for s in v:
                 if s.category not in class_map:
                     ad = True
@@ -53,13 +55,14 @@ class Dataset(object):
         self.add_annotations(path_csv, class_map, plot)
         # self.write_to_json(json_out_path)
 
-    def add_categories(self, dt_category, super_category={}):
+    def add_categories(self, dt_category, super_category=None):
         """
         add categories for later writting to json
         arguments:
             dt_category(dict): the category dictionary <class name, id>
             super_category(dict): the super category dictionary
         """
+        super_category = super_category or {}
         for cat in dt_category:
             dt = {}
             dt["supercategory"] = super_category[cat] if cat in super_category else ""

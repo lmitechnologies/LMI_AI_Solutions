@@ -1,10 +1,11 @@
 # %%
 import glob
-import cv2
+import logging
 import os
+
+import cv2
 import numpy as np
 from image_utils.img_resize import resize
-import logging
 
 logging.basicConfig(level=logging.INFO)
 

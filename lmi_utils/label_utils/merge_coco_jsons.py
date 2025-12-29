@@ -1,6 +1,7 @@
-from pycocotools.coco import COCO
 import json
 from pathlib import Path
+
+from pycocotools.coco import COCO
 
 
 def merge_coco_datasets(datasets: list[COCO]) -> COCO:

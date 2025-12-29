@@ -1,11 +1,10 @@
-import pytest
 import logging
 import os
+
 import cv2
-
-from yolov8_cls.model import Yolov8_cls
+import pytest
 from cls_core.classifier import Classifier
-
+from yolov8_cls.model import Yolov8_cls
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -76,7 +75,7 @@ class Test_Yolo_Det:
     def test_predict(self, model_det, imgs_coco):
         i = 0
         for model in model_det:
-            for img, resized, op in zip(*imgs_coco):
+            for img, resized, _op in zip(*imgs_coco):
                 out, time_info = model.predict(resized)
                 assert len(out["classes"]) > 0
                 for sc in out["scores"]:
@@ -105,7 +104,7 @@ class Test_Yolo_Det_API:
     def test_predict(self, model_det_api, imgs_coco):
         i = 0
         for model in model_det_api:
-            for img, resized, op in zip(*imgs_coco):
+            for img, resized, _op in zip(*imgs_coco):
                 out, time_info = model.predict(resized)
                 assert len(out["classes"]) > 0
                 for sc in out["scores"]:

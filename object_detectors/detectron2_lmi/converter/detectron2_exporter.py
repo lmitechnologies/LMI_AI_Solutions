@@ -2,10 +2,10 @@
 # Copyright (c) Facebook, Inc. and its affiliates.
 import argparse
 from typing import Dict, List
-import torch
-from torch import Tensor, nn
 
+import cv2
 import detectron2.data.transforms as T
+import torch
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.data import build_detection_test_loader
@@ -21,7 +21,7 @@ from detectron2.structures import Boxes
 from detectron2.utils.env import TORCH_VERSION
 from detectron2.utils.file_io import PathManager
 from detectron2.utils.logger import setup_logger
-import cv2
+from torch import Tensor, nn
 
 logger = setup_logger()
 

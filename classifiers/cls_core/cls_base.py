@@ -2,6 +2,7 @@ import abc
 
 
 class ClassifierBase(abc.ABC):
+    @abc.abstractmethod
     def __init__(self):
         pass
 

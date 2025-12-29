@@ -1,8 +1,9 @@
-import numpy as np
-import cv2
-import os
-import logging
 import argparse
+import logging
+import os
+
+import cv2
+import numpy as np
 from gadget_utils.pipeline_utils import fit_array_to_size, resize_image
 from system_utils.path_utils import get_relative_paths
 

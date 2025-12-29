@@ -1,8 +1,9 @@
 import argparse
 import os
+
 import yaml
-from padim.padim import PaDiM
 from padim.data_loader import DataLoader
+from padim.padim import PaDiM
 
 
 def train_padim(

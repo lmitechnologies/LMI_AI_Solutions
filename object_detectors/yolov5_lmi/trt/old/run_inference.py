@@ -2,16 +2,16 @@
 An example that uses TensorRT's Python api to make inferences.
 """
 
+import argparse
 import ctypes
 import os
 import random
-import argparse
 import time
+
 import cv2
 import numpy as np
 import pycuda.driver as cuda
 import tensorrt as trt
-
 
 MAX_OUTPUT_BBOX_COUNT = 1000  # must match with 'MAX_OUTPUT_BBOX_COUNT' in the yololayer.h
 
@@ -20,7 +20,7 @@ def get_img_path_batches(batch_size, img_dir):
     ret = []
     batch = []
     cnt_images = 0
-    for root, dirs, files in os.walk(img_dir):
+    for root, _dirs, files in os.walk(img_dir):
         for name in files:
             if name.find(".png") == -1:
                 continue
@@ -408,7 +408,7 @@ if __name__ == "__main__":
         print("batch size is", yolov5_wrapper.batch_max_size)
 
         # warm up 10 times
-        for i in range(10):
+        for _ in range(10):
             batch_image_raw, use_time = yolov5_wrapper.infer(yolov5_wrapper.get_raw_image_zeros())
             print("warm_up->{}, time->{:.2f}ms".format(batch_image_raw[0].shape, use_time["exec"]))
 

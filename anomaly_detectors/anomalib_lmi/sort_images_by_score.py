@@ -1,7 +1,8 @@
-import shutil
-import os
 import argparse
 import logging
+import os
+import shutil
+
 import pandas as pd
 
 logging.basicConfig()
@@ -36,7 +37,7 @@ if __name__ == "__main__":
     if not os.path.exists(args.dest):
         os.makedirs(args.dest)
 
-    for root, dirs, files in os.walk(args.src):
+    for root, _dirs, files in os.walk(args.src):
         for file in files:
             row_id = df[df["fname"] == file.replace("_annot.png", ".png")].index.tolist()
             if row_id:

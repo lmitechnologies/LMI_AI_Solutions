@@ -1,5 +1,5 @@
-import os
 import glob
+import os
 
 IMAGE_FORMATS = IMG_FORMATS = ["jpeg", "jpg", "png", "tif", "tiff", "heic"]
 

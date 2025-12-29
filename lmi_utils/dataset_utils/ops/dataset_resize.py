@@ -1,10 +1,10 @@
 import logging
+
 import numpy as np
 
 # LMI packages
 from dataset_utils.representations import Annotation
 from image_utils.img_resize import resize
-
 
 logger = logging.getLogger(__name__)
 

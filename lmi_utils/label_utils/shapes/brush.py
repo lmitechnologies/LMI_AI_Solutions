@@ -1,6 +1,8 @@
-from .shape import Shape
-import numpy as np
 import logging
+
+import numpy as np
+
+from .shape import Shape
 
 logging.basicConfig()
 logger = logging.getLogger()

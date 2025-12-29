@@ -1,10 +1,11 @@
-import os
 import argparse
-import logging
 import json
+import logging
+import os
+
 import numpy as np
-from label_utils.COCO_dataset import COCO_Dataset, Annotation
 from label_utils.bbox_utils import convert_from_ls, rotate
+from label_utils.COCO_dataset import Annotation, COCO_Dataset
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

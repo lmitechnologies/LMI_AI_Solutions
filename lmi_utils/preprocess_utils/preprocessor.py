@@ -1,5 +1,5 @@
-from image_utils.img_resize import resize_and_pad
 import numpy as np
+from image_utils.img_resize import resize_and_pad
 
 
 class Preprocessor:

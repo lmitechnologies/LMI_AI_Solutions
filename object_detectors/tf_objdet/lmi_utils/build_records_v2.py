@@ -1,22 +1,23 @@
 # %% import packages
-from tf_objdet.lmi_utils.tfannotation import TFAnnotation
-from sklearn.model_selection import train_test_split
-from PIL import Image
-import tensorflow as tf
-import os
 import argparse
 import importlib.util
-import numpy as np
-import cv2
 import io
+import os
+
+import cv2
+import numpy as np
+import tensorflow as tf
 from image_utils.img_resize import resize
+from PIL import Image
+from sklearn.model_selection import train_test_split
+from tf_objdet.lmi_utils.tfannotation import TFAnnotation
 
 
 # get item in a recursive dictionary
 def _finditem(obj, key):
     if key in obj:
         return obj[key]
-    for k, v in obj.items():
+    for _k, v in obj.items():
         if isinstance(v, dict):
             item = _finditem(v, key)
             if item is not None:
@@ -87,7 +88,8 @@ def main(config):
         f.write("}\n")
     f.close()
 
-    # initialize a data dictionary used to map each image filename to all bounding boxes associated with the image, then load the contents of the annotations file
+    # initialize a data dictionary used to map each image filename to all bounding boxes associated with the image,
+    # then load the contents of the annotations file
     D = {}
     # parse .csv file
     # create dictionary, keys=images, value=payload:label, bounding box
@@ -142,7 +144,8 @@ def main(config):
             print("[INFO] Skipping class: ", label)
             continue
 
-        # build path to input image, then grab any other bounding boxes + labels associated with the image path, labels, bounding box lists, respectively
+        # build path to input image, then grab any other bounding boxes + labels associated with the image path,
+        # labels, bounding box lists, respectively
         p = os.path.sep.join([config.DATA_PATH, imagePath])
         b = D.get(p, [])
 

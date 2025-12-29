@@ -1,21 +1,21 @@
-import numpy as np
-import random
-import cv2
-import os
 import json
 import logging
+import os
+import random
+
+import cv2
+import numpy as np
+from label_utils.bbox_utils import rotate
 
 # LMI packages
 from label_utils.csv_utils import load_csv
-from label_utils.shapes import Rect, Mask, Keypoint, Brush
 from label_utils.plot_utils import (
     plot_one_box,
+    plot_one_brush,
     plot_one_polygon,
     plot_one_pt,
-    plot_one_brush,
 )
-from label_utils.bbox_utils import rotate
-
+from label_utils.shapes import Brush, Keypoint, Mask, Rect
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

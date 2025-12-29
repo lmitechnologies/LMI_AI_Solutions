@@ -11,8 +11,8 @@ class Rect(Shape):
         im_name="",
         fullpath="",
         category="",
-        up_left=[0, 0],
-        bottom_right=[0, 0],
+        up_left=None,
+        bottom_right=None,
         confidence=1.0,
         angle=0,
     ):
@@ -26,8 +26,8 @@ class Rect(Shape):
             confidence(double): the confidence level between [0.0, 1.0]
         """
         super().__init__(im_name, fullpath, category, confidence)
-        self.up_left = up_left
-        self.bottom_right = bottom_right
+        self.up_left = up_left or [0, 0]
+        self.bottom_right = bottom_right or [0, 0]
         self.angle = angle
 
     def round(self):

@@ -1,9 +1,10 @@
 # %% extract bbox regions from JSON file
-import json
 import argparse
+import json
 import os
-import cv2
 import shutil
+
+import cv2
 import numpy as np
 
 

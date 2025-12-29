@@ -1,8 +1,9 @@
+import argparse
 import logging
+
 import torch
 import torch.nn as nn
 from anomalib_lmi.base import to_list
-import argparse
 from torchvision.transforms import v2
 
 logging.basicConfig()
@@ -37,7 +38,7 @@ def make_preprocessing_trace_safe(module, device):
     """
     Searches for torchvision Normalize layers and replaces them with SafeNormalize.
     """
-    for name, child in module.named_children():
+    for _name, child in module.named_children():
         if isinstance(child, v2.Compose):
             new_transforms = []
             for t in child.transforms:

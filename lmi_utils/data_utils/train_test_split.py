@@ -1,7 +1,8 @@
 import glob
-import random
 import os
+import random
 import shutil
+
 import cv2
 
 

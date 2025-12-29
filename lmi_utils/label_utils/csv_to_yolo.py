@@ -3,27 +3,27 @@ convert the data (images with a csv annotation file) to yolo file format
 """
 
 # built-in packages
-import cv2
-import shutil
 import glob
 import json
-import os
-import yaml
 import logging
+import os
+import shutil
+
+import cv2
 import numpy as np
+import yaml
+from label_utils.bbox_utils import rotate
 
 # LMI packages
 from label_utils.csv_utils import load_csv
-from label_utils.shapes import Mask, Rect, Keypoint, Brush
-from label_utils.bbox_utils import rotate
-
+from label_utils.shapes import Brush, Keypoint, Mask, Rect
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def del_classes(class_to_id, classes=[]):
+def del_classes(class_to_id, classes=None):
     """
     delete the classes from the class_to_id map and re-assign the class ID
 
@@ -31,6 +31,7 @@ def del_classes(class_to_id, classes=[]):
         class_to_id(dict): the map <class_name, class id>
         classes(list): classe names to de deleted
     """
+    classes = classes or []
     if not len(classes):
         return
     del_keys = set(classes)

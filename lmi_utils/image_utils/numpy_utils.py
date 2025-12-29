@@ -1,7 +1,8 @@
+from os import listdir, makedirs
+from os.path import isdir, isfile, join
+
 import cv2
 import numpy as np
-from os import listdir, makedirs
-from os.path import isfile, join, isdir
 
 
 class NumpyUtils:

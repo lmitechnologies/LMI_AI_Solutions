@@ -1,8 +1,9 @@
 import argparse
 import os
-import torch
 import time
+
 import numpy as np
+import torch
 from models.experimental import attempt_load
 
 TENSOR_TYPE = torch.half
@@ -37,7 +38,7 @@ model.eval()
 proc_time = []
 with torch.no_grad():
     dummy_input = torch.zeros(1, 3, h, w).to(TENSOR_TYPE).to(device)
-    for i in range(10):
+    for _ in range(10):
         t1 = time.time()
         pred = model(dummy_input)
         diff = time.time() - t1

@@ -1,6 +1,7 @@
-import matplotlib.pyplot as plt
 import collections
 import itertools
+
+import matplotlib.pyplot as plt
 
 
 # Function to read and parse the data from the text file
@@ -32,7 +33,9 @@ def read_data(file_path):
     return data
 
 
-def plot_and_save(totals, color_marker_combinations, wanted=[], not_wanted=[], outname=None):
+def plot_and_save(totals, color_marker_combinations, wanted=None, not_wanted=None, outname=None):
+    not_wanted = not_wanted or []
+    wanted = wanted or []
     # Plotting the data
     plt.figure(figsize=(10, 6))
     occurrences = []
@@ -68,7 +71,7 @@ if __name__ == "__main__":
     data = read_data(args.file)
 
     totals = collections.defaultdict(list)
-    for i, record in enumerate(data):
+    for _i, record in enumerate(data):
         service_name = record["Name"]
         total_plus_swap = record["RSS"] + record["Swap"]
         totals[service_name].append(total_plus_swap)

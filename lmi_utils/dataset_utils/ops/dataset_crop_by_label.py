@@ -1,13 +1,14 @@
-import numpy as np
 import logging
+
+import numpy as np
 
 # LMI packages
 from dataset_utils.representations import (
     Box,
-    Mask,
-    Polygon,
     BoxAnnotation,
+    Mask,
     MaskAnnotation,
+    Polygon,
     PolygonAnnotation,
 )
 

@@ -1,11 +1,11 @@
+import glob
+import json
+import logging
+import os
 from datetime import datetime
+
 import cv2
 import numpy as np
-import json
-import os
-import glob
-import logging
-
 from label_utils.bbox_utils import rotate
 
 logging.basicConfig()
@@ -14,7 +14,7 @@ logger.setLevel(logging.INFO)
 
 
 class Annotation:
-    def __init__(self, path: str, category: str, bbox: list, segmentation=[], rotation=None) -> None:
+    def __init__(self, path: str, category: str, bbox: list, segmentation=None, rotation=None) -> None:
         """init Annotation class for coco format
 
         Args:
@@ -23,6 +23,7 @@ class Annotation:
             segmentation (list, optional): _description_. Defaults to [].
             rotation (_type_, optional): _description_. Defaults to None.
         """
+        segmentation = segmentation or []
         self.path = path
         self.bbox = bbox
         self.category = category
@@ -94,13 +95,14 @@ class COCO_Dataset:
         self.add_categories()
         self.add_imgs(path_imgs)
 
-    def add_categories(self, super_category={}):
+    def add_categories(self, super_category=None):
         """
         add categories for later writting to json
         arguments:
             dt_category(dict): the category dictionary <class name, id>
             super_category(dict): the super category dictionary
         """
+        super_category = super_category or {}
         for cat in self.dt_category:
             dt = {}
             dt["supercategory"] = super_category[cat] if cat in super_category else ""
@@ -108,7 +110,7 @@ class COCO_Dataset:
             dt["id"] = self.dt_category[cat]
             self.categories.append(dt)
 
-    def add_imgs(self, path_imgs, fmts=["png", "jpeg", "jpg"]):
+    def add_imgs(self, path_imgs, fmts=("png", "jpeg", "jpg")):
         """
         add images from the path_img
         arguments:

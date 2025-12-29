@@ -1,15 +1,15 @@
-import os
 import argparse
-import logging
-import json
-import numpy as np
 import collections
 import glob
-from label_studio_sdk.converter.brush import decode_rle
+import json
+import logging
+import os
 
-from label_utils.csv_utils import write_to_csv
-from label_utils.shapes import Rect, Mask, Keypoint, Brush
+import numpy as np
+from label_studio_sdk.converter.brush import decode_rle
 from label_utils.bbox_utils import convert_from_ls
+from label_utils.csv_utils import write_to_csv
+from label_utils.shapes import Brush, Keypoint, Mask, Rect
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

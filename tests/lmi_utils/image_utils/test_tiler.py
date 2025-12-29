@@ -1,10 +1,10 @@
-import pytest
-import os
 import logging
+import os
+
+import pytest
 import torch
 import torchvision
-
-from image_utils.tiler import Tiler, ScaleMode
+from image_utils.tiler import ScaleMode, Tiler
 from system_utils import path_utils
 
 logging.basicConfig()

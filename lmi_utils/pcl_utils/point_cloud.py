@@ -1,18 +1,17 @@
 import os
+
+# import open3d
+import sys
 import time
 
 import cv2
+import image_utils.rgb_converter as rbg_converter
 import numpy as np
-# import open3d
+from image_utils.img_resize import resize
 
-
-import sys
 # if '..' not in sys.path:
 #     sys.path.append('..')
-
 from scipy.interpolate import griddata
-import image_utils.rgb_converter as rbg_converter
-from image_utils.img_resize import resize
 
 
 class PointCloud:
@@ -307,8 +306,8 @@ class PointCloud:
                     print("[INFO] Converting to grayscale")
                 img = (img_norm * 255).astype(np.uint8)
                 img_bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        except Exception:
-            raise Exception("Invalid color mapping.")
+        except Exception as e:
+            raise Exception("Invalid color mapping.") from e
 
         self.img = img_bgr
 

@@ -1,11 +1,12 @@
 # %% extract bbox regions from JSON file
-import json
 import argparse
-import csv
-import os
-import cv2
 import ast
+import csv
 import glob
+import json
+import os
+
+import cv2
 import numpy as np
 from image_utils.img_resize import resize
 
@@ -14,7 +15,7 @@ def extract_ROI_from_JSON(
     data_folder_path,
     output_csv_file_name,
     label_name="Name",
-    target_classes=[],
+    target_classes=None,
     render=False,
     mask_to_bbox=False,
 ):
@@ -29,7 +30,7 @@ def extract_ROI_from_JSON(
         is_mask (bool) - if shape is a polygon
         mask_to_bbox (bool) - if it should write bounding box from mask region
     """
-
+    target_classes = target_classes or []
     json_files = glob.glob(os.path.join(data_folder_path, "*.json"))
     output_csv_file_path = os.path.join(data_folder_path, output_csv_file_name)
     write_append_option = "w"
@@ -46,7 +47,7 @@ def extract_ROI_from_JSON(
         with open(output_csv_file_path, write_append_option, newline="") as csvfile:
             # extract top left corner and bbox dimensions
             labelWriter = csv.writer(csvfile, delimiter=";")
-            for i, key in enumerate(keys):
+            for _i, key in enumerate(keys):
                 regions = object_labels[key]["regions"]
                 fname = object_labels[key]["filename"]
                 print("[INFO] filename=", fname)

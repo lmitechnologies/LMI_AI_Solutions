@@ -1,12 +1,12 @@
 # built-in packages
+import json
+import logging
 import os
 import shutil
-import logging
-import numpy as np
-import json
 
 # 3rd party packages
 import cv2
+import numpy as np
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

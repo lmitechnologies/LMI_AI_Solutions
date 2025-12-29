@@ -1,20 +1,19 @@
-import os
-import io
-import cv2
-from PIL import Image
-import tensorflow as tf
-import numpy as np
-from tqdm import tqdm
 import argparse
+import io
+import os
 
+import cv2
+import numpy as np
+import tensorflow as tf
 from object_detection.core import data_parser
 from object_detection.core import standard_fields as fields
-
 from object_detection.metrics.tf_example_parser import (
     BoundingBoxParser,
-    StringParser,
     Int64Parser,
+    StringParser,
 )
+from PIL import Image
+from tqdm import tqdm
 
 
 # TODO: 1/18/2021 need testing for classifier and segmentation versions

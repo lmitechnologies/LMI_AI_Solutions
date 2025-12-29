@@ -1,8 +1,9 @@
 import argparse
-import numpy as np
-import shutil
-import os
 import csv
+import os
+import shutil
+
+import numpy as np
 
 
 def filter_by_label(inputfile, datapath, outpath):

@@ -1,16 +1,16 @@
-import os
-import numpy as np
 import collections
-from shapely.geometry import Polygon
-from shapely.validation import make_valid
 import csv
-import cv2
 import logging
+import os
+
+import cv2
+import numpy as np
 
 # LMI packages
 from label_utils import csv_utils
-from label_utils.shapes import Rect, Mask
-
+from label_utils.shapes import Mask, Rect
+from shapely.geometry import Polygon
+from shapely.validation import make_valid
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -99,12 +99,13 @@ def plot_shapes(
     class_label,
     shape_pred,
     class_pred,
-    skip_classes=[],
+    skip_classes=None,
     is_mask=False,
 ):
     # BGR
     BLUE = (255, 0, 0)
     RED = (0, 0, 255)
+    skip_classes = skip_classes or []
 
     def plot_bboxs(image, bboxs, labels, color: tuple, pos="uleft"):
         for i in range(len(bboxs)):
@@ -142,7 +143,7 @@ def plot_shapes(
         plot_masks(image, shape_pred, class_pred, color=RED, pos="bright")
 
 
-def get_ious(path_imgs: str, path_out: str, label_dt: dict, pred_dt: dict, skip_classes=[]):
+def get_ious(path_imgs: str, path_out: str, label_dt: dict, pred_dt: dict, skip_classes=None):
     """
     calculate the precision and recall based on the threshold of iou and confidence
     arguments:
@@ -152,6 +153,7 @@ def get_ious(path_imgs: str, path_out: str, label_dt: dict, pred_dt: dict, skip_
     return:
         all_ious: the map <fname, D>, where D is <class, list of ious of that class>. The list might contain nan which is FN.
     """
+    skip_classes = skip_classes or []
 
     def mask_to_np(shapes):
         masks = []

@@ -6,7 +6,7 @@ class Mask(Shape):
     the class for polygon mask annotations
     """
 
-    def __init__(self, im_name="", fullpath="", category="", x_vals=[], y_vals=[], confidence=1.0):
+    def __init__(self, im_name="", fullpath="", category="", x_vals=None, y_vals=None, confidence=1.0):
         """
         Arguments:
             im_name(str): the image file basename
@@ -17,8 +17,8 @@ class Mask(Shape):
             confidence(double): the confidence level between [0.0, 1.0]
         """
         super().__init__(im_name, fullpath, category, confidence)
-        self.X = x_vals
-        self.Y = y_vals
+        self.X = x_vals or []
+        self.Y = y_vals or []
 
     def round(self):
         self.X = list(map(round, self.X))

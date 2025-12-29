@@ -1,5 +1,6 @@
-import torch
 import os
+
+import torch
 from detectron2 import model_zoo
 from detectron2.config import get_cfg
 from detectron2.data.datasets import register_coco_instances

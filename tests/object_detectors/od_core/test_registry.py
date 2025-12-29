@@ -1,6 +1,6 @@
 import logging
-from od_core.object_detector_registry import ObjectDetectorRegistry
 
+from od_core.object_detector_registry import ObjectDetectorRegistry
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

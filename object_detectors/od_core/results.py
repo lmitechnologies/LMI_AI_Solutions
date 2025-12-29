@@ -1,6 +1,7 @@
-from typing import List, Optional, Union, Dict
-import torch
 import logging
+from typing import Dict, List, Optional, Union
+
+import torch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
