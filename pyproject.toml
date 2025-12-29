@@ -8,6 +8,15 @@ exclude = [
     "dist",
 ]
 
+[tool.ruff.lint]
+# Enable specific rule sets (e.g., Pyflakes, Isort, Flake8-bugbear)
+select = ["E", "F", "I", "B"]
+fixable = ["ALL"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
 [tool.pytest.ini_options]
 log_cli = true
 log_level = "INFO"
