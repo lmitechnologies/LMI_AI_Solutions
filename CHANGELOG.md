@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.5.0...v1.5.1) (2025-12-29)
+
+
+### Bug Fixes
+
+* model fuse on ARM ([#163](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/163)) ([b4598a5](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/b4598a54c46b5fdb9f2b59e5befea0e00fba9dfd))
+
 # [1.5.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.4.0...v1.5.0) (2025-12-17)
 
 
