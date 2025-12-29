@@ -1,9 +1,9 @@
-import cv2 # Opencv ver 3.1.0 used
+import cv2  # Opencv ver 3.1.0 used
 import selectinwindow
 import sys
-# Set recursion limit
-sys.setrecursionlimit(10 ** 9)
 
+# Set recursion limit
+sys.setrecursionlimit(10**9)
 
 
 # Define the drag object
@@ -11,7 +11,7 @@ rectI = selectinwindow.dragRect
 
 # Initialize the  drag object
 wName = "select region"
-image=cv2.imread('/home/caden/projects/fringeai/fringeai_ml/ml_utils/label_utils/opencvdragrect/trump.jpeg')
+image = cv2.imread("/home/caden/projects/fringeai/fringeai_ml/ml_utils/label_utils/opencvdragrect/trump.jpeg")
 imageWidth = image.shape[1]
 imageHeight = image.shape[0]
 # initialize image
@@ -33,7 +33,7 @@ while True:
 
     # if returnflag is True, break from the loop
     if rectI.returnflag:
-        print('I got here.')
+        print("I got here.")
         break
 
 # print "Dragged rectangle coordinates"

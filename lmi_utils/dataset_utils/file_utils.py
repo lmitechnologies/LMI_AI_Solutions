@@ -1,7 +1,8 @@
 import os
 import glob
 
-IMAGE_FORMATS=IMG_FORMATS = ["jpeg", "jpg", "png", "tif", "tiff", "heic"]
+IMAGE_FORMATS = IMG_FORMATS = ["jpeg", "jpg", "png", "tif", "tiff", "heic"]
+
 
 def get_files(directory, extensions):
     """Get all files in a directory with a given extension.
@@ -17,6 +18,7 @@ def get_files(directory, extensions):
     for ext in extensions:
         files.extend(glob.glob(os.path.join(directory, f"*.{ext}")))
     return files
+
 
 def get_images(images_dir):
     """Get all images in a directory.

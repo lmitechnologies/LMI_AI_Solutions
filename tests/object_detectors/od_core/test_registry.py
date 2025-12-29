@@ -13,18 +13,17 @@ def test_auto_registration():
     """
     ObjectDetectorRegistry.auto_register_models()
     assert len(ObjectDetectorRegistry._registry) > 0, "ObjectDetectorRegistry should have registered models."
-    
+
     to_be_tested_keys = [
-        ('detectron2', 'mask_rcnn', 'objectdetection', 'v0'),
-        ('ultralytics', 'yolov5', 'objectdetection', 'v0'),
-        ('ultralytics', 'yolov8', 'instancesegmentation', 'v0'),
-        ('ultralytics', 'yolo', 'objectdetection', 'v1'),
-        ('ultralytics', 'yolo', 'instancesegmentation', 'v1'),
-        ('ultralytics', 'yolo', 'keypointdetection', 'v1'),
-        ('ultralytics', 'yolo', 'orientedobjectdetection', 'v1'),
+        ("detectron2", "mask_rcnn", "objectdetection", "v0"),
+        ("ultralytics", "yolov5", "objectdetection", "v0"),
+        ("ultralytics", "yolov8", "instancesegmentation", "v0"),
+        ("ultralytics", "yolo", "objectdetection", "v1"),
+        ("ultralytics", "yolo", "instancesegmentation", "v1"),
+        ("ultralytics", "yolo", "keypointdetection", "v1"),
+        ("ultralytics", "yolo", "orientedobjectdetection", "v1"),
     ]
 
     for key in to_be_tested_keys:
         key2 = ObjectDetectorRegistry._generate_key(*key, info={})
         assert key2 in ObjectDetectorRegistry._registry, f"Model {key} should be registered."
-        

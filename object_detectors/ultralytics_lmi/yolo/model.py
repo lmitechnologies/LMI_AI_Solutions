@@ -18,7 +18,6 @@ from od_core.results import Results
 import gadget_utils.pipeline_utils as pipeline_utils
 
 
-
 @smart_inference_mode()
 def to_numpy(data):
     """Converts a tensor or a list to numpy arrays.
@@ -36,22 +35,21 @@ def to_numpy(data):
     elif isinstance(data, np.ndarray):
         return data
     else:
-        raise TypeError(f'Data type {type(data)} not supported')
+        raise TypeError(f"Data type {type(data)} not supported")
 
 
 @ObjectDetectorRegistry.register(
     metadata=dict(
-        versions=['v1'],
-        model_names=['yolo', 'yolov8', 'yolov11'],
-        tasks=['od', 'objectdetection'],
-        frameworks=['ultralytics', 'ultralytics8'],
+        versions=["v1"],
+        model_names=["yolo", "yolov8", "yolov11"],
+        tasks=["od", "objectdetection"],
+        frameworks=["ultralytics", "ultralytics8"],
     )
 )
 class Yolo(ODBase):
-    
     logger = logging.getLogger(__name__)
-    
-    def __init__(self, model_path:str, device='gpu', data=None, fp16=False,**kwargs) -> None:
+
+    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
         """init the model
         Args:
             model_path (str): the path to the model_path file.
@@ -61,59 +59,55 @@ class Yolo(ODBase):
         Raises:
             FileNotFoundError: _description_
         """
-        self.image_size = kwargs.get('image_size', [640, 640])
-        
+        self.image_size = kwargs.get("image_size", [640, 640])
+
         if not os.path.isfile(model_path):
-            raise FileNotFoundError(f'File not found: {model_path}')
-        
+            raise FileNotFoundError(f"File not found: {model_path}")
+
         self._setup_device(device)
-        
+
         # load model
         self.model = AutoBackend(model_path, self.device, data=data, fp16=fp16, fuse=False)
         if model_path.endswith('.pt') and hasattr(self.model.model, "fuse"):
             self.model.model.fuse()
         self.model.eval()
-        
+
         # class map < id: class name >
         self.names = self.model.names
-        
-        
+
     def _setup_device(self, device):
         """set up the computation device (CPU or GPU).
 
         Args:
             device (str): The device to be used, either 'cpu' or 'gpu'.
         """
-        if device.lower() not in ['cpu', 'gpu']:
+        if device.lower() not in ["cpu", "gpu"]:
             raise ValueError(f'Invalid device: {device}. Supported devices are "cpu" and "gpu".')
-        
-        self.device = torch.device('cpu')
-        if device.lower() == 'gpu':
+
+        self.device = torch.device("cpu")
+        if device.lower() == "gpu":
             if torch.cuda.is_available():
-                self.device = torch.device('cuda:0')
+                self.device = torch.device("cuda:0")
             else:
-                self.logger.warning('GPU not available, falling back to CPU')
-        
-        
+                self.logger.warning("GPU not available, falling back to CPU")
+
     @smart_inference_mode()
     def forward(self, im: torch.Tensor):
         return self.model(im)
-        
-        
+
     @smart_inference_mode()
     def from_numpy(self, x: np.ndarray) -> torch.Tensor:
         """
-         Convert a numpy array to a tensor.
+        Convert a numpy array to a tensor.
 
-         Args:
-             x (np.ndarray): The array to be converted.
+        Args:
+            x (np.ndarray): The array to be converted.
 
-         Returns:
-             (torch.Tensor): The converted tensor
-         """
+        Returns:
+            (torch.Tensor): The converted tensor
+        """
         return torch.tensor(x).to(self.device) if isinstance(x, np.ndarray) else x
-    
-    
+
     @smart_inference_mode()
     def warmup(self, imgsz=None):
         """
@@ -125,16 +119,18 @@ class Yolo(ODBase):
         """
         if imgsz is None:
             imgsz = self.image_size
-            
+
         if isinstance(imgsz, tuple):
             imgsz = list(imgsz)
-        
-            
-        imgsz = [1,3]+imgsz
-        im = torch.empty(*imgsz, dtype=torch.half if self.model.fp16 else torch.float, device=self.device)  # input
+
+        imgsz = [1, 3] + imgsz
+        im = torch.empty(
+            *imgsz,
+            dtype=torch.half if self.model.fp16 else torch.float,
+            device=self.device,
+        )  # input
         self.forward(im)  # warmup
-        
-        
+
     @smart_inference_mode()
     def preprocess(self, im: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
         """Prepares input image before inference.
@@ -144,43 +140,41 @@ class Yolo(ODBase):
         """
         if isinstance(im, np.ndarray):
             im = self.from_numpy(im)
-        
+
         im = im.to(self.device)
         # convert to HWC
         if im.ndim == 2:
             im = im.unsqueeze(-1)
-        if im.shape[-1] ==1:
-            im = im.expand(-1,-1,3)
-            
-        im = im.unsqueeze(0) # HWC -> BHWC
+        if im.shape[-1] == 1:
+            im = im.expand(-1, -1, 3)
+
+        im = im.unsqueeze(0)  # HWC -> BHWC
         img = im.permute((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
         img = img.contiguous()
 
         img = img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
         return img
-    
-    
-    def load_with_preprocess(self, im_path:str):
+
+    def load_with_preprocess(self, im_path: str):
         """load image and do im preprocess
 
         Args:
             im_path (str): the path to the image, could be either .npy, .png, or other image formats
-            
+
         Returns:
             (torch.Tensor): the preprocessed image.
             (np.ndarray): the original image.
         """
         ext = os.path.splitext(im_path)[-1]
-        if ext=='.npy':
+        if ext == ".npy":
             im0 = np.load(im_path)
         else:
-            im0 = cv2.imread(im_path) #BGR format
-            im0 = im0[:,:,::-1] #BGR to RGB
-        return self.preprocess(im0.copy()),im0
-    
+            im0 = cv2.imread(im_path)  # BGR format
+            im0 = im0[:, :, ::-1]  # BGR to RGB
+        return self.preprocess(im0.copy()), im0
 
-    def _get_min_conf(self, conf:Union[float, dict]) -> float:
+    def _get_min_conf(self, conf: Union[float, dict]) -> float:
         """Get the minimum confidence level for non-maximum suppression.
 
         Args:
@@ -191,38 +185,36 @@ class Yolo(ODBase):
         elif isinstance(conf, dict):
             min_conf = 1
             class_names = set(self.model.names.values())
-            for k,v in conf.items():
+            for k, v in conf.items():
                 if k in class_names:
                     min_conf = min(min_conf, v)
             if min_conf == 1:
-                self.logger.warning('No class matches in confidence dict, set to 1.0 for all classes.')
+                self.logger.warning("No class matches in confidence dict, set to 1.0 for all classes.")
         else:
-            raise TypeError(f'Confidence type {type(conf)} not supported')
+            raise TypeError(f"Confidence type {type(conf)} not supported")
         return min_conf
-    
-    
+
     @smart_inference_mode()
-    def _get_thresholds(self, conf:Union[float, dict], num_preds:int, classes:list) -> torch.Tensor:
+    def _get_thresholds(self, conf: Union[float, dict], num_preds: int, classes: list) -> torch.Tensor:
         """Get the thresholds for each class.
 
         Args:
             conf (float | dict): float or dictionary of <class: confidence level>.
             num_preds (int): the number of predictions.
             classes (list): the list of class names for each prediction.
-            
+
         Returns:
             (torch.Tensor): the thresholds for each prediction.
         """
         if isinstance(conf, float):
-            thres = np.array([conf]*num_preds)
+            thres = np.array([conf] * num_preds)
         elif isinstance(conf, dict):
             # set to 1 if c is not in conf
-            thres = np.array([conf.get(c,1) for c in classes])
+            thres = np.array([conf.get(c, 1) for c in classes])
         else:
-            raise TypeError(f'Confidence type {type(conf)} not supported')
+            raise TypeError(f"Confidence type {type(conf)} not supported")
         return self.from_numpy(thres)
-    
-    
+
     def construct_result(self, pred, img, orig_img, conf):
         """Constructs the result from the model prediction.
 
@@ -233,14 +225,13 @@ class Yolo(ODBase):
             conf (float | dict): float or dictionary of <class: confidence level>.
         """
         pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
-        xyxy,confs,clss = pred[:, :4],pred[:, 4],pred[:, 5]
+        xyxy, confs, clss = pred[:, :4], pred[:, 4], pred[:, 5]
         classes = np.array([self.model.names[c.item()] for c in clss])
-        
+
         # filter based on conf
         M = confs > self._get_thresholds(conf, len(clss), classes)
         return Results(xyxy[M], confs[M], classes[M.cpu().numpy()].tolist()), M
-    
-    
+
     def construct_results(self, preds, img, orig_imgs, conf):
         """Constructs the results from the model predictions.
 
@@ -249,19 +240,27 @@ class Yolo(ODBase):
             img (torch.Tensor): the preprocessed image(s)
             orig_imgs (list): list of original images. If this is a list of tensors, this function will return tensor results.
             conf (float | dict): float or dictionary of <class: confidence level>.
-        """ 
+        """
         return [self.construct_result(pred, img, orig_img, conf)[0] for pred, orig_img in zip(preds, orig_imgs)]
-    
-    
+
     def _run_nms(self, preds, conf: float, iou=0.45, agnostic=False, max_det=300):
         """runs non-maximum suppression on inference results"""
-        return nms.non_max_suppression(preds,conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names))
-    
-    
+        return nms.non_max_suppression(preds, conf, iou, agnostic=agnostic, max_det=max_det, nc=len(self.model.names))
+
     @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, **kwargs):
+    def postprocess(
+        self,
+        preds,
+        img,
+        orig_imgs,
+        conf: Union[float, dict],
+        iou=0.45,
+        agnostic=False,
+        max_det=300,
+        **kwargs,
+    ):
         """Postprocesses predictions and returns a list of Results objects.
-        
+
         Args:
             preds (torch.Tensor | list): Predictions from the model.
             img (torch.Tensor): the preprocessed image(s)
@@ -287,26 +286,24 @@ class Yolo(ODBase):
         for result, orig_img in zip(list_results, orig_imgs):
             use_tensor = isinstance(orig_img, torch.Tensor)
             result = result.to_dict(return_tensor=use_tensor)
-            for k,v in result.items():
+            for k, v in result.items():
                 results[k].append(v)
         return results
-
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
         """Reverts prediction coordinates to the original pre-transform space."""
         # Assumes single-image batch processing from predict()
         if not operators:
             return results
-        results['boxes'] = pipeline_utils.revert_to_origin(results['boxes'], operators, **kwargs)
+        results["boxes"] = pipeline_utils.revert_to_origin(results["boxes"], operators, **kwargs)
         return results
-
 
     @smart_inference_mode()
     def predict(self, image, configs, operators=[], iou=0.4, agnostic=False, max_det=300, **kwargs):
-        """run Yolo inference, where it runs the preprocess(), forward(), and postprocess() in sequence.  
-        It converts the results to the original coordinates space if the operators are provided.  
+        """run Yolo inference, where it runs the preprocess(), forward(), and postprocess() in sequence.
+        It converts the results to the original coordinates space if the operators are provided.
         Return tensors if the input image is a tensor, otherwise return numpy arrays.
-        
+
         Args:
             model (Yolo | YoloSeg | YoloPose | YoloObb): one yolo model
             image (np.ndarry | tensor): the input image
@@ -328,49 +325,55 @@ class Yolo(ODBase):
             time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
         """
         time_info = {}
-        
+
         # preprocess
         t0 = time.time()
         im = self.preprocess(image)
-        time_info['preproc'] = time.time()-t0
-        
+        time_info["preproc"] = time.time() - t0
+
         # infer
         t0 = time.time()
         pred = self.forward(im)
-        time_info['proc'] = time.time()-t0
-        
+        time_info["proc"] = time.time() - t0
+
         # postprocess
         t0 = time.time()
         post_args = {
-            'conf': configs,
-            'iou': iou,
-            'agnostic': agnostic,
-            'max_det': max_det,
+            "conf": configs,
+            "iou": iou,
+            "agnostic": agnostic,
+            "max_det": max_det,
         }
-        if kwargs.get('return_segments'):
-            post_args['return_segments'] = kwargs['return_segments']
-        results = self.postprocess(pred,im,image,**post_args)
+        if kwargs.get("return_segments"):
+            post_args["return_segments"] = kwargs["return_segments"]
+        results = self.postprocess(pred, im, image, **post_args)
         results_dict = collections.defaultdict(list)
-        
+
         # return empty results if no detection
-        if not len(results['boxes']):
-            time_info['postproc'] = time.time()-t0
+        if not len(results["boxes"]):
+            time_info["postproc"] = time.time() - t0
             return results_dict, time_info
 
         # Extract results for single image
-        for k,v in results.items():
+        for k, v in results.items():
             results_dict[k] = v[0]
-        
+
         # Revert coordinates if needed
         results_dict = self._revert_coordinates(results_dict, operators, **kwargs)
-        time_info['postproc'] = time.time()-t0
-        
+        time_info["postproc"] = time.time() - t0
+
         return results_dict, time_info
-    
-    
+
     @staticmethod
     @smart_inference_mode()
-    def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False):
+    def annotate_image(
+        results,
+        image,
+        colormap=None,
+        line_thickness=None,
+        hide_label=False,
+        hide_bbox=False,
+    ):
         """annotate model results on the image. If colormap is None, it will use the random colors.
 
         Args:
@@ -382,79 +385,76 @@ class Yolo(ODBase):
         Returns:
             np.ndarray: the annotated image
         """
-        boxes = results['boxes']
-        classes = results['classes']
-        scores = results['scores']
-        masks = results['masks']
-        points = results['points']
-        
+        boxes = results["boxes"]
+        classes = results["classes"]
+        scores = results["scores"]
+        masks = results["masks"]
+        points = results["points"]
+
         image = to_numpy(image).copy()
         if not len(boxes):
             return image
-        
+
         # convert to numpy
         boxes = to_numpy(boxes)
         points = to_numpy(points)
         if len(masks):
             masks = to_numpy(masks)
-        
+
         if image.ndim == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-        
+
         # plot boxes and masks
         for i in range(len(boxes)):
             label = "{}: {:.2f}".format(classes[i], scores[i])
             args = {
-                'label': None if hide_label else label, 
-                'color': None if colormap is None else colormap[classes[i]], 
-                'line_thickness':line_thickness, 
-                'hide_bbox':hide_bbox
-                }
-            
-            if boxes[i].shape == (4,2):
-                pipeline_utils.plot_one_rbox(boxes[i],image,**args)
+                "label": None if hide_label else label,
+                "color": None if colormap is None else colormap[classes[i]],
+                "line_thickness": line_thickness,
+                "hide_bbox": hide_bbox,
+            }
+
+            if boxes[i].shape == (4, 2):
+                pipeline_utils.plot_one_rbox(boxes[i], image, **args)
             elif boxes[i].shape == (4,):
                 mask = masks[i] if len(masks) else None
-                pipeline_utils.plot_one_box(boxes[i],image,mask,**args)
-                
+                pipeline_utils.plot_one_box(boxes[i], image, mask, **args)
+
         # plot keypoints
         points = points.astype(int)
         for i in range(len(points)):
             for j in range(len(points[i])):
-                cv2.circle(image, (points[i][j][0], points[i][j][1]), 4, (255,255,255), -1)
-                
+                cv2.circle(image, (points[i][j][0], points[i][j][1]), 4, (255, 255, 255), -1)
+
         return image
-    
-    
+
+
 @ObjectDetectorRegistry.register(
     metadata=dict(
-        versions=['v1'],
-        model_names=['yolo', 'yolov8', 'yolov11'],
-        tasks=['seg', 'instancesegmentation'],
-        frameworks=['ultralytics', 'ultralytics8'],
+        versions=["v1"],
+        model_names=["yolo", "yolov8", "yolov11"],
+        tasks=["seg", "instancesegmentation"],
+        frameworks=["ultralytics", "ultralytics8"],
     )
 )
 class YoloSeg(Yolo):
-    def __init__(self, model_path:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.logger = logging.getLogger(__name__)
-        
-        
+
     def to_segments(self, masks: torch.Tensor, img_shape: tuple) -> List[np.ndarray]:
         """Convert masks to segments.
 
         Args:
             masks (torch.Tensor): the masks to be converted, shape (n, h, w)
             img_shape (tuple): the shape of the image, (h, w, c)
-            
+
         Returns:
             (list): a list of segments, each segment is a numpy array of shape (n, 2)
         """
-        segments = [ops.scale_coords(masks.shape[1:], x, img_shape, normalize=False) 
-                    for x in ops.masks2segments(masks)]
+        segments = [ops.scale_coords(masks.shape[1:], x, img_shape, normalize=False) for x in ops.masks2segments(masks)]
         return segments
-    
-    
+
     def construct_result(self, pred, img, orig_img, conf, proto, return_segments=True):
         """Constructs a Results object from the model prediction.
 
@@ -472,16 +472,15 @@ class YoloSeg(Yolo):
             masks = ops.process_mask_native(proto, pred[:, 6:], pred[:, :4], orig_img.shape[:2])
             keep = masks.sum((-2, -1)) > 0  # only keep predictions with masks
             pred, masks = pred[keep], masks[keep]
-            
+
         results, M = super().construct_result(pred, img, orig_img, conf)
         if masks is not None:
             results.masks = masks[M]
             if return_segments:
-                segments = self.to_segments(masks[M], orig_img.shape) # list of [ (n1,2), (n2,2), ... ]
+                segments = self.to_segments(masks[M], orig_img.shape)  # list of [ (n1,2), (n2,2), ... ]
                 results.segments = [self.from_numpy(x) for x in segments]
         return results, M
-    
-    
+
     def construct_results(self, preds, img, orig_imgs, conf, protos, return_segments=True):
         """Constructs the results from the model predictions.
 
@@ -492,50 +491,76 @@ class YoloSeg(Yolo):
             conf (float | dict): float or dictionary of <class: confidence level>.
             proto (torch.Tensor): The prototype tensor for the masks.
             return_segments (bool): If True, return the segments of the masks.
-        """ 
-        return [self.construct_result(pred, img, orig_img, conf, proto=proto, return_segments=return_segments)[0]
-                for pred, orig_img, proto in zip(preds, orig_imgs, protos)]
-
+        """
+        return [
+            self.construct_result(pred, img, orig_img, conf, proto=proto, return_segments=return_segments)[0]
+            for pred, orig_img, proto in zip(preds, orig_imgs, protos)
+        ]
 
     @smart_inference_mode()
-    def postprocess(self, preds, img, orig_imgs, conf: Union[float, dict], iou=0.45, agnostic=False, max_det=300, return_segments=True):
+    def postprocess(
+        self,
+        preds,
+        img,
+        orig_imgs,
+        conf: Union[float, dict],
+        iou=0.45,
+        agnostic=False,
+        max_det=300,
+        return_segments=True,
+    ):
         """Postprocesses predictions and returns a list of Results objects."""
         protos = preds[1][-1] if isinstance(preds[1], tuple) else preds[1]
-        return super().postprocess(preds[0], img, orig_imgs, conf, iou=iou, agnostic=agnostic, max_det=max_det, protos=protos, return_segments=return_segments)
-    
-    
+        return super().postprocess(
+            preds[0],
+            img,
+            orig_imgs,
+            conf,
+            iou=iou,
+            agnostic=agnostic,
+            max_det=max_det,
+            protos=protos,
+            return_segments=return_segments,
+        )
+
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
         """Reverts prediction coordinates to the original pre-transform space."""
         if not operators:
             return results
         super()._revert_coordinates(results, operators, **kwargs)
-        if 'masks' in results:
-            results['masks'] = pipeline_utils.revert_masks_to_origin(results['masks'], operators, **kwargs)
-        if 'segments' in results:
-            results['segments'] = [pipeline_utils.revert_to_origin(seg, operators, **kwargs) for seg in results['segments']]
+        if "masks" in results:
+            results["masks"] = pipeline_utils.revert_masks_to_origin(results["masks"], operators, **kwargs)
+        if "segments" in results:
+            results["segments"] = [pipeline_utils.revert_to_origin(seg, operators, **kwargs) for seg in results["segments"]]
 
         return results
 
 
 @ObjectDetectorRegistry.register(
     metadata=dict(
-        versions=['v1'], 
-        model_names=['yolo','yolov8', 'yolov11'], 
-        tasks=['obb', 'orientedobjectdetection'], 
-        frameworks=['ultralytics', 'ultralytics8']
+        versions=["v1"],
+        model_names=["yolo", "yolov8", "yolov11"],
+        tasks=["obb", "orientedobjectdetection"],
+        frameworks=["ultralytics", "ultralytics8"],
     )
 )
 class YoloObb(Yolo):
-    def __init__(self, model_path:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.logger = logging.getLogger(__name__)
-        
-    
-    def _run_nms(self, preds, conf:float, iou=0.45, agnostic=False, max_det=300):
+
+    def _run_nms(self, preds, conf: float, iou=0.45, agnostic=False, max_det=300):
         """Postprocesses predictions and returns a list of Results objects."""
-        return nms.non_max_suppression(preds,conf,iou,agnostic=agnostic,max_det=max_det,nc=len(self.model.names), rotated=True)
-        
-    
+        return nms.non_max_suppression(
+            preds,
+            conf,
+            iou,
+            agnostic=agnostic,
+            max_det=max_det,
+            nc=len(self.model.names),
+            rotated=True,
+        )
+
     def construct_result(self, pred, img, orig_img, conf):
         """Constructs the result from the model prediction.
 
@@ -550,41 +575,39 @@ class YoloObb(Yolo):
         """
         # makes sure to regularize the bounding boxes to xywhr format (range [0, pi/2])
         rboxs = ops.regularize_rboxes(torch.cat([pred[:, :4], pred[:, -1:]], dim=-1))
-        rboxs[:,:4] = ops.scale_boxes(img.shape[2:], rboxs[:, :4], orig_img.shape, xywh=True)
+        rboxs[:, :4] = ops.scale_boxes(img.shape[2:], rboxs[:, :4], orig_img.shape, xywh=True)
         confs, clss = pred[:, 4], pred[:, 5]
         classes = np.array([self.model.names[c.item()] for c in clss])
-    
+
         # covert the boxes from xywhr to xyxyxyxy format
-        rboxs = ops.xywhr2xyxyxyxy(rboxs)   # [n_obj, 4, 2]
-        
+        rboxs = ops.xywhr2xyxyxyxy(rboxs)  # [n_obj, 4, 2]
+
         # filter based on conf
         M = confs > self._get_thresholds(conf, len(clss), classes)
         return Results(rboxs[M], confs[M], classes[M.cpu().numpy()].tolist()), M
-
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
         """Reverts OBB coordinates to the original pre-transform space."""
         if not operators:
             return results
-        boxes = results['boxes']
+        boxes = results["boxes"]
         reverted_boxes = [pipeline_utils.revert_to_origin(box, operators, **kwargs) for box in boxes]
-        results['boxes'] = torch.stack(reverted_boxes) if isinstance(boxes, torch.Tensor) else np.array(reverted_boxes)
+        results["boxes"] = torch.stack(reverted_boxes) if isinstance(boxes, torch.Tensor) else np.array(reverted_boxes)
         return results
-    
+
 
 @ObjectDetectorRegistry.register(
     metadata=dict(
-        versions=['v1'], 
-        model_names=['yolo','yolov8', 'yolov11'], 
-        tasks=['pose', 'keypointdetection'], 
-        frameworks=['ultralytics', 'ultralytics8']
+        versions=["v1"],
+        model_names=["yolo", "yolov8", "yolov11"],
+        tasks=["pose", "keypointdetection"],
+        frameworks=["ultralytics", "ultralytics8"],
     )
 )
 class YoloPose(Yolo):
-    def __init__(self, model_path:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.logger = logging.getLogger(__name__)
-
 
     def construct_result(self, pred, img, orig_img, conf):
         """Constructs a Results object from the model prediction.
@@ -595,29 +618,31 @@ class YoloPose(Yolo):
             orig_img (np.ndarray | torch.Tensor): Original image.
             conf (float | dict): Confidence threshold for filtering predictions.
         """
-        results,M = super().construct_result(pred, img, orig_img, conf)
+        results, M = super().construct_result(pred, img, orig_img, conf)
         pred_kpts = pred[:, 6:].view(len(pred), *self.model.kpt_shape) if len(pred) else pred[:, 6:]
         pred_kpts = ops.scale_coords(img.shape[2:], pred_kpts, orig_img.shape)
-        results.points = pred_kpts[M]   # [n_obj,n_kp,3]
-        return results,M
-
+        results.points = pred_kpts[M]  # [n_obj,n_kp,3]
+        return results, M
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
         """Reverts pose coordinates to the original pre-transform space."""
         if not operators:
             return results
         super()._revert_coordinates(results, operators, **kwargs)
-        if results.get('points') is not None:
-            points = results['points']
+        if results.get("points") is not None:
+            points = results["points"]
             visibility = None
             if len(points) and points.shape[-1] == 3:
-                points = points[:,:,:-1]
-                visibility = points[:,:,-1]
-            reverted_points = [pipeline_utils.revert_to_origin(p, operators, **kwargs) for p in points] # each iter: [n_kp,2]
+                points = points[:, :, :-1]
+                visibility = points[:, :, -1]
+            reverted_points = [pipeline_utils.revert_to_origin(p, operators, **kwargs) for p in points]  # each iter: [n_kp,2]
             # add back the visibility if exists
             is_tensor = isinstance(points, torch.Tensor)
             if visibility is not None:
-                reverted_points = [torch.cat((p, v.unsqueeze(-1)), dim=-1) if is_tensor else np.hstack((p, np.expand_dims(v, -1))) for p,v in zip(reverted_points, visibility)]
-            results['points'] = torch.stack(reverted_points) if is_tensor else np.array(reverted_points)
+                reverted_points = [
+                    torch.cat((p, v.unsqueeze(-1)), dim=-1) if is_tensor else np.hstack((p, np.expand_dims(v, -1)))
+                    for p, v in zip(reverted_points, visibility)
+                ]
+            results["points"] = torch.stack(reverted_points) if is_tensor else np.array(reverted_points)
 
         return results

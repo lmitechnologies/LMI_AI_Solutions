@@ -12,9 +12,7 @@ if __name__ == "__main__":
         required=True,
         help="path to directory of input images",
     )
-    ap.add_argument(
-        "-o", "--output_directory", required=True, help="where to write output images"
-    )
+    ap.add_argument("-o", "--output_directory", required=True, help="where to write output images")
     ap.add_argument(
         "-a",
         "--augmentation_config",

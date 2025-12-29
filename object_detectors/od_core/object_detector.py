@@ -8,20 +8,16 @@ ObjectDetectorRegistry.auto_register_models()
 
 
 class ObjectDetector(ODBase):
-
     def __new__(cls, metadata: Dict[str, Any], *args, **kwargs):
         logger = logging.getLogger(__name__)
-        model_path = metadata.get('model_path')
-        image_size = metadata.get('image_size')
+        model_path = metadata.get("model_path")
+        image_size = metadata.get("image_size")
         if image_size:
-            if 'image_size' in kwargs and kwargs['image_size'] is not None:
-                logger.warning(
-                    "Both 'image_size' in metadata and kwargs provided. "
-                    "Using the one from metadata."
-                )
-            
-        kwargs['image_size'] = image_size
-        
+            if "image_size" in kwargs and kwargs["image_size"] is not None:
+                logger.warning("Both 'image_size' in metadata and kwargs provided. Using the one from metadata.")
+
+        kwargs["image_size"] = image_size
+
         try:
             wrapper_cls = ObjectDetectorRegistry.get_class(metadata)
         except ValueError as e:

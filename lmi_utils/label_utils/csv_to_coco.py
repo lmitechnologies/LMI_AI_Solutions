@@ -16,7 +16,8 @@ class Dataset(object):
     """
     create a coco format dataset from csv file
     """
-    def __init__(self, path_pngs:str, path_csv:str, plot=True, selected_classes=[]):
+
+    def __init__(self, path_pngs: str, path_csv: str, plot=True, selected_classes=[]):
         super().__init__()
         self.info = {
             "description": "Custom Dataset",
@@ -29,17 +30,14 @@ class Dataset(object):
         self.fname_to_fullpath = {}
         self.im_id = 1
         self.anno_id = 1
-        
-        shapes, _ = self.csv_annotations = load_csv(
-            fname=path_csv,
-            path_img=path_imgs
-        )
+
+        shapes, _ = self.csv_annotations = load_csv(fname=path_csv, path_img=path_imgs)
         self.image_metadata = {}
         # generate the categories
         class_map = {}
-        idx = 1 # 0 is reserved
-        
-        for k , v in shapes.items():
+        idx = 1  # 0 is reserved
+
+        for k, v in shapes.items():
             for s in v:
                 if s.category not in class_map:
                     ad = True
@@ -48,14 +46,12 @@ class Dataset(object):
                     if ad:
                         class_map[s.category] = idx
                         idx += 1
-        
 
-        #func
+        # func
         self.add_categories(class_map)
         self.add_imgs(path_pngs)
         self.add_annotations(path_csv, class_map, plot)
         # self.write_to_json(json_out_path)
-
 
     def add_categories(self, dt_category, super_category={}):
         """
@@ -66,11 +62,10 @@ class Dataset(object):
         """
         for cat in dt_category:
             dt = {}
-            dt['supercategory'] = super_category[cat] if cat in super_category else ''
-            dt['name'] = cat
-            dt['id'] = dt_category[cat]
+            dt["supercategory"] = super_category[cat] if cat in super_category else ""
+            dt["name"] = cat
+            dt["id"] = dt_category[cat]
             self.categories.append(dt)
-        
 
     def add_imgs(self, path_imgs):
         """
@@ -78,26 +73,22 @@ class Dataset(object):
         arguments:
             path_imgs(str): the path to image folder
         """
-        files = glob.glob(os.path.join(path_imgs,'*.png'))
-        files += glob.glob(os.path.join(path_imgs,'*.jpg'))
+        files = glob.glob(os.path.join(path_imgs, "*.png"))
+        files += glob.glob(os.path.join(path_imgs, "*.jpg"))
         for f in files:
             dt = {}
             im = cv2.imread(f)
-            h,w = im.shape[:2]
+            h, w = im.shape[:2]
             fname = os.path.basename(f)
             self.fname_to_fullpath[fname] = f
-            dt['file_name'] = fname
-            dt['height'] = h
-            dt['width'] = w
-            dt['id'] = self.im_id
-            self.image_metadata[self.im_id] = {
-                'height': h,
-                'width': w
-            }
+            dt["file_name"] = fname
+            dt["height"] = h
+            dt["width"] = w
+            dt["id"] = self.im_id
+            self.image_metadata[self.im_id] = {"height": h, "width": w}
             self.imgfile2id[fname] = self.im_id
             self.im_id += 1
             self.images.append(dt)
-
 
     def add_annotations(self, path_csv, dt_category, plot, iscrowd=False):
         """
@@ -111,144 +102,170 @@ class Dataset(object):
         polygons = {}
         rects = {}
         brush = {}
-        #read annotations from csv file
-        with open(path_csv, newline='') as csvfile:
-            reader = csv.reader(csvfile, delimiter=';')
+        # read annotations from csv file
+        with open(path_csv, newline="") as csvfile:
+            reader = csv.reader(csvfile, delimiter=";")
             for row in reader:
                 fname = row[0]
                 if row[1] not in dt_category:
                     continue
-                if row[3]=='polygon':
+                if row[3] == "polygon":
                     if fname not in polygons:
                         polygons[fname] = collections.defaultdict(list)
-                    if row[4]=='x values':
-                        if 'x' not in polygons:
-                            polygons[fname]['x'].append(row[5:])
-                    if row[4]=='y values':
-                            polygons[fname]['y'].append(row[5:])
-                            polygons[fname]['category'].append(row[1])
-                            polygons[fname]['iscrowd'].append(iscrowd)
-                            polygons[fname]['image_id'].append(self.imgfile2id[fname])
-                
-                elif row[3]=='brush':
+                    if row[4] == "x values":
+                        if "x" not in polygons:
+                            polygons[fname]["x"].append(row[5:])
+                    if row[4] == "y values":
+                        polygons[fname]["y"].append(row[5:])
+                        polygons[fname]["category"].append(row[1])
+                        polygons[fname]["iscrowd"].append(iscrowd)
+                        polygons[fname]["image_id"].append(self.imgfile2id[fname])
+
+                elif row[3] == "brush":
                     if fname not in brush:
                         brush[fname] = collections.defaultdict(list)
-                    if row[4]=='x values':
-                        if 'x' not in brush:
-                            brush[fname]['x'].append(row[5:])
-                    if row[4]=='y values':
-                            brush[fname]['y'].append(row[5:])
-                            brush[fname]['category'].append(row[1])
-                            brush[fname]['iscrowd'].append(iscrowd)
-                            brush[fname]['image_id'].append(self.imgfile2id[fname])
-                            
-                elif row[3]=='rect':
+                    if row[4] == "x values":
+                        if "x" not in brush:
+                            brush[fname]["x"].append(row[5:])
+                    if row[4] == "y values":
+                        brush[fname]["y"].append(row[5:])
+                        brush[fname]["category"].append(row[1])
+                        brush[fname]["iscrowd"].append(iscrowd)
+                        brush[fname]["image_id"].append(self.imgfile2id[fname])
+
+                elif row[3] == "rect":
                     if fname not in rects:
                         rects[fname] = collections.defaultdict(list)
-                    if row[4]=='upper left':
+                    if row[4] == "upper left":
                         bbox = row[5:][:]
-                    if row[4]=='lower right':
+                    if row[4] == "lower right":
                         bbox += row[5:]
-                        rects[fname]['bbox'].append(bbox)
-                        rects[fname]['category'].append(row[1])
-                        rects[fname]['iscrowd'].append(iscrowd)
-                        rects[fname]['image_id'].append(self.imgfile2id[fname])
-        #generate coco annotations
+                        rects[fname]["bbox"].append(bbox)
+                        rects[fname]["category"].append(row[1])
+                        rects[fname]["iscrowd"].append(iscrowd)
+                        rects[fname]["image_id"].append(self.imgfile2id[fname])
+        # generate coco annotations
         if polygons != {}:
             for fname in polygons:
                 polygon = polygons[fname]
-                for x,y,cat_str,im_id,iscrowd in zip(polygon['x'],polygon['y'],polygon['category'],polygon['image_id'],polygon['iscrowd']):
-                    #skip if category not in dictionary
+                for x, y, cat_str, im_id, iscrowd in zip(
+                    polygon["x"],
+                    polygon["y"],
+                    polygon["category"],
+                    polygon["image_id"],
+                    polygon["iscrowd"],
+                ):
+                    # skip if category not in dictionary
                     if cat_str not in dt_category:
                         continue
-                    
+
                     dt = {}
-                    vertex = [int(v) for pt in zip(x,y) for v in pt] #(x1,y1,x2,y2)
-                    poly = Polygon([(int(xi),int(yi)) for xi,yi in zip(x,y)])
+                    vertex = [int(v) for pt in zip(x, y) for v in pt]  # (x1,y1,x2,y2)
+                    poly = Polygon([(int(xi), int(yi)) for xi, yi in zip(x, y)])
 
                     if plot:
-                        self.visualize(poly,fname)
+                        self.visualize(poly, fname)
 
-                    x_min,y_min,x_max,y_max = poly.bounds
-                    dt['segmentation'] = [vertex]
-                    dt['area'] = poly.area
-                    dt['iscrowd'] = iscrowd
-                    dt['image_id'] = im_id
-                    dt['bbox'] = [x_min,y_min,x_max-x_min,y_max-y_min]
-                    dt['category_id'] = dt_category[cat_str]
-                    dt['id'] = self.anno_id
+                    x_min, y_min, x_max, y_max = poly.bounds
+                    dt["segmentation"] = [vertex]
+                    dt["area"] = poly.area
+                    dt["iscrowd"] = iscrowd
+                    dt["image_id"] = im_id
+                    dt["bbox"] = [x_min, y_min, x_max - x_min, y_max - y_min]
+                    dt["category_id"] = dt_category[cat_str]
+                    dt["id"] = self.anno_id
                     self.anno_id += 1
                     self.annotations.append(dt)
-        
+
         if brush != {}:
             for fname in brush:
-                print(f'Filename: {fname}')
+                print(f"Filename: {fname}")
                 brush_m = brush[fname]
-                for x,y,cat_str,im_id,iscrowd in zip(brush_m['x'],brush_m['y'],brush_m['category'],brush_m['image_id'],brush_m['iscrowd']):
-                    #skip if category not in dictionary
+                for x, y, cat_str, im_id, iscrowd in zip(
+                    brush_m["x"],
+                    brush_m["y"],
+                    brush_m["category"],
+                    brush_m["image_id"],
+                    brush_m["iscrowd"],
+                ):
+                    # skip if category not in dictionary
                     if cat_str not in dt_category:
                         continue
-                    
+
                     dt = {}
                     # create a binary mask
-                    binary_mask = np.zeros((self.image_metadata[im_id]['height'], self.image_metadata[im_id]['width']), dtype=np.uint8)
+                    binary_mask = np.zeros(
+                        (
+                            self.image_metadata[im_id]["height"],
+                            self.image_metadata[im_id]["width"],
+                        ),
+                        dtype=np.uint8,
+                    )
                     x_pixels = np.array(x).astype(int)
                     y_pixels = np.array(y).astype(int)
                     binary_mask[y_pixels, x_pixels] = 1
-                    
+
                     if plot:
                         self.visualize_mask(binary_mask, fname)
-                    
+
                     brush_mask = coco_mask.encode(np.asfortranarray(binary_mask.astype(np.uint8)))
                     x_min = np.min(x_pixels)
                     y_min = np.min(y_pixels)
                     x_max = np.max(x_pixels)
                     y_max = np.max(y_pixels)
-                    brush_mask['counts'] = brush_mask['counts'].decode('utf-8')
-                    brush_mask['size'] = [int(dim) for dim in brush_mask['size']]
-                    dt['segmentation'] = brush_mask
-                    dt['area'] = int((x_max-x_min)*(y_max-y_min))
-                    dt['iscrowd'] = iscrowd
-                    dt['image_id'] = im_id
-                    dt['bbox'] = [int(x_min),int(y_min),int(x_max-x_min),int(y_max-y_min)]
-                    dt['category_id'] = int(dt_category[cat_str])
-                    dt['id'] = self.anno_id
+                    brush_mask["counts"] = brush_mask["counts"].decode("utf-8")
+                    brush_mask["size"] = [int(dim) for dim in brush_mask["size"]]
+                    dt["segmentation"] = brush_mask
+                    dt["area"] = int((x_max - x_min) * (y_max - y_min))
+                    dt["iscrowd"] = iscrowd
+                    dt["image_id"] = im_id
+                    dt["bbox"] = [
+                        int(x_min),
+                        int(y_min),
+                        int(x_max - x_min),
+                        int(y_max - y_min),
+                    ]
+                    dt["category_id"] = int(dt_category[cat_str])
+                    dt["id"] = self.anno_id
                     self.anno_id += 1
                     self.annotations.append(dt)
-                    
+
         for fname in rects:
             rect = rects[fname]
-            for bbox,cat_str,im_id,iscrowd in zip(rect['bbox'],rect['category'],rect['image_id'],rect['iscrowd']):
-                #skip if category not in dictionary
+            for bbox, cat_str, im_id, iscrowd in zip(rect["bbox"], rect["category"], rect["image_id"], rect["iscrowd"]):
+                # skip if category not in dictionary
                 if cat_str not in dt_category:
                     continue
 
                 dt = {}
-                x1,y1,x2,y2 = [int(v) for v in bbox]
-                w,h = x2-x1, y2-y1
-                poly = Polygon([(x1,y1), (x2,y1), (x2,y2), (x1,y2)])
+                x1, y1, x2, y2 = [int(v) for v in bbox]
+                w, h = x2 - x1, y2 - y1
+                poly = Polygon([(x1, y1), (x2, y1), (x2, y2), (x1, y2)])
 
                 if plot:
-                    self.visualize(poly,fname)
+                    self.visualize(poly, fname)
 
-                dt['segmentation'] = [[x1,y1]+[x2,y1]+[x2,y2]+[x1,y2]]
-                dt['area'] = w*h
-                dt['iscrowd'] = iscrowd
-                dt['image_id'] = im_id
-                dt['bbox'] = [x1,y1,w,h]
-                dt['category_id'] = dt_category[cat_str]
-                dt['id'] = self.anno_id
+                dt["segmentation"] = [[x1, y1] + [x2, y1] + [x2, y2] + [x1, y2]]
+                dt["area"] = w * h
+                dt["iscrowd"] = iscrowd
+                dt["image_id"] = im_id
+                dt["bbox"] = [x1, y1, w, h]
+                dt["category_id"] = dt_category[cat_str]
+                dt["id"] = self.anno_id
                 self.anno_id += 1
                 self.annotations.append(dt)
 
     def get_json(self):
-        return json.dumps({
-            'info': self.info, 'licenses': self.licenses, 
-            'images': self.images, 'annotations': self.annotations,
-            'categories': self.categories
-        })
-    
-    
+        return json.dumps(
+            {
+                "info": self.info,
+                "licenses": self.licenses,
+                "images": self.images,
+                "annotations": self.annotations,
+                "categories": self.categories,
+            }
+        )
+
     def write_to_json(self, json_out_path):
         """
         write the whole dataset to coco json format
@@ -256,13 +273,14 @@ class Dataset(object):
             json_out_path(str): the path to json output file
         """
         data = {
-            'info': self.info, 'licenses': self.licenses, 
-            'images': self.images, 'annotations': self.annotations,
-            'categories': self.categories
-            }
-        with open(json_out_path, 'w') as f:
+            "info": self.info,
+            "licenses": self.licenses,
+            "images": self.images,
+            "annotations": self.annotations,
+            "categories": self.categories,
+        }
+        with open(json_out_path, "w") as f:
             json.dump(data, f)
-        
 
     def visualize(self, polygon, fname):
         """
@@ -272,21 +290,20 @@ class Dataset(object):
             fname(str): the file name
         """
         im = cv2.imread(self.fname_to_fullpath[fname])
-        h,w = im.shape[:2]
-        #create 2d polygon mask
-        img = Image.new('L', (w, h), 0)
+        h, w = im.shape[:2]
+        # create 2d polygon mask
+        img = Image.new("L", (w, h), 0)
         ImageDraw.Draw(img).polygon(polygon.exterior.coords, outline=1, fill=1)
         mask = np.array(img)
-        #if len(im.shape)>len(mask.shape):
+        # if len(im.shape)>len(mask.shape):
         #    mask = np.repeat(mask[:, :, np.newaxis], 3, axis=2)
         mask = mask.astype(bool)
-        #plot
+        # plot
         im = im.astype(float)
         im[~mask] *= 0.25
-        cv2.imshow('plot',im.astype(np.uint8))
+        cv2.imshow("plot", im.astype(np.uint8))
         cv2.waitKey(300)
-        
-        
+
     def visualize_mask(self, mask, fname):
         """
         visualize the brush mask
@@ -298,7 +315,7 @@ class Dataset(object):
         im = im.astype(float)
         mask = mask.astype(bool)
         im[~mask] *= 0.25
-        cv2.imshow('plot', im.astype(np.uint8))
+        cv2.imshow("plot", im.astype(np.uint8))
         cv2.waitKey(300)
 
 
@@ -311,64 +328,68 @@ def copy_images_in_folder(path_img, path_out, fnames=None):
     """
     os.makedirs(path_out, exist_ok=True)
     if not fnames:
-        file_list = glob.glob(os.path.join(path_img, '*.png')) + glob.glob(os.path.join(path_img, '*.jpg'))
+        file_list = glob.glob(os.path.join(path_img, "*.png")) + glob.glob(os.path.join(path_img, "*.jpg"))
     else:
         file_list = [f"{path_img}/{fname}" for fname in fnames]
     for f in file_list:
         shutil.copy(f, path_out)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import argparse
+
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_imgs', required=True, help='the path to the images')
-    ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
-    ap.add_argument('--path_out', required=True, help='the directory path to store the results')
-    ap.add_argument('--plot', action='store_true', help='plot the annotations')
-    ap.add_argument('--classes', required=False, help='the class categories in the dataset using comma to separate each category')
+    ap.add_argument("--path_imgs", required=True, help="the path to the images")
+    ap.add_argument(
+        "--path_csv",
+        default="labels.csv",
+        help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs',
+    )
+    ap.add_argument("--path_out", required=True, help="the directory path to store the results")
+    ap.add_argument("--plot", action="store_true", help="plot the annotations")
+    ap.add_argument(
+        "--classes",
+        required=False,
+        help="the class categories in the dataset using comma to separate each category",
+    )
 
     args = vars(ap.parse_args())
 
-    path_imgs = args['path_imgs']
-    path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
-    path_out = args['path_out']
+    path_imgs = args["path_imgs"]
+    path_csv = args["path_csv"] if args["path_csv"] != "labels.csv" else os.path.join(path_imgs, args["path_csv"])
+    path_out = args["path_out"]
     if not os.path.isfile(path_csv):
-        raise Exception(f'Not found file: {path_csv}')
-    
-    data = Dataset(path_imgs, path_csv, plot=args['plot'], selected_classes=args['classes'].split(',') if args['classes'] else [])
-    
+        raise Exception(f"Not found file: {path_csv}")
+
+    data = Dataset(
+        path_imgs,
+        path_csv,
+        plot=args["plot"],
+        selected_classes=args["classes"].split(",") if args["classes"] else [],
+    )
+
     # write the images to the given directory
-    
+
     if not os.path.exists(path_out):
-        os.makedirs(
-            path_out
-        )
-    
-      # Create dict {id: name}
-    class_map = {cat['id']: cat['name'] for cat in data.categories}
+        os.makedirs(path_out)
+
+    # Create dict {id: name}
+    class_map = {cat["id"]: cat["name"] for cat in data.categories}
 
     # Save to JSON
-    class_map_file=os.path.join(path_out, 'class_map.json')
+    class_map_file = os.path.join(path_out, "class_map.json")
     with open(class_map_file, "w") as f:
         json.dump(class_map, f, indent=4)
 
     print("class_map.json written successfully.")
-    
+
     # write the json file to the directory
-    data.write_to_json(
-        json_out_path=os.path.join(path_out, 'annotations.json')
-    )
+    data.write_to_json(json_out_path=os.path.join(path_out, "annotations.json"))
     print("annotations.json written successfully.")
-    images_path = os.path.join(
-        path_out,'images'
-    )
+    images_path = os.path.join(path_out, "images")
     if not os.path.exists(images_path):
-        os.makedirs(
-            images_path
-        )
+        os.makedirs(images_path)
     # move the images to the folder
-    
-    copy_images_in_folder(
-        path_img=path_imgs,
-        path_out=images_path
-    )
+
+    copy_images_in_folder(path_img=path_imgs, path_out=images_path)
     print("Images copied successfully.")

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 
-def is_cuda_cv(): # 1 == using cuda, 0 = not using cuda
+def is_cuda_cv():  # 1 == using cuda, 0 = not using cuda
     try:
         count = cv2.cuda.getCudaEnabledDeviceCount()
         if count > 0:
@@ -21,10 +21,11 @@ def is_cuda_cv(): # 1 == using cuda, 0 = not using cuda
     except Exception:
         return False
 
+
 def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwargs):
     h, w = image.shape[:2]
-    th, tw  = height, width
-    operators = kwargs.get('operators', [])
+    th, tw = height, width
+    operators = kwargs.get("operators", [])
     if (tw is None and th is None) or (tw == w and th == h):
         th, tw = h, w
         im_out = image
@@ -33,46 +34,64 @@ def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwar
             scale = min(th / h, tw / w)
             tw = np.int32(scale * w)
             th = np.int32(scale * h)
-            im_out = resize_image(image, W=tw, H=th, mode=kwargs.get('mode', 'bilinear'))
-            operators.append({"resize": [im_out.shape[1], im_out.shape[0], image.shape[1], image.shape[0]]})
+            im_out = resize_image(image, W=tw, H=th, mode=kwargs.get("mode", "bilinear"))
+            operators.append(
+                {
+                    "resize": [
+                        im_out.shape[1],
+                        im_out.shape[0],
+                        image.shape[1],
+                        image.shape[0],
+                    ]
+                }
+            )
             if width is not None and height is not None:
                 im_out, pad_l, pad_r, pad_t, pad_b = fit_array_to_size(im_out, width, height)
                 operators.append({"pad": [pad_l, pad_r, pad_t, pad_b]})
-        else:    
+        else:
             if tw is None:
                 tw = w
-                im_out = resize_image(image, H=th, mode=kwargs.get('mode', 'bilinear'))
+                im_out = resize_image(image, H=th, mode=kwargs.get("mode", "bilinear"))
             elif th is None:
                 th = h
-                im_out = resize_image(image, W=tw, mode=kwargs.get('mode', 'bilinear'))
+                im_out = resize_image(image, W=tw, mode=kwargs.get("mode", "bilinear"))
             else:
-                im_out = resize_image(image, W=tw, H=th, mode=kwargs.get('mode', 'bilinear'))
-            operators.append({"resize": [im_out.shape[1], im_out.shape[0], image.shape[1], image.shape[0]]})
-    if kwargs.get('return_operators', False) is True:
+                im_out = resize_image(image, W=tw, H=th, mode=kwargs.get("mode", "bilinear"))
+            operators.append(
+                {
+                    "resize": [
+                        im_out.shape[1],
+                        im_out.shape[0],
+                        image.shape[1],
+                        image.shape[0],
+                    ]
+                }
+            )
+    if kwargs.get("return_operators", False) is True:
         return im_out, operators
     return im_out
 
 
-def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
-    '''
-    DESCRIPTION: 
+def resize(image, width=None, height=None, device="cpu", inter=cv2.INTER_AREA):
+    """
+    DESCRIPTION:
         resizes images, preserving aspect ratio along argument free dimension
     ARGS:
         image: image np array
         width: desired width
         height: desired height
         inter: interpolation method
-    '''
+    """
     if width == 0:
         width = None
     if height == 0:
         height = None
-    
+
     if height is None and width is None:
         return image
-    
+
     (h, w) = image.shape[:2]
-    
+
     if h == height and width == width:
         return image
 
@@ -80,32 +99,39 @@ def resize(image, width=None, height=None, device='cpu', inter=cv2.INTER_AREA):
         return image
     if (height is None) and (width is not None):
         ratio = width / np.float32(w)
-        height=np.int32(h * ratio)
+        height = np.int32(h * ratio)
     elif (width is None) and (height is not None):
         ratio = height / np.float32(h)
         width = np.int32(w * ratio)
     else:
         pass
 
-    if device=='gpu':
+    if device == "gpu":
         if not is_cuda_cv():
-            device='cpu'
+            device = "cpu"
 
-    if device=='gpu':
+    if device == "gpu":
         src = cv2.cuda_GpuMat()
         src.upload(image)
-        dest = cv2.cuda.resize(src, (width,height), interpolation=inter)
-        resized=dest.download()      
+        dest = cv2.cuda.resize(src, (width, height), interpolation=inter)
+        resized = dest.download()
     else:
-        resized = cv2.resize(image, (width,height), interpolation=inter)
+        resized = cv2.resize(image, (width, height), interpolation=inter)
 
     return resized
 
 
-def img_resize(input_path, output_path, width=None, height=None, recursive=False, maintain_aspect_ratio=False):
+def img_resize(
+    input_path,
+    output_path,
+    width=None,
+    height=None,
+    recursive=False,
+    maintain_aspect_ratio=False,
+):
     """
     Resize images in the input path and save them to the output path.
-    
+
     Args:
         input_path (str): Path to the input images.
         output_path (str): Path to save resized images.
@@ -115,61 +141,64 @@ def img_resize(input_path, output_path, width=None, height=None, recursive=False
         maintain_aspect_ratio (bool, optional): Maintain aspect ratio when resizing. Defaults to False.
     """
     if not os.path.isdir(input_path):
-        raise Exception('Input path is not a directory')
+        raise Exception("Input path is not a directory")
 
     files = get_relative_paths(input_path, recursive)
-    
+
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    
-    out_w = width if width else 'w'
-    out_h = height if height else 'h'
-    
+
+    out_w = width if width else "w"
+    out_h = height if height else "h"
+
     for file in files:
         image = cv2.imread(os.path.join(input_path, file))
         resized = resize_and_pad(image=image, width=width, height=height, preserve_aspect=maintain_aspect_ratio)
-        
+
         fname = os.path.basename(file)
-        outname = fname.replace(os.path.splitext(file)[1], '.png')
-        outname = outname.replace('.png', f'_resize_{out_w}x{out_h}.png')
-        
-        logger.debug(f'Writing {outname}')
-        
+        outname = fname.replace(os.path.splitext(file)[1], ".png")
+        outname = outname.replace(".png", f"_resize_{out_w}x{out_h}.png")
+
+        logger.debug(f"Writing {outname}")
+
         outp = os.path.join(output_path, os.path.dirname(file))
         if not os.path.exists(outp):
             os.makedirs(outp)
-        
+
         cv2.imwrite(os.path.join(outp, outname), resized)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('-i','--input_path', required=True, help='the path to images')
-    ap.add_argument('-o','--output_path', required=True)
-    ap.add_argument('--width', type=int, default=None)
-    ap.add_argument('--height',type=int, default=None)
-    ap.add_argument('--recursive', action='store_true', help='process images recursively')
+    ap.add_argument("-i", "--input_path", required=True, help="the path to images")
+    ap.add_argument("-o", "--output_path", required=True)
+    ap.add_argument("--width", type=int, default=None)
+    ap.add_argument("--height", type=int, default=None)
+    ap.add_argument("--recursive", action="store_true", help="process images recursively")
     ap.add_argument(
-        '--par', '-par', action='store_true',
-        help='Maintain aspect ratio when resizing and pad when needed.'
+        "--par",
+        "-par",
+        action="store_true",
+        help="Maintain aspect ratio when resizing and pad when needed.",
     )
     args = vars(ap.parse_args())
 
-    inpath=args['input_path']
-    outpath=args['output_path']
-    height=args['height']
-    width=args['width']
-    recursive=args['recursive']
-    maintain_aspect_ratio=args['par']
-    
+    inpath = args["input_path"]
+    outpath = args["output_path"]
+    height = args["height"]
+    width = args["width"]
+    recursive = args["recursive"]
+    maintain_aspect_ratio = args["par"]
+
     img_resize(
-        input_path=inpath, 
-        output_path=outpath, 
-        width=width, 
-        height=height, 
-        recursive=recursive, 
-        maintain_aspect_ratio=maintain_aspect_ratio
+        input_path=inpath,
+        output_path=outpath,
+        width=width,
+        height=height,
+        recursive=recursive,
+        maintain_aspect_ratio=maintain_aspect_ratio,
     )
 
-if __name__=='__main__':
+
+if __name__ == "__main__":
     main()

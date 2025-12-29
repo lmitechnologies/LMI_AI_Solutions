@@ -1,19 +1,19 @@
-#built-in packages
+# built-in packages
 import collections
 import os
 import glob
 import random
 import copy
 
-#3rd party packages
+# 3rd party packages
 import cv2
 
-#LMI packages
+# LMI packages
 from label_utils import csv_utils
 from label_utils.shapes import Rect, Mask
 
 
-def augment_imgs_with_csv(path_imgs:str, path_csv:str, path_out:str, pixel_mul:float, size_mul:int):
+def augment_imgs_with_csv(path_imgs: str, path_csv: str, path_out: str, pixel_mul: float, size_mul: int):
     """
     augment images and its annotations by multiplying a constant to each pixel
     Arguments:
@@ -24,20 +24,20 @@ def augment_imgs_with_csv(path_imgs:str, path_csv:str, path_out:str, pixel_mul:f
     Return:
         new_shapes(dict): the map <original image name, a list of shape objects>, where shape objects are annotations
     """
-    file_list = glob.glob(os.path.join(path_imgs, '*.png'))
-    shapes,_ = csv_utils.load_csv(path_csv, path_img=path_imgs)
+    file_list = glob.glob(os.path.join(path_imgs, "*.png"))
+    shapes, _ = csv_utils.load_csv(path_csv, path_img=path_imgs)
     new_shapes = collections.defaultdict(list)
-    
-    for sz in range(1,1+size_mul):
+
+    for sz in range(1, 1 + size_mul):
         for file in file_list:
             im = cv2.imread(file)
             im_name = os.path.basename(file)
-            
-            p_mul = random.uniform(1,max(1,pixel_mul))
-            out_name = os.path.splitext(im_name)[0] + f'_size_mul_{sz}_px_mul_{pixel_mul}' + '.png'
-            
-            print(f'writting to {out_name}')
-            cv2.imwrite(os.path.join(path_out,out_name), im*p_mul)
+
+            p_mul = random.uniform(1, max(1, pixel_mul))
+            out_name = os.path.splitext(im_name)[0] + f"_size_mul_{sz}_px_mul_{pixel_mul}" + ".png"
+
+            print(f"writting to {out_name}")
+            cv2.imwrite(os.path.join(path_out, out_name), im * p_mul)
 
             for i in range(len(shapes[im_name])):
                 if isinstance(shapes[im_name][i], Rect):
@@ -53,34 +53,48 @@ def augment_imgs_with_csv(path_imgs:str, path_csv:str, path_out:str, pixel_mul:f
     return new_shapes
 
 
-
-if __name__=='__main__':
+if __name__ == "__main__":
     import argparse
+
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_imgs', '-i', required=True, help='the path to images')
-    ap.add_argument('--path_csv', default='labels.csv', help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs')
-    ap.add_argument('--pixel_multiplier', default=2, type=float, help='the max multiplier to each pixel in the image, default = 2')
-    ap.add_argument('--data_size_multipler', default=5, type=int, help='the output sample size = data_size_multipler*length_of_input_data_size, default = 5')
-    ap.add_argument('--path_out', '-o', required=True, help='the path to augmented images')
+    ap.add_argument("--path_imgs", "-i", required=True, help="the path to images")
+    ap.add_argument(
+        "--path_csv",
+        default="labels.csv",
+        help='[optinal] the path of a csv file that corresponds to path_imgs, default="labels.csv" in path_imgs',
+    )
+    ap.add_argument(
+        "--pixel_multiplier",
+        default=2,
+        type=float,
+        help="the max multiplier to each pixel in the image, default = 2",
+    )
+    ap.add_argument(
+        "--data_size_multipler",
+        default=5,
+        type=int,
+        help="the output sample size = data_size_multipler*length_of_input_data_size, default = 5",
+    )
+    ap.add_argument("--path_out", "-o", required=True, help="the path to augmented images")
     args = vars(ap.parse_args())
 
-    pixel_mul = args['pixel_multiplier']    
-    size_mul = args['data_size_multipler']
-    path_imgs = args['path_imgs']
-    path_out = args['path_out']
-    path_csv = args['path_csv'] if args['path_csv']!='labels.csv' else os.path.join(path_imgs, args['path_csv'])
-    
-    #check if annotation exists
+    pixel_mul = args["pixel_multiplier"]
+    size_mul = args["data_size_multipler"]
+    path_imgs = args["path_imgs"]
+    path_out = args["path_out"]
+    path_csv = args["path_csv"] if args["path_csv"] != "labels.csv" else os.path.join(path_imgs, args["path_csv"])
+
+    # check if annotation exists
     if not os.path.isfile(path_csv):
-        raise Exception(f'cannot find file: {path_csv}')
+        raise Exception(f"cannot find file: {path_csv}")
 
     # create output path
-    assert path_imgs!=path_out, 'input and output path must be different'
+    assert path_imgs != path_out, "input and output path must be different"
     if not os.path.isdir(path_out):
         os.makedirs(path_out)
-        
+
     # augment images
-    shapes = augment_imgs_with_csv(path_imgs,path_csv,path_out,pixel_mul,size_mul)
-        
-    #write images and csv file  
-    csv_utils.write_to_csv(shapes, os.path.join(path_out,'labels.csv'))
+    shapes = augment_imgs_with_csv(path_imgs, path_csv, path_out, pixel_mul, size_mul)
+
+    # write images and csv file
+    csv_utils.write_to_csv(shapes, os.path.join(path_out, "labels.csv"))

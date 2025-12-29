@@ -15,7 +15,7 @@ def test_auto_registration():
     assert len(ClassifierRegistry._registry) > 0, "ClassifierRegistry should have registered classifiers."
 
     to_be_tested_keys = [
-        ('ultralytics', 'yolov8', 'classification', 'v0'),
+        ("ultralytics", "yolov8", "classification", "v0"),
     ]
 
     for key in to_be_tested_keys:

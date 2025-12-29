@@ -13,7 +13,7 @@ from torch.nn import functional as F
 from typing import Dict, Any, List
 
 
-BLACK=(0,0,0)
+BLACK = (0, 0, 0)
 TWO_TO_FIFTEEN = 2**15
 
 logging.basicConfig()
@@ -22,9 +22,9 @@ logger.setLevel(logging.INFO)
 
 
 @torch.inference_mode()
-def resize_image(im, W=None, H=None, mode='bilinear'):
+def resize_image(im, W=None, H=None, mode="bilinear"):
     """
-    args: 
+    args:
         im(np array | torch.tensor): the image of the shape (H,W) or (H,W,C)
         W(int): width
         H:(int): Height
@@ -32,41 +32,41 @@ def resize_image(im, W=None, H=None, mode='bilinear'):
     """
     if W is None and H is None:
         return im
-    
+
     # get the target width and height
-    h,w = im.shape[:2]
+    h, w = im.shape[:2]
     if W is None:
-        W = int(w*H/h)
+        W = int(w * H / h)
     elif H is None:
-        H = int(h*W/w)
-    
+        H = int(h * W / w)
+
     # convert to tensor
     is_numpy = isinstance(im, np.ndarray)
     if is_numpy:
         im = torch.from_numpy(im)
-    
-    # deal with 1 channel image 
-    one_channel = im.ndim==2
+
+    # deal with 1 channel image
+    one_channel = im.ndim == 2
     if one_channel:
         im = im.unsqueeze(-1)
-        
+
     # deal with integer image
     dtype = im.dtype
     is_fp = im.is_floating_point()
     if not is_fp:
         im = im.float()
-        
-    im2 = F.interpolate(im.permute(2,0,1).unsqueeze(0), size=(H,W), mode=mode)
-    im2 = im2.squeeze(0).permute(1,2,0)
-    
+
+    im2 = F.interpolate(im.permute(2, 0, 1).unsqueeze(0), size=(H, W), mode=mode)
+    im2 = im2.squeeze(0).permute(1, 2, 0)
+
     # back to integer image
     if not is_fp:
         im2 = im2.to(dtype)
-    
+
     # back to 1 channel
     if one_channel:
         im2 = im2.squeeze(-1)
-    
+
     return im2.numpy() if is_numpy else im2
 
 
@@ -81,38 +81,38 @@ def fit_im_to_size(im, W=None, H=None, value=0):
         H(int): the target height. If None, the height will not be changed
         value(int): the value to pad
     return:
-        im(torch.Tensor): the padded/cropped image 
+        im(torch.Tensor): the padded/cropped image
         pad_l(int): number of pixels padded to left
         pad_r(int): number of pixels padded to right
         pad_t(int): number of pixels padded to top
         pad_b(int): number of pixels padded to bottom
     """
-    
+
     if W is None and H is None:
         return im, 0, 0, 0, 0
-    h,w = im.shape[:2]
+    h, w = im.shape[:2]
     if W is None:
         W = w
     elif H is None:
         H = h
-    
+
     is_numpy = isinstance(im, np.ndarray)
     if is_numpy:
         im = torch.from_numpy(im)
 
     # deal with 1 channel image
-    one_channel = im.ndim==2
+    one_channel = im.ndim == 2
     if one_channel:
         im = im.unsqueeze(-1)
 
-    # convert to CHW format    
+    # convert to CHW format
     im = im.permute(2, 0, 1)
 
     # pad/crop width
     if W >= w:
         pad_L = (W - w) // 2
         pad_R = W - w - pad_L
-        im = F.pad(im, (pad_L, pad_R, 0, 0), value=value)  
+        im = F.pad(im, (pad_L, pad_R, 0, 0), value=value)
     else:
         pad_L = (w - W) // 2
         pad_R = w - W - pad_L
@@ -134,7 +134,7 @@ def fit_im_to_size(im, W=None, H=None, value=0):
 
     # convert back to HWC format
     im = im.permute(1, 2, 0)
-    
+
     # back to 1 channel
     if one_channel:
         im = im.squeeze(-1)
@@ -161,20 +161,20 @@ def fit_im(im, pad_ops, value=0):
         im = torch.from_numpy(im)
 
     # deal with 1 channel image
-    one_channel = im.ndim==2
+    one_channel = im.ndim == 2
     if one_channel:
         im = im.unsqueeze(-1)
 
-    # convert to CHW format    
+    # convert to CHW format
     im = im.permute(2, 0, 1)
-    
+
     # pad/crop
     pad_L, pad_R, pad_T, pad_B = pad_ops
     im = F.pad(im, (pad_L, pad_R, pad_T, pad_B), value=value)
 
     # convert back to HWC format
     im = im.permute(1, 2, 0)
-    
+
     # back to 1 channel
     if one_channel:
         im = im.squeeze(-1)
@@ -185,31 +185,31 @@ def fit_im(im, pad_ops, value=0):
 
 
 def fit_array_to_size(im, W=None, H=None, value=0):
-    h_im,w_im=im.shape[:2]
+    h_im, w_im = im.shape[:2]
     if W is None:
-        W=w_im
+        W = w_im
     if H is None:
-        H=h_im
+        H = h_im
     # pad or crop width
     if W >= w_im:
-        pad_L=(W-w_im)//2
-        pad_R=W-w_im-pad_L
-        im=cv2.copyMakeBorder(im,0,0,pad_L,pad_R,cv2.BORDER_CONSTANT,value)
+        pad_L = (W - w_im) // 2
+        pad_R = W - w_im - pad_L
+        im = cv2.copyMakeBorder(im, 0, 0, pad_L, pad_R, cv2.BORDER_CONSTANT, value)
     else:
-        pad_L = (w_im-W)//2
-        pad_R = w_im-W-pad_L
-        im = im[:,pad_L:-pad_R]
+        pad_L = (w_im - W) // 2
+        pad_R = w_im - W - pad_L
+        im = im[:, pad_L:-pad_R]
         pad_L *= -1
         pad_R *= -1
     # pad or crop height
     if H >= h_im:
-        pad_T=(H-h_im)//2
-        pad_B=H-h_im-pad_T
-        im=cv2.copyMakeBorder(im,pad_T,pad_B,0,0,cv2.BORDER_CONSTANT,value)
+        pad_T = (H - h_im) // 2
+        pad_B = H - h_im - pad_T
+        im = cv2.copyMakeBorder(im, pad_T, pad_B, 0, 0, cv2.BORDER_CONSTANT, value)
     else:
-        pad_T = (h_im-H)//2
-        pad_B = h_im-H-pad_T
-        im = im[pad_T:-pad_B,:]
+        pad_T = (h_im - H) // 2
+        pad_B = h_im - H - pad_T
+        im = im[pad_T:-pad_B, :]
         pad_T *= -1
         pad_B *= -1
     return im, pad_L, pad_R, pad_T, pad_B
@@ -222,11 +222,11 @@ def uint16_to_int16(profile):
     is_numpy = isinstance(profile, np.ndarray)
     if is_numpy:
         profile = torch.from_numpy(profile)
-        
+
     if profile.dtype != torch.uint16:
-        raise Exception(f'input should be uint16, got {profile.dtype}')
-    
-    profile = profile.to(torch.int32) - torch.tensor(TWO_TO_FIFTEEN,dtype=torch.int32)
+        raise Exception(f"input should be uint16, got {profile.dtype}")
+
+    profile = profile.to(torch.int32) - torch.tensor(TWO_TO_FIFTEEN, dtype=torch.int32)
     profile = profile.to(torch.int16)
     return profile.numpy() if is_numpy else profile
 
@@ -246,33 +246,33 @@ def profile_to_3d(profile, resolution, offset):
         mask: the mask of the profile image to remove background
     """
     is_numpy = isinstance(profile, np.ndarray)
-    
+
     # convert to tensor
     if is_numpy:
         profile = torch.from_numpy(profile)
     resolution = torch.from_numpy(np.array(resolution)).to(profile.device)
     offset = torch.from_numpy(np.array(offset)).to(profile.device)
-        
+
     if profile.dtype != torch.int16:
-        raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
-    
-    h,w = profile.shape[:2]
-    x1,y1 = 0,0
-    x2,y2 = w,h
+        raise Exception(f"profile.dtype should be int16, got {profile.dtype}")
+
+    h, w = profile.shape[:2]
+    x1, y1 = 0, 0
+    x2, y2 = w, h
     mask = profile != -TWO_TO_FIFTEEN
-    x_range = torch.arange(x1,x2,device=profile.device)
-    y_range = torch.arange(y1,y2,device=profile.device)
-    xx, yy = torch.meshgrid(x_range, y_range, indexing='xy')
+    x_range = torch.arange(x1, x2, device=profile.device)
+    y_range = torch.arange(y1, y2, device=profile.device)
+    xx, yy = torch.meshgrid(x_range, y_range, indexing="xy")
     X = offset[0] + xx * resolution[0]
     Y = offset[1] + yy * resolution[1]
-    Z = offset[2] + profile*resolution[2]
-    
+    Z = offset[2] + profile * resolution[2]
+
     if is_numpy:
         X = X.numpy()
         Y = Y.numpy()
         Z = Z.numpy()
         mask = mask.numpy()
-    return X,Y,Z,mask
+    return X, Y, Z, mask
 
 
 def pts_to_3d(pts, profile, resolution, offset):
@@ -285,39 +285,48 @@ def pts_to_3d(pts, profile, resolution, offset):
         offset(tuple): (x_offset, y_offset, z_offset)
     """
     if type(pts) is not type(profile):
-        raise Exception(f'pts and profile should have the same type, got {type(pts)} and {type(profile)}')
-    
+        raise Exception(f"pts and profile should have the same type, got {type(pts)} and {type(profile)}")
+
     is_numpy = isinstance(pts, np.ndarray)
     if is_numpy:
         pts = torch.from_numpy(pts)
         profile = torch.from_numpy(profile)
     offset = torch.from_numpy(np.array(offset)).to(pts.device)
     resolution = torch.from_numpy(np.array(resolution)).to(pts.device)
-    
+
     if pts.device != profile.device:
-        raise Exception(f'device of pts and profile should be the same, got {pts.device} and {profile.device}')
-    if pts.ndim!=2 or pts.shape[1]!=2:
-        raise Exception(f'shape of pts should be Nx2, got {pts.shape}')
+        raise Exception(f"device of pts and profile should be the same, got {pts.device} and {profile.device}")
+    if pts.ndim != 2 or pts.shape[1] != 2:
+        raise Exception(f"shape of pts should be Nx2, got {pts.shape}")
     if profile.dtype != torch.int16:
-        raise Exception(f'profile.dtype should be int16, got {profile.dtype}')
-    
+        raise Exception(f"profile.dtype should be int16, got {profile.dtype}")
+
     pts = pts.to(torch.int32)
-    Xs = pts[:,0]
-    Ys = pts[:,1]
-    
+    Xs = pts[:, 0]
+    Ys = pts[:, 1]
+
     nx = offset[0] + Xs * resolution[0]
     ny = offset[1] + Ys * resolution[1]
-    nz = offset[2] + profile[Ys,Xs]*resolution[2]
-    xyz = torch.stack([nx,ny,nz],dim=1)
-    
+    nz = offset[2] + profile[Ys, Xs] * resolution[2]
+    xyz = torch.stack([nx, ny, nz], dim=1)
+
     return xyz.numpy() if is_numpy else xyz
 
 
-def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, label=None, line_thickness=None, hide_bbox=False):
+def plot_one_box(
+    box,
+    img,
+    mask=None,
+    mask_threshold: float = 0.0,
+    color=None,
+    label=None,
+    line_thickness=None,
+    hide_bbox=False,
+):
     """
     description: Plots one bounding box and mask (optinal) on image img,
                  this function comes from YoLov5 project.
-    param: 
+    param:
         box:    a box likes [x1,y1,x2,y2]
         img:    a opencv image object in BGR format
         mask:   a binary mask for the box
@@ -327,25 +336,23 @@ def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, labe
     return:
         no return
     """
-    tl = (
-        line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1
-    )  # line/font thickness
+    tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
-    
+
     box = np.array(box, dtype=int)
     if box.shape != (4,):
-        raise Exception(f'box should be the shape of (4,), but got {box.shape}')
+        raise Exception(f"box should be the shape of (4,), but got {box.shape}")
     if torch.is_tensor(mask):
         mask = mask.cpu().numpy()
-        
-    x1,y1,x2,y2 = box
+
+    x1, y1, x2, y2 = box
     c1, c2 = (x1, y1), (x2, y2)
     if not hide_bbox:
         cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
     if mask is not None:
         # mask *= 255
-        m = mask>mask_threshold
-        blended = (0.4 * np.array(color,dtype=float) + 0.6 * img[m]).astype(np.uint8)
+        m = mask > mask_threshold
+        blended = (0.4 * np.array(color, dtype=float) + 0.6 * img[m]).astype(np.uint8)
         img[m] = blended
     if label:
         tf = max(tl - 1, 1)  # font thickness
@@ -367,7 +374,7 @@ def plot_one_box(box, img, mask=None, mask_threshold:float=0.0, color=None, labe
 def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bbox=False):
     """
     description: Plots one bounding rotated bbox on image img
-    param: 
+    param:
         box:    a box likes [[x,y],[x,y],[x,y],[x,y]]
         img:    a opencv image object in BGR format
         mask:   a binary mask for the box
@@ -377,29 +384,34 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bb
     return:
         no return
     """
-    tl = (
-        line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1
-    )  # line/font thickness
+    tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
-    
-    box = np.array(box,dtype=int)
-    if box.shape != (4,2):
-        raise Exception(f'box should be the shape of 4x2, but got {box.shape}')
-    
+
+    box = np.array(box, dtype=int)
+    if box.shape != (4, 2):
+        raise Exception(f"box should be the shape of 4x2, but got {box.shape}")
+
     if not hide_bbox:
         cv2.polylines(img, [box], isClosed=True, color=color, thickness=tl)
-        
+
     if label:
         highest_point = min(box, key=lambda point: point[1])
         text_position = (highest_point[0], highest_point[1] - 10)
-        
+
         if text_position[1] < 0:  # If the text would be outside the image, move it below the lowest point instead
             lowest_point = max(box, key=lambda point: point[1])
             text_position = (lowest_point[0], lowest_point[1] + 20)
-        
+
         tf = max(tl - 1, 1)  # font thickness
         t_size = cv2.getTextSize(label, 0, fontScale=tl / 4, thickness=tf)[0]
-        cv2.rectangle(img, text_position, (text_position[0] + t_size[0], text_position[1] - t_size[1] - 3), color, -1, cv2.LINE_AA)  # filled
+        cv2.rectangle(
+            img,
+            text_position,
+            (text_position[0] + t_size[0], text_position[1] - t_size[1] - 3),
+            color,
+            -1,
+            cv2.LINE_AA,
+        )  # filled
         cv2.putText(
             img,
             label,
@@ -413,11 +425,11 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bb
 
 
 @torch.inference_mode()
-def revert_mask_to_origin(mask, operations:list):
+def revert_mask_to_origin(mask, operations: list):
     """
     This func reverts a single mask image according to the operations list IN ORDER.
-    The operations list contains items as dictionary. The items are listed as follows: 
-        1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
+    The operations list contains items as dictionary. The items are listed as follows:
+        1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]>
         2. <resize: [resized_w, resized_h, orig_w, orig_h]>
         3. <flip: [flip left right, flip up down, im width, im height]>
     args:
@@ -426,28 +438,28 @@ def revert_mask_to_origin(mask, operations:list):
     """
     is_numpy = isinstance(mask, np.ndarray)
     for operator in reversed(operations):
-        if 'resize' in operator:
-            _,_,nw,nh = operator['resize']
-            mask = resize_image(mask,nw,nh)
-        if 'pad' in operator:
-            mask = fit_im(mask, -np.array(operator['pad']))
-        if 'flip' in operator:
-            lr,ud,im_w,im_h = operator['flip']
+        if "resize" in operator:
+            _, _, nw, nh = operator["resize"]
+            mask = resize_image(mask, nw, nh)
+        if "pad" in operator:
+            mask = fit_im(mask, -np.array(operator["pad"]))
+        if "flip" in operator:
+            lr, ud, im_w, im_h = operator["flip"]
             if is_numpy:
                 mask = torch.from_numpy(mask)
             if lr:
-                mask = torch.flip(mask,[1])
+                mask = torch.flip(mask, [1])
             if ud:
-                mask = torch.flip(mask,[0])
+                mask = torch.flip(mask, [0])
             if is_numpy:
                 mask = mask.numpy()
     return mask
 
 
 @torch.inference_mode()
-def revert_masks_to_origin(masks, operations:list):
+def revert_masks_to_origin(masks, operations: list):
     results = []
-    if len(masks)==0:
+    if len(masks) == 0:
         return results
     is_tensor = isinstance(masks[0], torch.Tensor)
     is_numpy = isinstance(masks, np.ndarray)
@@ -459,13 +471,13 @@ def revert_masks_to_origin(masks, operations:list):
 
 
 @torch.inference_mode()
-def revert_to_origin(pts, operations:list, **kwargs):
+def revert_to_origin(pts, operations: list, **kwargs):
     """
     revert the points to original image space.
     This func executes operations in the REVERSED order.
-    The operations list contains items as dictionary. The supported items are listed following: 
+    The operations list contains items as dictionary. The supported items are listed following:
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
-        2. <pad: [pad_left, pad_right, pad_top, pad_bottom]> 
+        2. <pad: [pad_left, pad_right, pad_top, pad_bottom]>
         3. <resize: [resized_w, resized_h, orig_w, orig_h]>
         4. <flip: [flip left-right (True/False), flip up-down (True/False), image width, image height]>
     args:
@@ -478,62 +490,61 @@ def revert_to_origin(pts, operations:list, **kwargs):
     is_numpy = isinstance(pts, np.ndarray)
     if not is_tensor:
         pts = torch.from_numpy(pts) if is_numpy else torch.as_tensor(pts)
-    
-    if pts.ndim!=2 or (pts.shape[1]!=2 and pts.shape[1]!=4):
-        raise Exception(f'pts should be Nx2 or Nx4, got shape: {pts.shape}')
-    
-    verbose = kwargs.get('verbose', False)
-    r,c = pts.shape
+
+    if pts.ndim != 2 or (pts.shape[1] != 2 and pts.shape[1] != 4):
+        raise Exception(f"pts should be Nx2 or Nx4, got shape: {pts.shape}")
+
+    verbose = kwargs.get("verbose", False)
+    r, c = pts.shape
     for op in reversed(operations):
-        if 'resize' in op:
-            tw,th,orig_w,orig_h = op['resize']
-            r = torch.tensor([tw/orig_w,th/orig_h],device=pts.device)
-            if c==4:
+        if "resize" in op:
+            tw, th, orig_w, orig_h = op["resize"]
+            r = torch.tensor([tw / orig_w, th / orig_h], device=pts.device)
+            if c == 4:
                 r = r.repeat(2).unsqueeze(0)
-            pts = pts/r
-        elif 'pad' in op:
-            pad_L,pad_R,pad_T,pad_B = op['pad']
-            p = torch.tensor([pad_L,pad_T],device=pts.device)
-            if c==4:
+            pts = pts / r
+        elif "pad" in op:
+            pad_L, pad_R, pad_T, pad_B = op["pad"]
+            p = torch.tensor([pad_L, pad_T], device=pts.device)
+            if c == 4:
                 p = p.repeat(2).unsqueeze(0)
             pts = pts - p
-        elif 'stretch' in op:
-            s = torch.tensor(op['stretch'],device=pts.device)
-            if c==4:
+        elif "stretch" in op:
+            s = torch.tensor(op["stretch"], device=pts.device)
+            if c == 4:
                 s = s.repeat(2).unsqueeze(0)
-            pts = pts/s
-        elif 'flip' in op:
-            lr,ud,im_w,im_h = op['flip']
-            idx = [0,2] if c==4 else [0]
-            idy = [1,3] if c==4 else [1]
+            pts = pts / s
+        elif "flip" in op:
+            lr, ud, im_w, im_h = op["flip"]
+            idx = [0, 2] if c == 4 else [0]
+            idy = [1, 3] if c == 4 else [1]
             if lr:
-                pts[:,idx] = im_w - pts[:,idx]
-                if c==4:
-                    pts[:,[0,2]] = pts[:,[2,0]]
+                pts[:, idx] = im_w - pts[:, idx]
+                if c == 4:
+                    pts[:, [0, 2]] = pts[:, [2, 0]]
             if ud:
-                pts[:,idy] = im_h - pts[:,idy]
-                if c==4:
-                    pts[:,[1,3]] = pts[:,[3,1]]
+                pts[:, idy] = im_h - pts[:, idy]
+                if c == 4:
+                    pts[:, [1, 3]] = pts[:, [3, 1]]
         else:
-            raise Exception(f'unsupported operation: {op}')
-        
+            raise Exception(f"unsupported operation: {op}")
+
         if verbose:
-            logger.info(f'after {op}, pts: {pts}')
-    
-    if kwargs.get('round', True):
+            logger.info(f"after {op}, pts: {pts}")
+
+    if kwargs.get("round", True):
         pts = pts.round().clamp(min=0)
     if is_tensor:
         return pts
     return pts.numpy() if is_numpy else pts.tolist()
 
 
-def apply_operations(pts:np.ndarray, operations:list):
-    
+def apply_operations(pts: np.ndarray, operations: list):
     """
     apply operations to pts.
-    The operations list contains each item as a dictionary. The items are listed as follows: 
+    The operations list contains each item as a dictionary. The items are listed as follows:
         1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
-        2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]> 
+        2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]>
         3. <resize: [resized_w, resized_h, orig_w, orig_h]>
         4. <flip: [flip left-right (True/False), flip up-down (True/False), image width, image height]>
     args:
@@ -542,58 +553,57 @@ def apply_operations(pts:np.ndarray, operations:list):
     """
     new_ops = []
     for op in operations:
-        if 'resize' in op:
-            tw,th,orig_w,orig_h = op['resize']
-            tmp = {'resize': [orig_w,orig_h,tw,th]}
-        elif 'pad' in op:
-            pad_L,pad_R,pad_T,pad_B = op['pad']
-            tmp = {'pad': [-pad_L,-pad_R,-pad_T,-pad_B]}
-        elif 'stretch' in op:
-            sx,sy = op['stretch']
-            tmp = {'stretch': [1/sx,1/sy]}
-        elif 'flip' in op:
-            lr,ud,im_w,im_h = op['flip']
-            tmp = {'flip': [lr,ud,im_w,im_h]}
+        if "resize" in op:
+            tw, th, orig_w, orig_h = op["resize"]
+            tmp = {"resize": [orig_w, orig_h, tw, th]}
+        elif "pad" in op:
+            pad_L, pad_R, pad_T, pad_B = op["pad"]
+            tmp = {"pad": [-pad_L, -pad_R, -pad_T, -pad_B]}
+        elif "stretch" in op:
+            sx, sy = op["stretch"]
+            tmp = {"stretch": [1 / sx, 1 / sy]}
+        elif "flip" in op:
+            lr, ud, im_w, im_h = op["flip"]
+            tmp = {"flip": [lr, ud, im_w, im_h]}
         else:
-            raise Exception(f'unsupported operation: {op}')
+            raise Exception(f"unsupported operation: {op}")
         new_ops.append(tmp)
     return revert_to_origin(pts, new_ops[::-1])
-    
-    
-    
+
+
 def convert_key_to_int(dt):
     """
     convert the class map <id, class name> to integer class id
     """
-    return {int(k):dt[k] for k in dt}  
+    return {int(k): dt[k] for k in dt}
 
 
 def val_to_key(dt):
-    return {dt[k]:k for k in dt}
+    return {dt[k]: k for k in dt}
 
-    
-def get_img_path_batches(batch_size, img_dir, fmt='png'):
+
+def get_img_path_batches(batch_size, img_dir, fmt="png"):
     ret = []
     batch = []
     cnt_images = 0
     for root, dirs, files in os.walk(img_dir):
         for name in files:
-            if name.find(f'.{fmt}')==-1:
+            if name.find(f".{fmt}") == -1:
                 continue
             if len(batch) == batch_size:
                 ret.append(batch)
                 batch = []
             batch.append(os.path.join(root, name))
             cnt_images += 1
-    logger.info(f'loaded {cnt_images} files')
+    logger.info(f"loaded {cnt_images} files")
     if len(batch) > 0:
         ret.append(batch)
     return ret
 
 
-def get_gadget_img_batches(batch_size, profile_dir, intensity_dir, fmt='png'):
-    profile_list = glob.glob(os.path.join(profile_dir,"*."+fmt))
-    intensity_list = glob.glob(os.path.join(intensity_dir,"*."+fmt))
+def get_gadget_img_batches(batch_size, profile_dir, intensity_dir, fmt="png"):
+    profile_list = glob.glob(os.path.join(profile_dir, "*." + fmt))
+    intensity_list = glob.glob(os.path.join(intensity_dir, "*." + fmt))
 
     profile_list.sort()
     intensity_list.sort()
@@ -605,9 +615,9 @@ def get_gadget_img_batches(batch_size, profile_dir, intensity_dir, fmt='png'):
         if len(batch) == batch_size:
             ret.append(batch)
             batch = []
-        batch.append({"profile":profile, "intensity":intensity})
+        batch.append({"profile": profile, "intensity": intensity})
         cnt_images += 1
-    logger.info(f'loaded {cnt_images} files')
+    logger.info(f"loaded {cnt_images} files")
     if len(batch) > 0:
         ret.append(batch)
     return ret
@@ -623,35 +633,35 @@ def get_gadget_inputs(path_im, path_surface_tar):
     Returns:
         dict: inputs to pipeline
     """
-    assert path_surface_tar.endswith('.tar')
-    
+    assert path_surface_tar.endswith(".tar")
+
     im_name = os.path.basename(path_im)
     surface_name = os.path.basename(path_surface_tar)
-    key1 = im_name.split('.')[0]
-    key2 = surface_name.split('.')[0]
-    assert key1==key2
-    
+    key1 = im_name.split(".")[0]
+    key2 = surface_name.split(".")[0]
+    assert key1 == key2
+
     # gocator returns a grayscale image
-    im = cv2.imread(path_im)[:,:,0]
-    
+    im = cv2.imread(path_im)[:, :, 0]
+
     # create tmp fodler
     with tempfile.TemporaryDirectory() as tmp_folder:
-        with tarfile.open(path_surface_tar, 'r') as t:
+        with tarfile.open(path_surface_tar, "r") as t:
             t.extractall(tmp_folder)
         # get surface data
-        with open(os.path.join(tmp_folder, 'metadata.json'), 'r') as f:
+        with open(os.path.join(tmp_folder, "metadata.json"), "r") as f:
             metadata = json.load(f)
-        profile = cv2.imread(os.path.join(tmp_folder,'profile.png'), cv2.IMREAD_UNCHANGED)
+        profile = cv2.imread(os.path.join(tmp_folder, "profile.png"), cv2.IMREAD_UNCHANGED)
         if profile.dtype == np.uint16:
-            profile = profile.view(np.int16)+np.int16(-TWO_TO_FIFTEEN)
-    
+            profile = profile.view(np.int16) + np.int16(-TWO_TO_FIFTEEN)
+
     out = {
-        'image':{'pixels': im},
-        'surface':{
-            'profile': profile,
-            'resolution': metadata['resolution'],
-            'offset': metadata['offset']
-        }
+        "image": {"pixels": im},
+        "surface": {
+            "profile": profile,
+            "resolution": metadata["resolution"],
+            "offset": metadata["offset"],
+        },
     }
     return out
 
@@ -659,63 +669,63 @@ def get_gadget_inputs(path_im, path_surface_tar):
 def load_pipeline_def(filepath):
     with open(filepath) as f:
         dt_all = json.load(f)
-        li = dt_all['configs_def']
+        li = dt_all["configs_def"]
         kwargs = {}
         for dt in li:
-            kwargs[dt['name']] = dt['default_value']
+            kwargs[dt["name"]] = dt["default_value"]
     return kwargs
 
 
-def get_models_from_static_manifest(manifest_json_path:str, **kwargs):
+def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     """
     Create models manifest from a static manifest json file.
     """
     manifest_path = Path(manifest_json_path).resolve()
     if not manifest_path.exists():
-        raise FileNotFoundError(f'Manifest file not found: {manifest_path}')
+        raise FileNotFoundError(f"Manifest file not found: {manifest_path}")
 
-    with open(manifest_path, 'r') as f:
+    with open(manifest_path, "r") as f:
         models: List[Dict[str, Any]] = json.load(f)
 
     manifest = {}
-    keys_to_copy = ['anomaly_size', 'threshold_max', 'threshold_min', 'iou']
-    
+    keys_to_copy = ["anomaly_size", "threshold_max", "threshold_min", "iou"]
+
     for model in models:
-        role = model.get('model_role')
+        role = model.get("model_role")
         if role is None:
             continue
-        
+
         # Update model paths
-        artifacts = model.get('artifacts', {})
+        artifacts = model.get("artifacts", {})
         for _, artifact_data in artifacts.items():
-            raw_path = artifact_data.get('model_path')
+            raw_path = artifact_data.get("model_path")
             if raw_path:
                 path_obj = Path(raw_path)
                 # Resolve relative paths against the JSON file's directory
                 if not path_obj.is_absolute():
-                    artifact_data['model_path'] = str((manifest_path.parent / path_obj).resolve())
+                    artifact_data["model_path"] = str((manifest_path.parent / path_obj).resolve())
 
         # Create object configs
-        model['configs'] = {}
-        details = model.get('details', {})
-        object_classes = details.get('object_class', [])
+        model["configs"] = {}
+        details = model.get("details", {})
+        object_classes = details.get("object_class", [])
 
         if object_classes:
             # Map config keys to their default values from details
             config_defaults = {
-                'confidence': details.get('confidence_threshold', 0.5),
-                'size': details.get('object_size', 1),
-                'to-fail': details.get('to_fail', True)
+                "confidence": details.get("confidence_threshold", 0.5),
+                "size": details.get("object_size", 1),
+                "to-fail": details.get("to_fail", True),
             }
 
             # Generate the dictionary for each config key
             for config_key, default_val in config_defaults.items():
-                model['configs'][config_key] = {cls: default_val for cls in object_classes}
+                model["configs"][config_key] = {cls: default_val for cls in object_classes}
 
         # Copy specific keys from details to configs
         for key in keys_to_copy:
             if key in details:
-                model['configs'][key] = details[key]
+                model["configs"][key] = details[key]
 
         # Add to the manifest
         manifest[role] = model

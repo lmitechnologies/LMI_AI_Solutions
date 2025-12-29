@@ -14,9 +14,8 @@ import tensorrt as trt
 
 
 class YoLov5TRT:
-    logger = logging.getLogger('ENGINE')
-    
-    
+    logger = logging.getLogger("ENGINE")
+
     def __init__(self, engines) -> None:
         """
         args:
@@ -24,15 +23,15 @@ class YoLov5TRT:
         """
         w = str(engines[0] if isinstance(engines, list) else engines)
         if torch.cuda.is_available():
-            device = torch.device('cuda:0')
+            device = torch.device("cuda:0")
         else:
-            self.logger.warning('Cannot find GPU device. Use CPU instead.')
-            device = torch.device('cpu')
+            self.logger.warning("Cannot find GPU device. Use CPU instead.")
+            device = torch.device("cpu")
 
-        self.logger.info(f'Loading {w} for TensorRT inference...')
-        Binding = namedtuple('Binding', ('name', 'dtype', 'shape', 'data', 'ptr'))
+        self.logger.info(f"Loading {w} for TensorRT inference...")
+        Binding = namedtuple("Binding", ("name", "dtype", "shape", "data", "ptr"))
         trt_logger = trt.Logger(trt.Logger.INFO)
-        with open(w, 'rb') as f, trt.Runtime(trt_logger) as runtime:
+        with open(w, "rb") as f, trt.Runtime(trt_logger) as runtime:
             model = runtime.deserialize_cuda_engine(f.read())
         context = model.create_execution_context()
         bindings = OrderedDict()
@@ -42,11 +41,11 @@ class YoLov5TRT:
         for i in range(model.num_bindings):
             name = model.get_binding_name(i)
             dtype = trt.nptype(model.get_binding_dtype(i))
-            
-            self.logger.info(f'binding {name} with the shape of {model.get_binding_shape(i)}')
+
+            self.logger.info(f"binding {name} with the shape of {model.get_binding_shape(i)}")
             if model.binding_is_input(i):
-                input_h,input_w = model.get_binding_shape(i)[-2:]
-                self.logger.info(f'found tensorRT input h,w = {input_h,input_w}')
+                input_h, input_w = model.get_binding_shape(i)[-2:]
+                self.logger.info(f"found tensorRT input h,w = {input_h, input_w}")
                 if -1 in tuple(model.get_binding_shape(i)):  # dynamic
                     dynamic = True
                     context.set_binding_shape(i, tuple(model.get_profile_shape(0, i)[2]))
@@ -58,51 +57,47 @@ class YoLov5TRT:
             im = torch.from_numpy(np.empty(shape, dtype=dtype)).to(device)
             bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
         binding_addrs = OrderedDict((n, d.ptr) for n, d in bindings.items())
-        batch_size = bindings['images'].shape[0]
-        if len(output_names)>1:
+        batch_size = bindings["images"].shape[0]
+        if len(output_names) > 1:
             use_mask = 1
         else:
             use_mask = 0
         self.__dict__.update(locals())
 
-
     def forward(self, im):
         if self.fp16:
             im = im.half()
-        if self.dynamic and im.shape != self.bindings['images'].shape:
-            i = self.model.get_binding_index('images')
+        if self.dynamic and im.shape != self.bindings["images"].shape:
+            i = self.model.get_binding_index("images")
             self.context.set_binding_shape(i, im.shape)  # reshape if dynamic
-            self.bindings['images'] = self.bindings['images']._replace(shape=im.shape)
+            self.bindings["images"] = self.bindings["images"]._replace(shape=im.shape)
             for name in self.output_names:
                 i = self.model.get_binding_index(name)
                 self.bindings[name].data.resize_(tuple(self.context.get_tensor_shape(i)))
-        s = self.bindings['images'].shape
+        s = self.bindings["images"].shape
         assert im.shape == s, f"input size {im.shape} {'>' if self.dynamic else 'not equal to'} max model size {s}"
-        self.binding_addrs['images'] = int(im.data_ptr())
+        self.binding_addrs["images"] = int(im.data_ptr())
         self.context.execute_v2(list(self.binding_addrs.values()))
         y = [self.bindings[x].data for x in sorted(self.output_names)]
         if isinstance(y, (list, tuple)):
             return self.from_numpy(y[0]) if len(y) == 1 else [self.from_numpy(x) for x in y]
         else:
             return self.from_numpy(y)
-        
-        
+
     def from_numpy(self, x):
         return torch.from_numpy(x).to(self.device) if isinstance(x, np.ndarray) else x
-    
-    
+
     def warmup(self, imgsz=(1, 3, 640, 640)):
         """
         warm up the model once
         Args:
             imgsz (tuple, optional): NCHW format. Defaults to (1, 3, 640, 640).
-            
+
         """
         # Warmup model by running inference once
         im = torch.empty(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
         return self.forward(im)
-    
-    
+
     def preprocess(self, im0, BGR_to_RGB=False):
         """im preprocess
             BGR_to_RGB -> normalization -> CHW -> contiguous -> BCHW
@@ -111,33 +106,40 @@ class YoLov5TRT:
             BGR_to_RGB (boolean): change im0 to RGB
         """
         if BGR_to_RGB:
-            im0 = im0[:,:,::-1]
+            im0 = im0[:, :, ::-1]
         im = im0.astype(np.float32)
-        im /= 255 # normalize to [0,1]
-        im = im.transpose((2, 0, 1)) # HWC to CHW
+        im /= 255  # normalize to [0,1]
+        im = im.transpose((2, 0, 1))  # HWC to CHW
         im = np.ascontiguousarray(im)  # contiguous
         if len(im.shape) == 3:
-            im = im[None] # expand for batch dim
+            im = im[None]  # expand for batch dim
         return self.from_numpy(im), im0
-    
-    
-    def load_with_preprocess(self, im_path:str):
+
+    def load_with_preprocess(self, im_path: str):
         """im preprocess
 
         Args:
             im_path (str): the path to the image, could be either .npy, .png, or other image formats
-            
+
         """
         ext = os.path.splitext(im_path)[-1]
-        if ext=='.npy':
+        if ext == ".npy":
             im0 = np.load(im_path)
         else:
-            im0 = cv2.imread(im_path) #BGR format
-            im0 = im0[:,:,::-1] #BGR to RGB
+            im0 = cv2.imread(im_path)  # BGR format
+            im0 = im0[:, :, ::-1]  # BGR to RGB
         return self.preprocess(im0)
-    
-    
-    def postprocess(self,prediction,im0,conf_thres,proto=None,iou_thres=0.45,agnostic=False,max_det=100):
+
+    def postprocess(
+        self,
+        prediction,
+        im0,
+        conf_thres,
+        proto=None,
+        iou_thres=0.45,
+        agnostic=False,
+        max_det=100,
+    ):
         """
         Args:
             prediction (list): a list of object detection predictions
@@ -149,27 +151,25 @@ class YoLov5TRT:
             agnostic (bool, optional): perform class-agnostic NMS. Defaults to False.
         """
         # Process predictions
-        pred = self.non_max_suppression(prediction,conf_thres,iou_thres,agnostic=agnostic,max_det=max_det)
+        pred = self.non_max_suppression(prediction, conf_thres, iou_thres, agnostic=agnostic, max_det=max_det)
         segments = []
         masks = []
-        for i,det in enumerate(pred):  # per image
-            if len(det)==0:
+        for i, det in enumerate(pred):  # per image
+            if len(det) == 0:
                 continue
             # Rescale boxes from img_size to im0 size
-            model_shape = (self.input_h,self.input_w)
+            model_shape = (self.input_h, self.input_w)
             if proto is not None:
-                mask = self.process_mask(proto[i], det[:, 6:], det[:, :4], model_shape, upsample=True) 
+                mask = self.process_mask(proto[i], det[:, 6:], det[:, :4], model_shape, upsample=True)
                 masks += [mask]
-                segs = [
-                        self.scale_segments(model_shape, x, im0.shape, normalize=False)
-                        for x in reversed(self.masks2segments(mask))]
+                segs = [self.scale_segments(model_shape, x, im0.shape, normalize=False) for x in reversed(self.masks2segments(mask))]
                 segments += [segs]
             det[:, :4] = self.scale_boxes(model_shape, det[:, :4], im0.shape).round()
-            
+
         return [pred, segments, masks] if self.use_mask else pred
-    
-    
-    def non_max_suppression(self, 
+
+    def non_max_suppression(
+        self,
         prediction,
         conf_thres,
         iou_thres=0.45,
@@ -178,7 +178,7 @@ class YoLov5TRT:
         labels=(),
         max_det=100,
         nm=0,  # number of masks
-        ):
+    ):
         """Non-Maximum Suppression (NMS) on inference results to reject overlapping detections
         Returns:
             list of detections, on (n,6) tensor per image [xyxy, conf, cls]
@@ -186,17 +186,17 @@ class YoLov5TRT:
 
         if isinstance(prediction, (list, tuple)):  # YOLOv5 model in validation model, output = (inference_out, loss_out)
             prediction = prediction[0]  # select only inference output
-            
+
         if self.use_mask:
             nm = 32
 
         bs = prediction.shape[0]  # batch size
         nc = prediction.shape[2] - nm - 5  # number of classes
-        xc = prediction[..., 4] > 0.01   # candidates
+        xc = prediction[..., 4] > 0.01  # candidates
 
         # Checks
         # assert 0 <= conf_thres <= 1, f'Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0'
-        assert 0 <= iou_thres <= 1, f'Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0'
+        assert 0 <= iou_thres <= 1, f"Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0"
 
         # Settings
         # min_wh = 2  # (pixels) minimum box width and height
@@ -267,7 +267,7 @@ class YoLov5TRT:
             i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
             if i.shape[0] > max_det:  # limit detections
                 i = i[:max_det]
-            if merge and (1 < n < 3E3):  # Merge NMS (boxes merged using weighted mean)
+            if merge and (1 < n < 3e3):  # Merge NMS (boxes merged using weighted mean)
                 # update boxes as boxes(i,4) = weights(i,n) * boxes(n,4)
                 iou = self.box_iou(boxes[i], boxes) > iou_thres  # iou matrix
                 weights = iou * scores[None]  # box weights
@@ -280,7 +280,6 @@ class YoLov5TRT:
             #     print(f'WARNING ⚠️ NMS time limit {time_limit:.3f}s exceeded')
             #     break  # time limit exceeded
         return output
-    
 
     def box_iou(self, box1, box2, eps=1e-7):
         # https://github.com/pytorch/vision/blob/master/torchvision/ops/boxes.py
@@ -302,7 +301,6 @@ class YoLov5TRT:
         # IoU = inter / (area1 + area2 - inter)
         return inter / ((a2 - a1).prod(2) + (b2 - b1).prod(2) - inter + eps)
 
-
     def xywh2xyxy(self, x):
         # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
         y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
@@ -311,8 +309,7 @@ class YoLov5TRT:
         y[..., 2] = x[..., 0] + x[..., 2] / 2  # bottom right x
         y[..., 3] = x[..., 1] + x[..., 3] / 2  # bottom right y
         return y
-    
-    
+
     def clip_boxes(self, boxes, shape):
         # Clip boxes (xyxy) to image shape (height, width)
         if isinstance(boxes, torch.Tensor):  # faster individually
@@ -323,13 +320,15 @@ class YoLov5TRT:
         else:  # np.array (faster grouped)
             boxes[..., [0, 2]] = boxes[..., [0, 2]].clip(0, shape[1])  # x1, x2
             boxes[..., [1, 3]] = boxes[..., [1, 3]].clip(0, shape[0])  # y1, y2
-    
-    
+
     def scale_boxes(self, img1_shape, boxes, img0_shape, ratio_pad=None):
         # Rescale boxes (xyxy) from img1_shape to img0_shape
         if ratio_pad is None:  # calculate from img0_shape
             gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
-            pad = (img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2  # wh padding
+            pad = (
+                (img1_shape[1] - img0_shape[1] * gain) / 2,
+                (img1_shape[0] - img0_shape[0] * gain) / 2,
+            )  # wh padding
         else:
             gain = ratio_pad[0][0]
             pad = ratio_pad[1]
@@ -339,8 +338,7 @@ class YoLov5TRT:
         boxes[..., :4] /= gain
         self.clip_boxes(boxes, img0_shape)
         return boxes
-    
-    
+
     def clip_segments(self, segments, shape):
         # Clip segments (xy1,xy2,...) to image shape (height, width)
         if isinstance(segments, torch.Tensor):  # faster individually
@@ -349,13 +347,15 @@ class YoLov5TRT:
         else:  # np.array (faster grouped)
             segments[:, 0] = segments[:, 0].clip(0, shape[1])  # x
             segments[:, 1] = segments[:, 1].clip(0, shape[0])  # y
-            
-            
+
     def scale_segments(self, img1_shape, segments, img0_shape, ratio_pad=None, normalize=False):
         # Rescale coords (xyxy) from img1_shape to img0_shape
         if ratio_pad is None:  # calculate from img0_shape
             gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
-            pad = (img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2  # wh padding
+            pad = (
+                (img1_shape[1] - img0_shape[1] * gain) / 2,
+                (img1_shape[0] - img0_shape[0] * gain) / 2,
+            )  # wh padding
         else:
             gain = ratio_pad[0][0]
             pad = ratio_pad[1]
@@ -368,8 +368,7 @@ class YoLov5TRT:
             segments[:, 0] /= img0_shape[1]  # width
             segments[:, 1] /= img0_shape[0]  # height
         return segments
-    
-    
+
     def crop_mask(self, masks, boxes):
         """
         "Crop" predicted masks by zeroing out everything not in the predicted bbox.
@@ -386,8 +385,7 @@ class YoLov5TRT:
         c = torch.arange(h, device=masks.device, dtype=x1.dtype)[None, :, None]  # cols shape(h,1,1)
 
         return masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))
-    
-    
+
     def process_mask(self, protos, masks_in, bboxes, shape, upsample=False):
         """
         Crop before upsample.
@@ -411,22 +409,20 @@ class YoLov5TRT:
 
         masks = self.crop_mask(masks, downsampled_bboxes)  # CHW
         if upsample:
-            masks = F.interpolate(masks[None], shape, mode='bilinear', align_corners=False)[0]  # CHW
+            masks = F.interpolate(masks[None], shape, mode="bilinear", align_corners=False)[0]  # CHW
         return masks.gt_(0.5)
-    
-    
-    def masks2segments(self, masks, strategy='largest'):
+
+    def masks2segments(self, masks, strategy="largest"):
         # Convert masks(n,160,160) into segments(n,xy)
         segments = []
-        for x in masks.int().cpu().numpy().astype('uint8'):
+        for x in masks.int().cpu().numpy().astype("uint8"):
             c = cv2.findContours(x, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
             if c:
-                if strategy == 'concat':  # concatenate all segments
+                if strategy == "concat":  # concatenate all segments
                     c = np.concatenate([x.reshape(-1, 2) for x in c])
-                elif strategy == 'largest':  # select largest segment
+                elif strategy == "largest":  # select largest segment
                     c = np.array(c[np.array([len(x) for x in c]).argmax()]).reshape(-1, 2)
             else:
                 c = np.zeros((0, 2))  # no segments found
-            segments.append(c.astype('float32'))
+            segments.append(c.astype("float32"))
         return segments
-    

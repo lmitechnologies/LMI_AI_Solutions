@@ -1,5 +1,5 @@
 [tool.ruff]
-line-length = 90
+line-length = 140
 exclude = [
     "submodules",
     "assets",

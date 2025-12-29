@@ -10,9 +10,10 @@ class TRT_Model:
     """
     the base class for all the tensorRT models
     """
+
     logger = logging.getLogger()
 
-    def __init__(self, engine_file_path, plugin_path='', channel_first=True) -> None:
+    def __init__(self, engine_file_path, plugin_path="", channel_first=True) -> None:
         """
         load the engine and plugin
         Args:
@@ -21,11 +22,11 @@ class TRT_Model:
             channel_first (bool, optional): use the channel first format: [C,H,W], otherwise use channel last format: [H,W,C]. Defaults to True.
         """
         self.name = self.__class__.__name__
-        
-        #load the plugin
+
+        # load the plugin
         if plugin_path:
             ctypes.CDLL(plugin_path)
-        
+
         # Create a Context on this device,
         self.ctx = cuda.Device(0).make_context()
         self.stream = cuda.Stream()
@@ -45,7 +46,7 @@ class TRT_Model:
         self.bindings = []
 
         for binding in self.engine:
-            self.logger.info(f'{self.name} binding:, {binding}, {self.engine.get_binding_shape(binding)}')
+            self.logger.info(f"{self.name} binding:, {binding}, {self.engine.get_binding_shape(binding)}")
             size = trt.volume(self.engine.get_binding_shape(binding)) * self.engine.max_batch_size
             dtype = trt.nptype(self.engine.get_binding_dtype(binding))
             # Allocate host and device buffers
@@ -68,30 +69,29 @@ class TRT_Model:
             else:
                 self.host_outputs[binding] = host_mem
                 self.cuda_outputs[binding] = cuda_mem
-        
-        
+
     @abc.abstractmethod
-    def infer(self, images_raw:list):
+    def infer(self, images_raw: list):
         """Must need to be implemented in the child class
         Args:
             images_raw (list): a list of numpy arrays
         """
         pass
-        
-        
+
     def destroy(self):
         # Remove any context from the top of the context stack, deactivating it.
         self.ctx.pop()
-        
-        
+
     def get_raw_image_zeros(self):
         """
         description: Ready data for warmup
         """
-        return np.zeros([self.batch_max_size, self.input_h, self.input_w, self.input_c], dtype=np.uint8)
-    
+        return np.zeros(
+            [self.batch_max_size, self.input_h, self.input_w, self.input_c],
+            dtype=np.uint8,
+        )
 
-    def preprocess_image(self,image_raw,BGR_to_RGB=False,normalize=True,HWC_to_NCHW=True):
+    def preprocess_image(self, image_raw, BGR_to_RGB=False, normalize=True, HWC_to_NCHW=True):
         """
         description:    BGR to RGB,
                         normalize to [0,1],
@@ -105,7 +105,7 @@ class TRT_Model:
 
         image = image_raw.astype(np.float32)
         if BGR_to_RGB:
-            image = image[:,:,::-1]
+            image = image[:, :, ::-1]
         if normalize:
             # Normalize to [0,1]
             image /= 255.0
@@ -117,4 +117,3 @@ class TRT_Model:
         # Convert the image to row-major order, also known as "C order":
         image = np.ascontiguousarray(image)
         return image, image_raw, errors
-    

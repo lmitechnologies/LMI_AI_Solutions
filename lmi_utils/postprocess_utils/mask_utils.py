@@ -9,6 +9,7 @@ import cv2
 BYTES_PER_FLOAT = 4
 GPU_MEM_LIMIT = 1024**3  # 1 GB memory limit
 
+
 @torch.jit.script
 def rescale_mask_func(masks, boxes, img_h: int, img_w: int, skip_empty: bool = True):
     """
@@ -32,9 +33,7 @@ def rescale_mask_func(masks, boxes, img_h: int, img_w: int, skip_empty: bool = T
     device = masks.device
 
     if skip_empty and not torch.jit.is_scripting():
-        x0_int, y0_int = torch.clamp(boxes.min(dim=0).values.floor()[:2] - 1, min=0).to(
-            dtype=torch.int32
-        )
+        x0_int, y0_int = torch.clamp(boxes.min(dim=0).values.floor()[:2] - 1, min=0).to(dtype=torch.int32)
         x1_int = torch.clamp(boxes[:, 2].max().ceil() + 1, max=img_w).to(dtype=torch.int32)
         y1_int = torch.clamp(boxes[:, 3].max().ceil() + 1, max=img_h).to(dtype=torch.int32)
     else:
@@ -48,7 +47,7 @@ def rescale_mask_func(masks, boxes, img_h: int, img_w: int, skip_empty: bool = T
     img_x = torch.arange(x0_int, x1_int, device=device, dtype=torch.float32) + 0.5
     img_y = (img_y - y0) / (y1 - y0) * 2 - 1
     img_x = (img_x - x0) / (x1 - x0) * 2 - 1
-    
+
     gx = img_x[:, None, :].expand(N, img_y.size(1), img_x.size(1))
     gy = img_y[:, :, None].expand(N, img_y.size(1), img_x.size(1))
     grid = torch.stack([gx, gy], dim=3)
@@ -63,9 +62,13 @@ def rescale_mask_func(masks, boxes, img_h: int, img_w: int, skip_empty: bool = T
     else:
         return img_masks[:, 0], ()
 
+
 @torch.jit.script
 def rescale_masks(
-    masks: torch.Tensor, boxes: torch.Tensor, image_shape: Tuple[int, int], threshold: float = 0.5
+    masks: torch.Tensor,
+    boxes: torch.Tensor,
+    image_shape: Tuple[int, int],
+    threshold: float = 0.5,
 ):
     """
     Paste a set of masks that are of a fixed resolution (e.g., 28 x 28) into an image.
@@ -114,17 +117,23 @@ def rescale_masks(
         # GPU benefits from parallelism for larger chunks, but may have memory issue
         # int(img_h) because shape may be tensors in tracing
         num_chunks = int(np.ceil(N * int(img_h) * int(img_w) * BYTES_PER_FLOAT / GPU_MEM_LIMIT))
-        assert (
-            num_chunks <= N
-        ), "Default GPU_MEM_LIMIT in mask_ops.py is too small; try increasing it"
+        assert num_chunks <= N, "Default GPU_MEM_LIMIT in mask_ops.py is too small; try increasing it"
     chunks = torch.chunk(torch.arange(N, device=device), num_chunks)
 
     img_masks = torch.zeros(
-        N, img_h, img_w, device=device, dtype=torch.bool if threshold >= 0 else torch.uint8
+        N,
+        img_h,
+        img_w,
+        device=device,
+        dtype=torch.bool if threshold >= 0 else torch.uint8,
     )
     for inds in chunks:
         masks_chunk, spatial_inds = rescale_mask_func(
-            masks[inds, None, :, :], boxes[inds], img_h, img_w, skip_empty=device.type == "cpu"
+            masks[inds, None, :, :],
+            boxes[inds],
+            img_h,
+            img_w,
+            skip_empty=device.type == "cpu",
         )
 
         if threshold >= 0:
@@ -139,7 +148,11 @@ def rescale_masks(
             img_masks[(inds,) + spatial_inds] = masks_chunk
     return img_masks
 
-@njit('(float64[:,:], int64[:], int64, int64)', nopython=True, )
+
+@njit(
+    "(float64[:,:], int64[:], int64, int64)",
+    nopython=True,
+)
 def process(S, P, a, b):
     """
     Recursively processes a set of points to find a subset that forms a convex hull.
@@ -164,7 +177,8 @@ def process(S, P, a, b):
     c = P[np.argmax(signed_dist)]
     return process(S, K, a, c)[:-1] + process(S, K, c, b)
 
-@njit('(float64[:,:],)', nopython=True)
+
+@njit("(float64[:,:],)", nopython=True)
 def quickhull(S: np.ndarray) -> np.ndarray:
     """
     Computes the convex hull of a set of 2D points using the Quickhull algorithm.
@@ -179,12 +193,13 @@ def quickhull(S: np.ndarray) -> np.ndarray:
     max_index = np.argmax(S[:, 0])
     return process(S, np.arange(S.shape[0]), a, max_index)[:-1] + process(S, np.arange(S.shape[0]), max_index, a)[:-1]
 
+
 def points_to_segments(points):
     """
     Converts a set of points into segments using the Quickhull algorithm.
 
     Args:
-        points (torch.Tensor or numpy.ndarray): A set of points to be converted into segments. 
+        points (torch.Tensor or numpy.ndarray): A set of points to be converted into segments.
             If a torch.Tensor is provided, it will be converted to a numpy.ndarray.
 
     Returns:
@@ -194,22 +209,24 @@ def points_to_segments(points):
         points = points.cpu().numpy()
     return points[quickhull(points.astype(np.float64))]
 
+
 def mask_to_polygon(mask, value=1.0):
     """
     Converts a mask to a polygon using the Quickhull algorithm.
 
     Args:
-        mask (torch.Tensor or numpy.ndarray): A mask to be converted into a polygon. 
+        mask (torch.Tensor or numpy.ndarray): A mask to be converted into a polygon.
             If a torch.Tensor is provided, it will be converted to a numpy.ndarray.
 
     Returns:
         numpy.ndarray: An array of points representing the polygon formed by the Quickhull algorithm.
     """
     if isinstance(mask, torch.Tensor):
-        points = torch.nonzero(mask == value, as_tuple=False)[:,[1,0]].cpu().numpy()
+        points = torch.nonzero(mask == value, as_tuple=False)[:, [1, 0]].cpu().numpy()
     else:
         points = np.vstack(np.where(mask == value))[::-1].T
     return points_to_segments(points.astype(np.float64))
+
 
 def segment_to_obb(points):
     """
@@ -221,7 +238,7 @@ def segment_to_obb(points):
     :param points: an nx2 matrix of coordinates
     :return: (cx, cy, angle, width, height), rval (4x2 matrix of coordinates)
     """
-    pi2 = np.pi / 2.
+    pi2 = np.pi / 2.0
 
     # Calculate edge angles
     edges = points[1:] - points[:-1]
@@ -230,12 +247,7 @@ def segment_to_obb(points):
     angles = np.unique(angles)
 
     # Find rotation matrices
-    rotations = np.vstack([
-        np.cos(angles),
-        np.cos(angles - pi2),
-        np.cos(angles + pi2),
-        np.cos(angles)
-    ]).T
+    rotations = np.vstack([np.cos(angles), np.cos(angles - pi2), np.cos(angles + pi2), np.cos(angles)]).T
     rotations = rotations.reshape((-1, 2, 2))
 
     # Apply rotations to the hull
@@ -259,12 +271,12 @@ def segment_to_obb(points):
     r = rotations[best_idx]
     x1, x2 = max_x[best_idx], min_x[best_idx]
     y1, y2 = max_y[best_idx], min_y[best_idx]
-   
+
     rval = np.zeros((4, 2))
-    rval[0] = np.dot([x1, y2], r) # top-left
-    rval[1] = np.dot([x2, y2], r) # top-right
-    rval[2] = np.dot([x2, y1], r) # bottom-right
-    rval[3] = np.dot([x1, y1], r) # bottom-left
+    rval[0] = np.dot([x1, y2], r)  # top-left
+    rval[1] = np.dot([x2, y2], r)  # top-right
+    rval[2] = np.dot([x2, y1], r)  # bottom-right
+    rval[3] = np.dot([x1, y1], r)  # bottom-left
 
     # Center of the bounding box
     cx, cy = rval.mean(axis=0)
@@ -274,9 +286,11 @@ def segment_to_obb(points):
 
     return np.array([cx, cy, width, height, angle]), rval
 
+
 def mask_to_obb(mask):
     polygon = mask_to_polygon(mask)
     return segment_to_obb(polygon)
+
 
 def mask_to_polygon_cv2(mask):
     """
@@ -304,4 +318,3 @@ def mask_to_polygon_cv2(mask):
     polygon = np.squeeze(largest_contour, axis=1)
 
     return polygon
-    

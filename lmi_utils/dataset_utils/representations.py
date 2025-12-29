@@ -13,6 +13,7 @@ from label_utils.bbox_utils import rotate, get_rotated_bbox
 
 logger = logging.getLogger(__name__)
 
+
 class AnnotationType(enum.Enum):
     BOX = "Box"
     POLYGON = "Polygon"
@@ -89,7 +90,8 @@ class Point2d(Base):
 
     def to_yolo(self, h, w, **kwargs):
         return [[self.x / w, self.y / h]]
-        
+
+
 @dataclass
 class Box(Base):
     x_min: float
@@ -144,13 +146,12 @@ class Box(Base):
 
     def to_yolo(self, h, w, **kwargs):
         use_obb = kwargs.get("use_obb", False)
-        
+
         width = self.x_max - self.x_min
         height = self.y_max - self.y_min
         cx = (self.x_min + self.x_max) / 2
         cy = (self.y_min + self.y_max) / 2
         if self.angle > 0 and use_obb:
-            
             rotated_coords = rotate(
                 self.x_min,
                 self.y_min,
@@ -169,12 +170,24 @@ class Box(Base):
         else:
             if use_obb:
                 logger.debug(f"Use_obb is True but angle is {self.angle}; returning obb formatted bounding box.")
-                corners = np.array([[self.x_min, self.y_min], [self.x_max, self.y_min], [self.x_max, self.y_max], [self.x_min, self.y_max]])
+                corners = np.array(
+                    [
+                        [self.x_min, self.y_min],
+                        [self.x_max, self.y_min],
+                        [self.x_max, self.y_max],
+                        [self.x_min, self.y_max],
+                    ]
+                )
                 return [[pt[0] / w, pt[1] / h] for pt in corners]
             else:
                 # convert to center_x, center_y, width, height
                 return [
-                    [cx/w, cy/h, (self.x_max - self.x_min)/w, (self.y_max - self.y_min)/h]
+                    [
+                        cx / w,
+                        cy / h,
+                        (self.x_max - self.x_min) / w,
+                        (self.y_max - self.y_min) / h,
+                    ]
                 ]
 
     def to_mask(self, **kwargs):
@@ -182,7 +195,15 @@ class Box(Base):
         angle_unit = kwargs.get("angle_unit", "degree")
         rot_center = kwargs.get("rot_center", "up_left")
         if self.angle != 0:
-            pts = rotate(self.x_min, self.y_min, self.x_max - self.x_min, self.y_max - self.y_min, self.angle, rot_center, angle_unit)
+            pts = rotate(
+                self.x_min,
+                self.y_min,
+                self.x_max - self.x_min,
+                self.y_max - self.y_min,
+                self.angle,
+                rot_center,
+                angle_unit,
+            )
         if mask_type == AnnotationType.MASK:
             img_h = kwargs.get("h")
             img_w = kwargs.get("w")
@@ -190,11 +211,11 @@ class Box(Base):
             if self.angle != 0:
                 cv2.fillPoly(mask, [pts], 1)
             else:
-                mask[int(self.y_min): int(self.y_max), int(self.x_min): int(self.x_max)] = 1
+                mask[int(self.y_min) : int(self.y_max), int(self.x_min) : int(self.x_max)] = 1
             return Mask(mask=mask)
         elif mask_type == AnnotationType.POLYGON:
             if self.angle == 0:
-                pts=[
+                pts = [
                     [self.x_min, self.y_min],
                     [self.x_max, self.y_min],
                     [self.x_max, self.y_max],
@@ -203,7 +224,7 @@ class Box(Base):
             return Polygon(points=pts)
         else:
             raise ValueError("Unsupported mask_type in Box.to_mask")
-    
+
     def point_in_box(self, x: int, y: int):
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
 
@@ -211,7 +232,7 @@ class Box(Base):
 @dataclass
 class Polygon(Base):
     points: Union[List[List[int]], List[List[float]], np.ndarray]
-    
+
     def __init__(self, points: Union[List[List[int]], List[List[float]], np.ndarray] = []):
         super().__init__()
         if isinstance(points, np.ndarray):
@@ -255,11 +276,11 @@ class Polygon(Base):
         pts = self.to_numpy().astype(np.int32)
         cv2.fillPoly(mask, [pts], 1)
         return Mask(mask=mask2rle(mask))
-    
+
     def to_rbox(self, **kwargs):
         rbox = get_rotated_bbox(self.to_numpy().astype(int))
-        x1,y1,w,h,angle = rbox
-        x2,y2 = x1 + w, y1 + h
+        x1, y1, w, h, angle = rbox
+        x2, y2 = x1 + w, y1 + h
         box = Box(x_min=x1, y_min=y1, x_max=x2, y_max=y2, angle=angle)
         return box
 
@@ -279,11 +300,10 @@ class Mask(Base):
             self.mask = mask2rle(mask)
         else:
             self.mask = mask
+
     @classmethod
     def from_dict(cls, data: dict) -> "Mask":
-        instance = cls(
-            **data
-        )
+        instance = cls(**data)
         return instance
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
@@ -318,7 +338,7 @@ class Mask(Base):
         if h is None or w is None:
             raise ValueError("Height and width cannot be None")
         mask = self.to_numpy(h=h, w=w)
-        ys, xs = np.nonzero(mask==1)
+        ys, xs = np.nonzero(mask == 1)
         return xs.tolist(), ys.tolist()
 
     def to_polygon(self, **kwargs) -> List[Polygon]:
@@ -362,6 +382,7 @@ class Mask(Base):
                 boxes.append(Box(x_min=x, y_min=y, x_max=x + w_box, y_max=y + h_box, angle=0))
             return boxes
 
+
 @dataclass
 class Label(Base):
     id: str
@@ -376,7 +397,12 @@ class Label(Base):
 
     @classmethod
     def from_dict(cls, data: dict) -> "Label":
-        return cls(id=data["id"], color=data.get("color", None), annotation_type=data.get("annotation_type", None))
+        return cls(
+            id=data["id"],
+            color=data.get("color", None),
+            annotation_type=data.get("annotation_type", None),
+        )
+
 
 @dataclass
 class Annotation(Base):
@@ -384,15 +410,15 @@ class Annotation(Base):
     label_id: str
     type: AnnotationType
     value: Union[Box, Mask, Point2d, Polygon] = None
-    link: Optional[str] = None,
-    confidence: Optional[float] = None,
-    iou: Optional[float] = None,
+    link: Optional[str] = (None,)
+    confidence: Optional[float] = (None,)
+    iou: Optional[float] = (None,)
 
     def __init__(
         self,
         id: str,
         label_id: str,
-        type: AnnotationType=None,
+        type: AnnotationType = None,
         value: Union[Box, Mask, Point2d, Polygon] = None,
         link: Optional[str] = None,
         confidence: Optional[float] = None,
@@ -420,9 +446,11 @@ class Annotation(Base):
             return PolygonAnnotation.from_dict(data)
         else:
             raise ValueError(f"Unsupported annotation type: {ann_type}")
-    
+
+
 class BoxAnnotation(Annotation):
     value: Box
+
     def __init__(
         self,
         id: str,
@@ -432,7 +460,14 @@ class BoxAnnotation(Annotation):
         confidence: Optional[float] = None,
         iou: Optional[float] = None,
     ):
-        super().__init__(id=id, label_id=label_id, type=AnnotationType.BOX, link=link, confidence=confidence, iou=iou)
+        super().__init__(
+            id=id,
+            label_id=label_id,
+            type=AnnotationType.BOX,
+            link=link,
+            confidence=confidence,
+            iou=iou,
+        )
         self.value = value
 
     @classmethod
@@ -445,10 +480,10 @@ class BoxAnnotation(Annotation):
             confidence=data.get("confidence", None),
             iou=data.get("iou", None),
         )
-        
 
     def to_yolo(self, h, w, **kwargs):
         return self.value.to_yolo(h, w, **kwargs)
+
 
 class MaskAnnotation(Annotation):
     value: Mask
@@ -462,9 +497,16 @@ class MaskAnnotation(Annotation):
         confidence: Optional[float] = None,
         iou: Optional[float] = None,
     ):
-        super().__init__(id=id, label_id=label_id, type=AnnotationType.MASK, link=link, confidence=confidence, iou=iou)
+        super().__init__(
+            id=id,
+            label_id=label_id,
+            type=AnnotationType.MASK,
+            link=link,
+            confidence=confidence,
+            iou=iou,
+        )
         self.value = value
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> "MaskAnnotation":
         return cls(
@@ -479,6 +521,7 @@ class MaskAnnotation(Annotation):
     def to_yolo(self, h, w, **kwargs):
         return self.value.to_yolo(h, w, **kwargs)
 
+
 class KeypointAnnotation(Annotation):
     value: Point2d
 
@@ -492,7 +535,14 @@ class KeypointAnnotation(Annotation):
         iou: Optional[float] = None,
         bounding_box_id: Optional[str] = None,
     ):
-        super().__init__(id=id, label_id=label_id, type=AnnotationType.KEYPOINT, link=link, confidence=confidence, iou=iou)
+        super().__init__(
+            id=id,
+            label_id=label_id,
+            type=AnnotationType.KEYPOINT,
+            link=link,
+            confidence=confidence,
+            iou=iou,
+        )
         self.bounding_box_id = bounding_box_id
         self.value = value
 
@@ -524,7 +574,14 @@ class PolygonAnnotation(Annotation):
         confidence: Optional[float] = None,
         iou: Optional[float] = None,
     ):
-        super().__init__(id=id, label_id=label_id, type=AnnotationType.POLYGON, link=link, confidence=confidence, iou=iou)
+        super().__init__(
+            id=id,
+            label_id=label_id,
+            type=AnnotationType.POLYGON,
+            link=link,
+            confidence=confidence,
+            iou=iou,
+        )
         self.value = value
 
     @classmethod
@@ -541,11 +598,12 @@ class PolygonAnnotation(Annotation):
     def to_yolo(self, h, w, **kwargs):
         return self.value.to_yolo(h, w, **kwargs)
 
+
 @dataclass
 class FileAnnotations(Base):
-    id: str     # File ID
-    path: str   # File path
-    height: int # File height
+    id: str  # File ID
+    path: str  # File path
+    height: int  # File height
     width: int  # File width
     annotations: List[Annotation]
     predictions: List[Annotation]
@@ -553,8 +611,8 @@ class FileAnnotations(Base):
     def __init__(
         self,
         id: str,
-        path:str,
-        height:int,
+        path: str,
+        height: int,
         width: int,
         annotations: List[Annotation] = [],
         predictions: List[Annotation] = [],
@@ -571,7 +629,14 @@ class FileAnnotations(Base):
     def from_dict(cls, data: dict) -> "FileAnnotations":
         annotations = [Annotation.from_dict(a) for a in data.get("annotations", [])]
         predictions = [Annotation.from_dict(a) for a in data.get("predictions", [])]
-        return cls(id=data['id'],path=data['path'], height=data.get('height', None), width=data.get('width', None), annotations=annotations, predictions=predictions)
+        return cls(
+            id=data["id"],
+            path=data["path"],
+            height=data.get("height", None),
+            width=data.get("width", None),
+            annotations=annotations,
+            predictions=predictions,
+        )
 
     @property
     def has_annotations(self) -> bool:
@@ -580,16 +645,14 @@ class FileAnnotations(Base):
     def relative_path(self, base_path: str) -> str:
         return os.path.relpath(self.path, base_path)
 
-    def update_file(self, id, path,height,width):
+    def update_file(self, id, path, height, width):
         self.id = id
         self.path = path
         self.height = height
         self.width = width
         return self
 
-    def delete_annotation(
-        self, annotation_id: str, list_type: str = "annotations"
-    ) -> bool:
+    def delete_annotation(self, annotation_id: str, list_type: str = "annotations") -> bool:
         if list_type not in ["annotations", "predictions"]:
             raise ValueError("list_type must be either 'annotations' or 'predictions'")
         target_list = self.annotations if list_type == "annotations" else self.predictions
@@ -601,17 +664,13 @@ class FileAnnotations(Base):
         logger.warning(f"Annotation with id '{annotation_id}' not found in {list_type}.")
         return False
 
-    def get_annotations_by_type(
-        self, annotation_type: AnnotationType, list_type: str = "annotations"
-    ) -> List[Annotation]:
+    def get_annotations_by_type(self, annotation_type: AnnotationType, list_type: str = "annotations") -> List[Annotation]:
         if list_type not in ["annotations", "predictions"]:
             raise ValueError("list_type must be either 'annotations' or 'predictions'")
         target_list = self.annotations if list_type == "annotations" else self.predictions
         return [ann for ann in target_list if ann.type == annotation_type]
 
-    def update_annotations(
-        self, annotations: List[Annotation], list_type: str = "annotations"
-    ):
+    def update_annotations(self, annotations: List[Annotation], list_type: str = "annotations"):
         if list_type not in ["annotations", "predictions"]:
             raise ValueError("list_type must be either 'annotations' or 'predictions'")
         if list_type == "annotations":
@@ -631,22 +690,30 @@ class FileAnnotations(Base):
                             annotation.bounding_box_id = box.id
                             assigned = True
                             break
-                        
+
                 if not assigned:
                     raise Exception(f"Keypoint {annotation.id} not assigned to any box")
-        
+
         return self
 
-    def to_yolo(self, label_id_idx: dict,to_segmentation=False, to_object_detection=False, merge_boxes=False, target_classes=[], use_obb=False):
+    def to_yolo(
+        self,
+        label_id_idx: dict,
+        to_segmentation=False,
+        to_object_detection=False,
+        merge_boxes=False,
+        target_classes=[],
+        use_obb=False,
+    ):
         """Convert this file's annotations to YOLO format.
-           `label_to_index` is a function mapping a label id to an integer index.
+        `label_to_index` is a function mapping a label id to an integer index.
         """
         yolo_annotations = []
         h = self.height
         w = self.width
         yolo_annotations_map = {}
         label_ids = []
-                
+
         for annotation in self.annotations:
             if annotation.type == AnnotationType.KEYPOINT:
                 continue
@@ -658,16 +725,18 @@ class FileAnnotations(Base):
             if annotation.type == AnnotationType.BOX and to_segmentation:
                 logger.debug(f"Converting box {annotation.id} to YOLO format with mask_type=AnnotationType.MASK")
                 updated_annotations.append(annotation.value.to_mask(h=h, w=w))
-            elif (annotation.type == AnnotationType.MASK and to_object_detection):
+            elif annotation.type == AnnotationType.MASK and to_object_detection:
                 logger.debug(f"Converting mask {annotation.id} to YOLO format with mask_type=AnnotationType.MASK")
                 updated_annotations.append(annotation.value.to_box(h=h, w=w, merge_boxes=merge_boxes))
-            elif (annotation.type == AnnotationType.POLYGON and to_object_detection):
+            elif annotation.type == AnnotationType.POLYGON and to_object_detection:
                 logger.debug(f"Converting polygon {annotation.id} to YOLO format with mask_type=AnnotationType.POLYGON")
                 updated_annotations.append(annotation.value.to_box(h=h, w=w))
 
-            converted = [
-                ann.to_yolo(h, w, use_obb=use_obb) for ann in updated_annotations
-            ] if updated_annotations else [annotation.to_yolo(h, w, use_obb=use_obb)]
+            converted = (
+                [ann.to_yolo(h, w, use_obb=use_obb) for ann in updated_annotations]
+                if updated_annotations
+                else [annotation.to_yolo(h, w, use_obb=use_obb)]
+            )
             for conv in converted:
                 if annotation.type == AnnotationType.MASK:
                     instance = []
@@ -679,16 +748,16 @@ class FileAnnotations(Base):
                     yolo_annotations.append(instance)
                 yolo_annotations_map[annotation.id] = instance
             label_ids.append(annotation.label_id)
-                
+
         # handle converting keypoints to YOLO format
         # assign keypoints to bounding boxes
-        
+
         self.assign_keypoints(target_ids=target_classes)
         for annotation in self.annotations:
             if annotation.type == AnnotationType.KEYPOINT:
                 logger.debug(f"Converting keypoint {annotation.id} to YOLO format with bounding box {annotation.bounding_box_id}")
                 box = yolo_annotations_map.get(annotation.bounding_box_id, None)
-                
+
                 if box is None:
                     raise Exception(f"Bounding box {annotation.bounding_box_id} not found for keypoint {annotation.id}")
                 idx = yolo_annotations.index(box)
@@ -697,7 +766,7 @@ class FileAnnotations(Base):
                 box.extend(np.array(yolo_kp).flatten().tolist())
                 # Update the box annotation in the list
                 yolo_annotations[idx] = box
-                
+
         if len(yolo_annotations) == 0:
             logger.debug(f"No annotations found for file {self.path}")
         return yolo_annotations, label_ids
@@ -725,12 +794,12 @@ class Dataset(Base):
         all_files = [file_ann.path for file_ann in self.files]
         common_prefix = os.path.commonprefix(all_files)
         return os.path.dirname(common_prefix)
-    
+
     def delete_empty_files(self):
         """Delete files that have no annotations."""
         self.files = [file_ann for file_ann in self.files if file_ann.has_annotations]
         return self
-    
+
     def files_to_relative(self):
         base_path = self.base_path
         if os.path.isabs(base_path):
@@ -740,20 +809,19 @@ class Dataset(Base):
 
     def get_label_ids(self) -> List[str]:
         return [label.id for label in self.labels]
-    
+
     def label_to_index(self, label_id: str) -> int:
         for idx, label in enumerate(self.labels):
             if label.id == label_id:
                 return idx
         raise ValueError(f"Label id {label_id} not found.")
-    
+
     def delete_label(self, label_id: str):
         self.labels = [label for label in self.labels if label.id != label_id]
         for file_ann in self.files:
             file_ann.annotations = [ann for ann in file_ann.annotations if ann.label_id != label_id]
             file_ann.predictions = [ann for ann in file_ann.predictions if ann.label_id != label_id]
         return self
-    
 
     def to_yolo(self, **kwargs):
         to_segmentation = kwargs.get("to_segmentation", False)
@@ -770,38 +838,38 @@ class Dataset(Base):
                 file_ann.annotations = [ann for ann in file_ann.annotations if ann.label_id not in delete_ids]
                 file_ann.predictions = [ann for ann in file_ann.predictions if ann.label_id not in delete_ids]
             logger.debug(f"Deleted annotations for labels {delete_ids}")
-            
+
             target_label_ids = target_classes
             logger.debug(f"Updated label ids {self.labels}")
         else:
             target_label_ids = [label.id for label in self.labels]
             logger.debug(f"Using all labels {target_label_ids}")
-        
-        # generate label counts 
+
+        # generate label counts
         if class_map:
             if len(class_map) != len(self.labels):
                 raise ValueError("Class map must have the same number of classes as the dataset")
-            label_id_index = {name:idx for idx,name in class_map.items()}
-        else:    
+            label_id_index = {name: idx for idx, name in class_map.items()}
+        else:
             label_id_index = {}
             label_idx = 0
             # generate label id index for labels that have annotations
             # create a sequential index for the labels
             for file_ann in self.files:
-                for annotation in file_ann.annotations:                    
+                for annotation in file_ann.annotations:
                     if annotation.label_id in target_label_ids and annotation.label_id not in label_id_index:
                         label_id_index[annotation.label_id] = label_idx
                         label_idx += 1
-        
+
         # sort the label_id_index by label id
         label_id_index = dict(sorted(label_id_index.items(), key=lambda item: item[1]))
-                    
+
         n_kpts = 0
         image_to_labels = {}
         label_ids = []
         for file_ann in self.files:
             file_path = file_ann.path
-            
+
             logger.debug(f"Processing file {file_path}")
             if file_path not in image_to_labels:
                 image_to_labels[file_path] = []
@@ -811,10 +879,7 @@ class Dataset(Base):
                 if n_kpts == 0:
                     n_kpts = len(keypoints)
                 elif len(keypoints) != n_kpts:
-                    raise Exception(
-                        f"Inconsistent number of keypoints: expected {n_kpts}, found {len(keypoints)}"
-                    )
-                    
+                    raise Exception(f"Inconsistent number of keypoints: expected {n_kpts}, found {len(keypoints)}")
 
             # Call the file-level to_yolo method:
             file_yolo, file_label_ids = file_ann.to_yolo(
@@ -827,7 +892,7 @@ class Dataset(Base):
             )
             label_ids.extend(file_label_ids)
             image_to_labels[file_path].extend(file_yolo)
-        
+
         # generate the class map
         return dict(
             image_labels=image_to_labels,

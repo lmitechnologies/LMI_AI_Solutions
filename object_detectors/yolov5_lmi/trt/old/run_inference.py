@@ -1,6 +1,7 @@
 """
 An example that uses TensorRT's Python api to make inferences.
 """
+
 import ctypes
 import os
 import random
@@ -12,7 +13,7 @@ import pycuda.driver as cuda
 import tensorrt as trt
 
 
-MAX_OUTPUT_BBOX_COUNT = 1000 #must match with 'MAX_OUTPUT_BBOX_COUNT' in the yololayer.h
+MAX_OUTPUT_BBOX_COUNT = 1000  # must match with 'MAX_OUTPUT_BBOX_COUNT' in the yololayer.h
 
 
 def get_img_path_batches(batch_size, img_dir):
@@ -21,23 +22,24 @@ def get_img_path_batches(batch_size, img_dir):
     cnt_images = 0
     for root, dirs, files in os.walk(img_dir):
         for name in files:
-            if name.find('.png')==-1:
+            if name.find(".png") == -1:
                 continue
             if len(batch) == batch_size:
                 ret.append(batch)
                 batch = []
             batch.append(os.path.join(root, name))
             cnt_images += 1
-    print(f'loaded {cnt_images} images')
+    print(f"loaded {cnt_images} images")
     if len(batch) > 0:
         ret.append(batch)
     return ret
+
 
 def plot_one_box(x, img, color=None, label=None, line_thickness=None):
     """
     description: Plots one bounding box on image img,
                  this function comes from YoLov5 project.
-    param: 
+    param:
         x:      a box likes [x1,y1,x2,y2]
         img:    a opencv image object
         color:  color to draw rectangle, such as (0,255,0)
@@ -47,9 +49,7 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
         no return
 
     """
-    tl = (
-        line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1
-    )  # line/font thickness
+    tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
     c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
     cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
@@ -95,7 +95,7 @@ class YoLov5TRT(object):
         self.bindings = []
 
         for binding in self.engine:
-            print('bingding:', binding, self.engine.get_binding_shape(binding))
+            print("bingding:", binding, self.engine.get_binding_shape(binding))
             size = trt.volume(self.engine.get_binding_shape(binding)) * self.engine.max_batch_size
             dtype = trt.nptype(self.engine.get_binding_dtype(binding))
             # Allocate host and device buffers
@@ -112,7 +112,7 @@ class YoLov5TRT(object):
             else:
                 self.host_outputs.append(host_mem)
                 self.cuda_outputs.append(cuda_mem)
-        
+
     def infer(self, raw_image_generator):
         start = time.time()
         # Make self the active context, pushing it on top of the context stack.
@@ -137,11 +137,15 @@ class YoLov5TRT(object):
         start = time.time()
         # Copy input image to host buffer
         np.copyto(self.host_inputs[0], batch_input_image.ravel())
-        
+
         # Transfer input data  to the GPU.
         cuda.memcpy_htod_async(self.cuda_inputs[0], self.host_inputs[0], self.stream)
         # Run inference.
-        self.context.execute_async(batch_size=batch_size, bindings=self.bindings, stream_handle=self.stream.handle)
+        self.context.execute_async(
+            batch_size=batch_size,
+            bindings=self.bindings,
+            stream_handle=self.stream.handle,
+        )
         # Transfer predictions back from the GPU.
         cuda.memcpy_dtoh_async(self.host_outputs[0], self.cuda_outputs[0], self.stream)
         # Synchronize the stream
@@ -157,7 +161,9 @@ class YoLov5TRT(object):
         # Do postprocess
         for i in range(batch_size):
             result_boxes, result_scores, result_classid = self.post_process(
-                output[i * (6*MAX_OUTPUT_BBOX_COUNT + 1): (i + 1) * (6*MAX_OUTPUT_BBOX_COUNT + 1)], batch_origin_h[i], batch_origin_w[i]
+                output[i * (6 * MAX_OUTPUT_BBOX_COUNT + 1) : (i + 1) * (6 * MAX_OUTPUT_BBOX_COUNT + 1)],
+                batch_origin_h[i],
+                batch_origin_w[i],
             )
             # Draw rectangles and labels on the original image
             for j in range(len(result_boxes)):
@@ -165,25 +171,27 @@ class YoLov5TRT(object):
                 plot_one_box(
                     box,
                     batch_image_raw[i],
-                    label="{}:{:.2f}".format(
-                        categories[int(result_classid[j])], result_scores[j]
-                    ),
+                    label="{}:{:.2f}".format(categories[int(result_classid[j])], result_scores[j]),
                 )
         end = time.time()
         postproc_time = end - start
-        return batch_image_raw, {'pre':preproc_time*1000, 'exec':exec_time*1000, 'post':postproc_time*1000}
+        return batch_image_raw, {
+            "pre": preproc_time * 1000,
+            "exec": exec_time * 1000,
+            "post": postproc_time * 1000,
+        }
 
     def destroy(self):
         # Remove any context from the top of the context stack, deactivating it.
         self.ctx.pop()
-        
+
     def get_raw_image(self, image_path_batch):
         """
         description: Read an image from image path
         """
         for img_path in image_path_batch:
             yield cv2.imread(img_path)
-        
+
     def get_raw_image_zeros(self, image_path_batch=None):
         """
         description: Ready data for warmup
@@ -205,15 +213,15 @@ class YoLov5TRT(object):
             w: original width
         """
         h, w, c = image_raw.shape
-        assert h==self.input_h
-        assert w==self.input_w
+        assert h == self.input_h
+        assert w == self.input_w
 
         image = image_raw.astype(np.float32)
         # Normalize to [0,1]
         image /= 255.0
         # HWC to CHW format:
         image = np.transpose(image, [2, 0, 1])
-        #BGR to RGB
+        # BGR to RGB
         image = image[::-1]
         # CHW to NCHW format
         image = np.expand_dims(image, axis=0)
@@ -253,7 +261,7 @@ class YoLov5TRT(object):
         """
         description: postprocess the prediction
         param:
-            output:     A numpy likes [num_boxes,cx,cy,w,h,conf,cls_id, cx,cy,w,h,conf,cls_id, ...] 
+            output:     A numpy likes [num_boxes,cx,cy,w,h,conf,cls_id, cx,cy,w,h,conf,cls_id, ...]
             origin_h:   height of original image
             origin_w:   width of original image
         return:
@@ -277,7 +285,7 @@ class YoLov5TRT(object):
         description: compute the IoU of two bounding boxes
         param:
             box1: A box coordinate (can be (x1, y1, x2, y2) or (x, y, w, h))
-            box2: A box coordinate (can be (x1, y1, x2, y2) or (x, y, w, h))            
+            box2: A box coordinate (can be (x1, y1, x2, y2) or (x, y, w, h))
             x1y1x2y2: select the coordinate format
         return:
             iou: computed iou
@@ -299,8 +307,7 @@ class YoLov5TRT(object):
         inter_rect_x2 = np.minimum(b1_x2, b2_x2)
         inter_rect_y2 = np.minimum(b1_y2, b2_y2)
         # Intersection area
-        inter_area = np.clip(inter_rect_x2 - inter_rect_x1 + 1, 0, None) * \
-                     np.clip(inter_rect_y2 - inter_rect_y1 + 1, 0, None)
+        inter_area = np.clip(inter_rect_x2 - inter_rect_x1 + 1, 0, None) * np.clip(inter_rect_y2 - inter_rect_y1 + 1, 0, None)
         # Union Area
         b1_area = (b1_x2 - b1_x1 + 1) * (b1_y2 - b1_y1 + 1)
         b2_area = (b2_x2 - b2_x1 + 1) * (b2_y2 - b2_y1 + 1)
@@ -327,10 +334,10 @@ class YoLov5TRT(object):
         # Trandform bbox from [center_x, center_y, w, h] to [x1, y1, x2, y2]
         boxes[:, :4] = self.xywh2xyxy(origin_h, origin_w, boxes[:, :4])
         # clip the coordinates
-        boxes[:, 0] = np.clip(boxes[:, 0], 0, origin_w -1)
-        boxes[:, 2] = np.clip(boxes[:, 2], 0, origin_w -1)
-        boxes[:, 1] = np.clip(boxes[:, 1], 0, origin_h -1)
-        boxes[:, 3] = np.clip(boxes[:, 3], 0, origin_h -1)
+        boxes[:, 0] = np.clip(boxes[:, 0], 0, origin_w - 1)
+        boxes[:, 2] = np.clip(boxes[:, 2], 0, origin_w - 1)
+        boxes[:, 1] = np.clip(boxes[:, 1], 0, origin_h - 1)
+        boxes[:, 3] = np.clip(boxes[:, 3], 0, origin_h - 1)
         # Object confidence
         confs = boxes[:, 4]
         # Sort by the confs
@@ -351,46 +358,61 @@ class YoLov5TRT(object):
 if __name__ == "__main__":
     # load custom plugin and engine
     ap = argparse.ArgumentParser()
-    ap.add_argument('-e', '--engine_file', required=True, help='the engine file path')
-    ap.add_argument('-p', '--plugin_folder', required=True, help='the folder contain the plugins, such as "libmyplugins.so"')
-    ap.add_argument('-i', '--image_path', required=True, help='the test image path')
-    ap.add_argument('-c', '--class_names', required=True, help='the class names, each separated by a comma')
-    ap.add_argument('-o', '--output_path', required=True, help='the output path')
-    ap.add_argument('--conf_thresh', default=0.25, type=float, help='the confidence threshold, default=0.25')
-    ap.add_argument('--iou_thresh', default=0.4, type=float, help='the IOU threshold, default=0.4')
+    ap.add_argument("-e", "--engine_file", required=True, help="the engine file path")
+    ap.add_argument(
+        "-p",
+        "--plugin_folder",
+        required=True,
+        help='the folder contain the plugins, such as "libmyplugins.so"',
+    )
+    ap.add_argument("-i", "--image_path", required=True, help="the test image path")
+    ap.add_argument(
+        "-c",
+        "--class_names",
+        required=True,
+        help="the class names, each separated by a comma",
+    )
+    ap.add_argument("-o", "--output_path", required=True, help="the output path")
+    ap.add_argument(
+        "--conf_thresh",
+        default=0.25,
+        type=float,
+        help="the confidence threshold, default=0.25",
+    )
+    ap.add_argument("--iou_thresh", default=0.4, type=float, help="the IOU threshold, default=0.4")
     args = vars(ap.parse_args())
 
     # load arguments
-    plugin_file = os.path.join(args['plugin_folder'],"libmyplugins.so")
+    plugin_file = os.path.join(args["plugin_folder"], "libmyplugins.so")
     if not os.path.isfile(plugin_file):
-        raise Exception(f'Not found plugin file: {plugin_file}')
-    
-    engine_file_path = args['engine_file']
+        raise Exception(f"Not found plugin file: {plugin_file}")
+
+    engine_file_path = args["engine_file"]
     if not os.path.isfile(engine_file_path):
-        raise Exception(f'Not found engine file: {engine_file_path}')
-    
+        raise Exception(f"Not found engine file: {engine_file_path}")
+
     ctypes.CDLL(plugin_file)
-    CONF_THRESH = args['conf_thresh']
-    IOU_THRESHOLD = args['iou_thresh']
-    image_dir = args['image_path']
-    output_dir = args['output_path']
-    categories = args['class_names'].split(',')
-    print('class names: ', categories)
-    
+    CONF_THRESH = args["conf_thresh"]
+    IOU_THRESHOLD = args["iou_thresh"]
+    image_dir = args["image_path"]
+    output_dir = args["output_path"]
+    categories = args["class_names"].split(",")
+    print("class names: ", categories)
+
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    
+
     # a YoLov5TRT instance
     yolov5_wrapper = YoLov5TRT(engine_file_path)
     try:
-        print('batch size is', yolov5_wrapper.batch_max_size)
+        print("batch size is", yolov5_wrapper.batch_max_size)
 
-        #warm up 10 times
+        # warm up 10 times
         for i in range(10):
             batch_image_raw, use_time = yolov5_wrapper.infer(yolov5_wrapper.get_raw_image_zeros())
-            print('warm_up->{}, time->{:.2f}ms'.format(batch_image_raw[0].shape, use_time['exec']))
-        
-        #do inference
+            print("warm_up->{}, time->{:.2f}ms".format(batch_image_raw[0].shape, use_time["exec"]))
+
+        # do inference
         proc_times = []
         pre_times = []
         post_times = []
@@ -402,17 +424,17 @@ if __name__ == "__main__":
                 parent, filename = os.path.split(img_path)
                 save_name = os.path.join(output_dir, filename)
                 cv2.imwrite(save_name, batch_image_raw[i])
-            print('input->{}, exec time->{:.2f}ms, saving into output_dir'.format(batch, use_time['exec']))
-            pre_times.append(use_time['pre'])
-            proc_times.append(use_time['exec'])
-            post_times.append(use_time['post'])
+            print("input->{}, exec time->{:.2f}ms, saving into output_dir".format(batch, use_time["exec"]))
+            pre_times.append(use_time["pre"])
+            proc_times.append(use_time["exec"])
+            post_times.append(use_time["post"])
         pre_times = np.array(pre_times)
         proc_times = np.array(proc_times)
         post_times = np.array(post_times)
-        print('[INFO] mean proc time: {:.2f}ms'.format(proc_times.mean()))
-        print('[INFO] max proc time: {:.2f}ms'.format(proc_times.max()))
-        print('[INFO] min proc time: {:.2f}ms'.format(proc_times.min()))
-        print('[INFO] mean preproc time: {:.2f}ms, mean postproc time: {:.2f}ms'.format(pre_times.mean(), post_times.mean()))
+        print("[INFO] mean proc time: {:.2f}ms".format(proc_times.mean()))
+        print("[INFO] max proc time: {:.2f}ms".format(proc_times.max()))
+        print("[INFO] min proc time: {:.2f}ms".format(proc_times.min()))
+        print("[INFO] mean preproc time: {:.2f}ms, mean postproc time: {:.2f}ms".format(pre_times.mean(), post_times.mean()))
     finally:
         # destroy the instance
         yolov5_wrapper.destroy()

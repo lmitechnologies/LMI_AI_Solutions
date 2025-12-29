@@ -24,22 +24,24 @@ import cv2
 
 
 class Rect:
-    '''
+    """
     Description: rectangle class captures x,y,w,h for all rectangle instances
-    '''
+    """
+
     x = None
     y = None
     w = None
     h = None
 
     def printit(self):
-        print(f'{str(self.x)}, {str(self.y)}, {str(self.w)}, {str(self.h)}')
+        print(f"{str(self.x)}, {str(self.y)}, {str(self.w)}, {str(self.h)}")
 
 
 # endclass
 
+
 class dragRect:
-    '''
+    """
     Description: Defines the draggable rectangle
     Objects for:
         -keepWithin: valid range (in the canvas)
@@ -48,15 +50,15 @@ class dragRect:
     Normal Vars for:
         -sBlk: drag handle marker size
         -image: image rendered on canvas
-        -wname: window name 
+        -wname: window name
     State Vars for:
-        -initialized 
+        -initialized
         -return flag
         -active: True if rectangle already present
         -drag: Currently resizing rectangle
         -hold: currently holding mouse button
         -drag handles: True if currently pulling on a particular drag handle
-    '''
+    """
 
     # Limits on the canvas
     keepWithin = Rect()
@@ -74,7 +76,7 @@ class dragRect:
 
     # Image
     image_in = None
-    image_runtime=None
+    image_runtime = None
 
     # Window Name
     wname = ""
@@ -102,16 +104,17 @@ class dragRect:
 
 # endclass
 
-def init(dragObj, Img, windowName, windowWidth, windowHeight,x=0,y=0,w=0,h=0):
-    '''
+
+def init(dragObj, Img, windowName, windowWidth, windowHeight, x=0, y=0, w=0, h=0):
+    """
     Description: initializes the dragRect object dragObj
-    
-    Args: 
+
+    Args:
         -dragObj: user defined rectangle
-    '''
+    """
     # Image
     dragObj.image_in = Img
-    dragObj.image_runtime=Img
+    dragObj.image_runtime = Img
 
     # Window name
     dragObj.wname = windowName
@@ -128,21 +131,23 @@ def init(dragObj, Img, windowName, windowWidth, windowHeight,x=0,y=0,w=0,h=0):
     dragObj.outRect.w = w
     dragObj.outRect.h = h
 
-    if x==0 and y==0 and w==0 and h==0:
+    if x == 0 and y == 0 and w == 0 and h == 0:
         pass
     else:
-        dragObj.active=True
+        dragObj.active = True
         clearCanvasNDraw(dragObj)
+
 
 # enddef
 
+
 def dragrect(event, x, y, flags, dragObj):
-    '''
+    """
     Description: callback definition that is passed to cv2.setMouseCallback()
 
     Entrypoint to mouse behavior, click or movement.
-    '''
-    #-------------
+    """
+    # -------------
     # Check if mouse is inside keepWithin rectangle
     # if no, set x,y to limit
     if x < dragObj.keepWithin.x:
@@ -158,7 +163,7 @@ def dragrect(event, x, y, flags, dragObj):
         y = dragObj.keepWithin.y + dragObj.keepWithin.h - 1
     # endif
 
-    #-------------
+    # -------------
     # switch on mouse action
     if event == cv2.EVENT_LBUTTONDOWN:
         mouseDown(x, y, dragObj)
@@ -173,12 +178,14 @@ def dragrect(event, x, y, flags, dragObj):
         mouseDoubleClick(x, y, dragObj)
     # endif
 
+
 # enddef
 
+
 def pointInRect(pX, pY, rX, rY, rW, rH):
-    '''
+    """
     Description: check to see if mouse point inside of rectangle
-    
+
     Args:
         pX: mouse point x
         pY: mouse point y
@@ -186,7 +193,7 @@ def pointInRect(pX, pY, rX, rY, rW, rH):
         rY: rect upper left y
         rW: rect width
         rH: rect height
-    '''
+    """
     if rX <= pX <= (rX + rW) and rY <= pY <= (rY + rH):
         return True
     else:
@@ -196,22 +203,29 @@ def pointInRect(pX, pY, rX, rY, rW, rH):
 
 # enddef
 
+
 def mouseDoubleClick(eX, eY, dragObj):
-    '''
+    """
     Description: double click event handler
 
     Args:
         -eX: current mouse pointer x
         -eY: current mouse pointer y
-        -dragObj user defined rectangle 
+        -dragObj user defined rectangle
 
-    '''
+    """
     if dragObj.active:
-
-        if pointInRect(eX, eY, dragObj.outRect.x, dragObj.outRect.y, dragObj.outRect.w, dragObj.outRect.h):
-            dragObj.active=False
+        if pointInRect(
+            eX,
+            eY,
+            dragObj.outRect.x,
+            dragObj.outRect.y,
+            dragObj.outRect.w,
+            dragObj.outRect.h,
+        ):
+            dragObj.active = False
             dragObj.returnflag = True
-            #cv2.destroyWindow(dragObj.wname)
+            # cv2.destroyWindow(dragObj.wname)
         # endif
 
     # endif
@@ -219,9 +233,10 @@ def mouseDoubleClick(eX, eY, dragObj):
 
 # enddef
 
+
 def mouseDown(eX, eY, dragObj):
-    '''
-    Description: 
+    """
+    Description:
         -main drag/resize callback
         -checks if user defined rectangle is active
             -yes:
@@ -230,65 +245,111 @@ def mouseDown(eX, eY, dragObj):
                     -yes: then re-position
             -no:
                 -create new user defined rectangle
-                -initialize top left corner to mouse position 
+                -initialize top left corner to mouse position
                 -sets drag to True for initial size setting
                 -sets active to True for intial rect definition
-    '''
+    """
 
     if dragObj.active:
-
-        if pointInRect(eX, eY, dragObj.outRect.x - dragObj.sBlk,
-                       dragObj.outRect.y - dragObj.sBlk,
-                       dragObj.sBlk * 2, dragObj.sBlk * 2):
+        if pointInRect(
+            eX,
+            eY,
+            dragObj.outRect.x - dragObj.sBlk,
+            dragObj.outRect.y - dragObj.sBlk,
+            dragObj.sBlk * 2,
+            dragObj.sBlk * 2,
+        ):
             dragObj.TL = True
             return
         # endif
-        if pointInRect(eX, eY, dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk,
-                       dragObj.outRect.y - dragObj.sBlk,
-                       dragObj.sBlk * 2, dragObj.sBlk * 2):
+        if pointInRect(
+            eX,
+            eY,
+            dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk,
+            dragObj.outRect.y - dragObj.sBlk,
+            dragObj.sBlk * 2,
+            dragObj.sBlk * 2,
+        ):
             dragObj.TR = True
             return
         # endif
-        if pointInRect(eX, eY, dragObj.outRect.x - dragObj.sBlk,
-                       dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk,
-                       dragObj.sBlk * 2, dragObj.sBlk * 2):
+        if pointInRect(
+            eX,
+            eY,
+            dragObj.outRect.x - dragObj.sBlk,
+            dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk,
+            dragObj.sBlk * 2,
+            dragObj.sBlk * 2,
+        ):
             dragObj.BL = True
             return
         # endif
-        if pointInRect(eX, eY, dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk,
-                       dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk,
-                       dragObj.sBlk * 2, dragObj.sBlk * 2):
+        if pointInRect(
+            eX,
+            eY,
+            dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk,
+            dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk,
+            dragObj.sBlk * 2,
+            dragObj.sBlk * 2,
+        ):
             dragObj.BR = True
             return
         # endif
 
-        if pointInRect(eX, eY, dragObj.outRect.x + dragObj.outRect.w / 2 - dragObj.sBlk,
-                       dragObj.outRect.y - dragObj.sBlk,
-                       dragObj.sBlk * 2, dragObj.sBlk * 2):
+        if pointInRect(
+            eX,
+            eY,
+            dragObj.outRect.x + dragObj.outRect.w / 2 - dragObj.sBlk,
+            dragObj.outRect.y - dragObj.sBlk,
+            dragObj.sBlk * 2,
+            dragObj.sBlk * 2,
+        ):
             dragObj.TM = True
             return
         # endif
-        if pointInRect(eX, eY, dragObj.outRect.x + dragObj.outRect.w / 2 - dragObj.sBlk,
-                       dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk,
-                       dragObj.sBlk * 2, dragObj.sBlk * 2):
+        if pointInRect(
+            eX,
+            eY,
+            dragObj.outRect.x + dragObj.outRect.w / 2 - dragObj.sBlk,
+            dragObj.outRect.y + dragObj.outRect.h - dragObj.sBlk,
+            dragObj.sBlk * 2,
+            dragObj.sBlk * 2,
+        ):
             dragObj.BM = True
             return
         # endif
-        if pointInRect(eX, eY, dragObj.outRect.x - dragObj.sBlk,
-                       dragObj.outRect.y + dragObj.outRect.h / 2 - dragObj.sBlk,
-                       dragObj.sBlk * 2, dragObj.sBlk * 2):
+        if pointInRect(
+            eX,
+            eY,
+            dragObj.outRect.x - dragObj.sBlk,
+            dragObj.outRect.y + dragObj.outRect.h / 2 - dragObj.sBlk,
+            dragObj.sBlk * 2,
+            dragObj.sBlk * 2,
+        ):
             dragObj.LM = True
             return
         # endif
-        if pointInRect(eX, eY, dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk,
-                       dragObj.outRect.y + dragObj.outRect.h / 2 - dragObj.sBlk,
-                       dragObj.sBlk * 2, dragObj.sBlk * 2):
+        if pointInRect(
+            eX,
+            eY,
+            dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk,
+            dragObj.outRect.y + dragObj.outRect.h / 2 - dragObj.sBlk,
+            dragObj.sBlk * 2,
+            dragObj.sBlk * 2,
+        ):
             dragObj.RM = True
             return
         # endif
 
         # This has to be below all of the other conditions
-        if pointInRect(eX, eY, dragObj.outRect.x, dragObj.outRect.y, dragObj.outRect.w, dragObj.outRect.h):
+        if pointInRect(
+            eX,
+            eY,
+            dragObj.outRect.x,
+            dragObj.outRect.y,
+            dragObj.outRect.w,
+            dragObj.outRect.h,
+        ):
             dragObj.anchor.x = eX - dragObj.outRect.x
             dragObj.anchor.w = dragObj.outRect.w - dragObj.anchor.x
             dragObj.anchor.y = eY - dragObj.outRect.y
@@ -310,11 +371,12 @@ def mouseDown(eX, eY, dragObj):
 
 # enddef
 
+
 def mouseMove(eX, eY, dragObj):
-    '''
-    Description: 
+    """
+    Description:
         -check for drag and active
-            -if true: 
+            -if true:
                 -reset w and h using delta between mouse pointer and uL corner
                 -update the image with the new rectangle
                 -redraw rectangle
@@ -329,7 +391,7 @@ def mouseMove(eX, eY, dragObj):
                 -redraw rectangle
 
 
-    '''
+    """
 
     if dragObj.drag & dragObj.active:
         dragObj.outRect.w = eX - dragObj.outRect.x
@@ -360,7 +422,6 @@ def mouseMove(eX, eY, dragObj):
         clearCanvasNDraw(dragObj)
         return
     # endif
-
 
     if dragObj.TL:
         dragObj.outRect.w = (dragObj.outRect.x + dragObj.outRect.w) - eX
@@ -417,15 +478,16 @@ def mouseMove(eX, eY, dragObj):
 
 # enddef
 
+
 def mouseUp(eX, eY, dragObj):
-    '''
+    """
     Description: action for releasing mouse button
         -disable drag state vars
         -disable resize state vars
         -check for 0 size:
             -if True, then deactivate "already present" flag
-        -redraw rect    
-    '''
+        -redraw rect
+    """
     dragObj.drag = False
     disableResizeButtons(dragObj)
     straightenUpRect(dragObj)
@@ -438,10 +500,11 @@ def mouseUp(eX, eY, dragObj):
 
 # enddef
 
+
 def disableResizeButtons(dragObj):
-    '''
+    """
     Description: disable all resize drag handles
-    '''
+    """
     dragObj.TL = dragObj.TM = dragObj.TR = False
     dragObj.LM = dragObj.RM = False
     dragObj.BL = dragObj.BM = dragObj.BR = False
@@ -450,10 +513,11 @@ def disableResizeButtons(dragObj):
 
 # enddef
 
+
 def straightenUpRect(dragObj):
-    '''
-    Description: correct inverted rectangle (user drags R edge over L edge, or T edge over B edge) 
-    '''
+    """
+    Description: correct inverted rectangle (user drags R edge over L edge, or T edge over B edge)
+    """
     if dragObj.outRect.w < 0:
         dragObj.outRect.x = dragObj.outRect.x + dragObj.outRect.w
         dragObj.outRect.w = -dragObj.outRect.w
@@ -466,25 +530,31 @@ def straightenUpRect(dragObj):
 
 # enddef
 
+
 def clearCanvasNDraw(dragObj):
-    '''
+    """
     Description:
         -Draw user defined rectangle on image
         -Draw resize handles on rectangle
         -Refresh the window
         -Wait for the next mouse click
-    '''
+    """
     tmp = dragObj.image_in.copy()
-    cv2.rectangle(tmp, (dragObj.outRect.x, dragObj.outRect.y),
-                  (dragObj.outRect.x + dragObj.outRect.w,
-                   dragObj.outRect.y + dragObj.outRect.h), (0, 255, 0), 1)
+    cv2.rectangle(
+        tmp,
+        (dragObj.outRect.x, dragObj.outRect.y),
+        (dragObj.outRect.x + dragObj.outRect.w, dragObj.outRect.y + dragObj.outRect.h),
+        (0, 255, 0),
+        1,
+    )
     drawSelectMarkers(tmp, dragObj)
-    dragObj.image_runtime=tmp
+    dragObj.image_runtime = tmp
     # cv2.imshow(dragObj.wname, tmp)
     # cv2.waitKey(1)
 
 
 # enddef
+
 
 def drawSelectMarkers(image, dragObj):
     # # Top-Left
@@ -504,4 +574,6 @@ def drawSelectMarkers(image, dragObj):
     # # Right-Mid
     # cv2.rectangle(image, (dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk,int(dragObj.outRect.y + dragObj.outRect.h / 2 - dragObj.sBlk)), (int(dragObj.outRect.x + dragObj.outRect.w - dragObj.sBlk + dragObj.sBlk * 2),int(dragObj.outRect.y + dragObj.outRect.h / 2 - dragObj.sBlk + dragObj.sBlk * 2)),(0, 255, 0), 1)
     pass
+
+
 # enddef

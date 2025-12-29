@@ -16,7 +16,7 @@ from dataset_utils.representations import (
     PolygonAnnotation,
     FileAnnotations,
     Dataset,
-    AnnotationType
+    AnnotationType,
 )
 from dataset_utils.mask_encoder import mask2rle
 from lmi_utils.label_utils.bbox_utils import rotate
@@ -27,19 +27,19 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 
-
-
 # ============================
 #  Geometry and Conversion Tests
 # ============================
+
 
 def test_point2d_from_dict_and_to_yolo():
     p = Point2d.from_dict({"x": 10, "y": 20})
     assert p.x == 10
     assert p.y == 20
     yolo = p.to_yolo(100, 200)  # height=100, width=200
-    expected = [[10/200, 20/100]]
+    expected = [[10 / 200, 20 / 100]]
     assert yolo == expected
+
 
 def test_point2d_resize_and_pad():
     p = Point2d(10, 20)
@@ -51,12 +51,14 @@ def test_point2d_resize_and_pad():
     assert np.isclose(p.x, 25)
     assert np.isclose(p.y, 45)
 
+
 def test_box_from_dict_and_to_yolo_no_angle():
     b = Box.from_dict({"x_min": 10, "y_min": 20, "x_max": 50, "y_max": 80, "angle": 0})
     yolo = b.to_yolo(100, 100)
     expected = [[0.3, 0.5, 0.4, 0.6]]
-    logger.warning(f'{yolo}')
+    logger.warning(f"{yolo}")
     assert yolo == expected
+
 
 def test_box_resize_and_pad():
     b = Box(10, 20, 50, 80, 0)
@@ -66,11 +68,12 @@ def test_box_resize_and_pad():
     assert np.isclose(b.y_min, 40)
     assert np.isclose(b.x_max, 100)
     assert np.isclose(b.y_max, 160)
-    b.pad(pl=5, pt=5) 
+    b.pad(pl=5, pt=5)
     assert np.isclose(b.x_min, 25)
     assert np.isclose(b.y_min, 45)
     assert np.isclose(b.x_max, 105)
     assert np.isclose(b.y_max, 165)
+
 
 def test_box_to_mask():
     b = Box(10, 20, 50, 80, 0)
@@ -79,17 +82,18 @@ def test_box_to_mask():
     mask = np.zeros((100, 100), dtype=np.uint8)
     mask[20:80, 10:50] = 1
     assert np.allclose(m.to_numpy(h=100, w=100), mask)
-    
+
     # test rotated box
     b = Box(10, 20, 50, 80, 30)  # 30 degrees rotation
     m = b.to_mask(h=100, w=100, mask_type=AnnotationType.MASK)
     assert isinstance(m, Mask)
     mask = np.zeros((100, 100), dtype=np.uint8)
-    pts = rotate(10, 20, 50-10, 80-20, 30)
+    pts = rotate(10, 20, 50 - 10, 80 - 20, 30)
     cv2.fillPoly(mask, [pts], 1)
     assert np.allclose(m.to_numpy(h=100, w=100), mask)
     poly = b.to_mask(mask_type=AnnotationType.POLYGON)
     assert np.allclose(poly.to_numpy(), pts)
+
 
 def test_box_invalid_coordinates():
     with pytest.raises(ValueError):
@@ -99,16 +103,24 @@ def test_box_invalid_coordinates():
         # y_min > y_max should raise an exception.
         Box(10, 80, 50, 20, 0)
 
+
 def test_box_point_in_box():
     b = Box(10, 20, 50, 80, 0)
     assert b.point_in_box(30, 50)
     assert not b.point_in_box(5, 50)
 
+
 def test_polygon_from_dict_and_to_yolo():
     poly = Polygon.from_dict({"points": [[10, 20], [30, 20], [30, 40], [10, 40]]})
     yolo = poly.to_yolo(100, 100)
-    expected = [[10/100, 20/100], [30/100, 20/100], [30/100, 40/100], [10/100, 40/100]]
+    expected = [
+        [10 / 100, 20 / 100],
+        [30 / 100, 20 / 100],
+        [30 / 100, 40 / 100],
+        [10 / 100, 40 / 100],
+    ]
     assert yolo == expected
+
 
 def test_polygon_resize_and_pad():
     poly = Polygon([[10, 20], [30, 20], [30, 40], [10, 40]])
@@ -120,6 +132,7 @@ def test_polygon_resize_and_pad():
     pts = np.array(poly.points)
     np.testing.assert_allclose(pts, np.array([[25, 45], [65, 45], [65, 85], [25, 85]]))
 
+
 def test_polygon_to_mask():
     poly = Polygon([[10, 20], [30, 20], [30, 40], [10, 40]])
     m = poly.to_mask(h=100, w=100)
@@ -127,6 +140,7 @@ def test_polygon_to_mask():
     mask = np.zeros((100, 100), dtype=np.uint8)
     cv2.fillPoly(mask, [np.array(poly.points).astype(np.int32)], 1)
     assert np.allclose(m.to_numpy(h=100, w=100), mask)
+
 
 def test_mask_from_dict_and_to_yolo():
     mask = np.zeros((100, 100), dtype=np.uint8)
@@ -137,6 +151,7 @@ def test_mask_from_dict_and_to_yolo():
     assert isinstance(yolo, list)
     assert len(yolo) > 0
 
+
 def test_mask_resize_and_pad():
     mask = np.zeros((100, 100), dtype=np.uint8)
     mask[20:80, 10:50] = 1
@@ -146,7 +161,7 @@ def test_mask_resize_and_pad():
     assert m.to_numpy(h=200, w=200).shape == (200, 200)
     m = m.pad(pad_h=10, pad_w=10, h=200, w=200)
     assert m.to_numpy(h=210, w=210).shape == (210, 210)
-    
+
 
 def test_mask_to_box():
     mask = np.zeros((100, 100), dtype=np.uint8)
@@ -156,9 +171,11 @@ def test_mask_to_box():
     b = m.to_box(merge_boxes=True, h=100, w=100)
     assert isinstance(b, Box)
 
+
 # # ============================
 # #     Annotation Tests
 # # ============================
+
 
 def test_box_annotation_to_yolo():
     b = Box(10, 20, 50, 80, 0)
@@ -166,6 +183,7 @@ def test_box_annotation_to_yolo():
     yolo = ba.to_yolo(100, 100)
     expected = b.to_yolo(100, 100)
     assert yolo == expected
+
 
 def test_mask_annotation_to_yolo():
     mask = np.zeros((100, 100), dtype=np.uint8)
@@ -177,12 +195,14 @@ def test_mask_annotation_to_yolo():
     expected = m.to_yolo(h=100, w=100)
     assert yolo == expected
 
+
 def test_keypoint_annotation_to_yolo():
     p = Point2d(10, 20)
     ka = KeypointAnnotation("a3", "label3", p)
     yolo = ka.to_yolo(100, 100)
     expected = p.to_yolo(100, 100)
     assert yolo == expected
+
 
 def test_polygon_annotation_to_yolo():
     poly = Polygon([[10, 20], [30, 20], [30, 40], [10, 40]])
@@ -191,9 +211,11 @@ def test_polygon_annotation_to_yolo():
     expected = poly.to_yolo(100, 100)
     assert yolo == expected
 
+
 # # ============================
 # #  FileAnnotations Tests
 # # ============================
+
 
 @pytest.fixture
 def dummy_file_annotations():
@@ -202,15 +224,17 @@ def dummy_file_annotations():
     file_path = "/dummy/path/image1.jpg"
     height = 100
     width = 100
-    
+
     b = Box(10, 20, 50, 80, 0)
     ba = BoxAnnotation(id="a1", label_id="label1", value=b)
-    return FileAnnotations(id=file_id,path=file_path, height=height,width=width, annotations=[ba])
+    return FileAnnotations(id=file_id, path=file_path, height=height, width=width, annotations=[ba])
+
 
 def test_file_annotations_relative_path(dummy_file_annotations):
     rel_path = dummy_file_annotations.relative_path("/dummy")
     expected = os.path.relpath(dummy_file_annotations.path, "/dummy")
     assert rel_path == expected
+
 
 def test_file_annotations_update_file(dummy_file_annotations):
     # Create a new File and update the file annotation.
@@ -218,10 +242,11 @@ def test_file_annotations_update_file(dummy_file_annotations):
     file_path = "/dummy/path/image1.jpg"
     height = 100
     width = 100
-    dummy_file_annotations.update_file(id=file_id, path=file_path,height=height,width=width)
+    dummy_file_annotations.update_file(id=file_id, path=file_path, height=height, width=width)
     assert dummy_file_annotations.id == "file1"
     assert dummy_file_annotations.height == 100
     assert dummy_file_annotations.width == 100
+
 
 def test_file_annotations_delete_annotation(dummy_file_annotations):
     # Try deleting an annotation that exists.
@@ -231,12 +256,14 @@ def test_file_annotations_delete_annotation(dummy_file_annotations):
     result = dummy_file_annotations.delete_annotation("a1", list_type="annotations")
     assert result is False
 
+
 def test_file_annotations_update_annotations(dummy_file_annotations):
     # Update annotations list.
     new_ann = BoxAnnotation("a_new", "label1", Box(5, 5, 15, 15, 0))
     dummy_file_annotations.update_annotations([new_ann], list_type="annotations")
     assert len(dummy_file_annotations.annotations) == 1
     assert dummy_file_annotations.annotations[0].id == "a_new"
+
 
 def test_file_annotations_assign_keypoints_error():
     # Create a FileAnnotations with a keypoint that does not fall inside any box.
@@ -247,9 +274,10 @@ def test_file_annotations_assign_keypoints_error():
     p = Point2d(5, 5)  # Outside any box we will add.
     ka = KeypointAnnotation("kp1", "label1", p)
     # No box annotation provided.
-    fa = FileAnnotations(id=file_id, path=file_path,height=height,width=width, annotations=[ka])
+    fa = FileAnnotations(id=file_id, path=file_path, height=height, width=width, annotations=[ka])
     with pytest.raises(Exception, match="not assigned"):
         fa.assign_keypoints()
+
 
 def test_file_annotations_to_yolo(dummy_file_annotations):
     logger.warning(f"dummy_file_annotations: {dummy_file_annotations}")
@@ -259,17 +287,17 @@ def test_file_annotations_to_yolo(dummy_file_annotations):
         to_object_detection=False,
         merge_boxes=False,
         target_classes=[],
-        label_id_idx={"label1": 0}
+        label_id_idx={"label1": 0},
     )
     assert isinstance(yolo, list)
     assert isinstance(label_ids, list)
     assert len(yolo) > 0
-    
-    
+
 
 # ============================
 #       Dataset Tests
 # ============================
+
 
 @pytest.fixture
 def dummy_dataset():
@@ -282,38 +310,57 @@ def dummy_dataset():
     ba = BoxAnnotation("a1", "label1", b)
     p = Point2d(30, 40)
     ka = KeypointAnnotation("a2", "label2", p)
-    file_ann = FileAnnotations(id=file_id, path=file_path,height=height,width=width, annotations=[ba, ka])
+    file_ann = FileAnnotations(id=file_id, path=file_path, height=height, width=width, annotations=[ba, ka])
     return Dataset(labels, [file_ann])
+
 
 def test_dataset_from_dict(dummy_dataset):
     data = {
         "labels": [
             {"id": "label1", "name": "Label One"},
-            {"id": "label2", "name": "Label Two"}
+            {"id": "label2", "name": "Label Two"},
         ],
-        "files": [{
-            "id": "file1",
-            "path": "/dummy/path/image1.jpg",
-            "height": 100,
-            "width": 100,
-            "annotations": [
-                {"id": "a1", "label_id": "label1", "type": "Box", 
-                 "value": {"x_min": 10, "y_min": 20, "x_max": 50, "y_max": 80, "angle": 0}},
-                {"id": "a2", "label_id": "label2", "type": "Keypoint", 
-                 "value": {"x": 30, "y": 40}}
-            ],
-            "predictions": []
-        }]
+        "files": [
+            {
+                "id": "file1",
+                "path": "/dummy/path/image1.jpg",
+                "height": 100,
+                "width": 100,
+                "annotations": [
+                    {
+                        "id": "a1",
+                        "label_id": "label1",
+                        "type": "Box",
+                        "value": {
+                            "x_min": 10,
+                            "y_min": 20,
+                            "x_max": 50,
+                            "y_max": 80,
+                            "angle": 0,
+                        },
+                    },
+                    {
+                        "id": "a2",
+                        "label_id": "label2",
+                        "type": "Keypoint",
+                        "value": {"x": 30, "y": 40},
+                    },
+                ],
+                "predictions": [],
+            }
+        ],
     }
     ds = Dataset.from_dict(data)
     assert len(ds.labels) == 2
     assert len(ds.files) == 1
+
 
 def test_dataset_label_to_index(dummy_dataset):
     idx = dummy_dataset.label_to_index("label1")
     assert isinstance(idx, int)
     with pytest.raises(ValueError):
         dummy_dataset.label_to_index("nonexistent")
+
 
 def test_dataset_base_path(dummy_dataset):
     # Compute common prefix and ensure base_path is the directory.
@@ -322,6 +369,7 @@ def test_dataset_base_path(dummy_dataset):
     expected = os.path.dirname("/dummy/path/image1.jpg")
     assert bp == expected
 
+
 def test_dataset_to_yolo(dummy_dataset):
     yolo_data = dummy_dataset.to_yolo(to_segmentation=False, to_object_detection=False)
     assert "image_labels" in yolo_data
@@ -329,6 +377,7 @@ def test_dataset_to_yolo(dummy_dataset):
     assert "n_kpts" in yolo_data
     for key, annotations in yolo_data["image_labels"].items():
         assert len(annotations) > 0
+
 
 def test_dataset_save_and_load(tmp_path, dummy_dataset):
     # Test the Base.save and Base.load functionality using a temporary file.
@@ -343,6 +392,7 @@ def test_dataset_save_and_load(tmp_path, dummy_dataset):
     # Check one field from a label.
     assert loaded.labels[0].id == dummy_dataset.labels[0].id
 
+
 def test_base_to_dict_and_to_json(dummy_dataset):
     # Test that Base.to_dict and to_json work.
     d = dummy_dataset.to_dict()
@@ -351,4 +401,3 @@ def test_base_to_dict_and_to_json(dummy_dataset):
     loaded = json.loads(j)
     assert isinstance(loaded, dict)
     assert isinstance(d, dict)
-    

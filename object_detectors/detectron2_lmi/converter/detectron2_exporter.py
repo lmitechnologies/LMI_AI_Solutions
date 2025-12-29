@@ -25,12 +25,13 @@ import cv2
 
 logger = setup_logger()
 
+
 def setup_cfg(args):
     cfg = get_cfg()
     # cuda context is initialized before creating dataloader, so we don't fork anymore
     cfg.DATALOADER.NUM_WORKERS = 0
     add_pointrend_config(cfg)
-    cfg.merge_from_file(args.get('config_file'))
+    cfg.merge_from_file(args.get("config_file"))
     cfg.freeze()
     return cfg
 
@@ -72,7 +73,7 @@ def export_scripting(torch_model, args):
                 return [i.get_fields() for i in instances]
 
     ts_model = scripting_with_instances(ScriptableAdapter(), fields)
-    with PathManager.open(args.get('pt_file_path'), "wb") as f:
+    with PathManager.open(args.get("pt_file_path"), "wb") as f:
         torch.jit.save(ts_model, f)
     # dump_torchscript_IR(ts_model, args.get('output'))
     # TODO inference in Python now missing postprocessing glue code
@@ -97,17 +98,17 @@ def export_tracing(torch_model, inputs, args):
 
     traceable_model = TracingAdapter(torch_model, inputs, inference)
 
-    if args.get('format') == "tracing":
+    if args.get("format") == "tracing":
         ts_model = torch.jit.trace(traceable_model, (image,))
-        with PathManager.open(args.get('pt_file_path'), "wb") as f:
+        with PathManager.open(args.get("pt_file_path"), "wb") as f:
             torch.jit.save(ts_model, f)
-    if args.get('format') == "onnx":
-        with PathManager.open(args.get('onnx_file_path'), "wb") as f:
+    if args.get("format") == "onnx":
+        with PathManager.open(args.get("onnx_file_path"), "wb") as f:
             torch.onnx.export(traceable_model, (image,), f, opset_version=STABLE_ONNX_OPSET_VERSION)
     logger.info("Inputs schema: " + str(traceable_model.inputs_schema))
     logger.info("Outputs schema: " + str(traceable_model.outputs_schema))
 
-    if args.get('format') != "torchscript":
+    if args.get("format") != "torchscript":
         return None
     if not isinstance(torch_model, (GeneralizedRCNN, RetinaNet)):
         return None
@@ -125,22 +126,19 @@ def export_tracing(torch_model, inputs, args):
     return eval_wrapper
 
 
-def get_sample_inputs(args,cfg):
-
-    if args.get('sample_image', None) is None:
+def get_sample_inputs(args, cfg):
+    if args.get("sample_image", None) is None:
         # get a first batch from dataset
         data_loader = build_detection_test_loader(cfg, cfg.DATASETS.TEST[0])
         first_batch = next(iter(data_loader))
         return first_batch
     else:
         # get a sample data
-        original_image = cv2.imread(args.get('sample_image', None))
+        original_image = cv2.imread(args.get("sample_image", None))
         original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
         print(f"Processing image {args.get('sample_image', None)}")
         print(f"Image size (h,w): {original_image.shape[:2]}")
-        aug = T.ResizeShortestEdge(
-            [original_image.shape[0], original_image.shape[0]], original_image.shape[0]
-        )
+        aug = T.ResizeShortestEdge([original_image.shape[0], original_image.shape[0]], original_image.shape[0])
         image = aug.get_transform(original_image).apply_image(original_image)
         height, width = original_image.shape[:2]
         image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
@@ -151,6 +149,7 @@ def get_sample_inputs(args,cfg):
         sample_inputs = [inputs]
         return sample_inputs
 
+
 def det2export(args) -> None:
     # Disable re-specialization on new shapes. Otherwise --run-eval will be slow
     torch._C._jit_set_bailout_depth(1)
@@ -159,16 +158,15 @@ def det2export(args) -> None:
 
     # create a torch model
     torch_model = build_model(cfg)
-    cfg.merge_from_list(["MODEL.WEIGHTS", args.get('weights')])
-        
-        
+    cfg.merge_from_list(["MODEL.WEIGHTS", args.get("weights")])
+
     DetectionCheckpointer(torch_model).resume_or_load(cfg.MODEL.WEIGHTS)
     torch_model.eval()
 
     # convert and save model
-    if args.get('format') == "pt":
+    if args.get("format") == "pt":
         export_scripting(torch_model, args)
-    elif args.get('format') == "onnx":
+    elif args.get("format") == "onnx":
         sample_inputs = get_sample_inputs(args, cfg)
         export_tracing(torch_model, sample_inputs, args)
 
@@ -184,12 +182,30 @@ if __name__ == "__main__":
         help="output format",
         default="onnx",
     )
-    parser.add_argument('-c',"--config-file",metavar="FILE", help="path to config file", default='/home/weights/config.yaml')
-    parser.add_argument('-o','--output',help="output directory for the converted model", default='/home/weights')
     parser.add_argument(
-        "-w", "--weights", help="The Detectron 2 model weights (.pkl)", type=str, default="/home/weights/model_final.pth",
+        "-c",
+        "--config-file",
+        metavar="FILE",
+        help="path to config file",
+        default="/home/weights/config.yaml",
     )
     parser.add_argument(
-        "-s", "--sample_image", help="Sample image for anchors generation/predictions", type=str, default="/home/weights/sample_image.png",
+        "-o",
+        "--output",
+        help="output directory for the converted model",
+        default="/home/weights",
     )
-    
+    parser.add_argument(
+        "-w",
+        "--weights",
+        help="The Detectron 2 model weights (.pkl)",
+        type=str,
+        default="/home/weights/model_final.pth",
+    )
+    parser.add_argument(
+        "-s",
+        "--sample_image",
+        help="Sample image for anchors generation/predictions",
+        type=str,
+        default="/home/weights/sample_image.png",
+    )

@@ -10,7 +10,7 @@ if target_dir not in sys.path:
 
 if __name__ == "__main__":
     real_script_path = os.path.join(target_dir, "model_main_tf2.py")
-    
+
     if not os.path.exists(real_script_path):
         raise FileNotFoundError(f"Could not find the real script at: {real_script_path}")
 
