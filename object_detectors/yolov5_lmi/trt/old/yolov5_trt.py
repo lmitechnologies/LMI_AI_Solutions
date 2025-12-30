@@ -1,10 +1,8 @@
 import random
 import time
-import cv2
-import numpy as np
-import pycuda.autoinit
-import pycuda.driver as cuda
 
+import numpy as np
+import pycuda.driver as cuda
 from yolov5_lmi.trt.old.base_trt_model import TRT_Model
 
 
@@ -13,16 +11,33 @@ class YoLov5TRT(TRT_Model):
     description: A YOLOv5 class that warps TensorRT ops, preprocess and postprocess ops.
     """
 
-    def __init__(self, engine_file_path, plugin_path, class_map, conf_thres, iou_thres=0.4, max_output_bbox_count=1000):
-        super().__init__(engine_file_path,plugin_path)
-        #load configs
+    def __init__(
+        self,
+        engine_file_path,
+        plugin_path,
+        class_map,
+        conf_thres,
+        iou_thres=0.4,
+        max_output_bbox_count=1000,
+    ):
+        super().__init__(engine_file_path, plugin_path)
+        # load configs
         self.class_map = class_map
         self.conf_thres = conf_thres
         self.nms_iou_thres = iou_thres
         self.max_output_bbox_count = max_output_bbox_count
-        
-        colors = [(0,0,255),(255,0,0),(0,255,0),(102,51,153),(255,140,0),(105,105,105),(127,25,27),(9,200,100)]
-        #<cls name: (R,G,B)>
+
+        colors = [
+            (0, 0, 255),
+            (255, 0, 0),
+            (0, 255, 0),
+            (102, 51, 153),
+            (255, 140, 0),
+            (105, 105, 105),
+            (127, 25, 27),
+            (9, 200, 100),
+        ]
+        # <cls name: (R,G,B)>
         self.color_map = {}
         min_id = min(class_map.keys())
         for i in class_map:
@@ -32,13 +47,12 @@ class YoLov5TRT(TRT_Model):
             if i < len(colors):
                 self.color_map[cls_name] = colors[i]
             else:
-                self.color_map[cls_name] = tuple([random.randint(0,255) for _ in range(3)])
-        
-        
-    def infer(self, images_raw:list, conf_thres:dict={}, nms_iou_thres=None):
+                self.color_map[cls_name] = tuple([random.randint(0, 255) for _ in range(3)])
+
+    def infer(self, images_raw: list, conf_thres: dict = None, nms_iou_thres=None):
         start = time.time()
         # loading default thresholds
-        if not conf_thres:
+        if conf_thres is None:
             conf_thres = self.conf_thres
         if nms_iou_thres is None:
             nms_iou_thres = self.nms_iou_thres
@@ -49,7 +63,7 @@ class YoLov5TRT(TRT_Model):
         batch_input_images = np.empty(shape=[self.batch_max_size, 3, self.input_h, self.input_w])
         batch_size = len(images_raw)
         for i, image in enumerate(images_raw):
-            input_image,raw_image,errs = self.preprocess_image(image)
+            input_image, raw_image, errs = self.preprocess_image(image)
             errors += errs
             np.copyto(batch_input_images[i], input_image)
         batch_input_images = np.ascontiguousarray(batch_input_images)
@@ -61,9 +75,13 @@ class YoLov5TRT(TRT_Model):
         # Transfer input data  to the GPU.
         cuda.memcpy_htod_async(self.cuda_inputs[0], self.host_inputs[0], self.stream)
         # Run inference.
-        self.context.execute_async(batch_size=batch_size, bindings=self.bindings, stream_handle=self.stream.handle)
+        self.context.execute_async(
+            batch_size=batch_size,
+            bindings=self.bindings,
+            stream_handle=self.stream.handle,
+        )
         # Transfer predictions back from the GPU.
-        cuda.memcpy_dtoh_async(self.host_outputs['prob'], self.cuda_outputs['prob'], self.stream)
+        cuda.memcpy_dtoh_async(self.host_outputs["prob"], self.cuda_outputs["prob"], self.stream)
         # Synchronize the stream
         self.stream.synchronize()
         exec_time = time.time() - start
@@ -72,18 +90,31 @@ class YoLov5TRT(TRT_Model):
         # Remove any context from the top of the context stack, deactivating it.
         self.ctx.pop()
         # Here we use the first row of output in that batch_size = 1
-        output = self.host_outputs['prob']
+        output = self.host_outputs["prob"]
         # Do postprocess
         results = []
         for i in range(batch_size):
             result_boxes, result_scores, result_classid = self.post_process(
-                output[i * (6*self.max_output_bbox_count + 1): (i + 1) * (6*self.max_output_bbox_count + 1)], self.input_h, self.input_w, conf_thres, nms_iou_thres
+                output[i * (6 * self.max_output_bbox_count + 1) : (i + 1) * (6 * self.max_output_bbox_count + 1)],
+                self.input_h,
+                self.input_w,
+                conf_thres,
+                nms_iou_thres,
             )
-            pred_classes = [self.class_map[int(cid)]  for cid in result_classid]
-            results.append({'boxes':result_boxes.tolist(), 'scores':result_scores.tolist(), 'classes':pred_classes})
+            pred_classes = [self.class_map[int(cid)] for cid in result_classid]
+            results.append(
+                {
+                    "boxes": result_boxes.tolist(),
+                    "scores": result_scores.tolist(),
+                    "classes": pred_classes,
+                }
+            )
         postproc_time = time.time() - start
-        return results, {'pre':preproc_time, 'exec':exec_time, 'post':postproc_time}, errors
-
+        return (
+            results,
+            {"pre": preproc_time, "exec": exec_time, "post": postproc_time},
+            errors,
+        )
 
     def xywh2xyxy(self, origin_h, origin_w, x):
         """
@@ -112,13 +143,12 @@ class YoLov5TRT(TRT_Model):
             y /= r_h
 
         return y
-    
 
     def post_process(self, output, origin_h, origin_w, conf_thres, nms_iou_thres):
         """
         description: postprocess the prediction
         param:
-            output:     A numpy likes [num_boxes,cx,cy,w,h,conf,cls_id, cx,cy,w,h,conf,cls_id, ...] 
+            output:     A numpy likes [num_boxes,cx,cy,w,h,conf,cls_id, cx,cy,w,h,conf,cls_id, ...]
             origin_h:   height of original image
             origin_w:   width of original image
             conf_thres(dict): a map of <class_name, threshold>
@@ -137,16 +167,15 @@ class YoLov5TRT(TRT_Model):
         result_boxes = boxes[:, :4] if len(boxes) else np.array([])
         result_scores = boxes[:, 4] if len(boxes) else np.array([])
         result_classid = boxes[:, 5] if len(boxes) else np.array([])
-        
-        return result_boxes, result_scores, result_classid
 
+        return result_boxes, result_scores, result_classid
 
     def bbox_iou(self, box1, box2, x1y1x2y2=True):
         """
         description: compute the IoU of two bounding boxes
         param:
             box1: A box coordinate (can be (x1, y1, x2, y2) or (x, y, w, h))
-            box2: A box coordinate (can be (x1, y1, x2, y2) or (x, y, w, h))            
+            box2: A box coordinate (can be (x1, y1, x2, y2) or (x, y, w, h))
             x1y1x2y2: select the coordinate format
         return:
             iou: computed iou
@@ -168,8 +197,7 @@ class YoLov5TRT(TRT_Model):
         inter_rect_x2 = np.minimum(b1_x2, b2_x2)
         inter_rect_y2 = np.minimum(b1_y2, b2_y2)
         # Intersection area
-        inter_area = np.clip(inter_rect_x2 - inter_rect_x1 + 1, 0, None) * \
-                     np.clip(inter_rect_y2 - inter_rect_y1 + 1, 0, None)
+        inter_area = np.clip(inter_rect_x2 - inter_rect_x1 + 1, 0, None) * np.clip(inter_rect_y2 - inter_rect_y1 + 1, 0, None)
         # Union Area
         b1_area = (b1_x2 - b1_x1 + 1) * (b1_y2 - b1_y1 + 1)
         b2_area = (b2_x2 - b2_x1 + 1) * (b2_y2 - b2_y1 + 1)
@@ -177,7 +205,6 @@ class YoLov5TRT(TRT_Model):
         iou = inter_area / (b1_area + b2_area - inter_area + 1e-16)
 
         return iou
-
 
     def non_max_suppression(self, prediction, origin_h, origin_w, conf_thres, nms_thres=0.4):
         """
@@ -194,17 +221,17 @@ class YoLov5TRT(TRT_Model):
         """
         # Get the boxes that score > CONF_THRESH
         M = np.zeros(prediction.shape[0], dtype=bool)
-        for i,pred in enumerate(prediction):
+        for i, pred in enumerate(prediction):
             name = self.class_map[pred[5]]
             M[i] = pred[4] >= conf_thres[name]
         boxes = prediction[M]
         # Trandform bbox from [center_x, center_y, w, h] to [x1, y1, x2, y2]
         boxes[:, :4] = self.xywh2xyxy(origin_h, origin_w, boxes[:, :4])
         # clip the coordinates
-        boxes[:, 0] = np.clip(boxes[:, 0], 0, origin_w -1)
-        boxes[:, 2] = np.clip(boxes[:, 2], 0, origin_w -1)
-        boxes[:, 1] = np.clip(boxes[:, 1], 0, origin_h -1)
-        boxes[:, 3] = np.clip(boxes[:, 3], 0, origin_h -1)
+        boxes[:, 0] = np.clip(boxes[:, 0], 0, origin_w - 1)
+        boxes[:, 2] = np.clip(boxes[:, 2], 0, origin_w - 1)
+        boxes[:, 1] = np.clip(boxes[:, 1], 0, origin_h - 1)
+        boxes[:, 3] = np.clip(boxes[:, 3], 0, origin_h - 1)
         # Object confidence
         confs = boxes[:, 4]
         # Sort by the confs

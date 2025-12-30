@@ -1,5 +1,6 @@
-from cls_core.classifier_registry import ClassifierRegistry
 import logging
+
+from cls_core.classifier_registry import ClassifierRegistry
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -15,7 +16,7 @@ def test_auto_registration():
     assert len(ClassifierRegistry._registry) > 0, "ClassifierRegistry should have registered classifiers."
 
     to_be_tested_keys = [
-        ('ultralytics', 'yolov8', 'classification', 'v0'),
+        ("ultralytics", "yolov8", "classification", "v0"),
     ]
 
     for key in to_be_tested_keys:

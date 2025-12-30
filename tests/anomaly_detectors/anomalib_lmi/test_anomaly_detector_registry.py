@@ -1,5 +1,6 @@
-from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 import logging
+
+from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -17,11 +18,10 @@ def test_auto_register_models():
 
     # Check if specific known detectors are registered
     known_keys = [
-        ('anomalib1', 'patchcore', 'anomalydetection', 'v1'),
-        ('anomalib', 'patchcore', 'anomalydetection', 'v0'),
-        ('anomalib0', 'padim', 'anomalydetection', 'v0'),
+        ("anomalib1", "patchcore", "anomalydetection", "v1"),
+        ("anomalib", "patchcore", "anomalydetection", "v0"),
+        ("anomalib0", "padim", "anomalydetection", "v0"),
     ]
     for key in known_keys:
         key2 = AnomalyDetectorRegistry._generate_key(*key, info={})
-        assert key2 in AnomalyDetectorRegistry._registry.keys(), \
-            f"Expected {key2} to be registered in AnomalyDetectorRegistry."
+        assert key2 in AnomalyDetectorRegistry._registry.keys(), f"Expected {key2} to be registered in AnomalyDetectorRegistry."

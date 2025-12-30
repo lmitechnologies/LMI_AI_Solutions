@@ -1,23 +1,24 @@
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, List, Optional
+
 
 @dataclass
 class Artifact:
     """Represents a single model artifact type (e.g., pt, onnx, trt)."""
+
     model_path: str
     image_size: List[int]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Artifact':
+    def from_dict(cls, data: Dict[str, Any]) -> "Artifact":
         """Creates an Artifact instance from a dictionary."""
-        return cls(
-            model_path=data.get("model_path", ""),
-            image_size=data.get("image_size", [])
-        )
+        return cls(model_path=data.get("model_path", ""), image_size=data.get("image_size", []))
+
 
 @dataclass
 class Details:
     """Contains model information that cannot be updated at runtime."""
+
     global_preprocessing: List[str]
     training_package: str
     training_algorithm: str
@@ -25,19 +26,19 @@ class Details:
     defect_class_list: Optional[List[str]] = None
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Details':
+    def from_dict(cls, data: Dict[str, Any]) -> "Details":
         """Creates a Details instance from a dictionary."""
         return cls(
             global_preprocessing=data.get("global_preprocessing", []),
             training_package=data.get("training_package", ""),
             training_algorithm=data.get("training_algorithm", ""),
             base_model=data.get("base_model", ""),
-            defect_class_list=data.get("defect_class_list")
+            defect_class_list=data.get("defect_class_list"),
         )
-    
-    def get_preprocessing_by_type(self,preprocessing_type: str) -> Optional[Dict[str, Any]]:
+
+    def get_preprocessing_by_type(self, preprocessing_type: str) -> Optional[Dict[str, Any]]:
         for step in self.global_preprocessing:
-            if step.get('type') == preprocessing_type:
+            if step.get("type") == preprocessing_type:
                 return step
         return None
 
@@ -49,35 +50,36 @@ class Configs:
     Uses Optional for fields that may not apply to all model types.
     The `**kwargs` allows for flexible handling of dynamic defect confidence keys.
     """
+
     threshold_min: Optional[float] = None
     threshold_max: Optional[float] = None
     defect_confidence: Dict[str, float] = field(default_factory=dict)
 
-
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Configs':
+    def from_dict(cls, data: Dict[str, Any]) -> "Configs":
         """
         Creates a Configs instance from a dictionary, separating known fields
         from dynamic defect confidence scores.
         """
         known_fields = {"threshold_min", "threshold_max"}
-        
+
         # Initialize with known fields
         instance = cls(
             threshold_min=data.get("threshold_min"),
-            threshold_max=data.get("threshold_max")
+            threshold_max=data.get("threshold_max"),
         )
 
         for key, value in data.items():
             if key not in known_fields:
                 instance.defect_confidence[key] = value
-        
+
         return instance
 
 
 @dataclass
 class Model:
     """Represents a complete model configuration."""
+
     model_role: str
     model_type: str
     model_name: str
@@ -88,7 +90,7 @@ class Model:
     format: str
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Model':
+    def from_dict(cls, data: Dict[str, Any]) -> "Model":
         """Creates a Model instance from a dictionary."""
         artifacts_data = data.get("artifacts", {})
         artifacts = {k: Artifact.from_dict(v) for k, v in artifacts_data.items()}
@@ -101,12 +103,13 @@ class Model:
             artifacts=artifacts,
             details=Details.from_dict(data.get("details", {})),
             configs=Configs.from_dict(data.get("configs", {})),
-            format=data.get("format", "")
+            format=data.get("format", ""),
         )
+
     def get_metadata(self) -> Dict[str, Any]:
         """Returns the metadata of the model as a dictionary."""
         # check for tiling preprocessing
-        tiling_config = self.details.get_preprocessing_by_type('tile')
+        tiling_config = self.details.get_preprocessing_by_type("tile")
         metadata = {
             "model_path": self.artifacts.get(self.format, {}).model_path if self.format in self.artifacts else "",
             "image_size": self.artifacts.get(self.format, {}).image_size if self.format in self.artifacts else [],
@@ -115,35 +118,45 @@ class Model:
             "package": self.details.training_package.lower(),
         }
         if tiling_config:
-            metadata['tile_size'] = [tiling_config.get(f'configuration', {}).get('height', None), tiling_config.get(f'configuration', {}).get('width', None)]
-            metadata['stride'] = [tiling_config.get(f'configuration', {}).get('y_stride', None), tiling_config.get(f'configuration', {}).get('x_stride', None)]
+            metadata["tile_size"] = [
+                tiling_config.get("configuration", {}).get("height", None),
+                tiling_config.get("configuration", {}).get("width", None),
+            ]
+            metadata["stride"] = [
+                tiling_config.get("configuration", {}).get("y_stride", None),
+                tiling_config.get("configuration", {}).get("x_stride", None),
+            ]
         return metadata
+
 
 @dataclass
 class ModelCollection:
     """Represents the top-level object containing all models."""
+
     models: Dict[str, Model]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'ModelCollection':
+    def from_dict(cls, data: Dict[str, Any]) -> "ModelCollection":
         """Creates a ModelCollection from the root dictionary."""
         # The root dictionary has a single key "model"
         models = {role: Model.from_dict(model_info) for role, model_info in data.items() if model_info is not None}
         return cls(models=models)
-    
+
     def get_metadata(self) -> Dict[str, Any]:
         configs = {}
         for model in self.models.values():
             configs[model.model_role] = model.get_metadata()
         return configs
 
+
 class ModelSchemaV_2:
     """Schema for model version 2."""
+
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> ModelCollection:
         """Creates a ModelCollection instance from a dictionary."""
         return ModelCollection.from_dict(data)
-    
+
     @staticmethod
     def get_metadata(model_collection: ModelCollection) -> Dict[str, Any]:
         """Returns the metadata of the model collection."""

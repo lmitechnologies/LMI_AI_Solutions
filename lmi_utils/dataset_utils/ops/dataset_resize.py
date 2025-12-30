@@ -1,13 +1,13 @@
 import logging
-import numpy as np
-import cv2
 
-#LMI packages
+import numpy as np
+
+# LMI packages
 from dataset_utils.representations import Annotation
 from image_utils.img_resize import resize
 
-
 logger = logging.getLogger(__name__)
+
 
 def resize_annotations(shapes, orig_h: int, orig_w: int, new_h: int, new_w: int):
     """resize shapes
@@ -23,7 +23,14 @@ def resize_annotations(shapes, orig_h: int, orig_w: int, new_h: int, new_w: int)
 
     return shapes
 
-def resize_annotated_image(image: np.ndarray, annotations: list[Annotation], width: int, height: int, maintain_aspect_ratio=False) -> tuple[np.ndarray, list[Annotation]]:
+
+def resize_annotated_image(
+    image: np.ndarray,
+    annotations: list[Annotation],
+    width: int,
+    height: int,
+    maintain_aspect_ratio=False,
+) -> tuple[np.ndarray, list[Annotation]]:
     """
     resize image and its annotations to the size [width, height]
     Arguments:
@@ -37,8 +44,8 @@ def resize_annotated_image(image: np.ndarray, annotations: list[Annotation], wid
         annotations(list): a list of annotation objects
     """
     h, w = image.shape[:2]
-    th, tw  = height, width
-    
+    th, tw = height, width
+
     if (tw is None and th is None) or (tw == w and th == h):
         th, tw = h, w
         im_out = image
@@ -47,8 +54,8 @@ def resize_annotated_image(image: np.ndarray, annotations: list[Annotation], wid
             scale = min(th / h, tw / w)
             tw = np.int32(scale * w)
             th = np.int32(scale * h)
-            im_out = resize(image, width=tw, height=th)            
-        else:    
+            im_out = resize(image, width=tw, height=th)
+        else:
             if tw is None:
                 tw = w
                 im_out = resize(image, height=th)
@@ -57,12 +64,12 @@ def resize_annotated_image(image: np.ndarray, annotations: list[Annotation], wid
                 im_out = resize(image, width=tw)
             else:
                 im_out = resize(image, width=tw, height=th)
-        
-    th,tw = im_out.shape[:2]
-    if tw != w or th != h:
-        annotations = resize_annotations(annotations,orig_h=h, orig_w=w, new_h=th, new_w=tw)
 
-    return im_out, annotations    
+    th, tw = im_out.shape[:2]
+    if tw != w or th != h:
+        annotations = resize_annotations(annotations, orig_h=h, orig_w=w, new_h=th, new_w=tw)
+
+    return im_out, annotations
 
 
 def resize_dataset(dataset, images, output_imsize, maintain_aspect_ratio=False):
@@ -80,12 +87,18 @@ def resize_dataset(dataset, images, output_imsize, maintain_aspect_ratio=False):
     for f in dataset.files:
         file_path = f.path
         im = images[file_path]
-      
-        im_out, annot_out = resize_annotated_image(image=im, annotations=f.annotations, width=output_imsize[0], height=output_imsize[1], maintain_aspect_ratio=maintain_aspect_ratio)
 
-        logger.debug(f'resize {file_path} from w:{im.shape[1]} h:{im.shape[0]} to w:{im_out.shape[1]} h:{im_out.shape[0]}')
+        im_out, annot_out = resize_annotated_image(
+            image=im,
+            annotations=f.annotations,
+            width=output_imsize[0],
+            height=output_imsize[1],
+            maintain_aspect_ratio=maintain_aspect_ratio,
+        )
 
-        f.height =  im_out.shape[0]
+        logger.debug(f"resize {file_path} from w:{im.shape[1]} h:{im.shape[0]} to w:{im_out.shape[1]} h:{im_out.shape[0]}")
+
+        f.height = im_out.shape[0]
         f.width = im_out.shape[1]
         f.annotations = annot_out
         resized_images[file_path] = im_out

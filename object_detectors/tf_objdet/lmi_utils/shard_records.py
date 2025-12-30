@@ -1,6 +1,7 @@
-import tensorflow as tf
 import argparse
 import os
+
+import tensorflow as tf
 
 
 def main(s, r, w):

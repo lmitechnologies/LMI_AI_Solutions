@@ -16,6 +16,7 @@
 #
 
 import logging
+
 import numpy as np
 import onnx_graphsurgeon as gs
 
@@ -36,9 +37,7 @@ def op_with_const(self, op, name, input, value):
     input_tensor = input if type(input) is gs.Variable else input[0]
     log.debug("Created {} node '{}': {}".format(op, name, value.squeeze()))
     const = gs.Constant(name="{}_value:0".format(name), values=value)
-    return self.layer(
-        name=name, op=op, inputs=[input_tensor, const], outputs=[name + ":0"]
-    )
+    return self.layer(name=name, op=op, inputs=[input_tensor, const], outputs=[name + ":0"])
 
 
 @gs.Graph.register()
@@ -52,9 +51,7 @@ def matmul(self, name, input, value):
     input_tensor = input if type(input) is gs.Variable else input[0]
     log.debug("Created {} node '{}': {}".format("MatMul", name, value.squeeze()))
     const = gs.Constant(name="{}_value:0".format(name), values=value)
-    return self.layer(
-        name=name, op="MatMul", inputs=[input_tensor, const], outputs=[name + ":0"]
-    )
+    return self.layer(name=name, op="MatMul", inputs=[input_tensor, const], outputs=[name + ":0"])
 
 
 @gs.Graph.register()
@@ -68,12 +65,8 @@ def clip(self, name, input, clip_min, clip_max):
     """
     input_tensor = input if type(input) is gs.Variable else input[0]
     log.debug("Created {} node '{}".format("Clip", name))
-    const_min = gs.Constant(
-        name="{}_value:0".format(name), values=np.asarray([clip_min], dtype=np.float32)
-    )
-    const_max = gs.Constant(
-        name="{}_value:1".format(name), values=np.asarray([clip_max], dtype=np.float32)
-    )
+    const_min = gs.Constant(name="{}_value:0".format(name), values=np.asarray([clip_min], dtype=np.float32))
+    const_max = gs.Constant(name="{}_value:1".format(name), values=np.asarray([clip_max], dtype=np.float32))
     return self.layer(
         name=name,
         op="Clip",
@@ -96,15 +89,9 @@ def slice(self, name, input, starts, ends, axes):
 
     input_tensor = input if type(input) is gs.Variable else input[0]
     log.debug("Created {} node '{}".format("Slice", name))
-    const_start = gs.Constant(
-        name="{}_value:0".format(name), values=np.asarray([starts], dtype=np.int64)
-    )
-    const_end = gs.Constant(
-        name="{}_value:1".format(name), values=np.asarray([ends], dtype=np.int64)
-    )
-    const_axes = gs.Constant(
-        name="{}_value:2".format(name), values=np.asarray([axes], dtype=np.int64)
-    )
+    const_start = gs.Constant(name="{}_value:0".format(name), values=np.asarray([starts], dtype=np.int64))
+    const_end = gs.Constant(name="{}_value:1".format(name), values=np.asarray([ends], dtype=np.int64))
+    const_axes = gs.Constant(name="{}_value:2".format(name), values=np.asarray([axes], dtype=np.int64))
     return self.layer(
         name=name,
         op="Slice",
@@ -114,7 +101,7 @@ def slice(self, name, input, starts, ends, axes):
 
 
 @gs.Graph.register()
-def unsqueeze(self, name, input, axes=[3]):
+def unsqueeze(self, name, input, axes=(3,)):
     """
     Adds to the graph an Unsqueeze node for the given axes and to the given input.
     :param self: The gs.Graph object being extended.
@@ -135,7 +122,7 @@ def unsqueeze(self, name, input, axes=[3]):
 
 
 @gs.Graph.register()
-def squeeze(self, name, input, axes=[2]):
+def squeeze(self, name, input, axes=(2,)):
     """
     Adds to the graph an Squeeze node for the given axes and to the given input.
     :param self: The gs.Graph object being extended.
@@ -209,9 +196,7 @@ def sigmoid(self, name, input):
     """
     input_tensor = input if type(input) is gs.Variable else input[0]
     log.debug("Created Sigmoid node '{}'".format(name))
-    return self.layer(
-        name=name, op="Sigmoid", inputs=[input_tensor], outputs=[name + ":0"]
-    )
+    return self.layer(name=name, op="Sigmoid", inputs=[input_tensor], outputs=[name + ":0"])
 
 
 @gs.Graph.register()
@@ -261,9 +246,7 @@ def find_node_by_op_name(self, op, name):
 
 
 @gs.Graph.register()
-def find_node_by_op_input_output_name(
-    self, op, input_name, output_name, input_pos=0, output_pos=0
-):
+def find_node_by_op_input_output_name(self, op, input_name, output_name, input_pos=0, output_pos=0):
     """
     Finds the first node in the graph with the given operation name.
     :param self: The gs.Graph object being extended.
@@ -275,11 +258,7 @@ def find_node_by_op_input_output_name(
     :return: The first node matching that performs that op.
     """
     for node in self.nodes:
-        if (
-            node.op == op
-            and node.inputs[input_pos].name == input_name
-            and node.outputs[output_pos].name == output_name
-        ):
+        if node.op == op and node.inputs[input_pos].name == input_name and node.outputs[output_pos].name == output_name:
             return node
     return None
 
@@ -297,7 +276,7 @@ def find_descendant_by_op(self, node, op, depth=10):
     :return: The first descendant node matching that performs that op.
     """
     queue = []
-    for i in range(depth):
+    for _i in range(depth):
         queue.append(node.o())
         while queue:
             node = queue.pop(0)
@@ -321,7 +300,7 @@ def find_ancestor_by_op(self, node, op, depth=10):
     :return: The first ancestor node matching that performs that op.
     """
     queue = []
-    for i in range(depth):
+    for _i in range(depth):
         queue.append(node.i())
         while queue:
             node = queue.pop(0)

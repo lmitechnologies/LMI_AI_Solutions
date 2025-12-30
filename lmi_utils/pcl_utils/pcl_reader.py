@@ -1,7 +1,6 @@
 import numpy as np
-import pandas
-
 import open3d
+import pandas
 
 
 class PCLReader(object):

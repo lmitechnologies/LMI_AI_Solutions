@@ -1,8 +1,6 @@
 import os
 
 import cv2
-import numpy
-
 from fringe_ds_utils.pcl_utils.image_or_point_cloud import ImageOrPointCloud
 
 

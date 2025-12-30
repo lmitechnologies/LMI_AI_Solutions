@@ -1,28 +1,29 @@
+import logging
+import time
+from collections import defaultdict
+
 import cv2
 import numpy as np
 import torch
-from collections import defaultdict
-import logging
+from cls_core.classifier_registry import ClassifierRegistry
 from PIL import Image
-import time
-
-from ultralytics.utils import ops
-from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.data.augment import classify_transforms
 from ultralytics.utils.torch_utils import smart_inference_mode
-
 from yolov8_lmi.model import Yolov8
-from cls_core.classifier_registry import ClassifierRegistry
 
 
 @ClassifierRegistry.register(
-    metadata=dict(versions=['v0'], model_names=['yolov8'], tasks=["classification"], frameworks=['ultralytics'])
+    metadata=dict(
+        versions=["v0"],
+        model_names=["yolov8"],
+        tasks=["classification"],
+        frameworks=["ultralytics"],
+    )
 )
 class Yolov8_cls(Yolov8):
-    
     logger = logging.getLogger(__name__)
 
-    def __init__(self, weights:str, device='gpu', data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, weights: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
         """init the model
 
         Args:
@@ -37,17 +38,14 @@ class Yolov8_cls(Yolov8):
             FileNotFoundError: _description_
         """
         super().__init__(weights, device, data, fp16, **kwargs)
-        self.image_size = kwargs.get('image_size', [224,224])
-        self.transforms = (
-            getattr(
-                self.model.model,
-                "transforms",
-                classify_transforms(self.image_size[0]),
-            )
+        self.image_size = kwargs.get("image_size", [224, 224])
+        self.transforms = getattr(
+            self.model.model,
+            "transforms",
+            classify_transforms(self.image_size[0]),
         )
         self._legacy_transform_name = "ultralytics.yolo.data.augment.ToTensor"
-        
-        
+
     @smart_inference_mode()
     def preprocess(self, img):
         """Prepares input image before inference.
@@ -57,37 +55,34 @@ class Yolov8_cls(Yolov8):
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
         img = np.expand_dims(img, 0)
         if not isinstance(img, torch.Tensor):
-            is_legacy_transform = any(
-                self._legacy_transform_name in str(transform) for transform in self.transforms.transforms
-            )
+            is_legacy_transform = any(self._legacy_transform_name in str(transform) for transform in self.transforms.transforms)
             if is_legacy_transform:  # to handle legacy transforms
                 img = torch.stack([self.transforms(im) for im in img], dim=0)
             else:
                 img = torch.stack(
-                    [self.transforms(Image.fromarray(im)) for im in img], dim=0 # not convert from BGR to RGB
+                    [self.transforms(Image.fromarray(im)) for im in img],
+                    dim=0,  # not convert from BGR to RGB
                 )
         img = (img if isinstance(img, torch.Tensor) else torch.from_numpy(img)).to(self.model.device)
         return img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
-    
-    
+
     @smart_inference_mode()
     def postprocess(self, preds):
         """Postprocesses predictions and returns a list of Results objects.
-        
+
         Args:
             preds (torch.Tensor | list): Predictions from the model.
-            
+
         """
-        
+
         results = defaultdict(list)
         preds = preds[0] if isinstance(preds, (list, tuple)) else preds
         for pred in preds:
             pred = pred.cpu().numpy()
             idx = pred.argmax()
-            results['scores'].append(pred[idx].item())
-            results['classes'].append(self.model.names[idx])
+            results["scores"].append(pred[idx].item())
+            results["classes"].append(self.model.names[idx])
         return results
-
 
     @smart_inference_mode()
     def predict(self, image):
@@ -102,20 +97,20 @@ class Yolov8_cls(Yolov8):
             time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
         """
         time_info = {}
-        
+
         # preprocess
         t0 = time.time()
         im = self.preprocess(image)
-        time_info['preproc'] = time.time()-t0
-        
+        time_info["preproc"] = time.time() - t0
+
         # infer
         t0 = time.time()
         pred = self.forward(im)
-        time_info['proc'] = time.time()-t0
-        
+        time_info["proc"] = time.time() - t0
+
         # postprocess
         t0 = time.time()
         results = self.postprocess(pred)
-        time_info['postproc'] = time.time()-t0
-        
+        time_info["postproc"] = time.time() - t0
+
         return results, time_info

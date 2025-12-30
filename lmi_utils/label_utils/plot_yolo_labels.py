@@ -1,17 +1,16 @@
-import cv2
 import argparse
 import glob
+import json
+import logging
 import os
+
+import cv2
 import numpy as np
 from label_utils.plot_utils import plot_one_polygon, plot_one_pt
-import json
-
-import os
-import numpy as np
-import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
 
 # This helper function must exist; it converts segment coordinates to bounding boxes.
 def segments2boxes(segments):
@@ -30,6 +29,7 @@ def segments2boxes(segments):
         h = y_max - y_min
         boxes.append(np.array([cx, cy, w, h]))
     return np.array(boxes)
+
 
 def load_yolo_labels(lb_file, im_file, shape, keypoint=False, nkpt=0, ndim=2, num_cls=1, prefix=""):
     """
@@ -65,7 +65,7 @@ def load_yolo_labels(lb_file, im_file, shape, keypoint=False, nkpt=0, ndim=2, nu
     ne = 0  # label empty flag
     msg = ""
     logger.info(f"Loading YOLO labels from {lb_file}")
-    logger.info(f'keypoint: {keypoint}, nkpt: {nkpt}, ndim: {ndim}, num_cls: {num_cls}')
+    logger.info(f"keypoint: {keypoint}, nkpt: {nkpt}, ndim: {ndim}, num_cls: {num_cls}")
     if os.path.isfile(lb_file):
         nf = 1  # label found
         with open(lb_file) as f:
@@ -96,8 +96,7 @@ def load_yolo_labels(lb_file, im_file, shape, keypoint=False, nkpt=0, ndim=2, nu
             # Verify that the maximum class id is within range.
             max_cls = lb[:, 0].max()
             assert max_cls < num_cls, (
-                f"Label class {int(max_cls)} exceeds dataset class count {num_cls}. "
-                f"Possible class labels are 0-{num_cls - 1}"
+                f"Label class {int(max_cls)} exceeds dataset class count {num_cls}. Possible class labels are 0-{num_cls - 1}"
             )
             # Remove duplicate rows if any.
             _, i = np.unique(lb, axis=0, return_index=True)
@@ -112,17 +111,17 @@ def load_yolo_labels(lb_file, im_file, shape, keypoint=False, nkpt=0, ndim=2, nu
     else:
         nm = 1  # label missing
         lb = np.zeros((0, (5 + nkpt * ndim) if keypoint else 5), dtype=np.float32)
-    
+
     if keypoint:
         keypoints = lb[:, 5:].reshape(-1, nkpt, ndim)
         if ndim == 2:
             kpt_mask = np.where((keypoints[..., 0] < 0) | (keypoints[..., 1] < 0), 0.0, 1.0).astype(np.float32)
             keypoints = np.concatenate([keypoints, kpt_mask[..., None]], axis=-1)
-    
+
     # Keep only the first 5 columns (class and bounding box info)
     lb = lb[:, :5]
     nc = num_cls  # number of classes
-    
+
     return {
         "classes": classes,
         "im_file": im_file,
@@ -137,16 +136,19 @@ def load_yolo_labels(lb_file, im_file, shape, keypoint=False, nkpt=0, ndim=2, nu
         "msg": msg,
     }
 
-        
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path_dataset", type=str, help="path to the root folder contains images and labels")
+    parser.add_argument(
+        "--path_dataset",
+        type=str,
+        help="path to the root folder contains images and labels",
+    )
     parser.add_argument("--path_out", type=str, help="path to the output directory")
-    parser.add_argument('--kp', action='store_true', help='whether the labels contain keypoint data')
-    parser.add_argument('--nkpt', type=int, default=0, help='number of keypoints')
+    parser.add_argument("--kp", action="store_true", help="whether the labels contain keypoint data")
+    parser.add_argument("--nkpt", type=int, default=0, help="number of keypoints")
 
-    print(f'args: {parser.parse_args()}')
+    print(f"args: {parser.parse_args()}")
     args = parser.parse_args()
     txt_files = glob.glob(os.path.join(args.path_dataset, "labels/train/*.txt"))
     print(f"Found {len(txt_files)} label files.")
@@ -157,7 +159,7 @@ if __name__ == "__main__":
         class_map = json.load(f)
     num_classes = len(class_map)
     id_to_class = {v: k for k, v in class_map.items()}
-    color_map ={}
+    color_map = {}
     for txt_file in txt_files:
         logger.info(f"Processing {txt_file}")
         image_path = txt_file.replace(".txt", ".png")
@@ -169,12 +171,23 @@ if __name__ == "__main__":
                 continue
         image = cv2.imread(image_path)
         h, w = image.shape[:2]
-        labels = load_yolo_labels(txt_file, image_path, (h, w), num_cls=num_classes, keypoint=args.kp, nkpt=args.nkpt)
-        for id in labels['classes']:
+        labels = load_yolo_labels(
+            txt_file,
+            image_path,
+            (h, w),
+            num_cls=num_classes,
+            keypoint=args.kp,
+            nkpt=args.nkpt,
+        )
+        for id in labels["classes"]:
             if id not in color_map:
-                color_map[id] = (np.random.randint(0, 255), np.random.randint(0, 255), np.random.randint(0, 255))
+                color_map[id] = (
+                    np.random.randint(0, 255),
+                    np.random.randint(0, 255),
+                    np.random.randint(0, 255),
+                )
         # logger.info(f"Labels: {labels['keypoints']}")
-        if labels['segments'] is not None:
+        if labels["segments"] is not None:
             for idx, segment in enumerate(labels["segments"]):
                 for i in range(len(segment)):
                     segment[i][0] = segment[i][0] * w
@@ -182,8 +195,8 @@ if __name__ == "__main__":
                 class_id = int(labels["classes"][idx])
                 color = color_map[class_id]
                 plot_one_polygon(segment, image, color=color, label=id_to_class[int(class_id)])
-        
-        if labels['keypoints'] is not None:
+
+        if labels["keypoints"] is not None:
             for idx, keypoint in enumerate(labels["keypoints"]):
                 for i in range(len(keypoint)):
                     keypoint[i][0] = keypoint[i][0] * w
@@ -193,15 +206,14 @@ if __name__ == "__main__":
                 keypoint = keypoint[:, :2].astype(np.int32)
                 for kpt in keypoint:
                     plot_one_pt(kpt, image, color=color, label=id_to_class[int(class_id)])
-                
-        
-        if labels['segments'] is None:
-            for label in labels['labels']:
+
+        if labels["segments"] is None:
+            for label in labels["labels"]:
                 cx, cy, width, height = label[1], label[2], label[3], label[4]
-                x1 = cx - width/2
-                y1 = cy - height/2
-                x2 = cx + width/2
-                y2 = cy + height/2
+                x1 = cx - width / 2
+                y1 = cy - height / 2
+                x2 = cx + width / 2
+                y2 = cy + height / 2
                 x1 = int(x1 * w)
                 y1 = int(y1 * h)
                 x2 = int(x2 * w)
@@ -209,8 +221,14 @@ if __name__ == "__main__":
                 class_id = int(label[0])
                 color = color_map[class_id]
                 cv2.rectangle(image, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-                cv2.putText(image, id_to_class[class_id], (int(x1), int(y1)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-                
+                cv2.putText(
+                    image,
+                    id_to_class[class_id],
+                    (int(x1), int(y1)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    color,
+                    2,
+                )
 
-        
         cv2.imwrite(os.path.join(args.path_out, os.path.basename(image_path)), image)

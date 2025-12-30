@@ -1,33 +1,27 @@
-import pytest
-import os
 import logging
+
+import pytest
 import torch
-import torchvision
-
 from preprocess_utils.preprocessor import Preprocessor
-
 
 logging.basicConfig()
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
 
 @pytest.mark.parametrize(
     "im, wh, par",
     [
         (torch.rand(100, 100, 3).numpy(), [151, 131], True),
         (torch.rand(100, 100, 3).numpy(), [71, 75], False),
-    ]
+    ],
 )
 def test_preprocessor_resize(im, wh, par):
     preprocessor = Preprocessor()
     processing_steps = [
         {
             "type": "resize",
-            "configuration": {
-                "width": wh[0],
-                "height": wh[1],
-                "preserve_aspect": par
-            }
+            "configuration": {"width": wh[0], "height": wh[1], "preserve_aspect": par},
         }
     ]
     im_out, operators = preprocessor.preprocess(im, processing_steps)

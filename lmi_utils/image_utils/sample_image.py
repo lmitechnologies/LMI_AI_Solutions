@@ -1,15 +1,16 @@
-#built-in packagesprint
-import os
+# built-in packagesprint
 import glob
 import logging
-
-#3rd party packages
-import shutil
+import os
 import random
+
+# 3rd party packages
+import shutil
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
 
 def sample_images(path_imgs, path_out, num_samples, is_random=False):
     """
@@ -22,33 +23,33 @@ def sample_images(path_imgs, path_out, num_samples, is_random=False):
     Return:
 
     """
-    file_list = glob.glob(os.path.join(path_imgs, '*.png'))
+    file_list = glob.glob(os.path.join(path_imgs, "*.png"))
     if is_random:
         random.shuffle(file_list)
-    
+
     for file in file_list[:num_samples]:
         im_name = os.path.basename(file)
-        logger.info(f'select file: {im_name}')
-        
+        logger.info(f"select file: {im_name}")
+
         dest_path = os.path.join(path_out, im_name)
         shutil.copy2(file, dest_path)
-        
-    logger.info(f'writting {num_samples} images to {path_out}\n')
+
+    logger.info(f"writting {num_samples} images to {path_out}\n")
     return
 
 
-
-if __name__=='__main__':
+if __name__ == "__main__":
     import argparse
+
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_imgs', '-i', required=True, help='the path to images')
-    ap.add_argument('--path_out', '-o', required=True, help='the path to sampled images')
-    ap.add_argument('--num_samples', '-n', required=True, type=int, help='the number of sample images')
-    ap.add_argument('--random', action='store_true', help='randomly sample images')
+    ap.add_argument("--path_imgs", "-i", required=True, help="the path to images")
+    ap.add_argument("--path_out", "-o", required=True, help="the path to sampled images")
+    ap.add_argument("--num_samples", "-n", required=True, type=int, help="the number of sample images")
+    ap.add_argument("--random", action="store_true", help="randomly sample images")
     args = ap.parse_args()
 
     # create output path
-    assert args.path_imgs!=args.path_out, 'input and output path must be different'
+    assert args.path_imgs != args.path_out, "input and output path must be different"
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
 

@@ -1,10 +1,8 @@
-import tensorflow as tf
-import numpy as np
 import argparse
 from pathlib import Path, PurePath
+
 import cv2
 from tqdm import tqdm
-
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -14,9 +12,7 @@ if __name__ == "__main__":
         required=True,
         help="path to directory of input images",
     )
-    ap.add_argument(
-        "-o", "--output_directory", required=True, help="where to write output images"
-    )
+    ap.add_argument("-o", "--output_directory", required=True, help="where to write output images")
     ap.add_argument(
         "-a",
         "--augmentation_config",

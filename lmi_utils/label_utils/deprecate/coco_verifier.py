@@ -1,19 +1,13 @@
-import torch
 import os
 
-# Some basic setup:
-# Setup detectron2 logger
-import detectron2
-from detectron2.utils.logger import setup_logger
-setup_logger()
-
-# import some common libraries
-import cv2, random
-
-# import some common detectron2 utilities
-from detectron2.utils.visualizer import Visualizer
-from detectron2.data import MetadataCatalog, DatasetCatalog
+import cv2
+import torch
+from detectron2.data import DatasetCatalog, MetadataCatalog
 from detectron2.data.datasets import register_coco_instances
+from detectron2.utils.logger import setup_logger
+from detectron2.utils.visualizer import Visualizer
+
+setup_logger()
 
 
 def plot(path_img, path_json, path_out, plot=False):
@@ -27,30 +21,37 @@ def plot(path_img, path_json, path_out, plot=False):
     dataset_dicts = DatasetCatalog.get("dataset")
     for d in dataset_dicts:
         img = cv2.imread(d["file_name"])
-        visualizer = Visualizer(img[:, :, ::-1], metadata=MetadataCatalog.get('dataset'), scale=1)
+        visualizer = Visualizer(img[:, :, ::-1], metadata=MetadataCatalog.get("dataset"), scale=1)
         out = visualizer.draw_dataset_dict(d)
         im_name = os.path.basename(d["file_name"])
         out.save(os.path.join(path_out, im_name))
         if plot:
-            cv2.imshow('plot',out.get_image()[:, :, ::-1])
+            cv2.imshow("plot", out.get_image()[:, :, ::-1])
             cv2.waitKey(0)
     if plot:
         cv2.destroyAllWindows()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import argparse
+
     ap = argparse.ArgumentParser()
-    ap.add_argument('--path_img', required=True, type=str, help='the path to the image folder')
-    ap.add_argument('--path_json', type=str, default='', help='[optinal] the path to the json annotation file, default=labels.json')
-    ap.add_argument('--path_out', required=True, type=str, help='the path to the output folder')
+    ap.add_argument("--path_img", required=True, type=str, help="the path to the image folder")
+    ap.add_argument(
+        "--path_json",
+        type=str,
+        default="",
+        help="[optinal] the path to the json annotation file, default=labels.json",
+    )
+    ap.add_argument("--path_out", required=True, type=str, help="the path to the output folder")
     args = ap.parse_args()
 
     TORCH_VERSION = ".".join(torch.__version__.split(".")[:2])
     CUDA_VERSION = torch.__version__.split("+")[-1]
     print("torch: ", TORCH_VERSION, "; cuda: ", CUDA_VERSION)
-    
+
     if not args.path_json:
-        args.path_json = os.path.join(args.path_img, 'labels.json')
+        args.path_json = os.path.join(args.path_img, "labels.json")
     if not os.path.isdir(args.path_out):
         os.makedirs(args.path_out)
 

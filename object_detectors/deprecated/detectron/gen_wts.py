@@ -1,21 +1,33 @@
-from detectron2.layers import Conv2d
-from torch import nn
-import torch
-import struct
+import argparse
 import os
+import struct
+
+import torch
+from detectron2 import model_zoo
+from detectron2.checkpoint import DetectionCheckpointer
+from detectron2.config import get_cfg
+from detectron2.layers import Conv2d
+from detectron2.modeling import build_model
+from torch import nn
 
 
 def fuse_conv_and_bn(conv):
     # Fuse convolution and batchnorm layers https://tehnokv.com/posts/fusing-batchnorm-and-conv/
     bn = conv.norm
     # init
-    fusedconv = nn.Conv2d(conv.in_channels,
-                          conv.out_channels,
-                          kernel_size=conv.kernel_size,
-                          stride=conv.stride,
-                          padding=conv.padding,
-                          groups=conv.groups,
-                          bias=True).requires_grad_(False).to(conv.weight.device)
+    fusedconv = (
+        nn.Conv2d(
+            conv.in_channels,
+            conv.out_channels,
+            kernel_size=conv.kernel_size,
+            stride=conv.stride,
+            padding=conv.padding,
+            groups=conv.groups,
+            bias=True,
+        )
+        .requires_grad_(False)
+        .to(conv.weight.device)
+    )
 
     # prepare filters
     w_conv = conv.weight.clone().view(conv.out_channels, -1)
@@ -29,6 +41,7 @@ def fuse_conv_and_bn(conv):
 
     return fusedconv
 
+
 def fuse_bn(model):
     for child_name, child in model.named_children():
         if isinstance(child, Conv2d) and child.norm is not None:
@@ -36,53 +49,50 @@ def fuse_bn(model):
         else:
             fuse_bn(child)
 
+
 def gen_wts(model, filename):
-    root,ext = os.path.splitext(filename)
-    if ext == '.wts':
-        filename = root 
-    f = open(filename + '.wts', 'w')
-    f.write('{}\n'.format(len(model.state_dict().keys())))
+    root, ext = os.path.splitext(filename)
+    if ext == ".wts":
+        filename = root
+    f = open(filename + ".wts", "w")
+    f.write("{}\n".format(len(model.state_dict().keys())))
     for k, v in model.state_dict().items():
-        print(f'{k}: {v.shape}')
+        print(f"{k}: {v.shape}")
         vr = v.reshape(-1).cpu().numpy()
-        f.write('{} {} '.format(k, len(vr)))
+        f.write("{} {} ".format(k, len(vr)))
         for vv in vr:
-            f.write(' ')
-            f.write(struct.pack('>f',float(vv)).hex())
-        f.write('\n')
+            f.write(" ")
+            f.write(struct.pack(">f", float(vv)).hex())
+        f.write("\n")
     f.close()
 
 
-# construct model
-from detectron2 import model_zoo
-from detectron2.config import get_cfg
-from detectron2.modeling import build_model
-from detectron2.checkpoint import DetectionCheckpointer
-import argparse
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument('--input', required=True, help='the input yaml file')
-    ap.add_argument('--output', required=True, help='the output .wts file')
-    ap.add_argument('--base_yaml', default="mask_rcnn_R_50_C4_1x.yaml", help='the base yaml file provided in https://github.com/facebookresearch/detectron2/tree/main/configs/COCO-InstanceSegmentation')
+    ap.add_argument("--input", required=True, help="the input yaml file")
+    ap.add_argument("--output", required=True, help="the output .wts file")
+    ap.add_argument(
+        "--base_yaml",
+        default="mask_rcnn_R_50_C4_1x.yaml",
+        help="the base yaml file provided in https://github.com/facebookresearch/detectron2/tree/main/configs/COCO-InstanceSegmentation",
+    )
     args = vars(ap.parse_args())
-    
+
     # load configs
     cfg = get_cfg()
-    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/"+args['base_yaml']))
-    cfg.merge_from_file(args['input'])
-    
+    cfg.merge_from_file(model_zoo.get_config_file("COCO-InstanceSegmentation/" + args["base_yaml"]))
+    cfg.merge_from_file(args["input"])
+
     # create model
     model = build_model(cfg)
     DetectionCheckpointer(model).load(cfg.MODEL.WEIGHTS)
     model.eval()
-    
+
     # generate weights
     fuse_bn(model)
-    gen_wts(model, args['output'])
-    print('done')
-    
+    gen_wts(model, args["output"])
+    print("done")
+
     # test data
     # from detectron2.data.detection_utils import read_image
     # from detectron2.data import transforms as T
@@ -104,4 +114,3 @@ if __name__ == '__main__':
     # with torch.no_grad():
     #     predictions = model([inputs])[0]
     # print (predictions)
-
