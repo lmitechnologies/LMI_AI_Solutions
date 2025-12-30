@@ -72,7 +72,7 @@ class Yolov8(ODBase):
 
         # load model
         self.model = AutoBackend(weights, self.device, data=data, fp16=fp16, fuse=False)
-        if weights.endswith('.pt') and hasattr(self.model.model, "fuse"):
+        if weights.endswith(".pt") and hasattr(self.model.model, "fuse"):
             self.model.model.fuse()
         self.model.eval()
 
