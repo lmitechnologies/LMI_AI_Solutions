@@ -7,7 +7,9 @@
 </div>
 
 # <img src="assets/images/lmi.png" width="20"/> LMI AI Solutions
+
 This repo contains the utils scripts, and several submodules for LMI Technologies Inc. AI modeling development.
+
 Currently, the following models are supported in the repo:
 + object detection
     - [yolov8](https://github.com/ultralytics/ultralytics)
@@ -21,65 +23,112 @@ Currently, the following models are supported in the repo:
     - [paddleOCR](https://github.com/lmitechnologies/models)
 
 ## Clone this repo
-For users who haven't set up the ssh keys
+
+For users who haven't set up the ssh keys:
 ```bash
 git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 ```
-For users who have setup ssh keys
+
+For users who have setup ssh keys:
 ```bash
-git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
+git clone git@github.com:lmitechnologies/LMI_AI_Solutions.git
 # npm using git for https
 git config --global url."git@github.com:".insteadOf https://github.com/
 git config --global url."git://".insteadOf https://
 ```
 
 ### Clone submodules
-Go to the repo and run the following commands 
+
+Navigate to the repo:
 ```bash
 cd LMI_AI_Solutions
 ```
-Each submodule is pointing to a specific commit in its `ais` branch. Clone the submodules to the commit that is specified in this repo 
+
+Each submodule is pointing to a specific commit in its `ais` branch. Clone the submodules to the commit that is specified in this repo:
 ```bash
 git submodule update --init
 ```
-(**not recommend**) if you want to update all submodules to the `lastest` commit in the `ais` branch, use the `--remote` argument
+
+(**not recommended**) If you want to update all submodules to the `latest` commit in the `ais` branch, use the `--remote` argument:
 ```bash
 git submodule update --init --remote
 ```
 
-### Use this repo
-To utilize the following repo you have two options
+## Use this repo
 
-#### Using the environment file
-Activate the environmental file - [lmi_ai.env](https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/lmi_ai.env): 
+To utilize this repo you have two options:
+
+### Using the environment file
+
+Activate the environmental file - [lmi_ai.env](./lmi_ai.env): 
 
 ```bash
 source PATH_TO_REPO/lmi_ai.env
 ```
-where ``PATH_TO_REPO`` is the path to the LMI_AI_Solutions repo.  
+where `PATH_TO_REPO` is the path to the LMI_AI_Solutions repo.  
 
-#### Using pip
+### Using pip
 
-Installing latest from git
+Installing latest from git:
 
 ```bash
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=lmi_utils&subdirectory=lmi_utils"
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=object_detectors&subdirectory=object_detectors"
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=anomaly_detectors&subdirectory=anomaly_detectors"
 ```
-Installing from source
+
+Installing from source:
 
 ```bash
 cd LMI_AI_Solutions && pip install -e lmi_utils
 cd LMI_AI_Solutions && pip install -e object_detectors
 cd LMI_AI_Solutions && pip install -e anomaly_detectors
 ```
-#### Runing Scripts
-1. Run any scripts in this repo, for example:
+
+### Running Scripts
+
+Run any scripts in this repo, for example:
 
 ```bash
 python -m label_utils.plot_labels -h
 ```
 
+## Development Guidelines
+
+### Code Quality with Pre-commit
+
+This repository uses pre-commit hooks with Ruff to ensure code quality and consistency. All contributions must pass these checks before being merged.
+
+For detailed setup and usage instructions, see the [Pre-commit with Ruff Guide](docs/PRECOMMIT_GUIDE.md).
+
+Quick setup:
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+The hooks will automatically run on `git commit` to check your code for style issues and formatting.
+
 ## Make contributions to this repo
-The `ais` branch of this repo and that branch of submodules are protected, which means you can't directly commit to that branch. You could create a new branch and open the pull request in order to merge into `ais` branch.
+
+The `ais` branch of this repo and that branch of submodules are protected, which means you can't directly commit to that branch. You must create a new branch and open a pull request in order to merge into the `ais` branch.
+
+### Contribution Workflow
+
+1. Create a new branch from `ais`:
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+2. Make your changes and ensure pre-commit hooks pass:
+   ```bash
+   git add .
+   git commit -m "Your descriptive commit message"
+   ```
+
+3. Push your branch and open a pull request:
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+
+4. Your pull request will be reviewed before being merged into `ais`.
