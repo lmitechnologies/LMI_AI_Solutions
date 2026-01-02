@@ -1,7 +1,10 @@
 import yaml
 import argparse
 import logging
-from rfdetr import RFDETRMedium, RFDETRLarge, RFDETRSmall, RFDETRNano, RFDETRBase
+try:
+    from rfdetr import RFDETRMedium, RFDETRLarge, RFDETRSmall, RFDETRNano, RFDETRBase
+except ImportError:
+    pass
 import logging
 import os
 from datetime import date
