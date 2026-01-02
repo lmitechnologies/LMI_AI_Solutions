@@ -157,9 +157,14 @@ def main():
         initiate_training(configs)
     if configs.get('model_configs').get('operation') == 'convert':
         logger.info("Starting model conversion to ONNX format...")
-        model = load_model(configs)
+        # model = load_model(configs)
         output_dir = configs.get('conversion_configs', {}).get('output_dir', os.path.dirname(configs.get('conversion_configs', {}).get('pretrain_weights', '')))
-        model.export(output_dir=output_dir) # export to ONNX
+        if os.path.isfile(os.path.join(output_dir, 'inference_model.onnx')):
+            logger.info(f"ONNX model already exists at {os.path.join(output_dir, 'inference_model.onnx')}. Skipping export.")
+        else:
+            model = load_model(configs)
+            model.export(output_dir=output_dir) # export to ONNX
+        
         logger.info("Converting to TensorRT engine...")
         convert_to_tensorrt(os.path.join(output_dir, 'inference_model.onnx'))
         
