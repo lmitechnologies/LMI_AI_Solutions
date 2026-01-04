@@ -2,8 +2,10 @@ name: Cleanup Old Images
 
 on:
   schedule:
-    # - cron: '0 2 * * 0'  # Weekly on Sunday at 2 AM
-    - cron: '*/5 * * * *'  # Every 5 minutes (for testing)
+    - cron: '0 2 * * 0'  # Weekly on Sunday at 2 AM
+  push:
+    branches:
+      - delete-old-images
   workflow_dispatch:
 
 jobs:
