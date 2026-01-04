@@ -23,4 +23,7 @@ RUN git clone https://github.com/facebookresearch/detectron2 detectron2 && \
     pip install --no-build-isolation -e .
 
 # Install anomalib
-RUN pip install anomalib==1.1.1 && anomalib install --option core
+RUN git clone -b v1.1.1 https://github.com/open-edge-platform/anomalib.git && \
+    cd anomalib && \
+    pip install -e . && \
+    anomalib install --option core
