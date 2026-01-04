@@ -3,9 +3,6 @@ name: Cleanup Old Images
 on:
   schedule:
     - cron: '0 2 * * 0'  # Weekly on Sunday at 2 AM
-  push:
-    branches:
-      - delete-old-images
   workflow_dispatch:
 
 jobs:
@@ -20,5 +17,5 @@ jobs:
         with:
           package-name: 'ais-test-env'
           package-type: 'container'
-          min-versions-to-keep: 0
+          min-versions-to-keep: 10
           delete-only-untagged-versions: true
