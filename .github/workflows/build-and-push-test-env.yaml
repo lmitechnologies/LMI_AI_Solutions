@@ -12,7 +12,7 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.10']
-        include:
+        runner-config:
           - runner: ubuntu-latest
             platform: linux/amd64
             arch: amd64
@@ -20,7 +20,7 @@ jobs:
             platform: linux/arm64
             arch: arm64
 
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner-config.runner }}
 
     env:
       IMAGE_NAME: ghcr.io/lmitechnologies/ais-test-env
@@ -45,14 +45,14 @@ jobs:
         with:
           images: ${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=py${{ matrix.python-version }}-${{ matrix.arch }}
+            type=raw,value=py${{ matrix.python-version }}-${{ matrix.runner-config.arch }}
 
       - name: Build and push image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./tests/dockerfile.ci
-          platforms: ${{ matrix.platform }}
+          platforms: ${{ matrix.runner-config.platform }}
           build-args: |
             PYTHON_VERSION=${{ matrix.python-version }}
           push: true
