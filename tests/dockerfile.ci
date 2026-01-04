@@ -18,9 +18,11 @@ COPY ./tests/requirements-ci.txt .
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
         # ARM64: Install PyTorch from default PyPI (has ARM support)
+        echo "Installing for ARM64..." && \
         pip install -r requirements-ci.txt; \
     else \
         # x86_64: Use CPU-optimized wheels
+        echo "Installing for x86_64..." && \
         pip install -r requirements-ci.txt --extra-index-url https://download.pytorch.org/whl/cpu; \
     fi
 
