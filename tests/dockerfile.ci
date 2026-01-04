@@ -1,23 +1,33 @@
 # Use ARG to accept the version from the workflow
-ARG PYTHON_VERSION=3.12
+ARG PYTHON_VERSION=3.8
 FROM python:${PYTHON_VERSION}
 
 WORKDIR /app
 
-# Install OS-level dependencies
-RUN apt-get update && apt-get install -y libgl1 \
-    && rm -rf /var/lib/apt/lists/*
+# Install OS-level dependencies including git-lfs in one layer
+RUN apt-get update && \
+    apt-get install -y libgl1 curl gnupg && \
+    curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash && \
+    apt-get install -y git-lfs && \
+    rm -rf /var/lib/apt/lists/*
 
-# Install git lfs
-RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
-RUN apt-get install git-lfs
-
-# Copy and install Python requirements
+# Copy requirements file
 COPY ./tests/requirements-ci.txt .
-RUN pip install -r requirements-ci.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
-# install detectron2 and anomalib
+# Install Python requirements with architecture-specific PyTorch handling
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        # ARM64: Install PyTorch from default PyPI (has ARM support)
+        pip install -r requirements-ci.txt; \
+    else \
+        # x86_64: Use CPU-optimized wheels
+        pip install -r requirements-ci.txt --extra-index-url https://download.pytorch.org/whl/cpu; \
+    fi
+
+# Install detectron2
 RUN git clone https://github.com/facebookresearch/detectron2 detectron2 && \
-    pip install --no-build-isolation -e detectron2
+    cd detectron2 && \
+    pip install --no-build-isolation -e .
 
+# Install anomalib
 RUN pip install anomalib==1.1.1 && anomalib install --option core
