@@ -150,14 +150,31 @@ services:
       dockerfile: dockerfile
     ipc: host
     runtime: nvidia
-    # ports:
-    # ports:
-    #   - 6006:6006 # tensorboard
     volumes:
       - ./configs/:/app/configs/
       - ./preprocessed/:/app/data/
       - ./output:/app/output
     command: >
       python3 -m rf_detr_lmi.cli -c /app/configs/rf-detr.convert.yaml
+```
+
+##### Inference
+
+docker-compose file
+```yaml
+version: "3.9"
+services:
+  postprocess:
+    container_name: train
+    build:
+      context: .
+      dockerfile: dockerfile
+    ipc: host
+    runtime: nvidia
+    volumes:
+      - ./preprocessed/:/app/data/ # images
+      - ./output:/app/output # folder where the model is stored and outputs are generated (can be different if prefered)
+v    command: >
+      python3 -m rf_detr_lmi.infer --weights /app/output/v1/checkpoint_best_total.pth --input /app/data/images --output /app/output/predictions
 ```
 
