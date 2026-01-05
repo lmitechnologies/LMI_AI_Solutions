@@ -165,7 +165,7 @@ docker-compose file
 version: "3.9"
 services:
   postprocess:
-    container_name: train
+    container_name: inference
     build:
       context: .
       dockerfile: dockerfile
@@ -174,7 +174,7 @@ services:
     volumes:
       - ./preprocessed/:/app/data/ # images
       - ./output:/app/output # folder where the model is stored and outputs are generated (can be different if prefered)
-v    command: >
+    command: >
       python3 -m rf_detr_lmi.infer --weights /app/output/v1/checkpoint_best_total.pth --input /app/data/images --output /app/output/predictions
 ```
 
