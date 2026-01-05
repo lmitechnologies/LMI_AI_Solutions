@@ -166,7 +166,8 @@ def main():
             logger.info(f"ONNX model already exists at {os.path.join(output_dir, 'inference_model.onnx')}. Skipping export.")
         else:
             model = load_model(configs)
-            model.export(output_dir=output_dir) # export to ONNX
+            logger.info(f"Exporting model to ONNX format to directory: {output_dir}...")
+            model.export(output_dir=output_dir, opset_version=17) # export to ONNX
         
         logger.info("Converting to TensorRT engine...")
         convert_to_tensorrt(os.path.join(output_dir, 'inference_model.onnx'))

@@ -20,6 +20,7 @@ def setup_parser():
     parser.add_argument('--output', type=str, required=True, help='Path to save output results')
     parser.add_argument('--conf', type=float, default=0.5, help='Confidence threshold for detections')
     parser.add_argument('--class_map', type=str, required=False, help='Path to class map JSON file')
+    parser.add_argument('--image_size', type=int, default=640, help='Input image size for the model')
     return parser
 
 def find_images(path:str, exts=['jpg','jpeg','png']):
@@ -43,6 +44,7 @@ def inference_run(args):
     imgs_path = args.get('input')
     out_path = args.get('output')
     class_map_path = args.get('class_map', None)
+    image_size = args.get('image_size', 640)
 
     if not os.path.exists(out_path):
         os.makedirs(out_path)
@@ -55,7 +57,10 @@ def inference_run(args):
         class_map = {int(k):v for k,v in class_map.items()}
 
     # load model
-    model = RfdetrModel(model_path, class_map=class_map)
+    model = RfdetrModel(model_path, class_map=class_map, image_size=[
+        image_size,
+        image_size
+    ])
     # model warmup
     model.warmup()
     # find images
