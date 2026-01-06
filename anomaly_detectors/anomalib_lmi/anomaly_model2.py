@@ -5,7 +5,6 @@ from collections.abc import Sequence
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 from image_utils.tiler import OverlapMode, ScaleMode, Tiler
 from torchvision.transforms import v2
@@ -151,9 +150,13 @@ class AnomalyModel2(Anomalib_Base):
             img = self.tiler.tile(img, self.tile_mode)
 
         batch = img.shape[0]
-        if self.inference_mode == "TRT" and batch != self.batch_size:
-            self.logger.warning(f"Got batch size of {batch},  but trt expects {self.batch_size}. The trt engine might output weird results")
-            img = F.interpolate(img, size=self.model_shape, mode="bilinear")
+        if self.inference_mode == "TRT":
+            if self.tiler is not None and batch != self.batch_size:
+                raise Exception(
+                    f"Batch size mismatch when using tensorRT model with tiling."
+                    f"Got input batch size of {batch}, but tensorRT expects {self.batch_size}."
+                )
+            img = v2.Resize(self.model_shape, antialias=True)(img)
 
         # resize baked into the pt model (although some torchscript models dont have preprocessing so resizing here)
         if self.tiler is None and self.inference_mode == "PT":
