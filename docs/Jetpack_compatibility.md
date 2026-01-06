@@ -1,18 +1,18 @@
 # AI Models Compatibility with NVIDIA Jetpack Versions
 
-This document provides compatibility information for popular AI models and frameworks on NVIDIA Jetson devices across different Jetpack versions.
+This document provides compatibility information for AI models and frameworks on NVIDIA Jetson devices across different Jetpack versions.
 
 ## Overview
 
 This guide covers compatibility for building AI solution pipelines using:
-- **Detectron2**
-- **Ultralytics YOLO**
-- **Anomalib**
+- Detectron2
+- Ultralytics YOLO
+- Anomalib: v1.1.1
 
 Across model formats:
-- **PT**
-- **TorchScript**
-- **TensorRT**
+- PT
+- TorchScript
+- TensorRT
 
 ## Jetpack Versions Covered
 
@@ -43,23 +43,14 @@ Across model formats:
 
 ---
 
-### Anomalib Compatibility
+### Anomalib v1 Compatibility
 
 | Model Format | Jetpack 4.5 | Jetpack 5.1 |
 |--------------|-------------|-------------|
-| PT (PyTorch) | ❌ Does not work | ❔ Not tested |
+| PT (PyTorch) | ❌ Does not work | ❌ Does not work |
 | TorchScript | ❌ Does not work | ✅ Works |
 | TensorRT | ❌ Does not work | ❔ Not tested |
 
 ---
 
-## Legend
-
-- ✅ **Works**: Fully compatible and tested
-<!-- - ⚠️ **Partial**: Works with limitations or requires workarounds -->
-- ❌ **Does not work**: Not compatible
-- ❔ **Not tested**: Compatibility unknown, testing required
-
----
-
-*Last Updated: January 2026*
+*Last Updated: January 6 2026*
