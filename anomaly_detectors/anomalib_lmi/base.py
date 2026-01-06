@@ -59,7 +59,7 @@ class Anomalib_Base(ABC):
         """
         # write metadata to export path
         json_file = os.path.join(os.path.dirname(export_path), "metadata.json")
-        if os.path.isfile(json_file):
+        if hasattr(self, "pt_metadata"):
             with open(
                 json_file,
                 "w",
