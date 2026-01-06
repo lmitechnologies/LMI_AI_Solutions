@@ -58,12 +58,14 @@ class Anomalib_Base(ABC):
             - opset_version: onnx version ID
         """
         # write metadata to export path
-        with open(
-            os.path.join(os.path.dirname(export_path), "metadata.json"),
-            "w",
-            encoding="utf-8",
-        ) as metadata_file:
-            json.dump(self.pt_metadata, metadata_file, ensure_ascii=False, indent=4)
+        json_file = os.path.join(os.path.dirname(export_path), "metadata.json")
+        if os.path.isfile(json_file):
+            with open(
+                json_file,
+                "w",
+                encoding="utf-8",
+            ) as metadata_file:
+                json.dump(self.pt_metadata, metadata_file, ensure_ascii=False, indent=4)
 
         if self.tiler is not None:
             if input_hw is None:

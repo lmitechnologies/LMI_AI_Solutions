@@ -219,7 +219,8 @@ class AnomalyModel2(Anomalib_Base):
 
         input_batch = self.preprocess(image)
         if kwargs.get("verbose", False):
-            self.logger.info(f"Using overlap mode: {overlap_mode_str}")
+            if self.tiler is not None:
+                self.logger.info(f"Using overlap mode: {overlap_mode_str}")
             self.logger.info(f"Final input batch shape: {input_batch.shape}")
 
         num_samples_in_input = input_batch.shape[0]
