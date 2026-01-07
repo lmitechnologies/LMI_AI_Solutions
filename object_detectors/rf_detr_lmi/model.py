@@ -316,9 +316,191 @@ class RfdetrTRT(ODBase):
             pipeline_utils.plot_one_box(boxes[i],image,None,**args)
                 
         return image
+    
+
+@RfdetrModel.register('pt')
+class RfdetrPT(ODBase):
+
+    logger = logging.getLogger('RFDETR')
+    logger.setLevel(logging.INFO)
+
+    def __init__(self, model_path: str, device='cuda', fp16=False, **kwargs) -> None:
+        self.image_size = kwargs.get('image_size', (640, 640))
+        self.means = [0.485, 0.456, 0.406]
+        self.stds = [0.229, 0.224, 0.225]
+
+        # load torchscript model
+        self.model = torch.jit.load(model_path, map_location=device)
+        self.model.eval()
+
+        class_map = kwargs.get("class_map", None)
+        if class_map is None:
+            raise ValueError("class_map is required for [RfdetrTRT]")
+        self.class_map = {
+            int(k): str(v) for k, v in class_map.items()
+        }
+        self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)))
+        self.device = device
+
+    def warmup(self):
+        """Warm up the model by running a dummy inference."""
+        dummy_input = torch.zeros((1, 3, self.image_size[0], self.image_size[1]), dtype=torch.float32).to(self.device)
+        self.forward(dummy_input)
+
+    def preprocess(self, image: np.ndarray, **kwargs):
+        """Preprocess the input image for the model.
+
+        Args:
+            image (np.ndarray): Input image in numpy array format.
+        """
+        input_img = image.astype(np.float32) / 255.0
+        means = np.array(self.means, dtype=np.float32)
+        stds = np.array(self.stds, dtype=np.float32)
+        input_img = (input_img - means) / stds
+        input_img = input_img.transpose(2, 0, 1)
+        input_img = np.expand_dims(input_img, axis=0)
+        return np.array([input_img])
+    
+    def sigmoid(self,x):
+        return 1 / (1 + np.exp(-x))
+    
+    def postprocess(self,outputs,image, **kwargs) -> Results:
+        orig_h, orig_w = image.shape[:2]
+        configs = kwargs.get("configs")
+        if configs is None:
+            self.logger.warning("configs is None. Using default value of 1.0 for all classes.")
+            configs = {k if isinstance(k,str) else v: 1.0 for k,v in self.class_map.items()}
+        if isinstance(configs, dict) is False and isinstance(configs, (int, float)):
+            configs = {k if isinstance(k,str) else v: configs for k,v in self.class_map.items()}
+        else:
+            self.logger.warning("configs should be a dictionary of class confidence thresholds. Using default value of 1.0 for all classes.")
+        
+        if len(outputs) < 2:
+            raise RuntimeError(f"Expected at least 2 output tensors, got {len(outputs)}")
+
+        dets_data = outputs[0][0]
+        labels_data = outputs[1][0]
+        if isinstance(labels_data, torch.Tensor):
+            labels_data = labels_data.cpu().numpy()
+        if isinstance(dets_data, torch.Tensor):
+            dets_data = dets_data.cpu().numpy()
+        
+        scores_all = self.sigmoid(labels_data)
+        
+        max_scores = np.max(scores_all, axis=1)
+        max_class_indices = np.argmax(scores_all, axis=1)
+        
+        max_class_indices = self.class_map_func(max_class_indices)
+
+        mask = max_scores >= np.vectorize(configs.get)(max_class_indices, 1.0)
+        
+        filtered_scores = max_scores[mask]
+        filtered_classes = max_class_indices[mask]
+        filtered_dets = dets_data[mask] # shape (N, 4)
+
+        if filtered_dets.shape[0] == 0:
+            return Results(
+                boxes = [],
+                scores = [],
+                classes = []
+            )
+
+        cx = filtered_dets[:, 0] * orig_w
+        cy = filtered_dets[:, 1] * orig_h
+        w  = filtered_dets[:, 2] * orig_w
+        h  = filtered_dets[:, 3] * orig_h
+
+        x_min = cx - w / 2.0
+        y_min = cy - h / 2.0
+        x_max = cx + w / 2.0
+        y_max = cy + h / 2.0
+        final_boxes = np.stack([x_min, y_min, x_max, y_max], axis=1)
+
+        return Results(
+            boxes = torch.from_numpy(final_boxes),
+            scores = torch.from_numpy(filtered_scores),
+            classes = filtered_classes
+        )
+
+    def forward(self, image: np.ndarray, **kwargs) -> list:
+        """
+        Perform inference.
+        """
+        input_tensor = torch.from_numpy(image)
+        with torch.no_grad():
+            outputs = self.model(input_tensor)
+        return outputs
+
+    def predict(self, image, configs={}, operators=[], **kwargs):
+        """Perform object detection on a list of images.
+
+        Args:
+            image (np.ndarray): Input image in numpy array format.
+            configs (dict): Configuration dictionary for confidence thresholding
+            operators (list, optional): List of operators to apply. Defaults to [].
+            iou (float, optional): IoU threshold for NMS. Defaults to 0.4.
+            agnostic (bool, optional): Class-agnostic NMS flag. Defaults to False.
+            max_det (int, optional): Maximum number of detections per image. Defaults to 300.
+
+        Returns:
+            Results: Object containing detection results.
+        """
+        preprocessed_image = self.preprocess(image, **kwargs)
+        # inference
+        outputs = self.forward(preprocessed_image, **kwargs)
+        # postprocess
+        results = self.postprocess(outputs, image=image,configs=configs, operators=operators, **kwargs)
+        results = results.to_dict(return_tensor=False)
+        if results == {}:
+            results = {
+                'boxes': [],
+                'scores': [],
+                'classes': []
+            }
+        return results
+    
+    @staticmethod
+    def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False):
+        """annotate model results on the image. If colormap is None, it will use the random colors.
+
+        Args:
+            results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
+            image (np.ndarray): the input image
+            colors (list, optional): a dictionary of colormaps, e.g., {'class-A':(0,0,255), 'class-B':(0,255,0)}. Defaults to None.
+            line_thickness (int, optional): the thickness of the bounding box. Defaults to None.
+            hide_bbox (bool,optional): hide the bounding box
+        Returns:
+            np.ndarray: the annotated image
+        """
+        boxes = results['boxes']
+        classes = results['classes']
+        scores = results['scores']
+
+        image = to_numpy(image).copy()
+        if not len(boxes):
+            return image
+        
+        # convert to numpy
+        boxes = to_numpy(boxes)
+        
+        if image.ndim == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+        
+        # plot boxes and masks
+        for i in range(len(boxes)):
+            label = "{}: {:.2f}".format(classes[i], scores[i])
+            args = {
+                'label': None if hide_label else label, 
+                'color': None if colormap is None else colormap[classes[i]], 
+                'line_thickness':line_thickness, 
+                'hide_bbox':hide_bbox
+                }
+            pipeline_utils.plot_one_box(boxes[i],image,None,**args)
+                
+        return image
         
 @RfdetrModel.register('pth')
-class RfdetrPT(ODBase):
+class RfdetrPTH(ODBase):
     
     logger = logging.getLogger('RFDETR')
     logger.setLevel(logging.INFO)
