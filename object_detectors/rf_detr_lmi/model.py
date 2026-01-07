@@ -362,7 +362,7 @@ class RfdetrPT(ODBase):
         input_img = (input_img - means) / stds
         input_img = input_img.transpose(2, 0, 1)
         input_img = np.expand_dims(input_img, axis=0)
-        return np.array([input_img])
+        return input_img
     
     def sigmoid(self,x):
         return 1 / (1 + np.exp(-x))
@@ -429,7 +429,11 @@ class RfdetrPT(ODBase):
         """
         Perform inference.
         """
-        input_tensor = torch.from_numpy(image)
+        if isinstance(image, np.ndarray):
+            input_tensor = torch.from_numpy(image)
+        else:
+            input_tensor = image
+        input_tensor = input_tensor.to(self.device).float()
         with torch.no_grad():
             outputs = self.model(input_tensor)
         return outputs
