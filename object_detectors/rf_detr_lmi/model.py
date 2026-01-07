@@ -6,7 +6,10 @@ import logging
 import os
 import torch
 import numpy as np
-from rfdetr import RFDETRMedium, RFDETRLarge, RFDETRSmall, RFDETRNano, RFDETRBase
+try:
+    from rfdetr import RFDETRMedium, RFDETRLarge, RFDETRSmall, RFDETRNano, RFDETRBase
+except ImportError:
+    pass
 import tensorrt as trt
 import pycuda.driver as cuda
 import pycuda.autoinit
