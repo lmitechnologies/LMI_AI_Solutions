@@ -134,9 +134,11 @@ conversion config file:
 ```yaml
 model_type: medium
 operation: convert 
+format: torchscript # onnx tensorrt
 conversion:
     pretrain_weights: /app/output/v1/checkpoint_best_total.pth # the pth file
     resolution: 256 # image size
+    device: cuda # cpu for torchscript export
 ```
 
 docker-compose file
