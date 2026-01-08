@@ -53,3 +53,5 @@ def convert_to_tensorrt(onnx_path:str, **kwargs) -> None:
     """
     trtexec(onnx_path, **kwargs)
 
+def convert_to_onnx(model, output_dir:str, **kwargs) -> None:
+    model.export(output_dir=output_dir, opset_version=kwargs.get('opset_version', 17))

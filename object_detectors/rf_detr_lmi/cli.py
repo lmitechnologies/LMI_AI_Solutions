@@ -8,7 +8,7 @@ except ImportError:
 import logging
 import os
 from datetime import date
-from rf_detr_lmi.convert import convert_to_tensorrt
+from rf_detr_lmi.convert import convert_to_tensorrt, convert_to_onnx
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,6 +63,8 @@ def parse_config(config):
         raise ValueError("Training configuration is missing.")
     
     elif model_configs['operation'] == 'convert':
+        if config.get('format', None) is None:
+            raise ValueError("Conversion format must be specified.") 
         if conversion_configs == {}:
             raise ValueError("Conversion configuration is missing.")
     else:
@@ -71,7 +73,8 @@ def parse_config(config):
     return {
         'model_configs': model_configs,
         'training_configs': training_configs,
-        'conversion_configs': conversion_configs    
+        'conversion_configs': conversion_configs,
+        'format': config.get('format', None)
     }
 
 def load_model(configs):
@@ -159,18 +162,27 @@ def main():
     if configs.get('model_configs').get('operation') == 'train':
         initiate_training(configs)
     if configs.get('model_configs').get('operation') == 'convert':
-        logger.info("Starting model conversion to ONNX format...")
-        # model = load_model(configs)
         output_dir = configs.get('conversion_configs', {}).get('output_dir', os.path.dirname(configs.get('conversion_configs', {}).get('pretrain_weights', '')))
-        if os.path.isfile(os.path.join(output_dir, 'inference_model.onnx')):
-            logger.info(f"ONNX model already exists at {os.path.join(output_dir, 'inference_model.onnx')}. Skipping export.")
-        else:
-            model = load_model(configs)
-            logger.info(f"Exporting model to ONNX format to directory: {output_dir}...")
-            model.export(output_dir=output_dir, opset_version=17) # export to ONNX
+        model = load_model(configs)
+        if configs.get('format') == 'torchscript':
+            # optimize model before conversion
+            logger.info("Optimizing model for TorchScript conversion...")
+            model.optimize_for_inference()
+            output_dir = configs.get('conversion_configs', {}).get('output_dir', os.path.dirname(configs.get('conversion_configs', {}).get('pretrain_weights', '')))
+            model.model.inference_model.save(os.path.join(output_dir, 'model.pt'))
         
-        logger.info("Converting to TensorRT engine...")
-        convert_to_tensorrt(os.path.join(output_dir, 'inference_model.onnx'))
+        elif configs.get('format') == 'onnx':
+            logger.info("Starting model conversion to ONNX format...")
+            convert_to_onnx(model, output_dir=output_dir)
+        
+        elif configs.get('format') == 'tensorrt':
+            if not os.path.exists(os.path.join(output_dir, 'inference_model.onnx')):
+                logger.info("ONNX model not found. Converting to ONNX format first...")
+                convert_to_onnx(model, output_dir=output_dir)
+            logger.info("Converting to TensorRT engine...")
+            convert_to_tensorrt(os.path.join(output_dir, 'inference_model.onnx'))
+        else:
+            raise ValueError(f"Unsupported conversion format: {configs.get('format')}")
         
         
 
