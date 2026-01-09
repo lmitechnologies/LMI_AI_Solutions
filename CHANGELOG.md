@@ -1,3 +1,10 @@
+## [1.5.2](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.5.1...v1.5.2) (2026-01-09)
+
+
+### Bug Fixes
+
+* fix trt inference for ad models ([#167](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/167)) ([2c79f9c](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/2c79f9ca128b06ab83872ac457380676b280c7db))
+
 ## [1.5.1](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.5.0...v1.5.1) (2025-12-29)
 
 
