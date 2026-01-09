@@ -320,8 +320,8 @@ class RfdetrPT(ODBase):
     logger = logging.getLogger("RFDETR")
     logger.setLevel(logging.INFO)
 
-    def __init__(self, model_path: str, device="cuda", fp16=False, **kwargs) -> None:
-        self.image_size = kwargs.get("image_size", (640, 640))
+    def __init__(self, model_path: str, device="cuda", **kwargs) -> None:
+        self.image_size = kwargs.get("image_size") or [640, 640]
         self.means = [0.485, 0.456, 0.406]
         self.stds = [0.229, 0.224, 0.225]
 

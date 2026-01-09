@@ -16,6 +16,8 @@ class ObjectDetector(ODBase):
         if image_size:
             if "image_size" in kwargs and kwargs["image_size"] is not None:
                 logger.warning("Both 'image_size' in metadata and kwargs provided. Using the one from metadata.")
+        elif "image_size" in kwargs and kwargs["image_size"] is not None:
+            image_size = kwargs["image_size"]
 
         kwargs["image_size"] = image_size
 

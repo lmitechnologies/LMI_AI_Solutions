@@ -14,7 +14,11 @@ logger.setLevel(logging.DEBUG)
 
 COCO_DIR = "tests/assets/images/coco"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+PTH_FILE = "tests/assets/models/od/rf_detr/model.pth"
 OD_MODEL = f"tests/assets/models/od/rf_detr/model_{DEVICE}.pt"
+IMAGE_SIZE = 384
+
+assert os.path.exists(OD_MODEL), f"Model path {OD_MODEL} does not exist"
 
 
 def load_image(path):
@@ -38,17 +42,19 @@ def imgs_coco():
 
 class Test_Rfdetr_Model:
     def test_compare_with_rfdetr(self, imgs_coco):
+        rf_model = RFDETRNano(pretrain_weights=PTH_FILE, device="cpu")
         obj_detector = ObjectDetector(
             metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
             model_path=OD_MODEL,
-            device=DEVICE,
+            class_map=rf_model.class_names,
+            image_size=[IMAGE_SIZE, IMAGE_SIZE],
         )
-        rf_model = RFDETRNano(pretrain_weights=OD_MODEL, device="cpu")
-        rf_model.optimize_for_inference()
 
+        rf_model.optimize_for_inference()
         for img in imgs_coco:
-            outputs_od = obj_detector.predict(img, configs=0.5)
-            outputs_rfdetr = rf_model.predict(img, threshold=0.5)
+            temp_image = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
+            outputs_od = obj_detector.predict(temp_image, configs=0.5)
+            outputs_rfdetr = rf_model.predict(temp_image, threshold=0.5)
             assert "boxes" in outputs_od
             assert "scores" in outputs_od
             assert "classes" in outputs_od
@@ -61,31 +67,40 @@ class Test_Rfdetr_Model:
             assert rf_detr_classes == outputs_od["classes"].tolist()
 
     def test_warmup(self, imgs_coco):
+        rf_model = RFDETRNano(pretrain_weights=PTH_FILE, device="cpu")
         obj_detector = ObjectDetector(
             metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
             model_path=OD_MODEL,
             device=DEVICE,
+            class_map=rf_model.class_names,
+            image_size=[IMAGE_SIZE, IMAGE_SIZE],
         )
         obj_detector.warmup()
 
     def test_empty(self, imgs_coco):
+        rf_model = RFDETRNano(pretrain_weights=PTH_FILE, device="cpu")
         object_detector = ObjectDetector(
             metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
             model_path=OD_MODEL,
             device=DEVICE,
+            class_map=rf_model.class_names,
+            image_size=[IMAGE_SIZE, IMAGE_SIZE],
         )
-        empty_img = np.zeros((480, 640, 3), dtype=np.uint8)
+        empty_img = np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
         outputs = object_detector.predict(empty_img, configs=0.5)
         assert len(outputs["boxes"]) == 0
         assert len(outputs["scores"]) == 0
         assert len(outputs["classes"]) == 0
 
     def test_confidence(self, imgs_coco):
+        rf_model = RFDETRNano(pretrain_weights=PTH_FILE, device="cpu")
         object_detector = ObjectDetector(
             metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
             model_path=OD_MODEL,
             device=DEVICE,
+            class_map=rf_model.class_names,
+            image_size=[IMAGE_SIZE, IMAGE_SIZE],
         )
-        img = imgs_coco[0]
+        img = cv2.resize(imgs_coco[0], (IMAGE_SIZE, IMAGE_SIZE))
         outputs_05 = object_detector.predict(img, configs=1.0)
         assert len(outputs_05["boxes"]) == 0
