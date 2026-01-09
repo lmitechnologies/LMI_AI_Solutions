@@ -13,8 +13,12 @@ try:
 except ImportError:
     pass
 import cv2
-import pycuda.driver as cuda
-import tensorrt as trt
+
+try:
+    import pycuda.driver as cuda
+    import tensorrt as trt
+except ImportError:
+    pass
 
 
 def to_numpy(data):
