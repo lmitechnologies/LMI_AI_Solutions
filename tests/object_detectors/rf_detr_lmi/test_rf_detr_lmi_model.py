@@ -40,7 +40,7 @@ def imgs_coco():
 
 class Test_Rfdetr_Model:
     def test_compare_with_rfdetr(self, imgs_coco):
-        rf_model = RFDETRNano(pretrain_weights=PTH_FILE)
+        rf_model = RFDETRNano(pretrain_weights=PTH_FILE, device="cpu")
         obj_detector = ObjectDetector(
             metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
             model_path=OD_MODEL,
