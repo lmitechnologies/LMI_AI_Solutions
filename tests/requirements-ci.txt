@@ -9,3 +9,4 @@ albumentations
 onnx
 pytest
 pytest-html
+rfdetr
