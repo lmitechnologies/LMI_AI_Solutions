@@ -12,6 +12,7 @@ RUN pip install ultralytics
 RUN pip install albumentations
 RUN pip install tensorboard
 RUN pip install numba
+RUN pip install rfdetr
 
 
 # Installing from anomalib src requires latest pip 

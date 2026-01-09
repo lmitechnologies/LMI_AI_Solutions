@@ -7,10 +7,14 @@ from typing import List, Optional, Union
 
 import cv2
 import numpy as np
+import torch
 from dataset_utils.mask_encoder import mask2rle, rle2mask
 from gadget_utils.pipeline_utils import fit_array_to_size
 from image_utils.img_resize import resize
 from label_utils.bbox_utils import get_rotated_bbox, rotate
+from pycocotools import mask as coco_mask
+from shapely.geometry import Polygon as ShapelyPolygon
+from torchvision.ops import masks_to_boxes
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +149,20 @@ class Box(Base):
     def coords(self, **kwargs):
         return self.x_min, self.y_min, self.x_max, self.y_max, self.angle
 
+    def to_xywh(self):
+        """Convert to (x, y, width, height) format."""
+        width = self.x_max - self.x_min
+        height = self.y_max - self.y_min
+        return np.array([self.x_min, self.y_min, width, height, self.angle])
+
+    def area(self):
+        """Calculate the area of the bounding box."""
+        return (self.x_max - self.x_min) * (self.y_max - self.y_min)
+
+    def to_coco(self, **kwargs):
+        """Convert to COCO format (x_min, y_min, width, height)."""
+        return self.to_xywh().tolist()[:4]  # Exclude angle for COCO format
+
     def to_yolo(self, h, w, **kwargs):
         use_obb = kwargs.get("use_obb", False)
 
@@ -226,6 +244,9 @@ class Box(Base):
         else:
             raise ValueError("Unsupported mask_type in Box.to_mask")
 
+    def to_polygon(self, **kwargs):
+        return self.to_mask(mask_type=AnnotationType.MASK, **kwargs)
+
     def point_in_box(self, x: int, y: int):
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
 
@@ -265,9 +286,20 @@ class Polygon(Base):
     def to_numpy(self):
         return np.array(self.points)
 
+    def area(self):
+        """Calculate the area of the polygon using the shoelace formula."""
+        coords = self.to_numpy()
+        x = coords[:, 0]
+        y = coords[:, 1]
+        return ShapelyPolygon([(int(xi), int(yi)) for xi, yi in zip(x, y)]).area
+
     def coords(self, **kwargs):
         points = np.array(self.points)
         return points[:, 0].tolist(), points[:, 1].tolist()
+
+    def to_coco(self):
+        """convert to COCO format."""
+        return np.array(self.points).ravel().tolist()
 
     def to_yolo(self, h, w, **kwargs):
         return [[point[0] / w, point[1] / h] for point in self.points]
@@ -279,6 +311,14 @@ class Polygon(Base):
         pts = self.to_numpy().astype(np.int32)
         cv2.fillPoly(mask, [pts], 1)
         return Mask(mask=mask2rle(mask))
+
+    def to_box(self, **kwargs):
+        poly = self.to_numpy()
+        x_min = np.min(poly[:, 0])
+        y_min = np.min(poly[:, 1])
+        x_max = np.max(poly[:, 0])
+        y_max = np.max(poly[:, 1])
+        return Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max)
 
     def to_rbox(self, **kwargs):
         rbox = get_rotated_bbox(self.to_numpy().astype(int))
@@ -354,6 +394,18 @@ class Mask(Base):
         polygons = [contour.reshape(-1, 2) for contour in contours]
         return [Polygon([[x, y] for x, y in polygon]) for polygon in polygons]
 
+    def to_coco(self, **kwargs):
+        """Convert the mask to COCO format."""
+        h = kwargs.get("h", None)
+        w = kwargs.get("w", None)
+        if h is None or w is None:
+            raise ValueError("Height and width cannot be None")
+        mask_array = self.to_numpy(h=h, w=w)
+        mask = coco_mask.encode(np.asfortranarray(mask_array.astype(np.uint8)))
+        mask["counts"] = mask["counts"].decode("utf-8")
+        mask["size"] = [int(dim) for dim in mask["size"]]
+        return mask
+
     def to_yolo(self, h, w, **kwargs):
         # Delegate conversion to polygons.
         instances = []
@@ -361,29 +413,40 @@ class Mask(Base):
             instances.append(polygon.to_yolo(h, w, **kwargs))
         return instances
 
+    def area(self, **kwargs):
+        """Calculate the area of the mask."""
+        polygons = self.to_polygon(**kwargs)
+        area = 0
+        for polygon in polygons:
+            area += polygon.area()
+        return area
+
     def to_box(self, **kwargs):
         h = kwargs.get("h", None)
         w = kwargs.get("w", None)
+
         if h is None or w is None:
             raise ValueError("Height and width cannot be None")
         merge_boxes = kwargs.get("merge_boxes", False)
         mask_array = self.to_numpy(h=kwargs.get("h"), w=kwargs.get("w"))
+        boxes = masks_to_boxes(torch.from_numpy(mask_array).unsqueeze(0))
         if merge_boxes:
-            pts = np.column_stack(np.where(mask_array > 0))
-            if pts.size == 0:
-                raise ValueError("Mask is empty; cannot compute bounding box.")
-            x, y, w_box, h_box = cv2.boundingRect(pts)
-            return Box(x_min=x, y_min=y, x_max=x + w_box, y_max=y + h_box, angle=0)
+            if boxes is not None:
+                x_min = boxes[:, 0].min().item()
+                y_min = boxes[:, 1].min().item()
+                x_max = boxes[:, 2].max().item()
+                y_max = boxes[:, 3].max().item()
+            else:
+                raise ValueError("No boxes found in the mask for merging.")
+            return Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max, angle=0)
         else:
-            boxes = []
-            for poly in self.to_polygon(h=kwargs.get("h"), w=kwargs.get("w")):
-                xs, ys = poly.coords()
-                pts = np.array(list(zip(xs, ys)), dtype=np.int32)
-                if pts.size == 0:
-                    continue
-                x, y, w_box, h_box = cv2.boundingRect(pts)
-                boxes.append(Box(x_min=x, y_min=y, x_max=x + w_box, y_max=y + h_box, angle=0))
-            return boxes
+            if boxes is None or boxes.numel() == 0:
+                raise ValueError("No boxes found in the mask.")
+            bboxes = []
+            for box in boxes:
+                x_min, y_min, x_max, y_max = box.tolist()
+                bboxes.append(Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max, angle=0))
+            return bboxes if len(bboxes) > 1 else bboxes[0]  # Return a list if multiple boxes, otherwise a single box
 
 
 @dataclass
