@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 COCO_DIR = "tests/assets/images/coco"
-DEVICE = "gpu" if torch.cuda.is_available() else "cpu"
-OD_MODEL = "tests/assets/models/od/rf_detr/checkpoint_best_regular.pth"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+OD_MODEL = f"tests/assets/models/od/rf_detr/model_{DEVICE}.pt"
 
 
 def load_image(path):
@@ -42,7 +42,6 @@ class Test_Rfdetr_Model:
             metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
             model_path=OD_MODEL,
             device=DEVICE,
-            model_type="nano",
         )
         rf_model = RFDETRNano(pretrain_weights=OD_MODEL, device="cpu")
         rf_model.optimize_for_inference()
@@ -66,7 +65,6 @@ class Test_Rfdetr_Model:
             metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
             model_path=OD_MODEL,
             device=DEVICE,
-            model_type="nano",
         )
         obj_detector.warmup()
 
@@ -75,7 +73,6 @@ class Test_Rfdetr_Model:
             metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
             model_path=OD_MODEL,
             device=DEVICE,
-            model_type="nano",
         )
         empty_img = np.zeros((480, 640, 3), dtype=np.uint8)
         outputs = object_detector.predict(empty_img, configs=0.5)
@@ -88,7 +85,6 @@ class Test_Rfdetr_Model:
             metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
             model_path=OD_MODEL,
             device=DEVICE,
-            model_type="nano",
         )
         img = imgs_coco[0]
         outputs_05 = object_detector.predict(img, configs=1.0)
