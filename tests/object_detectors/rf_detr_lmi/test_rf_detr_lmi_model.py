@@ -49,7 +49,7 @@ class Test_Rfdetr_Model:
             device=DEVICE,
         )
 
-        rf_model.optimize_for_inference()
+        # rf_model.optimize_for_inference()
         for img in imgs_coco:
             temp_image = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
             outputs_od = obj_detector.predict(temp_image, configs=0.5)
