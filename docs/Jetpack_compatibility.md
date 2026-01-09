@@ -49,8 +49,8 @@ Across model formats:
 |--------------|-------------|-------------|
 | PT (PyTorch) | ❌ Does not work | ❌ Does not work |
 | TorchScript | ❌ Does not work | ✅ Works |
-| TensorRT | ❌ Does not work | ❔ Not tested |
+| TensorRT | ❌ Does not work | ✅ Works |
 
 ---
 
-*Last Updated: January 6 2026*
+*Last Updated: January 9 2026*
