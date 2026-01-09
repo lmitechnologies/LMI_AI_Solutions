@@ -2,9 +2,6 @@
 *.pyc
 *.html
 
-#pytorch weights
-*.pt
-
 #ignore folders
 **.vscode
 data
