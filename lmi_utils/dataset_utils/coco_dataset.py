@@ -1,8 +1,9 @@
 import json
-from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Any, Optional, Union, Set
-from datetime import datetime
 import os
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Set, Union
+
 
 @dataclass
 class CocoInfo:
@@ -10,6 +11,7 @@ class CocoInfo:
     Represents the 'info' block of the COCO format.
     Contains high-level information about the dataset.
     """
+
     year: int
     version: str
     description: str
@@ -25,12 +27,14 @@ class CocoInfo:
         """Converts the Info object to a dictionary."""
         return asdict(self)
 
+
 @dataclass
 class CocoLicense:
     """
     Represents the 'license' block of the COCO format.
     Contains information about a single image license.
     """
+
     id: int
     name: str
     url: str = ""
@@ -43,12 +47,14 @@ class CocoLicense:
         """Converts the License object to a dictionary."""
         return asdict(self)
 
+
 @dataclass
 class CocoImage:
     """
     Represents the 'image' block of the COCO format.
     Contains information about a single image.
     """
+
     id: int
     width: int
     height: int
@@ -72,6 +78,7 @@ class CocoImage:
         """Converts the Image object to a dictionary."""
         return {k: v for k, v in asdict(self).items() if v is not None}
 
+
 @dataclass
 class CocoAnnotation:
     """
@@ -79,6 +86,7 @@ class CocoAnnotation:
     Contains information about a single annotation.
     The `segmentation` can be a list of polygons or an RLE object.
     """
+
     id: int
     image_id: int
     category_id: int
@@ -98,7 +106,7 @@ class CocoAnnotation:
             raise ValueError("Area must be non-negative")
         if self.iscrowd not in [0, 1]:
             raise ValueError("iscrowd must be 0 or 1")
-        
+
         # Validate bbox format [x, y, width, height]
         if not isinstance(self.bbox, list) or len(self.bbox) != 4:
             raise ValueError("bbox must be a list of 4 numbers [x, y, width, height]")
@@ -111,12 +119,14 @@ class CocoAnnotation:
         """Converts the Annotation object to a dictionary."""
         return asdict(self)
 
+
 @dataclass
 class CocoCategory:
     """
     Represents the 'category' block of the COCO format.
     Contains information about a single object category.
     """
+
     id: int
     name: str
     supercategory: str = ""
@@ -131,6 +141,7 @@ class CocoCategory:
         """Converts the Category object to a dictionary."""
         return asdict(self)
 
+
 @dataclass
 class CocoDataset:
     """
@@ -143,19 +154,22 @@ class CocoDataset:
     - annotations: A list of all annotations (e.g., bounding boxes, masks).
     - categories: A list of all object categories.
     """
-    info: Optional[CocoInfo] = field(default_factory=lambda: CocoInfo(
-        year=datetime.now().year,
-        version="1.0",
-        description="COCO dataset",
-        contributor="Unknown",
-        url="",
-        date_created=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ))
+
+    info: Optional[CocoInfo] = field(
+        default_factory=lambda: CocoInfo(
+            year=datetime.now().year,
+            version="1.0",
+            description="COCO dataset",
+            contributor="Unknown",
+            url="",
+            date_created=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+    )
     licenses: List[CocoLicense] = field(default_factory=list)
     images: List[CocoImage] = field(default_factory=list)
     annotations: List[CocoAnnotation] = field(default_factory=list)
     categories: List[CocoCategory] = field(default_factory=list)
-    
+
     # Private fields to track IDs (not serialized)
     _license_ids: Set[int] = field(default_factory=set, init=False, repr=False)
     _image_ids: Set[int] = field(default_factory=set, init=False, repr=False)
@@ -174,7 +188,7 @@ class CocoDataset:
             raise TypeError("license_obj must be an instance of CocoLicense")
         if license_obj.id in self._license_ids:
             raise ValueError(f"License with ID {license_obj.id} already exists")
-        
+
         self.licenses.append(license_obj)
         self._license_ids.add(license_obj.id)
 
@@ -184,11 +198,11 @@ class CocoDataset:
             raise TypeError("image must be an instance of CocoImage")
         if image.id in self._image_ids:
             raise ValueError(f"Image with ID {image.id} already exists")
-        
+
         # Check if license exists
         if image.license not in self._license_ids and image.license != 0:
             raise ValueError(f"License with ID {image.license} does not exist")
-        
+
         self.images.append(image)
         self._image_ids.add(image.id)
 
@@ -198,13 +212,13 @@ class CocoDataset:
             raise TypeError("annotation must be an instance of CocoAnnotation")
         if annotation.id in self._annotation_ids:
             raise ValueError(f"Annotation with ID {annotation.id} already exists")
-        
+
         # Check if image and category exist
         if annotation.image_id not in self._image_ids:
             raise ValueError(f"Image with ID {annotation.image_id} does not exist")
         if annotation.category_id not in self._category_ids:
             raise ValueError(f"Category with ID {annotation.category_id} does not exist")
-        
+
         self.annotations.append(annotation)
         self._annotation_ids.add(annotation.id)
 
@@ -214,7 +228,7 @@ class CocoDataset:
             raise TypeError("category must be an instance of CocoCategory")
         if category.id in self._category_ids:
             raise ValueError(f"Category with ID {category.id} already exists")
-        
+
         self.categories.append(category)
         self._category_ids.add(category.id)
 
@@ -264,34 +278,34 @@ class CocoDataset:
         Returns an empty list if the dataset is valid.
         """
         errors = []
-        
+
         # Check if info is set
         if self.info is None:
             errors.append("Dataset info is not set")
-        
+
         # Check if we have at least one category
         if not self.categories:
             errors.append("Dataset must have at least one category")
-        
+
         # Check for duplicate category names
         category_names = [cat.name for cat in self.categories]
         duplicate_names = set([name for name in category_names if category_names.count(name) > 1])
         if duplicate_names:
             errors.append(f"Warning: Duplicate category names found: {', '.join(duplicate_names)}")
-        
+
         # Check for orphaned annotations
         for annotation in self.annotations:
             if annotation.image_id not in self._image_ids:
                 errors.append(f"Annotation {annotation.id} references non-existent image {annotation.image_id}")
             if annotation.category_id not in self._category_ids:
                 errors.append(f"Annotation {annotation.id} references non-existent category {annotation.category_id}")
-        
+
         # Check for images without annotations (warning, not error)
         images_with_annotations = {ann.image_id for ann in self.annotations}
         for image in self.images:
             if image.id not in images_with_annotations:
                 errors.append(f"Warning: Image {image.id} has no annotations")
-        
+
         return errors
 
     def to_dict(self) -> Dict[str, Any]:
@@ -315,7 +329,7 @@ class CocoDataset:
             file_path (str): The path to the output JSON file.
             indent (int): The indentation level for the JSON output.
             validate (bool): Whether to validate the dataset before saving.
-        
+
         Raises:
             ValueError: If validation fails and validate=True.
             IOError: If the file cannot be written.
@@ -324,88 +338,86 @@ class CocoDataset:
             errors = self.validate_dataset()
             if any(not error.startswith("Warning:") for error in errors):
                 raise ValueError(f"Dataset validation failed: {'; '.join(errors)}")
-        
+
         # Ensure the directory exists
         if os.path.dirname(file_path):
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
         try:
-            with open(file_path, 'w') as f:
+            with open(file_path, "w") as f:
                 json.dump(self.to_dict(), f, indent=indent)
         except IOError as e:
-            raise IOError(f"Could not write to file {file_path}: {e}")
+            raise IOError(f"Could not write to file {file_path}: {e}") from None
 
     @classmethod
-    def load_from_json(cls, file_path: str) -> 'CocoDataset':
+    def load_from_json(cls, file_path: str) -> "CocoDataset":
         """
         Loads a COCO dataset from a JSON file.
-        
+
         Args:
             file_path (str): Path to the JSON file.
-            
+
         Returns:
             CocoDataset: The loaded dataset.
         """
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 data = json.load(f)
         except (IOError, json.JSONDecodeError) as e:
-            raise ValueError(f"Could not load JSON file {file_path}: {e}")
-        
+            raise ValueError(f"Could not load JSON file {file_path}: {e}") from None
+
         dataset = cls()
-        
+
         # Load info
-        if 'info' in data and data['info']:
-            info_data = data['info']
-            dataset.set_info(CocoInfo(
-                year=info_data.get('year', 0),
-                version=info_data.get('version', ''),
-                description=info_data.get('description', ''),
-                contributor=info_data.get('contributor', ''),
-                url=info_data.get('url', ''),
-                date_created=info_data.get('date_created')
-            ))
-        
+        if "info" in data and data["info"]:
+            info_data = data["info"]
+            dataset.set_info(
+                CocoInfo(
+                    year=info_data.get("year", 0),
+                    version=info_data.get("version", ""),
+                    description=info_data.get("description", ""),
+                    contributor=info_data.get("contributor", ""),
+                    url=info_data.get("url", ""),
+                    date_created=info_data.get("date_created"),
+                )
+            )
+
         # Load licenses
-        for lic_data in data.get('licenses', []):
-            dataset.add_license(CocoLicense(
-                id=lic_data['id'],
-                name=lic_data['name'],
-                url=lic_data.get('url', '')
-            ))
-        
+        for lic_data in data.get("licenses", []):
+            dataset.add_license(CocoLicense(id=lic_data["id"], name=lic_data["name"], url=lic_data.get("url", "")))
+
         # Load categories
-        for cat_data in data.get('categories', []):
-            dataset.add_category(CocoCategory(
-                id=cat_data['id'],
-                name=cat_data['name'],
-                supercategory=cat_data.get('supercategory', '')
-            ))
-        
+        for cat_data in data.get("categories", []):
+            dataset.add_category(CocoCategory(id=cat_data["id"], name=cat_data["name"], supercategory=cat_data.get("supercategory", "")))
+
         # Load images
-        for img_data in data.get('images', []):
-            dataset.add_image(CocoImage(
-                id=img_data['id'],
-                width=img_data['width'],
-                height=img_data['height'],
-                file_name=img_data['file_name'],
-                license=img_data.get('license', 0),
-                flickr_url=img_data.get('flickr_url'),
-                coco_url=img_data.get('coco_url'),
-                date_captured=img_data.get('date_captured')
-            ))
-        
+        for img_data in data.get("images", []):
+            dataset.add_image(
+                CocoImage(
+                    id=img_data["id"],
+                    width=img_data["width"],
+                    height=img_data["height"],
+                    file_name=img_data["file_name"],
+                    license=img_data.get("license", 0),
+                    flickr_url=img_data.get("flickr_url"),
+                    coco_url=img_data.get("coco_url"),
+                    date_captured=img_data.get("date_captured"),
+                )
+            )
+
         # Load annotations
-        for ann_data in data.get('annotations', []):
-            dataset.add_annotation(CocoAnnotation(
-                id=ann_data['id'],
-                image_id=ann_data['image_id'],
-                category_id=ann_data['category_id'],
-                segmentation=ann_data['segmentation'],
-                area=ann_data['area'],
-                bbox=ann_data['bbox'],
-                iscrowd=ann_data.get('iscrowd', False)
-            ))
-        
+        for ann_data in data.get("annotations", []):
+            dataset.add_annotation(
+                CocoAnnotation(
+                    id=ann_data["id"],
+                    image_id=ann_data["image_id"],
+                    category_id=ann_data["category_id"],
+                    segmentation=ann_data["segmentation"],
+                    area=ann_data["area"],
+                    bbox=ann_data["bbox"],
+                    iscrowd=ann_data.get("iscrowd", False),
+                )
+            )
+
         return dataset
 
     def get_statistics(self) -> Dict[str, Any]:
@@ -416,7 +428,7 @@ class CocoDataset:
             "num_categories": len(self.categories),
             "num_licenses": len(self.licenses),
             "annotations_per_image": len(self.annotations) / len(self.images) if self.images else 0,
-            "categories": [cat.name for cat in self.categories]
+            "categories": [cat.name for cat in self.categories],
         }
 
     def __post_init__(self):

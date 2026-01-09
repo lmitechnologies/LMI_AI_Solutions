@@ -7,6 +7,7 @@ from typing import List, Optional, Union
 
 import cv2
 import numpy as np
+import torch
 from dataset_utils.mask_encoder import mask2rle, rle2mask
 from gadget_utils.pipeline_utils import fit_array_to_size
 from image_utils.img_resize import resize
@@ -14,7 +15,6 @@ from label_utils.bbox_utils import get_rotated_bbox, rotate
 from pycocotools import mask as coco_mask
 from shapely.geometry import Polygon as ShapelyPolygon
 from torchvision.ops import masks_to_boxes
-import torch
 
 logger = logging.getLogger(__name__)
 
@@ -148,13 +148,13 @@ class Box(Base):
 
     def coords(self, **kwargs):
         return self.x_min, self.y_min, self.x_max, self.y_max, self.angle
-    
+
     def to_xywh(self):
         """Convert to (x, y, width, height) format."""
         width = self.x_max - self.x_min
         height = self.y_max - self.y_min
         return np.array([self.x_min, self.y_min, width, height, self.angle])
-    
+
     def area(self):
         """Calculate the area of the bounding box."""
         return (self.x_max - self.x_min) * (self.y_max - self.y_min)
@@ -243,10 +243,10 @@ class Box(Base):
             return Polygon(points=pts)
         else:
             raise ValueError("Unsupported mask_type in Box.to_mask")
-    
+
     def to_polygon(self, **kwargs):
         return self.to_mask(mask_type=AnnotationType.MASK, **kwargs)
-    
+
     def point_in_box(self, x: int, y: int):
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
 
@@ -285,18 +285,18 @@ class Polygon(Base):
 
     def to_numpy(self):
         return np.array(self.points)
-    
+
     def area(self):
         """Calculate the area of the polygon using the shoelace formula."""
         coords = self.to_numpy()
         x = coords[:, 0]
         y = coords[:, 1]
-        return ShapelyPolygon([(int(xi),int(yi)) for xi,yi in zip(x,y)]).area
+        return ShapelyPolygon([(int(xi), int(yi)) for xi, yi in zip(x, y)]).area
 
     def coords(self, **kwargs):
         points = np.array(self.points)
         return points[:, 0].tolist(), points[:, 1].tolist()
-    
+
     def to_coco(self):
         """convert to COCO format."""
         return np.array(self.points).ravel().tolist()
@@ -311,7 +311,7 @@ class Polygon(Base):
         pts = self.to_numpy().astype(np.int32)
         cv2.fillPoly(mask, [pts], 1)
         return Mask(mask=mask2rle(mask))
-    
+
     def to_box(self, **kwargs):
         poly = self.to_numpy()
         x_min = np.min(poly[:, 0])
@@ -319,7 +319,7 @@ class Polygon(Base):
         x_max = np.max(poly[:, 0])
         y_max = np.max(poly[:, 1])
         return Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max)
-    
+
     def to_rbox(self, **kwargs):
         rbox = get_rotated_bbox(self.to_numpy().astype(int))
         x1, y1, w, h, angle = rbox
@@ -402,8 +402,8 @@ class Mask(Base):
             raise ValueError("Height and width cannot be None")
         mask_array = self.to_numpy(h=h, w=w)
         mask = coco_mask.encode(np.asfortranarray(mask_array.astype(np.uint8)))
-        mask['counts'] = mask['counts'].decode('utf-8')
-        mask['size'] = [int(dim) for dim in mask['size']]
+        mask["counts"] = mask["counts"].decode("utf-8")
+        mask["size"] = [int(dim) for dim in mask["size"]]
         return mask
 
     def to_yolo(self, h, w, **kwargs):
@@ -412,20 +412,19 @@ class Mask(Base):
         for polygon in self.to_polygon(h=h, w=w):
             instances.append(polygon.to_yolo(h, w, **kwargs))
         return instances
-    
+
     def area(self, **kwargs):
         """Calculate the area of the mask."""
-        polygons  = self.to_polygon(**kwargs)
+        polygons = self.to_polygon(**kwargs)
         area = 0
         for polygon in polygons:
             area += polygon.area()
-        return area 
-        
+        return area
 
     def to_box(self, **kwargs):
         h = kwargs.get("h", None)
         w = kwargs.get("w", None)
-        
+
         if h is None or w is None:
             raise ValueError("Height and width cannot be None")
         merge_boxes = kwargs.get("merge_boxes", False)
@@ -448,6 +447,7 @@ class Mask(Base):
                 x_min, y_min, x_max, y_max = box.tolist()
                 bboxes.append(Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max, angle=0))
             return bboxes if len(bboxes) > 1 else bboxes[0]  # Return a list if multiple boxes, otherwise a single box
+
 
 @dataclass
 class Label(Base):

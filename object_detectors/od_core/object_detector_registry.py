@@ -4,7 +4,7 @@ import logging
 import pkgutil
 from typing import Any, Dict, List, Optional, Tuple, Type
 
-PACKAGES = ["ultralytics_lmi", "yolov8_lmi", "detectron2_lmi", "yolov5_lmi", "rf_detr_lmi"] 
+PACKAGES = ["ultralytics_lmi", "yolov8_lmi", "detectron2_lmi", "yolov5_lmi", "rf_detr_lmi"]
 TARGET_MODULE_SUFFIXES = [".model"]  # Target suffixes to look for in the packages
 
 

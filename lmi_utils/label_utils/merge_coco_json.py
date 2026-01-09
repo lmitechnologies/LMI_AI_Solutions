@@ -1,15 +1,14 @@
-import json
-import os
-from dataset_utils.coco_dataset import CocoDataset, CocoImage, CocoAnnotation, CocoCategory, CocoLicense
-from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Any, Optional, Union, Set
-from datetime import datetime
 import argparse
 import logging
+import os
 import shutil
+from typing import Dict, List
+
+from dataset_utils.coco_dataset import CocoAnnotation, CocoCategory, CocoDataset, CocoImage, CocoLicense
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0) -> None:
     """
@@ -23,7 +22,7 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
     # Global Maps to unify data across datasets
     # Map Name -> New ID
     global_category_map: Dict[str, int] = {}
-    
+
     # Map (Name, URL) -> New ID to avoid duplicate licenses
     global_license_map: Dict[tuple, int] = {}
 
@@ -52,7 +51,7 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
             continue
 
         # --- 1. Merge Licenses ---
-        local_lic_map = {} # old_id -> new_id
+        local_lic_map = {}  # old_id -> new_id
         for lic in ds.licenses:
             key = (lic.name, lic.url)
             if key not in global_license_map:
@@ -63,21 +62,17 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
             local_lic_map[lic.id] = global_license_map[key]
 
         # --- 2. Merge Categories (Unify by Name) ---
-        local_cat_map = {} # old_id -> new_id
+        local_cat_map = {}  # old_id -> new_id
         for cat in ds.categories:
             if cat.name not in global_category_map:
-                new_cat = CocoCategory(
-                    id=current_cat_id, 
-                    name=cat.name, 
-                    supercategory=cat.supercategory
-                )
+                new_cat = CocoCategory(id=current_cat_id, name=cat.name, supercategory=cat.supercategory)
                 merged.add_category(new_cat)
                 global_category_map[cat.name] = current_cat_id
                 current_cat_id += 1
             local_cat_map[cat.id] = global_category_map[cat.name]
 
         # --- 3. Merge Images (Remap IDs) ---
-        local_img_map = {} # old_id -> new_id
+        local_img_map = {}  # old_id -> new_id
         for img in ds.images:
             # Handle license mapping (default to 0 if not found)
             new_lic_id = local_lic_map.get(img.license, 0)
@@ -88,7 +83,7 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
             except Exception as e:
                 logger.error(f"Error copying image {full_image_path}: {e}")
                 exit(1)
-        
+
             new_img = CocoImage(
                 id=current_img_id,
                 width=img.width,
@@ -97,7 +92,7 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
                 license=new_lic_id,
                 flickr_url=img.flickr_url,
                 coco_url=img.coco_url,
-                date_captured=img.date_captured
+                date_captured=img.date_captured,
             )
             merged.add_image(new_img)
             local_img_map[img.id] = current_img_id
@@ -120,7 +115,7 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
                 segmentation=ann.segmentation,
                 area=ann.area,
                 bbox=ann.bbox,
-                iscrowd=ann.iscrowd
+                iscrowd=ann.iscrowd,
             )
             merged.add_annotation(new_ann)
             current_ann_id += 1
@@ -128,7 +123,7 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
     # Save
     print(f"Saving merged dataset to {output_path}...")
     merged.save_to_json(os.path.join(output_path, "merged.json"))
-    
+
     # Print stats
     stats = merged.get_statistics()
     print("Merge Complete.")
@@ -136,18 +131,11 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
     print(f"Total Annotations: {stats['num_annotations']}")
     print(f"Total Categories: {stats['num_categories']}")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Merge multiple COCO datasets.")
-    parser.add_argument(
-        "-i", "--inputs",
-        nargs="+", 
-        help="List of input COCO JSON files to merge"
-    )
-    parser.add_argument(
-        "-o", "--output", 
-        required=True, 
-        help="Output path for the merged JSON file"
-    )
+    parser.add_argument("-i", "--inputs", nargs="+", help="List of input COCO JSON files to merge")
+    parser.add_argument("-o", "--output", required=True, help="Output path for the merged JSON file")
 
     args = parser.parse_args()
     merge_datasets(args.inputs, args.output)
