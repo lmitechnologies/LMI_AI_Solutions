@@ -5,7 +5,6 @@ from collections.abc import Sequence
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 from image_utils.tiler import OverlapMode, ScaleMode, Tiler
 from torchvision.transforms import v2
@@ -131,20 +130,21 @@ class AnomalyModel2(Anomalib_Base):
             self.logger.info(f"init tiler with tile={tile}, stride={stride}, mode={self.tile_mode}")
 
     @torch.inference_mode()
-    def preprocess(self, image):
+    def preprocess(self, image, **kwargs):
         """
         Desc: Preprocess input image.
         args:
             - image: numpy array [H,W,Ch]
         """
 
+        verbose = kwargs.get("verbose", False)
         img = self.from_numpy(image).float()
 
         # grayscale to rgb
         if img.ndim == 2:
             img = img.unsqueeze(-1).repeat(1, 1, 3)
 
-        img = img.permute((2, 0, 1)).unsqueeze(0)
+        img = img.permute((2, 0, 1)).unsqueeze(0)  # to [B,Ch,H,W]
         img = img / 255.0
 
         if self.tiler is not None:
@@ -152,16 +152,18 @@ class AnomalyModel2(Anomalib_Base):
 
         batch = img.shape[0]
         if self.inference_mode == "TRT" and batch != self.batch_size:
-            self.logger.warning(f"Got batch size of {batch},  but trt expects {self.batch_size}. The trt engine might output weird results")
-            img = F.interpolate(img, size=self.model_shape, mode="bilinear")
+            raise Exception(
+                f"Batch size mismatch when using tensorRT model.Got input batch size of {batch}, but tensorRT expects {self.batch_size}."
+            )
 
-        # resize baked into the pt model (although some torchscript models dont have preprocessing so resizing here)
-        if self.tiler is None and self.inference_mode == "PT":
-            if img.shape[1] != self.model_shape[0] or img.shape[2] != self.model_shape[1]:
-                self.logger.debug(
-                    f"Input image shape {image.shape[:2]} does not match model shape {self.model_shape}. Resizing input image."
+        # resize inputs. Although resize baked into the original pt model, other model types (trt, ts) may not have it
+        if self.tiler is None and (img.shape[2] != self.model_shape[0] or img.shape[3] != self.model_shape[1]):
+            if verbose:
+                self.logger.info(
+                    f"Input image shape mismatch when using non-tiling mode."
+                    f"Got input image shape of {img.shape[2:]}, resizing to {self.model_shape}."
                 )
-                img = v2.Resize(self.model_shape, antialias=True)(img)
+            img = v2.Resize(self.model_shape, antialias=True)(img)
 
         img = img.contiguous()
         return img.half() if self.fp16 else img
@@ -203,6 +205,7 @@ class AnomalyModel2(Anomalib_Base):
                                         samples than this size, the input batch will be
                                         split and processed in chunks of this size.
                                         The results are then aggregated.
+            verbose (bool): whether to print verbose logs. Default False.
 
         Note: predict calls the preprocess method
         returns:
@@ -210,6 +213,7 @@ class AnomalyModel2(Anomalib_Base):
                       If tiling is used, this is the untilled output.
                       The output is squeezed.
         """
+        verbose = kwargs.get("verbose", False)
         if self.tiler is not None:
             tiling_settings = kwargs.get("tiling_settings", {})
             overlap_mode_str = tiling_settings.get("overlap_mode", "average")
@@ -217,9 +221,10 @@ class AnomalyModel2(Anomalib_Base):
             tiling_settings["overlap_mode"] = current_overlap_mode
             tiling_settings["scale_mode"] = self.tile_mode
 
-        input_batch = self.preprocess(image)
-        if kwargs.get("verbose", False):
-            self.logger.info(f"Using overlap mode: {overlap_mode_str}")
+        input_batch = self.preprocess(image, verbose=verbose)
+        if verbose:
+            if self.tiler is not None:
+                self.logger.info(f"Using overlap mode: {overlap_mode_str}")
             self.logger.info(f"Final input batch shape: {input_batch.shape}")
 
         num_samples_in_input = input_batch.shape[0]
