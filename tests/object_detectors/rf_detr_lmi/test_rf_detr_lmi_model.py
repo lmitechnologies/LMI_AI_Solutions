@@ -18,8 +18,6 @@ PTH_FILE = "tests/assets/models/od/rf_detr/model.pth"
 OD_MODEL = f"tests/assets/models/od/rf_detr/model_{DEVICE}.pt"
 IMAGE_SIZE = 384
 
-assert os.path.exists(OD_MODEL), f"Model path {OD_MODEL} does not exist"
-
 
 def load_image(path):
     im = cv2.imread(path)
