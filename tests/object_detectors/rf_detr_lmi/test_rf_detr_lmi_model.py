@@ -14,7 +14,7 @@ logger.setLevel(logging.DEBUG)
 
 COCO_DIR = "tests/assets/images/coco"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-PTH_FILE = "tests/assets/models/od/rf_detr/model_pth.pth"
+PTH_FILE = "tests/assets/models/od/rf_detr/checkpoint.pth"
 OD_MODEL = f"tests/assets/models/od/rf_detr/model_{DEVICE}.pt"
 IMAGE_SIZE = 384
 
