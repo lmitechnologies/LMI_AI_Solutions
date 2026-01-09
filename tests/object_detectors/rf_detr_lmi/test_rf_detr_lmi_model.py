@@ -46,6 +46,7 @@ class Test_Rfdetr_Model:
             model_path=OD_MODEL,
             class_map=rf_model.class_names,
             image_size=[IMAGE_SIZE, IMAGE_SIZE],
+            device=DEVICE,
         )
 
         rf_model.optimize_for_inference()
