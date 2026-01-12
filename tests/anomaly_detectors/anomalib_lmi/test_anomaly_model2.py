@@ -1,6 +1,7 @@
 import glob
 import logging
 import os
+import platform
 import subprocess
 import tempfile
 import time
@@ -35,6 +36,7 @@ BASE_CONFIG = {
     "model_path": MODEL_PATH,
     "task": "seg",
 }
+IS_ARM = platform.machine().startswith(("arm", "aarch64"))
 
 
 @pytest.fixture
@@ -98,7 +100,6 @@ def test_compare_results_with_anomalib_api():
         **BASE_CONFIG,
         "model_path": TRACED_MODEL_PATH,
     }  # replace model path with traced model path
-    logger.info(config)
     model3 = AnomalyDetector(config)
     compare_results(model1, [model2, model3])
 
@@ -250,3 +251,79 @@ def test_cmds():
             logger.info(result.stderr)
 
             assert os.path.isfile(os.path.join(t2, "model.engine"))
+
+
+@pytest.mark.parametrize("batch_size", [1, 2, 3, 4, 8])
+def test_mini_batch(batch_size):
+    """
+    Test mini-batch inference combined with tiling.
+    """
+    ad = AnomalyModel2(MODEL_PATH, tile=224, stride=224, device="cpu")
+    test_img = np.random.randint(0, 255, (672, 640, 3), dtype=np.uint8)
+
+    result_normal = ad.predict(test_img)
+    inference_settings = {"inference_batch_size": batch_size}
+    result_batched = ad.predict(test_img, inference_settings=inference_settings, verbose=True)
+
+    logger.info(f"max diff: {np.max(np.abs(result_normal - result_batched))}")
+    atol = 5e-2 if IS_ARM else 1e-5
+    assert np.allclose(result_normal, result_batched, atol=atol)
+
+
+def test_predict_invalid_overlap_mode():
+    """
+    Test that AnomalyModel2.predict raises ValueError for invalid overlap modes.
+    """
+    ad = AnomalyModel2(MODEL_PATH, tile=224, stride=224)
+    test_img = np.zeros((224, 224, 3), dtype=np.uint8)
+
+    with pytest.raises(ValueError, match="Invalid overlap mode"):
+        ad.predict(test_img, tiling_settings={"overlap_mode": "invalid_mode"})
+
+
+@pytest.mark.parametrize("batch_size", [1, 5, 10])
+def test_predict_batch_size_edge_cases(batch_size):
+    """
+    Test mini-batch inference with various batch sizes relative to number of tiles.
+    """
+    ad = AnomalyModel2(MODEL_PATH, tile=224, stride=224)
+    test_img = np.zeros((448, 448, 3), dtype=np.uint8)
+
+    inference_settings = {"inference_batch_size": batch_size}
+    result = ad.predict(test_img, inference_settings=inference_settings)
+    assert result.shape == (448, 448)
+
+
+def test_predict_input_variants():
+    """
+    Test predict with different input formats (numpy, torch tensor, grayscale).
+    """
+    ad = AnomalyModel2(MODEL_PATH)
+
+    # Numpy RGB
+    img_np = np.zeros((224, 224, 3), dtype=np.uint8)
+    res1 = ad.predict(img_np)
+    assert res1.shape == (224, 224)
+
+    # Grayscale
+    img_gray = np.zeros((224, 224), dtype=np.uint8)
+    res3 = ad.predict(img_gray)
+    assert res3.shape == (224, 224)
+
+
+def test_predict_error_handling(monkeypatch):
+    """
+    Test that AnomalyModel2.predict raises RuntimeError when _infer returns None.
+    """
+    ad = AnomalyModel2(MODEL_PATH)
+    test_img = np.zeros((224, 224, 3), dtype=np.uint8)
+
+    # Mock _infer to return None
+    monkeypatch.setattr(ad, "_infer", lambda x: None)
+    with pytest.raises(RuntimeError, match="Model inference failed to produce output"):
+        ad.predict(test_img)
+
+    # Mock _perform_batched_inference to return None
+    monkeypatch.setattr(ad, "_perform_batched_inference", lambda x, y: None)
+    with pytest.raises(RuntimeError, match="Model inference failed to produce output"):
+        ad.predict(test_img, inference_settings={"inference_batch_size": 1})

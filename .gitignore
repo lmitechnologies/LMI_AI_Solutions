@@ -1,6 +1,9 @@
 #ignore files
 *.pyc
 *.html
+*.pt
+*.pth
+*.ckpt
 
 #ignore folders
 **.vscode
