@@ -194,90 +194,152 @@ class AnomalyModel2(Anomalib_Base):
 
         return output_tensor
 
+    def _setup_tiling_settings(self, kwargs, verbose=False):
+        """
+        Setup tiling settings from kwargs.
+
+        Args:
+            kwargs: Keyword arguments containing tiling_settings
+            verbose: Whether to log tiling configuration
+
+        Returns:
+            dict: Tiling settings with overlap_mode and scale_mode configured
+        """
+        tiling_settings = kwargs.get("tiling_settings", {})
+        overlap_mode_str = tiling_settings.get("overlap_mode", "average")
+
+        try:
+            overlap_mode = OverlapMode(overlap_mode_str)
+        except (ValueError, KeyError) as e:
+            raise ValueError(f"Invalid overlap mode '{overlap_mode_str}'. Valid options: average, max, cosine, linear, gaussian") from e
+
+        tiling_settings["overlap_mode"] = overlap_mode
+        tiling_settings["scale_mode"] = self.tile_mode
+
+        if verbose:
+            self.logger.info(f"Using overlap mode: {overlap_mode_str}")
+
+        return tiling_settings
+
+    def _perform_batched_inference(self, input_batch, batch_size):
+        """
+        Perform inference on input batch in smaller chunks.
+
+        Args:
+            input_batch: Preprocessed input tensor [N, C, H, W]
+            batch_size: Maximum batch size for each inference call
+
+        Returns:
+            torch.Tensor: Concatenated output from all mini-batches
+
+        Raises:
+            RuntimeError: If inference fails for any mini-batch
+            ValueError: If output type is not supported for aggregation
+        """
+        num_samples = input_batch.shape[0]
+        mini_batch_outputs = []
+
+        for start_idx in range(0, num_samples, batch_size):
+            end_idx = min(start_idx + batch_size, num_samples)
+            mini_batch = input_batch[start_idx:end_idx]
+
+            output = self._infer(mini_batch)
+
+            if output is None:
+                raise RuntimeError(f"Inference failed for mini-batch [{start_idx}:{end_idx}]. Model returned None.")
+
+            mini_batch_outputs.append(output)
+
+        if not mini_batch_outputs:
+            raise RuntimeError(
+                f"Batched inference completed but no outputs were collected. Input batch size: {num_samples}, batch size: {batch_size}"
+            )
+
+        # Aggregate outputs
+        if isinstance(mini_batch_outputs[0], torch.Tensor):
+            return torch.cat(mini_batch_outputs, dim=0)
+        else:
+            raise ValueError(f"Cannot aggregate outputs of type {type(mini_batch_outputs[0]).__name__}. Expected torch.Tensor.")
+
+    def _convert_to_numpy(self, tensor):
+        """
+        Convert tensor to numpy array.
+
+        Args:
+            tensor: torch.Tensor or np.ndarray
+
+        Returns:
+            np.ndarray: Numpy array representation
+
+        Raises:
+            TypeError: If tensor type is not supported
+        """
+        if isinstance(tensor, torch.Tensor):
+            return tensor.cpu().numpy()
+        elif isinstance(tensor, np.ndarray):
+            return tensor
+        else:
+            raise TypeError(f"Cannot convert type {type(tensor).__name__} to numpy array. Expected torch.Tensor or np.ndarray.")
+
     @torch.inference_mode()
     def predict(self, image, **kwargs):
         """
-        Desc: Model prediction
-        Args: image: numpy array [H,W,Ch] or [N,H,W,Ch]
-        kwargs:
-            overlap_mode (str): "average", "max", "cosine", "linear", "gaussian". Default 'average'.
-            batch_size (int, optional): If provided and the input batch contains more
-                                        samples than this size, the input batch will be
-                                        split and processed in chunks of this size.
-                                        The results are then aggregated.
-            verbose (bool): whether to print verbose logs. Default False.
+        Perform model prediction on input image(s).
 
-        Note: predict calls the preprocess method
-        returns:
-            - output: processed output, typically a numpy array.
-                      If tiling is used, this is the untilled output.
-                      The output is squeezed.
+        Args:
+            image: Input image as numpy array [H,W,Ch] or [N,H,W,Ch]
+            **kwargs: Additional keyword arguments
+                tiling_settings (dict): Settings for tiling
+                    overlap_mode (str): "average", "max", "cosine", "linear", "gaussian". Default 'average'
+                inference_settings (dict): Settings for inference
+                    inference_batch_size (int): Batch size for chunked inference. If None, process all at once
+                verbose (bool): Enable verbose logging. Default False
+
+        Returns:
+            np.ndarray: Prediction output, squeezed to remove singleton dimensions.
+                       If tiling is used, returns the untiled output.
+
+        Raises:
+            ValueError: If tiling settings are invalid
+            RuntimeError: If inference fails
+            TypeError: If output type conversion fails
+
+        Note:
+            This method calls preprocess() internally to prepare the input.
         """
         verbose = kwargs.get("verbose", False)
-        if self.tiler is not None:
-            tiling_settings = kwargs.get("tiling_settings", {})
-            overlap_mode_str = tiling_settings.get("overlap_mode", "average")
-            current_overlap_mode = OverlapMode(overlap_mode_str)
-            tiling_settings["overlap_mode"] = current_overlap_mode
-            tiling_settings["scale_mode"] = self.tile_mode
 
+        # Setup tiling if enabled
+        tiling_settings = None
+        if self.tiler is not None:
+            tiling_settings = self._setup_tiling_settings(kwargs, verbose)
+
+        # Preprocess input
         input_batch = self.preprocess(image, verbose=verbose)
-        if verbose:
-            if self.tiler is not None:
-                self.logger.info(f"Using overlap mode: {overlap_mode_str}")
-            self.logger.info(f"Final input batch shape: {input_batch.shape}")
 
-        num_samples_in_input = input_batch.shape[0]
-        if num_samples_in_input == 0:
-            return np.array([])
-
+        # Perform inference (batched or single)
         inference_settings = kwargs.get("inference_settings", {})
-        user_inference_batch_size = inference_settings.get("inference_batch_size", None)
-        perform_mini_batch_inference = user_inference_batch_size is not None and user_inference_batch_size > 0
+        batch_size = inference_settings.get("inference_batch_size")
 
-        aggregated_output_tensor = None
-        if perform_mini_batch_inference:
-            all_mini_batch_outputs = []
-            for i in range(0, num_samples_in_input, user_inference_batch_size):
-                mini_batch = input_batch[i : min(i + user_inference_batch_size, num_samples_in_input)]
-                current_mini_batch_output_tensor = None
-                current_mini_batch_output_tensor = self._infer(mini_batch)
+        if verbose:
+            self.logger.info(f"Input batch shape: {input_batch.shape}, mini-batch size: {batch_size}")
 
-                if current_mini_batch_output_tensor is not None:
-                    all_mini_batch_outputs.append(current_mini_batch_output_tensor)
-                else:
-                    raise Exception("Model failed to produce an output for a mini-batch.")
-
-            if not all_mini_batch_outputs:
-                raise Exception("Batched inference was performed, but no outputs were collected.")
-
-            if isinstance(all_mini_batch_outputs[0], torch.Tensor):
-                aggregated_output_tensor = torch.cat(all_mini_batch_outputs, dim=0)
-            else:
-                raise Exception(f"Unsupported output type for aggregation: {type(all_mini_batch_outputs[0])}")
-
+        if batch_size is not None and batch_size > 0:
+            output = self._perform_batched_inference(input_batch, batch_size)
         else:
-            aggregated_output_tensor = self._infer(input_batch)
+            output = self._infer(input_batch)
 
-        if aggregated_output_tensor is None:
-            raise Exception("Model inference failed to produce an output tensor.")
+        if output is None:
+            raise RuntimeError(f"Model inference failed to produce output. Input shape: {input_batch.shape}, Mode: {self.inference_mode}")
 
-        processed_output = aggregated_output_tensor
-
+        # Untile if tiling was used
         if self.tiler is not None:
-            processed_output = self.tiler.untile(processed_output, **tiling_settings)
+            output = self.tiler.untile(output, **tiling_settings)
 
-        output_numpy = None
-        if isinstance(processed_output, torch.Tensor):
-            output_numpy = processed_output.cpu().numpy()
-        elif isinstance(processed_output, np.ndarray):
-            output_numpy = processed_output
-        else:
-            raise Exception(f"Output from model/tiler is of unexpected type: {type(processed_output)}")
+        # Convert to numpy and squeeze
+        output_numpy = self._convert_to_numpy(output)
 
-        final_squeezed_output = np.squeeze(output_numpy)
-
-        return final_squeezed_output
+        return np.squeeze(output_numpy)
 
     def warmup(self, input_hw=None):
         """
