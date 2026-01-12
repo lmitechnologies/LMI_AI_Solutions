@@ -321,11 +321,10 @@ def test_predict_error_handling(monkeypatch):
 
     # Mock _infer to return None
     monkeypatch.setattr(ad, "_infer", lambda x: None)
-
     with pytest.raises(RuntimeError, match="Model inference failed to produce output"):
         ad.predict(test_img)
 
-    # Mock _perform_batched_inference to return None if called
+    # Mock _perform_batched_inference to return None
     monkeypatch.setattr(ad, "_perform_batched_inference", lambda x, y: None)
     with pytest.raises(RuntimeError, match="Model inference failed to produce output"):
         ad.predict(test_img, inference_settings={"inference_batch_size": 1})
