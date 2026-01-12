@@ -263,6 +263,8 @@ def test_mini_batch(batch_size):
     result_normal = ad.predict(test_img)
     inference_settings = {"inference_batch_size": batch_size}
     result_batched = ad.predict(test_img, inference_settings=inference_settings, verbose=True)
+
+    logger.info(f"max diff: {np.max(np.abs(result_normal - result_batched))}")
     assert np.allclose(result_normal, result_batched)
 
 
