@@ -100,7 +100,6 @@ def test_compare_results_with_anomalib_api():
         **BASE_CONFIG,
         "model_path": TRACED_MODEL_PATH,
     }  # replace model path with traced model path
-    logger.info(config)
     model3 = AnomalyDetector(config)
     compare_results(model1, [model2, model3])
 
