@@ -256,6 +256,17 @@ def test_cmds():
             assert os.path.isfile(os.path.join(t2, "model.engine"))
 
 
+def test_convert_to_torchscript_argument_validation():
+    with tempfile.TemporaryDirectory() as t:
+        my_env = os.environ.copy()
+        # test convert_to_torchscript argument validation
+        outpath = os.path.join(t, "trace_fail.pt")
+        cmd = f"python -m anomalib_lmi.convert_to_torchscript -i {MODEL_PATH} -o {outpath}"
+        logger.info(f"running cmd: {cmd}")
+        result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
+        assert result.returncode != 0
+
+
 @pytest.mark.parametrize("batch_size", [1, 2, 3, 4, 8])
 def test_mini_batch(batch_size):
     """
