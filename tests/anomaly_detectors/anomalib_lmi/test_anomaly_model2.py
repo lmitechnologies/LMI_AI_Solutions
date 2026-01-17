@@ -214,15 +214,18 @@ def test_annotate(
 def test_convert_to_torchscript():
     with tempfile.TemporaryDirectory() as t:
         outpath = os.path.join(t, "trace.pt")
-        convert_v1_torchscript(MODEL_PATH, outpath)
+        convert_v1_torchscript(MODEL_PATH, outpath, device="cpu")
         assert os.path.isfile(outpath)
 
-        # test on cpu and gpu
         model = AnomalyModel2(outpath, device="cpu")
         inp = torch.randint(0, 255, (256, 256, 3), dtype=torch.uint8)
         model.predict(inp)
 
         if USE_GPU:
+            outpath = os.path.join(t, "trace_gpu.pt")
+            convert_v1_torchscript(MODEL_PATH, outpath, device="cuda")
+            assert os.path.isfile(outpath)
+
             model = AnomalyModel2(outpath, device="cuda")
             model.predict(inp.cuda())
 

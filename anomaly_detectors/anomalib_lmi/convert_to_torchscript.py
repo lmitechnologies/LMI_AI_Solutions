@@ -53,13 +53,14 @@ def make_preprocessing_trace_safe(module, device):
     return module
 
 
-def generate_traced_torchscript(model_path, output_path, version="v1", batch_size=1):
+def generate_traced_torchscript(model_path, output_path, device, version="v1", batch_size=1):
     """
     Generate a traced TorchScript model from the given model path.
 
     Args:
         model_path (str): Path to the model file.
         output_path (str): Path to save the converted model.
+        device (str): Device to use for tracing.
         version (str): Version of the model. Default is 'v1'.
         batch_size (int): Batch size for tracing. Default is 1.
 
@@ -67,25 +68,25 @@ def generate_traced_torchscript(model_path, output_path, version="v1", batch_siz
         torch.jit.ScriptModule: The traced TorchScript model.
     """
     if version == "v1":
-        return convert_v1_torchscript(model_path=model_path, output_path=output_path, batch_size=batch_size)
+        return convert_v1_torchscript(model_path, output_path, device, batch_size)
     else:
         raise ValueError(f"Unsupported version: {version}")
 
 
-def convert_v1_torchscript(model_path, output_path, batch_size=1, device="cpu"):
+def convert_v1_torchscript(model_path, output_path, device, batch_size=1):
     """
     Convert a model to TorchScript format.
 
     Args:
         model_path (str): Path to the model file.
         output_path (str): Path to save the converted model.
+        device (str): Device to use for tracing.
         batch_size (int): Batch size for tracing. Default is 1.
-        device (str): Device to use for tracing. Default is 'cpu'.
 
     Returns:
         torch.jit.ScriptModule: The converted TorchScript model.
     """
-    logger.info(f"Converting {model_path} to TorchScript format.")
+    logger.info(f"Converting {model_path} to TorchScript format on {device}")
     ckpt = torch.load(model_path, map_location=device, weights_only=False)
     model = ckpt["model"].eval()
     model = make_preprocessing_trace_safe(model, device=device)
@@ -117,6 +118,13 @@ def main():
         help="Path to save the converted model.",
     )
     parser.add_argument(
+        "--device",
+        type=str,
+        choices=["cuda", "cpu"],
+        help="Device to use for tracing.",
+        required=True,
+    )
+    parser.add_argument(
         "--version",
         type=str,
         default="v1",
@@ -133,7 +141,7 @@ def main():
     )
 
     args = parser.parse_args()
-    generate_traced_torchscript(args.input_path, args.output_path, args.version, args.batch_size)
+    generate_traced_torchscript(args.input_path, args.output_path, args.device, args.version, args.batch_size)
 
 
 if __name__ == "__main__":
