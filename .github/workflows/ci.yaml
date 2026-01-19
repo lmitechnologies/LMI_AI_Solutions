@@ -29,6 +29,7 @@ jobs:
         with:
           filters: |
             run_tests:
+              - '!**/*.yaml'
               - '!docs/**'
               - '!**/*.md'
               - '!.gitignore'
