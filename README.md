@@ -71,7 +71,6 @@ Quick setup:
 ```bash
 pip install pre-commit
 pre-commit install
-pre-commit run --all-files
 ```
 
 The hooks will automatically run on `git commit` to check your code for style issues and formatting.
