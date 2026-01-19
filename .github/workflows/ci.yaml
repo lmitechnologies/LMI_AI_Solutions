@@ -7,9 +7,14 @@ on:
     branches: [ "ais" ]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check-changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       run_tests: ${{ steps.filter.outputs.run_tests }}
     steps:
@@ -43,6 +48,7 @@ jobs:
         python-version: ['3.10']
         test_suite: ["no-AD", "AD"]
     
+    timeout-minutes: 30
     runs-on: ${{ matrix.runner-config.runner }}
     
     container:
@@ -77,12 +83,9 @@ jobs:
 
       - name: Install LMI AI Solutions packages
         run: |
-          pip install -e object_detectors
-          pip install -e anomaly_detectors
-          pip install -e lmi_utils
-          pip install -e classifiers
+          pip install -e object_detectors anomaly_detectors lmi_utils classifiers
           
-      - name: Run tests
+      - name: Run tests (${{ matrix.test_suite }})
         shell: bash
         run: |
           OTHER_TEST_SUITE=(lmi_utils object_detectors classifiers)
