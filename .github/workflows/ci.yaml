@@ -3,20 +3,36 @@ name: CI
 on:
   push:
     branches: [ "ais" ]
-    paths-ignore: &ignored_paths
-      - 'docs/**'
-      - '**/*.md'
-      - '.gitignore'
-      - '.gitattributes'
   pull_request:
     branches: [ "ais" ]
-    paths-ignore: *ignored_paths
   workflow_dispatch:
 
-
 jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      run_tests: ${{ steps.filter.outputs.run_tests }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          submodules: false
+          fetch-depth: 0
+          
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            run_tests:
+              - '!docs/**'
+              - '!**/*.md'
+              - '!.gitignore'
+              - '!.gitattributes'
+
   run-test:
-    if: github.head_ref != 'update-pre-commit-hooks'
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.run_tests == 'true' && github.head_ref != 'update-pre-commit-hooks' }}
+    
     strategy:
       matrix:
         runner-config:
