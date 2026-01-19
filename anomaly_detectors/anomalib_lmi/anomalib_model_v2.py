@@ -163,7 +163,9 @@ class AnomalyModel_V2(Anomalib_Base):
                     f"Input image shape mismatch when using non-tiling mode."
                     f"Got input image shape of {img.shape[2:]}, resizing to {self.model_shape}."
                 )
-            img = v2.Resize(self.model_shape, antialias=True)(img)
+            if self.inference_mode == "PT":
+                # for pt model, use the model's built-in resize
+                img = v2.Resize(self.model_shape, antialias=True)(img)
 
         img = img.contiguous()
         return img.half() if self.fp16 else img
