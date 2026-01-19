@@ -287,7 +287,7 @@ class AnomalyModel2(Anomalib_Base):
         Perform model prediction on input image(s).
 
         Args:
-            image: Input image as numpy array [H,W,Ch] or [N,H,W,Ch]
+            image: Input image as numpy array [H,W,Ch]
             **kwargs: Additional keyword arguments
                 tiling_settings (dict): Settings for tiling
                     overlap_mode (str): "average", "max", "cosine", "linear", "gaussian". Default 'average'
