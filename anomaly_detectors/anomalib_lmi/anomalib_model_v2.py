@@ -156,17 +156,6 @@ class AnomalyModel_V2(Anomalib_Base):
                 f"Batch size mismatch when using tensorRT model.Got input batch size of {batch}, but tensorRT expects {self.batch_size}."
             )
 
-        # resize inputs. Although resize baked into the original pt model, other model types (trt, ts) may not have it
-        if self.tiler is None and (img.shape[2] != self.model_shape[0] or img.shape[3] != self.model_shape[1]):
-            if verbose:
-                self.logger.info(
-                    f"Input image shape mismatch when using non-tiling mode."
-                    f"Got input image shape of {img.shape[2:]}, resizing to {self.model_shape}."
-                )
-            if self.inference_mode == "PT":
-                # for pt model, use the model's built-in resize
-                img = v2.Resize(self.model_shape, antialias=True)(img)
-
         img = img.contiguous()
         return img.half() if self.fp16 else img
 
@@ -181,7 +170,7 @@ class AnomalyModel_V2(Anomalib_Base):
         if self.inference_mode == "TRT":
             self.binding_addrs["input"] = int(input_batch.data_ptr())
             self.context.execute_v2(list(self.binding_addrs.values()))
-            output_tensor = self.bindings["output"].data
+            output_tensor = self.bindings["anomaly_map"].data
 
         elif self.inference_mode == "PT":
             preds = self.pt_model(input_batch)
