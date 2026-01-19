@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      docs_only: ${{ steps.filter.outputs.docs_only }}
+      skip_tests: ${{ steps.check.outputs.skip_tests }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,20 +24,25 @@ jobs:
           submodules: false
           fetch-depth: 0
           
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            docs_only:
-              - '**/*.yaml'
-              - 'docs/**'
-              - '**/*.md'
-              - '.gitignore'
-              - '.gitattributes'
+      - name: Check if only docs changed
+        id: check
+        run: |
+          files=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          echo "Changed files:"
+          echo "$files"
+          
+          # Filter out docs/config files
+          code_files=$(echo "$files" | grep -vE '(^docs/|\.md$|\.ya?ml$|^\.git)' || true)
+          
+          if [ -z "$code_files" ]; then
+            echo "skip_tests=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip_tests=false" >> $GITHUB_OUTPUT
+          fi
 
   run-test:
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.docs_only != 'true' && github.head_ref != 'update-pre-commit-hooks' }}
+    if: ${{ needs.check-changes.outputs.skip_tests != 'true' && github.head_ref != 'update-pre-commit-hooks' }}
     
     strategy:
       matrix:
