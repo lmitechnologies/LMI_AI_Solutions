@@ -83,7 +83,7 @@ jobs:
 
       - name: Install LMI AI Solutions packages
         run: |
-          pip install -e object_detectors anomaly_detectors lmi_utils classifiers
+          pip install -e object_detectors -e anomaly_detectors -e lmi_utils -e classifiers
           
       - name: Run tests (${{ matrix.test_suite }})
         shell: bash
