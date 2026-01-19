@@ -3,20 +3,41 @@ name: CI
 on:
   push:
     branches: [ "ais" ]
-    paths-ignore: &ignored_paths
-      - 'docs/**'
-      - '**/*.md'
-      - '.gitignore'
-      - '.gitattributes'
   pull_request:
     branches: [ "ais" ]
-    paths-ignore: *ignored_paths
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run_tests: ${{ steps.filter.outputs.run_tests }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          submodules: false
+          fetch-depth: 0
+          
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            run_tests:
+              - '!docs/**'
+              - '!**/*.md'
+              - '!.gitignore'
+              - '!.gitattributes'
+
   run-test:
-    if: github.head_ref != 'update-pre-commit-hooks'
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.run_tests == 'true' && github.head_ref != 'update-pre-commit-hooks' }}
+    
     strategy:
       matrix:
         runner-config:
@@ -27,6 +48,7 @@ jobs:
         python-version: ['3.10']
         test_suite: ["no-AD", "AD"]
     
+    timeout-minutes: 30
     runs-on: ${{ matrix.runner-config.runner }}
     
     container:
@@ -36,6 +58,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
+          lfs: false
           submodules: 'true'
 
       - name: Mark workspace as safe
@@ -48,10 +71,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .git/lfs
-          key: ${{ runner.os }}-${{ matrix.runner-config.arch }}-lfsdata-v1-${{ hashFiles('.git/lfs-hashes.txt') }}
+          key: lfsdata-v1-${{ hashFiles('.git/lfs-hashes.txt') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.runner-config.arch }}-lfsdata-v1-
-            ${{ runner.os }}-${{ matrix.runner-config.arch }}-lfsdata
+            lfsdata-v1-
+            lfsdata
 
       - name: Fetch any needed Git LFS objects and prune extraneous ones
         run: git lfs fetch --prune
@@ -61,10 +84,7 @@ jobs:
 
       - name: Install LMI AI Solutions packages
         run: |
-          pip install -e object_detectors
-          pip install -e anomaly_detectors
-          pip install -e lmi_utils
-          pip install -e classifiers
+          pip install -e object_detectors -e anomaly_detectors -e lmi_utils -e classifiers
           
       - name: Run tests
         shell: bash
