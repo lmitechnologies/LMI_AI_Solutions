@@ -6,7 +6,6 @@ import numpy as np
 import torch
 from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 from image_utils.tiler import OverlapMode, ScaleMode, Tiler
-from torchvision.transforms import v2
 
 from .base import Anomalib_Base, to_list
 
@@ -137,7 +136,6 @@ class AnomalyModel_V2(Anomalib_Base):
             - image: numpy array [H,W,Ch]
         """
 
-        verbose = kwargs.get("verbose", False)
         img = self.from_numpy(image).float()
 
         # grayscale to rgb
