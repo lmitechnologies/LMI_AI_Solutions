@@ -70,10 +70,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .git/lfs
-          key: ${{ runner.os }}-${{ matrix.runner-config.arch }}-lfsdata-v1-${{ hashFiles('.git/lfs-hashes.txt') }}
+          key: lfsdata-v1-${{ hashFiles('.git/lfs-hashes.txt') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.runner-config.arch }}-lfsdata-v1-
-            ${{ runner.os }}-${{ matrix.runner-config.arch }}-lfsdata
+            lfsdata-v1-
+            lfsdata
 
       - name: Fetch any needed Git LFS objects and prune extraneous ones
         run: git lfs fetch --prune
@@ -85,7 +85,7 @@ jobs:
         run: |
           pip install -e object_detectors -e anomaly_detectors -e lmi_utils -e classifiers
           
-      - name: Run tests (${{ matrix.test_suite }})
+      - name: Run tests
         shell: bash
         run: |
           OTHER_TEST_SUITE=(lmi_utils object_detectors classifiers)
