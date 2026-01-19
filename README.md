@@ -23,22 +23,32 @@ Currently, the following models are supported in the repo:
     - [paddleOCR](https://github.com/lmitechnologies/models)
 
 
-## Use this repo
+## Installation
 
-Installing latest from git:
+There are two ways to use this repository:
+
+### Option 1: Install from Git (Recommended for users)
+Use this option if you only want to use the tools without modifying the code.
 
 ```bash
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=lmi_utils&subdirectory=lmi_utils"
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=object_detectors&subdirectory=object_detectors"
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=anomaly_detectors&subdirectory=anomaly_detectors"
+pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=classifiers&subdirectory=classifiers"
 ```
 
-Installing from source:
+### Option 2: Install from Source (Recommended for developers)
+Use this option if you plan to modify the code or contribute to the repository.
 
+1. Clone the repository:
 ```bash
-cd LMI_AI_Solutions && pip install -e lmi_utils
-cd LMI_AI_Solutions && pip install -e object_detectors
-cd LMI_AI_Solutions && pip install -e anomaly_detectors
+git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
+cd LMI_AI_Solutions
+```
+
+2. Install packages in editable mode:
+```bash
+pip install -e lmi_utils -e object_detectors -e anomaly_detectors -e classifiers
 ```
 
 ### Running Scripts
@@ -61,6 +71,7 @@ Quick setup:
 ```bash
 pip install pre-commit
 pre-commit install
+pre-commit run --all-files
 ```
 
 The hooks will automatically run on `git commit` to check your code for style issues and formatting.
