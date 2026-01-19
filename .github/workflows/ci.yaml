@@ -47,7 +47,7 @@ jobs:
           echo "Changed files:"
           echo "$files"
           
-          # Filter out docs/config files
+          # Filter out docs/config files and .git files
           code_files=$(echo "$files" | grep -vE '(^docs/|\.md$|\.ya?ml$|^\.git)' || true)
           
           if [ -z "$code_files" ]; then
