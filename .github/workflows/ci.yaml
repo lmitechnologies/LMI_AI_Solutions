@@ -27,7 +27,23 @@ jobs:
       - name: Check if only docs changed
         id: check
         run: |
-          files=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }})
+          # Determine the correct base for comparison
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            # For PRs, compare against the base branch
+            git fetch origin ${{ github.base_ref }}
+            base="origin/${{ github.base_ref }}"
+          else
+            # For push events, compare against the previous commit
+            base="${{ github.event.before }}"
+            # If before is empty or all zeros (initial commit), use HEAD~1
+            if [ -z "$base" ] || [ "$base" == "0000000000000000000000000000000000000000" ]; then
+              base="HEAD~1"
+            fi
+          fi
+          
+          echo "Comparing against: $base"
+          files=$(git diff --name-only $base HEAD)
+          
           echo "Changed files:"
           echo "$files"
           
