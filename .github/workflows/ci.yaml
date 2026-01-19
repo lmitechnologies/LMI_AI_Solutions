@@ -10,6 +10,7 @@ on:
 
 jobs:
   run-test:
+    if: github.head_ref != 'update-pre-commit-hooks'
     strategy:
       matrix:
         runner-config:
