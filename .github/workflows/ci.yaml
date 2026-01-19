@@ -3,8 +3,14 @@ name: CI
 on:
   push:
     branches: [ "ais" ]
+    paths-ignore: &ignored_paths
+      - 'docs/**'
+      - '**/*.md'
+      - '.gitignore'
+      - '.gitattributes'
   pull_request:
     branches: [ "ais" ]
+    paths-ignore: *ignored_paths
   workflow_dispatch:
 
 
