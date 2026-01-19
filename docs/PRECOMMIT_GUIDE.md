@@ -2,13 +2,19 @@
 
 This repository uses [pre-commit](https://pre-commit.com/) with [Ruff](https://github.com/astral-sh/ruff) as the primary linting and formatting backend to maintain code quality and consistency.
 
-## What is Pre-commit?
+## What Ruff Checks
 
-Pre-commit is a framework for managing and maintaining multi-language pre-commit hooks. It runs automated checks on your code before each commit, ensuring that code quality standards are met before changes enter the repository.
+Ruff performs comprehensive linting that includes:
 
-## What is Ruff?
+- Code style violations (similar to Flake8, pycodestyle)
+- Import sorting and organization (similar to isort)
+- Common programming errors and anti-patterns
+- Code complexity checks
+- Docstring conventions
+- Security issues
+- And many more rules from popular Python linters
 
-Ruff is an extremely fast Python linter and formatter written in Rust. It replaces multiple tools like Flake8, isort, and Black with a single, high-performance tool that can check and format your code in milliseconds.
+Ruff also formats your code (similar to Black) to ensure consistent style across the codebase.
 
 ## Installation
 
@@ -91,20 +97,6 @@ To update all hooks to their latest versions:
 pre-commit autoupdate
 ```
 
-## What Ruff Checks
-
-Ruff performs comprehensive linting that includes:
-
-- Code style violations (similar to Flake8, pycodestyle)
-- Import sorting and organization (similar to isort)
-- Common programming errors and anti-patterns
-- Code complexity checks
-- Docstring conventions
-- Security issues
-- And many more rules from popular Python linters
-
-Ruff also formats your code (similar to Black) to ensure consistent style across the codebase.
-
 ## Handling Failures
 
 When pre-commit fails:
@@ -123,6 +115,15 @@ When pre-commit fails:
 The pre-commit configuration is stored in `.pre-commit-config.yaml` at the repository root. Ruff-specific settings can be found in `pyproject.toml`.
 
 ## VS Code Integration
+
+### Benefits of VS Code Integration
+
+- **Real-time feedback**: See linting errors as you type
+- **Auto-fix on save**: Automatically fix issues when saving files
+- **Import organization**: Automatically sort and organize imports
+- **Consistent formatting**: Match the pre-commit hook behavior in your editor
+
+This ensures your code is checked and formatted in VS Code the same way pre-commit will check it before commits.
 
 ### Install Ruff Extension
 
@@ -153,34 +154,6 @@ Add the following to your VS Code settings (`.vscode/settings.json` in the repos
 }
 ```
 
-### Benefits of VS Code Integration
-
-- **Real-time feedback**: See linting errors as you type
-- **Auto-fix on save**: Automatically fix issues when saving files
-- **Import organization**: Automatically sort and organize imports
-- **Consistent formatting**: Match the pre-commit hook behavior in your editor
-
-This ensures your code is checked and formatted in VS Code the same way pre-commit will check it before commits.
-
-## Troubleshooting
-
-### Pre-commit doesn't run
-- Ensure you've run `pre-commit install`
-- Check that you're in the repository root directory
-
-### Hooks are slow
-- Ruff is extremely fast, but first runs may take longer
-- Consider updating to the latest version: `pre-commit autoupdate`
-
-### Conflicts with IDE formatting
-- Configure your IDE to use Ruff for formatting
-- Ensure IDE settings match the project's Ruff configuration
-
-### Need to bypass temporarily
-```bash
-git commit --no-verify
-```
-Use this sparingly and only when absolutely necessary.
 
 ## Additional Resources
 
