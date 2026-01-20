@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "object_detectors"
-version = "2.3.0.0"
+version = "1.6.0"
 description = "LMI AI Solutions object detectors"
 
 [tool.setuptools]

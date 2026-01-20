@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lmi_utils"
-version = "2.3.0.0"
+version = "1.6.0"
 description = "Utility functions and scripts for LMI AI Solutions."
 dependencies = []
 # Optional but useful:

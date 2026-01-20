@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "classifiers"
-version = "0.0.0"
+version = "1.6.0"
 description = "LMI AI Solutions classifiers"
 
 

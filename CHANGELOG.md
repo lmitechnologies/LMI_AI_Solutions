@@ -1,3 +1,16 @@
+# [1.6.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.5.2...v1.6.0) (2026-01-20)
+
+
+### Bug Fixes
+
+* auto update release versions in pyproject.toml  ([#178](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/178)) ([1d9db22](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/1d9db229e2473eb9e08b47ec12fe55eb9be7b592))
+* lower ultralytics version to 8.3 ([#169](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/169)) ([f5810ce](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/f5810ce1139409f9d751b7561dc2ba2ae9405c13))
+
+
+### Features
+
+* rfdetr ([e899fa4](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/e899fa436e37af4cb7a382ca3e0c050839d32750))
+
 ## [1.5.2](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.5.1...v1.5.2) (2026-01-09)
 
 
