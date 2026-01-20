@@ -24,7 +24,9 @@ jobs:
           node-version: "20"
 
       - name: Install dependencies
-        run: npm install -g semantic-release @semantic-release/github @semantic-release/changelog @semantic-release/git
+        run: |
+          npm install -g semantic-release @semantic-release/github @semantic-release/changelog @semantic-release/git @semantic-release/exec
+          pip install tomlkit
 
       - name: Run semantic-release
         run: npx semantic-release
