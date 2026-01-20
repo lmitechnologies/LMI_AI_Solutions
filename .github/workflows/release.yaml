@@ -26,11 +26,8 @@ jobs:
       - name: Install dependencies
         run: npm install -g semantic-release @semantic-release/github @semantic-release/changelog @semantic-release/git @semantic-release/exec
 
-      - name: Manual Script Test
-        run: python3 .github/workflows/scripts/update_versions.py 1.6.0-test
-
       - name: Run semantic-release
-        run: npx semantic-release --dry-run
+        run: npx semantic-release
         env:
           GH_TOKEN: ${{ secrets.SEMANTIC_RELEASE_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
