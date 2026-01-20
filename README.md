@@ -25,7 +25,7 @@ Currently, the following models are supported in the repo:
 
 ## Installation
 
-There are two ways to use this repository:
+There are two options to use this repository:
 
 ### Option 1: Install from Git (Recommended for users)
 Use this option if you only want to use the tools without modifying the code.
