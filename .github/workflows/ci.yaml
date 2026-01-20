@@ -120,3 +120,23 @@ jobs:
               pytest tests/${suite}
             done
           fi
+
+  ci-success:
+    runs-on: ubuntu-latest
+    needs: run-test
+    if: always() # This ensures it runs even if run-test fails or is skipped
+    steps:
+      - name: Check run-test matrix status
+        run: |
+          # Get the status of the run-test job (which aggregates the matrix)
+          result="${{ needs.run-test.result }}"
+          
+          echo "Overall 'run-test' result: $result"
+          
+          if [[ $result == "success" || $result == "skipped" ]]; then
+            echo "CI check passed."
+            exit 0
+          else
+            echo "CI check failed. The matrix status was: $result"
+            exit 1
+          fi
