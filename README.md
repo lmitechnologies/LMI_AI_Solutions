@@ -12,7 +12,7 @@ This repo contains the utils scripts, and several submodules for LMI Technologie
 
 Currently, the following models are supported in the repo:
 + object detection
-    - [yolov8](https://github.com/ultralytics/ultralytics)
+    - [Ultralytics YOLO models](https://github.com/ultralytics/ultralytics)
     - [yolov5](https://github.com/lmitechnologies/yolov5)
     - [efficientnet](https://github.com/lmitechnologies/EfficientNet-PyTorch)
     - [detectron2](https://github.com/facebookresearch/detectron2)
@@ -22,67 +22,33 @@ Currently, the following models are supported in the repo:
 - OCR
     - [paddleOCR](https://github.com/lmitechnologies/models)
 
-## Clone this repo
 
-For users who haven't set up the ssh keys:
-```bash
-git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
-```
+## Installation
 
-For users who have setup ssh keys:
-```bash
-git clone git@github.com:lmitechnologies/LMI_AI_Solutions.git
-# npm using git for https
-git config --global url."git@github.com:".insteadOf https://github.com/
-git config --global url."git://".insteadOf https://
-```
+There are two options to use this repository:
 
-### Clone submodules
-
-Navigate to the repo:
-```bash
-cd LMI_AI_Solutions
-```
-
-Each submodule is pointing to a specific commit in its `ais` branch. Clone the submodules to the commit that is specified in this repo:
-```bash
-git submodule update --init
-```
-
-(**not recommended**) If you want to update all submodules to the `latest` commit in the `ais` branch, use the `--remote` argument:
-```bash
-git submodule update --init --remote
-```
-
-## Use this repo
-
-To utilize this repo you have two options:
-
-### Using the environment file
-
-Activate the environmental file - [lmi_ai.env](./lmi_ai.env): 
-
-```bash
-source PATH_TO_REPO/lmi_ai.env
-```
-where `PATH_TO_REPO` is the path to the LMI_AI_Solutions repo.  
-
-### Using pip
-
-Installing latest from git:
+### Option 1: Install from Git (Recommended for users)
+Use this option if you only want to use the tools without modifying the code.
 
 ```bash
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=lmi_utils&subdirectory=lmi_utils"
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=object_detectors&subdirectory=object_detectors"
 pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=anomaly_detectors&subdirectory=anomaly_detectors"
+pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=classifiers&subdirectory=classifiers"
 ```
 
-Installing from source:
+### Option 2: Install from Source (Recommended for developers)
+Use this option if you plan to modify the code or contribute to the repository.
 
+1. Clone the repository:
 ```bash
-cd LMI_AI_Solutions && pip install -e lmi_utils
-cd LMI_AI_Solutions && pip install -e object_detectors
-cd LMI_AI_Solutions && pip install -e anomaly_detectors
+git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
+cd LMI_AI_Solutions
+```
+
+2. Install packages in editable mode:
+```bash
+pip install -e lmi_utils -e object_detectors -e anomaly_detectors -e classifiers
 ```
 
 ### Running Scripts
@@ -105,30 +71,8 @@ Quick setup:
 ```bash
 pip install pre-commit
 pre-commit install
+# run pre-commit on all files (optional)
+pre-commit run --all-files
 ```
 
 The hooks will automatically run on `git commit` to check your code for style issues and formatting.
-
-## Make contributions to this repo
-
-The `ais` branch of this repo and that branch of submodules are protected, which means you can't directly commit to that branch. You must create a new branch and open a pull request in order to merge into the `ais` branch.
-
-### Contribution Workflow
-
-1. Create a new branch from `ais`:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. Make your changes and ensure pre-commit hooks pass:
-   ```bash
-   git add .
-   git commit -m "Your descriptive commit message"
-   ```
-
-3. Push your branch and open a pull request:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-4. Your pull request will be reviewed before being merged into `ais`.
