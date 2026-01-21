@@ -115,10 +115,14 @@ def main():
     cfg = load_config(args.config)
 
     # --- Build Model Dynamically ---
+    metadata = {
+        "image_size": cfg["model"]["params"].get("image_size", (256, 256)),
+    }
     model = build_model(cfg["model"])
 
     # --- Data Module Setup ---
     data_cfg = cfg["data"]
+
     datamodule = build_data(data_cfg)
 
     # --- Engine Setup ---
@@ -135,7 +139,7 @@ def main():
     engine.fit(model=model, datamodule=datamodule)
 
     # --- Export to ONNX---
-    engine.export(model=model, export_type=ExportType.ONNX)
+    engine.export(model=model, export_type=ExportType.ONNX, input_size=metadata["image_size"])
 
     # --- Export to Torch---
     engine.export(model=model, export_type=ExportType.TORCH)

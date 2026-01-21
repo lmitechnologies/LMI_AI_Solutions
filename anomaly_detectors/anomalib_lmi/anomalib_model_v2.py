@@ -76,7 +76,7 @@ class AnomalyModel_V2(Anomalib_Base):
         if device not in ["cuda", "cpu"]:
             raise ValueError(f"Unsupported device: {device}. Choose either 'cuda' or 'cpu'.")
         self.device = torch.device(device)
-        if device == "cuda" and not torch.cuda.is_available():
+        if device == "cuda" and torch.cuda.is_available() is False:
             self.logger.warning("GPU device unavailable. Use CPU instead.")
             self.device = torch.device("cpu")
 
