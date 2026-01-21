@@ -1,12 +1,17 @@
 import argparse
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import anomalib.models as ad_models
 import yaml
 from anomalib.data import Folder
+from anomalib.deploy import ExportType
 from anomalib.engine import Engine
 from torchvision.transforms import v2
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def load_config(config_path: str) -> dict:
@@ -41,15 +46,15 @@ def build_augmentations(aug_config: Optional[List[Dict]]) -> Optional[v2.Compose
 
         try:
             if not hasattr(v2, name):
-                print(f"Warning: Transform '{name}' not found in torchvision.transforms.v2. Skipping.")
+                logger.warning(f"Transform '{name}' not found in torchvision.transforms.v2. Skipping.")
                 continue
 
             transform_class = getattr(v2, name)
             transforms_list.append(transform_class(**params))
-            print(f"Added augmentation: {name}")
+            logger.info(f"Added augmentation: {name}")
 
         except Exception as e:
-            print(f"Error adding augmentation '{name}': {e}")
+            logger.error(f"Error adding augmentation '{name}': {e}")
 
     return v2.Compose(transforms_list) if transforms_list else None
 
@@ -70,28 +75,25 @@ def build_model(model_config: Dict[str, Any]):
         raise ValueError(f"Model '{class_name}' not found in anomalib.models")
 
     model_class = getattr(ad_models, class_name)
-    print(f"Initializing Model: {class_name}")
+    logger.info(f"Initializing Model: {class_name}")
 
     # 2. Extract and REMOVE image_size
-    # We use .pop() so it is NOT passed to the model's __init__
     image_size = params.pop("image_size", None)
 
     # 3. Configure Pre-processor (if applicable) using the extracted image_size
-    # PaDiM and others need this. If the user didn't provide image_size, we skip this.
     if hasattr(model_class, "configure_pre_processor") and image_size is not None:
         if "pre_processor" not in params:
-            print(f"Auto-configuring pre-processor for {class_name} with size {image_size}...")
+            logger.info(f"Auto-configuring pre-processor for {class_name} with size {image_size}...")
             pre_processor = model_class.configure_pre_processor(image_size=image_size)
             params["pre_processor"] = pre_processor
 
     # 4. Instantiate the model
-    # params now contains 'pre_processor' (if added) but explicitly excludes 'image_size'
     try:
         model = model_class(**params)
         return model
     except TypeError as e:
-        print(f"Error initializing {class_name}: {e}")
-        print(f"Parameters provided: {list(params.keys())}")
+        logger.error(f"Error initializing {class_name}: {e}")
+        logger.error(f"Parameters provided: {list(params.keys())}")
         raise e
 
 
@@ -129,8 +131,14 @@ def main():
     )
 
     # --- Train ---
-    print("Starting training...")
+    logger.info("Starting training...")
     engine.fit(model=model, datamodule=datamodule)
+
+    # --- Export to ONNX---
+    engine.export(model=model, export_type=ExportType.ONNX)
+
+    # --- Export to Torch---
+    engine.export(model=model, export_type=ExportType.TORCH)
 
 
 if __name__ == "__main__":
