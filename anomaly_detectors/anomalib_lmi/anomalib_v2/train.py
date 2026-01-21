@@ -107,6 +107,14 @@ def build_data(data_config: Dict[str, Any]) -> Folder:
     return Folder(**data_config)
 
 
+def get_image_size(model) -> Optional[tuple]:
+    """Extracts image size from model's pre-processor if available."""
+    for t in model.pre_processor.transform.transforms:
+        if type(t).__name__ == "Resize":
+            return t.size
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train Anomalib Model from YAML config")
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to config file")
@@ -115,9 +123,6 @@ def main():
     cfg = load_config(args.config)
 
     # --- Build Model Dynamically ---
-    metadata = {
-        "image_size": cfg["model"]["params"].get("image_size", (256, 256)),
-    }
     model = build_model(cfg["model"])
 
     # --- Data Module Setup ---
@@ -138,11 +143,11 @@ def main():
     logger.info("Starting training...")
     engine.fit(model=model, datamodule=datamodule)
 
-    # --- Export to ONNX---
-    engine.export(model=model, export_type=ExportType.ONNX, input_size=metadata["image_size"])
-
     # --- Export to Torch---
     engine.export(model=model, export_type=ExportType.TORCH)
+
+    # --- Export to ONNX---
+    engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model))
 
 
 if __name__ == "__main__":
