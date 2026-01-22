@@ -36,11 +36,29 @@ class Anomalib_Base(ABC):
     logger.setLevel(logging.INFO)
 
     tiler = None
+    _colormap_tensor = None
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     @abstractmethod
     def __init__(self) -> None:
         pass
+
+    @property
+    def colormap_tensor(self):
+        """
+        lazy initialize a turbo colormap tensor for annotation
+        """
+        if self._colormap_tensor is None:
+            # 1. Generate a gradient from 0 to 255
+            gradient = np.arange(256, dtype=np.uint8).reshape(1, 256)
+
+            # 2. Use OpenCV to generate the Look-Up Table
+            lut_bgr = cv2.applyColorMap(gradient, cv2.COLORMAP_TURBO)
+            lut_rgb = cv2.cvtColor(lut_bgr, cv2.COLOR_BGR2RGB)
+
+            # 3. Reshape to [256, 3] and convert to Tensor
+            self._colormap_tensor = self.from_numpy(lut_rgb).squeeze(0)
+        return self._colormap_tensor
 
     @torch.inference_mode()
     def from_numpy(self, x):
@@ -161,6 +179,8 @@ class Anomalib_Base(ABC):
         Returns:
             numpy: an annotated image
         """
+        # ensure that ad_max > ad_threshold
+        ad_max = max(ad_max, ad_threshold + 1e-8)
         # convert to tensor
         ad_scores = self.from_numpy(ad_scores)
         img = self.from_numpy(img)
@@ -175,9 +195,7 @@ class Anomalib_Base(ABC):
         # apply colormap
         ad_norm = (ad_scores - ad_threshold) / (ad_max - ad_threshold)
         ad_gray = (ad_norm * 255).to(torch.uint8)
-        ad_bgr = cv2.applyColorMap(np.expand_dims(ad_gray.cpu().numpy(), -1), cv2.COLORMAP_TURBO)
-        residual_rgb = cv2.cvtColor(ad_bgr, cv2.COLOR_BGR2RGB)
-        residual_rgb = self.from_numpy(residual_rgb)
+        residual_rgb = self.colormap_tensor[ad_gray.flatten().long()].view(*ad_gray.shape, 3).to(torch.uint8)
 
         # Overlay anomaly heat map with input image
         annot = img * 0.6 + residual_rgb * 0.4
