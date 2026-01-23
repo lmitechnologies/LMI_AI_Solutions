@@ -311,7 +311,8 @@ class Anomalib_Base(ABC):
             anom_sq = np.squeeze(np.array(anom_all))
             data = np.ravel(anom_sq)
             # Fit gamma distribution to anomaly data across entire data set
-            alpha_hat, loc_hat, beta_hat = gamma.fit(data, floc=0)
+            eps = 1e-6
+            alpha_hat, loc_hat, beta_hat = gamma.fit(data + eps, floc=0)
             # Plot histogram and gamma dist fit
             x = np.linspace(min(data), max(data), 1000)
             pdf_fitted = gamma.pdf(x, alpha_hat, loc=loc_hat, scale=beta_hat)
