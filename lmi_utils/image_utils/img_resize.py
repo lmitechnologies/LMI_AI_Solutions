@@ -4,7 +4,7 @@ import os
 
 import cv2
 import numpy as np
-from gadget_utils.pipeline_utils import fit_array_to_size, resize_image
+from gadget_utils.pipeline_utils import fit_im_to_size, resize_image
 from system_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
@@ -25,49 +25,28 @@ def is_cuda_cv():  # 1 == using cuda, 0 = not using cuda
 
 def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwargs):
     h, w = image.shape[:2]
-    th, tw = height, width
-    operators = kwargs.get("operators", [])
-    if (tw is None and th is None) or (tw == w and th == h):
-        th, tw = h, w
+    # Default target dimensions to current if not provided
+    tw = width if width is not None else w
+    th = height if height is not None else h
+    operators = kwargs.get("operators", [])[:]
+    # Check if resize is needed
+    if tw == w and th == h:
         im_out = image
     else:
         if preserve_aspect:
             scale = min(th / h, tw / w)
-            tw = np.int32(scale * w)
-            th = np.int32(scale * h)
-            im_out = resize_image(image, W=tw, H=th, mode=kwargs.get("mode", "bilinear"))
-            operators.append(
-                {
-                    "resize": [
-                        im_out.shape[1],
-                        im_out.shape[0],
-                        image.shape[1],
-                        image.shape[0],
-                    ]
-                }
-            )
-            if width is not None and height is not None:
-                im_out, pad_l, pad_r, pad_t, pad_b = fit_array_to_size(im_out, width, height)
+            new_w = int(scale * w)
+            new_h = int(scale * h)
+            im_out = resize_image(image, W=new_w, H=new_h, mode=kwargs.get("mode", "bilinear"))
+            operators.append({"resize": [new_w, new_h, w, h]})
+
+            if new_w != tw or new_h != th:
+                im_out, pad_l, pad_r, pad_t, pad_b = fit_im_to_size(im_out, tw, th)
                 operators.append({"pad": [pad_l, pad_r, pad_t, pad_b]})
         else:
-            if tw is None:
-                tw = w
-                im_out = resize_image(image, H=th, mode=kwargs.get("mode", "bilinear"))
-            elif th is None:
-                th = h
-                im_out = resize_image(image, W=tw, mode=kwargs.get("mode", "bilinear"))
-            else:
-                im_out = resize_image(image, W=tw, H=th, mode=kwargs.get("mode", "bilinear"))
-            operators.append(
-                {
-                    "resize": [
-                        im_out.shape[1],
-                        im_out.shape[0],
-                        image.shape[1],
-                        image.shape[0],
-                    ]
-                }
-            )
+            # Direct Resize (Stretch)
+            im_out = resize_image(image, W=tw, H=th, mode=kwargs.get("mode", "bilinear"))
+            operators.append({"resize": [tw, th, w, h]})
     if kwargs.get("return_operators", False) is True:
         return im_out, operators
     return im_out
