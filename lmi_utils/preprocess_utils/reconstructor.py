@@ -7,31 +7,35 @@ class Reconstructor:
     def __init__(self):
         self._undo_handlers = {"tile": self._undo_tile, "resize": self._undo_resize}
 
-    def reconstruct(self, final_images: list, ops: list) -> torch.Tensor:
+    def reconstruct(self, processed_images: list, ops: list) -> torch.Tensor:
         """
-        Reverses the pipeline.
+        reconstructs the original image from processed images and metadata.
 
         Args:
-            final_images: List of (H, W, C) tensors or numpy arrays.
+            processed_images: List of (H, W, C) tensors or numpy arrays.
             ops: List of metadata dicts.
 
         Returns:
             torch.Tensor | np.ndarray: The reconstructed image (H, W, C).
         """
-        if not len(final_images):
-            return
+        if not len(processed_images) or processed_images is None:
+            raise ValueError("No input images provided for reconstruction.")
+        if any(not isinstance(img, (np.ndarray, torch.Tensor)) for img in processed_images):
+            raise TypeError("All input images must be either numpy arrays or torch tensors.")
 
-        is_numpy = any(isinstance(img, np.ndarray) for img in final_images)
-
-        current_images = final_images
+        is_numpy = any(isinstance(img, np.ndarray) for img in processed_images)
+        current_images = processed_images
         if is_numpy:
-            current_images = [torch.from_numpy(img) if isinstance(img, np.ndarray) else img for img in final_images]
+            current_images = [torch.from_numpy(img) if isinstance(img, np.ndarray) else img for img in processed_images]
 
         # Iterate BACKWARDS through ops
+        required_keys = {"op", "metadata"}
         for step in reversed(ops):
+            if not required_keys.issubset(step.keys()):
+                raise ValueError(f"Each operation step must contain keys: {required_keys}")
+
             op_name = step["op"]
             meta = step["metadata"]
-
             if op_name in self._undo_handlers:
                 undo_func = self._undo_handlers[op_name]
                 current_images = undo_func(current_images, meta)
@@ -55,7 +59,6 @@ class Reconstructor:
 
         for tiler in tiler_instances:
             # 1. Derive count from Tiler state
-            # n_tiles is likely [rows, cols]
             count = tiler.n_tiles[0] * tiler.n_tiles[1]
 
             # 2. Slice the batch

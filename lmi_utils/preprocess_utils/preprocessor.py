@@ -35,7 +35,7 @@ class Preprocessor:
             raise TypeError(f"Handler for '{name}' must be a callable function.")
         self._handlers[name] = handler_func
 
-    def preprocess(self, image: np.ndarray | torch.Tensor, processing_steps: list) -> list[np.ndarray | torch.Tensor]:
+    def preprocess(self, image, processing_steps):
         """
         Runs the preprocessing pipeline.
 
@@ -44,23 +44,26 @@ class Preprocessor:
             processing_steps (list): List of config dictionaries.
 
         Returns:
-            final_images (list[np.ndarray | torch.Tensor]): Processed images (H, W, C).
+            current_images (list[np.ndarray | torch.Tensor]): Processed images (H, W, C).
             ops (list[dict]): Metadata chain for reconstruction.
         """
-        is_numpy = isinstance(image, np.ndarray)
+        if image is None:
+            raise ValueError("Input image cannot be None.")
 
-        # Initialize state with the single input image
+        is_numpy = isinstance(image, np.ndarray)
         current_images = [image]
         ops = []
+        required_keys = {"type", "configuration"}
         for step in processing_steps:
-            op_name = step.get("type")
-            config = step.get("configuration", {})
+            if not required_keys.issubset(step.keys()):
+                raise ValueError(f"Each processing step must contain keys: {required_keys}")
 
+            op_name = step["type"]
+            config = step["configuration"]
             if op_name not in self._handlers:
                 raise ValueError(f"Handler for '{op_name}' is not registered.")
 
             handler = self._handlers[op_name]
-
             parent_shapes = [img.shape[0:2] for img in current_images]
             new_images, metadata = handler(current_images, config)
 
