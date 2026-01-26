@@ -4,7 +4,7 @@ import torch
 from image_utils.tiler import Tiler
 
 
-def tile_handler(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], Dict[str, Any]]:
+def tile(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], Dict[str, Any]]:
     """
     Wraps Tiler.
     Args:
@@ -46,7 +46,7 @@ def tile_handler(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[Li
     return output_images, {"tiler_metadata": tiler_metadata}
 
 
-def undo_tile_handler(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torch.Tensor]:
+def undo_tile(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torch.Tensor]:
     """
     undoes the 'tile' operation.
     Args:

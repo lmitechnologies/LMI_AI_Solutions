@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, List, Tuple, Union
 import numpy as np
 import torch
 
-from .handlers import resize_handler, tile_handler
+from .handlers import resize, tile
 
 
 class Preprocessor:
@@ -23,8 +23,8 @@ class Preprocessor:
 
     def _register_default_handlers(self) -> None:
         """Registers the built-in processing functions."""
-        self.register_handler("resize", resize_handler)
-        self.register_handler("tile", tile_handler)
+        self.register_handler("resize", resize)
+        self.register_handler("tile", tile)
 
     def register_handler(self, name: str, handler_func: Callable) -> None:
         """

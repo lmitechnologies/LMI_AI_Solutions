@@ -3,7 +3,7 @@ from typing import Any, Callable, Dict, List, Union
 import numpy as np
 import torch
 
-from .handlers import undo_resize_handler, undo_tile_handler
+from .handlers import undo_resize, undo_tile
 
 
 class Reconstructor:
@@ -13,8 +13,8 @@ class Reconstructor:
 
     def register_default_undo_handlers(self):
         """Registers built-in undo handlers."""
-        self.register_undo_handler("tile", undo_tile_handler)
-        self.register_undo_handler("resize", undo_resize_handler)
+        self.register_undo_handler("tile", undo_tile)
+        self.register_undo_handler("resize", undo_resize)
 
     def register_undo_handler(self, name: str, undo_func: Callable) -> None:
         """Register an undo handler with validation"""

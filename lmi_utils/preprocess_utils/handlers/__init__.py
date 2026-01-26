@@ -1,9 +1,9 @@
-from .resize import resize_handler, undo_resize_handler
-from .tile import tile_handler, undo_tile_handler
+from .resize import resize, undo_resize
+from .tile import tile, undo_tile
 
 __all__ = [
-    "resize_handler",
-    "undo_resize_handler",
-    "tile_handler",
-    "undo_tile_handler",
+    "resize",
+    "undo_resize",
+    "tile",
+    "undo_tile",
 ]
