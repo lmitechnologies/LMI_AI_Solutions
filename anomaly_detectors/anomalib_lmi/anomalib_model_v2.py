@@ -434,12 +434,16 @@ class AnomalyModel_V2(Anomalib_Base):
         self.logger.info(f"Warming up model with input shape: {zeros.shape}")
         self.predict(zeros)
 
-    def __del__(self) -> None:
-        """Cleanup resources when object is destroyed."""
+    def _cleanup_resources(self) -> None:
+        """Internal helper to cleanup resources."""
         if hasattr(self, "context") and self.context is not None:
             del self.context
         if hasattr(self, "bindings"):
             self.bindings.clear()
+
+    def __del__(self) -> None:
+        """Cleanup resources when object is destroyed."""
+        self._cleanup_resources()
 
     def __enter__(self):
         """Context manager entry."""
@@ -447,7 +451,7 @@ class AnomalyModel_V2(Anomalib_Base):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager exit with cleanup."""
-        self.__del__()
+        self._cleanup_resources()
         return False
 
 
