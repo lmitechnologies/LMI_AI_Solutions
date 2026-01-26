@@ -5,8 +5,7 @@ import logging
 import traceback
 from abc import ABCMeta, abstractmethod
 
-from ad_core.anomaly_detector import AnomalyDetector
-from cls_core.classifier import Classifier
+
 from dataset_utils.representations import (
     Annotation,
     AnnotationType,
@@ -17,7 +16,18 @@ from dataset_utils.representations import (
 )
 
 # LMI AIS repo's modules
-from od_core.object_detector import ObjectDetector
+try:
+    from od_core.object_detector import ObjectDetector
+except ImportError:
+    print("ObjectDetector module not found")
+try:
+    from ad_core.anomaly_detector import AnomalyDetector
+except ImportError:
+    print("AnomalyDetector module not found")
+try:
+    from cls_core.classifier import Classifier
+except ImportError:
+    print("Classifier module not found")
 
 # local module
 # handle different model_roles schema according to gadget version
