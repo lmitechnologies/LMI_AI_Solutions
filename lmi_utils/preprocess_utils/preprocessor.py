@@ -2,8 +2,8 @@ from typing import Any, Callable, Dict, List, Tuple, Union
 
 import numpy as np
 import torch
-from image_utils.img_resize import resize_and_pad
-from image_utils.tiler import Tiler
+
+from .handlers import resize_handler, tile_handler
 
 
 class Preprocessor:
@@ -23,8 +23,8 @@ class Preprocessor:
 
     def _register_default_handlers(self) -> None:
         """Registers the built-in processing functions."""
-        self.register_handler("resize", self._resize_wrapper)
-        self.register_handler("tile", self._tile_wrapper)
+        self.register_handler("resize", resize_handler)
+        self.register_handler("tile", tile_handler)
 
     def register_handler(self, name: str, handler_func: Callable) -> None:
         """
@@ -105,77 +105,3 @@ class Preprocessor:
             processed_imgs = [img.cpu().numpy() for img in processed_imgs]
 
         return processed_imgs, history
-
-    def _tile_wrapper(self, images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], Dict[str, Any]]:
-        """
-        Wraps Tiler.
-        Args:
-            images (list[torch.Tensor]): List of input images (H, W, C).
-            config (dict): Configuration for Tiler.
-        """
-        if not images:
-            raise ValueError("Cannot tile empty image list")
-
-        required_keys = {"tile_size", "stride"}
-        if not required_keys.issubset(config.keys()):
-            raise ValueError(f"Tiler configuration must contain keys: {required_keys}")
-
-        scale_mode = config.get("scale_mode", "padding")
-        overlap_mode = config.get("overlap_mode", "average")
-
-        output_images = []
-        tiler_metadata = []
-
-        for img in images:
-            if img.dim() != 3:
-                raise ValueError(f"Expected 3D tensor (H, W, C), got {img.dim()}D tensor with shape {img.shape}")
-
-            tiler = Tiler(tile_size=config["tile_size"], stride=config["stride"])
-            img_batch = img.permute(2, 0, 1).unsqueeze(0)  # Convert to [1, C, H, W]
-            tiles_batch = tiler.tile(img_batch, mode=scale_mode)  # Returns [N, C, H, W]
-
-            # Convert back to List of (H, W, C)
-            tiles_list_chw = list(torch.unbind(tiles_batch, dim=0))
-            tiles_list_hwc = [t.permute(1, 2, 0) for t in tiles_list_chw]
-
-            output_images.extend(tiles_list_hwc)
-
-            metadata = tiler.save_metadata()
-            metadata["overlap_mode"] = overlap_mode
-            metadata["scale_mode"] = scale_mode
-            tiler_metadata.append(metadata)
-
-        return output_images, {"tiler_metadata": tiler_metadata}
-
-    def _resize_wrapper(self, images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], Dict[str, Any]]:
-        """
-        Wraps the user's custom 'resize_and_pad' function.
-
-        Args:
-            images (list[torch.Tensor]): List of input images (H, W, C).
-            config (dict): Configuration for resize_and_pad.
-        """
-        if not images:
-            raise ValueError("Cannot resize empty image list")
-
-        # Map config keys to function arguments
-        resize_configs = {
-            "width": config.get("width"),
-            "height": config.get("height"),
-            "preserve_aspect": config.get("preserve_aspect", False),
-            "mode": config.get("mode", "bilinear"),
-        }
-
-        output_images = []
-        image_ops_list = []
-        for img in images:
-            processed, ops = resize_and_pad(
-                img,
-                return_operators=True,
-                **resize_configs,
-            )
-
-            output_images.append(processed)
-            image_ops_list.append(ops)
-
-        return output_images, {"ops": image_ops_list}

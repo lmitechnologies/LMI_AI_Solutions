@@ -24,29 +24,29 @@ def is_cuda_cv():  # 1 == using cuda, 0 = not using cuda
 
 
 def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwargs):
-    h, w = image.shape[:2]
+    h0, w0 = image.shape[:2]
     # Default target dimensions to current if not provided
-    tw = width if width is not None else w
-    th = height if height is not None else h
+    tw = width if width is not None else w0
+    th = height if height is not None else h0
     operators = kwargs.get("operators", [])[:]
     # Check if resize is needed
-    if tw == w and th == h:
+    if tw == w0 and th == h0:
         im_out = image
     else:
         if preserve_aspect:
-            scale = min(th / h, tw / w)
-            new_w = int(scale * w)
-            new_h = int(scale * h)
-            im_out = resize_image(image, W=new_w, H=new_h, mode=kwargs.get("mode", "bilinear"))
-            operators.append({"resize": [new_w, new_h, w, h]})
+            scale = min(th / h0, tw / w0)
+            w1 = int(scale * w0)
+            h1 = int(scale * h0)
+            im_out = resize_image(image, W=w1, H=h1, mode=kwargs.get("mode", "bilinear"))
+            operators.append({"resize": [w1, h1, w0, h0]})
 
-            if new_w != tw or new_h != th:
+            if w1 != tw or h1 != th:
                 im_out, pad_l, pad_r, pad_t, pad_b = fit_im_to_size(im_out, tw, th)
                 operators.append({"pad": [pad_l, pad_r, pad_t, pad_b]})
         else:
             # Direct Resize (Stretch)
             im_out = resize_image(image, W=tw, H=th, mode=kwargs.get("mode", "bilinear"))
-            operators.append({"resize": [tw, th, w, h]})
+            operators.append({"resize": [tw, th, w0, h0]})
     if kwargs.get("return_operators", False) is True:
         return im_out, operators
     return im_out
