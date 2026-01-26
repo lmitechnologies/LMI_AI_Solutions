@@ -224,19 +224,37 @@ class Tiler:
             setattr(obj, k, v)
         return obj
 
+    @classmethod
+    def from_dict(cls, metadata: dict):
+        """init tiler from a metadata dict
+
+        Args:
+            metadata (dict): metadata dictionary
+        """
+        obj = cls(0, 0)  # init an obj using dummy sizes
+
+        for k, v in metadata.items():
+            setattr(obj, k, v)
+        return obj
+
     @torch.inference_mode()
-    def tile(self, im: torch.Tensor, mode=ScaleMode.PADDING) -> torch.Tensor:
+    def tile(self, im: torch.Tensor, mode="padding") -> torch.Tensor:
         """generate tiles from the image. Will resize images if necessary.
 
         Args:
             im (Tensor): input image in the format: [b,c,h,w]
-            mode (ScaleMode, optional): scale mode. Defaults to ScaleMode.PADDING.
+            mode (str or ScaleMode, optional): scale mode. Defaults to "padding".
 
         Returns:
             Tensor: resized tiles
         """
+        if not isinstance(mode, (str, ScaleMode)):
+            raise ValueError(f"mode must be str or ScaleMode enum. Got: {type(mode)}")
+
+        # Convert string to enum if needed
         if not isinstance(mode, ScaleMode):
-            raise Exception("mode must be a ScaleMode object")
+            mode = ScaleMode(mode)
+
         self.batch_size, self.num_channel, im_h, im_w = im.shape
         self.im_size = [im_h, im_w]
         device = im.device
@@ -280,16 +298,22 @@ class Tiler:
 
         Args:
             tiles (Torch): the tiles tensor in the format: [n_tiles*batch, c, tile_h, tile_w]
-            mode (ScaleMode, optional): scale mode. Defaults to ScaleMode.PADDING.
-            overlap_mode (OverlapMode, optional): overlap handling mode. Defaults to OverlapMode.AVERAGE.
+            scale_mode (str or ScaleMode, optional): scale mode. Defaults to ScaleMode.PADDING.
+            overlap_mode (str or OverlapMode, optional): overlap handling mode. Defaults to OverlapMode.AVERAGE.
 
         Returns:
             Tensor: the reconstructed image with smooth blending
         """
+        if not isinstance(scale_mode, (str, ScaleMode)):
+            raise ValueError(f"scale_mode must be str or ScaleMode enum. Got: {type(scale_mode)}")
+        if not isinstance(overlap_mode, (str, OverlapMode)):
+            raise ValueError(f"overlap_mode must be str or OverlapMode enum. Got: {type(overlap_mode)}")
+
+        # Convert string to enum if needed
         if not isinstance(scale_mode, ScaleMode):
-            raise Exception("mode must be a ScaleMode object")
+            scale_mode = ScaleMode(scale_mode)
         if not isinstance(overlap_mode, OverlapMode):
-            raise Exception("overlap_mode must be an OverlapMode object")
+            overlap_mode = OverlapMode(overlap_mode)
 
         _, num_channel, tile_h, tile_w = tiles.shape
         tiles = tiles.contiguous().view(-1, self.batch_size, num_channel, tile_h, tile_w)
@@ -336,6 +360,23 @@ class Tiler:
             im = torch.div(im, weight_sum + eps)
 
         return downscale_image(im, self.im_size, scale_mode).to(tiles.dtype)
+
+    def save_metadata(self):
+        """save tiler metadata to a dict
+
+        Returns:
+            dict: tiler metadata
+        """
+        metadata = {
+            "tile_size": self.tile_size,
+            "stride": self.stride,
+            "im_size": self.im_size,
+            "scale_size": self.scale_size,
+            "batch_size": self.batch_size,
+            "num_channel": self.num_channel,
+            "n_tiles": self.n_tiles,
+        }
+        return metadata
 
     def write_metadata(self, out_path):
         """write tiler metadata to a json file
