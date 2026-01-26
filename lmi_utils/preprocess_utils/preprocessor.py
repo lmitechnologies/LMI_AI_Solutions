@@ -3,16 +3,19 @@ from typing import Any, Callable, Dict, List, Tuple, Union
 import numpy as np
 import torch
 
+from .base import BaseProcessor
 from .handlers import resize, tile
 
 
-class Preprocessor:
+class Preprocessor(BaseProcessor):
     """
     A class to run a dynamic pipeline of preprocessing steps on an image.
 
     Handlers (processing functions) are registered with the instance and
     called based on a list of processing steps.
     """
+
+    _STEP_REQUIRED_KEYS = {"type", "configuration"}
 
     def __init__(self):
         """
@@ -61,21 +64,17 @@ class Preprocessor:
             history (list[dict]): Metadata chain for reconstruction.
         """
         if image is None:
-            raise ValueError("Input image cannot be None.")
-        if not isinstance(image, (np.ndarray, torch.Tensor)):
-            raise TypeError("Input image must be a numpy array or torch tensor.")
+            raise ValueError("No input image provided for preprocessing.")
+
+        images = [image]
+        self.validate_image_list(images, stage="preprocessing")
 
         # convert to tensor if needed
-        is_numpy = isinstance(image, np.ndarray)
-        if is_numpy:
-            image = torch.from_numpy(image)
+        processed_imgs, is_numpy = self.to_tensor_list(images)
 
-        processed_imgs = [image]
         history = []
-        required_keys = {"type", "configuration"}
         for step in processing_steps:
-            if not required_keys.issubset(step.keys()):
-                raise ValueError(f"Each processing step must contain keys: {required_keys}")
+            self.validate_step_keys(step, self._STEP_REQUIRED_KEYS)
 
             op_name = step["type"]
             config = step["configuration"]
@@ -88,20 +87,13 @@ class Preprocessor:
             new_images, metadata = handler(processed_imgs, config)
 
             # Validate handler output
-            if not isinstance(new_images, list):
-                raise TypeError(f"Handler '{op_name}' must return a list of images, got {type(new_images)}")
+            self.validate_handler_output(new_images, op_name, expected_type="handler")
             if not isinstance(metadata, dict):
                 raise TypeError(f"Handler '{op_name}' must return metadata as dict, got {type(metadata)}")
-            if not all(isinstance(img, torch.Tensor) for img in new_images):
-                raise TypeError(f"Handler '{op_name}' returned non-tensor images")
 
             # Save Metadata
             step_record = {"op": op_name, "metadata": {"config": config, "parent_shapes": parent_shapes, **metadata}}
             history.append(step_record)
             processed_imgs = new_images
 
-        # Convert back to numpy if needed
-        if is_numpy:
-            processed_imgs = [img.cpu().numpy() for img in processed_imgs]
-
-        return processed_imgs, history
+        return self.from_tensor_list(processed_imgs, is_numpy), history
