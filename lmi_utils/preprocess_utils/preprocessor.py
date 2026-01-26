@@ -15,8 +15,6 @@ class Preprocessor(BaseProcessor):
     called based on a list of processing steps.
     """
 
-    _STEP_REQUIRED_KEYS = {"type", "configuration"}
-
     def __init__(self):
         """
         Initializes the preprocessor and registers default handlers.
@@ -50,23 +48,21 @@ class Preprocessor(BaseProcessor):
         self._handlers[name] = handler_func
 
     def preprocess(
-        self, image: Union[np.ndarray, torch.Tensor], processing_steps: List[Dict[str, Any]]
+        self, images: Union[List[Union[np.ndarray, torch.Tensor]], np.ndarray, torch.Tensor], processing_steps: List[Dict[str, Any]]
     ) -> Tuple[List[Union[np.ndarray, torch.Tensor]], List[Dict[str, Any]]]:
         """
         Runs the preprocessing pipeline.
 
         Args:
-            image (np.ndarray | torch.Tensor): Input image in format (H, W, C).
+            images (np.ndarray | torch.Tensor | list): Input image(s) in format (H, W, C).
             processing_steps (list): List of config dictionaries.
 
         Returns:
             processed_imgs (list[np.ndarray | torch.Tensor]): list of (H, W, C).
             history (list[dict]): Metadata chain for reconstruction.
         """
-        if image is None:
-            raise ValueError("No input image provided for preprocessing.")
-
-        images = [image]
+        if not isinstance(images, list):
+            images = [images]
         self.validate_image_list(images, stage="preprocessing")
 
         # convert to tensor if needed
@@ -92,7 +88,7 @@ class Preprocessor(BaseProcessor):
                 raise TypeError(f"Handler '{op_name}' must return metadata as dict, got {type(metadata)}")
 
             # Save Metadata
-            step_record = {"op": op_name, "metadata": {"config": config, "parent_shapes": parent_shapes, **metadata}}
+            step_record = {"type": op_name, "configuration": {"config": config, "parent_shapes": parent_shapes, **metadata}}
             history.append(step_record)
             processed_imgs = new_images
 

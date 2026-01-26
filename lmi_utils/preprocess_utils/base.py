@@ -5,6 +5,8 @@ import torch
 
 
 class BaseProcessor:
+    _STEP_REQUIRED_KEYS = {"type", "configuration"}
+
     def to_tensor_list(self, images: List[Union[torch.Tensor, np.ndarray]]) -> tuple[List[torch.Tensor], bool]:
         """
         Convert image list to tensors if needed.

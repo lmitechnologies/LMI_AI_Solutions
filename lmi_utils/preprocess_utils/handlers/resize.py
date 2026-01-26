@@ -13,9 +13,6 @@ def resize(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[tor
         images (list[torch.Tensor]): List of input images (H, W, C).
         config (dict): Configuration for resize_and_pad.
     """
-    if not images:
-        raise ValueError("Cannot resize empty image list")
-
     # Map config keys to function arguments
     resize_configs = {
         "width": config.get("width"),
@@ -44,11 +41,8 @@ def undo_resize(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torch.
     Reverses the composite 'resize_and_pad' operation.
     Args:
         images (list[torch.Tensor]): List of input images (H, W, C).
-        meta (dict): Metadata containing 'ops' for each image.
+        meta (dict): Configuration containing 'ops' for each image.
     """
-    if not images:
-        raise ValueError("No input images provided for undo resize operation.")
-
     if "ops" not in meta:
         raise KeyError("Metadata missing required key 'ops'")
 
