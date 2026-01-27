@@ -52,3 +52,14 @@ class BaseProcessor:
             raise TypeError("Each processing step must be a dictionary.")
         if not required_keys.issubset(step.keys()):
             raise ValueError(f"Each step must contain keys: {required_keys}")
+
+    def validate_steps(self, steps: List[Dict[str, Any]]) -> None:
+        """Validate that steps is a proper list of metadata dictionaries."""
+        if not isinstance(steps, list):
+            raise TypeError("Steps must be a list.")
+        if not all(isinstance(step, dict) for step in steps):
+            raise TypeError("All steps must be dictionaries.")
+
+        # validate each step
+        for step in steps:
+            self.validate_step_keys(step, self._STEP_REQUIRED_KEYS)

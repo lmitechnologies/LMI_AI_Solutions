@@ -39,28 +39,25 @@ class Reconstructor(BaseProcessor):
         self._undo_handlers[name] = undo_func
 
     def reconstruct(
-        self, processed_images: List[Union[torch.Tensor, np.ndarray]], history: List[Dict[str, Any]]
-    ) -> Union[torch.Tensor, np.ndarray, List[Union[torch.Tensor, np.ndarray]]]:
+        self, processed_images: List[Union[torch.Tensor, np.ndarray]], steps: List[Dict[str, Any]]
+    ) -> List[Union[torch.Tensor, np.ndarray]]:
         """
         Reconstructs the original image from processed images and configuration.
 
         Args:
             processed_images: List of (H, W, C) tensors or numpy arrays.
-            history: List of configuration dicts.
+            steps: List of configuration dicts.
 
         Returns:
-            torch.Tensor | np.ndarray | list: The reconstructed image(s) (H, W, C).
+            List: The reconstructed image(s) (H, W, C).
         """
-        if not isinstance(processed_images, list):
-            processed_images = [processed_images]
         self.validate_image_list(processed_images, stage="reconstruction")
+        self.validate_steps(steps)
 
         current_images, is_numpy = self.to_tensor_list(processed_images)
 
-        # Iterate BACKWARDS through history
-        for step in reversed(history):
-            self.validate_step_keys(step, self._STEP_REQUIRED_KEYS)
-
+        # Iterate BACKWARDS through steps
+        for step in reversed(steps):
             op_name = step["type"]
             meta = step["configuration"]
             if op_name not in self._undo_handlers:
@@ -72,5 +69,4 @@ class Reconstructor(BaseProcessor):
 
             self.validate_handler_output(current_images, op_name, expected_type="undo handler")
 
-        current_images = self.from_tensor_list(current_images, is_numpy)
-        return current_images[0] if len(current_images) == 1 else current_images
+        return self.from_tensor_list(current_images, is_numpy)

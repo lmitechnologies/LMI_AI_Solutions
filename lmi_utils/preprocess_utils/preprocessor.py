@@ -64,14 +64,13 @@ class Preprocessor(BaseProcessor):
         if not isinstance(images, list):
             images = [images]
         self.validate_image_list(images, stage="preprocessing")
+        self.validate_steps(processing_steps)
 
         # convert to tensor if needed
         processed_imgs, is_numpy = self.to_tensor_list(images)
 
         history = []
         for step in processing_steps:
-            self.validate_step_keys(step, self._STEP_REQUIRED_KEYS)
-
             op_name = step["type"]
             config = step["configuration"]
             if op_name not in self._handlers:
