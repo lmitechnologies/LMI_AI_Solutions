@@ -78,7 +78,6 @@ class Preprocessor(BaseProcessor):
 
             # Call the handler
             handler = self._handlers[op_name]
-            parent_shapes = [img.shape[0:2] for img in processed_imgs]
             new_images, metadata = handler(processed_imgs, config)
 
             # Validate handler output
@@ -86,8 +85,8 @@ class Preprocessor(BaseProcessor):
             if not isinstance(metadata, dict):
                 raise TypeError(f"Handler '{op_name}' must return metadata as dict, got {type(metadata)}")
 
-            # Save Metadata
-            step_record = {"type": op_name, "configuration": {"config": config, "parent_shapes": parent_shapes, **metadata}}
+            # Save Metadata for reconstruction
+            step_record = {"type": op_name, "configuration": metadata}
             history.append(step_record)
             processed_imgs = new_images
 

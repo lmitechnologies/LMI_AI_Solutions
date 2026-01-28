@@ -5,6 +5,7 @@ import logging
 import traceback
 from abc import ABCMeta, abstractmethod
 
+# LMI AIS repo's modules
 from ad_core.anomaly_detector import AnomalyDetector
 from cls_core.classifier import Classifier
 from dataset_utils.representations import (
@@ -15,20 +16,21 @@ from dataset_utils.representations import (
     Point2d,
     Polygon,
 )
-
-# LMI AIS repo's modules
 from od_core.object_detector import ObjectDetector
+from preprocess_utils.preprocessor import Preprocessor
+from preprocess_utils.reconstructor import Reconstructor
 
-# local module
-# handle different model_roles schema according to gadget version
 from .core.schemas.schema_2 import ModelSchemaV_2
 
 
 class PipelineBase(metaclass=ABCMeta):
     logger = logging.getLogger(__name__)
     models: collections.OrderedDict
+    _preprocessing: collections.OrderedDict  # global preprocessing for all models
     version: str
     results: dict
+    preprocessor: Preprocessor
+    reconstructor: Reconstructor
 
     # Maps prediction keys to the specific classes and types needed for annotation.
     # This is used for uploading labels to label studio.
@@ -72,9 +74,14 @@ class PipelineBase(metaclass=ABCMeta):
             results: a dictionary of the results, e.g.,
                 {'outputs':{}, 'automation_keys':[], 'factory_keys':[], 'tags':[], 'should_archive':True, 'decision':None}
             version: the gadget version. It determines which model_roles handler to be used.
+            preprocessor: an instance of Preprocessor class for preprocessing inputs.
+            reconstructor: an instance of Reconstructor class for reconstructing outputs.
         """
         self.models = collections.OrderedDict()
+        self._preprocessing = collections.OrderedDict()
         self.version = kwargs.get("version", "2")
+        self.preprocessor = Preprocessor()
+        self.reconstructor = Reconstructor()
         self.init_results()
 
     def _load_model(self, model_name: str, metadata: dict, **kwargs):
@@ -131,6 +138,7 @@ class PipelineBase(metaclass=ABCMeta):
 
         Returns:
             dict: The parsed model roles.
+            dict: The global preprocessing steps.
         """
 
         # the format of model_roles from factory is:
@@ -188,10 +196,15 @@ class PipelineBase(metaclass=ABCMeta):
 
         # convert model_roles to the required format
         handler = self._MODEL_ROLES_HANDLERS[version]
+        use_global_preprocessing = kwargs.get("use_tiling_in_global_preprocessing", False)
+        include_tiling = not use_global_preprocessing  # use model's tiling
         if handler is None:
-            return model_roles
-        else:
-            return handler(model_roles).get_metadata()
+            if use_global_preprocessing:
+                raise ValueError(f"Unsupported version: {version} for loading global preprocessing")
+            return model_roles, None
+
+        instance = handler(model_roles)
+        return instance.get_metadata(include_tiling), instance.get_global_preprocessing()
 
     def load_models(self, model_roles: dict, configs: dict, filter: str = "-model", **kwargs):
         """load multiple models based on the provided model_roles, configs and filter.
@@ -203,10 +216,12 @@ class PipelineBase(metaclass=ABCMeta):
             model_roles (dict): a dictionary from gofactory or static_models.
             configs (dict): the configs from pipeline_def.json or the runtime.
             filter (str, optional): filter models by name. Defaults to '-model'.
+            use_tiling_in_global_preprocessing (bool, optional): whether to use tiling in global preprocessing or do tiling
+                inside AD models. Defaults to False for backward compatibility.
             verbose (bool, optional): whether to log the original and parsed model roles. Defaults to False.
         """
         # parse model_roles to match the required format for initializing AIS repo models
-        parsed_model_roles = self._parse_model_roles(model_roles, **kwargs)
+        parsed_model_roles, global_preprocessing = self._parse_model_roles(model_roles, **kwargs)
 
         if kwargs.get("verbose", False):
             self.logger.info(f"Original Model Roles: {json.dumps(model_roles, indent=4)}\n")
@@ -217,18 +232,39 @@ class PipelineBase(metaclass=ABCMeta):
         for model_key in target_model_keys:
             config_to_use = parsed_model_roles[model_key]
             model_source = "Static" if "static" in config_to_use["model_path"].split("/") else "GoFactory"
-            # TODO: handle tile configs
-            # keys_to_inherit = ['tile_size', 'stride']
-            # for key in keys_to_inherit:
-            #     if key not in config_to_use and key in configs[model_key]['metadata']:
-            #         self.logger.warning(
-            #             f"'{key}' not found in GoFactory config for '{model_key}'. Inheriting value from local config."
-            #         )
-            #         config_to_use[key] = configs[model_key]['metadata'][key]
-
             self._load_model(model_key, config_to_use, **kwargs)
+            if global_preprocessing:
+                self._preprocessing[model_key] = global_preprocessing[model_key]
             self.logger.info(f"Successfully loaded {model_source} model: {model_key}\n")
         self.logger.info(f"Final loaded models: {list(self.models.keys())}\n")
+
+    def preprocess(self, model_role, images):
+        """preprocess the image(s) based on the preprocessing steps in model_role.
+
+        Args:
+            model_role (str): the model role to be used for preprocessing.
+            images (numpy.ndarray | torch.Tensor | list[numpy.ndarray | torch.Tensor]): the image(s) to be preprocessed.
+
+        Returns:
+            list[numpy.ndarray | torch.Tensor]: the preprocessed image(s).
+            list[dict]: the preprocessing steps.
+        """
+        if model_role not in self._preprocessing:
+            raise ValueError(f"Not found global preprocessing steps for model role: {model_role}")
+
+        return self.preprocessor.preprocess(images, self._preprocessing[model_role])
+
+    def reconstruct(self, images, ops):
+        """reconstruct the images based on the preprocessing steps in ops.
+
+        Args:
+            images (list[numpy.ndarray | torch.Tensor]): the image(s) to be reconstructed.
+            ops (list[dict]): the preprocessing steps to be used for reconstruction.
+
+        Returns:
+            list[numpy.ndarray | torch.Tensor]: the reconstructed image(s).
+        """
+        return self.reconstructor.reconstruct(images, ops)
 
     def add_prediction(
         self,
@@ -381,6 +417,9 @@ class PipelineBase(metaclass=ABCMeta):
             self.logger.info(f"{model_name} has been cleaned up")
         self.models.clear()
         self.logger.info("pipeline is cleaned up")
+
+        self._preprocessing.clear()
+        self.logger.info("preprocessing is cleaned up")
 
     def update_results(self, key: str, value, sub_key=None, **kwargs):
         """

@@ -5,6 +5,7 @@ from gadget_utils.pipeline_utils import revert_mask_to_origin
 from image_utils.img_resize import resize_and_pad
 
 
+@torch.inference_mode()
 def resize(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], Dict[str, Any]]:
     """
     Wraps the user's custom 'resize_and_pad' function.
@@ -36,6 +37,7 @@ def resize(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[tor
     return output_images, {"ops": image_ops_list}
 
 
+@torch.inference_mode()
 def undo_resize(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torch.Tensor]:
     """
     Reverses the composite 'resize_and_pad' operation.

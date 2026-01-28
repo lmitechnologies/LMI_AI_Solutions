@@ -106,7 +106,7 @@ class Model:
             format=data.get("format", ""),
         )
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self, include_tiling: bool) -> Dict[str, Any]:
         """Returns the metadata of the model as a dictionary."""
         # check for tiling preprocessing
         tiling_config = self.details.get_preprocessing_by_type("tile")
@@ -117,7 +117,7 @@ class Model:
             "algorithm": self.details.training_algorithm.lower(),
             "package": self.details.training_package.lower(),
         }
-        if tiling_config:
+        if include_tiling and tiling_config:
             metadata["tile_size"] = [
                 tiling_config.get("configuration", {}).get("height", None),
                 tiling_config.get("configuration", {}).get("width", None),
@@ -142,11 +142,47 @@ class ModelCollection:
         models = {role: Model.from_dict(model_info) for role, model_info in data.items() if model_info is not None}
         return cls(models=models)
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self, include_tiling: bool) -> Dict[str, Any]:
         configs = {}
-        for model in self.models.values():
-            configs[model.model_role] = model.get_metadata()
+        for role, model in self.models.items():
+            configs[role] = model.get_metadata(include_tiling)
         return configs
+
+    def get_global_preprocessing(self) -> Dict[str, Any]:
+        """Returns the global preprocessing steps of the model collection."""
+
+        def parse(steps: List[Dict[str, Any]]):
+            """Parses preprocessing steps and formats tiling configurations."""
+            supported_types = {"resize", "tile"}
+            tiling_keys = {"height", "width", "xStride", "yStride"}
+
+            ops = []
+            for preprocess in steps:
+                if "type" not in preprocess or "configuration" not in preprocess:
+                    raise ValueError("Must contain 'type' and 'configuration' keys.")
+
+                p_type = preprocess["type"]
+                config = preprocess["configuration"]
+
+                if p_type not in supported_types:
+                    raise ValueError(f"Unsupported type '{p_type}'.")
+
+                if p_type == "tile":
+                    if not tiling_keys.issubset(config.keys()):
+                        raise ValueError(f"Tiling configuration must contain keys: {tiling_keys}.")
+
+                    # Format the tile config immediately
+                    tile_config = {"tile_size": [config["height"], config["width"]], "stride": [config["yStride"], config["xStride"]]}
+                    ops.append({"type": "tile", "configuration": tile_config})
+                elif p_type == "resize":
+                    ops.append(preprocess)
+            return ops
+
+        global_preprocessing = {}
+        for role, model in self.models.items():
+            steps = model.details.global_preprocessing
+            global_preprocessing[role] = parse(steps)
+        return global_preprocessing
 
 
 class ModelSchemaV_2:
@@ -158,6 +194,6 @@ class ModelSchemaV_2:
         return ModelCollection.from_dict(data)
 
     @staticmethod
-    def get_metadata(model_collection: ModelCollection) -> Dict[str, Any]:
+    def get_metadata(model_collection: ModelCollection, include_tiling: bool = True) -> Dict[str, Any]:
         """Returns the metadata of the model collection."""
-        return model_collection.get_metadata()
+        return model_collection.get_metadata(include_tiling)
