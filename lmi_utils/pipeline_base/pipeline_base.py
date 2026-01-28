@@ -4,6 +4,11 @@ import json
 import logging
 import traceback
 from abc import ABCMeta, abstractmethod
+from logging import Logger
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+import numpy
+import torch
 
 # LMI AIS repo's modules
 from ad_core.anomaly_detector import AnomalyDetector
@@ -25,12 +30,6 @@ from .core.schemas.schema_2 import ModelSchemaV_2
 
 class PipelineBase(metaclass=ABCMeta):
     logger = logging.getLogger(__name__)
-    models: collections.OrderedDict
-    _preprocessing: collections.OrderedDict  # global preprocessing for all models
-    version: str
-    results: dict
-    preprocessor: Preprocessor
-    reconstructor: Reconstructor
 
     # Maps prediction keys to the specific classes and types needed for annotation.
     # This is used for uploading labels to label studio.
@@ -65,7 +64,7 @@ class PipelineBase(metaclass=ABCMeta):
         "2": ModelSchemaV_2.from_dict,
     }
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: Any) -> None:
         """
         init the pipeline.
         it has the following attributes:
@@ -73,6 +72,7 @@ class PipelineBase(metaclass=ABCMeta):
             models: a dictionary of model instances, e.g., {model_name: model_instance}
             results: a dictionary of the results, e.g.,
                 {'outputs':{}, 'automation_keys':[], 'factory_keys':[], 'tags':[], 'should_archive':True, 'decision':None}
+            _preprocessing: a dictionary of global preprocessing configs for each model role.
             version: the gadget version. It determines which model_roles handler to be used.
             preprocessor: an instance of Preprocessor class for preprocessing inputs.
             reconstructor: an instance of Reconstructor class for reconstructing outputs.
@@ -84,15 +84,13 @@ class PipelineBase(metaclass=ABCMeta):
         self.reconstructor = Reconstructor()
         self.init_results()
 
-    def _load_model(self, model_name: str, metadata: dict, **kwargs):
+    def _load_model(self, model_name: str, metadata: dict, **kwargs: Any) -> None:
         """load a model with the given metadata. Set default image size if not provided.
 
-        args:
+        Args:
             model_name (str): the name of the model to be loaded.
             metadata (dict): the metadata of the model to be loaded.
             kwargs (dict): additional arguments to be passed to the model constructor.
-        Raises:
-            ValueError: if the model_type is not supported.
         """
         if model_name in self.models:
             self.logger.info(f"{model_name} is already loaded")
@@ -127,18 +125,19 @@ class PipelineBase(metaclass=ABCMeta):
         else:
             raise ValueError(f"model_type {model_type} is not supported")
 
-    def _parse_model_roles(self, model_roles: dict, **kwargs):
+    def _parse_model_roles(self, model_roles: dict, **kwargs: Any) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
         """parse model_roles by version and convert it to match the required format for initializing AIS repo models.
 
         Args:
             model_roles (dict): the model roles to parse.
+            **kwargs (Any): additional arguments to be passed to the model constructor.
 
         Raises:
             ValueError: If the version is not supported.
 
         Returns:
             dict: The parsed model roles.
-            dict: The global preprocessing steps.
+            dict or None: The global preprocessing steps.
         """
 
         # the format of model_roles from factory is:
@@ -194,20 +193,25 @@ class PipelineBase(metaclass=ABCMeta):
         if version not in self._MODEL_ROLES_HANDLERS:
             raise ValueError(f"Unsupported version: {version}. Supported versions are: {list(self._MODEL_ROLES_HANDLERS.keys())}")
 
+        use_model_internal_tiling = kwargs.get("use_model_internal_tiling", False)
+        if use_model_internal_tiling:
+            self.logger.warning("Use model internal tiling is deprecated. Please upgrade the Gadget and use global preprocessing instead.")
+            self.logger.warning("This will be removed in the future release.")
+
         # convert model_roles to the required format
         handler = self._MODEL_ROLES_HANDLERS[version]
-        use_global_preprocessing = kwargs.get("use_tiling_in_global_preprocessing", False)
-        include_tiling = not use_global_preprocessing  # use model's tiling
         if handler is None:
-            if use_global_preprocessing:
+            if not use_model_internal_tiling:
                 raise ValueError(f"Unsupported version: {version} for loading global preprocessing")
             return model_roles, None
 
         instance = handler(model_roles)
-        return instance.get_metadata(include_tiling), instance.get_global_preprocessing()
+        global_preprocessing = None if use_model_internal_tiling else instance.get_global_preprocessing()
+        return instance.get_metadata(use_model_internal_tiling), global_preprocessing
 
-    def load_models(self, model_roles: dict, configs: dict, filter: str = "-model", **kwargs):
-        """load multiple models based on the provided model_roles, configs and filter.
+    def load_models(self, model_roles: dict, configs: dict, filter: str = "-model", **kwargs: Any) -> None:
+        """
+        Load multiple models based on the provided model_roles, configs and filter.
         The model_roles are used for loading models from the GoFactory or static models.
         The configs are used for loading pipeline configs from pipeline_def.json or the runtime.
         It also filters out not relevant models based on the provided filter string.
@@ -216,29 +220,36 @@ class PipelineBase(metaclass=ABCMeta):
             model_roles (dict): a dictionary from gofactory or static_models.
             configs (dict): the configs from pipeline_def.json or the runtime.
             filter (str, optional): filter models by name. Defaults to '-model'.
-            use_tiling_in_global_preprocessing (bool, optional): whether to use tiling in global preprocessing or do tiling
-                inside AD models. Defaults to False for backward compatibility.
             verbose (bool, optional): whether to log the original and parsed model roles. Defaults to False.
+            use_model_internal_tiling (bool, optional): whether to use model internal tiling.
+                Defaults to False. Set to True for old Gadget versions.
         """
         # parse model_roles to match the required format for initializing AIS repo models
         parsed_model_roles, global_preprocessing = self._parse_model_roles(model_roles, **kwargs)
 
         if kwargs.get("verbose", False):
-            self.logger.info(f"Original Model Roles: {json.dumps(model_roles, indent=4)}\n")
-            self.logger.info(f"Parsed Model Roles: {json.dumps(parsed_model_roles, indent=4)}\n")
+            self.logger.info(f"Original Model Roles: {json.dumps(model_roles, indent=2)}\n")
+            self.logger.info(f"Parsed Model Roles: {json.dumps(parsed_model_roles, indent=2)}\n")
 
         # filter configs to get target model keys
         target_model_keys = [k for k in model_roles.keys() if f"{filter}" in k]
         for model_key in target_model_keys:
-            config_to_use = parsed_model_roles[model_key]
+            config_to_use = parsed_model_roles.get(model_key)
+            if config_to_use is None:
+                self.logger.warning(f"Not found '{model_key}' in parsed model roles. Skipping.")
+                continue
             model_source = "Static" if "static" in config_to_use["model_path"].split("/") else "GoFactory"
             self._load_model(model_key, config_to_use, **kwargs)
-            if global_preprocessing:
+            if global_preprocessing and model_key in global_preprocessing:
                 self._preprocessing[model_key] = global_preprocessing[model_key]
+            elif global_preprocessing:
+                self.logger.warning(f"No preprocessing config found for '{model_key}'. Global preprocessing will be skipped.")
             self.logger.info(f"Successfully loaded {model_source} model: {model_key}\n")
         self.logger.info(f"Final loaded models: {list(self.models.keys())}\n")
 
-    def preprocess(self, model_role, images):
+    def preprocess(
+        self, model_role: str, images: Union[numpy.ndarray, torch.Tensor, List[Union[numpy.ndarray, torch.Tensor]]]
+    ) -> Tuple[List[Union[numpy.ndarray, torch.Tensor]], List[Dict[str, Any]]]:
         """preprocess the image(s) based on the preprocessing steps in model_role.
 
         Args:
@@ -254,7 +265,9 @@ class PipelineBase(metaclass=ABCMeta):
 
         return self.preprocessor.preprocess(images, self._preprocessing[model_role])
 
-    def reconstruct(self, images, ops):
+    def reconstruct(
+        self, images: List[Union[numpy.ndarray, torch.Tensor]], ops: List[Dict[str, Any]]
+    ) -> List[Union[numpy.ndarray, torch.Tensor]]:
         """reconstruct the images based on the preprocessing steps in ops.
 
         Args:
@@ -274,8 +287,8 @@ class PipelineBase(metaclass=ABCMeta):
         label: str,
         image_height: int,
         image_width: int,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         """add a single prediction to results for uploading to Label Studio.
 
         Args:
@@ -300,8 +313,8 @@ class PipelineBase(metaclass=ABCMeta):
         image_width: int,
         key="outputs",
         sub_key="labels",
-    ):
-        """a helper functiomn to add a batch of predictions to results for Label Studio.
+    ) -> None:
+        """a helper function to add a batch of predictions to results for Label Studio.
 
         Args:
             predictions (dict): a dictionary of predictions with one of these keys: boxes, polygons, masks and keypoints. e.g.,
@@ -332,6 +345,15 @@ class PipelineBase(metaclass=ABCMeta):
             if pred_type in predictions:
                 data = predictions[pred_type]
 
+                # Validate structure
+                required_keys = ["objects", "classes", "confidences"]
+                if not all(k in data for k in required_keys):
+                    raise ValueError(f"Missing required keys for {pred_type}: {required_keys}")
+
+                # Validate lengths match
+                if not (len(data["classes"]) == len(data["confidences"]) == len(data["objects"])):
+                    raise ValueError(f"Array length of 'classes', 'confidences' and 'objects' mismatch for {pred_type}.")
+
                 for idx, value_data in enumerate(data["objects"]):
                     value_object = handler["value_factory"](value_data)
                     annotation = Annotation(
@@ -343,7 +365,7 @@ class PipelineBase(metaclass=ABCMeta):
                     )
                     prediction_list.append(annotation.to_dict())
 
-    def init_results(self):
+    def init_results(self) -> None:
         """
         init the output results
         """
@@ -359,7 +381,7 @@ class PipelineBase(metaclass=ABCMeta):
         }
 
     @classmethod
-    def track_exception(cls, logger=None):
+    def track_exception(cls, logger: Optional[Logger] = None) -> Callable:
         """track exceptions and log the error message to GoFactory.
 
         Args:
@@ -381,33 +403,35 @@ class PipelineBase(metaclass=ABCMeta):
                         self.update_results("tags", "ERROR", to_factory=True)
                         self.update_results("should_archive", True)
                         return self.results
+                    else:
+                        raise
 
             return wrapper
 
         return deco
 
     @abstractmethod
-    def warm_up(self, configs: dict):
+    def warm_up(self, configs: dict) -> None:
         """
         warm up the pipeline
         """
         pass
 
     @abstractmethod
-    def load(self, model_roles: dict, configs: dict):
+    def load(self, model_roles: dict, configs: dict) -> None:
         """
         load models
         """
         pass
 
     @abstractmethod
-    def predict(self, configs: dict, inputs: dict):
+    def predict(self, configs: dict, inputs: dict) -> dict:
         """
         the main function to run the pipeline.
         """
         pass
 
-    def clean_up(self):
+    def clean_up(self) -> None:
         """
         clean up the pipeline in REVERSED order, i.e., the last models get destroyed first
         """
@@ -421,7 +445,7 @@ class PipelineBase(metaclass=ABCMeta):
         self._preprocessing.clear()
         self.logger.info("preprocessing is cleaned up")
 
-    def update_results(self, key: str, value, sub_key=None, **kwargs):
+    def update_results(self, key: str, value, sub_key: Optional[str] = None, **kwargs: Any) -> None:
         """
         modifies self.results by applying rules for creation and updates.
 
@@ -447,7 +471,7 @@ class PipelineBase(metaclass=ABCMeta):
         if kwargs.get("to_automation", False) and key not in self.results["automation_keys"]:
             self.results["automation_keys"].append(key)
 
-    def check_return_types(self, check_sub_keys=None) -> bool:
+    def check_return_types(self, check_sub_keys: Optional[List[str]] = None) -> bool:
         """check if the result dictionary is json serializable
 
         Args:

@@ -106,7 +106,7 @@ class Model:
             format=data.get("format", ""),
         )
 
-    def get_metadata(self, include_tiling: bool) -> Dict[str, Any]:
+    def get_metadata(self, use_model_internal_tiling: bool) -> Dict[str, Any]:
         """Returns the metadata of the model as a dictionary."""
         # check for tiling preprocessing
         tiling_config = self.details.get_preprocessing_by_type("tile")
@@ -117,7 +117,7 @@ class Model:
             "algorithm": self.details.training_algorithm.lower(),
             "package": self.details.training_package.lower(),
         }
-        if include_tiling and tiling_config:
+        if use_model_internal_tiling and tiling_config:
             metadata["tile_size"] = [
                 tiling_config.get("configuration", {}).get("height", None),
                 tiling_config.get("configuration", {}).get("width", None),
@@ -142,10 +142,10 @@ class ModelCollection:
         models = {role: Model.from_dict(model_info) for role, model_info in data.items() if model_info is not None}
         return cls(models=models)
 
-    def get_metadata(self, include_tiling: bool) -> Dict[str, Any]:
+    def get_metadata(self, use_model_internal_tiling: bool) -> Dict[str, Any]:
         configs = {}
         for role, model in self.models.items():
-            configs[role] = model.get_metadata(include_tiling)
+            configs[role] = model.get_metadata(use_model_internal_tiling)
         return configs
 
     def get_global_preprocessing(self) -> Dict[str, Any]:
@@ -194,6 +194,6 @@ class ModelSchemaV_2:
         return ModelCollection.from_dict(data)
 
     @staticmethod
-    def get_metadata(model_collection: ModelCollection, include_tiling: bool = True) -> Dict[str, Any]:
+    def get_metadata(model_collection: ModelCollection, use_model_internal_tiling: bool = True) -> Dict[str, Any]:
         """Returns the metadata of the model collection."""
-        return model_collection.get_metadata(include_tiling)
+        return model_collection.get_metadata(use_model_internal_tiling)
