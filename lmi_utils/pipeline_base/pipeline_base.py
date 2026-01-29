@@ -6,7 +6,7 @@ import traceback
 from abc import ABCMeta, abstractmethod
 from logging import Logger
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import numpy
 import torch
@@ -86,45 +86,42 @@ class PipelineBase(metaclass=ABCMeta):
         self.init_results()
 
     def _load_model(self, model_name: str, metadata: dict, **kwargs: Any) -> None:
-        """load a model with the given metadata. Set default image size if not provided.
+        """load a model with the given metadata.
 
         Args:
             model_name (str): the name of the model to be loaded.
             metadata (dict): the metadata of the model to be loaded.
             kwargs (dict): additional arguments to be passed to the model constructor.
         """
-        if model_name in self.models:
-            self.logger.info(f"{model_name} is already loaded")
+        required_keys = ["model_path", "image_size", "model_type", "package"]
+        missing_keys = [key for key in required_keys if not metadata.get(key)]
+        if missing_keys:
+            raise ValueError(f"Missing required metadata keys {missing_keys} for model: {model_name}")
+
         self.logger.info(f"Loading {model_name} from {metadata['model_path']}")
 
-        if not metadata.get("image_size"):
-            raise ValueError(f"image_size is required in metadata for model: {model_name}")
+        meta_copy = metadata.copy()
+        model_type = meta_copy["model_type"].lower()
 
-        # add version to metadata if not provided
-        model_type = metadata.get("model_type", "").lower()
-        if "version" not in metadata:
-            metadata["version"] = "v1"
-        if metadata.get("package") == "detectron2":
-            # detectron2 only has v0 models
-            metadata["version"] = "v0"
-        if model_type == "classification":
-            # classification only has v0 models
-            metadata["version"] = "v0"
+        # Default to v1, but downgrade to v0 for specific cases
+        meta_copy.setdefault("version", "v1")
+        if (meta_copy["package"] == "detectron2") or (model_type == "classification"):
+            meta_copy["version"] = "v0"
 
-        # check model type
-        if model_type == "anomalydetection":
-            self.models[model_name] = AnomalyDetector(metadata, **kwargs)
-        elif model_type in [
-            "objectdetection",
-            "instancesegmentation",
-            "keypointdetection",
-            "orientedobjectdetection",
-        ]:
-            self.models[model_name] = ObjectDetector(metadata, **kwargs)
-        elif model_type == "classification":
-            self.models[model_name] = Classifier(metadata, **kwargs)
-        else:
-            raise ValueError(f"model_type {model_type} is not supported")
+        model_classes: Dict[str, Type] = {
+            "anomalydetection": AnomalyDetector,
+            "classification": Classifier,
+            "objectdetection": ObjectDetector,
+            "instancesegmentation": ObjectDetector,
+            "keypointdetection": ObjectDetector,
+            "orientedobjectdetection": ObjectDetector,
+        }
+        model_class = model_classes.get(model_type)
+
+        if not model_class:
+            raise ValueError(f"model_type '{model_type}' is not supported")
+
+        self.models[model_name] = model_class(meta_copy, **kwargs)
 
     def _parse_model_roles(self, model_roles: dict, **kwargs: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Parse model_roles by version and convert it to match the required format for initializing AIS repo models.
@@ -298,15 +295,7 @@ class PipelineBase(metaclass=ABCMeta):
         for pred_type, handler in self._PREDICTION_HANDLERS.items():
             if pred_type in predictions:
                 data = predictions[pred_type]
-
-                # Validate structure
-                required_keys = ["objects", "classes", "confidences"]
-                if not all(k in data for k in required_keys):
-                    raise ValueError(f"Missing required keys for {pred_type}: {required_keys}")
-
-                # Validate lengths match
-                if not (len(data["classes"]) == len(data["confidences"]) == len(data["objects"])):
-                    raise ValueError(f"Array length of 'classes', 'confidences' and 'objects' mismatch for {pred_type}.")
+                self._validate_prediction_data(pred_type, data)
 
                 for obj, cls, conf in zip(data["objects"], data["classes"], data["confidences"]):
                     value_object = handler["value_factory"](obj)
@@ -318,6 +307,24 @@ class PipelineBase(metaclass=ABCMeta):
                         type=handler["type"],
                     )
                     prediction_list.append(annotation.to_dict())
+
+    def _validate_prediction_data(self, pred_type: str, data: dict) -> None:
+        """validate the structure and lengths of prediction data.
+
+        Args:
+            pred_type (str): the type of the prediction.
+            data (dict): the prediction data to validate.
+
+        Raises:
+            ValueError: if the structure or lengths are invalid.
+        """
+        required_keys = ["objects", "classes", "confidences"]
+        if not all(k in data for k in required_keys):
+            raise ValueError(f"Missing required keys for {pred_type}: {required_keys}")
+
+        # Validate lengths match
+        if not (len(data["classes"]) == len(data["confidences"]) == len(data["objects"])):
+            raise ValueError(f"Array length of 'classes', 'confidences' and 'objects' mismatch for {pred_type}.")
 
     def init_results(self) -> None:
         """
