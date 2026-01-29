@@ -5,6 +5,7 @@ import logging
 import traceback
 from abc import ABCMeta, abstractmethod
 from logging import Logger
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy
@@ -147,24 +148,24 @@ class PipelineBase(metaclass=ABCMeta):
         #         "configs": {},
         #         "details": {
         #             "deployed": "2025-08-18T02:26:53.063Z",
-        #             "baseModel": "yolov8m.pt",
-        #             "trainingPackage": "Ultralytics8",
-        #             "trainingAlgorithm": "Yolo",
-        #             "confidenceThreshold": 0.5,
-        #             "globalPreprocessing": [
+        #             "base_model": "yolov8m.pt",
+        #             "training_package": "Ultralytics8",
+        #             "training_algorithm": "Yolo",
+        #             "confidence_threshold": 0.5,
+        #             "global_preprocessing": [
         #                 {
         #                     "type": "resize",
         #                     "configuration": {
         #                         "width": 640,
         #                         "height": 640,
-        #                         "preserveAspect": true
+        #                         "preserve_aspect": true
         #                     }
         #                 }
         #             ]
         #         },
         #         "artifacts": {
         #             "pt": {
-        #                 "imageSize": [],
+        #                 "image_size": [],
         #                 "model_path": "/app/models/top-od-model/ObjectDetection/yolo/1/model.pt"
         #             }
         #         },
@@ -190,28 +191,37 @@ class PipelineBase(metaclass=ABCMeta):
         # }
 
         version = kwargs.get("version", self.version)
-        if version not in self._MODEL_ROLES_HANDLERS:
-            raise ValueError(f"Unsupported version: {version}. Supported versions are: {list(self._MODEL_ROLES_HANDLERS.keys())}")
-
         use_model_internal_tiling = kwargs.get("use_model_internal_tiling", False)
-        if use_model_internal_tiling:
-            self.logger.warning("Use model internal tiling is deprecated. Please upgrade the Gadget and use global preprocessing instead.")
-            self.logger.warning("This will be removed in the future release.")
 
-        # convert model_roles to the required format
+        # Validate version
+        if version not in self._MODEL_ROLES_HANDLERS:
+            raise ValueError(f"Unsupported version: {version}")
+
         handler = self._MODEL_ROLES_HANDLERS[version]
+
+        # Version 1: Only supports model internal tiling
         if handler is None:
             if not use_model_internal_tiling:
-                raise ValueError(f"Unsupported version: {version} for loading global preprocessing")
+                raise ValueError(
+                    f"Gadget version {version} only supports model internal tiling. "
+                    f"Either set use_model_internal_tiling=True or upgrade to version 2."
+                )
+            self.logger.info("Using legacy model internal tiling (deprecated)")
             return model_roles, None
 
+        # Version 2+: Supports global preprocessing
         instance = handler(model_roles)
-        global_preprocessing = None if use_model_internal_tiling else instance.get_global_preprocessing()
-        return instance.get_metadata(use_model_internal_tiling), global_preprocessing
+
+        if use_model_internal_tiling:
+            self.logger.warning("Model internal tiling is deprecated. Consider upgrading Gadget to use global preprocessing.")
+            return instance.get_metadata(use_model_internal_tiling=True), None
+        else:
+            global_preprocessing = instance.get_global_preprocessing()
+            return instance.get_metadata(use_model_internal_tiling=False), global_preprocessing
 
     def load_models(self, model_roles: dict, configs: dict, filter: str = "-model", **kwargs: Any) -> None:
         """
-        Load multiple models based on the provided model_roles, configs and filter.
+        Load multiple models based on the provided model_roles, configs and filter. It also loads the global preprocessing for the models.
         The model_roles are used for loading models from the GoFactory or static models.
         The configs are used for loading pipeline configs from pipeline_def.json or the runtime.
         It also filters out not relevant models based on the provided filter string.
@@ -219,12 +229,12 @@ class PipelineBase(metaclass=ABCMeta):
         Args:
             model_roles (dict): a dictionary from gofactory or static_models.
             configs (dict): the configs from pipeline_def.json or the runtime.
-            filter (str, optional): filter models by name. Defaults to '-model'.
+            filter (str, optional): filter models by name. Defaults to "-model".
             verbose (bool, optional): whether to log the original and parsed model roles. Defaults to False.
             use_model_internal_tiling (bool, optional): whether to use model internal tiling.
                 Defaults to False. Set to True for old Gadget versions.
         """
-        # parse model_roles to match the required format for initializing AIS repo models
+        use_model_internal_tiling = kwargs.get("use_model_internal_tiling", False)
         parsed_model_roles, global_preprocessing = self._parse_model_roles(model_roles, **kwargs)
 
         if kwargs.get("verbose", False):
@@ -232,18 +242,30 @@ class PipelineBase(metaclass=ABCMeta):
             self.logger.info(f"Parsed Model Roles: {json.dumps(parsed_model_roles, indent=2)}\n")
 
         # filter configs to get target model keys
-        target_model_keys = [k for k in model_roles.keys() if f"{filter}" in k]
+        target_model_keys = [k for k in model_roles.keys() if filter in k]
         for model_key in target_model_keys:
             config_to_use = parsed_model_roles.get(model_key)
             if config_to_use is None:
-                self.logger.warning(f"Not found '{model_key}' in parsed model roles. Skipping.")
+                self.logger.warning(f"Not found '{model_key}' configs in parsed model roles. Skipping.")
                 continue
-            model_source = "Static" if "static" in config_to_use["model_path"].split("/") else "GoFactory"
+
+            model_source = "Static" if "static" in Path(config_to_use["model_path"]).parts else "GoFactory"
             self._load_model(model_key, config_to_use, **kwargs)
-            if global_preprocessing and model_key in global_preprocessing:
-                self._preprocessing[model_key] = global_preprocessing[model_key]
+
+            if use_model_internal_tiling:
+                self.logger.warning(f"Model '{model_key}' will use model internal tiling. This is deprecated.")
             elif global_preprocessing:
-                self.logger.warning(f"No preprocessing config found for '{model_key}'. Global preprocessing will be skipped.")
+                if model_key in global_preprocessing:
+                    self._preprocessing[model_key] = global_preprocessing[model_key]
+                    self.logger.info(f"Applied global preprocessing for '{model_key}'")
+                else:
+                    raise ValueError(
+                        f"Global preprocessing is enabled but no preprocessing config found for '{model_key}'. "
+                        f"Add preprocessing config in Gadget or static manifest."
+                    )
+            else:
+                raise RuntimeError("Invalid state: global_preprocessing is None but use_model_internal_tiling is False. ")
+
             self.logger.info(f"Successfully loaded {model_source} model: {model_key}\n")
         self.logger.info(f"Final loaded models: {list(self.models.keys())}\n")
 
@@ -354,13 +376,13 @@ class PipelineBase(metaclass=ABCMeta):
                 if not (len(data["classes"]) == len(data["confidences"]) == len(data["objects"])):
                     raise ValueError(f"Array length of 'classes', 'confidences' and 'objects' mismatch for {pred_type}.")
 
-                for idx, value_data in enumerate(data["objects"]):
-                    value_object = handler["value_factory"](value_data)
+                for obj, cls, conf in zip(data["objects"], data["classes"], data["confidences"]):
+                    value_object = handler["value_factory"](obj)
                     annotation = Annotation(
                         id=str(len(prediction_list)),
                         value=value_object,
-                        label_id=data["classes"][idx],
-                        confidence=float(data["confidences"][idx]),
+                        label_id=cls,
+                        confidence=float(conf),
                         type=handler["type"],
                     )
                     prediction_list.append(annotation.to_dict())
@@ -425,7 +447,7 @@ class PipelineBase(metaclass=ABCMeta):
         pass
 
     @abstractmethod
-    def predict(self, configs: dict, inputs: dict) -> dict:
+    def predict(self, configs: Dict[str, Any], inputs: Dict[str, Any]) -> Dict[str, Any]:
         """
         the main function to run the pipeline.
         """
@@ -445,13 +467,13 @@ class PipelineBase(metaclass=ABCMeta):
         self._preprocessing.clear()
         self.logger.info("preprocessing is cleaned up")
 
-    def update_results(self, key: str, value, sub_key: Optional[str] = None, **kwargs: Any) -> None:
+    def update_results(self, key: str, value: Any, sub_key: Optional[str] = None, **kwargs: Any) -> None:
         """
         modifies self.results by applying rules for creation and updates.
 
         Args:
             key (str): the key of the self.results
-            value (obj): the value of the key to be updated
+            value (Any): the value of the key to be updated
             sub_key (str, optional): the key of sub dictionary to be updated. Defaults to None.
             to_factory (bool, optional): add the key to the gofactory. Defaults to False.
             to_automation (bool, optional): add the key to the automation. Defaults to False.

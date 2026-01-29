@@ -154,7 +154,7 @@ class ModelCollection:
         def parse(steps: List[Dict[str, Any]]):
             """Parses preprocessing steps and formats tiling configurations."""
             supported_types = {"resize", "tile"}
-            tiling_keys = {"height", "width", "xStride", "yStride"}
+            tiling_keys = {"height", "width", "x_stride", "y_stride"}
 
             ops = []
             for preprocess in steps:
@@ -172,7 +172,7 @@ class ModelCollection:
                         raise ValueError(f"Tiling configuration must contain keys: {tiling_keys}.")
 
                     # Format the tile config immediately
-                    tile_config = {"tile_size": [config["height"], config["width"]], "stride": [config["yStride"], config["xStride"]]}
+                    tile_config = {"tile_size": [config["height"], config["width"]], "stride": [config["y_stride"], config["x_stride"]]}
                     ops.append({"type": "tile", "configuration": tile_config})
                 elif p_type == "resize":
                     ops.append(preprocess)

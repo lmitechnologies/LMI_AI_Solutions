@@ -49,7 +49,7 @@ class PipelineOD(PipelineBase):
         (
             [
                 {"type": "resize", "configuration": {"height": 640, "width": 640}},
-                {"type": "tile", "configuration": {"height": 320, "width": 320, "yStride": 320, "xStride": 320}},
+                {"type": "tile", "configuration": {"height": 320, "width": 320, "y_stride": 320, "x_stride": 320}},
             ],
             ["resize", "tile"],
         ),
@@ -66,13 +66,11 @@ def test_pipeline_OD(preprocessing_steps, expected_types):
             "format": "pt",
             "configs": {},
             "details": {
-                "base_model": "yolo11n-seg.pt",
                 "training_package": "Ultralytics",
                 "training_algorithm": "Yolo",
                 "global_preprocessing": preprocessing_steps,
             },
             "artifacts": {"pt": {"image_size": [640, 640], "model_path": model_path}},
-            "model_name": "yolo",
             "model_role": "mock-model",
             "model_type": "ObjectDetection",
             "model_version": "1",
@@ -150,7 +148,7 @@ class PipelineAD(PipelineBase):
         (
             [
                 {"type": "resize", "configuration": {"height": 224, "width": 448}},
-                {"type": "tile", "configuration": {"height": 224, "width": 224, "yStride": 112, "xStride": 112}},
+                {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}},
             ],
             ["resize", "tile"],
         ),
@@ -167,13 +165,11 @@ def test_pipeline_AD(preprocessing_steps, expected_types):
             "format": "pt",
             "configs": {},
             "details": {
-                "base_model": "model_v1_trace.pt",
                 "training_package": "Anomalib1",
                 "training_algorithm": "Patchcore",
                 "global_preprocessing": preprocessing_steps,
             },
             "artifacts": {"pt": {"image_size": [224, 224], "model_path": model_path}},
-            "model_name": "patchcore",
             "model_role": "mock-model",
             "model_type": "AnomalyDetection",
             "model_version": "1",
