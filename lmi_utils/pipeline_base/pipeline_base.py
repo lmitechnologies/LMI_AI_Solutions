@@ -61,7 +61,7 @@ class PipelineBase(metaclass=ABCMeta):
 
     # Maps gadget version to model_roles handler
     _MODEL_ROLES_HANDLERS = {
-        "1": None,  # currently handled by the base class
+        "1": None,  # no longer supported
         "2": ModelSchemaV_2.from_dict,
     }
 
@@ -126,8 +126,9 @@ class PipelineBase(metaclass=ABCMeta):
         else:
             raise ValueError(f"model_type {model_type} is not supported")
 
-    def _parse_model_roles(self, model_roles: dict, **kwargs: Any) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
-        """parse model_roles by version and convert it to match the required format for initializing AIS repo models.
+    def _parse_model_roles(self, model_roles: dict, **kwargs: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Parse model_roles by version and convert it to match the required format for initializing AIS repo models.
+        Also, it loads the global preprocessing steps.
 
         Args:
             model_roles (dict): the model roles to parse.
@@ -138,60 +139,9 @@ class PipelineBase(metaclass=ABCMeta):
 
         Returns:
             dict: The parsed model roles.
-            dict or None: The global preprocessing steps.
+            dict: The global preprocessing steps.
         """
-
-        # the format of model_roles from factory is:
-        # {
-        #     "top-od-model": {
-        #         "format": "pt",
-        #         "configs": {},
-        #         "details": {
-        #             "deployed": "2025-08-18T02:26:53.063Z",
-        #             "base_model": "yolov8m.pt",
-        #             "training_package": "Ultralytics8",
-        #             "training_algorithm": "Yolo",
-        #             "confidence_threshold": 0.5,
-        #             "global_preprocessing": [
-        #                 {
-        #                     "type": "resize",
-        #                     "configuration": {
-        #                         "width": 640,
-        #                         "height": 640,
-        #                         "preserve_aspect": true
-        #                     }
-        #                 }
-        #             ]
-        #         },
-        #         "artifacts": {
-        #             "pt": {
-        #                 "image_size": [],
-        #                 "model_path": "/app/models/top-od-model/ObjectDetection/yolo/1/model.pt"
-        #             }
-        #         },
-        #         "model_name": "yolo",
-        #         "model_role": "top-od-model",
-        #         "model_type": "ObjectDetection",
-        #         "model_version": "1"
-        #     }
-        # }
-
-        # However, the required format for initializing AIS repo models is:
-        # {
-        #     "top-od-model": {
-        #     "model_path": "/app/models/top-od-model/ObjectDetection/yolo/1/model.pt",
-        #     "image_size": [
-        #         640,
-        #         640
-        #     ],
-        #     "model_type": "objectdetection",
-        #     "algorithm": "yolo",
-        #     "package": "ultralytics"
-        #     }
-        # }
-
         version = kwargs.get("version", self.version)
-        use_model_internal_tiling = kwargs.get("use_model_internal_tiling", False)
 
         # Validate version
         if version not in self._MODEL_ROLES_HANDLERS:
@@ -199,25 +149,13 @@ class PipelineBase(metaclass=ABCMeta):
 
         handler = self._MODEL_ROLES_HANDLERS[version]
 
-        # Version 1: Only supports model internal tiling
+        # Version 1: No longer supported
         if handler is None:
-            if not use_model_internal_tiling:
-                raise ValueError(
-                    f"Gadget version {version} only supports model internal tiling. "
-                    f"Either set use_model_internal_tiling=True or upgrade to version 2."
-                )
-            self.logger.info("Using legacy model internal tiling (deprecated)")
-            return model_roles, None
+            raise ValueError(f"Gadget version {version} is no longer supported. Please upgrade to the latest version.")
 
         # Version 2+: Supports global preprocessing
         instance = handler(model_roles)
-
-        if use_model_internal_tiling:
-            self.logger.warning("Model internal tiling is deprecated. Consider upgrading Gadget to use global preprocessing.")
-            return instance.get_metadata(use_model_internal_tiling=True), None
-        else:
-            global_preprocessing = instance.get_global_preprocessing()
-            return instance.get_metadata(use_model_internal_tiling=False), global_preprocessing
+        return instance.get_metadata(), instance.get_global_preprocessing()
 
     def load_models(self, model_roles: dict, configs: dict, filter: str = "-model", **kwargs: Any) -> None:
         """
@@ -231,11 +169,10 @@ class PipelineBase(metaclass=ABCMeta):
             configs (dict): the configs from pipeline_def.json or the runtime.
             filter (str, optional): filter models by name. Defaults to "-model".
             verbose (bool, optional): whether to log the original and parsed model roles. Defaults to False.
-            use_model_internal_tiling (bool, optional): whether to use model internal tiling.
-                Defaults to False. Set to True for old Gadget versions.
         """
-        use_model_internal_tiling = kwargs.get("use_model_internal_tiling", False)
         parsed_model_roles, global_preprocessing = self._parse_model_roles(model_roles, **kwargs)
+        if not global_preprocessing:
+            raise ValueError("Global preprocessing is not defined in model roles.")
 
         if kwargs.get("verbose", False):
             self.logger.info(f"Original Model Roles: {json.dumps(model_roles, indent=2)}\n")
@@ -252,19 +189,14 @@ class PipelineBase(metaclass=ABCMeta):
             model_source = "Static" if "static" in Path(config_to_use["model_path"]).parts else "GoFactory"
             self._load_model(model_key, config_to_use, **kwargs)
 
-            if use_model_internal_tiling:
-                self.logger.warning(f"Model '{model_key}' will use model internal tiling. This is deprecated.")
-            elif global_preprocessing:
-                if model_key in global_preprocessing:
-                    self._preprocessing[model_key] = global_preprocessing[model_key]
-                    self.logger.info(f"Applied global preprocessing for '{model_key}'")
-                else:
-                    raise ValueError(
-                        f"Global preprocessing is enabled but no preprocessing config found for '{model_key}'. "
-                        f"Add preprocessing config in Gadget or static manifest."
-                    )
+            if model_key in global_preprocessing:
+                self._preprocessing[model_key] = global_preprocessing[model_key]
+                self.logger.info(f"Applied global preprocessing for '{model_key}'")
             else:
-                raise RuntimeError("Invalid state: global_preprocessing is None but use_model_internal_tiling is False. ")
+                raise ValueError(
+                    f"Global preprocessing is enabled but no preprocessing config found for '{model_key}'. "
+                    f"Add preprocessing config in Gadget or static manifest."
+                )
 
             self.logger.info(f"Successfully loaded {model_source} model: {model_key}\n")
         self.logger.info(f"Final loaded models: {list(self.models.keys())}\n")

@@ -8,7 +8,7 @@ from lmi_utils.pipeline_base.pipeline_base import PipelineBase
 
 class PipelineOD(PipelineBase):
     def load(self, model_roles: dict, configs: dict):
-        self.load_models(model_roles, configs, use_model_internal_tiling=False)
+        self.load_models(model_roles, configs)
 
     def warm_up(self, configs: dict):
         pass
@@ -106,7 +106,7 @@ def test_pipeline_OD(preprocessing_steps, expected_types):
 
 class PipelineAD(PipelineBase):
     def load(self, model_roles: dict, configs: dict):
-        self.load_models(model_roles, configs, use_model_internal_tiling=False)
+        self.load_models(model_roles, configs)
 
     def warm_up(self, configs: dict):
         pass
@@ -201,3 +201,10 @@ def test_pipeline_AD(preprocessing_steps, expected_types):
         assert orig_shape == h_shape, f"Shape mismatch: {orig_shape} vs {h_shape}"
 
     print(f"Test with steps {expected_types} passed!")
+
+
+def test_version_1_error():
+    pipeline = PipelineOD(version="1")
+    model_roles = {"mock-model": {"model_role": "mock-model"}}
+    with pytest.raises(ValueError, match="Gadget version 1 is no longer supported"):
+        pipeline.load(model_roles, {})

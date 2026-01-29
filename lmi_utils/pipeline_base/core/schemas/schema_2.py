@@ -36,12 +36,6 @@ class Details:
             defect_class_list=data.get("defect_class_list"),
         )
 
-    def get_preprocessing_by_type(self, preprocessing_type: str) -> Optional[Dict[str, Any]]:
-        for step in self.global_preprocessing:
-            if step.get("type") == preprocessing_type:
-                return step
-        return None
-
 
 @dataclass
 class Configs:
@@ -106,10 +100,8 @@ class Model:
             format=data.get("format", ""),
         )
 
-    def get_metadata(self, use_model_internal_tiling: bool) -> Dict[str, Any]:
+    def get_metadata(self) -> Dict[str, Any]:
         """Returns the metadata of the model as a dictionary."""
-        # check for tiling preprocessing
-        tiling_config = self.details.get_preprocessing_by_type("tile")
         metadata = {
             "model_path": self.artifacts.get(self.format, {}).model_path if self.format in self.artifacts else "",
             "image_size": self.artifacts.get(self.format, {}).image_size if self.format in self.artifacts else [],
@@ -117,15 +109,6 @@ class Model:
             "algorithm": self.details.training_algorithm.lower(),
             "package": self.details.training_package.lower(),
         }
-        if use_model_internal_tiling and tiling_config:
-            metadata["tile_size"] = [
-                tiling_config.get("configuration", {}).get("height", None),
-                tiling_config.get("configuration", {}).get("width", None),
-            ]
-            metadata["stride"] = [
-                tiling_config.get("configuration", {}).get("y_stride", None),
-                tiling_config.get("configuration", {}).get("x_stride", None),
-            ]
         return metadata
 
 
@@ -142,10 +125,10 @@ class ModelCollection:
         models = {role: Model.from_dict(model_info) for role, model_info in data.items() if model_info is not None}
         return cls(models=models)
 
-    def get_metadata(self, use_model_internal_tiling: bool) -> Dict[str, Any]:
+    def get_metadata(self) -> Dict[str, Any]:
         configs = {}
         for role, model in self.models.items():
-            configs[role] = model.get_metadata(use_model_internal_tiling)
+            configs[role] = model.get_metadata()
         return configs
 
     def get_global_preprocessing(self) -> Dict[str, Any]:
@@ -194,6 +177,6 @@ class ModelSchemaV_2:
         return ModelCollection.from_dict(data)
 
     @staticmethod
-    def get_metadata(model_collection: ModelCollection, use_model_internal_tiling: bool = True) -> Dict[str, Any]:
+    def get_metadata(model_collection: ModelCollection) -> Dict[str, Any]:
         """Returns the metadata of the model collection."""
-        return model_collection.get_metadata(use_model_internal_tiling)
+        return model_collection.get_metadata()
