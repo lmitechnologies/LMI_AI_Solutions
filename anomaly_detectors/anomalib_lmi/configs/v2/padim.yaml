@@ -1,0 +1,50 @@
+model:
+  class_name: "Padim"
+  params:
+    backbone: "resnet18"
+    layers: ["layer1", "layer2", "layer3"]
+    pre_trained: true
+    image_size: [224, 224]
+
+data:
+  name: "dataset"
+  root: "/app/data/toothbrush"
+  normal_dir: "train"
+  extensions: [".png"]
+  train_batch_size: 32
+  eval_batch_size: 32
+  num_workers: 8
+  test_split_mode: "synthetic"
+  test_split_ratio: 0.2
+  val_split_mode: "same_as_test"
+  val_split_ratio: 0.5
+  train_augmentations: # feel free to remove or modify augmentations
+    - class_name: "RandomHorizontalFlip"
+      params:
+        p: 0.5
+  
+    - class_name: "RandomVerticalFlip"
+      params:
+        p: 0.2
+      
+    - class_name: "RandomResizedCrop"
+      params:
+        size: [224, 224]
+        scale: [0.8, 1.0]
+
+    - class_name: "ColorJitter"
+      params:
+        brightness: 0.4
+        contrast: 0.4
+        saturation: 0.4
+        hue: 0.2
+
+    - class_name: "RandomGrayscale"
+      params:
+        p: 0.1
+
+engine:
+  max_epochs: 1
+  accelerator: "auto"
+  devices: 1
+  default_root_dir: "/app/out/"
