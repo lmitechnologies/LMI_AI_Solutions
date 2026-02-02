@@ -188,7 +188,7 @@ class PipelineBase(metaclass=ABCMeta):
 
             if model_key in global_preprocessing:
                 self._preprocessing[model_key] = global_preprocessing[model_key]
-                self.logger.info(f"Applied global preprocessing for '{model_key}'")
+                self.logger.info(f"Loaded global preprocessing for '{model_key}'")
             else:
                 raise ValueError(
                     f"Global preprocessing is enabled but no preprocessing config found for '{model_key}'. "
