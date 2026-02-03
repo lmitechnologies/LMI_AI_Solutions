@@ -109,7 +109,7 @@ jobs:
 
       - name: Install LMI AI Solutions packages
         run: |
-          pip install -e object_detectors -e anomaly_detectors -e lmi_utils -e classifiers
+          pip install -e .
           
       - name: Run tests
         shell: bash
