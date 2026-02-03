@@ -4,7 +4,7 @@ import numpy as np
 import torch
 
 from .base import BaseProcessor
-from .handlers import undo_resize, undo_tile
+from .handlers import revert_resize, revert_tile
 
 
 class Reconstructor(BaseProcessor):
@@ -18,8 +18,8 @@ class Reconstructor(BaseProcessor):
 
     def _register_default_undo_handlers(self):
         """Registers built-in undo handlers."""
-        self.register_undo_handler("tile", undo_tile)
-        self.register_undo_handler("resize", undo_resize)
+        self.register_undo_handler("tile", revert_tile)
+        self.register_undo_handler("resize", revert_resize)
 
     def register_undo_handler(self, name: str, undo_func: Callable) -> None:
         """

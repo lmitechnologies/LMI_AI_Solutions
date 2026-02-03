@@ -54,7 +54,7 @@ def tile(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch
 
 
 @torch.inference_mode()
-def undo_tile(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torch.Tensor]:
+def revert_tile(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torch.Tensor]:
     """
     undoes the 'tile' operation.
     Args:

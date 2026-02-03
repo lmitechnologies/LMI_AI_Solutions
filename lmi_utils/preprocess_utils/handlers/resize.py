@@ -38,7 +38,7 @@ def resize(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[tor
 
 
 @torch.inference_mode()
-def undo_resize(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torch.Tensor]:
+def revert_resize(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torch.Tensor]:
     """
     Reverses the composite 'resize_and_pad' operation.
     Args:
