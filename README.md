@@ -31,10 +31,7 @@ There are two options to use this repository:
 Use this option if you only want to use the tools without modifying the code.
 
 ```bash
-pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=lmi_utils&subdirectory=lmi_utils"
-pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=object_detectors&subdirectory=object_detectors"
-pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=anomaly_detectors&subdirectory=anomaly_detectors"
-pip install -e "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais#egg=classifiers&subdirectory=classifiers"
+pip install "git+https://github.com/lmitechnologies/LMI_AI_Solutions.git@ais"
 ```
 
 ### Option 2: Install from Source (Recommended for developers)
@@ -46,9 +43,9 @@ git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 cd LMI_AI_Solutions
 ```
 
-2. Install packages in editable mode:
+2. Install package in editable mode:
 ```bash
-pip install -e lmi_utils -e object_detectors -e anomaly_detectors -e classifiers
+pip install -e .
 ```
 
 ### Running Scripts
@@ -56,7 +53,7 @@ pip install -e lmi_utils -e object_detectors -e anomaly_detectors -e classifiers
 Run any scripts in this repo, for example:
 
 ```bash
-python -m label_utils.plot_labels -h
+python -m label_utils.plot_with_json -h
 ```
 
 ## Development Guidelines
