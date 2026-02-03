@@ -4,10 +4,7 @@ from pathlib import Path
 import tomlkit
 
 FILES_TO_UPDATE = [
-    "classifiers/pyproject.toml",
-    "anomaly_detectors/pyproject.toml",
-    "lmi_utils/pyproject.toml",
-    "object_detectors/pyproject.toml",
+    "pyproject.toml",
 ]
 
 
