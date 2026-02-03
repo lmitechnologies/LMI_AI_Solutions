@@ -1,9 +1,9 @@
 import json
 import logging
-import os
 from enum import Enum
 from itertools import product
 from math import ceil
+from pathlib import Path
 
 import torch
 from torch.nn import functional as F
@@ -181,6 +181,8 @@ def downscale_image(image: torch.Tensor, size: tuple, mode: ScaleMode = ScaleMod
 class Tiler:
     logger = logging.getLogger("Tiler")
 
+    EXPECTED_FIELDS = {"tile_size", "stride", "im_size", "scale_size", "batch_size", "num_channel", "n_tiles"}
+
     def __init__(self, tile_size, stride):
         """init tiler
 
@@ -193,21 +195,28 @@ class Tiler:
         if isinstance(stride, int):
             stride = [stride] * 2
 
-        if not isinstance(tile_size, list) or len(tile_size) != 2:
-            raise Exception(f"tile size must be a list of two elements. Got: {tile_size}")
-        if not isinstance(stride, list) or len(stride) != 2:
-            raise Exception(f"stride must be a list of two elements. Got: {stride}")
-        if stride[0] > tile_size[0] or stride[1] > tile_size[1]:
-            raise Exception("Stride size must be smaller or equal to tile size")
+        self.validate_tile_and_stride(tile_size, stride)
 
         self.tile_size = tile_size
         self.stride = stride
-        self.im_size: list
-        self.scale_size: list
-        self.batch_size: int
-        self.num_channel: int
-        self.n_tiles: list
+        self.im_size: list = None
+        self.scale_size: list = None
+        self.batch_size: int = None
+        self.num_channel: int = None
+        self.n_tiles: list = None
         self._blend_mask_cache = {}  # Cache for blend masks by overlap mode
+
+    @classmethod
+    def validate_tile_and_stride(cls, tile_size, stride):
+        """Validate that tile size and stride are set correctly."""
+        if not tile_size or not stride:
+            raise ValueError("Tile size and stride must be set.")
+        if not isinstance(tile_size, list) or len(tile_size) != 2:
+            raise ValueError(f"tile size must be a list of two elements. Got: {tile_size}")
+        if not isinstance(stride, list) or len(stride) != 2:
+            raise ValueError(f"stride must be a list of two elements. Got: {stride}")
+        if stride[0] > tile_size[0] or stride[1] > tile_size[1]:
+            raise ValueError("Stride size must be smaller or equal to tile size")
 
     @classmethod
     def from_json(cls, json_path):
@@ -216,27 +225,98 @@ class Tiler:
         Args:
             json_path (str): path to a metadata json
         """
-        obj = cls(0, 0)  # init an obj using dummy sizes
         with open(json_path, "r") as file:
             metadata = json.load(file)
+            tile_size = metadata.get("tile_size")
+            stride = metadata.get("stride")
+            if tile_size is None or stride is None:
+                raise ValueError("JSON metadata must contain 'tile_size' and 'stride'")
 
+        obj = cls(tile_size, stride)
         for k, v in metadata.items():
-            setattr(obj, k, v)
+            if k in cls.EXPECTED_FIELDS and getattr(obj, k, None) is None:
+                setattr(obj, k, v)
         return obj
 
+    @classmethod
+    def from_dict(cls, metadata: dict):
+        """init tiler from a metadata dict
+
+        Args:
+            metadata (dict): metadata dictionary
+        """
+        if not metadata:
+            raise ValueError("Metadata dictionary cannot be empty")
+
+        tile_size = metadata.get("tile_size")
+        stride = metadata.get("stride")
+        if tile_size is None or stride is None:
+            raise ValueError("Metadata dictionary must contain 'tile_size' and 'stride'")
+
+        obj = cls(tile_size, stride)
+        for k, v in metadata.items():
+            if k in cls.EXPECTED_FIELDS and getattr(obj, k, None) is None:
+                setattr(obj, k, v)
+        return obj
+
+    def to_dict(self):
+        """save tiler metadata to a dict
+
+        Returns:
+            dict: tiler metadata
+        """
+        metadata = {}
+        for field in self.EXPECTED_FIELDS:
+            value = getattr(self, field, None)
+            if value is None:
+                raise RuntimeError(f"Tiler metadata incomplete. Missing field: {field}")
+            metadata[field] = value
+        return metadata
+
+    def write_metadata(self, out_path):
+        """write tiler metadata to a json file
+
+        Args:
+            out_path (str | Path): a output folder or a output file path
+        """
+
+        def save_json(data, json_file):
+            with open(json_file, "w") as f:
+                json.dump(data, f)
+
+        out_path = Path(out_path)
+        ext = out_path.suffix.lower()
+        if ext == ".json":
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            save_json(self.to_dict(), out_path)
+        else:
+            out_path.mkdir(parents=True, exist_ok=True)
+            save_json(self.to_dict(), out_path / "metadata.json")
+
+    def _validate_state(self):
+        """Validate that all required state is set"""
+        missing = [f for f in self.EXPECTED_FIELDS if getattr(self, f, None) is None]
+        if missing:
+            raise RuntimeError(f"Tiler state incomplete. Missing: {missing}. Call tile() first or ensure metadata contains all fields.")
+
     @torch.inference_mode()
-    def tile(self, im: torch.Tensor, mode=ScaleMode.PADDING) -> torch.Tensor:
+    def tile(self, im: torch.Tensor, mode="padding") -> torch.Tensor:
         """generate tiles from the image. Will resize images if necessary.
 
         Args:
             im (Tensor): input image in the format: [b,c,h,w]
-            mode (ScaleMode, optional): scale mode. Defaults to ScaleMode.PADDING.
+            mode (str | ScaleMode, optional): scale mode. Defaults to "padding".
 
         Returns:
             Tensor: resized tiles
         """
+        if not isinstance(mode, (str, ScaleMode)):
+            raise ValueError(f"mode must be str or ScaleMode enum. Got: {type(mode)}")
+
+        # Convert string to enum if needed
         if not isinstance(mode, ScaleMode):
-            raise Exception("mode must be a ScaleMode object")
+            mode = ScaleMode(mode)
+
         self.batch_size, self.num_channel, im_h, im_w = im.shape
         self.im_size = [im_h, im_w]
         device = im.device
@@ -273,25 +353,39 @@ class Tiler:
     def untile(
         self,
         tiles,
-        scale_mode=ScaleMode.PADDING,
-        overlap_mode: OverlapMode = OverlapMode.AVERAGE,
+        scale_mode="padding",
+        overlap_mode="average",
     ):
         """convert tiles into original image. Apply blending for smooth transitions.
 
         Args:
             tiles (Torch): the tiles tensor in the format: [n_tiles*batch, c, tile_h, tile_w]
-            mode (ScaleMode, optional): scale mode. Defaults to ScaleMode.PADDING.
-            overlap_mode (OverlapMode, optional): overlap handling mode. Defaults to OverlapMode.AVERAGE.
+            scale_mode (str | ScaleMode, optional): scale mode. Defaults to "padding".
+            overlap_mode (str | OverlapMode, optional): overlap handling mode. Defaults to "average".
 
         Returns:
             Tensor: the reconstructed image with smooth blending
         """
-        if not isinstance(scale_mode, ScaleMode):
-            raise Exception("mode must be a ScaleMode object")
-        if not isinstance(overlap_mode, OverlapMode):
-            raise Exception("overlap_mode must be an OverlapMode object")
+        self._validate_state()
+        if not isinstance(scale_mode, (str, ScaleMode)):
+            raise ValueError(f"scale_mode must be str or ScaleMode enum. Got: {type(scale_mode)}")
+        if not isinstance(overlap_mode, (str, OverlapMode)):
+            raise ValueError(f"overlap_mode must be str or OverlapMode enum. Got: {type(overlap_mode)}")
 
-        _, num_channel, tile_h, tile_w = tiles.shape
+        # Convert string to enum if needed
+        if not isinstance(scale_mode, ScaleMode):
+            scale_mode = ScaleMode(scale_mode)
+        if not isinstance(overlap_mode, OverlapMode):
+            overlap_mode = OverlapMode(overlap_mode)
+
+        # Validate input shape
+        n_tiles_total, num_channel, tile_h, tile_w = tiles.shape
+        expected_n_tiles = self.n_tiles[0] * self.n_tiles[1] * self.batch_size
+        if n_tiles_total != expected_n_tiles:
+            raise ValueError(f"Expected {expected_n_tiles} tiles, got {n_tiles_total}")
+        if [tile_h, tile_w] != self.tile_size:
+            raise ValueError(f"Expected tile size {self.tile_size}, got [{tile_h}, {tile_w}]")
+
         tiles = tiles.contiguous().view(-1, self.batch_size, num_channel, tile_h, tile_w)
         device = tiles.device
 
@@ -311,7 +405,7 @@ class Tiler:
                     tile,
                 )
         else:
-            cache_key = (overlap_mode.value, str(device))
+            cache_key = (overlap_mode.value, device.type, device.index if device.index is not None else -1)
             if cache_key not in self._blend_mask_cache:
                 self._blend_mask_cache[cache_key] = create_blend_mask(self.tile_size, self.stride, overlap_mode, device)
 
@@ -336,22 +430,3 @@ class Tiler:
             im = torch.div(im, weight_sum + eps)
 
         return downscale_image(im, self.im_size, scale_mode).to(tiles.dtype)
-
-    def write_metadata(self, out_path):
-        """write tiler metadata to a json file
-
-        Args:
-            out_path (str): a output folder or a output file path
-        """
-
-        def save_json(data, json_file):
-            with open(json_file, "w") as f:
-                json.dump(data, f)
-
-        ext = os.path.splitext(out_path)[-1]
-        if ext == ".json":
-            os.makedirs(os.path.dirname(out_path), exist_ok=True)
-            save_json(self.__dict__, out_path)
-        else:
-            os.makedirs(out_path, exist_ok=True)
-            save_json(self.__dict__, os.path.join(out_path, "metadata.json"))

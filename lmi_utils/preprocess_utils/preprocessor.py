@@ -1,8 +1,13 @@
+from typing import Any, Callable, Dict, List, Tuple, Union
+
 import numpy as np
-from image_utils.img_resize import resize_and_pad
+import torch
+
+from .base import BaseProcessor
+from .handlers import resize, tile
 
 
-class Preprocessor:
+class Preprocessor(BaseProcessor):
     """
     A class to run a dynamic pipeline of preprocessing steps on an image.
 
@@ -17,47 +22,72 @@ class Preprocessor:
         self._handlers = {}
         self._register_default_handlers()
 
-    def _register_default_handlers(self):
+    def _register_default_handlers(self) -> None:
         """Registers the built-in processing functions."""
-        self.register_handler("resize", resize_and_pad)
+        self.register_handler("resize", resize)
+        self.register_handler("tile", tile)
 
-    def register_handler(self, name: str, handler_func):
+    def register_handler(self, name: str, handler_func: Callable) -> None:
         """
         Registers a new handler function or overwrites an existing one.
 
-        The handler_func must accept 'image' as its first argument,
-        followed by keyword arguments matching its configuration.
+        Args:
+            name (str): Unique identifier for this handler (e.g., "resize", "tile").
+            handler_func (callable): Processing function with signature:
+                (images: list[torch.Tensor], config: dict) -> tuple[list[torch.Tensor], dict]
+
+                - images: List of (H, W, C) torch tensors
+                - config: Handler-specific configuration dictionary
+                - Returns: (processed_images, metadata_dict)
+                    - processed_images: List of (H, W, C) tensors
+                    - metadata_dict: Dictionary containing operation metadata
+
         """
         if not callable(handler_func):
             raise TypeError(f"Handler for '{name}' must be a callable function.")
         self._handlers[name] = handler_func
 
-    def preprocess(self, image: np.ndarray, processing_steps: list) -> np.ndarray:
+    def preprocess(
+        self, images: Union[List[Union[np.ndarray, torch.Tensor]], np.ndarray, torch.Tensor], processing_steps: List[Dict[str, Any]]
+    ) -> Tuple[List[Union[np.ndarray, torch.Tensor]], List[Dict[str, Any]]]:
         """
-        Applies a sequence of preprocessing steps to the input image.
+        Runs the preprocessing pipeline.
 
         Args:
-            image (np.ndarray): The input image to preprocess.
-            processing_steps (list): A list of dictionaries, each specifying
-                                     a processing step with its parameters.
+            images (np.ndarray | torch.Tensor | list): Input image(s) in format (H, W, C).
+            processing_steps (list): List of config dictionaries.
 
         Returns:
-            np.ndarray: The preprocessed image.
+            processed_imgs (list[np.ndarray | torch.Tensor]): list of (H, W, C).
+            history (list[dict]): Metadata chain for reconstruction.
         """
-        im_out = image
-        operators = []
+        if not isinstance(images, list):
+            images = [images]
+        self.validate_image_list(images, stage="preprocessing")
+        self.validate_steps(processing_steps)
+
+        # convert to tensor if needed
+        processed_imgs, is_numpy = self.to_tensor_list(images)
+
+        history = []
         for step in processing_steps:
-            op_name = step.get("type")
-            config = step.get("configuration", {})
+            op_name = step["type"]
+            config = step["configuration"]
             if op_name not in self._handlers:
                 raise ValueError(f"Handler for '{op_name}' is not registered.")
-            if not isinstance(config, dict):
-                raise TypeError(f"Configuration for '{op_name}' must be a dictionary.")
-            if config is None or config == {}:
-                raise ValueError(f"Configuration for '{op_name}' cannot be None or empty.")
 
-            handler_func = self._handlers[op_name]
-            # Pass the current image and step parameters to the handler
-            im_out, operators = handler_func(im_out, **config, operators=operators, return_operators=True)
+            # Call the handler
+            handler = self._handlers[op_name]
+            new_images, metadata = handler(processed_imgs, config)
 
-        return im_out, operators
+            # Validate handler output
+            self.validate_handler_output(new_images, op_name, expected_type="handler")
+            if not isinstance(metadata, dict):
+                raise TypeError(f"Handler '{op_name}' must return metadata as dict, got {type(metadata)}")
+
+            # Save Metadata for reconstruction
+            step_record = {"type": op_name, "configuration": metadata}
+            history.append(step_record)
+            processed_imgs = new_images
+
+        return self.from_tensor_list(processed_imgs, is_numpy), history
