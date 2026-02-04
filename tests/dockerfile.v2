@@ -16,15 +16,8 @@ RUN pip install scikit-learn tensorboard numba cuda-python==12.9.0
 # Install fixed version of numpy
 RUN pip install 'numpy<2' 'ultralytics<8.4' albumentations onnx rfdetr
 
-# Installing from anomalib src
-RUN git clone -b v2.2.0 https://github.com/openvinotoolkit/anomalib.git && cd anomalib && pip install -e .
-RUN anomalib install
-
-# clone LMI AI Solutions repository
-RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git
-RUN cd LMI_AI_Solutions && git submodule update --init object_detectors/submodules/yolov5
-RUN cd LMI_AI_Solutions && pip3 install -e object_detectors && pip3 install -e anomaly_detectors && \
-    pip3 install -e lmi_utils && pip3 install -e classifiers
+# Installing anomalib
+RUN pip install anomalib==2.2.0
 
 # install git lfs 
 RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash

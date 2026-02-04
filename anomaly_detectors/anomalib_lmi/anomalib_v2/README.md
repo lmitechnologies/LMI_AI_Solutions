@@ -76,7 +76,7 @@ RUN anomalib install
 
 RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 RUN cd LMI_AI_Solutions && git submodule update --init object_detectors/submodules/yolov5
-RUN cd LMI_AI_Solutions && pip3 install -e object_detectors && pip3 install -e anomaly_detectors && pip3 install -e lmi_utils && pip3 install -e classifiers
+RUN cd LMI_AI_Solutions && pip3 install -e .
 ```
 
 The docker-compose.yaml for training is the following:
@@ -141,7 +141,7 @@ RUN pip3 install --no-cache-dir --ignore-installed "PyYAML>=5.3.1" && \
     pip3 install --no-cache-dir ultralytics scikit-guess scipy pycocotools
 
 RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git && cd LMI_AI_Solutions && \
-    pip3 install --no-cache-dir -e lmi_utils -e object_detectors -e anomaly_detectors -e classifiers
+    pip3 install --no-cache-dir -e .
 RUN pip3 install --user opencv-python==4.6.0.66
 RUN pip3 install onnx onnx_graphsurgeon onnxruntime
 ENV PATH="/usr/src/tensorrt/bin:${PATH}"

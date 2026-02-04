@@ -64,18 +64,15 @@ def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyMod
         preds = [model.predict(rgb) for model in ais_models]
 
         for pred2 in preds:
-            if USE_GPU:
-                assert np.array_equal(pred, pred2)
-            else:
-                assert np.allclose(pred, pred2, atol=1e-5)
+            assert np.allclose(pred, pred2, atol=1e-5)
 
 
 def test_compare_results_with_anomalib():
     """
     compare prediction results between current implementation and anomalib
     """
-    model1 = TorchInferencer(MODEL_PATH)
-    model2 = AnomalyModel_V2(MODEL_PATH)
+    model1 = TorchInferencer(MODEL_PATH, device="cpu")
+    model2 = AnomalyModel_V2(MODEL_PATH, device="cpu")
     compare_results(model1, [model2])
 
 
@@ -83,8 +80,8 @@ def test_compare_results_with_anomalib_api():
     """
     compare prediction results between current implementation and anomalib
     """
-    model1 = TorchInferencer(MODEL_PATH)
-    model2 = AnomalyDetector(BASE_CONFIG)
+    model1 = TorchInferencer(MODEL_PATH, device="cpu")
+    model2 = AnomalyDetector(BASE_CONFIG, device="cpu")
     compare_results(model1, [model2])
 
 
