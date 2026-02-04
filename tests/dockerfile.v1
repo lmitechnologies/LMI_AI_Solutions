@@ -19,12 +19,6 @@ RUN pip install 'numpy<2' 'ultralytics<8.4' albumentations onnx rfdetr
 # Installing from anomalib src
 RUN pip install anomalib==1.1.1 && anomalib install --option core
 
-# clone LMI AI Solutions repository
-RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git
-RUN cd LMI_AI_Solutions && git submodule update --init object_detectors/submodules/yolov5
-RUN cd LMI_AI_Solutions && pip3 install -e object_detectors && pip3 install -e anomaly_detectors && \
-    pip3 install -e lmi_utils && pip3 install -e classifiers
-
 # install git lfs 
 RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
 RUN apt-get install git-lfs

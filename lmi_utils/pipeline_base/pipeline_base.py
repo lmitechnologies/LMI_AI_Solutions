@@ -174,6 +174,7 @@ class PipelineBase(metaclass=ABCMeta):
         if kwargs.get("verbose", False):
             self.logger.info(f"Original Model Roles: {json.dumps(model_roles, indent=2)}\n")
             self.logger.info(f"Parsed Model Roles: {json.dumps(parsed_model_roles, indent=2)}\n")
+            self.logger.info(f"Global Preprocessing: {json.dumps(global_preprocessing, indent=2)}\n")
 
         # filter configs to get target model keys
         target_model_keys = [k for k in model_roles.keys() if filter in k]

@@ -153,9 +153,10 @@ def imgs_dota8():
 
 class Test_Yolo_Det:
     def test_compare_with_ultralytics(self, imgs_coco):
+        device = "cpu"
         for model_path in OD_DET_MODELS:
             ults_model = YOLO(model_path)
-            our_model = Yolo(model_path, device=DEVICE)
+            our_model = Yolo(model_path, device=device)
             for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -163,7 +164,7 @@ class Test_Yolo_Det:
                     conf=0.5,
                     iou=0.4,
                     max_det=300,
-                    device="cuda" if torch.cuda.is_available() else "cpu",
+                    device=device,
                 )
                 ults_out = results[0].cpu().numpy()
 
@@ -205,9 +206,10 @@ class Test_Yolo_Det:
 
 class Test_Yolo_Seg:
     def test_compare_with_ultralytics(self, imgs_coco):
+        device = "cpu"
         for model_path in OD_SEG_MODELS:
             ults_model = YOLO(model_path)
-            our_model = YoloSeg(model_path, device=DEVICE)
+            our_model = YoloSeg(model_path, device=device)
             for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -216,7 +218,7 @@ class Test_Yolo_Seg:
                     iou=0.4,
                     max_det=300,
                     retina_masks=True,
-                    device="cuda" if torch.cuda.is_available() else "cpu",
+                    device=device,
                 )
                 ults_out = results[0].cpu().numpy()
 
@@ -262,9 +264,10 @@ class Test_Yolo_Seg:
 
 class Test_Yolo_Obb:
     def compare_with_ultralytics(self, imgs, model_paths):
+        device = "cpu"
         for model_path in model_paths:
             ults_model = YOLO(model_path)
-            our_model = YoloObb(model_path, device=DEVICE)
+            our_model = YoloObb(model_path, device=device)
             for _img, resized, _op in zip(*imgs):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -272,7 +275,7 @@ class Test_Yolo_Obb:
                     conf=0.5,
                     iou=0.4,
                     max_det=300,
-                    device="cuda" if torch.cuda.is_available() else "cpu",
+                    device=device,
                 )
                 ults_out = results[0].cpu().numpy()
 
@@ -346,9 +349,10 @@ class Test_Yolo_Obb:
 
 class Test_Yolo_Pose:
     def test_compare_with_ultralytics(self, imgs_coco):
+        device = "cpu"
         for model_path in OD_POSE_MODELS:
             ults_model = YOLO(model_path)
-            our_model = YoloPose(model_path, device=DEVICE)
+            our_model = YoloPose(model_path, device=device)
             for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -356,7 +360,7 @@ class Test_Yolo_Pose:
                     conf=0.5,
                     iou=0.4,
                     max_det=300,
-                    device="cuda" if torch.cuda.is_available() else "cpu",
+                    device=device,
                 )
                 ults_out = results[0].cpu().numpy()
 
