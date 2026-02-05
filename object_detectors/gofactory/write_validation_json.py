@@ -27,7 +27,7 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
         w (int): image width
 
     Returns:
-        dict: a dictionary contains 'classes','boxes','masks'
+        dict: a dictionary contains 'classes' and 'boxes'. If available, 'masks' will also be included.
     """
     boxes = []
     masks = []
@@ -35,7 +35,7 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
     for annot in annotations:
         label_names.append(annot.label_id)
         if annot.type == AnnotationType.BOX:
-            boxes.append(annot.value.to_numpy())
+            boxes.append(annot.value.to_numpy())    # [x1,y1,x2,y2,angle]
         elif annot.type == AnnotationType.MASK:
             mask = annot.value.to_numpy(h=h,w=w)
             masks.append(mask)
@@ -45,11 +45,61 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
             masks.append(mask)
         else:
             raise Exception(f'Not supported type: {type(annot.type)}')
-    return {
+    dt = {
         'boxes': np.array(boxes),
-        'masks': np.array(masks),
         'classes': np.array(label_names)
     }
+    if len(masks) > 0:
+        dt['masks'] = np.array(masks)
+    return dt
+    
+    
+def calculate_iou_matrix(labels:dict, preds:dict, device):
+    """calculate iou matrix for given labels and predictions."""
+    ious = None
+    if 'masks' in preds:
+        n_gt = len(labels['masks'])
+        n_pred = len(preds['masks'])
+        if n_gt and n_pred:
+            gt_masks = torch.from_numpy(labels['masks']).float().to(device)
+            pred_masks = torch.from_numpy(preds['masks']).float().to(device)
+            ious = mask_iou(gt_masks.view(gt_masks.shape[0], -1),pred_masks.view(pred_masks.shape[0],-1))
+    else:
+        n_gt = len(labels['boxes'])
+        n_pred = len(preds['boxes'])
+        if n_gt and n_pred:
+            gt_boxes = torch.from_numpy(labels['boxes'][:,:-1]).float().to(device)
+            pred_boxes = torch.from_numpy(preds['boxes'][:,:-1]).float().to(device)
+            ious = box_iou(gt_boxes, pred_boxes)
+    return ious, n_gt, n_pred
+
+
+def write_iou_json(ious, n_gt, n_pred, out_iou_dir, file_id):
+    # write ious to a json file
+    ious_out = [] if ious is None else ious.cpu().numpy().tolist()
+    iou_json = dict(
+        n_gt=n_gt,
+        n_pred=n_pred,
+        iou=ious_out # a shape of n_gt x n_pred
+    )
+    os.makedirs(out_iou_dir, exist_ok=True)
+    out_iou_path = os.path.join(out_iou_dir, f'{file_id}.json')
+    with open(out_iou_path, 'w') as f:
+        json.dump(iou_json, f)
+
+
+def update_annotation_ids(annotations:list[Annotation], start_id=0):
+    """update annotation ids in place, starting from start_id."""
+    for i, annot in enumerate(annotations):
+        annot.id = str(start_id + i)
+    return
+
+
+def check_annotation_types(annotations:list[Annotation]):
+    """check if all annotations are of same supported types."""
+    types = set([annot.type for annot in annotations])
+    if len(types) > 1:
+        raise Exception(f'Annotations contain multiple types: {types}. Only one type is supported for training.')
 
 
 def write_json(model_path, config_path, image_dir, label_path, out_pred_json, out_image_dir, out_iou_dir, image_size: tuple[int,int] | None, confidence=0.01, iou=0.45, max_det=600):
@@ -63,7 +113,7 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         out_pred_json (str): a full output json file path
         out_image_dir (str): path to save output images
         out_iou_dir (str): a full output folder for iou matrix json files
-        image_size (tuple[int] | None, optional): a target image size for the model. Defaults to None.
+        image_size (tuple[int,int] | None, optional): a target image size for the model. Defaults to None.
         confidence (float, optional): a confidence threshold. Defaults to 0.01.
         iou (float, optional): an iou threshold for NMS. Defaults to 0.45.
         max_det (int, optional): the max number of detections. Defaults to 600.
@@ -80,49 +130,20 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         if im is None:
             raise Exception(f'Could not read image {p}')
         
-        # get labels and preds
+        # preprocess image and annotations
         im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        h,w = im.shape[:2]
-        h_train,w_train = image_size if image_size is not None else (h,w)
-
+        h0,w0 = im.shape[:2]
+        h_train,w_train = image_size if image_size is not None else (h0,w0)
+        check_annotation_types(file_annot.annotations)
         im_resized, annotations_resized = resize_annotated_image(im, file_annot.annotations, w_train, h_train, maintain_aspect_ratio=True)
         im_padded, annotations_padded, _ = pad_annotated_image(im_resized, annotations_resized, w_train, h_train)
-        labels = parse_annotations(annotations_padded, h_train, w_train)
-
-        preds,_ = model.predict(im_padded, confidence, iou=iou, max_det=max_det, return_segments=False)
         
-        # get ious
-        ious = None
-        if 'masks' in preds:
-            n_gt = len(labels['masks'])
-            n_pred = len(preds['masks'])
-            if n_gt and n_pred:
-                gt_masks = torch.from_numpy(labels['masks']).float().to(model.device)
-                pred_masks = torch.from_numpy(preds['masks']).to(model.device)
-                ious = mask_iou(gt_masks.view(gt_masks.shape[0], -1),pred_masks.view(pred_masks.shape[0],-1))
-        else:
-            n_gt = len(labels['boxes'])
-            n_pred = len(preds['boxes'])
-            if n_gt and n_pred:
-                gt_boxes = torch.from_numpy(labels['boxes'][:,:-1]).to(model.device)
-                pred_boxes = torch.from_numpy(preds['boxes']).to(model.device)
-                ious = box_iou(gt_boxes, pred_boxes)
-                
-        # write ious to a json file
-        ious_out = [] if ious is None else ious.cpu().numpy().tolist()
-        iou_json = dict(
-            n_gt=n_gt,
-            n_pred=n_pred,
-            iou=ious_out # a shape of n_gt x n_pred
-        )
-        os.makedirs(out_iou_dir, exist_ok=True)
-        out_iou_path = os.path.join(out_iou_dir, file_annot.id + '.json')
-        with open(out_iou_path, 'w') as f:
-            json.dump(iou_json, f)
+        preds,_ = model.predict(im_padded, confidence, iou=iou, max_det=max_det, return_segments=False)
         
         # add predictions to dataset
         logger.info(f'Found {len(preds["classes"])} predictions for {fname}')
         preds_padded = []
+        current_id = pred_annot_id
         for i in range(len(preds['classes'])):
             box = preds['boxes'][i]
             mask = preds['masks'][i] if 'masks' in preds else None
@@ -131,22 +152,37 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
             
             if mask is not None:
                 dt = dict(
-                    id=str(pred_annot_id), label_id=label_name, type=AnnotationType.MASK, value=Mask(mask), 
-                    confidence=score, 
+                    id=str(current_id), label_id=label_name, type=AnnotationType.MASK, value=Mask(mask), confidence=score, 
                 )
                 preds_padded.append(Annotation(**dt))
-                pred_annot_id += 1
+                current_id += 1
             else:
                 dt = dict(
-                    id=str(pred_annot_id), label_id=label_name, type=AnnotationType.BOX, value=Box(*box,angle=0), 
-                    confidence=score
+                    id=str(current_id), label_id=label_name, type=AnnotationType.BOX, value=Box(*box,angle=0), confidence=score
                 )
                 preds_padded.append(Annotation(**dt))
-                pred_annot_id += 1
+                current_id += 1
 
-        # remove padding and save image                
-        im_unpadded, preds_unpadded, _ = pad_annotated_image(im_padded, preds_padded, im_resized.shape[1], im_resized.shape[0])
-        _, annotations_unpadded, _ = pad_annotated_image(im_padded, annotations_padded, im_resized.shape[1], im_resized.shape[0])
+        # revert padding but keep resized
+        h_unpad,w_unpad = im_resized.shape[:2]
+        _, annotations_unpadded, _ = pad_annotated_image(im_padded, annotations_padded, w_unpad, h_unpad)
+        im_unpadded, preds_unpadded, is_deleted = pad_annotated_image(im_padded, preds_padded, w_unpad, h_unpad)
+        if is_deleted:
+            update_annotation_ids(preds_unpadded, start_id=pred_annot_id) # update annotation ids after deletion
+        pred_annot_id += len(preds_unpadded)
+        
+        # calculate iou matrix and write to json
+        labels = parse_annotations(annotations_unpadded, h_unpad, w_unpad)
+        preds = parse_annotations(preds_unpadded, h_unpad, w_unpad)
+        ious,n_gt,n_preds = calculate_iou_matrix(labels, preds, device=model.device)
+        write_iou_json(ious, n_gt, n_preds, out_iou_dir, file_annot.id)
+        
+        if len(annotations_unpadded) != n_gt:
+            raise Exception(f'Invalid number of labels after unpadding: {len(annotations_unpadded)} vs n_gt: {n_gt}')
+        if len(preds_unpadded) != n_preds:
+            raise Exception(f'Invalid number of predictions after unpadding: {len(preds_unpadded)} vs n_pred: {n_preds}')
+        
+        # save output image
         im_out = cv2.cvtColor(im_unpadded, cv2.COLOR_RGB2BGR)
         out_image_path = os.path.join(out_image_dir, file_annot.path)
         os.makedirs(os.path.dirname(out_image_path), exist_ok=True)
