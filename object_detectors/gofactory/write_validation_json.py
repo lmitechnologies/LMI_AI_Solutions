@@ -95,6 +95,13 @@ def update_annotation_ids(annotations:list[Annotation], start_id=0):
     return
 
 
+def check_annotation_types(annotations:list[Annotation]):
+    """check if all annotations are of same supported types."""
+    types = set([annot.type for annot in annotations])
+    if len(types) > 1:
+        raise Exception(f'Annotations contain multiple types: {types}. Only one type is supported for training.')
+
+
 def write_json(model_path, config_path, image_dir, label_path, out_pred_json, out_image_dir, out_iou_dir, image_size: tuple[int,int] | None, confidence=0.01, iou=0.45, max_det=600):
     """write predictions and labels to a json file
 
@@ -127,6 +134,7 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         h0,w0 = im.shape[:2]
         h_train,w_train = image_size if image_size is not None else (h0,w0)
+        check_annotation_types(file_annot.annotations)
         im_resized, annotations_resized = resize_annotated_image(im, file_annot.annotations, w_train, h_train, maintain_aspect_ratio=True)
         im_padded, annotations_padded, _ = pad_annotated_image(im_resized, annotations_resized, w_train, h_train)
         
