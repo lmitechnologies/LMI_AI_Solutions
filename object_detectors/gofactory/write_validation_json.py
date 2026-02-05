@@ -27,7 +27,7 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
         w (int): image width
 
     Returns:
-        dict: a dictionary contains 'classes','boxes','masks'
+        dict: a dictionary contains 'classes' and 'boxes'. If available, 'masks' will also be included.
     """
     boxes = []
     masks = []
@@ -35,7 +35,7 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
     for annot in annotations:
         label_names.append(annot.label_id)
         if annot.type == AnnotationType.BOX:
-            boxes.append(annot.value.to_numpy())
+            boxes.append(annot.value.to_numpy())    # [x1,y1,x2,y2,angle]
         elif annot.type == AnnotationType.MASK:
             mask = annot.value.to_numpy(h=h,w=w)
             masks.append(mask)
@@ -45,11 +45,13 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
             masks.append(mask)
         else:
             raise Exception(f'Not supported type: {type(annot.type)}')
-    return {
+    dt = {
         'boxes': np.array(boxes),
-        'masks': np.array(masks),
         'classes': np.array(label_names)
     }
+    if len(masks) > 0:
+        dt['masks'] = np.array(masks)
+    return dt
     
     
 def calculate_iou_matrix(labels:dict, preds:dict, device):
@@ -67,7 +69,7 @@ def calculate_iou_matrix(labels:dict, preds:dict, device):
         n_pred = len(preds['boxes'])
         if n_gt and n_pred:
             gt_boxes = torch.from_numpy(labels['boxes'][:,:-1]).float().to(device)
-            pred_boxes = torch.from_numpy(preds['boxes']).float().to(device)
+            pred_boxes = torch.from_numpy(preds['boxes'][:,:-1]).float().to(device)
             ious = box_iou(gt_boxes, pred_boxes)
     return ious, n_gt, n_pred
 
@@ -166,6 +168,11 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         preds = parse_annotations(preds_unpadded, h_unpad, w_unpad)
         ious,n_gt,n_preds = calculate_iou_matrix(labels, preds, device=model.device)
         write_iou_json(ious, n_gt, n_preds, out_iou_dir, file_annot.id)
+        
+        if len(annotations_unpadded) != n_gt:
+            raise Exception(f'Invalid number of labels after unpadding: {len(annotations_unpadded)} vs n_gt: {n_gt}')
+        if len(preds_unpadded) != n_preds:
+            raise Exception(f'Invalid number of predictions after unpadding: {len(preds_unpadded)} vs n_pred: {n_preds}')
         
         # save output image
         im_out = cv2.cvtColor(im_unpadded, cv2.COLOR_RGB2BGR)
