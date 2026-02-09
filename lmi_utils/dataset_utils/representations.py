@@ -167,7 +167,7 @@ class Box(Base):
             raise ValueError("Width must be positive for horizontal flip")
         if flipy and h0 <= 0:
             raise ValueError("Height must be positive for vertical flip")
-        if self.angle > 0:
+        if self.angle != 0:
             # convert to obb
             pts = rotate(*self.to_xywh(), rot_center="up_left", unit="degree")
             if flipx:
@@ -179,13 +179,9 @@ class Box(Base):
             self.angle = angle
         else:
             if flipx:
-                new_x_max = w0 - self.x_min
-                new_x_min = w0 - self.x_max
-                self.x_max, self.x_min = new_x_max, new_x_min
+                self.x_max, self.x_min = w0 - self.x_min, w0 - self.x_max
             if flipy:
-                new_y_max = h0 - self.y_min
-                new_y_min = h0 - self.y_max
-                self.y_max, self.y_min = new_y_max, new_y_min
+                self.y_max, self.y_min = h0 - self.y_min, h0 - self.y_max
         return self
 
     def to_numpy(self):
