@@ -460,6 +460,31 @@ def test_box_flip():
         Box(10, 20, 50, 80, 0).flip(flipx=True, w=0)
 
 
+@pytest.mark.parametrize(
+    "box_in, flip_kwargs, expected",
+    [
+        ((15, 25, 50, 80, 30), {"flipx": True, "w": 200}, (185, 25)),
+        ((80, 50, 120, 90, 45), {"flipx": True, "w": 200}, (120, 50)),
+        ((50, 50, 70, 130, 90), {"flipy": True, "h": 200}, (50, 130)),
+    ],
+)
+def test_flip_rotated(box_in, flip_kwargs, expected):
+    x1, y1, x2, y2, a = box_in
+    box = Box(x1, y1, x2, y2, a)
+
+    box.flip(**flip_kwargs)
+
+    # Verify the new x_min, y_min (Anchor point)
+    ex_x, ex_y = expected
+    assert box.x_min == pytest.approx(ex_x, abs=0.1)
+    assert box.y_min == pytest.approx(ex_y, abs=0.1)
+
+    # verify the width and height
+    old_dims = sorted([x2 - x1, y2 - y1])
+    new_dims = sorted([box.x_max - box.x_min, box.y_max - box.y_min])
+    assert new_dims == pytest.approx(old_dims, abs=1)
+
+
 def test_polygon_flip():
     points = [[10, 20], [30, 20], [30, 40], [10, 40]]
     poly = Polygon(points)
