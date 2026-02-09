@@ -402,3 +402,95 @@ def test_base_to_dict_and_to_json(dummy_dataset):
     loaded = json.loads(j)
     assert isinstance(loaded, dict)
     assert isinstance(d, dict)
+
+
+def test_point2d_flip():
+    p = Point2d(10, 20)
+    # Horizontal flip
+    p.flip(flipx=True, w=100)
+    assert p.x == 90
+    assert p.y == 20
+    # Vertical flip
+    p.flip(flipy=True, h=50)
+    assert p.x == 90
+    assert p.y == 30
+    # Both flips
+    p = Point2d(10, 20)
+    p.flip(flipx=True, flipy=True, w=100, h=50)
+    assert p.x == 90
+    assert p.y == 30
+    # Invalid dimensions
+    with pytest.raises(ValueError, match="Width must be positive"):
+        Point2d(10, 20).flip(flipx=True, w=0)
+    with pytest.raises(ValueError, match="Height must be positive"):
+        Point2d(10, 20).flip(flipy=True, h=0)
+
+
+def test_box_flip():
+    b = Box(10, 20, 50, 80, 0)
+    # Horizontal flip: w=100, flipx=True
+    # new_x_min = 100 - 50 = 50
+    # new_x_max = 100 - 10 = 90
+    b.flip(flipx=True, w=100)
+    assert b.x_min == 50
+    assert b.x_max == 90
+    assert b.y_min == 20
+    assert b.y_max == 80
+
+    # Vertical flip: h=100, flipy=True
+    # new_y_min = 100 - 80 = 20
+    # new_y_max = 100 - 20 = 80
+    b = Box(10, 20, 50, 80, 0)
+    b.flip(flipy=True, h=100)
+    assert b.x_min == 10
+    assert b.x_max == 50
+    assert b.y_min == 20
+    assert b.y_max == 80
+
+    # Both flips
+    b = Box(10, 20, 50, 80, 0)
+    b.flip(flipx=True, flipy=True, w=100, h=100)
+    assert b.x_min == 50
+    assert b.x_max == 90
+    assert b.y_min == 20
+    assert b.y_max == 80
+
+    # Invalid dimensions
+    with pytest.raises(ValueError, match="Width must be positive"):
+        Box(10, 20, 50, 80, 0).flip(flipx=True, w=0)
+
+
+def test_polygon_flip():
+    points = [[10, 20], [30, 20], [30, 40], [10, 40]]
+    poly = Polygon(points)
+    # Horizontal flip, w=100
+    # expected: [[90, 20], [70, 20], [70, 40], [90, 40]]
+    poly.flip(flipx=True, w=100)
+    expected = [[90, 20], [70, 20], [70, 40], [90, 40]]
+    np.testing.assert_allclose(poly.points, expected)
+
+    # Vertical flip, h=100
+    # current: [[90, 20], [70, 20], [70, 40], [90, 40]]
+    # expected: [[90, 80], [70, 80], [70, 60], [90, 60]]
+    poly.flip(flipy=True, h=100)
+    expected = [[90, 80], [70, 80], [70, 60], [90, 60]]
+    np.testing.assert_allclose(poly.points, expected)
+
+
+def test_mask_flip():
+    mask = np.zeros((10, 10), dtype=np.uint8)
+    mask[2:5, 1:4] = 1  # y: [2,5), x: [1,4)
+    rle = mask2rle(mask)
+    m = Mask(rle)
+
+    # Horizontal flip, w=10, h=10
+    m.flip(flipx=True, w=10, h=10)
+    flipped_mask = m.to_numpy(h=10, w=10)
+    expected_mask = np.flip(mask, axis=1)
+    assert np.allclose(flipped_mask, expected_mask)
+
+    # Vertical flip, h=10, w=10
+    m.flip(flipy=True, h=10, w=10)
+    flipped_mask = m.to_numpy(h=10, w=10)
+    expected_mask = np.flip(np.flip(mask, axis=1), axis=0)
+    assert np.allclose(flipped_mask, expected_mask)

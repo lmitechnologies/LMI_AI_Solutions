@@ -3,6 +3,8 @@ import glob
 import json
 import logging
 import os
+from pathlib import Path
+from typing import Union
 
 import cv2
 import numpy as np
@@ -78,10 +80,15 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
         logger.warning(f"unsupported result type: {result_type}, skip")
 
 
-def generate_file_ids(files):
+def to_linux_path(path: Union[str, Path]):
+    """convert windows path to linux (POSIX) path"""
+    return Path(path).as_posix()
+
+
+def generate_file_ids(files: list[str]):
     file_id = {}
     for i, f in enumerate(files):
-        file_id[f] = i
+        file_id[to_linux_path(f)] = i
     return file_id
 
 
@@ -129,7 +136,7 @@ def get_annotations_from_json(path_json, images_dir, background=False):
             # load file name
             if "data" not in dt:
                 raise Exception('missing "data" in json file. Ensure that the label studio export format is not JSON-MIN.')
-            f = dt["data"]["image"]  # image web path
+            f = dt["data"]["image"]  # image web path. already in linux path format
             file_annotations: list[Annotation] = []
             pred_annotations: list[Annotation] = []
 
