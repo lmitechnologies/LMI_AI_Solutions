@@ -76,13 +76,13 @@ def rotate(x, y, w, h, angle=0.0, rot_center="up_left", unit="degree"):
 
 
 def get_rotated_bbox(pts: np.ndarray) -> list:
-    """Get the rotated bbox with top-left corner from polygon points.
+    """Get the rotated bbox from polygon points.
 
     Args:
         pts (np.ndarray): Polygon points in shape [N, 2]
 
     Returns:
-        list: [x, y, w, h, angle] where (x,y) is top-left corner
+        list: [x, y, w, h, angle], where (x,y) is the pivot of the rotated bbox
     """
     bbox = np.array(pts, dtype=np.float32)
     (cx, cy), (w, h), angle = cv2.minAreaRect(bbox)
