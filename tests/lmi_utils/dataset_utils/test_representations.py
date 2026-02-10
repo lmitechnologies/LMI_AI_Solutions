@@ -494,14 +494,13 @@ def get_flip_expected_coords(x, y, w, h, angle, flip_w, flip_h, flip_x=False, fl
 @pytest.mark.parametrize(
     "box_in, flip_kwargs",
     [
-        ((15, 25, 65, 55, 30), {"flipx": True, "w": 200}),  # Updated width/height to be w/h not x2/y2
+        ((15, 25, 65, 55, 30), {"flipx": True, "w": 200}),
         ((80, 50, 200, 140, 45), {"flipx": True, "w": 200}),
         ((50, 50, 70, 130, 90), {"flipy": True, "h": 200}),
     ],
 )
 def test_flip_rotated_robust(box_in, flip_kwargs):
     x1, y1, x2, y2, a = box_in
-    # Convert x1,y1,x2,y2 to x,y,w,h for cleaner math
     w_box = x2 - x1
     h_box = y2 - y1
 
