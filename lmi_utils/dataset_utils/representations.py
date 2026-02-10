@@ -163,25 +163,34 @@ class Box(Base):
         flipy = kwargs.get("flipy", False)
         h0 = kwargs.get("h", 0)
         w0 = kwargs.get("w", 0)
+
         if flipx and w0 <= 0:
             raise ValueError("Width must be positive for horizontal flip")
         if flipy and h0 <= 0:
             raise ValueError("Height must be positive for vertical flip")
+
         if self.angle != 0:
-            # convert to obb
+            # Get corner points of rotated box
             pts = rotate(*self.to_xywh(), rot_center="up_left", unit="degree")
+
+            # Flip points
             if flipx:
                 pts[:, 0] = w0 - pts[:, 0]
             if flipy:
                 pts[:, 1] = h0 - pts[:, 1]
+
+            # Get new rotated bbox
             x, y, w, h, angle = get_rotated_bbox(pts)
-            self.x_min, self.y_min, self.x_max, self.y_max = x, y, x + w, y + h
+
+            self.x_min, self.y_min = x, y
+            self.x_max, self.y_max = x + w, y + h
             self.angle = angle
         else:
             if flipx:
-                self.x_max, self.x_min = w0 - self.x_min, w0 - self.x_max
+                self.x_min, self.x_max = w0 - self.x_max, w0 - self.x_min
             if flipy:
-                self.y_max, self.y_min = h0 - self.y_min, h0 - self.y_max
+                self.y_min, self.y_max = h0 - self.y_max, h0 - self.y_min
+
         return self
 
     def to_numpy(self):
