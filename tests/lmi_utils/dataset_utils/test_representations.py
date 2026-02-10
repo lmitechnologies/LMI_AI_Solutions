@@ -486,8 +486,11 @@ def get_flip_expected_coords(x, y, w, h, angle, flip_w, flip_h, flip_x=False, fl
     if flip_y:
         pts[:, 1] = flip_h - pts[:, 1]
 
-    # 3. Find the new "Top-Left" (Smallest Y, then Smallest X)
-    ind = np.lexsort((pts[:, 0], pts[:, 1]))
+    # 3. Find the pivot
+    if angle != 90:
+        ind = np.lexsort((pts[:, 0], pts[:, 1]))
+    else:
+        ind = np.lexsort((-pts[:, 0], pts[:, 1]))
     return pts[ind[0]]
 
 

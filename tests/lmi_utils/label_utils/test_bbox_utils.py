@@ -11,11 +11,8 @@ def create_rotated_rect_points(center, size, angle):
     return pts
 
 
-# --- Test Cases ---
-
-
 @pytest.mark.parametrize("angle", [0, 30, 45, 90, -15])
-@pytest.mark.parametrize("size", [(100, 50), (50, 100), (50, 50)])  # Landscape, Portrait, Square
+@pytest.mark.parametrize("size", [(100, 50), (50, 100), (50, 50)])
 def test_geometric_consistency(angle, size):
     """
     Verifies that the returned (x,y) is mathematically a corner of the
@@ -40,15 +37,15 @@ def test_geometric_consistency(angle, size):
 
 def test_top_left_logic():
     """
-    Verifies that the returned point is strictly the 'Top-Left' (lowest Y, then lowest X).
+    Verifies that the returned point is the 'Top-right' and angle is 90 degrees when the box is horizontal.
     """
     # Create a box where the "top" is flat (0 degrees)
     pts = create_rotated_rect_points((100, 100), (40, 20), 0)
 
     x, y, w, h, angle = get_rotated_bbox(pts)
-
-    assert x == pytest.approx(80, abs=1.0)
-    assert y == pytest.approx(90, abs=1.0)
+    assert angle == pytest.approx(90, abs=0.01)
+    assert x == pytest.approx(120, abs=0.01)
+    assert y == pytest.approx(90, abs=0.01)
 
 
 def test_diamond_shape_top_vertex():

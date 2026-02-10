@@ -91,8 +91,13 @@ def get_rotated_bbox(pts: np.ndarray) -> list:
     rect = ((cx, cy), (w, h), angle)
     box_points = cv2.boxPoints(rect)
 
-    # Find the top-left corner (minimum y, then minimum x if tied)
-    idx = np.lexsort((box_points[:, 0], box_points[:, 1]))[0]
+    # Find pivot
+    if angle != 90:
+        # the top-left corner (minimum y, then minimum x if tied)
+        idx = np.lexsort((box_points[:, 0], box_points[:, 1]))[0]
+    else:
+        # the top-right corner (minimum y, then maximum x if tied)
+        idx = np.lexsort((-box_points[:, 0], box_points[:, 1]))[0]
     x, y = box_points[idx]
 
     return [x, y, w, h, angle]
