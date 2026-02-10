@@ -179,8 +179,9 @@ class Box(Base):
             if flipy:
                 pts[:, 1] = h0 - pts[:, 1]
 
-            # Get new rotated bbox
+            # Get new rotated bbox and convert to float
             x, y, w, h, angle = get_rotated_bbox(pts)
+            x, y, w, h, angle = map(float, (x, y, w, h, angle))
 
             self.x_min, self.y_min = x, y
             self.x_max, self.y_max = x + w, y + h

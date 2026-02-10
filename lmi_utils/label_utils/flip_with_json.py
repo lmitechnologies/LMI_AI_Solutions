@@ -83,7 +83,8 @@ if __name__ == "__main__":
     ap.add_argument("--path_imgs", "-i", required=True, type=Path, help="the path to images")
     ap.add_argument(
         "--path_json",
-        default="labels.json",
+        default=Path("labels.json"),
+        type=Path,
         help='[optional] the path of a json file that corresponds to path_imgs, default="labels.json" in path_imgs',
     )
     ap.add_argument("--path_out", "-o", required=True, type=Path, help="the path to resized images")
@@ -94,7 +95,7 @@ if __name__ == "__main__":
 
     path_imgs = args["path_imgs"]
     path_out = args["path_out"]
-    path_json = args["path_json"] if args["path_json"] != "labels.json" else path_imgs / "labels.json"
+    path_json = args["path_json"] if args["path_json"] != Path("labels.json") else path_imgs / "labels.json"
 
     # check if annotation exists
     if not path_json.is_file():

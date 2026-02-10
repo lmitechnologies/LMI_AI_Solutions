@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import pytest
-from label_utils.bbox_utils import get_rotated_bbox
+from label_utils.bbox_utils import get_rotated_bbox, rotate
 
 
 # --- Helper to generate rotated rectangles ---
@@ -15,27 +15,27 @@ def create_rotated_rect_points(center, size, angle):
 @pytest.mark.parametrize("size", [(100, 50), (50, 100), (50, 50)])
 def test_geometric_consistency(angle, size):
     """
-    Verifies that the returned (x,y) is mathematically a corner of the
-    box defined by the returned (w,h, angle).
+    Verifies that the reconstructed rotated rectangle is the same as the original one.
     """
     center = (200, 200)
     pts = create_rotated_rect_points(center, size, angle)
 
     # Run function
     x, y, w, h, out_angle = get_rotated_bbox(pts)
+    recon_corners = rotate(x, y, w, h, out_angle)
 
     # Get the ground truth box from OpenCV directly for comparison
     gt_rect = cv2.minAreaRect(pts)
     gt_corners = cv2.boxPoints(gt_rect)
 
-    # Check: Is the returned (x,y) one of the true corners?
-    distances = [np.linalg.norm(c - np.array([x, y])) for c in gt_corners]
-    min_dist = min(distances)
+    # sort the corners
+    recon_corners = np.array(sorted(recon_corners, key=lambda p: (p[0], p[1])))
+    gt_corners = np.array(sorted(gt_corners.astype(int), key=lambda p: (p[0], p[1])))
 
-    assert min_dist < 1e-4, f"Returned point ({x},{y}) is not a corner of the fitted box."
+    assert np.allclose(recon_corners, gt_corners), "Reconstructed corners do not match ground truth corners."
 
 
-def test_top_left_logic():
+def test_pivot_logic():
     """
     Verifies that the returned point is the 'Top-right' and angle is 90 degrees when the box is horizontal.
     """
@@ -43,9 +43,9 @@ def test_top_left_logic():
     pts = create_rotated_rect_points((100, 100), (40, 20), 0)
 
     x, y, w, h, angle = get_rotated_bbox(pts)
-    assert angle == pytest.approx(90, abs=0.01)
-    assert x == pytest.approx(120, abs=0.01)
-    assert y == pytest.approx(90, abs=0.01)
+    assert angle == 90
+    assert x == 120
+    assert y == 90
 
 
 def test_diamond_shape_top_vertex():
