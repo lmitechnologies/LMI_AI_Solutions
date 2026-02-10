@@ -506,7 +506,7 @@ def test_flip_rotated_robust(box_in, flip_kwargs):
     h_box = y2 - y1
 
     # Setup Object
-    box = Box(x1, y1, x2, y2, a)  # Assuming your Box takes (x1, y1, x2, y2, angle)
+    box = Box(x1, y1, x2, y2, a)
 
     # Perform Flip
     box.flip(**flip_kwargs)
@@ -518,8 +518,6 @@ def test_flip_rotated_robust(box_in, flip_kwargs):
     flip_y = flip_kwargs.get("flipy", False)
 
     expected_pt = get_flip_expected_coords(x1, y1, w_box, h_box, a, flip_w, flip_h, flip_x, flip_y)
-
-    print(f"\nExpected: {expected_pt}, Got: ({box.x_min}, {box.y_min})")
 
     assert box.x_min == pytest.approx(expected_pt[0], abs=1.0)
     assert box.y_min == pytest.approx(expected_pt[1], abs=1.0)
