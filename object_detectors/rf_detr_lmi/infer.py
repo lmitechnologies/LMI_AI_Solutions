@@ -21,6 +21,7 @@ def setup_parser():
     parser.add_argument("--conf", type=float, default=0.5, help="Confidence threshold for detections")
     parser.add_argument("--class_map", type=str, required=False, help="Path to class map JSON file")
     parser.add_argument("--image_size", type=int, default=640, help="Input image size for the model")
+    parser.add_argument("--model_type", type=str, required=False, help="Type of the model to use for inference")
     return parser
 
 
@@ -30,7 +31,11 @@ def inference_run(args):
     out_path = args.get("output")
     class_map_path = args.get("class_map", None)
     image_size = args.get("image_size", 640)
-
+    model_type = args.get("model_type", None)
+    if args.weights.split(".")[-1] == "pth":
+        if model_type is None or model_type == "":
+            logger.error("Model type must be specified when using .pth weights")
+            exit(1)
     if not os.path.exists(out_path):
         os.makedirs(out_path)
     class_map = None
@@ -41,7 +46,7 @@ def inference_run(args):
         class_map = {int(k): v for k, v in class_map.items()}
 
     # load model
-    model = RfdetrModel(model_path, class_map=class_map, image_size=[image_size, image_size])
+    model = RfdetrModel(model_path, class_map=class_map, image_size=[image_size, image_size], model_type=model_type)
     # model warmup
     model.warmup()
     # find images
