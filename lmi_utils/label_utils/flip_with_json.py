@@ -73,6 +73,8 @@ def flip_imgs_with_json(path_imgs, path_json, flip, path_out, recursive):
         # update file path using linux format
         file_annot.path = (relative_path / out_name).as_posix()
 
+    if not path_out.exists():
+        path_out.mkdir(parents=True, exist_ok=True)
     dataset.save(path_out / "labels.json")
 
 
