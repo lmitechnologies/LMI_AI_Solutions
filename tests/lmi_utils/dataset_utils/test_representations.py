@@ -402,3 +402,165 @@ def test_base_to_dict_and_to_json(dummy_dataset):
     loaded = json.loads(j)
     assert isinstance(loaded, dict)
     assert isinstance(d, dict)
+
+
+def test_point2d_flip():
+    p = Point2d(10, 20)
+    # Horizontal flip
+    p.flip(flipx=True, w=100)
+    assert p.x == 90
+    assert p.y == 20
+    # Vertical flip
+    p.flip(flipy=True, h=50)
+    assert p.x == 90
+    assert p.y == 30
+    # Both flips
+    p = Point2d(10, 20)
+    p.flip(flipx=True, flipy=True, w=100, h=50)
+    assert p.x == 90
+    assert p.y == 30
+    # Invalid dimensions
+    with pytest.raises(ValueError, match="Width must be positive"):
+        Point2d(10, 20).flip(flipx=True, w=0)
+    with pytest.raises(ValueError, match="Height must be positive"):
+        Point2d(10, 20).flip(flipy=True, h=0)
+
+
+def test_box_flip():
+    b = Box(10, 20, 50, 80, 0)
+    # Horizontal flip: w=100, flipx=True
+    # new_x_min = 100 - 50 = 50
+    # new_x_max = 100 - 10 = 90
+    b.flip(flipx=True, w=100)
+    assert b.x_min == 50
+    assert b.x_max == 90
+    assert b.y_min == 20
+    assert b.y_max == 80
+
+    # Vertical flip: h=100, flipy=True
+    # new_y_min = 100 - 80 = 20
+    # new_y_max = 100 - 20 = 80
+    b = Box(10, 20, 50, 80, 0)
+    b.flip(flipy=True, h=100)
+    assert b.x_min == 10
+    assert b.x_max == 50
+    assert b.y_min == 20
+    assert b.y_max == 80
+
+    # Both flips
+    b = Box(10, 20, 50, 80, 0)
+    b.flip(flipx=True, flipy=True, w=100, h=100)
+    assert b.x_min == 50
+    assert b.x_max == 90
+    assert b.y_min == 20
+    assert b.y_max == 80
+
+    # Invalid dimensions
+    with pytest.raises(ValueError, match="Width must be positive"):
+        Box(10, 20, 50, 80, 0).flip(flipx=True, w=0)
+
+
+def get_flip_expected_coords(x, y, w, h, angle, flip_w, flip_h, flip_x=False, flip_y=False):
+    """
+    Helper to calculate ground truth for the test.
+    """
+    # 1. Get exact corners of the input box
+    angle_rad = np.deg2rad(angle)
+    cos_a = np.cos(angle_rad)
+    sin_a = np.sin(angle_rad)
+
+    # Corners of a rectangle at (0,0) with w,h
+    pts_local = np.array([[0, 0], [w, 0], [w, h], [0, h]])
+
+    # Rotate
+    pts_rot = np.zeros_like(pts_local, dtype=float)
+    pts_rot[:, 0] = pts_local[:, 0] * cos_a - pts_local[:, 1] * sin_a
+    pts_rot[:, 1] = pts_local[:, 0] * sin_a + pts_local[:, 1] * cos_a
+
+    # Shift to pivot (x,y)
+    pts = pts_rot + [x, y]
+
+    # 2. Apply Flip
+    if flip_x:
+        pts[:, 0] = flip_w - pts[:, 0]
+    if flip_y:
+        pts[:, 1] = flip_h - pts[:, 1]
+
+    # 3. Find the pivot
+    if angle != 90:
+        ind = np.lexsort((pts[:, 0], pts[:, 1]))
+    else:
+        ind = np.lexsort((-pts[:, 0], pts[:, 1]))
+    return pts[ind[0]]
+
+
+@pytest.mark.parametrize(
+    "box_in, flip_kwargs",
+    [
+        ((15, 25, 65, 55, 30), {"flipx": True, "w": 200}),
+        ((80, 50, 200, 140, 45), {"flipx": True, "w": 200}),
+        ((50, 50, 70, 130, 90), {"flipy": True, "h": 200}),
+    ],
+)
+def test_flip_rotated_robust(box_in, flip_kwargs):
+    x1, y1, x2, y2, a = box_in
+    w_box = x2 - x1
+    h_box = y2 - y1
+
+    # Setup Object
+    box = Box(x1, y1, x2, y2, a)
+
+    # Perform Flip
+    box.flip(**flip_kwargs)
+
+    # Calculate Truth
+    flip_w = flip_kwargs.get("w", 0)
+    flip_h = flip_kwargs.get("h", 0)
+    flip_x = flip_kwargs.get("flipx", False)
+    flip_y = flip_kwargs.get("flipy", False)
+
+    expected_pt = get_flip_expected_coords(x1, y1, w_box, h_box, a, flip_w, flip_h, flip_x, flip_y)
+
+    assert box.x_min == pytest.approx(expected_pt[0], abs=1.0)
+    assert box.y_min == pytest.approx(expected_pt[1], abs=1.0)
+
+    # verify the width and height
+    old_dims = sorted([x2 - x1, y2 - y1])
+    new_dims = sorted([box.x_max - box.x_min, box.y_max - box.y_min])
+    assert new_dims == pytest.approx(old_dims, abs=1)
+
+
+def test_polygon_flip():
+    points = [[10, 20], [30, 20], [30, 40], [10, 40]]
+    poly = Polygon(points)
+    # Horizontal flip, w=100
+    # expected: [[90, 20], [70, 20], [70, 40], [90, 40]]
+    poly.flip(flipx=True, w=100)
+    expected = [[90, 20], [70, 20], [70, 40], [90, 40]]
+    np.testing.assert_allclose(poly.points, expected)
+
+    # Vertical flip, h=100
+    # current: [[90, 20], [70, 20], [70, 40], [90, 40]]
+    # expected: [[90, 80], [70, 80], [70, 60], [90, 60]]
+    poly.flip(flipy=True, h=100)
+    expected = [[90, 80], [70, 80], [70, 60], [90, 60]]
+    np.testing.assert_allclose(poly.points, expected)
+
+
+def test_mask_flip():
+    mask = np.zeros((10, 10), dtype=np.uint8)
+    mask[2:5, 1:4] = 1  # y: [2,5), x: [1,4)
+    rle = mask2rle(mask)
+    m = Mask(rle)
+
+    # Horizontal flip, w=10, h=10
+    m.flip(flipx=True, w=10, h=10)
+    flipped_mask = m.to_numpy(h=10, w=10)
+    expected_mask = np.flip(mask, axis=1)
+    assert np.allclose(flipped_mask, expected_mask)
+
+    # Vertical flip, h=10, w=10
+    m.flip(flipy=True, h=10, w=10)
+    flipped_mask = m.to_numpy(h=10, w=10)
+    expected_mask = np.flip(np.flip(mask, axis=1), axis=0)
+    assert np.allclose(flipped_mask, expected_mask)

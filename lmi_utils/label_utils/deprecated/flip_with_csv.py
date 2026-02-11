@@ -29,6 +29,8 @@ def flip_shapes(shapes, is_flip, hw):
         if isinstance(shape, Rect):
             x1, y1 = shape.up_left
             x2, y2 = shape.bottom_right
+            if shape.angle != 0 and (flipx or flipy):
+                raise Exception(f"Not support flipping rotated bounding box: {shape}")
             if flipx:
                 x1 = w - x1
                 x2 = w - x2

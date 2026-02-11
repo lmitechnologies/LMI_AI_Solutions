@@ -87,6 +87,21 @@ class Point2d(Base):
         self.y += pt
         return self
 
+    def flip(self, **kwargs):
+        flipx = kwargs.get("flipx", False)
+        flipy = kwargs.get("flipy", False)
+        h = kwargs.get("h", 0)
+        w = kwargs.get("w", 0)
+        if flipx and w <= 0:
+            raise ValueError("Width must be positive for horizontal flip")
+        if flipy and h <= 0:
+            raise ValueError("Height must be positive for vertical flip")
+        if flipx:
+            self.x = w - self.x
+        if flipy:
+            self.y = h - self.y
+        return self
+
     def to_numpy(self):
         return np.array([self.x, self.y])
 
@@ -141,6 +156,42 @@ class Box(Base):
         self.y_min += pt
         self.x_max += pl
         self.y_max += pt
+        return self
+
+    def flip(self, **kwargs):
+        flipx = kwargs.get("flipx", False)
+        flipy = kwargs.get("flipy", False)
+        h0 = kwargs.get("h", 0)
+        w0 = kwargs.get("w", 0)
+
+        if flipx and w0 <= 0:
+            raise ValueError("Width must be positive for horizontal flip")
+        if flipy and h0 <= 0:
+            raise ValueError("Height must be positive for vertical flip")
+
+        if self.angle != 0:
+            # Get corner points of rotated box
+            pts = rotate(*self.to_xywh(), rot_center="up_left", unit="degree")
+
+            # Flip points
+            if flipx:
+                pts[:, 0] = w0 - pts[:, 0]
+            if flipy:
+                pts[:, 1] = h0 - pts[:, 1]
+
+            # Get new rotated bbox and convert to float
+            x, y, w, h, angle = get_rotated_bbox(pts)
+            x, y, w, h, angle = map(float, (x, y, w, h, angle))
+
+            self.x_min, self.y_min = x, y
+            self.x_max, self.y_max = x + w, y + h
+            self.angle = angle
+        else:
+            if flipx:
+                self.x_min, self.x_max = w0 - self.x_max, w0 - self.x_min
+            if flipy:
+                self.y_min, self.y_max = h0 - self.y_max, h0 - self.y_min
+
         return self
 
     def to_numpy(self):
@@ -283,6 +334,21 @@ class Polygon(Base):
             point[0], point[1] = p.x, p.y
         return self
 
+    def flip(self, **kwargs):
+        flipx = kwargs.get("flipx", False)
+        flipy = kwargs.get("flipy", False)
+        h = kwargs.get("h", 0)
+        w = kwargs.get("w", 0)
+        if flipx and w <= 0:
+            raise ValueError("Width must be positive for horizontal flip")
+        if flipy and h <= 0:
+            raise ValueError("Height must be positive for vertical flip")
+        for point in self.points:
+            p = Point2d(x=point[0], y=point[1])
+            p = p.flip(flipx=flipx, flipy=flipy, h=h, w=w)
+            point[0], point[1] = p.x, p.y
+        return self
+
     def to_numpy(self):
         return np.array(self.points)
 
@@ -365,6 +431,21 @@ class Mask(Base):
         pad_w = kwargs.get("pad_w", 0)
         mask_array = rle2mask(self.mask, h=kwargs.get("h"), w=kwargs.get("w"))
         mask_array, _, _, _, _ = fit_array_to_size(mask_array, pad_w, pad_h)
+        self.mask = mask2rle(mask_array)
+        return self
+
+    def flip(self, **kwargs):
+        flipx = kwargs.get("flipx", False)
+        flipy = kwargs.get("flipy", False)
+        h = kwargs.get("h", 0)
+        w = kwargs.get("w", 0)
+        if h <= 0 or w <= 0:
+            raise ValueError("Height and width must be positive for mask flip")
+        mask_array = rle2mask(self.mask, h=h, w=w)
+        if flipx:
+            mask_array = np.flip(mask_array, axis=1)
+        if flipy:
+            mask_array = np.flip(mask_array, axis=0)
         self.mask = mask2rle(mask_array)
         return self
 
