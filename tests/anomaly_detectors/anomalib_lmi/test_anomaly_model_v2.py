@@ -35,7 +35,6 @@ BASE_CONFIG = {
     "model_name": "padim",
     "version": "v2",
     "model_path": MODEL_PATH,
-    "traced_model_path": TRACED_MODEL_PATH,
     "task": "seg",
 }
 IS_ARM = platform.machine().startswith(("arm", "aarch64"))
