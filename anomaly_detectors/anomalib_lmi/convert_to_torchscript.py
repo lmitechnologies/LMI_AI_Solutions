@@ -69,6 +69,8 @@ def generate_traced_torchscript(model_path, output_path, device, version="v1", b
     """
     if version == "v1":
         return convert_v1_torchscript(model_path, output_path, device, batch_size)
+    elif version == "v2":
+        return convert_v2_torchscript(model_path, output_path, batch_size, device)
     else:
         raise ValueError(f"Unsupported version: {version}")
 
@@ -107,6 +109,60 @@ def convert_v1_torchscript(model_path, output_path, device, batch_size=1):
     return traced_model
 
 
+def convert_v2_torchscript(model_path, output_path, batch_size=1, device="cpu"):
+    """
+    Convert a model to TorchScript format.
+
+    Args:
+        model_path (str): Path to the model file.
+        output_path (str): Path to save the converted model.
+        batch_size (int): Batch size for tracing. Default is 1.
+        device (str): Device to use for tracing. Default is 'cpu'.
+
+    Returns:
+        torch.jit.ScriptModule: The converted TorchScript model.
+    """
+    logger.info(f"Converting {model_path} to TorchScript format.")
+    ckpt = torch.load(model_path, map_location=device, weights_only=False)
+    model = ckpt["model"].eval()
+    model = make_preprocessing_trace_safe(model, device=device)
+
+    class DummyTrainer:
+        def __init__(self):
+            self.global_step = 0
+            self.current_epoch = 0
+
+    model._trainer = DummyTrainer()
+
+    image_size = None
+
+    try:
+        for t in model.pre_processor.transform.transforms:
+            if type(t).__name__ == "Resize":
+                image_size = t.size
+                break
+    except AttributeError:
+        logger.warning("Could not access transforms. Using default size.")
+
+    if image_size is None:
+        logger.warning("Resize transform not found. Defaulting image size to [256, 256].")
+        image_size = [256, 256]
+
+    logger.info(f"Using image size: {image_size}")
+
+    # trace the model
+    image_size = [image_size[0] + 1, image_size[1] + 1]
+    # Ensure inputs are on the correct device
+    inp = torch.rand(batch_size, 3, image_size[0], image_size[1]).to(device)
+
+    # strict=False is often required for models with dictionaries/complex outputs
+    traced_model = torch.jit.trace(model, inp, strict=False)
+
+    torch.jit.save(traced_model, output_path)
+    logger.info(f"Saved traced model to {output_path}")
+    return traced_model
+
+
 def main():
     parser = argparse.ArgumentParser(description="Convert a model to TorchScript format.")
     parser.add_argument("--input_path", "-i", type=str, required=True, help="Path to the model file.")
@@ -130,7 +186,7 @@ def main():
         default="v1",
         help="Version of the model. Default is v1.",
         required=False,
-        choices=["v1"],
+        choices=["v1", "v2"],
     )
     parser.add_argument(
         "--batch_size",
