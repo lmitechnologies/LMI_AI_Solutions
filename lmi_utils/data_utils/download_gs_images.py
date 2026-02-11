@@ -38,7 +38,13 @@ def download_gs_images(input_file, output_dir):
 
     # 3. Use gsutil -m (multithreading) to download in parallel
     try:
-        subprocess.run(["gsutil", "-m", "cp", "-n", "-I", output_dir], stdin=open(manifest_path, "r"), shell=True, check=True)
+        with open(manifest_path, "r") as manifest_file:
+            subprocess.run(
+                ["gsutil", "-m", "cp", "-n", "-I", output_dir],
+                stdin=manifest_file,
+                shell=True,
+                check=True,
+            )
         print(f"\nSuccess! Images saved to {output_dir}")
     except subprocess.CalledProcessError as e:
         print(f"Error during gsutil execution: {e}")
