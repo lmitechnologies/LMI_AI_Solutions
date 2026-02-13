@@ -2,6 +2,7 @@ import glob
 import logging
 import os
 import platform
+import tempfile
 import time
 from typing import List, Tuple
 
@@ -12,7 +13,8 @@ import torch
 from ad_core.anomaly_detector import AnomalyDetector
 from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
-from anomalib_lmi.anomalib_model_v2 import AnomalyModel_V2
+from anomalib_lmi.anomaly_model_v2 import AnomalyModel_V2
+from anomalib_lmi.convert_to_torchscript import convert_v2_torchscript
 from gadget_utils import pipeline_utils
 
 os.environ["TRUST_REMOTE_CODE"] = "1"
@@ -25,6 +27,8 @@ logger.setLevel(logging.DEBUG)
 DATA_PATH = "tests/assets/images/nvtec-ad"
 MODEL_PATH = "tests/assets/models/ad/model_v2.pt"
 OUTPUT_PATH = "tests/outputs/ad/anomalib_v2"
+TRACED_MODEL_PATH = "tests/assets/models/ad/model_v2_trace.pt"
+
 USE_GPU = torch.cuda.is_available()
 BASE_CONFIG = {
     "framework": "anomalib2",
@@ -64,25 +68,34 @@ def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyMod
         preds = [model.predict(rgb) for model in ais_models]
 
         for pred2 in preds:
-            assert np.allclose(pred, pred2, atol=1e-5)
+            if USE_GPU:
+                assert np.array_equal(pred, pred2)
+            else:
+                assert np.allclose(pred, pred2, atol=1e-5)
 
 
 def test_compare_results_with_anomalib():
     """
     compare prediction results between current implementation and anomalib
     """
-    model1 = TorchInferencer(MODEL_PATH, device="cpu")
-    model2 = AnomalyModel_V2(MODEL_PATH, device="cpu")
-    compare_results(model1, [model2])
+    model1 = TorchInferencer(MODEL_PATH)
+    model2 = AnomalyModel_V2(MODEL_PATH)
+    model3 = AnomalyModel_V2(TRACED_MODEL_PATH)
+    compare_results(model1, [model2, model3])
 
 
 def test_compare_results_with_anomalib_api():
     """
     compare prediction results between current implementation and anomalib
     """
-    model1 = TorchInferencer(MODEL_PATH, device="cpu")
-    model2 = AnomalyDetector(BASE_CONFIG, device="cpu")
-    compare_results(model1, [model2])
+    model1 = TorchInferencer(MODEL_PATH)
+    model2 = AnomalyDetector(BASE_CONFIG)
+    config = {
+        **BASE_CONFIG,
+        "model_path": TRACED_MODEL_PATH,
+    }  # replace model path with traced model path
+    model3 = AnomalyDetector(config)
+    compare_results(model1, [model2, model3])
 
 
 @pytest.mark.parametrize("init_args, warmup_size", [((224, 112), [672, 640]), ((), [256, 224])])
@@ -190,6 +203,25 @@ def test_annotate(
 
             assert np.array_equal(out1, out2)
             assert np.array_equal(out2, out3)
+
+
+def test_convert_to_torchscript():
+    with tempfile.TemporaryDirectory() as t:
+        outpath = os.path.join(t, "trace.pt")
+        convert_v2_torchscript(MODEL_PATH, outpath, device="cpu")
+        assert os.path.isfile(outpath)
+
+        model = AnomalyModel_V2(outpath, device="cpu")
+        inp = torch.randint(0, 255, (256, 256, 3), dtype=torch.uint8)
+        model.predict(inp)
+
+        if USE_GPU:
+            outpath = os.path.join(t, "trace_gpu.pt")
+            convert_v2_torchscript(MODEL_PATH, outpath, device="cuda")
+            assert os.path.isfile(outpath)
+
+            model = AnomalyModel_V2(outpath, device="cuda")
+            model.predict(inp.cuda())
 
 
 @pytest.mark.parametrize("batch_size", [1, 2, 3, 4, 8])

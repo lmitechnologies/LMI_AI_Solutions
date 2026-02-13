@@ -149,8 +149,10 @@ class AnomalyModel_V2(Anomalib_Base):
         try:
             # Try loading as TorchScript model
             self.pt_model = torch.jit.load(model_path, map_location=self.device)
+            self.pt_model.eval()
             self.model_shape = self.image_size
             self.logger.info(f"Loaded TorchScript model with shape: {self.model_shape}")
+            # self.model_shape = self.image_size
         except Exception:
             # Fall back to loading as checkpoint
             checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
@@ -229,6 +231,7 @@ class AnomalyModel_V2(Anomalib_Base):
 
         # Apply tiling if configured
         if self.tiler is not None:
+            self.logger.info(f"Applying tiling to input image with shape {img.shape}")
             img = self.tiler.tile(img, self.tile_mode)
 
         # Validate batch size for TensorRT
@@ -260,7 +263,10 @@ class AnomalyModel_V2(Anomalib_Base):
 
         elif self.inference_mode == "PT":
             preds = self.pt_model(input_batch)
-            output_tensor = preds.anomaly_map
+            if isinstance(preds, tuple):
+                output_tensor = preds[2]
+            else:
+                output_tensor = preds.anomaly_map
             self.logger.debug(f"PT model output shape: {output_tensor.shape}, input shape: {input_batch.shape}")
         else:
             raise ValueError(f"Unknown inference mode: {self.inference_mode}")
@@ -432,7 +438,7 @@ class AnomalyModel_V2(Anomalib_Base):
         zeros = np.zeros(input_hw + [3], dtype=np.uint8)
 
         self.logger.info(f"Warming up model with input shape: {zeros.shape}")
-        self.predict(zeros)
+        self.predict(zeros, verbose=True)
 
     def _cleanup_resources(self) -> None:
         """Internal helper to cleanup resources."""
@@ -483,6 +489,13 @@ if __name__ == "__main__":
         default="gaussian",
         help='overlap mode for tiling, can be "average", "max", "cosine", "linear", "gaussian"',
     )
+    test_ap.add_argument(
+        "-device",
+        "--device",
+        type=str,
+        default="cuda",
+        help="device for inference. cuda",
+    )
 
     convert_ap = subs.add_parser("convert", help="convert model to trt engine")
     convert_ap.add_argument("-i", "--model_path", default="/app/model/model.pt", help="Input model file path.")
@@ -511,7 +524,7 @@ if __name__ == "__main__":
     model_path = args["model_path"]
 
     mode = "resize" if args["resize"] else "padding"
-    ad = AnomalyModel_V2(model_path, args["tile"], args["stride"], mode)
+    ad = AnomalyModel_V2(model_path, args["tile"], args["stride"], mode, device=args["device"])
 
     if action == "convert":
         export_dir = args["export_dir"]
