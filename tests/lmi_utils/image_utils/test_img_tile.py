@@ -6,8 +6,9 @@ import tempfile
 import pytest
 import torch
 import torchvision
-from image_utils.img_tile import ScaleMode, to_images, to_tiles
-from system_utils import path_utils
+
+from lmi_utils.image_utils.img_tile import ScaleMode, to_images, to_tiles
+from lmi_utils.system_utils import path_utils
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

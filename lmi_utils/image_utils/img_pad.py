@@ -3,8 +3,9 @@ import logging
 import os
 
 import cv2
-from gadget_utils.pipeline_utils import fit_array_to_size
-from system_utils.path_utils import get_relative_paths
+
+from lmi_utils.gadget_utils.pipeline_utils import fit_array_to_size
+from lmi_utils.system_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

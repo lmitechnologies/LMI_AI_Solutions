@@ -4,8 +4,9 @@ import os
 
 import cv2
 import numpy as np
-from label_utils.csv_utils import load_csv, write_to_csv
-from label_utils.shapes import Brush, Rect
+
+from lmi_utils.label_utils.csv_utils import load_csv, write_to_csv
+from lmi_utils.label_utils.shapes import Brush, Rect
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

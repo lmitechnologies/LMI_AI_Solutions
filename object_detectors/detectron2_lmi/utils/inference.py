@@ -11,10 +11,11 @@ from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.modeling import build_model, detector_postprocess
 from detectron2.utils.visualizer import GenericMask
-from gadget_utils.pipeline_utils import plot_one_box
-from label_utils.csv_utils import write_to_csv
-from label_utils.shapes import Mask, Rect
 from od_base import ODBase
+
+from lmi_utils.gadget_utils.pipeline_utils import plot_one_box
+from lmi_utils.label_utils.csv_utils import write_to_csv
+from lmi_utils.label_utils.shapes import Mask, Rect
 
 """
 TODO Update for deploying to LMI AISolutions

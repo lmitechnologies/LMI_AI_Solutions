@@ -11,9 +11,10 @@ import tty
 from concurrent.futures import ThreadPoolExecutor
 
 import cv2
-import label_utils.opencvdragrect.selectinwindow as selectinwindow
 import numpy as np
-from image_utils.img_resize import resize
+
+import lmi_utils.label_utils.opencvdragrect.selectinwindow as selectinwindow
+from lmi_utils.image_utils.img_resize import resize
 
 WINDOW_NAME = "Label Editor"
 

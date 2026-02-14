@@ -5,8 +5,9 @@ import random
 import cv2
 import numpy as np
 import torch
-from gadget_utils.pipeline_utils import get_img_path_batches
-from yolov5_lmi.model import Yolov5
+
+from lmi_utils.gadget_utils.pipeline_utils import get_img_path_batches
+from object_detectors.yolov5_lmi.model import Yolov5
 
 BATCH_SIZE = 1
 

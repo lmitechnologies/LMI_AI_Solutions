@@ -5,13 +5,14 @@ import sys
 import time
 
 import cv2
-import image_utils.rgb_converter as rbg_converter
 import numpy as np
-from image_utils.img_resize import resize
 
 # if '..' not in sys.path:
 #     sys.path.append('..')
 from scipy.interpolate import griddata
+
+import lmi_utils.image_utils.rgb_converter as rbg_converter
+from lmi_utils.image_utils.img_resize import resize
 
 
 class PointCloud:

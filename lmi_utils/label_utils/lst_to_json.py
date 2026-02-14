@@ -8,7 +8,9 @@ from typing import Union
 
 import cv2
 import numpy as np
-from dataset_utils.representations import (
+from label_studio_sdk.converter.brush import decode_rle
+
+from lmi_utils.dataset_utils.representations import (
     Annotation,
     AnnotationType,
     Box,
@@ -19,9 +21,8 @@ from dataset_utils.representations import (
     Point2d,
     Polygon,
 )
-from label_studio_sdk.converter.brush import decode_rle
-from label_utils.bbox_utils import convert_from_ls
-from system_utils.path_utils import get_relative_paths
+from lmi_utils.label_utils.bbox_utils import convert_from_ls
+from lmi_utils.system_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

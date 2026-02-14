@@ -4,9 +4,10 @@ import logging
 import os
 
 import cv2
-from detectron2_lmi.model import Detectron2Model
-from label_utils.csv_utils import write_to_csv
-from label_utils.shapes import Mask, Rect
+
+from lmi_utils.label_utils.csv_utils import write_to_csv
+from lmi_utils.label_utils.shapes import Mask, Rect
+from object_detectors.detectron2_lmi.model import Detectron2Model
 
 # setup the logger
 logging.basicConfig(level=logging.INFO)

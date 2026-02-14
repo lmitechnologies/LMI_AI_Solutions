@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 
 # LMI packages
-from dataset_utils.representations import (
+from lmi_utils.dataset_utils.representations import (
     Annotation,
     AnnotationType,
     Box,
@@ -12,7 +12,7 @@ from dataset_utils.representations import (
     Point2d,
     Polygon,
 )
-from gadget_utils.pipeline_utils import fit_array_to_size
+from lmi_utils.gadget_utils.pipeline_utils import fit_array_to_size
 
 logger = logging.getLogger(__name__)
 

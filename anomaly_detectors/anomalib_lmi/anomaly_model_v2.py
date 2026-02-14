@@ -5,8 +5,9 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import torch
-from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
-from image_utils.tiler import OverlapMode, ScaleMode, Tiler
+
+from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
+from lmi_utils.image_utils.tiler import OverlapMode, ScaleMode, Tiler
 
 from .base import Anomalib_Base, to_list
 

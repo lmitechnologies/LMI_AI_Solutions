@@ -4,14 +4,15 @@ from typing import Dict, List
 
 import numpy as np
 import torch
-from gadget_utils.pipeline_utils import (
+
+from lmi_utils.gadget_utils.pipeline_utils import (
     plot_one_box,
     revert_mask_to_origin,
     revert_to_origin,
 )
-from od_core.object_detector_registry import ObjectDetectorRegistry
-from od_core.od_base import ODBase
-from postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_masks
+from lmi_utils.postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_masks
+from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
+from object_detectors.od_core.od_base import ODBase
 
 
 @ObjectDetectorRegistry.register(
@@ -89,9 +90,10 @@ class Detectron2TRT(ODBase):
         """
         """source: https://github.com/NVIDIA/TensorRT/tree/release/10.4/samples/python/detectron2"""
 
-        import detectron2_lmi.utils.common_runtime as common
         import tensorrt as trt
         from cuda import cudart
+
+        import object_detectors.detectron2_lmi.utils.common_runtime as common
 
         trt_logger = trt.Logger(trt.Logger.ERROR)
         trt.init_libnvinfer_plugins(trt_logger, namespace="")
@@ -193,7 +195,7 @@ class Detectron2TRT(ODBase):
         Returns:
             list: A list of numpy arrays containing the model's output data.
         """
-        import detectron2_lmi.utils.common_runtime as common
+        import object_detectors.detectron2_lmi.utils.common_runtime as common
 
         outputs = []
         for out in self.model_outputs:
@@ -386,7 +388,7 @@ class Detectron2PT(ODBase):
         try:
             self.model = torch.jit.load(model_path, map_location=self.device)
         except Exception as e:
-            self.logger.exception(f"❗ Failed to load model: {e}")
+            self.logger.exception(f"鉂?Failed to load model: {e}")
 
         class_map = kwargs.get("class_map", None)
         if class_map is None:

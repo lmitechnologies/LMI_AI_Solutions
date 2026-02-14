@@ -4,7 +4,7 @@ import logging
 import os
 import shutil
 
-import label_utils.csv_utils as csv_utils
+import lmi_utils.label_utils.csv_utils as csv_utils
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

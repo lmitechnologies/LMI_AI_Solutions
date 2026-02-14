@@ -1,5 +1,6 @@
 import tensorflow as tf
-from pcl_utils.point_cloud import PointCloud
+
+from lmi_utils.pcl_utils.point_cloud import PointCloud
 
 
 def extract_image(acq_path, W, H):

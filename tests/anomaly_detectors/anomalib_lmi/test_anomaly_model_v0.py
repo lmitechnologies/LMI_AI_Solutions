@@ -4,8 +4,9 @@ import subprocess
 import tempfile
 
 import torch
-from ad_core.anomaly_detector import AnomalyDetector
-from anomalib_lmi.anomaly_model import AnomalyModel
+
+from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
+from anomaly_detectors.anomalib_lmi.anomaly_model import AnomalyModel
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

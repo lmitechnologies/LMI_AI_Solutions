@@ -2,7 +2,8 @@ import logging
 
 import pytest
 import torch
-from preprocess_utils.preprocessor import Preprocessor
+
+from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 
 logging.basicConfig()
 logger = logging.getLogger()

@@ -2,9 +2,9 @@ import argparse
 import logging
 import os
 
-from detectron2_lmi.convert import convert
-from detectron2_lmi.infer import inference_run
-from detectron2_lmi.trainer import training_run
+from object_detectors.detectron2_lmi.convert import convert
+from object_detectors.detectron2_lmi.infer import inference_run
+from object_detectors.detectron2_lmi.trainer import training_run
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

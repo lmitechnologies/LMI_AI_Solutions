@@ -3,10 +3,11 @@ import os
 from collections import OrderedDict, namedtuple
 
 import albumentations as A
-import gadget_utils.pipeline_utils as pipeline_utils
 import numpy as np
 import torch
-from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
+
+import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 
 from .base import Anomalib_Base
 

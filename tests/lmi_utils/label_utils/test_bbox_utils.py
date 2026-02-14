@@ -1,7 +1,8 @@
 import cv2
 import numpy as np
 import pytest
-from label_utils.bbox_utils import get_rotated_bbox, rotate
+
+from lmi_utils.label_utils.bbox_utils import get_rotated_bbox, rotate
 
 
 # --- Helper to generate rotated rectangles ---

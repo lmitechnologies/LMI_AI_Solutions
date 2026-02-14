@@ -6,7 +6,7 @@ import os
 from logging import warning
 
 # LMI packages
-from label_utils.shapes import Brush, Keypoint, Mask, Rect
+from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

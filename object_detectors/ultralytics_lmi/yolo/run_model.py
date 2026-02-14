@@ -5,7 +5,9 @@ import random
 
 import cv2
 import numpy as np
-from gadget_utils.pipeline_utils import (
+from tqdm import tqdm
+
+from lmi_utils.gadget_utils.pipeline_utils import (
     fit_im_to_size,
     get_img_path_batches,
     plot_one_box,
@@ -14,11 +16,10 @@ from gadget_utils.pipeline_utils import (
     revert_masks_to_origin,
     revert_to_origin,
 )
-from label_utils.bbox_utils import get_rotated_bbox
-from label_utils.csv_utils import write_to_csv
-from label_utils.shapes import Mask, Rect
-from tqdm import tqdm
-from ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
+from lmi_utils.label_utils.bbox_utils import get_rotated_bbox
+from lmi_utils.label_utils.csv_utils import write_to_csv
+from lmi_utils.label_utils.shapes import Mask, Rect
+from object_detectors.ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
 
 BATCH_SIZE = 1
 COLORS = [

@@ -3,7 +3,8 @@ import time
 
 import numpy as np
 import pycuda.driver as cuda
-from yolov5_lmi.trt.old.base_trt_model import TRT_Model
+
+from object_detectors.yolov5_lmi.trt.old.base_trt_model import TRT_Model
 
 
 class YoLov5TRT(TRT_Model):

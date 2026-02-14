@@ -1,7 +1,8 @@
 # %%
 import cv2
 import numpy as np
-from image_utils.rgb_converter import convert_array_to_rainbow
+
+from lmi_utils.image_utils.rgb_converter import convert_array_to_rainbow
 
 BLACK = [0, 0, 0]
 TWO_TO_SIXTEEN_MINUS_ONE = np.power(2, 16) - 1

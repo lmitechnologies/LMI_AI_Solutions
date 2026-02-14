@@ -6,7 +6,8 @@ import os
 
 import cv2
 import numpy as np
-from label_utils.plot_utils import plot_one_polygon, plot_one_pt
+
+from lmi_utils.label_utils.plot_utils import plot_one_polygon, plot_one_pt
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -80,7 +81,7 @@ def load_yolo_labels(lb_file, im_file, shape, keypoint=False, nkpt=0, ndim=2, nu
             lb = np.array(lb, dtype=np.float32)
             classes = lb[:, 0]
             if len(classes) == 0:
-                msg = f"{prefix}WARNING ⚠️ {im_file}: negative class labels {classes[classes < 0]}"
+                msg = f"{prefix}WARNING 鈿狅笍 {im_file}: negative class labels {classes[classes < 0]}"
         nl = len(lb)
         if nl:
             if keypoint:
@@ -104,7 +105,7 @@ def load_yolo_labels(lb_file, im_file, shape, keypoint=False, nkpt=0, ndim=2, nu
                 lb = lb[i]
                 if segments is not None:
                     segments = [segments[x] for x in i]
-                msg = f"{prefix}WARNING ⚠️ {im_file}: {nl - len(i)} duplicate labels removed"
+                msg = f"{prefix}WARNING 鈿狅笍 {im_file}: {nl - len(i)} duplicate labels removed"
         else:
             ne = 1  # label empty
             lb = np.zeros((0, (5 + nkpt * ndim) if keypoint else 5), dtype=np.float32)

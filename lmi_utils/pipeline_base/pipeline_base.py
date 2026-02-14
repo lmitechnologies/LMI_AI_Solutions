@@ -12,9 +12,9 @@ import numpy
 import torch
 
 # LMI AIS repo's modules
-from ad_core.anomaly_detector import AnomalyDetector
-from cls_core.classifier import Classifier
-from dataset_utils.representations import (
+from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
+from classifiers.cls_core.classifier import Classifier
+from lmi_utils.dataset_utils.representations import (
     Annotation,
     AnnotationType,
     Box,
@@ -22,9 +22,9 @@ from dataset_utils.representations import (
     Point2d,
     Polygon,
 )
-from od_core.object_detector import ObjectDetector
-from preprocess_utils.preprocessor import Preprocessor
-from preprocess_utils.reconstructor import Reconstructor
+from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+from lmi_utils.preprocess_utils.reconstructor import Reconstructor
+from object_detectors.od_core.object_detector import ObjectDetector
 
 from .core.schemas.schema_2 import ModelSchemaV_2
 

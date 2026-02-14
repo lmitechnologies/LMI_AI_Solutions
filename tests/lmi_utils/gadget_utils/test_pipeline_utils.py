@@ -1,10 +1,11 @@
 import logging
 
 import cv2
-import gadget_utils.pipeline_utils as pipeline_utils
 import numpy as np
 import pytest
 import torch
+
+import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

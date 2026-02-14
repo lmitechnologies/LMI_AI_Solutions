@@ -7,10 +7,11 @@ import shutil
 
 import cv2
 import numpy as np
-from label_utils.csv_utils import load_csv
 from PIL import Image, ImageDraw
 from pycocotools import mask as coco_mask
 from shapely.geometry import Polygon
+
+from lmi_utils.label_utils.csv_utils import load_csv
 
 
 class Dataset(object):

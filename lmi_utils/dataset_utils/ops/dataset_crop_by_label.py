@@ -3,7 +3,7 @@ import logging
 import numpy as np
 
 # LMI packages
-from dataset_utils.representations import (
+from lmi_utils.dataset_utils.representations import (
     Box,
     BoxAnnotation,
     Mask,

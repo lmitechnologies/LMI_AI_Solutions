@@ -25,7 +25,7 @@ except ImportError as e:
     logging.error(f"Failed to import rfdetr models: {e}")
     raise
 
-from rf_detr_lmi.convert import convert_to_onnx, convert_to_tensorrt
+from object_detectors.rf_detr_lmi.convert import convert_to_onnx, convert_to_tensorrt
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -4,8 +4,9 @@ import os
 import pytest
 import torch
 import torchvision
-from image_utils.tiler import ScaleMode, Tiler
-from system_utils import path_utils
+
+from lmi_utils.image_utils.tiler import ScaleMode, Tiler
+from lmi_utils.system_utils import path_utils
 
 logging.basicConfig()
 logger = logging.getLogger()

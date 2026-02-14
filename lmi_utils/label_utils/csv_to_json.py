@@ -3,7 +3,8 @@ import os
 
 import cv2
 import numpy as np
-from dataset_utils.representations import (
+
+from lmi_utils.dataset_utils.representations import (
     Annotation,
     AnnotationType,
     Box,

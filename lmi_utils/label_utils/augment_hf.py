@@ -2,8 +2,9 @@ import logging
 import os
 
 import cv2
-from label_utils.csv_utils import load_csv, write_to_csv
-from label_utils.shapes import Keypoint, Rect
+
+from lmi_utils.label_utils.csv_utils import load_csv, write_to_csv
+from lmi_utils.label_utils.shapes import Keypoint, Rect
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

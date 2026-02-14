@@ -4,11 +4,12 @@ import os
 
 import cv2
 import numpy as np
-from label_utils.bbox_utils import rotate
-from label_utils.plot_utils import get_distinct_colors, plot_one_brush, plot_one_polygon
 from pycocotools import mask as coco_mask
 from pycocotools.coco import COCO
-from system_utils import path_utils
+
+from lmi_utils.label_utils.bbox_utils import rotate
+from lmi_utils.label_utils.plot_utils import get_distinct_colors, plot_one_brush, plot_one_polygon
+from lmi_utils.system_utils import path_utils
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

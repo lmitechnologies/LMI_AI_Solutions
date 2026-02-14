@@ -4,12 +4,13 @@ import os
 
 import cv2
 import numpy as np
-from gadget_utils.pipeline_utils import fit_array_to_size
-from label_utils.csv_utils import load_csv, write_to_csv
+
+from lmi_utils.gadget_utils.pipeline_utils import fit_array_to_size
+from lmi_utils.label_utils.csv_utils import load_csv, write_to_csv
 
 # LMI packages
-from label_utils.shapes import Brush, Keypoint, Mask, Rect
-from system_utils.path_utils import get_relative_paths
+from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
+from lmi_utils.system_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

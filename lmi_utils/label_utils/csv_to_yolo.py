@@ -12,11 +12,12 @@ import shutil
 import cv2
 import numpy as np
 import yaml
-from label_utils.bbox_utils import rotate
+
+from lmi_utils.label_utils.bbox_utils import rotate
 
 # LMI packages
-from label_utils.csv_utils import load_csv
-from label_utils.shapes import Brush, Keypoint, Mask, Rect
+from lmi_utils.label_utils.csv_utils import load_csv
+from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

@@ -10,12 +10,13 @@ import cv2
 import numpy as np
 import pytest
 import torch
-from ad_core.anomaly_detector import AnomalyDetector
 from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
-from anomalib_lmi.anomaly_model_v2 import AnomalyModel_V2
-from anomalib_lmi.convert_to_torchscript import convert_v2_torchscript
-from gadget_utils import pipeline_utils
+
+from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
+from anomaly_detectors.anomalib_lmi.anomaly_model_v2 import AnomalyModel_V2
+from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v2_torchscript
+from lmi_utils.gadget_utils import pipeline_utils
 
 os.environ["TRUST_REMOTE_CODE"] = "1"
 

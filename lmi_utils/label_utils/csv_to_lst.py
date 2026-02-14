@@ -4,8 +4,9 @@ from pathlib import Path
 
 import cv2
 import lxml.etree as ET
-from label_utils.csv_utils import load_csv
-from label_utils.shapes import Mask, Rect
+
+from lmi_utils.label_utils.csv_utils import load_csv
+from lmi_utils.label_utils.shapes import Mask, Rect
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

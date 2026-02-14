@@ -3,7 +3,8 @@ import glob
 import os
 
 import numpy as np
-from pcl_utils.point_cloud import PointCloud
+
+from lmi_utils.pcl_utils.point_cloud import PointCloud
 
 
 def convert_pcd_to_png(path_in, path_out, color_map, contrast_enhance=False):

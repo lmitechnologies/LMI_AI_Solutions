@@ -6,7 +6,8 @@ import shutil
 
 import cv2
 import yaml
-from dataset_utils.representations import Dataset
+
+from lmi_utils.dataset_utils.representations import Dataset
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

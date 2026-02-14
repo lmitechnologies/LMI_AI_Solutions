@@ -4,7 +4,8 @@ import pathlib
 import cv2
 import numpy as np
 import yaml
-from label_utils.bbox_utils import get_rotated_bbox
+
+from lmi_utils.label_utils.bbox_utils import get_rotated_bbox
 
 
 def xywhn2xyxy(xc, yc, w, h, im_w, im_h):

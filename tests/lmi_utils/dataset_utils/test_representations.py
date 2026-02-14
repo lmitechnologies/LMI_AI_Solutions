@@ -5,8 +5,9 @@ import os
 import cv2
 import numpy as np
 import pytest
-from dataset_utils.mask_encoder import mask2rle
-from dataset_utils.representations import (
+
+from lmi_utils.dataset_utils.mask_encoder import mask2rle
+from lmi_utils.dataset_utils.representations import (
     AnnotationType,
     Box,
     BoxAnnotation,
@@ -20,7 +21,6 @@ from dataset_utils.representations import (
     Polygon,
     PolygonAnnotation,
 )
-
 from lmi_utils.label_utils.bbox_utils import rotate
 
 logging.basicConfig()

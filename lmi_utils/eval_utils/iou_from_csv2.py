@@ -5,12 +5,12 @@ import os
 
 import cv2
 import numpy as np
-
-# LMI packages
-from label_utils import csv_utils
-from label_utils.shapes import Mask, Rect
 from shapely.geometry import Polygon
 from shapely.validation import make_valid
+
+# LMI packages
+from lmi_utils.label_utils import csv_utils
+from lmi_utils.label_utils.shapes import Mask, Rect
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
