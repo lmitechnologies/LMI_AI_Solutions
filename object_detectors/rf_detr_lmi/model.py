@@ -506,14 +506,17 @@ class RfdetrPTH(ODBase):
     logger.setLevel(logging.INFO)
 
     # Model configuration: {model_type: (default_resolution, model_class)}
-    MODEL_CONFIGS = {
-        "nano": (384, RFDETRNano),
-        "small": (512, RFDETRSmall),
-        "medium": (576, RFDETRMedium),
-        "large": (704, RFDETRLarge),
-        "xlarge": (700, RFDETRXLarge),
-        "2xlarge": (880, RFDETR2XLarge),
-    }
+    try:
+        MODEL_CONFIGS = {
+            "nano": (384, RFDETRNano),
+            "small": (512, RFDETRSmall),
+            "medium": (576, RFDETRMedium),
+            "large": (704, RFDETRLarge),
+            "xlarge": (700, RFDETRXLarge),
+            "2xlarge": (880, RFDETR2XLarge),
+        }
+    except Exception:
+        MODEL_CONFIGS = {}
 
     DEFAULT_MODEL_TYPE = "medium"
     DEFAULT_CONFIDENCE = 0.5
