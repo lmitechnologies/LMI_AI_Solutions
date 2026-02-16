@@ -515,7 +515,7 @@ class RfdetrPTH(ODBase):
             "xlarge": (700, RFDETRXLarge),
             "2xlarge": (880, RFDETR2XLarge),
         }
-    except NameError:
+    except Exception:
         MODEL_CONFIGS = {}
 
     DEFAULT_MODEL_TYPE = "medium"
