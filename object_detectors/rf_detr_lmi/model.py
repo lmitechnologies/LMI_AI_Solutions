@@ -9,7 +9,7 @@ from od_core.od_base import ODBase
 from od_core.results import Results
 
 try:
-    from rfdetr import RFDETRBase, RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
+    from rfdetr import RFDETR2XLarge, RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall, RFDETRXLarge
 except ImportError:
     pass
 import cv2
@@ -496,192 +496,303 @@ class RfdetrPT(ODBase):
 
 @RfdetrModel.register("pth")
 class RfdetrPTH(ODBase):
+    """RF-DETR PyTorch model wrapper for object detection.
+
+    This class provides an interface for RF-DETR models loaded from PyTorch checkpoint files.
+    Supports multiple model variants: nano, medium, large, xlarge, and 2xlarge.
+    """
+
     logger = logging.getLogger("RFDETR")
     logger.setLevel(logging.INFO)
 
+    # Model configuration: {model_type: (default_resolution, model_class)}
+    try:
+        MODEL_CONFIGS = {
+            "nano": (384, RFDETRNano),
+            "small": (512, RFDETRSmall),
+            "medium": (576, RFDETRMedium),
+            "large": (704, RFDETRLarge),
+            "xlarge": (700, RFDETRXLarge),
+            "2xlarge": (880, RFDETR2XLarge),
+        }
+    except Exception:
+        MODEL_CONFIGS = {}
+
+    DEFAULT_MODEL_TYPE = "medium"
+    DEFAULT_CONFIDENCE = 0.5
+
     def __init__(self, model_path: str, **kwargs) -> None:
-        print(f"kwargs: {kwargs}")
+        """Initialize RF-DETR model from checkpoint.
 
-        if torch.cuda.is_available() and kwargs.get("device", "cuda") == "cuda":
-            self.device = "cuda"
-        else:
-            self.device = "cpu"
+        Args:
+            model_path: Path to the model checkpoint file (.pth)
+            **kwargs: Additional configuration options:
+                - model_type: Model variant (nano/medium/large/xlarge/2xlarge). Default: medium
+                - device: Device to run on (cuda/cpu). Default: cuda if available
+                - image_size: Tuple of (height, width). Default: model-specific
 
+        Raises:
+            FileNotFoundError: If model_path does not exist
+            ValueError: If model_type is not supported
+        """
+        self.logger.debug(f"Initializing RfdetrPTH with kwargs: {kwargs}")
+
+        # Validate model path
         if not os.path.isfile(model_path):
-            raise FileNotFoundError(f"File not found: {model_path}")
+            raise FileNotFoundError(f"Model checkpoint not found: {model_path}")
 
-        # TODO load model and support all types
-        model_type = kwargs.get("model_type", "medium").lower()
-        self.class_names = {}
-        self.model = None
-        if model_type == "medium":
-            self.image_size = (
-                kwargs.get("image_size")[0] if kwargs.get("image_size") is not None else 576,
-                kwargs.get("image_size")[1] if kwargs.get("image_size") is not None else 576,
-            )
-            self.model = RFDETRMedium(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
-        elif model_type == "large":
-            self.image_size = (
-                kwargs.get("image_size")[0] if kwargs.get("image_size") is not None else 560,
-                kwargs.get("image_size")[1] if kwargs.get("image_size") is not None else 560,
-            )
-            self.model = RFDETRLarge(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
-        elif model_type == "small":
-            self.image_size = (
-                kwargs.get("image_size")[0] if kwargs.get("image_size") is not None else 512,
-                kwargs.get("image_size")[1] if kwargs.get("image_size") is not None else 512,
-            )
+        # Determine device
+        self.device = self._get_device(kwargs.get("device", "cuda"))
 
-            self.model = RFDETRSmall(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
-        elif model_type == "nano":
-            self.image_size = (
-                kwargs.get("image_size")[0] if kwargs.get("image_size") is not None else 384,
-                kwargs.get("image_size")[1] if kwargs.get("image_size") is not None else 384,
-            )
-            self.model = RFDETRNano(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
-        elif model_type == "base":
-            self.image_size = (
-                kwargs.get("image_size")[0] if kwargs.get("image_size") is not None else 560,
-                kwargs.get("image_size")[1] if kwargs.get("image_size") is not None else 560,
-            )
-            self.model = RFDETRBase(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
+        # Get model type and validate
+        model_type = kwargs.get("model_type", self.DEFAULT_MODEL_TYPE).lower()
+        if model_type not in self.MODEL_CONFIGS:
+            supported = ", ".join(self.MODEL_CONFIGS.keys())
+            raise ValueError(f"Unsupported model type: '{model_type}'. Supported types: {supported}")
+
+        # Get model configuration
+        default_resolution, model_class = self.MODEL_CONFIGS[model_type]
+
+        # Set image size (use provided or default)
+        custom_size = kwargs.get("image_size")
+        if custom_size is not None:
+            self.image_size = (custom_size[0], custom_size[1])
         else:
-            raise ValueError(f'Unsupported model type: {model_type}. Supported types are "medium".')
-        if self.model is None:
-            raise ValueError("Model loading failed.")
+            self.image_size = (default_resolution, default_resolution)
+
+        # Initialize model
+        self.logger.info(
+            f"Loading {model_type} RF-DETR model from {model_path} "
+            f"with resolution {self.image_size[0]}x{self.image_size[1]} on {self.device}"
+        )
+        self.model = model_class(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
 
         self.class_names = self.model.class_names
         self.model.optimize_for_inference()
 
-    def warmup(self):
-        """Warm up the model by running a dummy inference."""
-        self.model.predict(np.zeros((self.image_size[0], self.image_size[1], 3), dtype=np.uint8))
-
-    def preprocess(self, image: np.ndarray, **kwargs):
-        """Preprocess the input image for the model.
+    def _get_device(self, requested_device: str) -> str:
+        """Determine the device to use for inference.
 
         Args:
-            image (np.ndarray): Input image in numpy array format.
-        """
-        pass  # No preprocessing needed for RF-DETR
-
-    def forward(self, image, **kwargs) -> dict:
-        """Perform object detection on a list of images.
-
-        Args:
-            image (np.ndarray): Input image in numpy array format.
+            requested_device: Requested device (cuda/cpu)
 
         Returns:
-            Results: Object containing detection results.
+            Device string (cuda/cpu)
         """
+        if requested_device == "cuda" and torch.cuda.is_available():
+            return "cuda"
 
+        if requested_device == "cuda" and not torch.cuda.is_available():
+            self.logger.warning("CUDA requested but not available. Falling back to CPU.")
+
+        return "cpu"
+
+    def warmup(self) -> None:
+        """Warm up the model by running a dummy inference.
+
+        This helps initialize CUDA kernels and prepare the model for actual inference.
+        """
+        dummy_image = np.zeros((self.image_size[0], self.image_size[1], 3), dtype=np.uint8)
+        self.model.predict(dummy_image)
+        self.logger.debug("Model warmup completed")
+
+    def preprocess(self, image: np.ndarray, **kwargs) -> np.ndarray:
+        """Preprocess the input image for the model.
+
+        Note: RF-DETR handles preprocessing internally, so no preprocessing is needed here.
+
+        Args:
+            image: Input image in numpy array format (HWC, uint8)
+            **kwargs: Additional preprocessing parameters (unused)
+
+        Returns:
+            The input image unchanged
+        """
+        return image
+
+    def forward(self, image: np.ndarray, **kwargs) -> dict:
+        """Perform forward pass through the model.
+
+        Args:
+            image: Input image in numpy array format (HWC, uint8)
+            **kwargs: Additional inference parameters (unused)
+
+        Returns:
+            Model predictions containing bounding boxes, scores, and class IDs
+        """
         return self.model.predict(image)
 
-    def _construct_results(self, preds, **kwargs) -> dict:
+    def _construct_results(self, preds, **kwargs) -> Results:
+        """Construct Results object from model predictions.
+
+        Args:
+            preds: Raw predictions from the model
+            **kwargs: Additional parameters (unused)
+
+        Returns:
+            Results object containing boxes, scores, and class IDs
+        """
         return Results(boxes=preds.xyxy, scores=preds.confidence, classes=preds.class_id)
 
     def postprocess(self, preds, **kwargs) -> Results:
-        """Postprocess the model outputs.
+        """Postprocess the model outputs by applying confidence thresholds and operators.
 
         Args:
-            outputs (dict): Model outputs.
+            preds: Raw predictions from the model containing xyxy, confidence, and class_id
+            **kwargs: Additional parameters:
+                - configs: Confidence threshold (float) or per-class thresholds (dict)
+                - operators: List of operators to revert coordinate transformations
 
         Returns:
-            dict: Postprocessed outputs.
-        """
-        conf = kwargs.get("configs", 0.5)
-        if isinstance(conf, float):
-            conf_thresholds = {cls_name: conf for cls_name in self.class_names.values()}
-        elif isinstance(conf, dict):
-            conf_thresholds = conf
-        else:
-            raise ValueError("conf should be a float or a dict")
+            Results object containing filtered boxes, scores, and class names
 
-        operators = kwargs.get("operators", [])
+        Raises:
+            ValueError: If configs is not a float or dict
+        """
+        # Get confidence thresholds
+        configs = kwargs.get("configs", self.DEFAULT_CONFIDENCE)
+        conf_thresholds = self._parse_confidence_config(configs)
+
+        # Extract predictions
         boxes = np.array(preds.xyxy)
         scores = np.array(preds.confidence)
-        classes = preds.class_id
-        # convert class ids to names
-        classes = np.array([self.class_names[c + 1] for c in classes])
+        class_ids = preds.class_id
+
+        # Early return if no detections
         if len(boxes) == 0:
             return Results(boxes=[], scores=[], classes=[])
-        mask = scores >= np.vectorize(conf_thresholds.get)(classes, 1.0)
 
+        # Convert class IDs to names
+        classes = np.array([self.class_names[c + 1] for c in class_ids])
+
+        # Filter by confidence thresholds
+        mask = scores >= np.vectorize(conf_thresholds.get)(classes, 1.0)
         boxes = boxes[mask]
         scores = scores[mask]
         classes = classes[mask]
 
-        # revert to origin
-        if len(operators) > 0:
+        # Apply coordinate transformations if operators provided
+        operators = kwargs.get("operators", [])
+        if operators:
             boxes = pipeline_utils.revert_to_origin(boxes, operators)
 
+        # Convert to tensors if results exist
         return Results(
             boxes=torch.from_numpy(boxes) if len(boxes) > 0 else [],
             scores=torch.from_numpy(scores) if len(scores) > 0 else [],
-            classes=[] if classes is None else classes,
+            classes=classes if len(classes) > 0 else [],
         )
 
-    @staticmethod
-    def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False):
-        """annotate model results on the image. If colormap is None, it will use the random colors.
+    def _parse_confidence_config(self, configs) -> dict:
+        """Parse confidence configuration into a per-class threshold dictionary.
 
         Args:
-            results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
-            image (np.ndarray): the input image
-            colors (list, optional): a dictionary of colormaps, e.g., {'class-A':(0,0,255), 'class-B':(0,255,0)}. Defaults to None.
-            line_thickness (int, optional): the thickness of the bounding box. Defaults to None.
-            hide_bbox (bool,optional): hide the bounding box
+            configs: Confidence threshold (float) or per-class thresholds (dict)
+
         Returns:
-            np.ndarray: the annotated image
+            Dictionary mapping class names to confidence thresholds
+
+        Raises:
+            ValueError: If configs is not a float or dict
+        """
+        if isinstance(configs, (int, float)):
+            return {cls_name: float(configs) for cls_name in self.class_names.values()}
+        elif isinstance(configs, dict):
+            return configs
+        else:
+            raise ValueError(f"configs must be a float or dict, got {type(configs).__name__}")
+
+    @staticmethod
+    def annotate_image(
+        results: dict,
+        image: np.ndarray,
+        colormap: dict = None,
+        line_thickness: int = None,
+        hide_label: bool = False,
+        hide_bbox: bool = False,
+    ) -> np.ndarray:
+        """Annotate detection results on the input image.
+
+        Args:
+            results: Detection results dictionary containing:
+                - boxes: List or array of bounding boxes [x1, y1, x2, y2]
+                - classes: List of class names
+                - scores: List of confidence scores
+            image: Input image as numpy array
+            colormap: Dictionary mapping class names to RGB tuples, e.g.,
+                {'class-A': (0, 0, 255), 'class-B': (0, 255, 0)}.
+                If None, random colors will be used
+            line_thickness: Thickness of bounding box lines. If None, auto-calculated
+            hide_label: If True, do not display class labels and scores
+            hide_bbox: If True, do not display bounding boxes
+
+        Returns:
+            Annotated image as numpy array (copy of input)
         """
         boxes = results["boxes"]
         classes = results["classes"]
         scores = results["scores"]
 
+        # Create a copy of the image
         image = to_numpy(image).copy()
+
+        # Early return if no detections
         if not len(boxes):
             return image
 
-        # convert to numpy
+        # Convert boxes to numpy
         boxes = to_numpy(boxes)
 
+        # Convert grayscale to RGB if needed
         if image.ndim == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
-        # plot boxes and masks
+        # Plot boxes and labels
         for i in range(len(boxes)):
-            label = "{}: {:.2f}".format(classes[i], scores[i])
-            args = {
+            label = f"{classes[i]}: {scores[i]:.2f}"
+            plot_args = {
                 "label": None if hide_label else label,
-                "color": None if colormap is None else colormap[classes[i]],
+                "color": None if colormap is None else colormap.get(classes[i]),
                 "line_thickness": line_thickness,
                 "hide_bbox": hide_bbox,
             }
-            pipeline_utils.plot_one_box(boxes[i], image, None, **args)
+            pipeline_utils.plot_one_box(boxes[i], image, None, **plot_args)
 
         return image
 
-    def predict(self, image, configs, operators=None, **kwargs):
-        """Perform object detection on a list of images.
+    def predict(self, image: np.ndarray, configs, operators=None, **kwargs) -> dict:
+        """Perform object detection on an input image.
+
+        This method runs the complete inference pipeline: forward pass and postprocessing.
 
         Args:
-            image (np.ndarray): Input image in numpy array format.
-            configs (dict): Configuration dictionary for confidence thresholding
-            operators (list, optional): List of operators to apply. Defaults to [].
-            iou (float, optional): IoU threshold for NMS. Defaults to 0.4.
-            agnostic (bool, optional): Class-agnostic NMS flag. Defaults to False.
-            max_det (int, optional): Maximum number of detections per image. Defaults to 300.
+            image: Input image in numpy array format (HWC, uint8)
+            configs: Confidence threshold (float) or per-class thresholds (dict)
+            operators: List of coordinate transformation operators to revert. Defaults to None
+            **kwargs: Additional inference parameters
 
         Returns:
-            Results: Object containing detection results.
+            Dictionary containing detection results:
+                - boxes: List of bounding boxes [x1, y1, x2, y2]
+                - scores: List of confidence scores
+                - classes: List of class names
+
+        Note:
+            Unlike some DETR variants, RF-DETR handles NMS internally,
+            so iou, agnostic, and max_det parameters are not used.
         """
         if operators is None:
             operators = []
-        # inference
+
+        # Inference
         outputs = self.forward(image, **kwargs)
-        # postprocess
+
+        # Postprocess
         results = self.postprocess(outputs, configs=configs, operators=operators, **kwargs)
-        results = results.to_dict(return_tensor=False)
-        if results == {}:
-            results = {"boxes": [], "scores": [], "classes": []}
-        return results
+        results_dict = results.to_dict(return_tensor=False)
+
+        # Ensure consistent return format
+        if not results_dict:
+            results_dict = {"boxes": [], "scores": [], "classes": []}
+
+        return results_dict

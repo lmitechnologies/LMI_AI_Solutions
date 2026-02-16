@@ -45,7 +45,7 @@ RUN pip install onnxsim onnx-graphsurgeon pycuda seaborn
 
 # clone LMI AI Solutions repository
 WORKDIR /repos
-RUN git clone -b FAIE-2765 https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git
 RUN cd LMI_AI_Solutions && pip install -e .
 ```
 
