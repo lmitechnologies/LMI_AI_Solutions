@@ -25,6 +25,7 @@ import onnx
 import onnx_graphsurgeon as gs
 import torch
 from onnx import shape_inference
+import detectron2_lmi.converter.onnx_utils  # noqa: F401
 
 try:
     from detectron2.config import get_cfg
