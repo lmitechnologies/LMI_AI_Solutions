@@ -27,7 +27,7 @@ Across model formats:
 
 | Model Format | Jetpack 4.5 | Jetpack 5.1 |
 |--------------|-------------|-------------|
-| PT (PyTorch) | ❌ Does not work | ❔ Not tested |
+| PT (PyTorch) | ❌ Does not work | ❌ Does not work |
 | TorchScript | ❌ Does not work | ✅ Works |
 | TensorRT | ❌ Does not work | ✅ Works |
 
