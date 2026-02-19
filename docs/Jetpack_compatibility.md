@@ -29,7 +29,7 @@ Across model formats:
 |--------------|-------------|-------------|
 | PT (PyTorch) | ❌ Does not work | ❔ Not tested |
 | TorchScript | ❌ Does not work | ✅ Works |
-| TensorRT | ❌ Does not work | ❔ Not tested |
+| TensorRT | ❌ Does not work | ✅ Works |
 
 ---
 
