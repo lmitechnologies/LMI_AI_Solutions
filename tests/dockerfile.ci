@@ -19,8 +19,7 @@ COPY ./tests/requirements-ci.txt .
 
 # remove triton for ARM
 RUN ARCH=$(uname -m) && \
-    # 'arm64' covers Apple Silicon (M1/M2/M3), 'aarch64' covers Linux ARM (like AWS Graviton)
-    if [[ "$ARCH" == "arm64" || "$ARCH" == "aarch64" ]]; then \
+    if [ "$ARCH" = "arm64" ] || [ "$ARCH" = "aarch64" ]; then \
         echo "ARM architecture detected ($ARCH). Removing incompatible dummy triton package..." && \
         pip uninstall triton -y || true; \
     else \
