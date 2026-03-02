@@ -24,55 +24,14 @@ jobs:
           submodules: false
           fetch-depth: 0
           
-      - name: Check if only docs changed
+      - name: Check if run CI
         id: check
         run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            git fetch origin ${{ github.base_ref }}
-            base="origin/${{ github.base_ref }}"
-            
-            if ! git cat-file -e $base^{commit} 2>/dev/null; then
-              echo "⚠️ Base branch $base not found, falling back to HEAD~1"
-              base="HEAD~1"
-            fi
-          else
-            base="${{ github.event.before }}"
-            
-            if [ -z "$base" ] || [ "$base" == "0000000000000000000000000000000000000000" ]; then
-              echo "ℹ️ Initial push detected, using HEAD~1 as base"
-              base="HEAD~1"
-            else
-              if ! git cat-file -e $base^{commit} 2>/dev/null; then
-                echo "⚠️ Base commit $base not found (likely force push). Defaulting to HEAD~1."
-                base="HEAD~1"
-              fi
-            fi
-          fi
-          
-          echo "📊 Comparing against: $base"
-          files=$(git diff --name-only $base HEAD)
-          
-          if [ -z "$files" ]; then
-            echo "ℹ️ No files changed (identical commits)"
-            echo "skip_tests=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          echo "📝 Changed files:"
-          echo "$files"
-          echo ""
-          
-          code_files=$(echo "$files" | grep -vE '(^docs/|\.md$|^\.gitignore$|^\.gitattributes$)' || true)
-          
-          if [ -z "$code_files" ]; then
-            echo "✅ Only documentation changed - skipping tests"
-            echo "skip_tests=true" >> $GITHUB_OUTPUT
-          else
-            echo "⚠️ Code changes detected - running full test suite"
-            echo "Code files changed:"
-            echo "$code_files"
-            echo "skip_tests=false" >> $GITHUB_OUTPUT
-          fi
+          python .github/workflows/scripts/check_changes.py
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
 
   run-test:
     needs: check-changes
