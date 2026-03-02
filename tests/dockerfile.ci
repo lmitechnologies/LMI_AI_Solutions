@@ -29,4 +29,6 @@ RUN git clone https://github.com/facebookresearch/detectron2 detectron2 && \
 RUN git clone -b ${ANOMALIB_VERSION} https://github.com/open-edge-platform/anomalib.git && \
     cd anomalib && \
     pip install -e . && \
-    anomalib install
+    if [ "${ANOMALIB_VERSION}" != "v2.2.0" ]; then \
+        anomalib install; \
+    fi
