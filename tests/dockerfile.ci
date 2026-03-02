@@ -17,6 +17,16 @@ RUN apt-get update && \
 # Copy requirements file
 COPY ./tests/requirements-ci.txt .
 
+# remove triton for ARM
+# RUN ARCH=$(uname -m) && \
+#     # 'arm64' covers Apple Silicon (M1/M2/M3), 'aarch64' covers Linux ARM (like AWS Graviton)
+#     if [[ "$ARCH" == "arm64" || "$ARCH" == "aarch64" ]]; then \
+#         echo "ARM architecture detected ($ARCH). Removing incompatible dummy triton package..." && \
+#         pip uninstall triton -y || true; \
+#     else \
+#         echo "x86_64 architecture detected. Keeping triton for GPU optimization."; \
+#     fi
+
 # Install Python requirements with architecture-specific PyTorch handling
 RUN pip install -r requirements-ci.txt --extra-index-url https://download.pytorch.org/whl/cpu
 

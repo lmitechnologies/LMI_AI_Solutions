@@ -1,5 +1,6 @@
 torch==2.4.1
 torchvision==0.19.1
+triton>=2.0.0; sys_platform == "linux" and platform_machine == "x86_64"
 scikit-learn
 tensorboard
 numba
