@@ -6,6 +6,7 @@ numba
 numpy<2.0
 ultralytics<8.4
 albumentations
+albucore==0.0.16
 onnx
 pytest
 pytest-html
