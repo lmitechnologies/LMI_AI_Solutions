@@ -1,5 +1,4 @@
 name: Cleanup Old Images
-
 on:
   schedule:
     - cron: '0 2 * * 0'  # Weekly on Sunday at 2 AM
@@ -20,7 +19,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-
+    
     steps:
       - name: Delete untagged images older than retention period
         env:
@@ -32,9 +31,16 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Validate retention period
+          if [ "${RETENTION_DAYS}" -lt 1 ]; then
+            echo "ERROR: retention_days must be >= 1, got: ${RETENTION_DAYS}"
+            exit 1
+          fi
+
           # Compute cutoff as epoch seconds for reliable numeric comparison
           CUTOFF_EPOCH=$(date -d "${RETENTION_DAYS} days ago" +%s)
-          echo "Retention: ${RETENTION_DAYS} days — deleting untagged images older than $(date -d "${RETENTION_DAYS} days ago" -Iseconds)"
+          CUTOFF_ISO=$(date -d "@${CUTOFF_EPOCH}" -Iseconds)
+          echo "Retention: ${RETENTION_DAYS} days — deleting untagged images older than ${CUTOFF_ISO}"
           echo "Dry run: ${DRY_RUN}"
 
           # Fetch all pages; --paginate emits concatenated JSON arrays so we
@@ -50,7 +56,7 @@ jobs:
           OLD_VERSIONS=$(echo "$VERSIONS" | jq -rs --argjson cutoff "$CUTOFF_EPOCH" '
             .[]
             | select(.metadata.container.tags | length == 0)
-            | select((.updated_at | fromdateiso8601) < $cutoff)
+            | select((.created_at | fromdateiso8601) < $cutoff)
             | .id
           ')
 
@@ -80,7 +86,7 @@ jobs:
                 echo "WARNING: Failed to delete version ID ${version_id}"
                 FAILED=$((FAILED + 1))
               fi
-              sleep 0.5  # Avoid hitting the GitHub API rate limit
+              sleep 1  # Avoid hitting the GitHub API rate limit
             fi
           done
 
@@ -91,13 +97,19 @@ jobs:
             echo "- **Retention:** ${RETENTION_DAYS} days"
             echo "- **Dry run:** ${DRY_RUN}"
             echo "- **Candidates found:** ${COUNT}"
-            if [ "$DRY_RUN" != "true" ]; then
+            if [ "$DRY_RUN" = "true" ]; then
+              echo ""
+              echo "### Candidates (dry run)"
+              for version_id in $OLD_VERSIONS; do
+                echo "- \`${version_id}\`"
+              done
+            else
               echo "- **Deleted:** ${DELETED}"
               echo "- **Failed:** ${FAILED}"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          if [ "$FAILED" -gt 0 ]; then
+          if [ "$DRY_RUN" != "true" ] && [ "$FAILED" -gt 0 ]; then
             echo "Cleanup finished with ${FAILED} failure(s)."
             exit 1
           fi
