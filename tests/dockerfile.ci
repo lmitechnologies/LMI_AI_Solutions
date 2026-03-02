@@ -34,4 +34,4 @@ RUN git clone -b ${ANOMALIB_VERSION} https://github.com/open-edge-platform/anoma
     fi
 
 # print triton version
-RUN pip list | grep triton
+RUN pip list | grep -i "triton" || true
