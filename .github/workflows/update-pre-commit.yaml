@@ -30,4 +30,5 @@ jobs:
           title: "Update Pre-commit Hooks"
           body: "This is an automated PR to update the pre-commit hooks to their latest versions."
           branch: update-pre-commit-hooks
+          labels: "dependencies, precommit"
           delete-branch: true
