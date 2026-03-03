@@ -31,6 +31,10 @@ jobs:
         run: |
           set -euo pipefail
 
+          # GitHub Actions 'number' inputs may arrive as floats (e.g. "7.0");
+          # truncate to integer for shell arithmetic and date command.
+          RETENTION_DAYS=${RETENTION_DAYS%.*}
+
           # Validate retention period
           if [ "${RETENTION_DAYS}" -lt 1 ]; then
             echo "ERROR: retention_days must be >= 1, got: ${RETENTION_DAYS}"
