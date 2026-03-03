@@ -5,9 +5,10 @@ import subprocess
 from abc import ABC, abstractmethod
 
 import cv2
-import gadget_utils.pipeline_utils as pipeline_utils
 import numpy as np
 import torch
+
+import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
 
 logging.basicConfig()
 
@@ -245,10 +246,11 @@ class Anomalib_Base(ABC):
         from pathlib import Path
 
         import matplotlib.pyplot as plt
-        from anomalib_lmi.ad_utils import plot_fig
         from scipy import interpolate
         from scipy.stats import gamma
         from tabulate import tabulate
+
+        from anomaly_detectors.anomalib_lmi.ad_utils import plot_fig
 
         def find_p(thresh_array, p_patch_array, p_sample_array, p_sample_target):
             """

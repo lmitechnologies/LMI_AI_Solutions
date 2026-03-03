@@ -7,9 +7,10 @@ import os
 
 import numpy as np
 from label_studio_sdk.converter.brush import decode_rle
-from label_utils.bbox_utils import convert_from_ls
-from label_utils.csv_utils import write_to_csv
-from label_utils.shapes import Brush, Keypoint, Mask, Rect
+
+from lmi_utils.label_utils.bbox_utils import convert_from_ls
+from lmi_utils.label_utils.csv_utils import write_to_csv
+from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

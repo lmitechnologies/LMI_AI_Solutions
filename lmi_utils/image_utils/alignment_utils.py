@@ -5,7 +5,8 @@ import os
 
 import cv2
 import numpy as np
-from image_utils.img_rotate import rotate
+
+from lmi_utils.image_utils.img_rotate import rotate
 
 # %% convert intensity pcd to png
 

@@ -6,8 +6,8 @@ import cv2
 import numpy as np
 
 # LMI packages
-from dataset_utils.representations import Dataset
-from system_utils.path_utils import get_relative_paths
+from lmi_utils.dataset_utils.representations import Dataset
+from lmi_utils.system_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

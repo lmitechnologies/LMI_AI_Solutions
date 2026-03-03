@@ -3,8 +3,9 @@ import os
 
 import cv2
 import pytest
-from cls_core.classifier import Classifier
-from yolov8_cls.model import Yolov8_cls
+
+from classifiers.cls_core.classifier import Classifier
+from classifiers.yolov8_cls.model import Yolov8_cls
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

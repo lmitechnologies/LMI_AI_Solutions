@@ -3,11 +3,12 @@ import os
 
 import cv2
 import numpy as np
-from dataset_utils.mask_encoder import mask2rle
+
+from lmi_utils.dataset_utils.mask_encoder import mask2rle
 
 # LMI packages
-from dataset_utils.representations import AnnotationType
-from label_utils.bbox_utils import get_rotated_bbox, rotate
+from lmi_utils.dataset_utils.representations import AnnotationType
+from lmi_utils.label_utils.bbox_utils import get_rotated_bbox, rotate
 
 logger = logging.getLogger(__name__)
 

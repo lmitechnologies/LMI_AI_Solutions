@@ -5,8 +5,9 @@ import os
 import time
 
 import cv2
-from dataset_utils.file_utils import get_images
-from rf_detr_lmi.model import RfdetrModel
+
+from lmi_utils.dataset_utils.file_utils import get_images
+from object_detectors.rf_detr_lmi.model import RfdetrModel
 
 # setup the logger
 logger = logging.getLogger("RFDETR-INFER")

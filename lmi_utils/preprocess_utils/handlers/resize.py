@@ -1,8 +1,9 @@
 from typing import Any, Dict, List, Tuple
 
 import torch
-from gadget_utils.pipeline_utils import revert_mask_to_origin
-from image_utils.img_resize import resize_and_pad
+
+from lmi_utils.gadget_utils.pipeline_utils import revert_mask_to_origin
+from lmi_utils.image_utils.img_resize import resize_and_pad
 
 
 @torch.inference_mode()

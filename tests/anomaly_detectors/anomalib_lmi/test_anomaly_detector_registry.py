@@ -1,6 +1,6 @@
 import logging
 
-from ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
+from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

@@ -4,8 +4,9 @@ import logging
 import os
 
 import numpy as np
-from label_utils.bbox_utils import convert_from_ls, rotate
-from label_utils.COCO_dataset import Annotation, COCO_Dataset
+
+from lmi_utils.label_utils.bbox_utils import convert_from_ls, rotate
+from lmi_utils.label_utils.COCO_dataset import Annotation, COCO_Dataset
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

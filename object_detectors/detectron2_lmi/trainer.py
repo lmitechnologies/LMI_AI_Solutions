@@ -8,7 +8,8 @@ import yaml
 from detectron2.data import DatasetMapper, build_detection_train_loader
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.logger import setup_logger
-from detectron2_lmi.utils.det_utils import create_config, register_datasets
+
+from object_detectors.detectron2_lmi.utils.det_utils import create_config, register_datasets
 
 logger = setup_logger()
 

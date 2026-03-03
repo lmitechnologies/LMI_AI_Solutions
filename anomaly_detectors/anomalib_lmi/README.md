@@ -200,7 +200,7 @@ services:
     ipc: host
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && python -m anomalib_lmi.anomaly_model2 convert -i /app/weights/torch/model.pt -e /app/weights/engine"
+      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && python -m anomaly_detectors.anomalib_lmi.anomaly_model2 convert -i /app/weights/torch/model.pt -e /app/weights/engine"
 
 ```
 
@@ -239,7 +239,7 @@ services:
     ipc: host
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && python -m anomalib_lmi.anomaly_model2 test -i /app/weights/engine/model.engine -d /app/data -o /app/outputs -p"
+      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && python -m anomaly_detectors.anomalib_lmi.anomaly_model2 test -i /app/weights/engine/model.engine -d /app/data -o /app/outputs -p"
 
 ```
 
@@ -287,7 +287,7 @@ If using single mode, please refer to the steps in [4. Validate Model](#4-valida
 Generate tiles as the training dataset, where `TILE_SZ` and `STRIDE` are integers for the tile size and stride step respectively. **Note:** if original images have varying sizes, make the image size consistent before generating tiles.
 
 ```bash
-python -m image_utils.img_tile --option tile -i PATH_DATA -o PATH_OUT --tile TILE_SZ TILE_SZ --stride STRIDE STRIDE
+python -m lmi_utils.image_utils.img_tile --option tile -i PATH_DATA -o PATH_OUT --tile TILE_SZ TILE_SZ --stride STRIDE STRIDE
 ```
 
 ### 5.2 Validate/Test
@@ -295,7 +295,7 @@ python -m image_utils.img_tile --option tile -i PATH_DATA -o PATH_OUT --tile TIL
 Use original images (not the tiles), where `PATH_DATA` is the path to the original images.
 
 ```bash
-python -m anomalib_lmi.anomaly_model2 test -i PATH_MODEL -d PATH_DATA -o PATH_OUT -p --tile TILE_SZ TILE_SZ --stride STRIDE STRIDE
+python -m anomaly_detectors.anomalib_lmi.anomaly_model2 test -i PATH_MODEL -d PATH_DATA -o PATH_OUT -p --tile TILE_SZ TILE_SZ --stride STRIDE STRIDE
 ```
 
 ### 5.3 Convert to TensorRT
@@ -303,5 +303,5 @@ python -m anomalib_lmi.anomaly_model2 test -i PATH_MODEL -d PATH_DATA -o PATH_OU
 The script requires the original image size, tile size and stride for TensorRT conversion, where `H` and `W` are the height and width from original images (not the tiles).
 
 ```bash
-python -m anomalib_lmi.anomaly_model2 convert -i MODEL_PATH -o EXPORT_PATH --hw H W --tile TILE TILE --stride STRIDE STRIDE
+python -m anomaly_detectors.anomalib_lmi.anomaly_model2 convert -i MODEL_PATH -o EXPORT_PATH --hw H W --tile TILE TILE --stride STRIDE STRIDE
 ```

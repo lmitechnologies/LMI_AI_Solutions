@@ -5,8 +5,9 @@ import cv2
 import numpy as np
 import pytest
 import torch
-from od_core.object_detector import ObjectDetector
 from rfdetr import RFDETRNano
+
+from object_detectors.od_core.object_detector import ObjectDetector
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

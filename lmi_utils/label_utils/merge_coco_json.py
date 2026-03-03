@@ -4,7 +4,7 @@ import os
 import shutil
 from typing import Dict, List
 
-from dataset_utils.coco_dataset import CocoAnnotation, CocoCategory, CocoDataset, CocoImage, CocoLicense
+from lmi_utils.dataset_utils.coco_dataset import CocoAnnotation, CocoCategory, CocoDataset, CocoImage, CocoLicense
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

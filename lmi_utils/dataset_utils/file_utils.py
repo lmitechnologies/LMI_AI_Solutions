@@ -4,7 +4,8 @@ import os
 import shutil
 
 import cv2
-from dataset_utils.representations import Dataset
+
+from lmi_utils.dataset_utils.representations import Dataset
 
 logger = logging.getLogger(__name__)
 

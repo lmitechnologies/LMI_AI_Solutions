@@ -6,8 +6,9 @@ import tempfile
 import pytest
 import torch
 import torchvision
-from image_utils.img_tile import ScaleMode, to_images, to_tiles
-from system_utils import path_utils
+
+from lmi_utils.image_utils.img_tile import ScaleMode, to_images, to_tiles
+from lmi_utils.system_utils import path_utils
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -63,13 +64,13 @@ def test_cmds():
     imgs = load_imgs(PATH_IMG)
     my_env = os.environ.copy()
     with tempfile.TemporaryDirectory() as tmpdir:
-        cmd = f"python -m image_utils.img_tile --option tile -i {str(PATH_IMG)} -o {str(tmpdir)} --tile 224 224 --stride 112 112"
+        cmd = f"python -m lmi_utils.image_utils.img_tile --option tile -i {str(PATH_IMG)} -o {str(tmpdir)} --tile 224 224 --stride 112 112"
         out = subprocess.run(cmd, check=True, shell=True, env=my_env, capture_output=True, text=True)
         logger.info(out.stdout)
         logger.info(out.stderr)
 
         with tempfile.TemporaryDirectory() as tmpdir2:
-            cmd = f"python -m image_utils.img_tile --option untile -i {str(tmpdir)} -o {str(tmpdir2)}"
+            cmd = f"python -m lmi_utils.image_utils.img_tile --option untile -i {str(tmpdir)} -o {str(tmpdir2)}"
             out = subprocess.run(cmd, check=True, shell=True, env=my_env, capture_output=True, text=True)
             logger.info(out.stdout)
             logger.info(out.stderr)

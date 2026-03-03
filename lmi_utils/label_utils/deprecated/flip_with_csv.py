@@ -1,4 +1,4 @@
-# built-in packages
+﻿# built-in packages
 import logging
 import os
 
@@ -6,9 +6,9 @@ import cv2
 import numpy as np
 
 # LMI packages
-from label_utils import csv_utils
-from label_utils.shapes import Brush, Keypoint, Mask, Rect
-from system_utils.path_utils import get_relative_paths
+from lmi_utils.label_utils import csv_utils
+from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
+from lmi_utils.system_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

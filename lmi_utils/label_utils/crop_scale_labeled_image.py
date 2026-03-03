@@ -2,7 +2,8 @@ import argparse
 
 import cv2
 import numpy as np
-from image_utils.img_resize import resize
+
+from lmi_utils.image_utils.img_resize import resize
 
 
 def make_border(img, p2h=None, p2w=None):

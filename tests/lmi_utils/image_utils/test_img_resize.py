@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
 import torch
-from image_utils.img_resize import resize_and_pad
+
+from lmi_utils.image_utils.img_resize import resize_and_pad
 
 
 @pytest.mark.parametrize(

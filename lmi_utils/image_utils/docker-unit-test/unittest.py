@@ -4,7 +4,8 @@ import cv2
 import tensorflow as tf
 import torch
 import torchvision.transforms as T
-from image_utils.img_resize import resize
+
+from lmi_utils.image_utils.img_resize import resize
 
 img = cv2.imread("/app/data/1678995822014641.gadget2d.png")
 

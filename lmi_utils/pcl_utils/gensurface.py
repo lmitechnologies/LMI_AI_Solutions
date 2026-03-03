@@ -3,7 +3,8 @@ import glob
 import os
 
 import numpy as np
-import pcl_utils.point_cloud as pcloud
+
+import lmi_utils.pcl_utils.point_cloud as pcloud
 
 
 # %%

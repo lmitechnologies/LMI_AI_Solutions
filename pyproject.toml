@@ -11,18 +11,19 @@ dependencies = []
 
 [project.scripts]
 # From lmi_utils
-labels-preprocess = "label_utils.apply_ops:main"
-labels-convert-yolo = "label_utils.json_to_yolo:main"
-labels-convert-lst = "label_utils.lst_to_json:main"
-gadget-surface = "gadget_utils.gadget_surface_utils:main"
-gadget-image = "gadget_utils.gadget_image:main"
+labels-preprocess = "lmi_utils.label_utils.apply_ops:main"
+labels-convert-yolo = "lmi_utils.label_utils.json_to_yolo:main"
+labels-convert-lst = "lmi_utils.label_utils.lst_to_json:main"
+gadget-surface = "lmi_utils.gadget_utils.gadget_surface_utils:main"
+gadget-image = "lmi_utils.gadget_utils.gadget_image:main"
 
 [tool.setuptools.packages.find]
-where = [
-    "anomaly_detectors",
-    "classifiers",
-    "lmi_utils",
-    "object_detectors",
+where = ["."]
+include = [
+    "anomaly_detectors*",
+    "classifiers*",
+    "lmi_utils*",
+    "object_detectors*",
 ]
 exclude = [
     "*submodules*",

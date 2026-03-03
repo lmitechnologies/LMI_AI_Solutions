@@ -53,7 +53,7 @@ pip install -e .
 Run any scripts in this repo, for example:
 
 ```bash
-python -m label_utils.plot_with_json -h
+python -m lmi_utils.label_utils.plot_with_json -h
 ```
 
 ## Development Guidelines

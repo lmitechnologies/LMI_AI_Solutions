@@ -5,9 +5,10 @@ import cv2
 import numpy as np
 import pytest
 import torch
-from od_core.object_detector import ObjectDetector
 from ultralytics import YOLO
-from ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
+
+from object_detectors.od_core.object_detector import ObjectDetector
+from object_detectors.ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

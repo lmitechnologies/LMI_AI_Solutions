@@ -4,7 +4,7 @@ import logging
 import pkgutil
 from typing import Any, Dict, List, Optional, Tuple, Type
 
-PACKAGES = ["yolov8_cls"]
+PACKAGES = ["classifiers.yolov8_cls"]
 TARGET_MODULE_SUFFIXES = [".model"]  # Target suffixes to look for in the packages
 
 

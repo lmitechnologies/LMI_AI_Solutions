@@ -2,7 +2,8 @@ import argparse
 import os
 
 import pandas as pd
-import pcl_utils.point_cloud as pcloud
+
+import lmi_utils.pcl_utils.point_cloud as pcloud
 
 """ MODULE:
         get_local_hmaps.py

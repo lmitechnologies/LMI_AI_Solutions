@@ -4,7 +4,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from label_utils.csv_to_lst import POLYGON_NAME, RECT_NAME, write_xml
+from lmi_utils.label_utils.csv_to_lst import POLYGON_NAME, RECT_NAME, write_xml
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

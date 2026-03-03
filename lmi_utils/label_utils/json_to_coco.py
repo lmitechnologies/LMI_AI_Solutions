@@ -2,9 +2,9 @@ import argparse
 import logging
 import os
 
-from dataset_utils.coco_dataset import CocoAnnotation, CocoCategory, CocoDataset, CocoImage
-from dataset_utils.file_utils import copy_images_in_folder, load_and_update
-from dataset_utils.representations import BoxAnnotation, Dataset, MaskAnnotation, PolygonAnnotation
+from lmi_utils.dataset_utils.coco_dataset import CocoAnnotation, CocoCategory, CocoDataset, CocoImage
+from lmi_utils.dataset_utils.file_utils import copy_images_in_folder, load_and_update
+from lmi_utils.dataset_utils.representations import BoxAnnotation, Dataset, MaskAnnotation, PolygonAnnotation
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

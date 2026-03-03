@@ -3,8 +3,8 @@ import logging
 import numpy as np
 
 # LMI packages
-from dataset_utils.representations import Annotation
-from image_utils.img_resize import resize
+from lmi_utils.dataset_utils.representations import Annotation
+from lmi_utils.image_utils.img_resize import resize
 
 logger = logging.getLogger(__name__)
 

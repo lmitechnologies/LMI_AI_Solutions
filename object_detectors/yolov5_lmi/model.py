@@ -6,12 +6,13 @@ import time
 from typing import Union
 
 import cv2
-import gadget_utils.pipeline_utils as pipeline_utils
 import numpy as np
 import torch
-from od_core.object_detector_registry import ObjectDetectorRegistry
-from od_core.od_base import ODBase
-from yolov8_lmi.model import Yolov8
+
+import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
+from object_detectors.od_core.od_base import ODBase
+from object_detectors.yolov8_lmi.model import Yolov8
 
 # add yolov5 submodule to the path
 YOLO_PATH = os.path.join(os.path.dirname(__file__), "../submodules/yolov5")

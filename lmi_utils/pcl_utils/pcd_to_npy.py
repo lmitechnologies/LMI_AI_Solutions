@@ -2,7 +2,7 @@ import argparse
 import glob
 import os
 
-from pcl_utils.point_cloud import PointCloud
+from lmi_utils.pcl_utils.point_cloud import PointCloud
 
 
 def convert_pcd_to_npy(path_in, path_out):

@@ -4,8 +4,9 @@ import os
 
 import cv2
 import numpy as np
-from gadget_utils.pipeline_utils import fit_im_to_size, resize_image
-from system_utils.path_utils import get_relative_paths
+
+from lmi_utils.gadget_utils.pipeline_utils import fit_im_to_size, resize_image
+from lmi_utils.system_utils.path_utils import get_relative_paths
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

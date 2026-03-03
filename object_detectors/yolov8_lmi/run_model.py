@@ -5,12 +5,13 @@ import random
 
 import cv2
 import numpy as np
-from gadget_utils.pipeline_utils import get_img_path_batches, plot_one_box, plot_one_rbox
-from label_utils.bbox_utils import get_rotated_bbox
-from label_utils.csv_utils import write_to_csv
-from label_utils.shapes import Mask, Rect
 from tqdm import tqdm
-from yolov8_lmi.model import Yolov8, Yolov8Obb, Yolov8Pose
+
+from lmi_utils.gadget_utils.pipeline_utils import get_img_path_batches, plot_one_box, plot_one_rbox
+from lmi_utils.label_utils.bbox_utils import get_rotated_bbox
+from lmi_utils.label_utils.csv_utils import write_to_csv
+from lmi_utils.label_utils.shapes import Mask, Rect
+from object_detectors.yolov8_lmi.model import Yolov8, Yolov8Obb, Yolov8Pose
 
 BATCH_SIZE = 1
 COLORS = [

@@ -8,13 +8,14 @@ from typing import List, Optional, Union
 import cv2
 import numpy as np
 import torch
-from dataset_utils.mask_encoder import mask2rle, rle2mask
-from gadget_utils.pipeline_utils import fit_array_to_size
-from image_utils.img_resize import resize
-from label_utils.bbox_utils import get_rotated_bbox, rotate
 from pycocotools import mask as coco_mask
 from shapely.geometry import Polygon as ShapelyPolygon
 from torchvision.ops import masks_to_boxes
+
+from lmi_utils.dataset_utils.mask_encoder import mask2rle, rle2mask
+from lmi_utils.gadget_utils.pipeline_utils import fit_array_to_size
+from lmi_utils.image_utils.img_resize import resize
+from lmi_utils.label_utils.bbox_utils import get_rotated_bbox, rotate
 
 logger = logging.getLogger(__name__)
 

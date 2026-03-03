@@ -10,8 +10,9 @@ from detectron2 import model_zoo
 from detectron2.utils.testing import (
     get_sample_coco_image,
 )
-from detectron2_lmi.model import Detectron2Model
-from od_core.object_detector import ObjectDetector
+
+from object_detectors.detectron2_lmi.model import Detectron2Model
+from object_detectors.od_core.object_detector import ObjectDetector
 
 with open("tests/assets/coco_class_names.txt", "r") as f:
     classnames = f.readlines()

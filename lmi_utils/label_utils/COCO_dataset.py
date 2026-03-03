@@ -6,7 +6,8 @@ from datetime import datetime
 
 import cv2
 import numpy as np
-from label_utils.bbox_utils import rotate
+
+from lmi_utils.label_utils.bbox_utils import rotate
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

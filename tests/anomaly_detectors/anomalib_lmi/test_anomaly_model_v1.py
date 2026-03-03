@@ -12,12 +12,13 @@ import cv2
 import numpy as np
 import pytest
 import torch
-from ad_core.anomaly_detector import AnomalyDetector
 from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
-from anomalib_lmi.anomaly_model2 import AnomalyModel2
-from anomalib_lmi.convert_to_torchscript import convert_v1_torchscript
-from gadget_utils import pipeline_utils
+
+from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
+from anomaly_detectors.anomalib_lmi.anomaly_model2 import AnomalyModel2
+from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v1_torchscript
+from lmi_utils.gadget_utils import pipeline_utils
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -234,7 +235,7 @@ def test_cmds():
     """test model inference and model to tensorrt conversion"""
     with tempfile.TemporaryDirectory() as t:
         my_env = os.environ.copy()
-        cmd = f"python -m anomalib_lmi.anomaly_model2 test -i {MODEL_PATH} -d {DATA_PATH} -o {str(t)} \
+        cmd = f"python -m anomaly_detectors.anomalib_lmi.anomaly_model2 test -i {MODEL_PATH} -d {DATA_PATH} -o {str(t)} \
             -g -p --tile 224 224 --stride 224 224 --resize"
         logger.info(f"running cmd: {cmd}")
         result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
@@ -247,7 +248,10 @@ def test_cmds():
 
         if USE_GPU:
             t2 = os.path.join(t, "recon")
-            cmd = f"python -m anomalib_lmi.anomaly_model2 convert -i {MODEL_PATH} -o {t2} --hw 1120 1120 --tile 224 224 --stride 224 224"
+            cmd = (
+                f"python -m anomaly_detectors.anomalib_lmi.anomaly_model2 convert"
+                f" -i {MODEL_PATH} -o {t2} --hw 1120 1120 --tile 224 224 --stride 224 224"
+            )
             logger.info(f"running cmd: {cmd}")
             result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
             logger.info(result.stdout)
@@ -261,7 +265,7 @@ def test_convert_to_torchscript_argument_validation():
         my_env = os.environ.copy()
         # test convert_to_torchscript argument validation
         outpath = os.path.join(t, "trace_fail.pt")
-        cmd = f"python -m anomalib_lmi.convert_to_torchscript -i {MODEL_PATH} -o {outpath}"
+        cmd = f"python -m anomaly_detectors.anomalib_lmi.convert_to_torchscript -i {MODEL_PATH} -o {outpath}"
         logger.info(f"running cmd: {cmd}")
         result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
         assert result.returncode != 0

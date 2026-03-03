@@ -5,17 +5,18 @@ import time
 from typing import Dict, List, Union
 
 import cv2
-import gadget_utils.pipeline_utils as pipeline_utils
 import numpy as np
 import torch
-from od_core.object_detector_registry import ObjectDetectorRegistry
-
-# import LMI AI Solutions modules
-from od_core.od_base import ODBase
-from od_core.results import Results
 from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.utils import nms, ops
 from ultralytics.utils.torch_utils import smart_inference_mode
+
+import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
+
+# import LMI AI Solutions modules
+from object_detectors.od_core.od_base import ODBase
+from object_detectors.od_core.results import Results
 
 
 @smart_inference_mode()

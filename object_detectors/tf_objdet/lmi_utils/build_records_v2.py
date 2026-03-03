@@ -7,10 +7,11 @@ import os
 import cv2
 import numpy as np
 import tensorflow as tf
-from image_utils.img_resize import resize
 from PIL import Image
 from sklearn.model_selection import train_test_split
 from tf_objdet.lmi_utils.tfannotation import TFAnnotation
+
+from lmi_utils.image_utils.img_resize import resize
 
 
 # get item in a recursive dictionary

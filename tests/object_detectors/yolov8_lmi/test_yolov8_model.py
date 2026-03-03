@@ -4,8 +4,9 @@ import os
 import cv2
 import pytest
 import torch
-from od_core.object_detector import ObjectDetector
-from yolov8_lmi.model import Yolov8, Yolov8Obb, Yolov8Pose
+
+from object_detectors.od_core.object_detector import ObjectDetector
+from object_detectors.yolov8_lmi.model import Yolov8, Yolov8Obb, Yolov8Pose
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

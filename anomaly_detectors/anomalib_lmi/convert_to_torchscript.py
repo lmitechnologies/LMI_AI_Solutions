@@ -3,8 +3,9 @@ import logging
 
 import torch
 import torch.nn as nn
-from anomalib_lmi.base import to_list
 from torchvision.transforms import v2
+
+from anomaly_detectors.anomalib_lmi.base import to_list
 
 logging.basicConfig()
 logger = logging.getLogger()

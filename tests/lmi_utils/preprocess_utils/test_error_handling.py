@@ -1,8 +1,9 @@
 import numpy as np
 import pytest
 import torch
-from preprocess_utils.preprocessor import Preprocessor
-from preprocess_utils.reconstructor import Reconstructor
+
+from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
 
 @pytest.fixture

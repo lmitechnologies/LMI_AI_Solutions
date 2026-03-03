@@ -1,7 +1,8 @@
 from typing import Any, Dict, List, Tuple
 
 import torch
-from image_utils.tiler import Tiler
+
+from lmi_utils.image_utils.tiler import Tiler
 
 
 @torch.inference_mode()

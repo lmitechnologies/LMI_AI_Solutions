@@ -1,9 +1,10 @@
 import collections
 import os
 
-# LMI modules
-from label_utils import csv_utils
 from sklearn.model_selection import train_test_split
+
+# LMI modules
+from lmi_utils.label_utils import csv_utils
 
 
 def copy_images(data, out_path):

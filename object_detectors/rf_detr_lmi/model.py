@@ -1,12 +1,13 @@
 import logging
 import os
 
-import gadget_utils.pipeline_utils as pipeline_utils
 import numpy as np
 import torch
-from od_core.object_detector_registry import ObjectDetectorRegistry
-from od_core.od_base import ODBase
-from od_core.results import Results
+
+import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
+from object_detectors.od_core.od_base import ODBase
+from object_detectors.od_core.results import Results
 
 try:
     from rfdetr import RFDETR2XLarge, RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall, RFDETRXLarge

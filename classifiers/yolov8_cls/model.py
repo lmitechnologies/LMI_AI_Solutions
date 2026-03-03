@@ -5,11 +5,12 @@ from collections import defaultdict
 import cv2
 import numpy as np
 import torch
-from cls_core.classifier_registry import ClassifierRegistry
 from PIL import Image
 from ultralytics.data.augment import classify_transforms
 from ultralytics.utils.torch_utils import smart_inference_mode
-from yolov8_lmi.model import Yolov8
+
+from classifiers.cls_core.classifier_registry import ClassifierRegistry
+from object_detectors.yolov8_lmi.model import Yolov8
 
 
 @ClassifierRegistry.register(

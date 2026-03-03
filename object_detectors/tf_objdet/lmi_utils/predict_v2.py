@@ -9,8 +9,9 @@ import time
 import cv2
 import numpy as np
 import tensorflow as tf
-from image_utils.img_resize import resize
 from object_detection.utils import label_map_util
+
+from lmi_utils.image_utils.img_resize import resize
 
 # TODO:
 # conform to if __name__==main() convention

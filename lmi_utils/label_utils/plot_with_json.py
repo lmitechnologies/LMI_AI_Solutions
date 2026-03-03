@@ -5,9 +5,9 @@ import cv2
 import numpy as np
 
 # LMI packages
-from dataset_utils.representations import AnnotationType, Dataset
-from label_utils.bbox_utils import rotate
-from label_utils.plot_utils import get_distinct_colors, plot_one_brush, plot_one_polygon, plot_one_pt
+from lmi_utils.dataset_utils.representations import AnnotationType, Dataset
+from lmi_utils.label_utils.bbox_utils import rotate
+from lmi_utils.label_utils.plot_utils import get_distinct_colors, plot_one_brush, plot_one_polygon, plot_one_pt
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

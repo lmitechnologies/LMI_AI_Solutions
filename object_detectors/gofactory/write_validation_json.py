@@ -5,9 +5,12 @@ import os
 import cv2
 import numpy as np
 import torch
-from dataset_utils.ops.dataset_pad import pad_annotated_image
-from dataset_utils.ops.dataset_resize import resize_annotated_image
-from dataset_utils.representations import (
+from ultralytics.utils import nms, ops
+from ultralytics.utils.metrics import box_iou, kpt_iou, mask_iou
+
+from lmi_utils.dataset_utils.ops.dataset_pad import pad_annotated_image
+from lmi_utils.dataset_utils.ops.dataset_resize import resize_annotated_image
+from lmi_utils.dataset_utils.representations import (
     Annotation,
     AnnotationType,
     Box,
@@ -16,9 +19,7 @@ from dataset_utils.representations import (
     Point2d,
     Polygon,
 )
-from ultralytics.utils import nms, ops
-from ultralytics.utils.metrics import box_iou, kpt_iou, mask_iou
-from ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
+from object_detectors.ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)

@@ -5,7 +5,8 @@ import os
 
 import cv2
 import numpy as np
-from image_utils.img_resize import resize
+
+from lmi_utils.image_utils.img_resize import resize
 
 logging.basicConfig(level=logging.INFO)
 

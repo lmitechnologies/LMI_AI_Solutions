@@ -3,7 +3,8 @@ import subprocess
 from datetime import date
 
 import yaml
-from yolov8_lmi.run_cmd import add_configs, check_path_exist, get_model_path, sanity_check
+
+from object_detectors.yolov8_lmi.run_cmd import add_configs, check_path_exist, get_model_path, sanity_check
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
