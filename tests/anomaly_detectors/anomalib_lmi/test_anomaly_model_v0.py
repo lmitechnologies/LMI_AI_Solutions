@@ -35,14 +35,14 @@ def test_model_api():
 def test_cmds():
     with tempfile.TemporaryDirectory() as t:
         my_env = os.environ.copy()
-        cmd = f"python -m anomalib_lmi.anomaly_model -a test -i {MODEL_PATH} -d {DATA_PATH} -o {str(t)} -g -p"
+        cmd = f"python -m anomaly_detectors.anomalib_lmi.anomaly_model -a test -i {MODEL_PATH} -d {DATA_PATH} -o {str(t)} -g -p"
         logger.info(f"running cmd: {cmd}")
         result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
         logger.info(result.stdout)
         logger.info(result.stderr)
 
         if USE_GPU:
-            cmd = f"python -m anomalib_lmi.anomaly_model -a convert -i {MODEL_PATH} -e {str(t)}"
+            cmd = f"python -m anomaly_detectors.anomalib_lmi.anomaly_model -a convert -i {MODEL_PATH} -e {str(t)}"
             logger.info(f"running cmd: {cmd}")
             result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
             logger.info(result.stdout)

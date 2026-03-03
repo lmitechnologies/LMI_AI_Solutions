@@ -84,17 +84,17 @@ H=640
 source /repos/LMI_AI_Solutions/lmi_ai.env
 
 # convert labels from VGG json to csv
-# python -m label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
+# python -m lmi_utils.label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
 
 # convert labels from label studio to csv
-python -m label_utils.lst_to_csv -i $input_path -o $input_path
+python -m lmi_utils.label_utils.lst_to_csv -i $input_path -o $input_path
 
 # resize images with labels
-python -m label_utils.resize_with_csv -i $input_path -o /app/data/resized --width $W --height $H
+python -m lmi_utils.label_utils.resize_with_csv -i $input_path -o /app/data/resized --width $W --height $H
 
 # convert to yolo format
 # remote the --seg flag if you want to train a object detection model
-python -m label_utils.csv_to_yolo -i /app/data/resized -o /app/data/resized_yolo --seg
+python -m lmi_utils.label_utils.csv_to_yolo -i /app/data/resized -o /app/data/resized_yolo --seg
 ```
 
 ### Create a docker-compose file
