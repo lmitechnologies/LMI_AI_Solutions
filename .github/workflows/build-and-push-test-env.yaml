@@ -53,7 +53,7 @@ jobs:
             type=raw,value=py${{ matrix.python-version }}-${{ matrix.runner-config.arch }}-${{ matrix.anomalib-version }}
 
       - name: Build and push image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./tests/dockerfile.ci
