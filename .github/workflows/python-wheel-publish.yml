@@ -62,8 +62,11 @@ jobs:
           path: dist/
 
       - name: Publish release distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          user: ${{ secrets.DEV_PYPI_USER }}
-          password: ${{ secrets.DEV_PYPI_PASSWORD }}
-          packages-dir: dist/
+        env:
+          TWINE_USERNAME: ${{ secrets.DEV_PYPI_USER }}
+          TWINE_PASSWORD: ${{ secrets.DEV_PYPI_PASSWORD }}
+          # Using the exact URL format your other repo likely uses
+          TWINE_REPOSITORY_URL: https://dev-pypi.factorysmart.com
+        run: |
+          pip install twine
+          twine upload --disable-progress-bar -r $TWINE_REPOSITORY_URL dist/*
