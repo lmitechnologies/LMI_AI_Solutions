@@ -72,7 +72,7 @@ def test_pipeline_OD(preprocessing_steps, expected_types):
             },
             "artifacts": {"pt": {"image_size": [640, 640], "model_path": model_path}},
             "model_role": "mock-model",
-            "model_type": "ObjectDetection",
+            "model_type": "InstanceSegmentation",
             "model_version": "1",
         }
     }

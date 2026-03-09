@@ -14,7 +14,7 @@ RUN pip install --no-build-isolation -e detectron2
 RUN pip install scikit-learn tensorboard numba cuda-python==12.9.0
 
 # Install fixed version of numpy
-RUN pip install 'numpy<2' 'ultralytics<8.4' onnx rfdetr
+RUN pip install 'numpy<2' ultralytics==8.4.21 onnx rfdetr
 
 # Installing from anomalib src
 RUN pip install anomalib==1.1.1 && anomalib install --option core

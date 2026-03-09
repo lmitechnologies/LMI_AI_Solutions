@@ -12,7 +12,7 @@ import torch
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
-from object_detectors.yolov8_lmi.model import Yolov8
+from object_detectors.ultralytics_lmi.yolo.model import Yolo
 
 # add yolov5 submodule to the path
 YOLO_PATH = os.path.join(os.path.dirname(__file__), "../submodules/yolov5")
@@ -308,4 +308,4 @@ class Yolov5(ODBase):
         Returns:
             np.ndarray: the annotated image
         """
-        return Yolov8.annotate_image(results, image, colormap)
+        return Yolo.annotate_image(results, image, colormap)

@@ -6,7 +6,6 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 
 PACKAGES = [
     "object_detectors.ultralytics_lmi",
-    "object_detectors.yolov8_lmi",
     "object_detectors.detectron2_lmi",
     "object_detectors.yolov5_lmi",
     "object_detectors.rf_detr_lmi",
