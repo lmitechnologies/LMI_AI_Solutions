@@ -47,15 +47,12 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - release-build
-    permissions:
-      # IMPORTANT: this permission is mandatory for trusted publishing
-      id-token: write
 
     # Dedicated environments with protections for publishing are strongly recommended.
     # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
     environment:
       name: pypi
-      url: https://pyadmin:D3@Rhome@dev-pypi.factorysmart.com
+      url: https://dev-pypi.factorysmart.com
 
     steps:
       - name: Retrieve release distributions
@@ -67,4 +64,6 @@ jobs:
       - name: Publish release distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
+          user: ${{ secrets.DEV_PYPI_USER }}
+          password: ${{ secrets.DEV_PYPI_PASSWORD }}
           packages-dir: dist/
