@@ -17,20 +17,68 @@ labels-convert-lst = "lmi_utils.label_utils.lst_to_json:main"
 gadget-surface = "lmi_utils.gadget_utils.gadget_surface_utils:main"
 gadget-image = "lmi_utils.gadget_utils.gadget_image:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = [
-    "anomaly_detectors*",
-    "classifiers*",
-    "lmi_utils*",
-    "object_detectors*",
+[tool.setuptools]
+include-package-data = true
+packages = [
+    "lmi_utils",
+    "lmi_utils.system_utils",
+    "lmi_utils.dataset_utils",
+    "lmi_utils.eval_utils",
+    "lmi_utils.label_utils",
+    "lmi_utils.label_utils.shapes",
+    "lmi_utils.system_utils",
+    "lmi_utils.dataset_utils.ops",
+    "lmi_utils.preprocess_utils",
+    "lmi_utils.dataset_utils",
+    "lmi_utils.pcl_utils",
+    "lmi_utils.postprocess_utils",
+    "lmi_utils.image_utils",
+    "lmi_utils.pipeline_base",
+    "lmi_utils.gadget_utils",
+    "lmi_utils.preprocess_utils.handlers",
+    "pipeline_base",
+    "pipeline_base.core",
+    "pipeline_base.core.schemas",
+    "gadget_utils",
+    "object_detectors",
+    "object_detectors.od_core",
+    "object_detectors.rf_detr_lmi",
+    "object_detectors.ultralytics_lmi.yolo",
+    "object_detectors.yolov5_lmi.trt",
+    "object_detectors.yolov5_lmi",
+    "object_detectors.yolov8_lmi",
+    "object_detectors.detectron2_lmi",
+    "object_detectors.submodules",
+    "object_detectors.submodules.yolov5",
+    "classifiers",
+    "classifiers.cls_core",
+    "classifiers.yolov8_cls",
+    "anomaly_detectors",
+    "anomaly_detectors.ad_core",
+    "anomaly_detectors.anomalib_lmi"
 ]
-exclude = [
-    "*submodules*",
-    "*legacy*",
-    "*deprecated*",
-    "*tf_objdet*",
-]
+[tool.setuptools.package-dir]
+"lmi_utils" = "lmi_utils"
+"pipeline_base" = "lmi_utils/pipeline_base"
+"object_detectors" = "object_detectors"
+"classifiers" = "classifiers"
+"anomaly_detectors" = "anomaly_detectors"
+"gadget_utils" = "lmi_utils/gadget_utils"
+
+#[tool.setuptools.packages.find]
+#where = ["."]
+#include = [
+#    "anomaly_detectors*",
+#    "classifiers*",
+#    "lmi_utils*",
+#    "object_detectors*",
+#]
+#exclude = [
+#    "*submodules*",
+#    "*legacy*",
+#    "*deprecated*",
+#    "*tf_objdet*",
+#]
 
 [tool.ruff]
 target-version = "py38"
