@@ -3,10 +3,15 @@ name: Release
 on:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Create Release
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write      # To create tags and releases
       issues: write      # To comment on issues
