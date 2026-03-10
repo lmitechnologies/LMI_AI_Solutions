@@ -26,7 +26,6 @@ include = [
     "object_detectors*",
 ]
 exclude = [
-    "*submodules*",
     "*legacy*",
     "*deprecated*",
     "*tf_objdet*",
