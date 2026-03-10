@@ -46,19 +46,19 @@ The folder structure below will be created when we go through the tutorial. By c
 ## Create a dockerfile
 Create a file `./dockerfile`. It installs the dependencies and clone LMI_AI_Solutions repository inside the container.
 ```docker
-# last version running on ubuntu 20.04, require CUDA 12.1 
-FROM nvcr.io/nvidia/pytorch:23.04-py3
+FROM nvcr.io/nvidia/pytorch:25.04-py3
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies
 RUN apt-get update && apt-get install libgl1 -y
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install --user opencv-python
-RUN pip install ultralytics -U
+RUN pip install ultralytics
 
 # clone LMI AI Solutions repository
 WORKDIR /repos
-RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && \
+    pip install -e LMI_AI_Solutions
 
 ```
 
@@ -77,7 +77,7 @@ RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 │   │   |   ├── class_2
 │   │   |   ├── ...
 │   │   |   ├── class_N
-│   │   ├── test (optional)
+│   │   ├── test
 │   │   |   ├── class_1
 │   │   |   ├── class_2
 │   │   |   ├── ...
@@ -93,9 +93,6 @@ Since **YOLO models require the dimensions of images to be dividable by 32**, in
 
 Create a script `./preprocess/2023-07-19.sh` as follows:
 ```bash
-# import the repo paths
-source /repos/LMI_AI_Solutions/lmi_ai.env
-
 # preprocess training dataset
 python -m lmi_utils.image_utils.img_resize -i /app/data/train -o /temp --height 224 --recursive
 python -m lmi_utils.image_utils.img_pad -i /temp -o /app/out/train --wh 224,224 --recursive
@@ -108,10 +105,9 @@ python -m lmi_utils.image_utils.img_pad -i /temp -o /app/out/val --wh 224,224 --
 ### Create a docker-compose file
 To run the script in the container, we need to create a file `./docker-compose_preprocess.yaml`.
 ```yaml
-version: "3.9"
 services:
-  yolov8_cls:
-    container_name: yolov8-cls_prep
+  yolo-cls:
+    container_name: yolo-cls_prep
     build:
       context: .
       dockerfile: ./dockerfile
@@ -130,7 +126,6 @@ services:
 Spin up the container using the following commands: 
 ```bash
 # build the container
-# "-f" specifies the yaml file to load
 docker compose -f docker-compose_preprocess.yaml build
 
 # spin up the container
@@ -143,13 +138,13 @@ Once it finishs, the train and val datasets will be created in `./data/out`.
 To train the model, we need to create a hyperparameter file and a docker-compose file.
 
 ### Create a hyperparameter file
-Crete a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **small-size yolov8 classification model** with the image size of 224x224. If the training images are square, set `rect` to `False`.
+Crete a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **small-size yolo classification model** with the image size of 224x224.
 ```yaml
 task: classify # (str) YOLO task, i.e. detect, segment, classify, pose
 mode: train # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
 
 # Train settings -------------------------------------------------------------------------------------------------------
-model: yolov8s-cls.pt # (str, optional) path to model file, i.e. yolov8n.pt, yolov8n.yaml
+model: yolo26s-cls.pt # (str, optional) path to model file, i.e. yolo26n-cls.pt, yolo26s-cls.pt, yolo26m-cls.pt, yolo26l-cls.pt, yolo26x-cls.pt
 epochs: 100 # (int) number of epochs to train for
 patience: 100 # (int) epochs to wait for no observable improvement for early stopping of training
 batch: 32 # (int) number of images per batch (-1 for AutoBatch)
@@ -189,10 +184,9 @@ erasing: 0.4 # (float) probability of random erasing during classification train
 ### Create a docker-compose file
 Create a file `./docker-compose_train.yaml`. It mounts the host locations to the required directories in the container and run the script `run_cmd.py`, which load the hyperparameters and run the task that was specified in the file `./config/2023-07-19_train.yaml`.
 ```yaml
-version: "3.9"
 services:
-  yolov8-cls:
-    container_name: yolov8-cls_train
+  yolo-cls:
+    container_name: yolo-cls_train
     build:
       context: .
       dockerfile: dockerfile
@@ -205,8 +199,7 @@ services:
       - ./data/out:/app/dataset  # training data, which should include a "train" subfolder and a "val"/"test" subbfolder
       - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env &&
-      python3 -m yolov8_cls.run_cmd"
+      bash -c "python3 -m classifiers.ultralytics_lmi.run_cmd"
 
 ```
 Note: Do **NOT** modify the required locations in the container, such as `/app/training`, `/app/data`, `/app/config/dataset.yaml`, `/app/config/hyp.yaml`.
@@ -246,10 +239,9 @@ split: val # (str) dataset split to use for validation, i.e. 'val', 'test' or 't
 
 Create a file `./docker-compose_val.yaml` as below.
 ```yaml
-version: "3.9"
 services:
-  yolov8-cls:
-    container_name: yolov8-cls_val
+  yolo-cls:
+    container_name: yolo-cls_val
     build:
       context: .
       dockerfile: dockerfile
@@ -261,8 +253,7 @@ services:
       - ./data/out:/app/dataset  # input data path
       - ./config/2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env &&
-      python3 -m yolov8_cls.run_cmd"
+      bash -c "python3 -m classifiers.ultralytics_lmi.run_cmd"
 
 ```
 
@@ -283,10 +274,9 @@ imgsz: 224,224 # (int | list) input images size as int for train and val modes, 
 
 Create a file `./docker-compose_predict.yaml` as below.
 ```yaml
-version: "3.9"
 services:
-  yolov8-cls:
-    container_name: yolov8-cls_predict
+  yolo-cls:
+    container_name: yolo-cls_predict
     build:
       context: .
       dockerfile: dockerfile
@@ -298,8 +288,7 @@ services:
       - ./data/out/test/distil:/app/data  # input data path
       - ./config/2023-07-19_test.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env &&
-      python3 -m yolov8_cls.run_cmd"
+      bash -c "python3 -m classifiers.ultralytics_lmi.run_cmd"
 ```
 
 ### Start prediction
@@ -332,10 +321,9 @@ workspace: 4  # (int) TensorRT: workspace size (GB)
 
 Create a docker-compose file `./docker-compose_trt.yaml`:
 ```yaml
-version: "3.9"
 services:
-  yolov8-cls:
-    container_name: yolov8-cls_trt
+  yolo-cls:
+    container_name: yolo-cls_trt
     build:
       context: .
       dockerfile: dockerfile
@@ -345,8 +333,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env &&
-      python3 -m yolov8_cls.run_cmd"
+      bash -c "python3 -m classifiers.ultralytics_lmi.run_cmd"
 ```
 
 ### Engine Generation on x86 systems
@@ -366,11 +353,12 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN python3 -m pip install pip --upgrade
 RUN pip3 install --upgrade setuptools wheel
 RUN pip3 install opencv-python --user
-RUN pip3 install ultralytics -U
+RUN pip3 install ultralytics
 
 # clone AIS
 WORKDIR /repos
-RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && \
+  pip install -e LMI_AI_Solutions
 ```
 
 Replace the line `dockerfile: dockerfile` in `./docker-compose_trt.yaml` with `dockerfile: arm.dockerfile`.
