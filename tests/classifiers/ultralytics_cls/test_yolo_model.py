@@ -17,6 +17,7 @@ OUT_DIR = "tests/outputs/cls/yolov8"
 MODEL_SZ = 224
 
 CLS_MODELS = [
+    "tests/assets/models/cls/yolo26n-cls.pt",
     "tests/assets/models/cls/yolo11n-cls.pt",
 ]
 

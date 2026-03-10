@@ -81,8 +81,11 @@ def test_compare_results_with_anomalib():
     """
     model1 = TorchInferencer(MODEL_PATH)
     model2 = AnomalyModel_V2(MODEL_PATH)
-    model3 = AnomalyModel_V2(TRACED_MODEL_PATH)
-    compare_results(model1, [model2, model3])
+    if USE_GPU:
+        compare_results(model1, [model2])
+    else:
+        model3 = AnomalyModel_V2(TRACED_MODEL_PATH)
+        compare_results(model1, [model2, model3])
 
 
 def test_compare_results_with_anomalib_api():
@@ -91,12 +94,15 @@ def test_compare_results_with_anomalib_api():
     """
     model1 = TorchInferencer(MODEL_PATH)
     model2 = AnomalyDetector(BASE_CONFIG)
-    config = {
-        **BASE_CONFIG,
-        "model_path": TRACED_MODEL_PATH,
-    }  # replace model path with traced model path
-    model3 = AnomalyDetector(config)
-    compare_results(model1, [model2, model3])
+    if USE_GPU:
+        compare_results(model1, [model2])
+    else:
+        config = {
+            **BASE_CONFIG,
+            "model_path": TRACED_MODEL_PATH,
+        }  # replace model path with traced model path
+        model3 = AnomalyDetector(config)
+        compare_results(model1, [model2, model3])
 
 
 @pytest.mark.parametrize("init_args, warmup_size", [((224, 112), [672, 640]), ((), [256, 224])])

@@ -21,24 +21,32 @@ DOTA_DIR = "tests/assets/images/dota"
 OUT_DIR = "tests/outputs/od/ultralytics/yolo"
 DEVICE = "gpu" if torch.cuda.is_available() else "cpu"
 
-OD_DET_MODELS = ["tests/assets/models/od/yolo11n.pt", "tests/assets/models/od/yolov8n.pt"]
+OD_DET_MODELS = [
+    "tests/assets/models/od/ultralytics/yolo26n.pt",
+    "tests/assets/models/od/ultralytics/yolo11n.pt",
+    "tests/assets/models/od/ultralytics/yolov8n.pt",
+]
 
 OD_SEG_MODELS = [
-    "tests/assets/models/od/yolo11n-seg.pt",
-    "tests/assets/models/od/yolov8n-seg.pt",
+    "tests/assets/models/od/ultralytics/yolo26n-seg.pt",
+    "tests/assets/models/od/ultralytics/yolo11n-seg.pt",
+    "tests/assets/models/od/ultralytics/yolov8n-seg.pt",
 ]
 
 OD_OBB_DOTA_8 = [
-    "tests/assets/models/od/yolo11n-obb.pt",
+    "tests/assets/models/od/ultralytics/yolo26n-obb.pt",
+    "tests/assets/models/od/ultralytics/yolo11n-obb.pt",
 ]
 
 OD_OBB_DOTA = [
-    "tests/assets/models/od/yolov8n-obb.pt",
+    "tests/assets/models/od/ultralytics/yolo26n-obb.pt",
+    "tests/assets/models/od/ultralytics/yolov8n-obb.pt",
 ]
 
 OD_POSE_MODELS = [
-    "tests/assets/models/od/yolo11n-pose.pt",
-    "tests/assets/models/od/yolov8n-pose.pt",
+    "tests/assets/models/od/ultralytics/yolo26n-pose.pt",
+    "tests/assets/models/od/ultralytics/yolo11n-pose.pt",
+    "tests/assets/models/od/ultralytics/yolov8n-pose.pt",
 ]
 
 

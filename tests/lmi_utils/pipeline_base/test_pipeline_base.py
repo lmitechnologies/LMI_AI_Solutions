@@ -57,7 +57,7 @@ class PipelineOD(PipelineBase):
 )
 def test_pipeline_OD(preprocessing_steps, expected_types):
     # Asset paths
-    model_path = os.path.abspath("tests/assets/models/od/yolo11n-seg.pt")
+    model_path = os.path.abspath("tests/assets/models/od/ultralytics/yolo11n-seg.pt")
     image_dir = os.path.abspath("tests/assets/images/coco")
 
     # Mock model_roles (Schema V2)
