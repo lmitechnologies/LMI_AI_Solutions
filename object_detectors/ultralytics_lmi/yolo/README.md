@@ -196,7 +196,19 @@ services:
 Spin up the docker containers as shown in [Spin up the container](#spin-up-the-container). **Ensure you load `docker-compose_train.yaml`.**
 
 ### Monitor the training progress (optional)
-While training, monitor the training process using Tensorboard at http://localhost:6006.
+While the training process is running, open another terminal and enter the commands:
+```bash
+# find the CONTAINER_ID
+docker ps
+
+# Log into the container which hosts the training process
+docker exec -it CONTAINER_ID bash 
+
+# track the training progress using tensorboard
+tensorboard --logdir /app/training/2026-03-11 --port 6006
+```
+
+Monitor the training at http://localhost:6006.
 
 
 ## Prediction

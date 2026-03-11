@@ -209,7 +209,7 @@ services:
 Run the container (see [Spin up the container](#spin-up-the-container)) using `docker-compose_train.yaml`. The output will be generated in `./training/2026-03-11`.
 
 ### Monitor the training progress (optional)
-While the training process is running, open another terminal. 
+While the training process is running, open another terminal and enter the commands:
 ```bash
 # find the CONTAINER_ID
 docker ps
@@ -221,7 +221,7 @@ docker exec -it CONTAINER_ID bash
 tensorboard --logdir /app/training/2026-03-11 --port 6006
 ```
 
-Execute the commands above and monitor the training at http://localhost:6006.
+Monitor the training at http://localhost:6006.
 
 
 ## Validation
