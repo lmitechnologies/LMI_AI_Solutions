@@ -1,5 +1,5 @@
-# Train and test YOLOv8 models
-This is the tutorial walking through how to train and test YOLOv8 classification models.
+# Train and test YOLO classification models
+This tutorial walks through training and testing YOLO classification models.
 
 ## System requirements
 - Nvidia Drivers
@@ -7,31 +7,31 @@ This is the tutorial walking through how to train and test YOLOv8 classification
 - [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 
 ### Model training
-- X86 system
-- ubuntu OS
+- x86 system
+- Ubuntu OS
 
 ### TensorRT on GoMax
-- JetPack 5.0 or 5.1
+- JetPack >= 5.0
 
 ## Directory structure
-The folder structure below will be created when we go through the tutorial. By convention, we use today's date (i.e. 2023-07-19) as the file name.
+The folder structure below will be created when we go through the tutorial. By convention, we use today's date (i.e. 2026-03-11) as the folder and file name.
 ```
 ├── config
-│   ├── 2023-07-19_train.yaml
-│   ├── 2023-07-19_val.yaml
-│   ├── 2023-07-19_trt.yaml
+│   ├── 2026-03-11_train.yaml
+│   ├── 2026-03-11_val.yaml
+│   ├── 2026-03-11_trt.yaml
 ├── preprocess
-│   ├── 2023-07-19.sh
+│   ├── 2026-03-11.sh
 ├── data
 │   ├── train
 │   ├── val (optional)
 │   ├── test 
 ├── training
-│   ├── 2023-07-19
+│   ├── 2026-03-11
 ├── validation
-│   ├── 2023-07-19
+│   ├── 2026-03-11
 ├── prediction
-│   ├── 2023-07-19
+│   ├── 2026-03-11
 ├── docker-compose_preprocess.yaml
 ├── docker-compose_train.yaml
 ├── docker-compose_val.yaml
@@ -44,7 +44,7 @@ The folder structure below will be created when we go through the tutorial. By c
 
 
 ## Create a dockerfile
-Create a file `./dockerfile`. It installs the dependencies and clone LMI_AI_Solutions repository inside the container.
+Create `./dockerfile`:
 ```docker
 FROM nvcr.io/nvidia/pytorch:25.04-py3
 ARG DEBIAN_FRONTEND=noninteractive
@@ -72,7 +72,7 @@ RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && \
 │   │   |   ├── class_2
 │   │   |   ├── ...
 │   │   |   ├── class_N
-│   │   ├── val
+│   │   ├── val (optional)
 │   │   |   ├── class_1
 │   │   |   ├── class_2
 │   │   |   ├── ...
@@ -85,13 +85,13 @@ RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && \
 ```
 Yolo classification models use the subfolder names as the class names. Replace `class_1`, `class_2`, `class_N` with real class names.
 
-### Create a script for image processing
-Since **YOLO models require the dimensions of images to be dividable by 32**, in this tutorial, we prepare the dataset by the followings:
-- resize images to 224 in height while keep the aspect ratio
+### Create a script for image preprocessing
+Since **YOLO models require the dimensions of images to be divisible by 32**, in this tutorial, we prepare the dataset by the following:
+- resize images to 224 in height while keeping the aspect ratio
 - pad images to 224 in width
 
 
-Create a script `./preprocess/2023-07-19.sh` as follows:
+Create `./preprocess/2026-03-11.sh`:
 ```bash
 # preprocess training dataset
 python -m lmi_utils.image_utils.img_resize -i /app/data/train -o /temp --height 224 --recursive
@@ -103,7 +103,7 @@ python -m lmi_utils.image_utils.img_pad -i /temp -o /app/out/val --wh 224,224 --
 ```
 
 ### Create a docker-compose file
-To run the script in the container, we need to create a file `./docker-compose_preprocess.yaml`.
+Create `./docker-compose_preprocess.yaml`:
 ```yaml
 services:
   yolo-cls:
@@ -117,13 +117,13 @@ services:
       # mount location_in_host:location_in_container
       - ./data/raw:/app/data
       - ./data/out:/app/out
-      - ./preprocess/2023-07-19.sh:/app/preprocess/preprocess.sh
+      - ./preprocess/2026-03-11.sh:/app/preprocess/preprocess.sh
     command: >
       bash /app/preprocess/preprocess.sh
 ```
 
 ### Spin up the container
-Spin up the container using the following commands: 
+Run the following commands:
 ```bash
 # build the container
 docker compose -f docker-compose_preprocess.yaml build
@@ -131,14 +131,13 @@ docker compose -f docker-compose_preprocess.yaml build
 # spin up the container
 docker compose -f docker-compose_preprocess.yaml up
 ```
-Once it finishs, the train and val datasets will be created in `./data/out`.
+The preprocessed datasets will be generated in `./data/out`.
 
 
 ## Train the model
-To train the model, we need to create a hyperparameter file and a docker-compose file.
 
 ### Create a hyperparameter file
-Crete a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **small-size yolo classification model** with the image size of 224x224.
+Create `./config/2026-03-11_train.yaml`. Below shows an example of training a **small-size yolo classification model** with the image size of 224x224:
 ```yaml
 task: classify # (str) YOLO task, i.e. detect, segment, classify, pose
 mode: train # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
@@ -182,7 +181,7 @@ erasing: 0.4 # (float) probability of random erasing during classification train
 ```
 
 ### Create a docker-compose file
-Create a file `./docker-compose_train.yaml`. It mounts the host locations to the required directories in the container and run the script `run_cmd.py`, which load the hyperparameters and run the task that was specified in the file `./config/2023-07-19_train.yaml`.
+Create `./docker-compose_train.yaml`:
 ```yaml
 services:
   yolo-cls:
@@ -196,17 +195,18 @@ services:
       - 6006:6006 # tensorboard
     volumes:
       - ./training:/app/training   # training output
-      - ./data/out:/app/dataset  # training data, which should include a "train" subfolder and a "val"/"test" subbfolder
-      - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./data/out:/app/dataset  # training data, which should include a "train" subfolder and a "val"/"test" subfolder
+      - ./config/2026-03-11_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "python3 -m classifiers.ultralytics_lmi.run_cmd"
+      python3 -m classifiers.ultralytics_lmi.run_cmd
 
 ```
-Note: Do **NOT** modify the required locations in the container, such as `/app/training`, `/app/data`, `/app/config/dataset.yaml`, `/app/config/hyp.yaml`.
+> [!WARNING]
+> Do **not** modify the target container paths (e.g., `/app/training`, `/app/dataset`, `/app/config/hyp.yaml`). The internal scripts expect these exact locations.
 
 
 ### Start training
-Spin up the docker containers to train the model as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_train.yaml`.** Once the training is done, a folder named by today's date will be generated in `training` folder, i.e. `training/2023-07-19`.
+Run the container (see [Spin up the container](#spin-up-the-container)) using `docker-compose_train.yaml`. The output will be generated in `./training/2026-03-11`.
 
 ### Monitor the training progress (optional)
 While the training process is running, open another terminal. 
@@ -214,18 +214,18 @@ While the training process is running, open another terminal.
 # find the CONTAINER_ID
 docker ps
 
-# Log in the container which hosts the training process
+# Log into the container which hosts the training process
 docker exec -it CONTAINER_ID bash 
 
 # track the training progress using tensorboard
-tensorboard --logdir /app/training/2023-07-19 --port 6006
+tensorboard --logdir /app/training/2026-03-11 --port 6006
 ```
 
-Execuate the command above and go to http://localhost:6006 to monitor the training.
+Execute the commands above and monitor the training at http://localhost:6006.
 
 
 ## Validation
-Create a hyperparameter file `./config/2023-07-19_val.yaml`.
+Create `./config/2026-03-11_val.yaml`:
 ```yaml
 task: classify # (str) YOLO task, i.e. detect, segment, classify, pose
 mode: val # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
@@ -237,7 +237,7 @@ split: val # (str) dataset split to use for validation, i.e. 'val', 'test' or 't
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
 
-Create a file `./docker-compose_val.yaml` as below.
+Create `./docker-compose_val.yaml`:
 ```yaml
 services:
   yolo-cls:
@@ -249,20 +249,20 @@ services:
     runtime: nvidia
     volumes:
       - ./validation:/app/validation  # output path
-      - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, where it has best.pt
+      - ./training/2026-03-11/weights:/app/trained-inference-models   # trained model path, where it has best.pt
       - ./data/out:/app/dataset  # input data path
-      - ./config/2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./config/2026-03-11_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "python3 -m classifiers.ultralytics_lmi.run_cmd"
+      python3 -m classifiers.ultralytics_lmi.run_cmd
 
 ```
 
 ### Start validation
-Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_val.yaml.`** Then, the output results are saved in `./validation/2023-07-19`.
+Run the container (see [Spin up the container](#spin-up-the-container)) using `docker-compose_val.yaml`. The output will be saved in `./validation/2026-03-11`.
 
 
 ## Prediction
-Create a hyperparameter file `./config/2023-07-19_predict.yaml`. The `imgsz` should be a list of [h,w].
+Create `./config/2026-03-11_predict.yaml`. The `imgsz` should be a list of [h,w]:
 ```yaml
 task: classify # (str) YOLO task, i.e. detect, segment, classify, pose
 mode: predict # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
@@ -272,7 +272,7 @@ imgsz: 224,224 # (int | list) input images size as int for train and val modes, 
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
 
-Create a file `./docker-compose_predict.yaml` as below.
+Create `./docker-compose_predict.yaml`:
 ```yaml
 services:
   yolo-cls:
@@ -284,22 +284,22 @@ services:
     runtime: nvidia
     volumes:
       - ./prediction:/app/prediction  # output path
-      - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, where it has best.pt
+      - ./training/2026-03-11/weights:/app/trained-inference-models   # trained model path, where it has best.pt
       - ./data/out/test/distil:/app/data  # input data path
-      - ./config/2023-07-19_test.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./config/2026-03-11_test.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "python3 -m classifiers.ultralytics_lmi.run_cmd"
+      python3 -m classifiers.ultralytics_lmi.run_cmd
 ```
 
 ### Start prediction
-Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_predict.yaml.`** Then, the output results are saved in `./prediction/2023-07-19`.
+Run the container (see [Spin up the container](#spin-up-the-container)) using `docker-compose_predict.yaml`. The output will be saved in `./prediction/2026-03-11`.
 
 
 ## Generate TensorRT engines
-The TensorRT egnines can be generated in two systems: x86 and ARM. Both systems share the same hyperparameter file, while the dockerfile and docker-compose files are different.
+The TensorRT engines can be generated in two systems: x86 and ARM. Both systems share the same hyperparameter file, while the dockerfile and docker-compose files are different.
 
 ### Create a hyperparameter file
-Create a hyperparamter yaml file `./config/2023-07-19_trt.yaml` that works for both systems:
+Create `./config/2026-03-11_trt.yaml` that works for both systems:
 ```yaml
 task: classify  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
 mode: export  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where track, benchmark are NOT tested
@@ -319,7 +319,7 @@ workspace: 4  # (int) TensorRT: workspace size (GB)
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
 
-Create a docker-compose file `./docker-compose_trt.yaml`:
+Create `./docker-compose_trt.yaml`:
 ```yaml
 services:
   yolo-cls:
@@ -330,20 +330,19 @@ services:
     ipc: host
     runtime: nvidia
     volumes:
-      - ./training/2023-07-19/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
-      - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./training/2026-03-11/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
+      - ./config/2026-03-11_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "python3 -m classifiers.ultralytics_lmi.run_cmd"
+      python3 -m classifiers.ultralytics_lmi.run_cmd
 ```
 
 ### Engine Generation on x86 systems
 
-#### Start generation
-Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). **Ensure to load the `docker-compose_trt.yaml`.** Then, the tensorRT engine is generated in `./training/2023-07-19/weights`.
+Run the container (see [Spin up the container](#spin-up-the-container)) using `docker-compose_trt.yaml`. The output engines will be saved in `./training/2026-03-11/weights`.
 
 
 ### Engine Generation on ARM systems
-Create a file `./arm.dockerfile`.
+Create `./arm.dockerfile`:
 ```docker
 # jetpack 5.1
 FROM --platform=linux/arm64/v8 nvcr.io/nvidia/l4t-ml:r35.2.1-py3
@@ -363,5 +362,4 @@ RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && \
 
 Replace the line `dockerfile: dockerfile` in `./docker-compose_trt.yaml` with `dockerfile: arm.dockerfile`.
 
-#### Start generation
-Spin up the container as shown in [spin-up-the-container](#spin-up-the-container). Ensure to load the `./docker-compose_trt.yaml`. The output engines are saved in `./training/2023-07-19/weights`.
+Run the container (see [Spin up the container](#spin-up-the-container)) using `docker-compose_trt.yaml`. The output engines will be saved in `./training/2026-03-11/weights`.
