@@ -45,7 +45,7 @@ def to_numpy(data):
         frameworks=["ultralytics", "ultralytics8"],
     )
 )
-class Yolo(ODBase, YoloCore):
+class Yolo(YoloCore, ODBase):
     logger = logging.getLogger("yolo")
 
     def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:

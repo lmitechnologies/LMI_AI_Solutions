@@ -1,4 +1,3 @@
-import collections
 import logging
 import os
 
@@ -49,7 +48,6 @@ if __name__ == "__main__":
     logger.info(f"warmup input shape: {args.sz}")
     logger.info(f"warmup proc time -> {t2 - t1:.4f}")
 
-    fname_to_shapes = collections.defaultdict(list)
     batches = get_img_path_batches(batch_size=BATCH_SIZE, img_dir=args.path_imgs)
     logger.info(f"loaded {len(batches)} with a batch size of {BATCH_SIZE}")
     for batch in batches:
@@ -66,10 +64,7 @@ if __name__ == "__main__":
             im1 = im0
             if args.sz[0] != im0.shape[0] or args.sz[1] != im0.shape[1]:
                 logger.warning(f"model input size: {args.sz} is different from image size: {im0.shape}, warping image")
-                rh, rw = args.sz[0] / im0.shape[0], args.sz[1] / im0.shape[1]
                 im1 = cv2.resize(im0, (args.sz[1], args.sz[0]))
-            else:
-                rh, rw = 1.0, 1.0
 
             # inference
             im = model.preprocess(im1)

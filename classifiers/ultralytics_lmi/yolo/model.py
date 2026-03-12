@@ -22,7 +22,7 @@ from lmi_common.yolo_core import YoloCore
         frameworks=["ultralytics"],
     )
 )
-class YoloCls(ClassifierBase, YoloCore):
+class YoloCls(YoloCore, ClassifierBase):
     logger = logging.getLogger("yolo-cls")
 
     def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
