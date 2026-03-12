@@ -21,7 +21,11 @@ class YoloCore:
         Raises:
             FileNotFoundError: the model_path file does not exist
         """
-        self.image_size = kwargs.get("image_size", [640, 640])
+        image_size = kwargs.get("image_size", None)
+        if image_size is None:
+            image_size = [640, 640]
+            self.logger.warning("image_size not specified, using default value of [640, 640]")
+        self.image_size = image_size
 
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f"File not found: {model_path}")

@@ -41,7 +41,6 @@ class YoloCls(YoloCore, ClassifierBase):
         """
         YoloCore.__init__(self, model_path, device, data, fp16, **kwargs)
         self.task = "classify"
-        self.image_size = kwargs.get("image_size", [224, 224])
 
         updated = (
             self.model.model.transforms.transforms[0].size != max(self.image_size)
