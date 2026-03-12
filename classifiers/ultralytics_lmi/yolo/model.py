@@ -52,13 +52,22 @@ class YoloCls(YoloCore, ClassifierBase):
 
     @smart_inference_mode()
     def preprocess(self, img):
-        """Prepares input image before inference."""
+        """Prepares input image before inference.
+
+        Args:
+            img (np.ndarray | torch.Tensor): the input image with shape of (H, W, C) or (H, W)
+
+        Returns:
+            torch.Tensor: the preprocessed image with shape of (1, C, H, W)
+        """
+        if isinstance(img, torch.Tensor):
+            # convert to numpy since self.transforms only accept numpy array
+            img = img.cpu().numpy()
         if img.ndim == 2:
             img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
         img = np.expand_dims(img, 0)
-        if not isinstance(img, torch.Tensor):
-            img = torch.stack([self.transforms(Image.fromarray(im)) for im in img], dim=0)
-        img = (img if isinstance(img, torch.Tensor) else torch.from_numpy(img)).to(self.model.device)
+        img = torch.stack([self.transforms(Image.fromarray(im)) for im in img], dim=0)
+        img = img.to(self.model.device)
         return img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
 
     @smart_inference_mode()
