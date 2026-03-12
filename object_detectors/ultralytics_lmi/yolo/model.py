@@ -1,20 +1,18 @@
 import collections
 import logging
-import os
 import time
 from typing import Dict, List, Union
 
 import cv2
 import numpy as np
 import torch
-from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.utils import nms, ops
 from ultralytics.utils.torch_utils import smart_inference_mode
 
-import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
-from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
-
 # import LMI AI Solutions modules
+import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from lmi_common.yolo_core import YoloCore
+from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 
@@ -47,8 +45,8 @@ def to_numpy(data):
         frameworks=["ultralytics", "ultralytics8"],
     )
 )
-class Yolo(ODBase):
-    logger = logging.getLogger(__name__)
+class Yolo(YoloCore, ODBase):
+    logger = logging.getLogger("yolo")
 
     def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
         """init the model
@@ -60,77 +58,8 @@ class Yolo(ODBase):
         Raises:
             FileNotFoundError: _description_
         """
-        self.image_size = kwargs.get("image_size", [640, 640])
-
-        if not os.path.isfile(model_path):
-            raise FileNotFoundError(f"File not found: {model_path}")
-
-        self._setup_device(device)
-
-        # load model
-        self.model = AutoBackend(model_path, self.device, data=data, fp16=fp16, fuse=False)
-        if model_path.endswith(".pt") and hasattr(self.model.model, "fuse"):
-            self.model.model.fuse()
-        self.model.eval()
-
-        # class map < id: class name >
-        self.names = self.model.names
-
-    def _setup_device(self, device):
-        """set up the computation device (CPU or GPU).
-
-        Args:
-            device (str): The device to be used, either 'cpu' or 'gpu'.
-        """
-        if device.lower() not in ["cpu", "gpu"]:
-            raise ValueError(f'Invalid device: {device}. Supported devices are "cpu" and "gpu".')
-
-        self.device = torch.device("cpu")
-        if device.lower() == "gpu":
-            if torch.cuda.is_available():
-                self.device = torch.device("cuda:0")
-            else:
-                self.logger.warning("GPU not available, falling back to CPU")
-
-    @smart_inference_mode()
-    def forward(self, im: torch.Tensor):
-        return self.model(im)
-
-    @smart_inference_mode()
-    def from_numpy(self, x: np.ndarray) -> torch.Tensor:
-        """
-        Convert a numpy array to a tensor.
-
-        Args:
-            x (np.ndarray): The array to be converted.
-
-        Returns:
-            (torch.Tensor): The converted tensor
-        """
-        return torch.tensor(x).to(self.device) if isinstance(x, np.ndarray) else x
-
-    @smart_inference_mode()
-    def warmup(self, imgsz=None):
-        """
-        Warm up the model by running one forward pass with a dummy input.
-        Args:
-            imgsz(list): list of [h,w], default to None
-        Returns:
-            (None): This method runs the forward pass and don't return any value
-        """
-        if imgsz is None:
-            imgsz = self.image_size
-
-        if isinstance(imgsz, tuple):
-            imgsz = list(imgsz)
-
-        imgsz = [1, 3] + imgsz
-        im = torch.empty(
-            *imgsz,
-            dtype=torch.half if self.model.fp16 else torch.float,
-            device=self.device,
-        )  # input
-        self.forward(im)  # warmup
+        YoloCore.__init__(self, model_path, device, data, fp16, **kwargs)
+        self.task = "detect"
 
     @smart_inference_mode()
     def preprocess(self, im: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
@@ -156,24 +85,6 @@ class Yolo(ODBase):
         img = img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
         return img
-
-    def load_with_preprocess(self, im_path: str):
-        """load image and do im preprocess
-
-        Args:
-            im_path (str): the path to the image, could be either .npy, .png, or other image formats
-
-        Returns:
-            (torch.Tensor): the preprocessed image.
-            (np.ndarray): the original image.
-        """
-        ext = os.path.splitext(im_path)[-1]
-        if ext == ".npy":
-            im0 = np.load(im_path)
-        else:
-            im0 = cv2.imread(im_path)  # BGR format
-            im0 = im0[:, :, ::-1]  # BGR to RGB
-        return self.preprocess(im0.copy()), im0
 
     def _get_min_conf(self, conf: Union[float, dict]) -> float:
         """Get the minimum confidence level for non-maximum suppression.
@@ -246,7 +157,9 @@ class Yolo(ODBase):
 
     def _run_nms(self, preds, conf: float, iou=0.45, agnostic=False, max_det=300):
         """runs non-maximum suppression on inference results"""
-        return nms.non_max_suppression(preds, conf, iou, agnostic=agnostic, max_det=max_det, nc=len(self.model.names))
+        end2end = getattr(self.model, "end2end", False)
+        nc = 0 if self.task == "detect" else len(self.model.names)
+        return nms.non_max_suppression(preds, conf, iou, agnostic=agnostic, max_det=max_det, nc=nc, end2end=end2end)
 
     @smart_inference_mode()
     def postprocess(
@@ -443,9 +356,11 @@ class Yolo(ODBase):
     )
 )
 class YoloSeg(Yolo):
+    logger = logging.getLogger("yolo-seg")
+
     def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
-        self.logger = logging.getLogger(__name__)
+        self.task = "segment"
 
     def to_segments(self, masks: torch.Tensor, img_shape: tuple) -> List[np.ndarray]:
         """Convert masks to segments.
@@ -475,8 +390,9 @@ class YoloSeg(Yolo):
             masks = None
         else:
             masks = ops.process_mask_native(proto, pred[:, 6:], pred[:, :4], orig_img.shape[:2])
-            keep = masks.sum((-2, -1)) > 0  # only keep predictions with masks
-            pred, masks = pred[keep], masks[keep]
+            keep = masks.amax((-2, -1)) > 0  # only keep predictions with masks
+            if not all(keep):  # most predictions have masks
+                pred, masks = pred[keep], masks[keep]  # indexing is slow
 
         results, M = super().construct_result(pred, img, orig_img, conf)
         if masks is not None:
@@ -515,7 +431,7 @@ class YoloSeg(Yolo):
         return_segments=True,
     ):
         """Postprocesses predictions and returns a list of Results objects."""
-        protos = preds[1][-1] if isinstance(preds[1], tuple) else preds[1]
+        protos = preds[0][1] if isinstance(preds[0], tuple) else preds[1]
         return super().postprocess(
             preds[0],
             img,
@@ -550,9 +466,11 @@ class YoloSeg(Yolo):
     )
 )
 class YoloObb(Yolo):
+    logger = logging.getLogger("yolo-obb")
+
     def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
-        self.logger = logging.getLogger(__name__)
+        self.task = "obb"
 
     def _run_nms(self, preds, conf: float, iou=0.45, agnostic=False, max_det=300):
         """Postprocesses predictions and returns a list of Results objects."""
@@ -564,6 +482,7 @@ class YoloObb(Yolo):
             max_det=max_det,
             nc=len(self.model.names),
             rotated=True,
+            end2end=getattr(self.model, "end2end", False),
         )
 
     def construct_result(self, pred, img, orig_img, conf):
@@ -578,18 +497,17 @@ class YoloObb(Yolo):
         Returns:
             dict: the constructed result dictionary
         """
-        # makes sure to regularize the bounding boxes to xywhr format (range [0, pi/2])
-        rboxs = ops.regularize_rboxes(torch.cat([pred[:, :4], pred[:, -1:]], dim=-1))
-        rboxs[:, :4] = ops.scale_boxes(img.shape[2:], rboxs[:, :4], orig_img.shape, xywh=True)
+        rboxes = torch.cat([pred[:, :4], pred[:, -1:]], dim=-1)
+        rboxes[:, :4] = ops.scale_boxes(img.shape[2:], rboxes[:, :4], orig_img.shape, xywh=True)
         confs, clss = pred[:, 4], pred[:, 5]
         classes = np.array([self.model.names[c.item()] for c in clss])
 
         # covert the boxes from xywhr to xyxyxyxy format
-        rboxs = ops.xywhr2xyxyxyxy(rboxs)  # [n_obj, 4, 2]
+        rboxes = ops.xywhr2xyxyxyxy(rboxes)  # [n_obj, 4, 2]
 
         # filter based on conf
         M = confs > self._get_thresholds(conf, len(clss), classes)
-        return Results(rboxs[M], confs[M], classes[M.cpu().numpy()].tolist()), M
+        return Results(rboxes[M], confs[M], classes[M.cpu().numpy()].tolist()), M
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
         """Reverts OBB coordinates to the original pre-transform space."""
@@ -610,9 +528,11 @@ class YoloObb(Yolo):
     )
 )
 class YoloPose(Yolo):
+    logger = logging.getLogger("yolo-pose")
+
     def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
-        self.logger = logging.getLogger(__name__)
+        self.task = "pose"
 
     def construct_result(self, pred, img, orig_img, conf):
         """Constructs a Results object from the model prediction.
@@ -624,7 +544,7 @@ class YoloPose(Yolo):
             conf (float | dict): Confidence threshold for filtering predictions.
         """
         results, M = super().construct_result(pred, img, orig_img, conf)
-        pred_kpts = pred[:, 6:].view(len(pred), *self.model.kpt_shape) if len(pred) else pred[:, 6:]
+        pred_kpts = pred[:, 6:].view(pred.shape[0], *self.model.kpt_shape)
         pred_kpts = ops.scale_coords(img.shape[2:], pred_kpts, orig_img.shape)
         results.points = pred_kpts[M]  # [n_obj,n_kp,3]
         return results, M

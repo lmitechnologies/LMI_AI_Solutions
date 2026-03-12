@@ -8,7 +8,7 @@ WORKDIR /app
 
 RUN pip install tabulate
 RUN pip install pytest
-RUN pip install 'ultralytics<8.4'
+RUN pip install 'ultralytics==8.4.21'
 RUN pip install albumentations
 RUN pip install tensorboard
 RUN pip install numba

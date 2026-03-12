@@ -5,7 +5,7 @@ import cv2
 import pytest
 
 from classifiers.cls_core.classifier import Classifier
-from classifiers.yolov8_cls.model import Yolov8_cls
+from classifiers.ultralytics_lmi.yolo.model import YoloCls
 
 logging.basicConfig()
 logger = logging.getLogger(__name__)
@@ -17,13 +17,14 @@ OUT_DIR = "tests/outputs/cls/yolov8"
 MODEL_SZ = 224
 
 CLS_MODELS = [
+    "tests/assets/models/cls/yolo26n-cls.pt",
     "tests/assets/models/cls/yolo11n-cls.pt",
 ]
 
 
 @pytest.fixture
 def model_det():
-    return [Yolov8_cls(model) for model in CLS_MODELS]
+    return [YoloCls(model) for model in CLS_MODELS]
 
 
 @pytest.fixture
@@ -31,7 +32,7 @@ def model_det_api():
     return [
         Classifier(
             metadata=dict(
-                version="v0",
+                version="v1",
                 model_name="yolov8",
                 task="classification",
                 framework="ultralytics",

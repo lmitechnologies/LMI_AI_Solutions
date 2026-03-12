@@ -3,27 +3,23 @@ import abc
 
 class ODBase(abc.ABC):
     @abc.abstractmethod
-    def __init__(self):
+    def warmup(self, *args, **kwargs):
         pass
 
     @abc.abstractmethod
-    def warmup(self):
+    def preprocess(self, *args, **kwargs):
         pass
 
     @abc.abstractmethod
-    def preprocess(self):
+    def forward(self, *args, **kwargs):
         pass
 
     @abc.abstractmethod
-    def forward(self):
+    def postprocess(self, *args, **kwargs):
         pass
 
     @abc.abstractmethod
-    def postprocess(self):
-        pass
-
-    @abc.abstractmethod
-    def predict(self):
+    def predict(self, *args, **kwargs):
         """
         combine preprocess, forward, and postprocess
         """

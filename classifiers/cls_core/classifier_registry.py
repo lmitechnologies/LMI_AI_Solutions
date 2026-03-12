@@ -4,7 +4,7 @@ import logging
 import pkgutil
 from typing import Any, Dict, List, Optional, Tuple, Type
 
-PACKAGES = ["classifiers.yolov8_cls"]
+PACKAGES = ["classifiers.ultralytics_lmi"]
 TARGET_MODULE_SUFFIXES = [".model"]  # Target suffixes to look for in the packages
 
 
@@ -79,7 +79,7 @@ class ClassifierRegistry:
         framework: Optional[str] = metadata.get("framework") or metadata.get("package")
         model_name: Optional[str] = metadata.get("model_name") or metadata.get("algorithm")
         task: Optional[str] = metadata.get("task") or metadata.get("model_type")
-        version: str = metadata.get("version", "v0")
+        version: str = metadata.get("version", "v1")
         info: Dict[str, Any] = metadata.get("info", {})
 
         if not all([framework, model_name, task]):
