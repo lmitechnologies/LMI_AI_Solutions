@@ -24,6 +24,7 @@ include = [
     "classifiers*",
     "lmi_utils*",
     "object_detectors*",
+    "lmi_common*",
 ]
 exclude = [
     "*submodules*",

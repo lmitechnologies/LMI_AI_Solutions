@@ -10,7 +10,8 @@ from ultralytics.data.augment import classify_transforms
 from ultralytics.utils.torch_utils import smart_inference_mode
 
 from classifiers.cls_core.classifier_registry import ClassifierRegistry
-from object_detectors.ultralytics_lmi.yolo.model import Yolo
+from classifiers.cls_core.cls_base import ClassifierBase
+from lmi_common.yolo_core import YoloCore
 
 
 @ClassifierRegistry.register(
@@ -21,14 +22,14 @@ from object_detectors.ultralytics_lmi.yolo.model import Yolo
         frameworks=["ultralytics"],
     )
 )
-class YoloCls(Yolo):
+class YoloCls(ClassifierBase, YoloCore):
     logger = logging.getLogger("yolo-cls")
 
-    def __init__(self, weights: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
         """init the model
 
         Args:
-            weights (str): the path to the weights file.
+            model_path (str): the path to the model_path file.
             device (str, optional): _description_. Defaults to 'gpu'.
             data (str, optional): the path to dataset yaml file. Defaults to None.
             fp16 (bool, optional): use fp16 precision. Defaults to False.
@@ -38,7 +39,7 @@ class YoloCls(Yolo):
         Raises:
             FileNotFoundError: _description_
         """
-        super().__init__(weights, device, data, fp16, **kwargs)
+        YoloCore.__init__(self, model_path, device, data, fp16, **kwargs)
         self.task = "classify"
         self.image_size = kwargs.get("image_size", [224, 224])
 

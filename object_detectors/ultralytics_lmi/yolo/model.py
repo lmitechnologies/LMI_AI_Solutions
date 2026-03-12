@@ -1,18 +1,17 @@
 import collections
 import logging
-import os
 import time
 from typing import Dict, List, Union
 
 import cv2
 import numpy as np
 import torch
-from ultralytics.nn.autobackend import AutoBackend
 from ultralytics.utils import nms, ops
 from ultralytics.utils.torch_utils import smart_inference_mode
 
 # import LMI AI Solutions modules
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from lmi_common.yolo_core import YoloCore
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
@@ -46,7 +45,7 @@ def to_numpy(data):
         frameworks=["ultralytics", "ultralytics8"],
     )
 )
-class Yolo(ODBase):
+class Yolo(ODBase, YoloCore):
     logger = logging.getLogger("yolo")
 
     def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
@@ -59,78 +58,8 @@ class Yolo(ODBase):
         Raises:
             FileNotFoundError: _description_
         """
-        self.image_size = kwargs.get("image_size", [640, 640])
-
-        if not os.path.isfile(model_path):
-            raise FileNotFoundError(f"File not found: {model_path}")
-
-        self._setup_device(device)
-
-        # load model
-        self.model = AutoBackend(model_path, self.device, data=data, fp16=fp16, fuse=False)
-        if model_path.endswith(".pt") and hasattr(self.model.model, "fuse"):
-            self.model.model.fuse()
-        self.model.eval()
-
-        # class map < id: class name >
-        self.names = self.model.names
+        YoloCore.__init__(self, model_path, device, data, fp16, **kwargs)
         self.task = "detect"
-
-    def _setup_device(self, device):
-        """set up the computation device (CPU or GPU).
-
-        Args:
-            device (str): The device to be used, either 'cpu' or 'gpu'.
-        """
-        if device.lower() not in ["cpu", "gpu"]:
-            raise ValueError(f'Invalid device: {device}. Supported devices are "cpu" and "gpu".')
-
-        self.device = torch.device("cpu")
-        if device.lower() == "gpu":
-            if torch.cuda.is_available():
-                self.device = torch.device("cuda:0")
-            else:
-                self.logger.warning("GPU not available, falling back to CPU")
-
-    @smart_inference_mode()
-    def forward(self, im: torch.Tensor):
-        return self.model(im)
-
-    @smart_inference_mode()
-    def from_numpy(self, x: np.ndarray) -> torch.Tensor:
-        """
-        Convert a numpy array to a tensor.
-
-        Args:
-            x (np.ndarray): The array to be converted.
-
-        Returns:
-            (torch.Tensor): The converted tensor
-        """
-        return torch.tensor(x).to(self.device) if isinstance(x, np.ndarray) else x
-
-    @smart_inference_mode()
-    def warmup(self, imgsz=None):
-        """
-        Warm up the model by running one forward pass with a dummy input.
-        Args:
-            imgsz(list): list of [h,w], default to None
-        Returns:
-            (None): This method runs the forward pass and don't return any value
-        """
-        if imgsz is None:
-            imgsz = self.image_size
-
-        if isinstance(imgsz, tuple):
-            imgsz = list(imgsz)
-
-        imgsz = [1, 3] + imgsz
-        im = torch.empty(
-            *imgsz,
-            dtype=torch.half if self.model.fp16 else torch.float,
-            device=self.device,
-        )
-        self.forward(im)
 
     @smart_inference_mode()
     def preprocess(self, im: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
@@ -156,24 +85,6 @@ class Yolo(ODBase):
         img = img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
         return img
-
-    def load_with_preprocess(self, im_path: str):
-        """load image and do im preprocess
-
-        Args:
-            im_path (str): the path to the image, could be either .npy, .png, or other image formats
-
-        Returns:
-            (torch.Tensor): the preprocessed image.
-            (np.ndarray): the original image.
-        """
-        ext = os.path.splitext(im_path)[-1]
-        if ext == ".npy":
-            im0 = np.load(im_path)
-        else:
-            im0 = cv2.imread(im_path)  # BGR format
-            im0 = im0[:, :, ::-1]  # BGR to RGB
-        return self.preprocess(im0.copy()), im0
 
     def _get_min_conf(self, conf: Union[float, dict]) -> float:
         """Get the minimum confidence level for non-maximum suppression.
