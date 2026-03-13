@@ -1,26 +1,25 @@
-<div style="text-align: center;"> 
+<p align="center"> 
     <picture>
         <source srcset="assets/images/FactorySmartAI_Logo_dark.png" media="(prefers-color-scheme: dark)">
         <source srcset="assets/images/FactorySmartAI_Logo_light.png" media="(prefers-color-scheme: light)">
         <img src="assets/images/FactorySmartAI_Logo_light.png" alt="FactorySmartAI Logo">
     </picture>
-</div>
+</p>
 
-# <img src="assets/images/lmi.png" width="20"/> LMI AI Solutions
+# <img src="assets/images/lmi.png" width="20" alt="LMI logo"/> LMI AI Solutions
 
 This repo contains the utils scripts, and several submodules for LMI Technologies Inc. AI modeling development.
 
 Currently, the following models are supported in the repo:
-+ object detection
-    - [Ultralytics YOLO models](https://github.com/ultralytics/ultralytics)
-    - [yolov5](https://github.com/lmitechnologies/yolov5)
-    - [efficientnet](https://github.com/lmitechnologies/EfficientNet-PyTorch)
-    - [detectron2](https://github.com/facebookresearch/detectron2)
-    - [tensorflow object detection API](https://github.com/lmitechnologies/models)
-- anomaly detection
-    - [anomalib](https://github.com/lmitechnologies/anomalib)
-- OCR
-    - [paddleOCR](https://github.com/lmitechnologies/models)
++ Object Detection
+    - [Ultralytics YOLO](https://github.com/ultralytics/ultralytics)
+    - [YOLOv5](https://github.com/ultralytics/yolov5)
+    - [Detectron2](https://github.com/facebookresearch/detectron2)
+    - [RF-DETR](https://github.com/roboflow/rf-detr)
+- Anomaly Detection
+    - [Anomalib](https://github.com/open-edge-platform/anomalib)
+- Classification
+    - [Ultralytics YOLO](https://github.com/ultralytics/ultralytics)
 
 
 ## Installation
