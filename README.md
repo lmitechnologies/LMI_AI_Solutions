@@ -73,3 +73,14 @@ pre-commit run --all-files
 ```
 
 The hooks will automatically run on `git commit` to check your code for style issues and formatting.
+
+**If your commit fails due to pre-commit hooks:** Ruff automatically fixes most lint and formatting issues in place. Simply re-stage the modified files and commit again:
+```bash
+git add -u
+git commit -m "Your commit message"
+```
+If any issues cannot be auto-fixed, Ruff will print the errors — fix them manually, then stage and commit.
+
+### Contributing
+
+Please read the [Contributing Guide](CONTRIBUTING.md) before submitting a pull request. It covers our branch workflow, commit conventions, and PR requirements.
