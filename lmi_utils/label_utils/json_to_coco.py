@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+from typing import Dict, Set, Tuple
 
 from lmi_utils.dataset_utils.coco_dataset import CocoAnnotation, CocoCategory, CocoDataset, CocoImage
 from lmi_utils.dataset_utils.file_utils import copy_images_in_folder, load_and_update
@@ -26,31 +27,40 @@ def get_args():
 
 
 def get_coco_annotation(annotation, **kwargs):
-    """Convert a dataset annotation to COCO format."""
+    """Convert a dataset annotation to COCO format. Returns (segmentation, bbox, area)."""
     if isinstance(annotation, MaskAnnotation):
         bbox = annotation.value.to_box(**kwargs)
-        return annotation.value.to_coco(**kwargs), bbox.to_coco(**kwargs)
+        area = annotation.value.area(**kwargs)
+        return annotation.value.to_coco(**kwargs), bbox.to_coco(**kwargs), area
     elif isinstance(annotation, PolygonAnnotation):
         bbox = annotation.value.to_box(**kwargs)
-        return annotation.value.to_coco(**kwargs), bbox.to_coco(**kwargs)
+        area = annotation.value.area(**kwargs)
+        return annotation.value.to_coco(**kwargs), bbox.to_coco(**kwargs), area
     elif isinstance(annotation, BoxAnnotation):
         poly = annotation.value.to_polygon(**kwargs)
         segm = poly.to_coco(**kwargs)
-        return segm, annotation.value.to_coco(**kwargs)
+        area = poly.area(**kwargs)
+        return segm, annotation.value.to_coco(**kwargs), area
     else:
         raise ValueError(f"Unsupported annotation type: {type(annotation)}")
 
 
-def create_coco_dataset(dataset: Dataset, is_crowd: bool = False, target_classes: list = None, **kwargs) -> CocoDataset:
+def create_coco_dataset(
+    dataset: Dataset, is_crowd: bool = False, target_classes: list = None, **kwargs
+) -> Tuple[Dataset, CocoDataset, Set[str], Dict[str, str]]:
     """
-    Create a COCO dataset from a given dataset and image path.
+    Create a COCO dataset from a given dataset.
 
     Args:
         dataset (Dataset): The dataset to convert.
-        path_imgs (str): The path to the images directory.
+        is_crowd (bool): Whether annotations are crowd annotations. Default False.
+        target_classes (list): List of class IDs to include. If None, all classes are used.
+        **kwargs: Additional options (e.g. merge_boxes, idx0).
 
     Returns:
-        CocoDataset: A COCO dataset with updated file dimensions.
+        Tuple of (Dataset, CocoDataset, Set[str], Dict[str, str]):
+            the filtered Dataset, the converted CocoDataset, a set of included image filenames,
+            and a mapping from basename to file ID.
     """
     if target_classes is None:
         target_classes = [c.id for c in dataset.labels]
@@ -95,7 +105,7 @@ def create_coco_dataset(dataset: Dataset, is_crowd: bool = False, target_classes
         for annotation in filtered_annotations:
             try:
                 # both segmentation and bbox are required for COCO format
-                segmentation, bbox = get_coco_annotation(annotation, h=file.height, w=file.width, **kwargs)
+                segmentation, bbox, area = get_coco_annotation(annotation, h=file.height, w=file.width, **kwargs)
                 if bbox[2] <= 0 or bbox[3] <= 0:
                     logger.warning(f"Skipping annotation {annotation.id} for file {file.path} as bbox is invalid: {bbox}")
                     continue
@@ -107,7 +117,7 @@ def create_coco_dataset(dataset: Dataset, is_crowd: bool = False, target_classes
                         category_id=coco_dataset.get_category_by_name(annotation.label_id).id,
                         segmentation=segmentation,
                         bbox=bbox,
-                        area=0,
+                        area=area,
                         iscrowd=is_crowd,
                     )
                 )

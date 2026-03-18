@@ -233,7 +233,7 @@ class Box(Base):
         height = self.y_max - self.y_min
         return np.array([self.x_min, self.y_min, width, height, self.angle])
 
-    def area(self):
+    def area(self, **kwargs):
         return (self.x_max - self.x_min) * (self.y_max - self.y_min)
 
     def to_coco(self, **kwargs):
@@ -349,8 +349,8 @@ class Polygon(Base):
     def to_numpy(self):
         return np.array(self.points)
 
-    def area(self):
-        x, y = self.coords()
+    def area(self, **kwargs):
+        x, y = self.coords(**kwargs)
         return ShapelyPolygon([(int(xi), int(yi)) for xi, yi in zip(x, y)]).area
 
     def coords(self, **kwargs):
@@ -462,7 +462,7 @@ class Mask(Base):
         polygons = self.to_polygon(**kwargs)
         area = 0
         for polygon in polygons:
-            area += polygon.area()
+            area += polygon.area(**kwargs)
         return area
 
     def to_box(self, **kwargs):
