@@ -60,6 +60,8 @@ class Base:
 
     def save(self, path: str):
         """Save the dataclass as a JSON file."""
+        # create directory if it doesn't exist
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             f.write(self.to_json())
 
@@ -355,9 +357,9 @@ class Polygon(Base):
         points = np.array(self.points)
         return points[:, 0].tolist(), points[:, 1].tolist()
 
-    def to_coco(self):
+    def to_coco(self, **kwargs):
         """convert to COCO format."""
-        return np.array(self.points).ravel().tolist()
+        return [np.array(self.points).ravel().tolist()]
 
     def to_yolo(self, h, w, **kwargs):
         return [[point[0] / w, point[1] / h] for point in self.points]

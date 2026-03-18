@@ -29,10 +29,10 @@ def get_coco_annotation(annotation, **kwargs):
     """Convert a dataset annotation to COCO format."""
     if isinstance(annotation, MaskAnnotation):
         bbox = annotation.value.to_box(**kwargs)
-        return annotation.value.to_coco(**kwargs), bbox.to_coco()
+        return annotation.value.to_coco(**kwargs), bbox.to_coco(**kwargs)
     elif isinstance(annotation, PolygonAnnotation):
-        bbox = annotation.value.to_box()
-        return annotation.value.to_coco(), bbox.to_coco()
+        bbox = annotation.value.to_box(**kwargs)
+        return annotation.value.to_coco(**kwargs), bbox.to_coco(**kwargs)
     elif isinstance(annotation, BoxAnnotation):
         poly = annotation.value.to_polygon(**kwargs)
         segm = poly.to_coco(**kwargs)
@@ -57,8 +57,8 @@ def create_coco_dataset(dataset: Dataset, is_crowd: bool = False, target_classes
     coco_dataset = CocoDataset()
     file_id_map = {}
     annotation_id = 0
-    # add categories
-    labels = dataset.labels
+    # add categories (only target classes)
+    labels = [label for label in dataset.labels if label.id in target_classes]
     for label_id, label in enumerate(labels):
         coco_dataset.add_category(
             CocoCategory(
@@ -92,16 +92,14 @@ def create_coco_dataset(dataset: Dataset, is_crowd: bool = False, target_classes
             )
         )
         added_annotations = 0
-        for annotation in file.annotations:
-            annotation_id += 1
-            # both segmentation and bbox are required for COCO format
+        for annotation in filtered_annotations:
             try:
-                annotation_id += 1
                 # both segmentation and bbox are required for COCO format
                 segmentation, bbox = get_coco_annotation(annotation, h=file.height, w=file.width, **kwargs)
                 if bbox[2] <= 0 or bbox[3] <= 0:
                     logger.warning(f"Skipping annotation {annotation.id} for file {file.path} as bbox is invalid: {bbox}")
                     continue
+                annotation_id += 1
                 coco_dataset.add_annotation(
                     CocoAnnotation(
                         id=annotation_id,
@@ -184,28 +182,29 @@ def convert_to_json(args):
     )
     if use_train_for_val:
         logger.info("Creating validation dataset from train dataset")
-        val_file_id_map = train_file_id_map
+        val_ais_dataset = train_ais_dataset
         coco_val_dataset = coco_train_dataset
+        val_files = train_files
+        val_file_id_map = train_file_id_map
     else:
         logger.info("Creating validation dataset from val dataset")
         val_ais_dataset, coco_val_dataset, val_files, val_file_id_map = create_coco_dataset(
             val_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box, idx0=args.get("idx0", False)
         )
+
     # save ais datasets
-    if not os.path.isdir(os.path.join(path_out, "train")):
-        os.makedirs(os.path.join(path_out, "train"), exist_ok=True)
-
+    os.makedirs(os.path.join(path_out, "train"), exist_ok=True)
+    os.makedirs(os.path.join(path_out, "valid"), exist_ok=True)
     train_ais_dataset.save(os.path.join(path_out, "train", "ais.train.dataset.json"))
-    # save coco datasets
-    coco_train_dataset.save_to_json(file_path=os.path.join(path_out, "train", "annotations.json"))
-    if not use_train_for_val:
-        coco_val_dataset.save_to_json(file_path=os.path.join(path_out, "val", "annotations.json"))
+    val_ais_dataset.save(os.path.join(path_out, "valid", "ais.val.dataset.json"))
 
-    # save the train dataset
-    copy_images_in_folder(path_train_imgs, os.path.join(path_out, "train", "images"), train_files, train_file_id_map)
-    if not use_train_for_val:
-        # save the val dataset
-        copy_images_in_folder(path_val_imgs, os.path.join(path_out, "val", "images"), val_files, val_file_id_map)
+    # save coco json annotations
+    coco_train_dataset.save_to_json(file_path=os.path.join(path_out, "train", "_annotations.coco.json"))
+    coco_val_dataset.save_to_json(file_path=os.path.join(path_out, "valid", "_annotations.coco.json"))
+
+    # save datasets
+    copy_images_in_folder(path_train_imgs, os.path.join(path_out, "train"), train_files, train_file_id_map)
+    copy_images_in_folder(path_val_imgs, os.path.join(path_out, "valid"), val_files, val_file_id_map)
 
 
 def main():
