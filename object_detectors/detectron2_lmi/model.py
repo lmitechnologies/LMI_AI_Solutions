@@ -345,7 +345,7 @@ class Detectron2TRT(ODBase):
         predictions = self.forward(self.preprocess(images))
         predictions = self.postprocess(images, predictions, **kwargs)
         t1 = time.time()
-        self.logger.info(f"proc-time {(t1 - t0) * 1000.0:.2f} ms")
+        self.logger.debug(f"proc-time {(t1 - t0) * 1000.0:.2f} ms")
         return predictions
 
     def annotate_image(self, result, image, color_map=None, **kwargs):
@@ -582,7 +582,7 @@ class Detectron2PT(ODBase):
         # postprocess
         results = self.postprocess(images, predictions, **kwargs)
         t1 = time.time()
-        self.logger.info(f"proc-time {(t1 - t0) * 1000.0:.2f} ms")
+        self.logger.debug(f"proc-time {(t1 - t0) * 1000.0:.2f} ms")
         return results
 
     def annotate_image(self, result, image, color_map=None, **kwargs):
