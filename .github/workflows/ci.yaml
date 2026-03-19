@@ -35,7 +35,7 @@ jobs:
 
   run-test:
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.skip_tests != 'true' && github.head_ref != 'update-pre-commit-hooks' }}
+    if: ${{ needs.check-changes.outputs.skip_tests != 'true' }}
     
     strategy:
       fail-fast: false

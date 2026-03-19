@@ -27,6 +27,7 @@ DOCS_PATTERNS: list[re.Pattern] = [
     re.compile(r"\.md$"),
     re.compile(r"^\.gitignore$"),
     re.compile(r"^\.gitattributes$"),
+    re.compile(r"^\.pre-commit-config\.yaml$"),
 ]
 
 # Files under .github/ are also skipped by default …
