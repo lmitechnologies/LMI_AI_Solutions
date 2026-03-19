@@ -11,13 +11,13 @@ def convert_to_trt(args):
 
 def convert(args):
     if args.get("pt", True):
-        from detectron2_lmi.converter.detectron2_exporter import det2export
+        from object_detectors.detectron2_lmi.converter.detectron2_exporter import det2export
 
         args["format"] = "pt"
         det2export(args)
 
     if args.get("onnx", True):
-        from detectron2_lmi.converter.detectron2_onnx_trtonnx import onnx_gs
+        from object_detectors.detectron2_lmi.converter.detectron2_onnx_trtonnx import onnx_gs
 
         args["format"] = "onnx"
         det2export(args)

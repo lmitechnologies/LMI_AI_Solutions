@@ -5,7 +5,8 @@ from typing import Dict, List
 import numpy as np
 import torch
 import torchvision  # noqa: F401
-from gadget_utils.pipeline_utils import (
+
+from lmi_utils.gadget_utils.pipeline_utils import (
     plot_one_box,
     revert_mask_to_origin,
     revert_to_origin,
