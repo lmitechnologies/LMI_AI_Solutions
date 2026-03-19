@@ -1,4 +1,5 @@
 import csv
+import logging
 import os
 
 import cv2
@@ -14,6 +15,8 @@ from lmi_utils.dataset_utils.representations import (
     Point2d,
     Polygon,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def read_one_row(row):
@@ -131,10 +134,13 @@ def write_to_json(label_set: dict, file_map: dict, json_path: str):
     dataset.labels = [Label(id=str(label_name)) for label_name in label_set]
     dataset.files = list(file_map.values())
     dataset.save(json_path)
+    logger.info(f"save {len(dataset.labels)} labels to {json_path}")
 
 
 if __name__ == "__main__":
     import argparse
+
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", required=True)
