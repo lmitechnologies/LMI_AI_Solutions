@@ -88,6 +88,8 @@ def read_csv(csv_path: str, img_dir: str):
                 shape = Polygon(xy.tolist())
                 mtype = AnnotationType.POLYGON
             if shape_type == "rect":
+                if angle is None:
+                    angle = 0
                 shape = Box(x_min=c1[0], y_min=c1[1], x_max=c2[0], y_max=c2[1], angle=angle)
                 mtype = AnnotationType.BOX
             if shape_type == "keypoint":
