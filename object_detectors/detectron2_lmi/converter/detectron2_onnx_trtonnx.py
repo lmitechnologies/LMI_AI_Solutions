@@ -20,6 +20,7 @@ import os
 import sys
 
 import cv2
+import detectron2_lmi.converter.onnx_utils  # noqa: F401
 import numpy as np
 import onnx
 import onnx_graphsurgeon as gs

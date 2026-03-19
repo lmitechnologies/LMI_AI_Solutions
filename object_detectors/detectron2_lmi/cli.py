@@ -2,10 +2,6 @@ import argparse
 import logging
 import os
 
-from object_detectors.detectron2_lmi.convert import convert
-from object_detectors.detectron2_lmi.infer import inference_run
-from object_detectors.detectron2_lmi.trainer import training_run
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -106,11 +102,17 @@ if __name__ == "__main__":
     args = vars(args)
 
     if args["action"] == "train":
+        from object_detectors.detectron2_lmi.trainer import training_run
+
         logger.info("Training model")
         training_run(args)
     elif args["action"] == "test":
+        from object_detectors.detectron2_lmi.infer import inference_run
+
         inference_run(args)
     elif args["action"] == "convert":
+        from object_detectors.detectron2_lmi.convert import convert
+
         args["onnx_file_path"] = os.path.join(args.get("output"), DET2_ONNX_EXPORT)
         args["trt_file_path"] = os.path.join(args.get("output"), DET2_TRT_EXPORT)
         args["pt_file_path"] = os.path.join(args.get("output"), DET2_PT_EXPORT)
