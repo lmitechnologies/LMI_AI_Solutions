@@ -20,6 +20,7 @@ MODEL_PATH = "tests/assets/models/od/detectron2/model.pt"
 OG_WEIGHTS_PATH = "tests/assets/models/od/detectron2/model_final_f10217.pkl"
 SAMPLE_IMAGE = "tests/assets/images/detectron2/sample_image.jpg"
 OUT_DIR = "tests/outputs/od/detectron2"
+USE_CUDA = torch.cuda.is_available()
 
 with open(COCO_CLASSMAP, "r") as f:
     class_map = json.load(f)
@@ -33,6 +34,7 @@ logger.setLevel(logging.DEBUG)
 def og_model():
     cfg = get_cfg()
     cfg.merge_from_file(model_zoo.get_config_file(MASKRCNN_MODEL_CONFIG))
+    cfg.MODEL.DEVICE = "cuda" if USE_CUDA else "cpu"
     model = build_model(cfg)
     DetectionCheckpointer(model).load(OG_WEIGHTS_PATH)
     model.eval()

@@ -9,7 +9,7 @@ services:
     ipc: host
     working_dir: /repo
     command: >
-      bash -c "bash tests/run_tests.sh od"
+      bash -c "bash tests/run_tests.sh v1-all"
   
   test_ais_ad_v2:
     depends_on:
