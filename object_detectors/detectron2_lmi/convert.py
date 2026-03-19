@@ -1,11 +1,5 @@
 import subprocess
 
-<<<<<<< HEAD
-from object_detectors.detectron2_lmi.converter.detectron2_exporter import det2export
-from object_detectors.detectron2_lmi.converter.detectron2_onnx_trtonnx import onnx_gs
-
-=======
->>>>>>> 49e84705 (updated)
 
 def convert_to_trt(args):
     command = f"trtexec --onnx={args.get('onnx_file_path')} --saveEngine={args.get('trt_file_path')} --useCudaGraph"
