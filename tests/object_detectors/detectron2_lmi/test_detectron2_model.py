@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 import torch
 from detectron2 import model_zoo
+from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.utils.testing import (
     get_sample_coco_image,
 )
@@ -26,6 +27,7 @@ with open("tests/assets/models/od/detectron2/class_map.json", "w") as f:
 MASKRCNN_MODEL_CONFIG = "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
 COCO_CLASSMAP = "tests/assets/models/od/detectron2/class_map.json"
 MODEL_PATH = "tests/assets/models/od/detectron2/model.pt"
+OG_WEIGHTS_PATH = "tests/assets/models/od/detectron2/model_final_f10217.pkl"
 SAMPLE_IMAGE = "tests/assets/images/detectron2/sample_image.jpg"
 OUT_DIR = "tests/outputs/od/detectron2"
 
@@ -36,7 +38,8 @@ logger.setLevel(logging.DEBUG)
 
 @pytest.fixture(scope="module")
 def og_model():
-    model = model_zoo.get(MASKRCNN_MODEL_CONFIG, trained=True)
+    model = model_zoo.get(MASKRCNN_MODEL_CONFIG, trained=False)
+    DetectionCheckpointer(model).load(OG_WEIGHTS_PATH)
     model.eval()
     return model
 
