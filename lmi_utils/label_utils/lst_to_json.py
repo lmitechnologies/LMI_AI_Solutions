@@ -44,7 +44,7 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
         return None, None, None, None
 
     label = labels[0]
-    conf = result["value"]["score"] if load_confidence else 1.0
+    conf = result["value"].get("score", 1.0) if load_confidence else 1.0
     if result_type == "rectanglelabels":
         # get bbox
         x, y, w, h, angle = convert_from_ls(result)
@@ -79,6 +79,7 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
         return Point2d(x=x, y=y), label, conf, AnnotationType.KEYPOINT
     else:
         logger.warning(f"unsupported result type: {result_type}, skip")
+        return None, None, None, None
 
 
 def to_linux_path(path: Union[str, Path]):
@@ -91,6 +92,28 @@ def generate_file_ids(files: list[str]):
     for i, f in enumerate(files):
         file_id[to_linux_path(f)] = i
     return file_id
+
+
+def collect_results(results, out_list, counter, label_dict, labels, fname, load_confidence=False):
+    """Parse results, append Annotations to out_list, return updated counter."""
+    for result in results:
+        shape, label, conf, annot_type = lst_to_shape(result, fname, load_confidence=load_confidence)
+        if shape is None:
+            continue
+        if label not in label_dict:
+            label_dict[label] = label
+            labels.append(Label(id=str(label), annotation_type=annot_type))
+        out_list.append(
+            Annotation(
+                id=str(counter),
+                label_id=str(label_dict[label]),
+                type=annot_type,
+                value=shape,
+                confidence=conf if load_confidence else None,
+            )
+        )
+        counter += 1
+    return counter
 
 
 def get_annotations_from_json(path_json, images_dir, background=False):
@@ -128,10 +151,8 @@ def get_annotations_from_json(path_json, images_dir, background=False):
 
         # collect all the files
         files = [dt["data"]["image"] for dt in li if "data" in dt]
-        common_prefix = os.path.dirname(os.path.commonprefix(files))
+        common_prefix = os.path.commonpath(files) if files else ""
         logger.info(f"base_path: {common_prefix}")
-
-        # find the common prefix between the image path
 
         for dt in li:
             # load file name
@@ -144,76 +165,22 @@ def get_annotations_from_json(path_json, images_dir, background=False):
             if "annotations" in dt:
                 cnt = 0
                 for annot in dt["annotations"]:
-                    num_labels = len(annot["result"])
-                    if num_labels > 0:
+                    if len(annot["result"]) > 0:
                         cnt += 1
-                    for result in annot["result"]:
-                        shape, label, conf, annot_type = lst_to_shape(result, f)
-                        if shape is not None:
-                            if label not in label_dict:
-                                label_id = label
-                                label_dict[label] = label_id
-                                labels.append(Label(id=str(label_id), annotation_type=annot_type))
-                            else:
-                                label_id = label_dict[label]
-                            file_annotations.append(
-                                Annotation(
-                                    id=str(cnt_anno),
-                                    label_id=str(label_id),
-                                    type=annot_type,
-                                    value=shape,
-                                )
-                            )
-                            cnt_anno += 1
+                    cnt_anno = collect_results(annot["result"], file_annotations, cnt_anno, label_dict, labels, f)
 
                     if "prediction" in annot and "result" in annot["prediction"]:
-                        for result in annot["prediction"]["result"]:
-                            shape, label, conf, annot_type = lst_to_shape(result, f, load_confidence=True)
-                            if shape is not None:
-                                if label not in label_dict:
-                                    label_id = label
-                                    label_dict[label] = label_id
-                                    labels.append(Label(id=str(label_id), annotation_type=annot_type))
-                                else:
-                                    label_id = label_dict[label]
-                                pred_annotations.append(
-                                    Annotation(
-                                        id=str(cnt_pred),
-                                        label_id=str(label_id),
-                                        type=annot_type,
-                                        value=shape,
-                                        confidence=conf,
-                                    )
-                                )
-                                cnt_pred += 1
-                if cnt > 0:
-                    cnt_image += 1
-                if cnt == 0 and dt["total_annotations"] > 0:
+                        cnt_pred = collect_results(
+                            annot["prediction"]["result"], pred_annotations, cnt_pred, label_dict, labels, f, load_confidence=True
+                        )
+                if cnt == 0 and dt.get("total_annotations", 0) > 0:
                     cnt_wrong += 1
-                    logger.warning(f"found 0 annotation in {f}, but lst claims total_annotations = {dt['total_annotations']}")
+                    logger.warning(f"found 0 annotation in {f}, but lst claims total_annotations = {dt.get('total_annotations')}")
 
             if "predictions" in dt:
                 for pred in dt["predictions"]:
                     if isinstance(pred, dict):
-                        for result in pred["result"]:
-                            shape, label, conf, annot_type = lst_to_shape(result, f, load_confidence=True)
-                            if shape is not None:
-                                if label not in label_dict:
-                                    label_id = label
-                                    label_dict[label] = label_id
-                                    labels.append(Label(id=str(label_id), annotation_type=annot_type))
-                                else:
-                                    label_id = label_dict[label]
-                                pred_annotations.append(
-                                    Annotation(
-                                        id=str(cnt_pred),
-                                        label_id=str(label_id),
-                                        type=annot_type,
-                                        value=shape,
-                                        confidence=conf,
-                                    )
-                                )
-                                cnt_pred += 1
+                        cnt_pred = collect_results(pred["result"], pred_annotations, cnt_pred, label_dict, labels, f, load_confidence=True)
 
             f = f.removeprefix(common_prefix).removeprefix("/")
             updated_fp = os.path.join(images_dir, f)
@@ -223,12 +190,13 @@ def get_annotations_from_json(path_json, images_dir, background=False):
             file_id = file_id_dict[f]
 
             image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
+            if image is None:
+                raise Exception(f"failed to read image: {updated_fp}")
             height, width = image.shape[:2]
             if len(file_annotations) > 0:
-                # File(id=str(file_id), path=f, height=height, width=width)
                 annotations.append(
                     FileAnnotations(
-                        id=file_id,
+                        id=str(file_id),
                         path=f,
                         height=height,
                         width=width,
@@ -257,6 +225,8 @@ def get_annotations_from_json(path_json, images_dir, background=False):
                 raise Exception(f"file not found: {updated_fp}")
             file_id = file_id_dict[f]
             image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
+            if image is None:
+                raise Exception(f"failed to read image: {updated_fp}")
             height, width = image.shape[:2]
             annotations.append(FileAnnotations(id=str(file_id), path=f, height=height, width=width))
 
