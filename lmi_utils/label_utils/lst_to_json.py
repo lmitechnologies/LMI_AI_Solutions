@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Union
+from typing import List, Union
 
 import cv2
 import numpy as np
@@ -87,7 +87,7 @@ def to_linux_path(path: Union[str, Path]):
     return Path(path).as_posix()
 
 
-def generate_file_ids(files: list[str]):
+def generate_file_ids(files: List[str]):
     file_id = {}
     for i, f in enumerate(files):
         file_id[to_linux_path(f)] = i
@@ -101,12 +101,12 @@ def collect_results(results, out_list, counter, label_dict, labels, fname, load_
         if shape is None:
             continue
         if label not in label_dict:
-            label_dict[label] = label
+            label_dict.add(label)
             labels.append(Label(id=str(label), annotation_type=annot_type))
         out_list.append(
             Annotation(
                 id=str(counter),
-                label_id=str(label_dict[label]),
+                label_id=str(label),
                 type=annot_type,
                 value=shape,
                 confidence=conf if load_confidence else None,
@@ -130,11 +130,12 @@ def get_annotations_from_json(path_json, images_dir, background=False):
     else:
         json_files = glob.glob(os.path.join(path_json, "*.json"))
 
-    labels: list[Label] = []
-    annotations: list[FileAnnotations] = []
+    labels: List[Label] = []
+    annotations: List[FileAnnotations] = []
 
-    label_dict = {}
+    label_set = set()
     file_id_dict = generate_file_ids(get_relative_paths(images_dir))
+    processed_files = set()
 
     for path_json in json_files:
         if path_json.endswith(LABEL_NAME) or path_json.endswith(PRED_NAME):
@@ -151,27 +152,28 @@ def get_annotations_from_json(path_json, images_dir, background=False):
 
         # collect all the files
         files = [dt["data"]["image"] for dt in li if "data" in dt]
-        common_prefix = os.path.commonpath(files) if files else ""
-        logger.info(f"base_path: {common_prefix}")
+        # find common string-based prefix to handle cloud path and local path.
+        common_prefix = os.path.dirname(os.path.commonprefix(files))
+        logger.info(f"common prefix of image paths in json: {common_prefix}")
 
         for dt in li:
             # load file name
             if "data" not in dt:
-                raise Exception('missing "data" in json file. Ensure that the label studio export format is not JSON-MIN.')
+                raise ValueError('missing "data" in json file. Ensure that the label studio export format is not JSON-MIN.')
             f = dt["data"]["image"]  # image web path. already in linux path format
-            file_annotations: list[Annotation] = []
-            pred_annotations: list[Annotation] = []
+            file_annotations: List[Annotation] = []
+            pred_annotations: List[Annotation] = []
 
             if "annotations" in dt:
                 cnt = 0
                 for annot in dt["annotations"]:
                     if len(annot["result"]) > 0:
                         cnt += 1
-                    cnt_anno = collect_results(annot["result"], file_annotations, cnt_anno, label_dict, labels, f)
+                    cnt_anno = collect_results(annot["result"], file_annotations, cnt_anno, label_set, labels, f)
 
                     if "prediction" in annot and "result" in annot["prediction"]:
                         cnt_pred = collect_results(
-                            annot["prediction"]["result"], pred_annotations, cnt_pred, label_dict, labels, f, load_confidence=True
+                            annot["prediction"]["result"], pred_annotations, cnt_pred, label_set, labels, f, load_confidence=True
                         )
                 if cnt == 0 and dt.get("total_annotations", 0) > 0:
                     cnt_wrong += 1
@@ -180,20 +182,24 @@ def get_annotations_from_json(path_json, images_dir, background=False):
             if "predictions" in dt:
                 for pred in dt["predictions"]:
                     if isinstance(pred, dict):
-                        cnt_pred = collect_results(pred["result"], pred_annotations, cnt_pred, label_dict, labels, f, load_confidence=True)
+                        cnt_pred = collect_results(pred["result"], pred_annotations, cnt_pred, label_set, labels, f, load_confidence=True)
 
-            f = f.removeprefix(common_prefix).removeprefix("/")
+            f = f[len(common_prefix) :].lstrip("/")
             updated_fp = os.path.join(images_dir, f)
             if not os.path.isfile(updated_fp):
-                raise Exception(f"file not found: {updated_fp}")
+                raise FileNotFoundError(
+                    f"Not found '{f}' in '{images_dir}'. Check if the folder structure of images_dir is the same as the path in json file."
+                )
 
-            file_id = file_id_dict[f]
+            file_id = file_id_dict.get(f)
+            if file_id is None:
+                raise KeyError(f"key {f} not found in dict. Sample keys: {list(file_id_dict.keys())[:5]}.")
 
             image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
             if image is None:
-                raise Exception(f"failed to read image: {updated_fp}")
+                raise ValueError(f"failed to read image: {updated_fp}")
             height, width = image.shape[:2]
-            if len(file_annotations) > 0:
+            if file_annotations or pred_annotations:
                 annotations.append(
                     FileAnnotations(
                         id=str(file_id),
@@ -204,29 +210,36 @@ def get_annotations_from_json(path_json, images_dir, background=False):
                         predictions=pred_annotations,
                     )
                 )
-                cnt_image += 1
-
+                if file_annotations:
+                    cnt_image += 1
+                else:
+                    logger.warning(f"no annotation found in {f}")
             else:
                 logger.warning(f"no annotation found in {f}")
-
                 if background:
                     annotations.append(FileAnnotations(id=str(file_id), path=f, height=height, width=width))
+
+            processed_files.add(f)
 
         logger.info(f"{cnt_image} out of {len(li)} images have annotations")
         if cnt_wrong > 0:
             logger.info(f"{cnt_wrong} images with total_annotations > 0, but found 0 annotation")
         logger.info(f"total {cnt_anno} annotations")
         logger.info(f"total {cnt_pred} predictions")
-    # save all background images
+    # save background images not present in any json file
     if background:
         for f in file_id_dict:
+            if f in processed_files:
+                continue
             updated_fp = os.path.join(images_dir, f)
             if not os.path.isfile(updated_fp):
-                raise Exception(f"file not found: {updated_fp}")
+                raise FileNotFoundError(
+                    f"Not found '{f}' in '{images_dir}'. Check if the folder structure of the images is the same as the path in json file."
+                )
             file_id = file_id_dict[f]
             image = cv2.imread(updated_fp, cv2.IMREAD_UNCHANGED)
             if image is None:
-                raise Exception(f"failed to read image: {updated_fp}")
+                raise ValueError(f"failed to read image: {updated_fp}")
             height, width = image.shape[:2]
             annotations.append(FileAnnotations(id=str(file_id), path=f, height=height, width=width))
 
@@ -244,24 +257,24 @@ def main():
         required=True,
         help="the directory of label-studio json files",
     )
-    ap.add_argument("-imgs", "--path_images", required=False, help="the root directory of images")
-    ap.add_argument("-of", "--path_out_json", required=False, help="path to store the json file")
+    ap.add_argument("-imgs", "--path_images", required=True, help="the root directory of images")
+    ap.add_argument("-of", "--path_out_json", required=True, help="path to store the json file")
     ap.add_argument("-bg", "--background", action="store_true", help="save background")
     args = ap.parse_args()
 
     annotations, labels = get_annotations_from_json(args.path_json, args.path_images, background=args.background)
 
     annotations = Dataset(labels=labels, files=annotations)
-    out_path = args.path_out_json
-    if not out_path.endswith(".json") and out_path != "labels.json":
-        if not os.path.isdir(out_path):
-            os.makedirs(out_path)
-        out_json = os.path.join(out_path, "labels.json")
-    else:
-        out_json = out_path
 
-    annotations.save(out_json)
-    logger.info(f"saved to {out_json}")
+    out_path = args.path_out_json
+    if not out_path.endswith(".json"):
+        raise Exception("output path should end with .json")
+    out_dir = os.path.dirname(out_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    annotations.save(out_path)
+    logger.info(f"saved to {out_path}")
 
 
 if __name__ == "__main__":
