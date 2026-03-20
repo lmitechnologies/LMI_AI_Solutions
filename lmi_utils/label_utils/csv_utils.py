@@ -1,4 +1,5 @@
 # built-in packages
+import argparse
 import collections
 import csv
 import logging
@@ -8,9 +9,7 @@ from logging import warning
 # LMI packages
 from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def load_csv(fname: str, path_img: str = "", class_map: dict = None, zero_index: bool = True):
@@ -230,7 +229,7 @@ def write_to_csv(shapes: dict, filename: str, overwrite=True):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--input", required=True, help="input csv file")

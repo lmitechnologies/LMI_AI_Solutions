@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 import os
@@ -6,9 +7,7 @@ from pathlib import Path
 
 from lmi_utils.label_utils.csv_to_lst import POLYGON_NAME, RECT_NAME, write_xml
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 """
@@ -177,7 +176,7 @@ def convert_to_ls(files, destination, bucket):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument(

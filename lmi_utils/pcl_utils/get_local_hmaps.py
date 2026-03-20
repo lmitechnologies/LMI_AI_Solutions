@@ -1,9 +1,12 @@
 import argparse
+import logging
 import os
 
 import pandas as pd
 
 import lmi_utils.pcl_utils.point_cloud as pcloud
+
+logger = logging.getLogger(__name__)
 
 """ MODULE:
         get_local_hmaps.py
@@ -139,7 +142,7 @@ def prune_ROIs(
         try:
             pcd.read_points(pcd_file)
         except Exception:
-            print("[Error] Could not open .pcd file: ", pcd_file)
+            logger.error(f"Could not open .pcd file: {pcd_file}")
         region_id = 0
         # check bounding box shape
         bb_shape_check = [False, False]
@@ -197,6 +200,7 @@ def prune_ROIs(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "-c",

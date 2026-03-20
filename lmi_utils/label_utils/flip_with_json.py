@@ -1,4 +1,5 @@
 # built-in packages
+import argparse
 import logging
 from pathlib import Path
 
@@ -9,9 +10,7 @@ import numpy as np
 from lmi_utils.dataset_utils.representations import Dataset
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def flip_imgs_with_json(path_imgs, path_json, flip, path_out, recursive):
@@ -79,7 +78,7 @@ def flip_imgs_with_json(path_imgs, path_json, flip, path_out, recursive):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--path_imgs", "-i", required=True, type=Path, help="the path to images")

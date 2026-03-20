@@ -6,9 +6,8 @@ from datetime import date
 
 import yaml
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
 
 # mounted locations in the docker container
 HYP_YAML = "/app/config/hyp.yaml"
@@ -75,6 +74,7 @@ def add_configs(final_configs: dict, configs: dict):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     # check if files exist
     check_path_exist(HYP_YAML, True)
 

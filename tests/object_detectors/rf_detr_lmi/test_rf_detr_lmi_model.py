@@ -9,9 +9,7 @@ from rfdetr import RFDETRNano
 
 from object_detectors.od_core.object_detector import ObjectDetector
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 COCO_DIR = "tests/assets/images/coco"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"

@@ -1,7 +1,11 @@
+import argparse
 import collections
 import itertools
+import logging
 
 import matplotlib.pyplot as plt
+
+logger = logging.getLogger(__name__)
 
 
 # Function to read and parse the data from the text file
@@ -19,7 +23,7 @@ def read_data(file_path):
             ):
                 continue
             parts = line.split()
-            print(parts)
+            logger.info(parts)
             record = {
                 "Container ID": parts[0],
                 "Name": parts[1],
@@ -61,7 +65,7 @@ def plot_and_save(totals, color_marker_combinations, wanted=None, not_wanted=Non
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("-f", "--file", required=True, help="Path to the log file")

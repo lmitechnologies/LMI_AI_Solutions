@@ -8,9 +8,7 @@ import numpy as np
 from lmi_utils.gadget_utils.pipeline_utils import fit_im_to_size, resize_image
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def is_cuda_cv():  # 1 == using cuda, 0 = not using cuda
@@ -150,6 +148,7 @@ def img_resize(
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--input_path", required=True, help="the path to images")
     ap.add_argument("-o", "--output_path", required=True)

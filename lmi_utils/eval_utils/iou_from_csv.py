@@ -1,11 +1,14 @@
 # %%
 import argparse
 import csv
+import logging
 import os
 import re
 
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 def csv_to_dictionary(csv_file: str, object_classes: str):
@@ -32,7 +35,7 @@ def csv_to_dictionary(csv_file: str, object_classes: str):
 
     # Step through each row and create a new dictionary when the row includes a target object
     for row in rows:
-        print(row)
+        logger.info(row)
         if row[-1] == ";":
             row = row[0:-1]
         row = row.split(";")
@@ -164,6 +167,7 @@ def main(
         None
 
     """
+    logging.basicConfig(level=logging.INFO)
 
     if labels is None:
         object_classes_model = np.genfromtxt(model_path, delimiter=";", dtype=str)[:, 1]
@@ -174,7 +178,7 @@ def main(
         try:
             obj_classes = labels.split(",")
         except Exception:
-            print(f"Incorrect labels definition: {labels}")
+            logger.info(f"Incorrect labels definition: {labels}")
 
     manual_data = csv_to_dictionary(manual_path, obj_classes)
     model_data = csv_to_dictionary(model_path, obj_classes)
@@ -258,7 +262,7 @@ def main(
                             cv2.fillPoly(model_mask, pts_model, 255)
                             label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.3, 1)
                             label_size = label_size[0][0]
-                            print(f"[INFO] Label size: {label_size}")
+                            logger.info(f"Label size: {label_size}")
                             overrun = label_coord[0] + label_size
                             if overrun > image.shape[1]:
                                 delta = overrun - image.shape[1]
@@ -297,7 +301,7 @@ def main(
                                 1,
                             )
                         else:
-                            print(f"[INFO] skipping model, {current_model[i]['shape']} not present in labeled data.")
+                            logger.info(f"skipping model, {current_model[i]['shape']} not present in labeled data.")
 
                     image_rsz = image.copy()
                     if render:
@@ -311,7 +315,7 @@ def main(
                     intersection = np.sum(cv2.bitwise_and(model_mask, manual_mask))
                     iou_i = intersection / union * 100
                     iou.append(iou_i)
-                    print("[INFO] Class %s : IOU = %.2f percent" % (obj_class, float(iou_i)))
+                    logger.info(f"Class {obj_class} : IOU = {iou_i:.2f} percent")
                     rowWriter.writerow([file_x, obj_class, iou_i])
         if render:
             cv2.destroyWindow("Validation Window")
@@ -324,11 +328,11 @@ def main(
             iou_min = np.min(iou_filt)
             iou_max = np.max(iou_filt)
             iou_mean = np.mean(iou_filt)
-            print("[INFO] Mean IOU = %.2f percent" % iou_mean)
-            print("[INFO] Max IOU = %.2f percent" % iou_max)
-            print("[INFO] Min IOU = %.2f percent" % iou_min)
+            logger.info(f"Mean IOU = {iou_mean:.2f} percent")
+            logger.info(f"Max IOU = {iou_max:.2f} percent")
+            logger.info(f"Min IOU = {iou_min:.2f} percent")
         else:
-            print("[INFO] Target label not found in the input files.")
+            logger.info("Target label not found in the input files.")
 
 
 if __name__ == "__main__":

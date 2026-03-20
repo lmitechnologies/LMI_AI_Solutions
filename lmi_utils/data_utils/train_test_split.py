@@ -1,9 +1,13 @@
+import argparse
 import glob
+import logging
 import os
 import random
 import shutil
 
 import cv2
+
+logger = logging.getLogger(__name__)
 
 
 def get_files(dir):
@@ -11,12 +15,12 @@ def get_files(dir):
     files_grabbed = []
     for ftype in ftypes:
         files_grabbed.extend(glob.glob(os.path.join(dir, ftype)))
-    print(f"[INFO] Found {len(files_grabbed)} available source files.")
+    logger.info(f"Found {len(files_grabbed)} available source files.")
     return files_grabbed
 
 
 def randomize(files_list, seed=42):
-    print("Randomizing source data.")
+    logger.info("Randomizing source data.")
     random.seed(seed)
     random.shuffle(files_list)
     return files_list
@@ -26,7 +30,7 @@ def split_files(files_list, n, make_test):
     training = files_list[0:n]
     test = []
     if make_test:
-        print("[INFO] Creating test directory for residual files not used in training set.")
+        logger.info("Creating test directory for residual files not used in training set.")
         if len(files_list) > n:
             test = files_list[n:]
     return training, test
@@ -46,7 +50,7 @@ def move_files(dir, training, test, convert_to_png, rotate_png_90, make_test):
     for file in training:
         fname = os.path.split(file)[1]
         if convert_to_png:
-            print(f"[INFO] Converting {fname} to .png and moving to training directory")
+            logger.info(f"Converting {fname} to .png and moving to training directory")
             img = cv2.imread(file)
             if rotate_png_90:
                 img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
@@ -54,26 +58,26 @@ def move_files(dir, training, test, convert_to_png, rotate_png_90, make_test):
             fname_out = fname.replace(ext, ".png")
             path_out = os.path.join(training_path, fname_out)
             cv2.imwrite(path_out, img)
-            print(f"[INFO] Removing original {fname} to .png")
+            logger.info(f"Removing original {fname} to .png")
             os.remove(file)
         else:
-            print(f"[INFO] moving {fname} to training directory.")
+            logger.info(f"moving {fname} to training directory.")
             path_out = os.path.join(training_path, fname)
             shutil.move(file, path_out)
     if make_test:
         for file in test:
             fname = os.path.split(file)[1]
             if convert_to_png:
-                print(f"[INFO] Converting {fname} to .png and moving to test dirctory")
+                logger.info(f"Converting {fname} to .png and moving to test dirctory")
                 img = cv2.imread(file)
                 ext = os.path.splitext(fname)[1]
                 fname_out = fname.replace(ext, ".png")
                 path_out = os.path.join(test_path, fname_out)
                 cv2.imwrite(path_out, img)
-                print(f"[INFO] Removing original {fname} to .png")
+                logger.info(f"Removing original {fname} to .png")
                 os.remove(file)
             else:
-                print(f"[INFO] moving {fname} to test directory.")
+                logger.info(f"moving {fname} to test directory.")
                 path_out = os.path.join(test_path, fname)
                 shutil.move(file, path_out)
 
@@ -85,11 +89,11 @@ def copy_files(dir, training, test, convert_to_png, rotate_png_90, make_test):
         test_path = os.path.join(dir, "test/")
         os.makedirs(test_path, exist_ok=True)
 
-    print(f"[INFO] Copying {len(training)} files from {dir} to {training_path}")
+    logger.info(f"Copying {len(training)} files from {dir} to {training_path}")
     for file in training:
         fname = os.path.split(file)[1]
         if convert_to_png:
-            print(f"[INFO] Converting {fname} to .png and copying to training directory")
+            logger.info(f"Converting {fname} to .png and copying to training directory")
             img = cv2.imread(file)
             if rotate_png_90:
                 img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
@@ -98,27 +102,27 @@ def copy_files(dir, training, test, convert_to_png, rotate_png_90, make_test):
             path_out = os.path.join(training_path, fname_out)
             cv2.imwrite(path_out, img)
         else:
-            print(f"[INFO] Copying {fname} to training directory.")
+            logger.info(f"Copying {fname} to training directory.")
             path_out = os.path.join(training_path, fname)
             shutil.copy(file, path_out)
     if make_test:
         for file in test:
             fname = os.path.split(file)[1]
             if convert_to_png:
-                print(f"[INFO] Converting {fname} to .png and moving to test dirctory")
+                logger.info(f"Converting {fname} to .png and moving to test dirctory")
                 img = cv2.imread(file)
                 ext = os.path.splitext(fname)[1]
                 fname_out = fname.replace(ext, ".png")
                 path_out = os.path.join(test_path, fname_out)
                 cv2.imwrite(path_out, img)
             else:
-                print(f"[INFO] Copying {fname} to test directory.")
+                logger.info(f"Copying {fname} to test directory.")
                 path_out = os.path.join(test_path, fname)
                 shutil.copy(file, path_out)
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     parser = argparse.ArgumentParser()
     parser.add_argument(

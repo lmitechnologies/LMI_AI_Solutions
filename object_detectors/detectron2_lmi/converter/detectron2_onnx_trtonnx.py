@@ -17,7 +17,6 @@
 
 import logging
 import os
-import sys
 
 import cv2
 import detectron2_lmi.converter.onnx_utils  # noqa: F401
@@ -25,21 +24,12 @@ import numpy as np
 import onnx
 import onnx_graphsurgeon as gs
 import torch
+from detectron2.config import get_cfg
+from detectron2.engine.defaults import DefaultPredictor
+from detectron2.modeling import build_model
+from detectron2.structures import ImageList
 from onnx import shape_inference
 
-try:
-    from detectron2.config import get_cfg
-    from detectron2.engine.defaults import DefaultPredictor
-    from detectron2.modeling import build_model
-    from detectron2.structures import ImageList
-except ImportError:
-    print("Could not import Detectron 2 modules. Maybe you did not install Detectron 2")
-    print("Please install Detectron 2, check https://github.com/facebookresearch/detectron2/blob/main/INSTALL.md")
-    sys.exit(1)
-
-
-logging.basicConfig(level=logging.INFO)
-logging.getLogger("ModelHelper").setLevel(logging.INFO)
 log = logging.getLogger("ModelHelper")
 
 

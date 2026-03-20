@@ -12,9 +12,7 @@ from lmi_utils.label_utils.csv_utils import load_csv, write_to_csv
 from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def pad_image_with_csv(
@@ -163,6 +161,7 @@ def fit_shapes_to_size(shapes, pad_l, pad_t):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser(description="Pad or crop images with csv to output size.")
     ap.add_argument("--path_imgs", "-i", required=True, help="the path to the images")
     ap.add_argument(

@@ -1,3 +1,4 @@
+import logging
 import os
 
 import cv2
@@ -9,6 +10,8 @@ from classifiers.ultralytics_lmi.yolo.model import YoloCls
 # Asset paths
 MODEL_PATH = os.path.abspath("tests/assets/models/cls/yolo11n-cls.pt")
 IMAGE_DIR = os.path.abspath("tests/assets/images/coco")
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
@@ -52,8 +55,6 @@ def test_yolo_cls_predict(classifier, sample_image, input_type):
     assert "proc" in time_info
     assert "postproc" in time_info
 
-    print(f"Test passed for input type: {input_type}")
-
 
 def test_yolo_cls_grayscale(classifier, sample_image):
     """
@@ -64,4 +65,3 @@ def test_yolo_cls_grayscale(classifier, sample_image):
 
     results, _ = classifier.predict(gray_img)
     assert len(results["classes"]) > 0
-    print("Test passed for grayscale input")

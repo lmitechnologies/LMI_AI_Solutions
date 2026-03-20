@@ -1,6 +1,7 @@
 # %%
 import argparse
 import json
+import logging
 import os
 import select
 import sys
@@ -13,9 +14,10 @@ from concurrent.futures import ThreadPoolExecutor
 import cv2
 import numpy as np
 
-import lmi_utils.label_utils.opencvdragrect.selectinwindow as selectinwindow
+import opencvdragrect.selectinwindow as selectinwindow
 from lmi_utils.image_utils.img_resize import resize
 
+logger = logging.getLogger(__name__)
 WINDOW_NAME = "Label Editor"
 
 
@@ -64,7 +66,7 @@ def cmd_line(change_str, replacement_labels, current_label, rect_gui_event, cmd_
     delete_label = False
     change_label = current_label
     old_settings = termios.tcgetattr(sys.stdin)
-    print(change_str)
+    logger.info(change_str)
     try:
         tty.setcbreak(sys.stdin.fileno())
         # run while no gui-based or command-based exit flags
@@ -78,22 +80,22 @@ def cmd_line(change_str, replacement_labels, current_label, rect_gui_event, cmd_
                     break
                 # delete roi - not supported
                 elif k == "d":
-                    print("Delete label not supported.")
+                    logger.info("Delete label not supported.")
                     # delete_label=True
                     # cmd_line_event.set()
                     # break
                 # skip, go to next label
                 elif k == " ":
-                    print("Moving to next sample.")
+                    logger.info("Moving to next sample.")
                     cmd_line_event.set()
                     break
                 # relabel roi
                 try:
                     change_label = replacement_labels[int(k)]
-                    print(f"Reassigning label:{current_label} to {change_label}")
+                    logger.info(f"Reassigning label:{current_label} to {change_label}")
                     cmd_line_event.set()
                 except Exception:
-                    print("Invalid input.")
+                    logger.info("Invalid input.")
 
     finally:
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
@@ -121,7 +123,7 @@ def check_labels(
     for i, lab in enumerate(replacement_labels):
         change_str = change_str + f"{str(i)}:{lab},"
     change_str = change_str[0:-1] + '] or "d" to delete'
-    print("")
+    logger.info("")
 
     # loop through all labels, enable edit for the target label
     quit = False
@@ -167,7 +169,7 @@ def check_labels(
                 rect_gui_event.clear()
                 cmd_line_event.clear()
                 # launch edit threads
-                print(f"Current file: {fname}")
+                logger.info(f"Current file: {fname}")
                 with ThreadPoolExecutor(max_workers=2) as executor:
                     future_gui = executor.submit(
                         rect_gui,
@@ -213,11 +215,12 @@ def check_labels(
 
     # write new labels file
     with open(output_json_path, "w") as json_file:
-        print(f"Writing new .json file: {output_json_path}")
+        logger.info(f"Writing new .json file: {output_json_path}")
         json.dump(label_dict, json_file)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("--input_data_path", required=True)
     ap.add_argument("--input_json_path", required=True)

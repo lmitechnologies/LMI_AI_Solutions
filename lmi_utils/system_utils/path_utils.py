@@ -1,10 +1,8 @@
+import argparse
 import logging
 import os
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
 
 IMG_FORMATS = [".png", ".jpg", "jpeg", "tiff"]
 
@@ -39,7 +37,7 @@ def get_relative_paths(inpath, recursive=True, formats=IMG_FORMATS):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--input_path", required=True, help="the path to images")

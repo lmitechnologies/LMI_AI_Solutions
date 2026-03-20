@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LMI AI Solutions is a Python monorepo providing unified wrappers and utilities for AI/ML model frameworks used in industrial computer vision: object detection, anomaly detection, classification, and OCR.
+LMI AI Solutions is a Python monorepo providing unified wrappers and utilities for AI/ML model frameworks used in industrial computer vision: object detection, anomaly detection, and classification.
 
 ## Commands
 
@@ -47,26 +47,28 @@ The core design across all model domains (object detection, anomaly detection, c
 
 | Module | Purpose |
 |--------|---------|
-| `lmi_utils/` | Shared utilities: image, data, dataset, label, eval, pre/post-processing, point cloud, pipeline base |
-| `lmi_common/` | Cross-domain shared code (e.g., `YoloCore` wrapping Ultralytics AutoBackend) |
-| `object_detectors/` | Object detection: Ultralytics YOLO (v8+), YOLOv5, Detectron2, RF-DETR, TF OD API |
+| `lmi_utils/` | Shared utilities: image, data, dataset, label (incl. `json_to_factory`), eval, pre/post-processing, point cloud, pipeline base, system utils |
+| `lmi_common/` | Cross-domain shared code (`YoloCore` wrapping Ultralytics AutoBackend, shared by both detectors and classifiers) |
+| `object_detectors/` | Object detection: Ultralytics YOLO (v8–v12 / yolo26), YOLOv5, Detectron2, RF-DETR, TF OD API |
 | `anomaly_detectors/` | Anomaly detection: Anomalib v1.1.1 and v2.2.0 wrappers |
-| `classifiers/` | Classification: Ultralytics YOLO classification wrapper |
-| `ocr_models/` | OCR: PaddleOCR wrapper |
+| `classifiers/` | Classification: Ultralytics YOLO classifier (`ultralytics_lmi/yolo`); legacy `yolov8_cls` in `deprecated/` |
 
 ### Git Submodules
 
 External dependencies (YOLOv5, Anomalib forks) are included as git submodules under `*/submodules/`. After cloning, run `git submodule update --init --recursive`.
 
+> Note: The EfficientNet, TF OD API models, and PaddleOCR submodules have been removed. The `tf_objdet/` folder remains but no longer has a submodule dependency.
+
 ### Supported Model Backends
 
-- **Ultralytics YOLO** (v8, v9, v11, v12 — "yolo26" generation): detection, segmentation, pose, classification
-- **YOLOv5** (custom fork)
+- **Ultralytics YOLO** (v8–v12, "yolo26" generation): detection, segmentation, pose, OBB, classification — v0 support dropped; `yolov8_lmi` and `yolov8_cls` moved to `deprecated/`
+- **YOLOv5** (custom fork submodule)
 - **Detectron2** (Facebook Research)
 - **RF-DETR**
-- **TensorFlow Object Detection API**
+- **TensorFlow Object Detection API** (no longer a submodule; wrapper code retained)
 - **Anomalib** (v1.x and v2.x — separate class hierarchies due to API differences)
 - **SAM2** (Segment Anything Model 2)
+- ~~**PaddleOCR**~~ — removed
 
 ### Versioning & Releases
 

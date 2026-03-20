@@ -6,12 +6,11 @@ import shutil
 
 import lmi_utils.label_utils.csv_utils as csv_utils
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--path_imgs", required=True, help="the path to images")
     ap.add_argument(

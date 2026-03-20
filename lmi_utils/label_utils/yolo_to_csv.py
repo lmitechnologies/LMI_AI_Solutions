@@ -1,4 +1,5 @@
 import csv
+import logging
 import pathlib
 
 import cv2
@@ -6,6 +7,8 @@ import numpy as np
 import yaml
 
 from lmi_utils.label_utils.bbox_utils import get_rotated_bbox
+
+logger = logging.getLogger(__name__)
 
 
 def xywhn2xyxy(xc, yc, w, h, im_w, im_h):
@@ -22,12 +25,13 @@ def xywhn2xyxy(xc, yc, w, h, im_w, im_h):
 
 
 def main(path_txt_files, path_imgs, path_csv, yaml_obj, model_type):
+    logging.basicConfig(level=logging.INFO)
     paths = pathlib.Path(path_txt_files).glob("*.txt")
     path_imgs = pathlib.Path(path_imgs)
     names = yaml_obj["names"]
     if model_type == "keypoint":
         kpt_shape = yaml_obj["kpt_shape"]
-        print(f"keypoint shape: {kpt_shape}")
+        logger.info(f"keypoint shape: {kpt_shape}")
 
     with open(path_csv, "w", newline="") as csv_file:
         labelWriter = csv.writer(csv_file, delimiter=";")

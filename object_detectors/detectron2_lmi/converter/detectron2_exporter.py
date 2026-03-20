@@ -136,8 +136,8 @@ def get_sample_inputs(args, cfg):
         # get a sample data
         original_image = cv2.imread(args.get("sample_image", None))
         original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
-        print(f"Processing image {args.get('sample_image', None)}")
-        print(f"Image size (h,w): {original_image.shape[:2]}")
+        logger.info(f"Processing image {args.get('sample_image', None)}")
+        logger.info(f"Image size (h,w): {original_image.shape[:2]}")
         aug = T.ResizeShortestEdge([original_image.shape[0], original_image.shape[0]], original_image.shape[0])
         image = aug.get_transform(original_image).apply_image(original_image)
         height, width = original_image.shape[:2]

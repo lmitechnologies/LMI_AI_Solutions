@@ -93,7 +93,6 @@ class RfdetrModel(ODBase):
 @RfdetrModel.register("engine")
 class RfdetrTRT(ODBase):
     logger = logging.getLogger("RFDETR")
-    logger.setLevel(logging.INFO)
 
     def __init__(self, model_path: str, device="cuda", fp16=False, **kwargs) -> None:
         self.image_size = kwargs.get("image_size", (640, 640))
@@ -323,7 +322,6 @@ class RfdetrTRT(ODBase):
 @RfdetrModel.register("pt")
 class RfdetrPT(ODBase):
     logger = logging.getLogger("RFDETR")
-    logger.setLevel(logging.INFO)
 
     def __init__(self, model_path: str, device="cuda", **kwargs) -> None:
         self.image_size = kwargs.get("image_size") or [640, 640]
@@ -504,7 +502,6 @@ class RfdetrPTH(ODBase):
     """
 
     logger = logging.getLogger("RFDETR")
-    logger.setLevel(logging.INFO)
 
     # Model configuration: {model_type: (default_resolution, model_class)}
     try:

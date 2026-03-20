@@ -10,7 +10,6 @@ from lmi_utils.label_utils.shapes import Mask, Rect
 from object_detectors.detectron2_lmi.model import Detectron2Model
 
 # setup the logger
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

@@ -1,10 +1,14 @@
 import argparse
 import glob
+import logging
 import os
 
 import cv2
 
+logger = logging.getLogger(__name__)
+
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--input_path", default=".")
     ap.add_argument("-o", "--output_path", default="./png")
@@ -27,7 +31,7 @@ if __name__ == "__main__":
         os.mkdir(output_path)
 
     for file in files:
-        print(f"[INFO] Converting {file}")
+        logger.info(f"Converting {file}")
         img = cv2.imread(file)
         if cvt_color:
             img = cv2.applyColorMap(img, cv2.COLORMAP_JET)

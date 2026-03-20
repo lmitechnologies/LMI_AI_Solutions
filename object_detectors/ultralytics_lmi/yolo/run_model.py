@@ -85,7 +85,7 @@ if __name__ == "__main__":
     parser.add_argument("--pad", required=False, nargs=2, type=int, help="pad")
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.NOTSET)
+    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
     if args.el:
         logger.propagate = False

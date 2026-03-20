@@ -11,8 +11,6 @@ from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorR
 
 from .base import Anomalib_Base
 
-logging.basicConfig()
-
 PASS = "PASS"
 FAIL = "FAIL"
 MINIMUM_QUANT = 1e-12
@@ -38,7 +36,6 @@ class AnomalyModel(Anomalib_Base):
     """
 
     logger = logging.getLogger("AnomalyModel v0")
-    logger.setLevel(logging.INFO)
 
     def __init__(self, model_path, **kwargs):
         if not os.path.isfile(model_path):
@@ -163,6 +160,7 @@ class AnomalyModel(Anomalib_Base):
 if __name__ == "__main__":
     import argparse
 
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "-a",

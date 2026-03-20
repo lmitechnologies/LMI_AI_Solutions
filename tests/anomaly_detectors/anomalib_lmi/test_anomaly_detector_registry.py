@@ -2,9 +2,7 @@ import logging
 
 from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def test_auto_register_models():

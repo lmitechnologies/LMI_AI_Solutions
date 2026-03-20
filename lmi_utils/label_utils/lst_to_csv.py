@@ -12,9 +12,8 @@ from lmi_utils.label_utils.bbox_utils import convert_from_ls
 from lmi_utils.label_utils.csv_utils import write_to_csv
 from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
 
 LABEL_NAME = "labels.csv"
 PRED_NAME = "preds.csv"
@@ -146,6 +145,7 @@ def get_annotations_from_json(path_json):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser("Convert label studio json file to csv format")
     ap.add_argument(
         "-i",

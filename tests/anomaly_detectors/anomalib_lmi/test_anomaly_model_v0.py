@@ -8,9 +8,7 @@ import torch
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
 from anomaly_detectors.anomalib_lmi.anomaly_model import AnomalyModel
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 DATA_PATH = "tests/assets/images/nvtec-ad"

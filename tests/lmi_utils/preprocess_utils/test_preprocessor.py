@@ -5,9 +5,7 @@ import torch
 
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 
-logging.basicConfig()
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
 
 @pytest.mark.parametrize(

@@ -226,6 +226,7 @@ def apply_ops(args):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     args = parse_args()
     apply_ops(args)
 

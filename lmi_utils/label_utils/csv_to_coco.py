@@ -1,7 +1,9 @@
+import argparse
 import collections
 import csv
 import glob
 import json
+import logging
 import os
 import shutil
 
@@ -12,6 +14,8 @@ from pycocotools import mask as coco_mask
 from shapely.geometry import Polygon
 
 from lmi_utils.label_utils.csv_utils import load_csv
+
+logger = logging.getLogger(__name__)
 
 
 class Dataset(object):
@@ -183,7 +187,7 @@ class Dataset(object):
 
         if brush != {}:
             for fname in brush:
-                print(f"Filename: {fname}")
+                logger.info(f"Filename: {fname}")
                 brush_m = brush[fname]
                 for x, y, cat_str, im_id, iscrowd in zip(
                     brush_m["x"],
@@ -340,7 +344,7 @@ def copy_images_in_folder(path_img, path_out, fnames=None):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--path_imgs", required=True, help="the path to the images")
@@ -385,15 +389,15 @@ if __name__ == "__main__":
     with open(class_map_file, "w") as f:
         json.dump(class_map, f, indent=4)
 
-    print("class_map.json written successfully.")
+    logger.info("class_map.json written successfully.")
 
     # write the json file to the directory
     data.write_to_json(json_out_path=os.path.join(path_out, "annotations.json"))
-    print("annotations.json written successfully.")
+    logger.info("annotations.json written successfully.")
     images_path = os.path.join(path_out, "images")
     if not os.path.exists(images_path):
         os.makedirs(images_path)
     # move the images to the folder
 
     copy_images_in_folder(path_img=path_imgs, path_out=images_path)
-    print("Images copied successfully.")
+    logger.info("Images copied successfully.")

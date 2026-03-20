@@ -95,9 +95,7 @@ def crop_mask(bbox, mask=None, polygon_mask=None, bbox_format="xywh"):
     return cropped_mask, cropped_polygon
 
 
-def crop_dataset_by_label(dataset, images, target_label, crop_warning_level=logging.DEBUG, clip=True):
-    logger.setLevel(crop_warning_level)
-
+def crop_dataset_by_label(dataset, images, target_label, clip=True):
     # determine the label labels for each of the files
     crop_labels = {}
     cropped_images = {}

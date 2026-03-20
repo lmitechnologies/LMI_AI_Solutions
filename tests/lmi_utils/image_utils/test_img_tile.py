@@ -10,9 +10,7 @@ import torchvision
 from lmi_utils.image_utils.img_tile import ScaleMode, to_images, to_tiles
 from lmi_utils.system_utils import path_utils
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 PATH_IMG = "tests/assets/images/dota"
 

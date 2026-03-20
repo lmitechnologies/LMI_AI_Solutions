@@ -1,3 +1,4 @@
+import argparse
 import collections
 import csv
 import logging
@@ -12,9 +13,7 @@ from shapely.validation import make_valid
 from lmi_utils.label_utils import csv_utils
 from lmi_utils.label_utils.shapes import Mask, Rect
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def bbox_iou(bbox1, bbox2):
@@ -291,7 +290,7 @@ def write_to_csv(all_ious: dict, mean_ious: dict, filename: str):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     parse = argparse.ArgumentParser(
         description="Get the IOU and save to file. Right now, it does NOT support mixed polygons and bboxs in csv files."

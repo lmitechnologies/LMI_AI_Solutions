@@ -1,10 +1,14 @@
 # %%
+import argparse
 import glob
+import logging
 import os
 
 import numpy as np
 
 import lmi_utils.pcl_utils.point_cloud as pcloud
+
+logger = logging.getLogger(__name__)
 
 
 # %%
@@ -53,7 +57,7 @@ def gensurface(
 
         # added to clip noisy parts
         current_cloud.z[current_cloud.z < zmin_col] = zmin_col
-        print(f"[INFO] {file}:z less than {zmin_col} being replaced by {zmin_col}")
+        logger.info(f"{file}:z less than {zmin_col} being replaced by {zmin_col}")
 
         fname_base = os.path.split(file)[1]
         if color_option == "rgb":
@@ -88,14 +92,14 @@ def gensurface(
             current_cloud.pad(int(Hout), int(Wout))
         current_cloud.save_img(outfile)
 
-    print(f"[INFO] min z: {np.min(minZ)}")
-    print(f"[INFO] max z: {np.max(maxZ)}")
-    print(f"[INFO] W max: {np.max(W)}")
-    print(f"[INFO] H max: {np.max(H)}")
+    logger.info(f"min z: {np.min(minZ)}")
+    logger.info(f"max z: {np.max(maxZ)}")
+    logger.info(f"W max: {np.max(W)}")
+    logger.info(f"H max: {np.max(H)}")
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--input_path", required=True, help="path to directory with input .pcd clouds")

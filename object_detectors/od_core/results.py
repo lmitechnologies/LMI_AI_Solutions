@@ -3,7 +3,6 @@ from typing import Dict, List, Optional, Union
 
 import torch
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 

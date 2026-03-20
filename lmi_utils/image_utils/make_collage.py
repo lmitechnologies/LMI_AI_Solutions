@@ -1,4 +1,5 @@
 # %%
+import argparse
 import glob
 import logging
 import os
@@ -8,7 +9,7 @@ import numpy as np
 
 from lmi_utils.image_utils.img_resize import resize
 
-logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # %%
@@ -17,7 +18,7 @@ def gen_collage(input_path, output_path, colmax, width, rowmax=None, file_filter
     if file_filter is not None:
         files = [s for s in files if file_filter in s]
     files = sorted(files)
-    logging.debug(f"List of files: {files}")
+    logger.debug(f"List of files: {files}")
 
     img_h = []
     img_w = []
@@ -30,9 +31,9 @@ def gen_collage(input_path, output_path, colmax, width, rowmax=None, file_filter
     img_h = np.array(img_h)
     img_w = np.array(img_w)
     max_h = img_h.max()
-    print(f"[INFO] Max Input Image Height: {max_h}")
+    logger.info(f"Max Input Image Height: {max_h}")
     max_w = img_w.max()
-    print(f"[INFO] Max Input Image Width: {max_w}")
+    logger.info(f"Max Input Image Width: {max_w}")
 
     n_img = len(imgs)
     if rowmax is None:
@@ -90,7 +91,7 @@ def gen_collage(input_path, output_path, colmax, width, rowmax=None, file_filter
 
 # %%
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--input_data_path", required=True)

@@ -1,9 +1,12 @@
 import argparse
 import csv
+import logging
 import os
 import shutil
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 def filter_by_label(inputfile, datapath, outpath):
@@ -19,10 +22,11 @@ def filter_by_label(inputfile, datapath, outpath):
         fsrc = os.path.join(datapath, f)
         fdst = os.path.join(outpath, f)
         shutil.copyfile(fsrc, fdst)
-        print(f"Copied file: {f}")
+        logger.info(f"Copied file: {f}")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("--input_csv_file", required=True)
     ap.add_argument("--data_path", required=True)

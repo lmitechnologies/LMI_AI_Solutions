@@ -1,4 +1,6 @@
+import argparse
 import json
+import logging
 import pickle
 import tarfile
 import tempfile
@@ -9,6 +11,8 @@ import numpy as np
 
 SCHEMA_ID: str = "gadget3d"
 VERSION: int = 1
+
+logger = logging.getLogger(__name__)
 
 
 def to_int16(arr):
@@ -36,15 +40,15 @@ def generate_emulation_data(path_source, path_out):
     image_folders = sorted(path_source.rglob("image_*"))
     surface_folders = sorted(path_source.rglob("surface_*"))
 
-    print(f"Found {len(image_folders)} image folders and {len(surface_folders)} surface folders.")
+    logger.info(f"Found {len(image_folders)} image folders and {len(surface_folders)} surface folders.")
 
     for image_folder, surface_folder in zip(image_folders, surface_folders):
-        print(f"Processing {image_folder.name} and {surface_folder.name}")
+        logger.info(f"Processing {image_folder.name} and {surface_folder.name}")
         image_files = sorted(image_folder.glob("*.jpg"))
         surface_files = sorted(surface_folder.glob("*.tar"))
 
         for image_file, surface_file in zip(image_files, surface_files):
-            print(f"Processing image file {image_file.name} and surface file {surface_file.name}")
+            logger.info(f"Processing image file {image_file.name} and surface file {surface_file.name}")
             img = cv2.imread(str(image_file), cv2.IMREAD_UNCHANGED)
 
             # laod surface data
@@ -87,7 +91,7 @@ def generate_emulation_data(path_source, path_out):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     parser = argparse.ArgumentParser(description="Generate emulation data from source images.")
     parser.add_argument(

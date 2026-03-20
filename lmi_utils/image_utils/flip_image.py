@@ -1,10 +1,12 @@
 import argparse
 import glob
+import logging
 import os
 
 import cv2
 import numpy as np
 
+logger = logging.getLogger(__name__)
 BLACK = (0, 0, 0)
 
 
@@ -24,7 +26,7 @@ def flip_images(input_path: str, output_path: str, flip: str):
         im = cv2.imread(path)
         h, w = im.shape[:2]
         im_name = os.path.basename(path)
-        print(f"Input file: {im_name} with size of [{w},{h}]")
+        logger.info(f"Input file: {im_name} with size of [{w},{h}]")
 
         # flip image
         im_out = np.flip(im, axis=1 if flip == "lr" else 0)
@@ -32,12 +34,13 @@ def flip_images(input_path: str, output_path: str, flip: str):
         # create output fname
         out_name = os.path.splitext(im_name)[0] + f"_flip{flip}" + ".png"
         output_file = os.path.join(output_path, out_name)
-        print(f"Output file: {output_file}")
+        logger.info(f"Output file: {output_file}")
         cv2.imwrite(output_file, im_out)
-        print()
+        logger.info()
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser(description="flip images")
     ap.add_argument("--path_imgs", required=True, help="the path to the images")
     ap.add_argument("--path_out", required=True, help="the output path")

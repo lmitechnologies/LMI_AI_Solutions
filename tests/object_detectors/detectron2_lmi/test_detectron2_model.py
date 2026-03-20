@@ -25,9 +25,7 @@ USE_CUDA = torch.cuda.is_available()
 with open(COCO_CLASSMAP, "r") as f:
     class_map = json.load(f)
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 @pytest.fixture(scope="module")

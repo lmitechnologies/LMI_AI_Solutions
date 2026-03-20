@@ -24,9 +24,8 @@ from lmi_utils.dataset_utils.representations import (
 from lmi_utils.label_utils.bbox_utils import convert_from_ls
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
 
 LABEL_NAME = "labels.json"
 PRED_NAME = "preds.json"
@@ -267,6 +266,7 @@ def get_annotations_from_json(path_json, images_dir, background=False):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser("Convert label studio json file to json format")
     ap.add_argument(
         "-i",

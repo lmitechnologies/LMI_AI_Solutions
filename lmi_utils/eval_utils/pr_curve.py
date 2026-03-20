@@ -1,4 +1,6 @@
+import argparse
 import collections
+import logging
 import os
 
 import matplotlib.pyplot as plt
@@ -9,6 +11,8 @@ from shapely.validation import make_valid
 # LMI packages
 from lmi_utils.label_utils import csv_utils
 from lmi_utils.label_utils.shapes import Mask, Rect
+
+logger = logging.getLogger(__name__)
 
 
 def bbox_iou(bbox1, bbox2):
@@ -67,7 +71,7 @@ def polygon_iou(polygon_1, polygon_2):
         poly_2 = Polygon(polygon_2)
     except Exception:
         # usually less than 3 points for creating the polygons
-        # print(e)
+        # logger.info(e)
         return 0
 
     if not poly_1.is_valid:
@@ -222,7 +226,7 @@ def precision_recall(
             TP[c] += M.sum()
             FP[c] += (~M).sum()
 
-    print(f"iou: {iou}, threshold_conf: {threshold_conf}")
+    logger.info(f"iou: {iou}, threshold_conf: {threshold_conf}")
     # calcualte precision and recall
     epsilon = 1e-16
     P, R = {}, {}
@@ -239,7 +243,7 @@ def precision_recall(
         P[c] = min(1, tp / (tp + fp + epsilon))
         R[c] = min(1, tp / (gt + epsilon))
         Err[c] = FN_im[c] / total_imgs
-        print(
+        logger.info(
             f"class {c}: ",
             f"error rate: {Err[c]:.4f}, ",
             f"precision: {P[c]:.4f}, ",
@@ -251,7 +255,7 @@ def precision_recall(
         total_gt += gt
     P["all"] = min(1, total_tp / (total_tp + total_fp + epsilon))
     R["all"] = min(1, total_tp / (total_gt + epsilon))
-    print("")
+    logger.info("")
     return P, R, Err
 
 
@@ -292,7 +296,7 @@ def plot_curve(
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     parse = argparse.ArgumentParser()
     parse.add_argument("--model_csv", required=True, help="the path to the model prediction csv")
@@ -334,10 +338,10 @@ if __name__ == "__main__":
         raise Exception(f'Not found the "labels.csv" in {os.path.dirname(label_csv)}')
 
     label_dt, class_map = csv_utils.load_csv(label_csv)
-    print(f"found class map: {class_map}")
+    logger.info(f"found class map: {class_map}")
     pred_dt, _ = csv_utils.load_csv(model_csv, class_map=class_map)
     X = np.linspace(0, 1, num=20)
-    print(f"confidence levels:\n {X}")
+    logger.info(f"confidence levels:\n {X}")
 
     Ps, Rs = collections.defaultdict(list), collections.defaultdict(list)
     Errs = collections.defaultdict(list)
@@ -378,4 +382,4 @@ if __name__ == "__main__":
     #     y_range=[0, 20.1],
     #     step=1,
     # )
-    print(f"Precision and Recall figures are saved in {out_path}")
+    logger.info(f"Precision and Recall figures are saved in {out_path}")

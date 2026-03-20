@@ -1,6 +1,7 @@
 # %% load modules
 import argparse
 import csv
+import logging
 import os
 
 import cv2
@@ -9,6 +10,7 @@ import numpy as np
 from lmi_utils.eval_utils.iou_from_csv import csv_to_dictionary, find_class_index
 from lmi_utils.label_utils.crop_scale_labeled_image import crop_scale_labeled_image
 
+logger = logging.getLogger(__name__)
 NAN_INT = -999999
 
 
@@ -33,7 +35,7 @@ def crop_scale(
     #     p2h=int(p2h)
     #     p2w=int(p2w)
     # except:
-    #     print('[INFO] Skip rescaling.')
+    #     logger.info('[INFO] Skip rescaling.')
     #     def_width=True
 
     object_classes = object_labels
@@ -48,7 +50,7 @@ def crop_scale(
     with open(outfile, "w", newline="") as csvfile:
         rowWriter = csv.writer(csvfile, delimiter=";")
         for image_file in image_files:
-            print("[INFO] converting file: ", image_file)
+            logger.info(f"converting file: {image_file}")
             current_labels = [item for item in label_dicts if item["image_file"] == image_file]
             old_image = cv2.imread(os.path.join(input_data_dir, current_labels[0]["image_file"]), -1)
             if boundingbox_label is None:
@@ -162,7 +164,7 @@ if __name__ == "__main__":
         object labels: labeled regions of the internal objects
         scl_w, p2h: new image dimensions
     """
-
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("--input_data_path", required=True, help="Input data directory.")
     ap.add_argument("--input_csv_path", required=True, help="Input label.csv path")

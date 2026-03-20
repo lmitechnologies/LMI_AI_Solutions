@@ -1,4 +1,5 @@
 # built-in packages
+import argparse
 import logging
 import os
 
@@ -11,9 +12,7 @@ from lmi_utils.label_utils import csv_utils
 from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def resize_shapes(shapes, rx, ry):
@@ -98,7 +97,7 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--path_imgs", "-i", required=True, help="the path to images")

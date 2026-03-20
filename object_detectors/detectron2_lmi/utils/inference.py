@@ -243,6 +243,9 @@ if __name__ == "__main__":
     import cv2
     import tqdm
 
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--weights",
@@ -310,7 +313,7 @@ if __name__ == "__main__":
         try:
             image = cv2.imread(image_path)  # read in as BGR
         except Exception as e:
-            print(f"Error reading image {image_path}: {e}")
+            logger.error(f"Error reading image {image_path}: {e}")
             continue
         t0 = time.time()
         outputs = model.predict(image=image, confs=confidence_map, return_segments=False)

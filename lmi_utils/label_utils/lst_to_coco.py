@@ -8,9 +8,7 @@ import numpy as np
 from lmi_utils.label_utils.bbox_utils import convert_from_ls, rotate
 from lmi_utils.label_utils.COCO_dataset import Annotation, COCO_Dataset
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def get_annotations_from_json(path_json, path_imgs, plot=False):
@@ -53,6 +51,7 @@ def get_annotations_from_json(path_json, path_imgs, plot=False):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser("Note: currently only loads the bboxes!")
     ap.add_argument("--path_imgs", required=True)
     ap.add_argument("--path_json", required=True)

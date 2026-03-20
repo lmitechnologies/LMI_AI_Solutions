@@ -6,9 +6,8 @@ import yaml
 
 from object_detectors.ultralytics_lmi.run_cmd import add_configs, check_path_exist, get_model_path, sanity_check
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
 
 # mounted locations in the docker container
 HYP_YAML = "/app/config/hyp.yaml"
@@ -24,6 +23,7 @@ SOURCE_PATH = "/app/data"
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     # check if files exist
     check_path_exist(HYP_YAML, True)
 

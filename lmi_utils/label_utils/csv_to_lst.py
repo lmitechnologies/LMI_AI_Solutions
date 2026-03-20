@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 from pathlib import Path
@@ -8,7 +9,6 @@ import lxml.etree as ET
 from lmi_utils.label_utils.csv_utils import load_csv
 from lmi_utils.label_utils.shapes import Mask, Rect
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -178,7 +178,7 @@ def write_to_lst(shapes: dict, out_path: Path, img_dir: Path, gs_path: str, is_p
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser(description="Convert csv annotations to label studio lst format")
     ap.add_argument("--path_imgs", "-i", type=Path, help="path to the images")

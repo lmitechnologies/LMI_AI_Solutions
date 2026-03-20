@@ -11,9 +11,7 @@ from lmi_utils.label_utils.bbox_utils import rotate
 from lmi_utils.label_utils.plot_utils import get_distinct_colors, plot_one_brush, plot_one_polygon
 from lmi_utils.system_utils import path_utils
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def get_annotations_from_json(path_json, path_imgs, path_out):
@@ -78,6 +76,7 @@ def get_annotations_from_json(path_json, path_imgs, path_out):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--path_imgs", required=True)
     ap.add_argument("-j", "--path_json", required=True)

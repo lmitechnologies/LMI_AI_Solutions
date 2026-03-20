@@ -1,5 +1,6 @@
 # %% modules
 import json
+import logging
 import math
 import os
 
@@ -7,6 +8,8 @@ import cv2
 import numpy as np
 
 from lmi_utils.image_utils.img_rotate import rotate
+
+logger = logging.getLogger(__name__)
 
 # %% convert intensity pcd to png
 
@@ -51,8 +54,8 @@ def rotateByContour(image, contour):
     M = cv2.moments(contour)
     cx = int(M["m10"] / M["m00"])
     cy = int(M["m01"] / M["m00"])
-    # print('minBB angle ={}'.format(angle))
-    # print('centerX = {}'.format(cx) + ' centerY = {}'.format(cy))
+    # logger.info('minBB angle ={}'.format(angle))
+    # logger.info('centerX = {}'.format(cx) + ' centerY = {}'.format(cy))
     rotated = rotate(image, -(180 - angle), center=(cx, cy))
     return cx, cy, rotated
 
@@ -98,15 +101,15 @@ def rotateByMinBB(image, contour):
 
 def cropByBB(image, contour, delta=0):
     rect = cv2.minAreaRect(contour)
-    # print('rect='+str(rect))
+    # logger.info('rect='+str(rect))
     box = cv2.boxPoints(rect)
-    # print('box float='+str(box))
+    # logger.info('box float='+str(box))
     box = np.int0(box)
-    # print('box int='+str(box))
+    # logger.info('box int='+str(box))
     #    delx=box[3][0]-box[0][0]
     #    dely=box[3][1]-box[0][1]
     #    angle=np.arctan(dely/delx)*180/np.pi
-    #    print('angle ={}'.format(angle))
+    #    logger.info('angle ={}'.format(angle))
     #    cv2.drawContours(image,[box],0,(0,0,255),2)
     (ymax, xmax) = image.shape[:2]
     xmin = 0
@@ -161,11 +164,11 @@ def extract_UniformBox_ROI_from_JSON(json_file_path, input_image_dir_path, outpu
     # get maximum box dimension
     w_max = max_list_of_lists(ww)
     h_max = max_list_of_lists(hh)
-    print("[INFO] maximum width ", w_max)
-    print("[INFO] maximum height ", h_max)
+    logger.info(f"maximum width {w_max}")
+    logger.info(f"maximum height {h_max}")
     # compute square window dimension
     wd = max((w_max, h_max))
-    print("[INFO] window dimension ", wd)
+    logger.info(f"window dimension {wd}")
 
     # write defect images
     if not os.path.isdir(output_image_dir_path):
@@ -227,12 +230,12 @@ def align_and_crop(image_file_path, output_dir_path):
     )
     # extract outer contour
     contour = getContours(image)
-    print("[INFO]: {0:2d} contours".format(len(contour)))
+    logger.info("{0:2d} contours".format(len(contour)))
     # rotate the image
     _, _, rotated = rotateByMinBB(image, contour[0])
     # get new contour
     contour = getContours(rotated)
-    print("[INFO] {0:2d} contours".format(len(contour)))
+    logger.info("{0:2d} contours".format(len(contour)))
     # crop by bounding box
     cropped = cropByBB(rotated, contour[0], 15)
     # save the cropped image
@@ -256,10 +259,10 @@ def tile_image(image_file_path, tile_dir_path, window_dimension, steps_per_windo
     for j in range(j_y - 1):
         for i in range(i_x - 1):
             wd_y = int(j * wd / steps_per_window)
-            print("[INFO] wd_y=", wd_y)
+            logger.info(f"wd_y={wd_y}")
             wd_x = int(i * wd / steps_per_window)
-            print("[INFO] wd_x=", wd_x)
+            logger.info(f"wd_x={wd_x}")
             windowed = image[wd_y : wd_y + wd, wd_x : wd_x + wd]
-            print("[INFO] shape=", windowed.shape)
+            logger.info(f"shape={windowed.shape}")
             fwin = tile_dir_path + "/" + os.path.splitext(os.path.split(image_file_path)[1])[0] + "_" + str(i) + "_" + str(j) + ".png"
             cv2.imwrite(fwin, windowed)
