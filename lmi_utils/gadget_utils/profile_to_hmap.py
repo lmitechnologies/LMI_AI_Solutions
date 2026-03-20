@@ -115,7 +115,6 @@ def preprocess_hmap(img, map_choice="rainbow-med", global_max=None, remove_outli
 if __name__ == "__main__":
     import argparse
     import glob
-    import logging
     import os
     import time
 
