@@ -1,4 +1,6 @@
+import argparse
 import collections
+import logging
 import os
 
 from lmi_utils.dataset_utils.representations import AnnotationType, Dataset
@@ -59,7 +61,7 @@ def json_to_csv(path_json, path_out):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--path_json", type=str, help="path to json file")

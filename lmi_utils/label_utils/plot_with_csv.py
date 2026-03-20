@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 import os
@@ -18,9 +19,7 @@ from lmi_utils.label_utils.plot_utils import (
 )
 from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def plot_shape(shape, im, color_map):
@@ -58,7 +57,7 @@ def plot_shape(shape, im, color_map):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--path_imgs", required=True, help="the path to the input image folder")

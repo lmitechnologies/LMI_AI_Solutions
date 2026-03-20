@@ -1,3 +1,4 @@
+import argparse
 import collections
 import logging
 import os
@@ -8,9 +9,7 @@ import numpy as np
 from lmi_utils.label_utils.csv_utils import load_csv, write_to_csv
 from lmi_utils.label_utils.shapes import Brush, Rect
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def cropped_bbox(bbox1, bbox2):
@@ -55,7 +54,7 @@ def crop_mask(bbox, mask=None, polygon_mask=None, bbox_format="xywh"):
 
 
 def main():
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
 

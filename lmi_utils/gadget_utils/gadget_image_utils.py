@@ -1,9 +1,13 @@
+import argparse
+import logging
 import pickle
 from os import listdir, makedirs
 from os.path import isdir, isfile, join
 
 import numpy
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 
 class GadgetImageUtils:
@@ -14,7 +18,7 @@ class GadgetImageUtils:
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".gadget2d.pickle" in f]
 
         for file in files:
-            print(join(source_path, file))
+            logger.info(join(source_path, file))
 
             with open(join(source_path, file), "rb") as f:
                 content = pickle.load(f)
@@ -29,7 +33,7 @@ class GadgetImageUtils:
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".gadget2d.pickle" in f]
 
         for file in files:
-            print(join(source_path, file))
+            logger.info(join(source_path, file))
 
             with open(join(source_path, file), "rb") as f:
                 content = pickle.load(f)
@@ -46,7 +50,7 @@ class GadgetImageUtils:
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".npy" in f]
 
         for file in files:
-            print(join(source_path, file))
+            logger.info(join(source_path, file))
 
             npy_arr = numpy.load(join(source_path, file))
 
@@ -76,7 +80,7 @@ class GadgetImageUtils:
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".png" in f]
 
         for file in files:
-            print(join(source_path, file))
+            logger.info(join(source_path, file))
 
             img = Image.open(join(source_path, file))
             npy_arr = numpy.array(img)
@@ -105,7 +109,7 @@ class GadgetImageUtils:
 
 
 def main():
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--option", required=True, help="pkl_2_npy or pkl_2_png or npy_2_pkl or png_2_pkl")
@@ -119,11 +123,11 @@ def main():
     dest = args["dest"]
     rotate = args["rotate"]
 
-    print(f"Rotate: {rotate}")
+    logger.info(f"Rotate: {rotate}")
     translate = GadgetImageUtils()
 
-    print(f"Src: {src}")
-    print(f"Dest: {dest}")
+    logger.info(f"Src: {src}")
+    logger.info(f"Dest: {dest}")
 
     if not isdir(dest):
         makedirs(dest)

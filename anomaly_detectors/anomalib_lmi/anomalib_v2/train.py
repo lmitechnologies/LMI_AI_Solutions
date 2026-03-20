@@ -10,7 +10,6 @@ from anomalib.deploy import ExportType
 from anomalib.engine import Engine
 from torchvision.transforms import v2
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -116,6 +115,7 @@ def get_image_size(model) -> Optional[tuple]:
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Train Anomalib Model from YAML config")
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to config file")
     args = parser.parse_args()

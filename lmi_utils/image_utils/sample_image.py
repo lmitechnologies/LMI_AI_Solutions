@@ -1,4 +1,5 @@
 # built-in packagesprint
+import argparse
 import glob
 import logging
 import os
@@ -7,9 +8,7 @@ import random
 # 3rd party packages
 import shutil
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def sample_images(path_imgs, path_out, num_samples, is_random=False):
@@ -39,7 +38,7 @@ def sample_images(path_imgs, path_out, num_samples, is_random=False):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--path_imgs", "-i", required=True, help="the path to images")

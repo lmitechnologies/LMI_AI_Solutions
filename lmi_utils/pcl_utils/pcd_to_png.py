@@ -1,10 +1,13 @@
 import argparse
 import glob
+import logging
 import os
 
 import numpy as np
 
 from lmi_utils.pcl_utils.point_cloud import PointCloud
+
+logger = logging.getLogger(__name__)
 
 
 def convert_pcd_to_png(path_in, path_out, color_map, contrast_enhance=False):
@@ -22,7 +25,7 @@ def convert_pcd_to_png(path_in, path_out, color_map, contrast_enhance=False):
             zmax_color=None,
         )
         file_out = os.path.split(file)[1]
-        print(f"[INFO] File: {file_out}, hmin: {pointcloud.zmin}, hmax: {pointcloud.zmax}")
+        logger.info(f"File: {file_out}, hmin: {pointcloud.zmin}, hmax: {pointcloud.zmax}")
         hmax.append(pointcloud.zmax)
         hmin.append(pointcloud.zmin)
         file_out = os.path.splitext(file_out)[0]
@@ -31,12 +34,13 @@ def convert_pcd_to_png(path_in, path_out, color_map, contrast_enhance=False):
 
     hmax = np.asarray(hmax)
     hmin = np.asarray(hmin)
-    print("------")
-    print(f"[INFO] Hmin={hmin.min()}, Hmax={hmax.max()}")
-    print("------")
+    logger.info("------")
+    logger.info(f"Hmin={hmin.min()}, Hmax={hmax.max()}")
+    logger.info("------")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--input_path", default="./")
     ap.add_argument("-o", "--output_path", default="./")

@@ -13,7 +13,6 @@ MAX_UINT16 = 65535
 IMG_FORMATS = [".png", ".jpg"]
 NUM_BINS = 100
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -162,6 +161,7 @@ def predict(
 if __name__ == "__main__":
     import argparse
 
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser(description="gofactory AD prediction")
     ap.add_argument("--model", type=str, required=True, help="path to the AD model")
     ap.add_argument("-i", "--images", type=str, required=True, help="path to the testing images")

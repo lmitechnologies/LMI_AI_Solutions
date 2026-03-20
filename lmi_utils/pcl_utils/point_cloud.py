@@ -1,3 +1,5 @@
+import argparse
+import logging
 import os
 
 # import open3d
@@ -6,13 +8,12 @@ import time
 
 import cv2
 import numpy as np
-
-# if '..' not in sys.path:
-#     sys.path.append('..')
 from scipy.interpolate import griddata
 
 import lmi_utils.image_utils.rgb_converter as rbg_converter
 from lmi_utils.image_utils.img_resize import resize
+
+logger = logging.getLogger(__name__)
 
 
 class PointCloud:
@@ -114,7 +115,7 @@ class PointCloud:
         self.width = W
 
     def __enhance_contrast(self):
-        print("[INFO] Applying local contrast enhancement.")
+        logger.info("Applying local contrast enhancement.")
         bgr = self.img
         lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
         lab_planes = cv2.split(lab)
@@ -287,24 +288,24 @@ class PointCloud:
         img_norm = self.__normalize_img(zmin_color, zmax_color)
         img_norm[np.isnan(img_norm)] = 0.0
         if verbose:
-            print(f"[INFO] Normalizing data between {zmin_color} and {zmax_color}")
+            logger.info(f"Normalizing data between {zmin_color} and {zmax_color}")
         try:
             if color_mapping == "rainbow":
                 if verbose:
-                    print("[INFO] Converting to rainbow color map.")
+                    logger.info("Converting to rainbow color map.")
                 # discretize range
                 img_int = (img_norm * self.TWO_TO_TWENTYFOURTH_MINUS_ONE).astype(np.int)
                 img = rbg_converter.convert_array_to_rainbow(img_int)
                 img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             elif color_mapping == "rgb":
                 if verbose:
-                    print("[INFO] Converting to high-res color map.")
+                    logger.info("Converting to high-res color map.")
                 img_int = (img_norm * self.TWO_TO_TWENTYFOURTH_MINUS_ONE).astype(np.int)
                 img = rbg_converter.convert_array_to_rgb(img_int)
                 img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             elif color_mapping == "gray":
                 if verbose:
-                    print("[INFO] Converting to grayscale")
+                    logger.info("Converting to grayscale")
                 img = (img_norm * 255).astype(np.uint8)
                 img_bgr = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
         except Exception as e:
@@ -326,11 +327,11 @@ class PointCloud:
             arr = np.column_stack((self.x, self.y, self.z))
             np.save(fname, arr)
         except Exception:
-            print("Could not write the .npy file.")
+            logger.info("Could not write the .npy file.")
 
 
 def main():
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--input", required=True, help="path to input cloud")
@@ -341,27 +342,27 @@ def main():
     try:
         pc.read_points(input_cloud_path, zmin=0, zmax=40, clip_mode=1)
     except Exception:
-        print("Bad path.")
+        logger.error("Bad path.")
         sys.exit(1)
     tstart = time.time()
     pc.convert_points_to_image(colore_mapping="rainbow", contrast_enhancement=True)
     tstop = time.time()
-    print(f"[INFO] Time to gen rainbow: {tstop - tstart}s")
+    logger.info(f"Time to gen rainbow: {tstop - tstart}s")
     image_rb = pc.img
     pc.reinitialize_fp_image()
     tstart = time.time()
     pc.convert_points_to_image(color_mapping="rgb", contrast_enhancement=True)
     tstop = time.time()
-    print(f"[INFO] Time to gen rgb: {tstop - tstart}s")
+    logger.info(f"Time to gen rgb: {tstop - tstart}s")
     image_rgb = pc.img
     pc.reinitialize_fp_image()
     tstart = time.time()
     pc.convert_points_to_image(color_mapping="gray", contrast_enhancement=True)
     tstop = time.time()
-    print(f"[INFO] Time to gen gray: {tstop - tstart}s")
+    logger.info(f"Time to gen gray: {tstop - tstart}s")
     image_gray = pc.img
 
-    print(f"[INFO] Shape Width: {image_gray.shape[1]}, Height: {image_gray.shape[0]}")
+    logger.info(f"Shape Width: {image_gray.shape[1]}, Height: {image_gray.shape[0]}")
 
     cv2.imshow("Rainbow", image_rb)
     cv2.imshow("RGB", image_rgb)

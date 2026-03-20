@@ -1,3 +1,4 @@
+import argparse
 import json
 import logging
 import os
@@ -21,9 +22,7 @@ from lmi_utils.dataset_utils.representations import (
 )
 from object_detectors.ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def parse_annotations(annotations: list[Annotation], h: int, w: int, model_type: str) -> dict:
@@ -321,8 +320,7 @@ def write_json(
 
 
 if __name__ == "__main__":
-    import argparse
-
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", required=True, help="a path to a model weights file")
     parser.add_argument(

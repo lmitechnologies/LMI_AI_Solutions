@@ -10,9 +10,6 @@ import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
 
-logging.basicConfig()
-
-
 MINIMUM_QUANT = 1e-12
 
 
@@ -34,7 +31,6 @@ def to_list(data):
 
 class Anomalib_Base(ABC):
     logger = logging.getLogger("Anomalib Base")
-    logger.setLevel(logging.INFO)
 
     tiler = None
     _colormap_tensor = None

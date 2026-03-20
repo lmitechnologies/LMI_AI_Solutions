@@ -4,12 +4,15 @@ import ast
 import csv
 import glob
 import json
+import logging
 import os
 
 import cv2
 import numpy as np
 
 from lmi_utils.image_utils.img_resize import resize
+
+logger = logging.getLogger(__name__)
 
 
 def extract_ROI_from_JSON(
@@ -51,7 +54,7 @@ def extract_ROI_from_JSON(
             for _i, key in enumerate(keys):
                 regions = object_labels[key]["regions"]
                 fname = object_labels[key]["filename"]
-                print("[INFO] filename=", fname)
+                logger.info(f"filename= {fname}")
                 filepath = os.path.join(data_folder_path, fname)
                 if os.path.exists(filepath):
                     for j, _ in enumerate(regions):
@@ -65,10 +68,7 @@ def extract_ROI_from_JSON(
                             xj = regions[j]["shape_attributes"]["all_points_x"]
                             yj = regions[j]["shape_attributes"]["all_points_y"]
                             if mask_to_bbox:
-                                print(
-                                    "[INFO] Writing bounding box from mask region: ",
-                                    label,
-                                )
+                                logger.info(f"Writing bounding box from mask region: {label}")
                                 xj = np.array(xj, dtype=np.int32)
                                 yj = np.array(yj, dtype=np.int32)
                                 x_ul = xj.min()
@@ -197,13 +197,14 @@ def extract_ROI_from_JSON(
                             cv2.imshow("image", image)
                             cv2.waitKey(500)
                 else:
-                    print(f"[INFO] File does not exist in data path: {filepath}")
+                    logger.info(f"File does not exist in data path: {filepath}")
 
             # append csv file for each additional json file
             write_append_option = "a"
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("-d", "--data_path", required=True)
     ap.add_argument("--output_fname", default="labels.csv")
@@ -221,7 +222,7 @@ if __name__ == "__main__":
         target_classes = []
     else:
         target_classes = target_classes.split(",")
-    print(f"target_classes: {target_classes}")
+    logger.info(f"target_classes: {target_classes}")
 
     # is_mask=ast.literal_eval(args['is_mask'])
     # if type(is_mask) is not type(True):

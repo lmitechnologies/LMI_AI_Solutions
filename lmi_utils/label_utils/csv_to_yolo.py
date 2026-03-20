@@ -3,6 +3,7 @@ convert the data (images with a csv annotation file) to yolo file format
 """
 
 # built-in packages
+import argparse
 import glob
 import json
 import logging
@@ -19,9 +20,7 @@ from lmi_utils.label_utils.bbox_utils import rotate
 from lmi_utils.label_utils.csv_utils import load_csv
 from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def del_classes(class_to_id, classes=None):
@@ -289,7 +288,7 @@ def copy_images_in_folder(path_img, path_out, fnames=None):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--path_imgs", "-i", required=True, help="the path of a image folder")

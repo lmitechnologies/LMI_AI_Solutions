@@ -7,9 +7,7 @@ import cv2
 from lmi_utils.gadget_utils.pipeline_utils import fit_array_to_size
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def fit_image_to_size(input_path, output_path, out_wh, recursive):
@@ -45,6 +43,7 @@ def fit_image_to_size(input_path, output_path, out_wh, recursive):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser(description="Pad or crop images to output size.")
     ap.add_argument("--path_imgs", "-i", required=True, help="the path to the images")
     ap.add_argument("--path_out", "-o", required=True, help="the output path")

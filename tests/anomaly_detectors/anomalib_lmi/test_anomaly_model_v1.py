@@ -20,9 +20,7 @@ from anomaly_detectors.anomalib_lmi.anomaly_model2 import AnomalyModel2
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v1_torchscript
 from lmi_utils.gadget_utils import pipeline_utils
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 DATA_PATH = "tests/assets/images/nvtec-ad"

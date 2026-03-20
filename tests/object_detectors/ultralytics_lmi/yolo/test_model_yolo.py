@@ -10,9 +10,7 @@ from ultralytics import YOLO
 from object_detectors.od_core.object_detector import ObjectDetector
 from object_detectors.ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 COCO_DIR = "tests/assets/images/coco"

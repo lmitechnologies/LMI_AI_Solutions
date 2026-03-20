@@ -6,7 +6,6 @@ from typing import Dict, List
 
 from lmi_utils.dataset_utils.coco_dataset import CocoAnnotation, CocoCategory, CocoDataset, CocoImage, CocoLicense
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -40,14 +39,14 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
     if not os.path.exists(os.path.join(output_path, "images")):
         os.makedirs(os.path.join(output_path, "images"))
 
-    print(f"Starting merge of {len(input_paths)} datasets...")
+    logger.info(f"Starting merge of {len(input_paths)} datasets...")
 
     for path in input_paths:
-        print(f"Processing: {path}")
+        logger.info(f"Processing: {path}")
         try:
             ds = CocoDataset.load_from_json(path)
         except Exception as e:
-            print(f"Error loading {path}: {e}")
+            logger.error(f"Error loading {path}: {e}")
             continue
 
         # --- 1. Merge Licenses ---
@@ -102,10 +101,10 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
         for ann in ds.annotations:
             # Sanity Check: Ensure referenced image/category actually exist in this dataset
             if ann.image_id not in local_img_map:
-                print(f"Warning: Skipping annotation {ann.id} (Image {ann.image_id} not found)")
+                logger.warning(f"Skipping annotation {ann.id} (Image {ann.image_id} not found)")
                 continue
             if ann.category_id not in local_cat_map:
-                print(f"Warning: Skipping annotation {ann.id} (Category {ann.category_id} not found)")
+                logger.warning(f"Skipping annotation {ann.id} (Category {ann.category_id} not found)")
                 continue
 
             new_ann = CocoAnnotation(
@@ -121,18 +120,19 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
             current_ann_id += 1
 
     # Save
-    print(f"Saving merged dataset to {output_path}...")
+    logger.info(f"Saving merged dataset to {output_path}...")
     merged.save_to_json(os.path.join(output_path, "merged.json"))
 
     # Print stats
     stats = merged.get_statistics()
-    print("Merge Complete.")
-    print(f"Total Images: {stats['num_images']}")
-    print(f"Total Annotations: {stats['num_annotations']}")
-    print(f"Total Categories: {stats['num_categories']}")
+    logger.info("Merge Complete.")
+    logger.info(f"Total Images: {stats['num_images']}")
+    logger.info(f"Total Annotations: {stats['num_annotations']}")
+    logger.info(f"Total Categories: {stats['num_categories']}")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Merge multiple COCO datasets.")
     parser.add_argument("-i", "--inputs", nargs="+", help="List of input COCO JSON files to merge")
     parser.add_argument("-o", "--output", required=True, help="Output path for the merged JSON file")

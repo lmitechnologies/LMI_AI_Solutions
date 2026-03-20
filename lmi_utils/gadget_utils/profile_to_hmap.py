@@ -1,8 +1,12 @@
 # %%
+import logging
+
 import cv2
 import numpy as np
 
 from lmi_utils.image_utils.rgb_converter import convert_array_to_rainbow
+
+logger = logging.getLogger(__name__)
 
 BLACK = [0, 0, 0]
 TWO_TO_SIXTEEN_MINUS_ONE = np.power(2, 16) - 1
@@ -114,6 +118,8 @@ if __name__ == "__main__":
     import os
     import time
 
+    logging.basicConfig(level=logging.INFO)
+
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--input_path", default=".")
     ap.add_argument("-o", "--output_path", default=None)
@@ -147,21 +153,21 @@ if __name__ == "__main__":
     for file in files:
         img_p = cv2.imread(file, -1)
         unique_input_value = len(np.unique(img_p))
-        print(f"[INFO] Input image has {unique_input_value} unique values.")
+        logger.info(f"Input image has {unique_input_value} unique values.")
         t0 = time.time()
         hmap = preprocess_hmap(img_p, map_choice=map_choice)
         t1 = time.time()
         img_bgr = cv2.cvtColor(hmap, cv2.COLOR_RGB2BGR)
         tdelta = t1 - t0
-        print(f"[INFO] Proc time = {tdelta}")
+        logger.info(f"Proc time = {tdelta}")
         if args["show_quant"]:
             hmap_int = img_rgb_to_int_array(hmap)
             unique_input_value = len(np.unique(hmap_int))
-            print(f"[INFO] Converted hmap has {unique_input_value} unique values.")
+            logger.info(f"Converted hmap has {unique_input_value} unique values.")
         proc_time.append(tdelta)
         fname = os.path.split(file)[1]
         fname = fname.replace(".png", "_hmap.png")
         cv2.imwrite(os.path.join(outpath, fname), img_bgr)
 
     proc_time = np.array(proc_time)
-    print(f"[INFO] Mean Processing Time = {proc_time.mean()}")
+    logger.info(f"Mean Processing Time = {proc_time.mean()}")

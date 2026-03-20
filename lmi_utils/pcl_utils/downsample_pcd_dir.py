@@ -1,4 +1,5 @@
 import argparse
+import logging
 import os
 
 import open3d
@@ -6,8 +7,11 @@ from tqdm import tqdm
 
 from lmi_utils.pcl_utils.point_cloud import PointCloud
 
+logger = logging.getLogger(__name__)
+
 
 def main(inp, out, rate):
+    logging.basicConfig(level=logging.INFO)
     input_pcds = os.listdir(inp)
     for i in tqdm(range(len(input_pcds))):
         inp_path = os.path.join(inp, input_pcds[i])
@@ -30,7 +34,7 @@ if __name__ == "__main__":
     rate = args["sampling_rate"]
     assert os.path.exists(inp), f"Path {inp} does not exist"
     if not os.path.exists(out):
-        print("[INFO] Creating new directory:", out)
+        logger.info(f"Creating new directory: {out}")
         os.mkdir(out)
     assert rate > 0, f"Received negative sampling rate of {rate}"
     main(inp, out, rate)

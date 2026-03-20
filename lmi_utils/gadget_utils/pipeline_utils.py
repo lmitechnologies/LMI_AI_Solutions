@@ -16,9 +16,7 @@ from torch.nn import functional as F
 BLACK = (0, 0, 0)
 TWO_TO_FIFTEEN = 2**15
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 @torch.inference_mode()

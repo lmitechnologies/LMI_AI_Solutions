@@ -1,4 +1,6 @@
+import argparse
 import json
+import logging
 from pathlib import Path
 
 from pycocotools.coco import COCO
@@ -52,7 +54,7 @@ def merge_coco_datasets(datasets: list[COCO]) -> COCO:
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser(description="Merge multiple COCO datasets into one.")
     ap.add_argument(

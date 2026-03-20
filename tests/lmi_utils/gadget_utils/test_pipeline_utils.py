@@ -7,9 +7,7 @@ import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 class Test_resize_image:

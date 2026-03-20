@@ -6,9 +6,7 @@ from lmi_utils.dataset_utils.coco_dataset import CocoAnnotation, CocoCategory, C
 from lmi_utils.dataset_utils.file_utils import copy_images_in_folder, load_and_update
 from lmi_utils.dataset_utils.representations import BoxAnnotation, Dataset, MaskAnnotation, PolygonAnnotation
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def get_args():
@@ -211,6 +209,7 @@ def convert_to_json(args):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     args = get_args()
     convert_to_json(args)
 

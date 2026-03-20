@@ -1,9 +1,12 @@
 import argparse
+import logging
 
 import cv2
 import numpy as np
 
 from lmi_utils.image_utils.img_resize import resize
+
+logger = logging.getLogger(__name__)
 
 
 def make_border(img, p2h=None, p2w=None):
@@ -13,7 +16,7 @@ def make_border(img, p2h=None, p2w=None):
     """
 
     (h0, w0) = img.shape[:2]
-    print("[INFO] Make_border() input image dimensions: w=%2d,h=%2d" % (w0, h0))
+    logger.info("Make_border() input image dimensions: w=%2d,h=%2d" % (w0, h0))
 
     top_border = 0
     bottom_border = 0
@@ -28,12 +31,12 @@ def make_border(img, p2h=None, p2w=None):
             img = img[crop_rows_top : h0 - crop_rows_bottom, :]
             top_border = -crop_rows_top
             bottom_border = -crop_rows_bottom
-            print(f"[INFO] Scaled image is too tall.  Clipping top rows: {crop_rows_top} and bottom rows: {crop_rows_bottom}")
+            logger.info(f"Scaled image is too tall.  Clipping top rows: {crop_rows_top} and bottom rows: {crop_rows_bottom}")
         else:
             top_border = (p2h - h0) // 2
             bottom_border = p2h - h0 - top_border
             img = cv2.copyMakeBorder(img, top_border, bottom_border, 0, 0, cv2.BORDER_CONSTANT, value=[0, 0, 0])
-            print("[INFO] Adding top/bottom borders to maintain image shape.")
+            logger.info("Adding top/bottom borders to maintain image shape.")
     if p2w is not None:
         if w0 > p2w:
             crop_cols = w0 - p2w
@@ -42,15 +45,15 @@ def make_border(img, p2h=None, p2w=None):
             img = img[:, crop_cols_left : w0 - crop_cols_right]
             left_border = -crop_cols_left
             right_border = -crop_cols_right
-            print(f"[INFO] Scaled image is too wide.  Clipping left columns: {crop_cols_left} and right columns: {crop_cols_right}")
+            logger.info(f"Scaled image is too wide.  Clipping left columns: {crop_cols_left} and right columns: {crop_cols_right}")
         else:
             left_border = (p2w - w0) // 2
             right_border = p2w - w0 - left_border
             img = cv2.copyMakeBorder(img, 0, 0, left_border, right_border, cv2.BORDER_CONSTANT, value=[0, 0, 0])
-            print("[INFO] Adding left/right borders to maintain image shape.")
+            logger.info("Adding left/right borders to maintain image shape.")
 
     (h1, w1) = img.shape[:2]
-    print("[INFO] New scaled image section shape: W=%2d, H=%2d." % (w1, h1))
+    logger.info(f"New scaled image section shape: W={w1}, H={h1}.")
     return img, top_border, bottom_border, left_border, right_border
 
 
@@ -123,7 +126,7 @@ def crop_scale_labeled_image(image, boundingbox, masks=None, new_width=None, new
                 x = mask[:, 0] * sclx
                 # correct invalid mask points
                 # if (np.any(x>new_width)) or (np.any(x<0)):
-                #     print('[INFO] invalid mask point, setting to bounding box edge.')
+                #     logger.info('invalid mask point, setting to bounding box edge.')
                 #     x[x>new_width]=0
                 #     x[x<0]=0
                 y = mask[:, 1] * scly
@@ -145,6 +148,7 @@ def crop_scale_labeled_image(image, boundingbox, masks=None, new_width=None, new
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("--image", required=True, help="Base image file.")
     ap.add_argument("--bounding_box", required=True, help="Bounding box for crop.")

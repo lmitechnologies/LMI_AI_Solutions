@@ -3,9 +3,7 @@ import logging
 import cv2
 import numpy as np
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def xyxy_to_xywh(x1, y1, x2, y2):

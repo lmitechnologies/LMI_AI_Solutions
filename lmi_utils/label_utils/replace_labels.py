@@ -5,7 +5,6 @@ from pathlib import Path
 
 from lmi_utils.label_utils.csv_utils import load_csv, write_to_csv
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +24,7 @@ def replace_labels(name_to_shapes, label_mapping):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("--input", "-i", type=str, required=True, help="Path to input CSV file")
     ap.add_argument("--output", "-o", type=str, required=True, help="Path to output CSV file")

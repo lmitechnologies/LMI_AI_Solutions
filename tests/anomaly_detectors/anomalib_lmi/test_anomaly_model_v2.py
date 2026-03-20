@@ -20,9 +20,7 @@ from lmi_utils.gadget_utils import pipeline_utils
 
 os.environ["TRUST_REMOTE_CODE"] = "1"
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 DATA_PATH = "tests/assets/images/nvtec-ad"

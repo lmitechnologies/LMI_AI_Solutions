@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 
@@ -6,13 +7,11 @@ import cv2
 from lmi_utils.label_utils.csv_utils import load_csv, write_to_csv
 from lmi_utils.label_utils.shapes import Keypoint, Rect
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def main():
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
 

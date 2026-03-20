@@ -15,7 +15,6 @@ from anomaly_detectors.anomalib_lmi.anomaly_model2 import AnomalyModel2
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -434,6 +433,7 @@ def save_metrics_to_csv(
 
 def main() -> None:
     """Main function to run anomaly detection benchmark."""
+    logging.basicConfig(level=logging.INFO)
     # Parse arguments
     ap = argparse.ArgumentParser("Anomaly Detection Benchmark: Compare two models on the same dataset")
     ap.add_argument("--data", required=True, type=Path, help='Path to data directory, which must contain "good" and "bad" subdirectories')

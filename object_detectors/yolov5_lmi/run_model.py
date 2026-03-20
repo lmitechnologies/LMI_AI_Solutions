@@ -85,7 +85,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.NOTSET)
+    logging.basicConfig(level=logging.INFO)
 
     h, w = args.imsz
     engine = Yolov5(args.engine)

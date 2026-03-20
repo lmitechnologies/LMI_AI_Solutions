@@ -7,9 +7,7 @@ from torchvision.transforms import v2
 
 from anomaly_detectors.anomalib_lmi.base import to_list
 
-logging.basicConfig()
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
 
 class SafeNormalize(nn.Module):
@@ -165,6 +163,7 @@ def convert_v2_torchscript(model_path, output_path, batch_size=1, device="cpu"):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Convert a model to TorchScript format.")
     parser.add_argument("--input_path", "-i", type=str, required=True, help="Path to the model file.")
     parser.add_argument(

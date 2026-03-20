@@ -6,9 +6,7 @@ import os
 import cv2
 import numpy as np
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def split_vstack_image(im, num_split: int):
@@ -87,6 +85,7 @@ def split_stack_images(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser(description="split images into segments and vstack these segments")
     ap.add_argument("--path_imgs", required=True, help="the path to the images")
     ap.add_argument("--path_out", required=True, help="the output path")

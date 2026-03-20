@@ -1,3 +1,5 @@
+import argparse
+import logging
 import pickle
 from os import listdir, makedirs
 from os.path import isdir, isfile, join
@@ -8,6 +10,8 @@ from PIL import Image
 
 TWO_TO_FIFTEEN = 32768
 
+logger = logging.getLogger(__name__)
+
 
 class GadgetSurfaceUtils:
     SCHEMA_ID: str = "gadget3d"
@@ -17,7 +21,7 @@ class GadgetSurfaceUtils:
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".gadget3d.pickle" in f]
 
         for file in files:
-            print(join(source_path, file))
+            logger.info(join(source_path, file))
 
             with open(join(source_path, file), "rb") as f:
                 content = pickle.load(f)
@@ -45,7 +49,7 @@ class GadgetSurfaceUtils:
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".gadget3d.pickle" in f]
 
         for file in files:
-            print(join(source_path, file))
+            logger.info(join(source_path, file))
 
             with open(join(source_path, file), "rb") as f:
                 content = pickle.load(f)
@@ -109,7 +113,7 @@ class GadgetSurfaceUtils:
         use_intensity = True if source_path_intensity is not None else False
 
         for file in files:
-            print(join(source_path, file))
+            logger.info(join(source_path, file))
 
             with open(join(source_path, file), "rb") as f:
                 content = pickle.load(f)
@@ -118,12 +122,12 @@ class GadgetSurfaceUtils:
                 try:
                     fname_intensity = file.replace(".gadget3d.pickle", ".gadget2d.jpg")
                     path_intensity = join(source_path_intensity, fname_intensity)
-                    print(f"[INFO] Loading intensity image from:{path_intensity}")
+                    logger.info(f"Loading intensity image from:{path_intensity}")
                     img_intensity = Image.open(path_intensity)
                     img_intensity = img_intensity.convert("RGB")  # convert to color
                     img_intensity = numpy.array(img_intensity).astype(numpy.float32)
                 except Exception:
-                    print("[WARNING] Failed to load intensity image.")
+                    logger.info("[WARNING] Failed to load intensity image.")
                     use_intensity = False
 
             profile = content["profile_array"]
@@ -150,7 +154,7 @@ class GadgetSurfaceUtils:
         use_intensity = True if source_path_intensity is not None else False
 
         for file in files:
-            print(join(source_path, file))
+            logger.info(join(source_path, file))
 
             with tarfile.open(join(source_path, file), "r") as tar:
                 dest = join(destination_path, file.replace(".gadget3d.tar", ""))
@@ -161,12 +165,12 @@ class GadgetSurfaceUtils:
                     try:
                         fname_intensity = file.replace(".gadget3d.tar", ".gadget2d.jpg")
                         path_intensity = join(source_path_intensity, fname_intensity)
-                        print(f"[INFO] Loading intensity image from:{path_intensity}")
+                        logger.info(f"Loading intensity image from:{path_intensity}")
                         img_intensity = Image.open(path_intensity)
                         img_intensity = img_intensity.convert("RGB")  # convert to color
                         img_intensity = numpy.array(img_intensity).astype(numpy.float32)
                     except Exception:
-                        print("[WARNING] Failed to load intensity image.")
+                        logger.info("[WARNING] Failed to load intensity image.")
                         use_intensity = False
 
                 metadata = None
@@ -197,7 +201,7 @@ class GadgetSurfaceUtils:
         use_intensity = True if source_path_intensity is not None else False
 
         for file in tqdm.tqdm(files):
-            # print(join(source_path, file))
+            # logger.info(join(source_path, file))
 
             with tarfile.open(join(source_path, file), "r") as tar:
                 dest = join(destination_path, file.replace(".gadget3d.tar", ""))
@@ -213,11 +217,11 @@ class GadgetSurfaceUtils:
                     try:
                         fname_intensity = file.replace(".gadget3d.tar", ".gadget2d.jpg")
                         path_intensity = join(source_path_intensity, fname_intensity)
-                        # print(f'[INFO] Loading intensity image from:{path_intensity}')
+                        # logger.info(f'Loading intensity image from:{path_intensity}')
                         img_intensity = numpy.array(Image.open(path_intensity))
 
                     except Exception:
-                        print("[WARNING] Failed to load intensity image.")
+                        logger.info("[WARNING] Failed to load intensity image.")
                         use_intensity = False
 
                 metadata = None
@@ -247,7 +251,7 @@ class GadgetSurfaceUtils:
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".npy" in f]
 
         for file in files:
-            print(join(source_path, file))
+            logger.info(join(source_path, file))
 
             npy_arr = numpy.load(join(source_path, file))
 
@@ -282,7 +286,7 @@ class GadgetSurfaceUtils:
 
         for file_tuple in files:
             file_p = file_tuple[0]
-            print(join(source_path, file_p))
+            logger.info(join(source_path, file_p))
             img = Image.open(join(source_path, file_p))
             npy_arr_p = numpy.array(img)
             if npy_arr_p.dtype == numpy.uint16:
@@ -292,7 +296,7 @@ class GadgetSurfaceUtils:
 
             if len(file_tuple) == 2:
                 file_i = file_tuple[1]
-                print(join(source_path, file_i))
+                logger.info(join(source_path, file_i))
                 img = Image.open(join(source_path_intensity, file_i))
                 npy_arr_i = numpy.array(img)
             else:
@@ -318,7 +322,7 @@ class GadgetSurfaceUtils:
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".pcd" in f]
 
         for file in files:
-            print(join(source_path, file))
+            logger.info(join(source_path, file))
 
             pcd = open3d.io.read_point_cloud(join(source_path, file))
             np_arr = numpy.asarray(pcd.points)
@@ -359,7 +363,7 @@ class GadgetSurfaceUtils:
 
 
 def main():
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument(
@@ -387,8 +391,8 @@ def main():
 
     translate = GadgetSurfaceUtils()
 
-    print(f"Src: {src}")
-    print(f"Dest: {dest}")
+    logger.info(f"Src: {src}")
+    logger.info(f"Dest: {dest}")
 
     if not isdir(dest):
         makedirs(dest)

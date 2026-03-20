@@ -1,10 +1,14 @@
+import argparse
 import collections
+import logging
 import os
 
 from sklearn.model_selection import train_test_split
 
 # LMI modules
 from lmi_utils.label_utils import csv_utils
+
+logger = logging.getLogger(__name__)
 
 
 def copy_images(data, out_path):
@@ -29,8 +33,8 @@ def split_data_in_csv(path_csv, path_img, test_ratio=0.25, rs=777):
     test_data = collections.defaultdict(list)
     for name in test_names:
         test_data[name] = data[name]
-    print(f"total images: {len(img_names)}")
-    print(f"split: {len(train_data)} images to training, {len(test_data)} images ({test_ratio * 100}%) to testing")
+    logger.info(f"total images: {len(img_names)}")
+    logger.info(f"split: {len(train_data)} images to training, {len(test_data)} images ({test_ratio * 100}%) to testing")
     return train_data, test_data
 
 
@@ -46,7 +50,7 @@ def generate_split_datasets(train_data, test_data, path_out, test_only):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--path_imgs", required=True, help="the path to the image folder")

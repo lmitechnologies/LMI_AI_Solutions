@@ -9,9 +9,7 @@ import torchvision
 
 from lmi_utils.image_utils.tiler import ScaleMode, Tiler
 
-logging.basicConfig()
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
 
 IM_TYPES = ("png", "jpg", "jpeg", "tiff")
@@ -110,6 +108,7 @@ def to_images(source, dest, mode=ScaleMode.PADDING):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("--option", required=True)
     ap.add_argument("-i", "--src", required=True)

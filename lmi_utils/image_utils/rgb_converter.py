@@ -3,8 +3,12 @@ integer converter: converts between integers and rgb encodings [red,green,blue]
 image converter: converts images
 """
 
+import logging
+
+import cv2
 import numpy as np
 
+logger = logging.getLogger(__name__)
 TWO_TO_TWENTYFORUTH_MINUS_ONE = 16777215
 TWO_TO_SIXTEENTH_MINUS_ONE = 65535
 
@@ -77,7 +81,7 @@ def convert_to_rainbow(an_int, full_scale_range=24):
             green = x * slope
             red = 255
     except Exception:
-        print("Invald range.")
+        logger.error("Invald range.")
 
     return np.uint8(red), np.uint8(green), np.uint8(blue)
 
@@ -173,7 +177,7 @@ def convert_greyscale_to_color_simple(greyscale_img):
 
 
 if __name__ == "__main__":
-    import cv2
+    logging.basicConfig(level=logging.INFO)
 
     ramp = np.arange(0, TWO_TO_TWENTYFORUTH_MINUS_ONE, 50000)
     n = ramp.shape[0]
@@ -184,7 +188,7 @@ if __name__ == "__main__":
     y_rgb = np.zeros([len(ramp), len(ramp), 3], dtype=np.uint8)
     for i in range(n):
         for j in range(n):
-            print("[INFO] i:", str(i), ", j:", str(j))
+            logger.info(f"i: {i}, j: {j}")
             x_rb[i, j] = convert_to_rainbow(x[i, j])
             y_rb[i, j] = convert_to_rainbow(y[i, j])
             x_rgb[i, j] = convert_to_rgb(x[i, j])

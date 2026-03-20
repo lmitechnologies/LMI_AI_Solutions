@@ -8,9 +8,8 @@ import torchvision
 from lmi_utils.image_utils.tiler import ScaleMode, Tiler
 from lmi_utils.system_utils import path_utils
 
-logging.basicConfig()
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+
 
 PATH_IMG = "tests/assets/images/dota"
 

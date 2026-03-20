@@ -20,8 +20,6 @@ import logging
 import numpy as np
 import onnx_graphsurgeon as gs
 
-logging.basicConfig(level=logging.INFO)
-logging.getLogger("ModelHelper").setLevel(logging.INFO)
 log = logging.getLogger("ModelHelper")
 
 

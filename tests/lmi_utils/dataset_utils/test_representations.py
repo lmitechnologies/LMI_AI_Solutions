@@ -23,9 +23,7 @@ from lmi_utils.dataset_utils.representations import (
 )
 from lmi_utils.label_utils.bbox_utils import rotate
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 # ============================

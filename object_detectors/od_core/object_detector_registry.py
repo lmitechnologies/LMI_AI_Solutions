@@ -13,9 +13,7 @@ PACKAGES = [
 TARGET_MODULE_SUFFIXES = [".model"]  # Target suffixes to look for in the packages
 
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class ObjectDetectorRegistry:

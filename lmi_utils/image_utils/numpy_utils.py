@@ -1,8 +1,12 @@
+import argparse
+import logging
 from os import listdir, makedirs
 from os.path import isdir, isfile, join
 
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class NumpyUtils:
@@ -10,7 +14,7 @@ class NumpyUtils:
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ((".png" in f) or (".jpg" in f))]
 
         for f in files:
-            print(join(source_path, f))
+            logger.info(join(source_path, f))
             np_frame = cv2.imread(join(source_path, f))
             np_frame = cv2.cvtColor(np_frame, cv2.COLOR_RGB2BGR)
             if rotate:
@@ -23,7 +27,7 @@ class NumpyUtils:
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".npy" in f]
 
         for f in files:
-            print(join(source_path, f))
+            logger.info(join(source_path, f))
             np_frame = np.load(join(source_path, f))
             if rotate:
                 np_frame = np.rot90(np_frame)
@@ -36,7 +40,7 @@ class NumpyUtils:
         files = [f for f in listdir(source_path) if isfile(join(source_path, f)) and ".png" in f]
 
         for f in files:
-            print(join(source_path, f))
+            logger.info(join(source_path, f))
             np_frame = cv2.imread(join(source_path, f))
             if rotate:
                 np_frame = np.rot90(np_frame)
@@ -47,7 +51,7 @@ class NumpyUtils:
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--option", required=True, help="npy_2_png or png_2_npy or png_2_png")
@@ -65,8 +69,8 @@ if __name__ == "__main__":
 
     translate = NumpyUtils()
 
-    print(f"Src: {src}")
-    print(f"Dest: {dest}")
+    logger.info(f"Src: {src}")
+    logger.info(f"Dest: {dest}")
 
     if not isdir(dest):
         makedirs(dest)

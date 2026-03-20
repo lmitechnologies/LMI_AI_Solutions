@@ -4,9 +4,7 @@ import numpy as np
 
 from .shape import Shape
 
-logging.basicConfig()
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
 
 class Brush(Shape):

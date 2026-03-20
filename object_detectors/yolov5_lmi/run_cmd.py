@@ -8,9 +8,7 @@ import yaml
 
 from object_detectors.ultralytics_lmi.yolo.run_cmd import add_configs, check_path_exist, get_model_path, sanity_check
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 YOLO_REPO_HYP_URL = "https://raw.githubusercontent.com/ultralytics/yolov5/master/data/hyps/hyp.scratch-low.yaml"
@@ -139,6 +137,7 @@ SOURCE_PATH = "/app/data"
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     # download repo's yaml file
     urlretrieve(YOLO_REPO_HYP_URL, REPO_YAML)
 

@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 import random
@@ -6,9 +7,8 @@ import tarfile
 
 import cv2
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+
 
 CAMERAS = ["avt", "gocator"]
 ARCHIVE_PREFIX = "archive-"
@@ -178,7 +178,7 @@ def extract_imgs(
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser(description="this script extracts raw sensor images from gofactory archive data")
     ap.add_argument(

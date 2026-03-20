@@ -55,6 +55,7 @@ def merge_intensity_to_depth(path_pcd_intensity: str, path_pcd_depth: str, color
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "-i",

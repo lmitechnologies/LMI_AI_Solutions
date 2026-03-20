@@ -1,3 +1,4 @@
+import argparse
 import logging
 import os
 
@@ -9,9 +10,7 @@ from lmi_utils.dataset_utils.representations import AnnotationType, Dataset
 from lmi_utils.label_utils.bbox_utils import rotate
 from lmi_utils.label_utils.plot_utils import get_distinct_colors, plot_one_brush, plot_one_polygon, plot_one_pt
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def plot_shape(shape, im, color_map, no_label=False):
@@ -48,7 +47,7 @@ def plot_shape(shape, im, color_map, no_label=False):
 
 
 if __name__ == "__main__":
-    import argparse
+    logging.basicConfig(level=logging.INFO)
 
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--path_imgs", required=True, help="the path to the input image folder")

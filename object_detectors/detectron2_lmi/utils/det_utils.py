@@ -61,7 +61,7 @@ def create_config(cfg_file_path, detectron2_config_file, output_dir):
         raise ValueError(f"Config file {cfg_file_path} does not exist")
 
     configuration = yaml.safe_load(open(cfg_file_path, "r"))
-    print(f"Configuration: {configuration}")
+    logger.info(f"Configuration: {configuration}")
     # get the model configuration to use
     # load the config from the file
     # remove augmentations from the config

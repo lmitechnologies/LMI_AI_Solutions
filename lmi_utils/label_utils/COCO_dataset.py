@@ -9,9 +9,7 @@ import numpy as np
 
 from lmi_utils.label_utils.bbox_utils import rotate
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 class Annotation:

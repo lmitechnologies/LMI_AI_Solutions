@@ -1,5 +1,6 @@
 import argparse
 import glob
+import logging
 import os
 
 import cv2
@@ -22,6 +23,7 @@ def hstack_imgs(orig_folder, pred_folder, fmt, path_out):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     ap.add_argument("--path_orig", required=True, help="the path to the original images")
     ap.add_argument("--path_pred", required=True, help="the path to the predicgtion images")

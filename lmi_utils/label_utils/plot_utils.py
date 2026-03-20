@@ -5,9 +5,7 @@ import random
 import cv2
 import numpy as np
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def get_distinct_colors(n):

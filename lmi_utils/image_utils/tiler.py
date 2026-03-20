@@ -8,9 +8,7 @@ from pathlib import Path
 import torch
 from torch.nn import functional as F
 
-logging.basicConfig()
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
 
 class ScaleMode(str, Enum):

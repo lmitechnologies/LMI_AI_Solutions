@@ -10,7 +10,6 @@ import numpy as np
 from lmi_utils.label_utils.plot_utils import plot_one_polygon, plot_one_pt
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 # This helper function must exist; it converts segment coordinates to bounding boxes.
@@ -139,6 +138,7 @@ def load_yolo_labels(lb_file, im_file, shape, keypoint=False, nkpt=0, ndim=2, nu
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--path_dataset",
@@ -149,10 +149,10 @@ if __name__ == "__main__":
     parser.add_argument("--kp", action="store_true", help="whether the labels contain keypoint data")
     parser.add_argument("--nkpt", type=int, default=0, help="number of keypoints")
 
-    print(f"args: {parser.parse_args()}")
+    logger.info(f"args: {parser.parse_args()}")
     args = parser.parse_args()
     txt_files = glob.glob(os.path.join(args.path_dataset, "labels/train/*.txt"))
-    print(f"Found {len(txt_files)} label files.")
+    logger.info(f"Found {len(txt_files)} label files.")
     os.makedirs(args.path_out, exist_ok=True)
     # load class map json
     class_map = {}

@@ -2,9 +2,7 @@ import logging
 
 from classifiers.cls_core.classifier_registry import ClassifierRegistry
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 
 def test_auto_registration():

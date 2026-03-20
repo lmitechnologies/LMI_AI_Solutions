@@ -71,7 +71,6 @@ class Detectron2Model(ODBase):
 @Detectron2Model.register("engine")
 class Detectron2TRT(ODBase):
     logger = logging.getLogger("Detectron2TRT")
-    logger.setLevel(logging.INFO)
 
     def __init__(self, model_path, **kwargs):
         """
@@ -378,7 +377,6 @@ class Detectron2TRT(ODBase):
 @Detectron2Model.register("pt")
 class Detectron2PT(ODBase):
     logger = logging.getLogger("Detectron2PT")
-    logger.setLevel(logging.INFO)
 
     def __init__(self, model_path, **kwargs):
         device = kwargs.get("device", "cuda")

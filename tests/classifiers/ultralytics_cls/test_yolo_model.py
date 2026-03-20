@@ -7,9 +7,7 @@ import pytest
 from classifiers.cls_core.classifier import Classifier
 from classifiers.ultralytics_lmi.yolo.model import YoloCls
 
-logging.basicConfig()
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
 
 
 IMG_DIR = "tests/assets/images/coco"

@@ -12,9 +12,6 @@ from lmi_utils.image_utils.tiler import OverlapMode, ScaleMode, Tiler
 
 from .base import Anomalib_Base, to_list
 
-logging.basicConfig()
-
-
 MINIMUM_QUANT = 1e-12
 Binding = namedtuple("Binding", ("name", "dtype", "shape", "data", "ptr"))
 
@@ -33,7 +30,6 @@ class AnomalyModel2(Anomalib_Base):
     """
 
     logger = logging.getLogger("AnomalyModel v1")
-    logger.setLevel(logging.INFO)
 
     def __init__(self, model_path, tile=None, stride=None, tile_mode="padding", **kwargs):
         """_summary_
@@ -366,6 +362,7 @@ class AnomalyModel2(Anomalib_Base):
 if __name__ == "__main__":
     import argparse
 
+    logging.basicConfig(level=logging.INFO)
     ap = argparse.ArgumentParser()
     subs = ap.add_subparsers(dest="action", required=True, help="Action modes: test or convert")
 

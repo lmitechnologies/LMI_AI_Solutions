@@ -1,7 +1,10 @@
 import argparse
 import json
+import logging
 import os
 import subprocess
+
+logger = logging.getLogger(__name__)
 
 
 def download_gs_images(input_file, output_dir):
@@ -21,11 +24,11 @@ def download_gs_images(input_file, output_dir):
                 if uri and uri.startswith("gs://"):
                     gs_uris.append(uri)
     except FileNotFoundError:
-        print(f"Error: {input_file} not found.")
+        logger.error(f"{input_file} not found.")
         return
 
     if not gs_uris:
-        print("No Google Storage (gs://) URIs found.")
+        logger.info("No Google Storage (gs://) URIs found.")
         return
 
     # 2. Write URIs to a temporary file for gsutil to read
@@ -34,7 +37,7 @@ def download_gs_images(input_file, output_dir):
         for uri in gs_uris:
             f.write(f"{uri}\n")
 
-    print(f"Found {len(gs_uris)} images. Starting parallel download...")
+    logger.info(f"Found {len(gs_uris)} images. Starting parallel download...")
 
     # 3. Use gsutil -m (multithreading) to download in parallel
     try:
@@ -45,9 +48,9 @@ def download_gs_images(input_file, output_dir):
                 shell=True,
                 check=True,
             )
-        print(f"\nSuccess! Images saved to {output_dir}")
+        logger.info(f"\nSuccess! Images saved to {output_dir}")
     except subprocess.CalledProcessError as e:
-        print(f"Error during gsutil execution: {e}")
+        logger.error(f"Error during gsutil execution: {e}")
     finally:
         # Clean up temporary manifest
         if os.path.exists(manifest_path):
@@ -55,6 +58,7 @@ def download_gs_images(input_file, output_dir):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Download images from Google Storage URIs in a label studio JSON file.")
     parser.add_argument("-j", "--json", required=True, help="Path to the label studio JSON file.")
     parser.add_argument("-o", "--output", required=True, help="Output directory for downloaded images.")

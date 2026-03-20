@@ -1,5 +1,8 @@
+import logging
 import os
 import subprocess
+
+logger = logging.getLogger(__name__)
 
 
 def trtexec(onnx_dir: str, **kwargs) -> None:
@@ -21,7 +24,7 @@ def trtexec(onnx_dir: str, **kwargs) -> None:
         profile_dir = onnx_dir.replace(".onnx", ".nsys-rep")
         # Wrap with nsys profile command
         command = " ".join(["nsys profile", f"--output={profile_dir}", "--trace=cuda,nvtx", "--force-overwrite true", trt_command])
-        print(f"Profile data will be saved to: {profile_dir}")
+        logger.info(f"Profile data will be saved to: {profile_dir}")
     else:
         command = trt_command
 
@@ -30,15 +33,15 @@ def trtexec(onnx_dir: str, **kwargs) -> None:
 
 def run_command_shell(command, dry_run: bool = False) -> int:
     if dry_run:
-        print("")
-        print(f"CUDA_VISIBLE_DEVICES={os.environ['CUDA_VISIBLE_DEVICES']} {command}")
-        print("")
+        logger.info("")
+        logger.info(f"CUDA_VISIBLE_DEVICES={os.environ['CUDA_VISIBLE_DEVICES']} {command}")
+        logger.info("")
     try:
         result = subprocess.run(command, shell=True, capture_output=True, text=True)
         return result
     except subprocess.CalledProcessError as e:
-        print(f"Command failed with exit code {e.returncode}")
-        print(f"Error output:\n{e.stderr.decode('utf-8')}")
+        logger.error(f"Command failed with exit code {e.returncode}")
+        logger.error(f"Error output:\n{e.stderr.decode('utf-8')}")
         raise
 
 

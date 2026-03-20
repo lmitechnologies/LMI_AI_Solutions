@@ -27,7 +27,6 @@ except ImportError as e:
 
 from object_detectors.rf_detr_lmi.convert import convert_to_onnx, convert_to_tensorrt
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Constants
@@ -336,6 +335,7 @@ def handle_conversion(configs: Dict[str, Any]) -> None:
 
 def main() -> None:
     """Main entry point for the CLI application."""
+    logging.basicConfig(level=logging.INFO)
     parser = setup_argparser()
     args = parser.parse_args()
 

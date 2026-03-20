@@ -11,7 +11,6 @@ from object_detectors.rf_detr_lmi.model import RfdetrModel
 
 # setup the logger
 logger = logging.getLogger("RFDETR-INFER")
-logger.setLevel(logging.INFO)
 
 
 def setup_parser():
@@ -79,6 +78,7 @@ def inference_run(args):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     parser = setup_parser()
     args = parser.parse_args()
     logger.info(f"Arguments: {args}")

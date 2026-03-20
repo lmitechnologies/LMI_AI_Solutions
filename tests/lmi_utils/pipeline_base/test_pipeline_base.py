@@ -101,8 +101,6 @@ def test_pipeline_OD(preprocessing_steps, expected_types):
         recon_shape = reconstructed.shape[:2]
         assert orig_shape == recon_shape, f"Shape mismatch: {orig_shape} vs {recon_shape}"
 
-    print(f"Test with steps {expected_types} passed!")
-
 
 class PipelineAD(PipelineBase):
     def load(self, model_roles: dict, configs: dict):
@@ -199,8 +197,6 @@ def test_pipeline_AD(preprocessing_steps, expected_types):
         orig_shape = original.shape[:2]
         h_shape = h.shape[:2]
         assert orig_shape == h_shape, f"Shape mismatch: {orig_shape} vs {h_shape}"
-
-    print(f"Test with steps {expected_types} passed!")
 
 
 def test_version_1_error():

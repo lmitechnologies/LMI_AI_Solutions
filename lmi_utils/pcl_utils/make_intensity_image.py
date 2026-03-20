@@ -1,10 +1,13 @@
 import argparse
 import glob
+import logging
 import os
 
 import cv2
 import numpy as np
 import open3d
+
+logger = logging.getLogger(__name__)
 
 
 def make_intensity_image(input_path, output_path):
@@ -42,6 +45,7 @@ def make_intensity_image(input_path, output_path):
 
 # %% ------------------------------- MAIN ---------------------------------------
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     # options
     ap = argparse.ArgumentParser()
     ap.add_argument("-i", "--input", required=True)
@@ -54,12 +58,12 @@ if __name__ == "__main__":
     if not os.path.isdir(input_path):
         make_intensity_image(input_path, output_path)
     else:
-        print("[INFO] converting directory of pcds.")
+        logger.info("converting directory of pcds.")
         files = glob.glob(os.path.join(input_path, "*.pcd"))
         for current_file in files:
-            print(f"[INFO] Reading: {current_file}")
+            logger.info(f"Reading: {current_file}")
             fname = os.path.split(current_file)[1]
             fname = os.path.splitext(fname)[0] + ".png"
             fout = os.path.join(output_path, fname)
-            print(f"[INFO] writing: {fout}")
+            logger.info(f"Writing: {fout}")
             make_intensity_image(current_file, fout)
