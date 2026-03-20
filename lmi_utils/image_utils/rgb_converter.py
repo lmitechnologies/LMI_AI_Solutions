@@ -81,7 +81,7 @@ def convert_to_rainbow(an_int, full_scale_range=24):
             green = x * slope
             red = 255
     except Exception:
-        logger.info("Invald range.")
+        logger.error("Invald range.")
 
     return np.uint8(red), np.uint8(green), np.uint8(blue)
 

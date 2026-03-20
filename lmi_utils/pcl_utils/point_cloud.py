@@ -342,7 +342,7 @@ def main():
     try:
         pc.read_points(input_cloud_path, zmin=0, zmax=40, clip_mode=1)
     except Exception:
-        logger.info("Bad path.")
+        logger.error("Bad path.")
         sys.exit(1)
     tstart = time.time()
     pc.convert_points_to_image(colore_mapping="rainbow", contrast_enhancement=True)
