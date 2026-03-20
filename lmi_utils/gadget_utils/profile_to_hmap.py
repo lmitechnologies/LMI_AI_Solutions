@@ -154,21 +154,21 @@ if __name__ == "__main__":
     for file in files:
         img_p = cv2.imread(file, -1)
         unique_input_value = len(np.unique(img_p))
-        logger.info(f"[INFO] Input image has {unique_input_value} unique values.")
+        logger.info(f"Input image has {unique_input_value} unique values.")
         t0 = time.time()
         hmap = preprocess_hmap(img_p, map_choice=map_choice)
         t1 = time.time()
         img_bgr = cv2.cvtColor(hmap, cv2.COLOR_RGB2BGR)
         tdelta = t1 - t0
-        logger.info(f"[INFO] Proc time = {tdelta}")
+        logger.info(f"Proc time = {tdelta}")
         if args["show_quant"]:
             hmap_int = img_rgb_to_int_array(hmap)
             unique_input_value = len(np.unique(hmap_int))
-            logger.info(f"[INFO] Converted hmap has {unique_input_value} unique values.")
+            logger.info(f"Converted hmap has {unique_input_value} unique values.")
         proc_time.append(tdelta)
         fname = os.path.split(file)[1]
         fname = fname.replace(".png", "_hmap.png")
         cv2.imwrite(os.path.join(outpath, fname), img_bgr)
 
     proc_time = np.array(proc_time)
-    logger.info(f"[INFO] Mean Processing Time = {proc_time.mean()}")
+    logger.info(f"Mean Processing Time = {proc_time.mean()}")

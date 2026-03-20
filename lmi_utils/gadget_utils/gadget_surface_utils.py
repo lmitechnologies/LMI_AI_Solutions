@@ -122,7 +122,7 @@ class GadgetSurfaceUtils:
                 try:
                     fname_intensity = file.replace(".gadget3d.pickle", ".gadget2d.jpg")
                     path_intensity = join(source_path_intensity, fname_intensity)
-                    logger.info(f"[INFO] Loading intensity image from:{path_intensity}")
+                    logger.info(f"Loading intensity image from:{path_intensity}")
                     img_intensity = Image.open(path_intensity)
                     img_intensity = img_intensity.convert("RGB")  # convert to color
                     img_intensity = numpy.array(img_intensity).astype(numpy.float32)
@@ -165,7 +165,7 @@ class GadgetSurfaceUtils:
                     try:
                         fname_intensity = file.replace(".gadget3d.tar", ".gadget2d.jpg")
                         path_intensity = join(source_path_intensity, fname_intensity)
-                        logger.info(f"[INFO] Loading intensity image from:{path_intensity}")
+                        logger.info(f"Loading intensity image from:{path_intensity}")
                         img_intensity = Image.open(path_intensity)
                         img_intensity = img_intensity.convert("RGB")  # convert to color
                         img_intensity = numpy.array(img_intensity).astype(numpy.float32)
@@ -217,7 +217,7 @@ class GadgetSurfaceUtils:
                     try:
                         fname_intensity = file.replace(".gadget3d.tar", ".gadget2d.jpg")
                         path_intensity = join(source_path_intensity, fname_intensity)
-                        # logger.info(f'[INFO] Loading intensity image from:{path_intensity}')
+                        # logger.info(f'Loading intensity image from:{path_intensity}')
                         img_intensity = numpy.array(Image.open(path_intensity))
 
                     except Exception:

@@ -35,7 +35,7 @@ def crop_scale(
     #     p2h=int(p2h)
     #     p2w=int(p2w)
     # except:
-    #     logger.info('[INFO] Skip rescaling.')
+    #     logger.info('Skip rescaling.')
     #     def_width=True
 
     object_classes = object_labels
