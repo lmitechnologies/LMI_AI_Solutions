@@ -55,7 +55,6 @@ def test_box_from_dict_and_to_yolo_no_angle():
     b = Box.from_dict({"x_min": 10, "y_min": 20, "x_max": 50, "y_max": 80, "angle": 0})
     yolo = b.to_yolo(100, 100)
     expected = [[0.3, 0.5, 0.4, 0.6]]
-    logger.warning(f"{yolo}")
     assert yolo == expected
 
 
@@ -279,8 +278,6 @@ def test_file_annotations_assign_keypoints_error():
 
 
 def test_file_annotations_to_yolo(dummy_file_annotations):
-    logger.warning(f"dummy_file_annotations: {dummy_file_annotations}")
-    # logger.warning(f"yolo: {yolo}")
     yolo, label_ids = dummy_file_annotations.to_yolo(
         to_segmentation=False,
         to_object_detection=False,
@@ -562,3 +559,91 @@ def test_mask_flip():
     flipped_mask = m.to_numpy(h=10, w=10)
     expected_mask = np.flip(np.flip(mask, axis=1), axis=0)
     assert np.allclose(flipped_mask, expected_mask)
+
+
+def test_dataset_json_format_preserved():
+    """Verify that the JSON output format has all expected keys and correct value structures."""
+    mask_arr = np.zeros((100, 100), dtype=np.uint8)
+    mask_arr[20:80, 10:50] = 1
+    rle = mask2rle(mask_arr)
+
+    labels = [
+        Label("label_box", "Box Label"),
+        Label("label_kp", "Keypoint Label"),
+        Label("label_poly", "Polygon Label"),
+        Label("label_mask", "Mask Label"),
+    ]
+    annotations = [
+        BoxAnnotation("ann_box", "label_box", Box(10, 20, 50, 80, 0)),
+        KeypointAnnotation("ann_kp", "label_kp", Point2d(30, 40)),
+        PolygonAnnotation("ann_poly", "label_poly", Polygon([[0, 0], [10, 0], [10, 10], [0, 10]])),
+        MaskAnnotation("ann_mask", "label_mask", Mask(rle)),
+    ]
+    file_ann = FileAnnotations(id="f1", path="/dummy/img.jpg", height=100, width=100, annotations=annotations)
+    dataset = Dataset(labels=labels, files=[file_ann])
+
+    data = json.loads(dataset.to_json())
+
+    # Top-level keys
+    assert set(data.keys()) >= {"labels", "files"}
+
+    # Label structure
+    for label in data["labels"]:
+        assert "id" in label
+        assert "color" in label
+        assert "annotation_type" in label
+
+    # File structure
+    assert len(data["files"]) == 1
+    f = data["files"][0]
+    assert set(f.keys()) >= {"id", "path", "height", "width", "annotations", "predictions"}
+    assert f["id"] == "f1"
+    assert f["height"] == 100
+    assert f["width"] == 100
+
+    # Annotation structure — common fields
+    anns_by_type = {a["type"]: a for a in f["annotations"]}
+    for ann in f["annotations"]:
+        assert set(ann.keys()) >= {"id", "label_id", "type", "value"}
+        assert isinstance(ann["type"], str), "annotation type must be serialized as a string, not an enum"
+
+    # BoxAnnotation value structure
+    assert "Box" in anns_by_type
+    box_value = anns_by_type["Box"]["value"]
+    assert set(box_value.keys()) >= {"x_min", "y_min", "x_max", "y_max", "angle"}
+    assert box_value["x_min"] == pytest.approx(10.0)
+    assert box_value["y_min"] == pytest.approx(20.0)
+    assert box_value["x_max"] == pytest.approx(50.0)
+    assert box_value["y_max"] == pytest.approx(80.0)
+    assert box_value["angle"] == pytest.approx(0.0)
+
+    # KeypointAnnotation value structure
+    assert "Keypoint" in anns_by_type
+    kp_ann = anns_by_type["Keypoint"]
+    kp_value = kp_ann["value"]
+    assert set(kp_value.keys()) >= {"x", "y"}
+    assert kp_value["x"] == pytest.approx(30.0)
+    assert kp_value["y"] == pytest.approx(40.0)
+    assert "bounding_box_id" in kp_ann
+
+    # PolygonAnnotation value structure
+    assert "Polygon" in anns_by_type
+    poly_value = anns_by_type["Polygon"]["value"]
+    assert "points" in poly_value
+    assert isinstance(poly_value["points"], list)
+    assert len(poly_value["points"]) == 4
+
+    # MaskAnnotation value structure (RLE dict)
+    assert "Bitmask" in anns_by_type
+    mask_value = anns_by_type["Bitmask"]["value"]
+    assert isinstance(mask_value, dict)
+
+    # Round-trip: load back and verify labels/files match
+    loaded = Dataset.from_dict(data)
+    assert len(loaded.labels) == len(dataset.labels)
+    assert len(loaded.files) == len(dataset.files)
+    assert [lb.id for lb in loaded.labels] == [lb.id for lb in dataset.labels]
+    loaded_anns_by_id = {a.id: a for a in loaded.files[0].annotations}
+    assert loaded_anns_by_id["ann_box"].value.x_min == pytest.approx(10.0)
+    assert loaded_anns_by_id["ann_kp"].value.x == pytest.approx(30.0)
+    assert len(loaded_anns_by_id["ann_poly"].value.points) == 4
