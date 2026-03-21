@@ -294,7 +294,7 @@ class Box(Base):
             raise ValueError("Unsupported mask_type in Box.to_mask")
 
     def to_polygon(self, **kwargs):
-        return self.to_mask(mask_type=AnnotationType.MASK, **kwargs)
+        return self.to_mask(mask_type=AnnotationType.POLYGON, **kwargs)
 
     def point_in_box(self, x: int, y: int):
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
@@ -350,9 +350,7 @@ class Polygon(Base):
         return np.array(self.points)
 
     def area(self):
-        coords = self.to_numpy()
-        x = coords[:, 0]
-        y = coords[:, 1]
+        x, y = self.coords()
         return ShapelyPolygon([(int(xi), int(yi)) for xi, yi in zip(x, y)]).area
 
     def coords(self, **kwargs):
@@ -372,7 +370,7 @@ class Polygon(Base):
         mask = np.zeros((img_h, img_w), dtype=np.uint8)
         pts = self.to_numpy().astype(np.int32)
         cv2.fillPoly(mask, [pts], 1)
-        return Mask(mask=mask2rle(mask))
+        return Mask(mask=mask)
 
     def to_box(self, **kwargs):
         poly = self.to_numpy()
@@ -438,27 +436,25 @@ class Mask(Base):
         self.mask = mask2rle(mask_array)
         return self
 
-    def to_numpy(self, **kwargs):
-        h = kwargs.get("h", None)
-        w = kwargs.get("w", None)
+    def _require_hw(self, kwargs):
+        h = kwargs.get("h")
+        w = kwargs.get("w")
         if h is None or w is None:
             raise ValueError("Height and width cannot be None")
+        return h, w
+
+    def to_numpy(self, **kwargs):
+        h, w = self._require_hw(kwargs)
         return rle2mask(self.mask, h, w)
 
     def coords(self, **kwargs):
-        h = kwargs.get("h", None)
-        w = kwargs.get("w", None)
-        if h is None or w is None:
-            raise ValueError("Height and width cannot be None")
+        h, w = self._require_hw(kwargs)
         mask = self.to_numpy(h=h, w=w)
         ys, xs = np.nonzero(mask == 1)
         return xs.tolist(), ys.tolist()
 
     def to_polygon(self, **kwargs) -> List[Polygon]:
-        h = kwargs.get("h", None)
-        w = kwargs.get("w", None)
-        if h is None or w is None:
-            raise ValueError("Height and width cannot be None")
+        h, w = self._require_hw(kwargs)
         mask_array = self.to_numpy(h=h, w=w)
         contours, _ = cv2.findContours(mask_array, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         polygons = [contour.reshape(-1, 2) for contour in contours]
@@ -466,10 +462,7 @@ class Mask(Base):
 
     def to_coco(self, **kwargs):
         """Convert the mask to COCO format."""
-        h = kwargs.get("h", None)
-        w = kwargs.get("w", None)
-        if h is None or w is None:
-            raise ValueError("Height and width cannot be None")
+        h, w = self._require_hw(kwargs)
         mask_array = self.to_numpy(h=h, w=w)
         mask = coco_mask.encode(np.asfortranarray(mask_array.astype(np.uint8)))
         mask["counts"] = mask["counts"].decode("utf-8")
@@ -490,10 +483,7 @@ class Mask(Base):
         return area
 
     def to_box(self, **kwargs):
-        h = kwargs.get("h", None)
-        w = kwargs.get("w", None)
-        if h is None or w is None:
-            raise ValueError("Height and width cannot be None")
+        h, w = self._require_hw(kwargs)
         merge_boxes = kwargs.get("merge_boxes", False)
         mask_array = self.to_numpy(h=h, w=w)
         boxes = masks_to_boxes(torch.from_numpy(mask_array).unsqueeze(0))
@@ -535,8 +525,8 @@ class Label(Base):
 class Annotation(Base):
     id: str
     label_id: str
-    type: AnnotationType = None
     value: Union[Box, Mask, Point2d, Polygon] = None
+    type: AnnotationType = None
     link: Optional[str] = None
     confidence: Optional[float] = None
     iou: Optional[float] = None
@@ -548,107 +538,77 @@ class Annotation(Base):
 
     @classmethod
     def from_dict(cls, data: dict) -> "Annotation":
+        _TYPE_MAP = {
+            AnnotationType.BOX.value: BoxAnnotation,
+            AnnotationType.MASK.value: MaskAnnotation,
+            AnnotationType.KEYPOINT.value: KeypointAnnotation,
+            AnnotationType.POLYGON.value: PolygonAnnotation,
+        }
         ann_type = data.get("type")
-        if ann_type == AnnotationType.BOX.value:
-            return BoxAnnotation.from_dict(data)
-        elif ann_type == AnnotationType.MASK.value:
-            return MaskAnnotation.from_dict(data)
-        elif ann_type == AnnotationType.KEYPOINT.value:
-            return KeypointAnnotation.from_dict(data)
-        elif ann_type == AnnotationType.POLYGON.value:
-            return PolygonAnnotation.from_dict(data)
-        else:
+        ann_cls = _TYPE_MAP.get(ann_type)
+        if ann_cls is None:
             raise ValueError(f"Unsupported annotation type: {ann_type}")
+        return ann_cls.from_dict(data)
+
+    @classmethod
+    def _base_fields(cls, data: dict) -> dict:
+        """Extract the common Annotation fields from a dict for use in child from_dict methods."""
+        return {
+            "id": data["id"],
+            "label_id": data["label_id"],
+            "link": data.get("link"),
+            "confidence": data.get("confidence"),
+            "iou": data.get("iou"),
+        }
+
+    def to_yolo(self, h, w, **kwargs):
+        return self.value.to_yolo(h, w, **kwargs)
 
 
+@dataclass
 class BoxAnnotation(Annotation):
-    value: Box
-
-    def __init__(self, id, label_id, value, link=None, confidence=None, iou=None):
-        super().__init__(id=id, label_id=label_id, type=AnnotationType.BOX, link=link, confidence=confidence, iou=iou)
-        self.value = value
+    def __post_init__(self):
+        self.type = AnnotationType.BOX
+        super().__post_init__()
 
     @classmethod
     def from_dict(cls, data: dict) -> "BoxAnnotation":
-        return cls(
-            id=data["id"],
-            label_id=data["label_id"],
-            value=Box.from_dict(data["value"]),
-            link=data.get("link"),
-            confidence=data.get("confidence"),
-            iou=data.get("iou"),
-        )
-
-    def to_yolo(self, h, w, **kwargs):
-        return self.value.to_yolo(h, w, **kwargs)
+        return cls(**cls._base_fields(data), value=Box.from_dict(data["value"]))
 
 
+@dataclass
 class MaskAnnotation(Annotation):
-    value: Mask
-
-    def __init__(self, id, label_id, value, link=None, confidence=None, iou=None):
-        super().__init__(id=id, label_id=label_id, type=AnnotationType.MASK, link=link, confidence=confidence, iou=iou)
-        self.value = value
+    def __post_init__(self):
+        self.type = AnnotationType.MASK
+        super().__post_init__()
 
     @classmethod
     def from_dict(cls, data: dict) -> "MaskAnnotation":
-        return cls(
-            id=data["id"],
-            label_id=data["label_id"],
-            value=Mask.from_dict(data["value"]),
-            link=data.get("link"),
-            confidence=data.get("confidence"),
-            iou=data.get("iou"),
-        )
-
-    def to_yolo(self, h, w, **kwargs):
-        return self.value.to_yolo(h, w, **kwargs)
+        return cls(**cls._base_fields(data), value=Mask.from_dict(data["value"]))
 
 
+@dataclass
 class KeypointAnnotation(Annotation):
-    value: Point2d
+    bounding_box_id: Optional[str] = None
 
-    def __init__(self, id, label_id, value, link=None, confidence=None, iou=None, bounding_box_id=None):
-        super().__init__(id=id, label_id=label_id, type=AnnotationType.KEYPOINT, link=link, confidence=confidence, iou=iou)
-        self.bounding_box_id = bounding_box_id
-        self.value = value
+    def __post_init__(self):
+        self.type = AnnotationType.KEYPOINT
+        super().__post_init__()
 
     @classmethod
     def from_dict(cls, data: dict) -> "KeypointAnnotation":
-        return cls(
-            id=data["id"],
-            label_id=data["label_id"],
-            value=Point2d.from_dict(data["value"]),
-            link=data.get("link"),
-            confidence=data.get("confidence"),
-            iou=data.get("iou"),
-            bounding_box_id=data.get("bounding_box_id"),
-        )
-
-    def to_yolo(self, h, w, **kwargs):
-        return self.value.to_yolo(h, w, **kwargs)
+        return cls(**cls._base_fields(data), value=Point2d.from_dict(data["value"]), bounding_box_id=data.get("bounding_box_id"))
 
 
+@dataclass
 class PolygonAnnotation(Annotation):
-    value: Polygon
-
-    def __init__(self, id, label_id, value, link=None, confidence=None, iou=None):
-        super().__init__(id=id, label_id=label_id, type=AnnotationType.POLYGON, link=link, confidence=confidence, iou=iou)
-        self.value = value
+    def __post_init__(self):
+        self.type = AnnotationType.POLYGON
+        super().__post_init__()
 
     @classmethod
     def from_dict(cls, data: dict) -> "PolygonAnnotation":
-        return cls(
-            id=data["id"],
-            label_id=data["label_id"],
-            value=Polygon.from_dict(data["value"]),
-            link=data.get("link"),
-            confidence=data.get("confidence"),
-            iou=data.get("iou"),
-        )
-
-    def to_yolo(self, h, w, **kwargs):
-        return self.value.to_yolo(h, w, **kwargs)
+        return cls(**cls._base_fields(data), value=Polygon.from_dict(data["value"]))
 
 
 @dataclass
