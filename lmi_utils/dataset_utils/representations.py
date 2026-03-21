@@ -65,10 +65,9 @@ class Point2d(Base):
     x: float
     y: float
 
-    def __init__(self, x: float, y: float):
-        super().__init__()
-        self.x = float(x)
-        self.y = float(y)
+    def __post_init__(self):
+        self.x = float(self.x)
+        self.y = float(self.y)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Point2d":
@@ -121,13 +120,12 @@ class Box(Base):
     y_max: float
     angle: Optional[float] = 0
 
-    def __init__(self, x_min, y_min, x_max, y_max, angle=0):
-        super().__init__()
-        self.x_min = float(x_min)
-        self.y_min = float(y_min)
-        self.x_max = float(x_max)
-        self.y_max = float(y_max)
-        self.angle = float(angle)
+    def __post_init__(self):
+        self.x_min = float(self.x_min)
+        self.y_min = float(self.y_min)
+        self.x_max = float(self.x_max)
+        self.y_max = float(self.y_max)
+        self.angle = float(self.angle)
         if self.x_min > self.x_max:
             raise ValueError("x_min must be less than x_max")
         if self.y_min > self.y_max:
@@ -208,7 +206,6 @@ class Box(Base):
         return np.array([self.x_min, self.y_min, width, height, self.angle])
 
     def area(self):
-        """Calculate the area of the bounding box."""
         return (self.x_max - self.x_min) * (self.y_max - self.y_min)
 
     def to_coco(self, **kwargs):
@@ -305,34 +302,32 @@ class Box(Base):
 
 @dataclass
 class Polygon(Base):
-    points: Union[List[List[int]], List[List[float]], np.ndarray]
+    points: Union[List[List[int]], List[List[float]], np.ndarray] = None
 
-    def __init__(self, points: Union[List[List[int]], List[List[float]], np.ndarray] = None):
-        super().__init__()
-        if points is None:
-            points = []
-        if isinstance(points, np.ndarray):
-            points = points.astype(float).tolist()
-        self.points = points
+    def __post_init__(self):
+        if self.points is None:
+            self.points = []
+        elif isinstance(self.points, np.ndarray):
+            self.points = self.points.astype(float).tolist()
 
     @classmethod
     def from_dict(cls, data: dict) -> "Polygon":
         return cls(**data)
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
+        rx = new_w / orig_w if orig_w else 1
+        ry = new_h / orig_h if orig_h else 1
         for point in self.points:
-            p = Point2d(x=point[0], y=point[1])
-            p = p.resize(orig_h, orig_w, new_h, new_w)
-            point[0], point[1] = p.x, p.y
+            point[0] *= rx
+            point[1] *= ry
         return self
 
     def pad(self, **kwargs):
         pl = kwargs.get("pl", 0)
         pt = kwargs.get("pt", 0)
         for point in self.points:
-            p = Point2d(x=point[0], y=point[1])
-            p = p.pad(pl=pl, pt=pt)
-            point[0], point[1] = p.x, p.y
+            point[0] += pl
+            point[1] += pt
         return self
 
     def flip(self, **kwargs):
@@ -345,16 +340,16 @@ class Polygon(Base):
         if flipy and h <= 0:
             raise ValueError("Height must be positive for vertical flip")
         for point in self.points:
-            p = Point2d(x=point[0], y=point[1])
-            p = p.flip(flipx=flipx, flipy=flipy, h=h, w=w)
-            point[0], point[1] = p.x, p.y
+            if flipx:
+                point[0] = w - point[0]
+            if flipy:
+                point[1] = h - point[1]
         return self
 
     def to_numpy(self):
         return np.array(self.points)
 
     def area(self):
-        """Calculate the area of the polygon using the shoelace formula."""
         coords = self.to_numpy()
         x = coords[:, 0]
         y = coords[:, 1]
@@ -388,36 +383,29 @@ class Polygon(Base):
         return Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max)
 
     def to_rbox(self, **kwargs):
-        rbox = get_rotated_bbox(self.to_numpy().astype(int))
-        x1, y1, w, h, angle = rbox
-        x2, y2 = x1 + w, y1 + h
-        box = Box(x_min=x1, y_min=y1, x_max=x2, y_max=y2, angle=angle)
-        return box
+        x1, y1, w, h, angle = get_rotated_bbox(self.to_numpy().astype(int))
+        return Box(x_min=x1, y_min=y1, x_max=x1 + w, y_max=y1 + h, angle=angle)
 
 
 @dataclass
 class Mask(Base):
-    mask: str
+    mask: Union[str, np.ndarray]
 
-    def __init__(
-        self,
-        mask: Union[str, np.ndarray],
-    ):
-        super().__init__()
-        if not isinstance(mask, (str, np.ndarray)):
+    def __post_init__(self):
+        if not isinstance(self.mask, (str, np.ndarray)):
             raise ValueError("Mask must be a string or numpy array")
-        if isinstance(mask, np.ndarray):
-            self.mask = mask2rle(mask)
-        else:
-            self.mask = mask
+        if isinstance(self.mask, np.ndarray):
+            self.mask = mask2rle(self.mask)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Mask":
-        instance = cls(**data)
-        return instance
+        return cls(**data)
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
-        assert orig_h > 0 and orig_w > 0, "Original height and width must be positive"
+        if orig_h <= 0 or orig_w <= 0:
+            raise ValueError("Original height and width must be positive")
+        if new_h <= 0 or new_w <= 0:
+            raise ValueError("New height and width must be positive")
         mask_array = rle2mask(self.mask, h=orig_h, w=orig_w)
         resized_mask = resize(mask_array, width=new_w, height=new_h)
         self.mask = mask2rle(resized_mask)
@@ -430,7 +418,7 @@ class Mask(Base):
             raise ValueError("Height and width cannot be None")
         pad_h = kwargs.get("pad_h", 0)
         pad_w = kwargs.get("pad_w", 0)
-        mask_array = rle2mask(self.mask, h=kwargs.get("h"), w=kwargs.get("w"))
+        mask_array = rle2mask(self.mask, h=h, w=w)
         mask_array, _, _, _, _ = fit_array_to_size(mask_array, pad_w, pad_h)
         self.mask = mask2rle(mask_array)
         return self
@@ -489,14 +477,12 @@ class Mask(Base):
         return mask
 
     def to_yolo(self, h, w, **kwargs):
-        # Delegate conversion to polygons.
         instances = []
         for polygon in self.to_polygon(h=h, w=w):
             instances.append(polygon.to_yolo(h, w, **kwargs))
         return instances
 
     def area(self, **kwargs):
-        """Calculate the area of the mask."""
         polygons = self.to_polygon(**kwargs)
         area = 0
         for polygon in polygons:
@@ -506,11 +492,10 @@ class Mask(Base):
     def to_box(self, **kwargs):
         h = kwargs.get("h", None)
         w = kwargs.get("w", None)
-
         if h is None or w is None:
             raise ValueError("Height and width cannot be None")
         merge_boxes = kwargs.get("merge_boxes", False)
-        mask_array = self.to_numpy(h=kwargs.get("h"), w=kwargs.get("w"))
+        mask_array = self.to_numpy(h=h, w=w)
         boxes = masks_to_boxes(torch.from_numpy(mask_array).unsqueeze(0))
         if merge_boxes:
             if boxes is not None:
@@ -534,21 +519,15 @@ class Mask(Base):
 @dataclass
 class Label(Base):
     id: str
-    annotation_type: AnnotationType = None
     color: Optional[str] = None
-
-    def __init__(self, id: str, color: Optional[str] = None, annotation_type: AnnotationType = None):
-        super().__init__()
-        self.id = id
-        self.color = color
-        self.annotation_type = annotation_type
+    annotation_type: AnnotationType = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "Label":
         return cls(
             id=data["id"],
-            color=data.get("color", None),
-            annotation_type=data.get("annotation_type", None),
+            color=data.get("color"),
+            annotation_type=data.get("annotation_type"),
         )
 
 
@@ -556,30 +535,16 @@ class Label(Base):
 class Annotation(Base):
     id: str
     label_id: str
-    type: AnnotationType
+    type: AnnotationType = None
     value: Union[Box, Mask, Point2d, Polygon] = None
-    link: Optional[str] = (None,)
-    confidence: Optional[float] = (None,)
-    iou: Optional[float] = (None,)
+    link: Optional[str] = None
+    confidence: Optional[float] = None
+    iou: Optional[float] = None
 
-    def __init__(
-        self,
-        id: str,
-        label_id: str,
-        type: AnnotationType = None,
-        value: Union[Box, Mask, Point2d, Polygon] = None,
-        link: Optional[str] = None,
-        confidence: Optional[float] = None,
-        iou: Optional[float] = None,
-    ):
-        super().__init__()
-        self.id = str(id)
-        self.label_id = str(label_id)
-        self.type = type
-        self.link = link
-        self.confidence = float(confidence) if confidence is not None else None
-        self.iou = iou
-        self.value = value
+    def __post_init__(self):
+        self.id = str(self.id)
+        self.label_id = str(self.label_id)
+        self.confidence = float(self.confidence) if self.confidence is not None else None
 
     @classmethod
     def from_dict(cls, data: dict) -> "Annotation":
@@ -599,23 +564,8 @@ class Annotation(Base):
 class BoxAnnotation(Annotation):
     value: Box
 
-    def __init__(
-        self,
-        id: str,
-        label_id: str,
-        value: Box,
-        link: Optional[str] = None,
-        confidence: Optional[float] = None,
-        iou: Optional[float] = None,
-    ):
-        super().__init__(
-            id=id,
-            label_id=label_id,
-            type=AnnotationType.BOX,
-            link=link,
-            confidence=confidence,
-            iou=iou,
-        )
+    def __init__(self, id, label_id, value, link=None, confidence=None, iou=None):
+        super().__init__(id=id, label_id=label_id, type=AnnotationType.BOX, link=link, confidence=confidence, iou=iou)
         self.value = value
 
     @classmethod
@@ -625,8 +575,8 @@ class BoxAnnotation(Annotation):
             label_id=data["label_id"],
             value=Box.from_dict(data["value"]),
             link=data.get("link"),
-            confidence=data.get("confidence", None),
-            iou=data.get("iou", None),
+            confidence=data.get("confidence"),
+            iou=data.get("iou"),
         )
 
     def to_yolo(self, h, w, **kwargs):
@@ -636,23 +586,8 @@ class BoxAnnotation(Annotation):
 class MaskAnnotation(Annotation):
     value: Mask
 
-    def __init__(
-        self,
-        id: str,
-        label_id: str,
-        value: Mask,
-        link: Optional[str] = None,
-        confidence: Optional[float] = None,
-        iou: Optional[float] = None,
-    ):
-        super().__init__(
-            id=id,
-            label_id=label_id,
-            type=AnnotationType.MASK,
-            link=link,
-            confidence=confidence,
-            iou=iou,
-        )
+    def __init__(self, id, label_id, value, link=None, confidence=None, iou=None):
+        super().__init__(id=id, label_id=label_id, type=AnnotationType.MASK, link=link, confidence=confidence, iou=iou)
         self.value = value
 
     @classmethod
@@ -662,8 +597,8 @@ class MaskAnnotation(Annotation):
             label_id=data["label_id"],
             value=Mask.from_dict(data["value"]),
             link=data.get("link"),
-            confidence=data.get("confidence", None),
-            iou=data.get("iou", None),
+            confidence=data.get("confidence"),
+            iou=data.get("iou"),
         )
 
     def to_yolo(self, h, w, **kwargs):
@@ -673,24 +608,8 @@ class MaskAnnotation(Annotation):
 class KeypointAnnotation(Annotation):
     value: Point2d
 
-    def __init__(
-        self,
-        id: str,
-        label_id: str,
-        value: Point2d,
-        link: Optional[str] = None,
-        confidence: Optional[float] = None,
-        iou: Optional[float] = None,
-        bounding_box_id: Optional[str] = None,
-    ):
-        super().__init__(
-            id=id,
-            label_id=label_id,
-            type=AnnotationType.KEYPOINT,
-            link=link,
-            confidence=confidence,
-            iou=iou,
-        )
+    def __init__(self, id, label_id, value, link=None, confidence=None, iou=None, bounding_box_id=None):
+        super().__init__(id=id, label_id=label_id, type=AnnotationType.KEYPOINT, link=link, confidence=confidence, iou=iou)
         self.bounding_box_id = bounding_box_id
         self.value = value
 
@@ -701,9 +620,9 @@ class KeypointAnnotation(Annotation):
             label_id=data["label_id"],
             value=Point2d.from_dict(data["value"]),
             link=data.get("link"),
-            confidence=data.get("confidence", None),
-            iou=data.get("iou", None),
-            bounding_box_id=data.get("bounding_box_id", None),
+            confidence=data.get("confidence"),
+            iou=data.get("iou"),
+            bounding_box_id=data.get("bounding_box_id"),
         )
 
     def to_yolo(self, h, w, **kwargs):
@@ -713,23 +632,8 @@ class KeypointAnnotation(Annotation):
 class PolygonAnnotation(Annotation):
     value: Polygon
 
-    def __init__(
-        self,
-        id: str,
-        label_id: str,
-        value: Polygon,
-        link: Optional[Union[str, None]] = None,
-        confidence: Optional[float] = None,
-        iou: Optional[float] = None,
-    ):
-        super().__init__(
-            id=id,
-            label_id=label_id,
-            type=AnnotationType.POLYGON,
-            link=link,
-            confidence=confidence,
-            iou=iou,
-        )
+    def __init__(self, id, label_id, value, link=None, confidence=None, iou=None):
+        super().__init__(id=id, label_id=label_id, type=AnnotationType.POLYGON, link=link, confidence=confidence, iou=iou)
         self.value = value
 
     @classmethod
@@ -739,8 +643,8 @@ class PolygonAnnotation(Annotation):
             label_id=data["label_id"],
             value=Polygon.from_dict(data["value"]),
             link=data.get("link"),
-            confidence=data.get("confidence", None),
-            iou=data.get("iou", None),
+            confidence=data.get("confidence"),
+            iou=data.get("iou"),
         )
 
     def to_yolo(self, h, w, **kwargs):
@@ -753,25 +657,12 @@ class FileAnnotations(Base):
     path: str  # File path
     height: int  # File height
     width: int  # File width
-    annotations: List[Annotation]
-    predictions: List[Annotation]
+    annotations: List[Annotation] = None
+    predictions: List[Annotation] = None
 
-    def __init__(
-        self,
-        id: str,
-        path: str,
-        height: int,
-        width: int,
-        annotations: List[Annotation] = None,
-        predictions: List[Annotation] = None,
-    ):
-        super().__init__()
-        self.id = id
-        self.path = path
-        self.height = height
-        self.width = width
-        self.annotations = annotations or []
-        self.predictions = predictions or []
+    def __post_init__(self):
+        self.annotations = self.annotations or []
+        self.predictions = self.predictions or []
 
     @classmethod
     def from_dict(cls, data: dict) -> "FileAnnotations":
@@ -800,10 +691,13 @@ class FileAnnotations(Base):
         self.width = width
         return self
 
-    def delete_annotation(self, annotation_id: str, list_type: str = "annotations") -> bool:
-        if list_type not in ["annotations", "predictions"]:
+    def _get_target_list(self, list_type: str) -> List[Annotation]:
+        if list_type not in ("annotations", "predictions"):
             raise ValueError("list_type must be either 'annotations' or 'predictions'")
-        target_list = self.annotations if list_type == "annotations" else self.predictions
+        return self.annotations if list_type == "annotations" else self.predictions
+
+    def delete_annotation(self, annotation_id: str, list_type: str = "annotations") -> bool:
+        target_list = self._get_target_list(list_type)
         for index, ann in enumerate(target_list):
             if ann.id == annotation_id:
                 del target_list[index]
@@ -813,17 +707,13 @@ class FileAnnotations(Base):
         return False
 
     def get_annotations_by_type(self, annotation_type: AnnotationType, list_type: str = "annotations") -> List[Annotation]:
-        if list_type not in ["annotations", "predictions"]:
-            raise ValueError("list_type must be either 'annotations' or 'predictions'")
-        target_list = self.annotations if list_type == "annotations" else self.predictions
-        return [ann for ann in target_list if ann.type == annotation_type]
+        return [ann for ann in self._get_target_list(list_type) if ann.type == annotation_type]
 
     def update_annotations(self, annotations: List[Annotation], list_type: str = "annotations"):
-        if list_type not in ["annotations", "predictions"]:
-            raise ValueError("list_type must be either 'annotations' or 'predictions'")
         if list_type == "annotations":
             self.annotations = annotations
         else:
+            self._get_target_list(list_type)  # validates list_type
             self.predictions = annotations
 
     def assign_keypoints(self, target_ids=None):
@@ -906,16 +796,13 @@ class FileAnnotations(Base):
         for annotation in self.annotations:
             if annotation.type == AnnotationType.KEYPOINT:
                 logger.debug(f"Converting keypoint {annotation.id} to YOLO format with bounding box {annotation.bounding_box_id}")
-                box = yolo_annotations_map.get(annotation.bounding_box_id, None)
+                box = yolo_annotations_map.get(annotation.bounding_box_id)
 
                 if box is None:
                     raise Exception(f"Bounding box {annotation.bounding_box_id} not found for keypoint {annotation.id}")
-                idx = yolo_annotations.index(box)
                 yolo_kp = annotation.to_yolo(h, w, use_obb=use_obb)
-                # Add the keypoint to the box annotation
+                # Extend the box annotation in-place (list reference is shared with yolo_annotations)
                 box.extend(np.array(yolo_kp).flatten().tolist())
-                # Update the box annotation in the list
-                yolo_annotations[idx] = box
 
         if len(yolo_annotations) == 0:
             logger.debug(f"No annotations found for file {self.path}")
