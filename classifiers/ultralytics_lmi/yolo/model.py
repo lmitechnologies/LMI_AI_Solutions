@@ -47,7 +47,7 @@ class YoloCls(YoloCore, ClassifierBase):
             if hasattr(self.model.model, "transforms") and hasattr(self.model.model.transforms.transforms[0], "size")
             else False
         )
-        self.transforms = classify_transforms(self.image_size) if updated or not self.model.pt else self.model.model.transforms
+        self.transforms = classify_transforms(self.image_size) if updated or self.model.format != "pt" else self.model.model.transforms
 
     @smart_inference_mode()
     def preprocess(self, img):
