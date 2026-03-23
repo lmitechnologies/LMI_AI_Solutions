@@ -1,8 +1,11 @@
 name: Build and Publish Test Docker Image
 
 on:
-  schedule:
-    - cron: '0 0 * * 0' # Weekly on Sunday at midnight
+  push:
+    branches: ["ais"]
+    paths:
+      - "tests/dockerfile.ci"
+      - "tests/requirements-ci.txt"
   workflow_dispatch:
 
 concurrency:

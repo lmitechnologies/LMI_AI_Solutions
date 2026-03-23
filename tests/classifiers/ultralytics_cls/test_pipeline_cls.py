@@ -10,13 +10,15 @@ from classifiers.ultralytics_lmi.yolo.model import YoloCls
 # Asset paths
 MODEL_PATH = os.path.abspath("tests/assets/models/cls/yolo11n-cls.pt")
 IMAGE_DIR = os.path.abspath("tests/assets/images/coco")
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+IMGSZ = [224, 224]
 
 logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
 def classifier():
-    return YoloCls(MODEL_PATH)
+    return YoloCls(MODEL_PATH, device=DEVICE, image_size=IMGSZ)
 
 
 @pytest.fixture
@@ -26,7 +28,7 @@ def sample_image():
     # Load first image and resize to model's expected size for consistency
     img = cv2.imread(image_files[0])
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = cv2.resize(img, (224, 224))
+    img = cv2.resize(img, (IMGSZ[0], IMGSZ[1]))
     return img
 
 

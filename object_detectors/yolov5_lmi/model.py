@@ -37,7 +37,7 @@ from utils.torch_utils import smart_inference_mode  # noqa: E402
 class Yolov5(ODBase):
     logger = logging.getLogger(__name__)
 
-    def __init__(self, weights: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, weights: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         """
         args:
             weights(str): the path to the tensorRT engine file
@@ -49,7 +49,7 @@ class Yolov5(ODBase):
         self.image_size = kwargs.get("image_size", [640, 640])
         # set device
         self.device = torch.device("cpu")
-        if device == "gpu":
+        if device.lower() == "cuda":
             if torch.cuda.is_available():
                 self.device = torch.device("cuda:0")
             else:

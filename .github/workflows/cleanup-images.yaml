@@ -1,7 +1,8 @@
 name: Cleanup Old Images
 on:
-  schedule:
-    - cron: '0 2 * * 0'  # Weekly on Sunday at 2 AM
+  workflow_run:
+    workflows: ["Build and Publish Test Docker Image"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -19,6 +20,7 @@ concurrency:
 
 jobs:
   cleanup:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

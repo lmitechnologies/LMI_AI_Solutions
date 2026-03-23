@@ -25,19 +25,15 @@ from lmi_common.yolo_core import YoloCore
 class YoloCls(YoloCore, ClassifierBase):
     logger = logging.getLogger("yolo-cls")
 
-    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         """init the model
 
         Args:
             model_path (str): the path to the model_path file.
-            device (str, optional): _description_. Defaults to 'gpu'.
+            device (str, optional): 'cuda', or 'cpu'. Defaults to 'cuda'.
             data (str, optional): the path to dataset yaml file. Defaults to None.
             fp16 (bool, optional): use fp16 precision. Defaults to False.
-            imgsz (list, optional): input image size [h,w]. Defaults to [224,224].
-            crop_fraction(float, optional): crop fraction. Defaults to 1.
 
-        Raises:
-            FileNotFoundError: _description_
         """
         YoloCore.__init__(self, model_path, device, data, fp16, **kwargs)
         self.task = "classify"
@@ -47,7 +43,7 @@ class YoloCls(YoloCore, ClassifierBase):
             if hasattr(self.model.model, "transforms") and hasattr(self.model.model.transforms.transforms[0], "size")
             else False
         )
-        self.transforms = classify_transforms(self.image_size) if updated or not self.model.pt else self.model.model.transforms
+        self.transforms = classify_transforms(self.image_size) if updated or self.model.format != "pt" else self.model.model.transforms
 
     @smart_inference_mode()
     def preprocess(self, img):

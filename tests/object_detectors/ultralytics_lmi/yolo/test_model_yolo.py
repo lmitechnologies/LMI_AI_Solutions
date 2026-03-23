@@ -17,7 +17,8 @@ COCO_DIR = "tests/assets/images/coco"
 DOTA8_DIR = "tests/assets/images/dota8"
 DOTA_DIR = "tests/assets/images/dota"
 OUT_DIR = "tests/outputs/od/ultralytics/yolo"
-DEVICE = "gpu" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+IMGSZ = [640, 640]
 
 OD_DET_MODELS = [
     "tests/assets/models/od/ultralytics/yolo26n.pt",
@@ -61,7 +62,7 @@ def yolo_models():
     ]
     model_classes = [Yolo, YoloSeg, YoloObb, YoloObb, YoloPose]
     for k, ml, mc in zip(keys, model_lists, model_classes):
-        models[k] = [mc(model, device=DEVICE) for model in ml]
+        models[k] = [mc(model, device=DEVICE, image_size=IMGSZ) for model in ml]
     return models
 
 
@@ -86,7 +87,7 @@ def yolo_models_api():
                     task=task,
                     framework="ultralytics",
                     model_path=model,
-                    image_size=[640, 640],
+                    image_size=IMGSZ,
                 ),
                 device=DEVICE,
             )
@@ -160,10 +161,9 @@ def imgs_dota8():
 
 class Test_Yolo_Det:
     def test_compare_with_ultralytics(self, imgs_coco):
-        device = "cpu"
         for model_path in OD_DET_MODELS:
             ults_model = YOLO(model_path)
-            our_model = Yolo(model_path, device=device)
+            our_model = Yolo(model_path, device=DEVICE, image_size=IMGSZ)
             for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -171,7 +171,7 @@ class Test_Yolo_Det:
                     conf=0.5,
                     iou=0.4,
                     max_det=300,
-                    device=device,
+                    device=DEVICE,
                 )
                 ults_out = results[0].cpu().numpy()
 
@@ -213,10 +213,9 @@ class Test_Yolo_Det:
 
 class Test_Yolo_Seg:
     def test_compare_with_ultralytics(self, imgs_coco):
-        device = "cpu"
         for model_path in OD_SEG_MODELS:
             ults_model = YOLO(model_path)
-            our_model = YoloSeg(model_path, device=device)
+            our_model = YoloSeg(model_path, device=DEVICE, image_size=IMGSZ)
             for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -225,7 +224,7 @@ class Test_Yolo_Seg:
                     iou=0.4,
                     max_det=300,
                     retina_masks=True,
-                    device=device,
+                    device=DEVICE,
                 )
                 ults_out = results[0].cpu().numpy()
 
@@ -271,10 +270,9 @@ class Test_Yolo_Seg:
 
 class Test_Yolo_Obb:
     def compare_with_ultralytics(self, imgs, model_paths):
-        device = "cpu"
         for model_path in model_paths:
             ults_model = YOLO(model_path)
-            our_model = YoloObb(model_path, device=device)
+            our_model = YoloObb(model_path, device=DEVICE, image_size=IMGSZ)
             for _img, resized, _op in zip(*imgs):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -282,7 +280,7 @@ class Test_Yolo_Obb:
                     conf=0.5,
                     iou=0.4,
                     max_det=300,
-                    device=device,
+                    device=DEVICE,
                 )
                 ults_out = results[0].cpu().numpy()
 
@@ -356,10 +354,9 @@ class Test_Yolo_Obb:
 
 class Test_Yolo_Pose:
     def test_compare_with_ultralytics(self, imgs_coco):
-        device = "cpu"
         for model_path in OD_POSE_MODELS:
             ults_model = YOLO(model_path)
-            our_model = YoloPose(model_path, device=device)
+            our_model = YoloPose(model_path, device=DEVICE, image_size=IMGSZ)
             for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -367,7 +364,7 @@ class Test_Yolo_Pose:
                     conf=0.5,
                     iou=0.4,
                     max_det=300,
-                    device=device,
+                    device=DEVICE,
                 )
                 ults_out = results[0].cpu().numpy()
 

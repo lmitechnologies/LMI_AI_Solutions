@@ -8,11 +8,11 @@ WORKDIR /app
 
 RUN pip install tabulate
 RUN pip install pytest
-RUN pip install 'ultralytics==8.4.21'
+RUN pip install 'ultralytics==8.4.24'
 RUN pip install albumentations
 RUN pip install tensorboard
 RUN pip install numba
-RUN pip install rfdetr
+RUN pip install 'rfdetr<1.6.0'
 
 
 # Installing from anomalib src requires latest pip 

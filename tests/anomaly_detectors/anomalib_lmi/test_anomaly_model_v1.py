@@ -28,6 +28,7 @@ MODEL_PATH = "tests/assets/models/ad/model_v1.pt"
 TRACED_MODEL_PATH = "tests/assets/models/ad/model_v1_trace.pt"
 OUTPUT_PATH = "tests/outputs/ad/anomalib_v1"
 USE_GPU = torch.cuda.is_available()
+DEVICE = "cuda" if USE_GPU else "cpu"
 BASE_CONFIG = {
     "framework": "anomalib1",
     "model_name": "padim",
@@ -83,9 +84,9 @@ def test_compare_results_with_anomalib():
     """
     compare prediction results between current implementation and anomalib
     """
-    model1 = TorchInferencer(MODEL_PATH)
-    model2 = AnomalyModel2(MODEL_PATH)
-    model3 = AnomalyModel2(TRACED_MODEL_PATH)
+    model1 = TorchInferencer(MODEL_PATH, device=DEVICE)
+    model2 = AnomalyModel2(MODEL_PATH, device=DEVICE)
+    model3 = AnomalyModel2(TRACED_MODEL_PATH, device=DEVICE)
     compare_results(model1, [model2, model3])
 
 
@@ -93,13 +94,13 @@ def test_compare_results_with_anomalib_api():
     """
     compare prediction results between current implementation and anomalib
     """
-    model1 = TorchInferencer(MODEL_PATH)
-    model2 = AnomalyDetector(BASE_CONFIG)
+    model1 = TorchInferencer(MODEL_PATH, device=DEVICE)
+    model2 = AnomalyDetector(BASE_CONFIG, device=DEVICE)
     config = {
         **BASE_CONFIG,
         "model_path": TRACED_MODEL_PATH,
     }  # replace model path with traced model path
-    model3 = AnomalyDetector(config)
+    model3 = AnomalyDetector(config, device=DEVICE)
     compare_results(model1, [model2, model3])
 
 
@@ -108,7 +109,7 @@ def test_warmup(init_args: Tuple, warmup_size: List[int]):
     """
     Test AnomalyModel2 warmup with default and specific sizes.
     """
-    ad = AnomalyModel2(MODEL_PATH, *init_args)
+    ad = AnomalyModel2(MODEL_PATH, *init_args, device=DEVICE)
     ad.warmup()
     ad.warmup(warmup_size)
 
@@ -118,7 +119,7 @@ def test_warmup_api(warmup_size: List[int]):
     """
     Test warmup with different input dimensions.
     """
-    ad = AnomalyDetector(BASE_CONFIG, 224, 112)
+    ad = AnomalyDetector(BASE_CONFIG, 224, 112, device=DEVICE)
     ad.warmup()
     ad.warmup(warmup_size)
 
@@ -135,7 +136,7 @@ def test_model(init_args: Tuple, sub_dir: str):
     """
     Test AnomalyModel2 with various initialization parameters.
     """
-    model = AnomalyModel2(*init_args)
+    model = AnomalyModel2(*init_args, device=DEVICE)
 
     # specific output path if sub_dir exists, else default OUTPUT_PATH
     save_path = os.path.join(OUTPUT_PATH, sub_dir) if sub_dir else OUTPUT_PATH
@@ -147,7 +148,7 @@ def test_model_api(extra_args: Tuple):
     """
     Test AnomalyDetector API with and without resize arguments.
     """
-    ad = AnomalyDetector(BASE_CONFIG, *extra_args)
+    ad = AnomalyDetector(BASE_CONFIG, *extra_args, device=DEVICE)
     ad.test(DATA_PATH, OUTPUT_PATH)
 
 
@@ -175,7 +176,7 @@ def test_annotate(
         annot[indices] = img[indices]
         return annot
 
-    ad = AnomalyModel2(MODEL_PATH)
+    ad = AnomalyModel2(MODEL_PATH, device=DEVICE)
     for _ in range(1):
         ad.warmup()
 
@@ -290,7 +291,7 @@ def test_predict_invalid_overlap_mode():
     """
     Test that AnomalyModel2.predict raises ValueError for invalid overlap modes.
     """
-    ad = AnomalyModel2(MODEL_PATH, tile=224, stride=224)
+    ad = AnomalyModel2(MODEL_PATH, tile=224, stride=224, device=DEVICE)
     test_img = np.zeros((224, 224, 3), dtype=np.uint8)
 
     with pytest.raises(ValueError, match="Invalid overlap mode"):
@@ -302,7 +303,7 @@ def test_predict_batch_size_edge_cases(batch_size):
     """
     Test mini-batch inference with various batch sizes relative to number of tiles.
     """
-    ad = AnomalyModel2(MODEL_PATH, tile=224, stride=224)
+    ad = AnomalyModel2(MODEL_PATH, tile=224, stride=224, device=DEVICE)
     test_img = np.zeros((448, 448, 3), dtype=np.uint8)
 
     inference_settings = {"inference_batch_size": batch_size}
@@ -314,7 +315,7 @@ def test_predict_input_variants():
     """
     Test predict with different input formats (numpy, torch tensor, grayscale).
     """
-    ad = AnomalyModel2(MODEL_PATH)
+    ad = AnomalyModel2(MODEL_PATH, device=DEVICE)
 
     # Numpy RGB
     img_np = np.zeros((224, 224, 3), dtype=np.uint8)
@@ -331,7 +332,7 @@ def test_predict_error_handling(monkeypatch):
     """
     Test that AnomalyModel2.predict raises RuntimeError when _infer returns None.
     """
-    ad = AnomalyModel2(MODEL_PATH)
+    ad = AnomalyModel2(MODEL_PATH, device=DEVICE)
     test_img = np.zeros((224, 224, 3), dtype=np.uint8)
 
     # Mock _infer to return None
