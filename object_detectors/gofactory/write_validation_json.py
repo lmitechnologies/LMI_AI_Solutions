@@ -50,7 +50,7 @@ def parse_annotations(annotations: list[Annotation], h: int, w: int, model_type:
             masks.append(mask)
         elif annot.type == AnnotationType.POLYGON:
             if model_type == "InstanceSegmentation":
-                obj = annot.value.to_mask(h=h, w=w, mask_type=AnnotationType.MASK)
+                obj = annot.value.to_mask(h=h, w=w)
                 mask = obj.to_numpy(h=h, w=w)
                 masks.append(mask)
             elif model_type == "OrientedObjectDetection":
@@ -134,7 +134,7 @@ def write_json(
         if model_type == "OrientedObjectDetection":
             for i, annot in enumerate(file_annot.annotations):
                 if annot.type == AnnotationType.BOX:
-                    poly = annot.value.to_mask(mask_type=AnnotationType.POLYGON)
+                    poly = annot.value.to_polygon()
                     converted_annots[i] = Annotation(
                         id=annot.id,
                         label_id=annot.label_id,

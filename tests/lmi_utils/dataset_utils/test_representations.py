@@ -8,7 +8,6 @@ import pytest
 
 from lmi_utils.dataset_utils.mask_encoder import mask2rle
 from lmi_utils.dataset_utils.representations import (
-    AnnotationType,
     Box,
     BoxAnnotation,
     Dataset,
@@ -75,7 +74,7 @@ def test_box_resize_and_pad():
 
 def test_box_to_mask():
     b = Box(10, 20, 50, 80, 0)
-    m = b.to_mask(h=100, w=100, mask_type=AnnotationType.MASK)
+    m = b.to_mask(h=100, w=100)
     assert isinstance(m, Mask)
     mask = np.zeros((100, 100), dtype=np.uint8)
     mask[20:80, 10:50] = 1
@@ -83,13 +82,13 @@ def test_box_to_mask():
 
     # test rotated box
     b = Box(10, 20, 50, 80, 30)  # 30 degrees rotation
-    m = b.to_mask(h=100, w=100, mask_type=AnnotationType.MASK)
+    m = b.to_mask(h=100, w=100)
     assert isinstance(m, Mask)
     mask = np.zeros((100, 100), dtype=np.uint8)
     pts = rotate(10, 20, 50 - 10, 80 - 20, 30)
     cv2.fillPoly(mask, [pts], 1)
     assert np.allclose(m.to_numpy(h=100, w=100), mask)
-    poly = b.to_mask(mask_type=AnnotationType.POLYGON)
+    poly = b.to_polygon()
     assert np.allclose(poly.to_numpy(), pts)
 
 
