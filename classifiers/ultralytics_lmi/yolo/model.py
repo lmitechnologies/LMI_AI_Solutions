@@ -30,14 +30,10 @@ class YoloCls(YoloCore, ClassifierBase):
 
         Args:
             model_path (str): the path to the model_path file.
-            device (str, optional): _description_. Defaults to 'gpu'.
+            device (str, optional): 'gpu' or 'cpu'. Defaults to 'gpu'.
             data (str, optional): the path to dataset yaml file. Defaults to None.
             fp16 (bool, optional): use fp16 precision. Defaults to False.
-            imgsz (list, optional): input image size [h,w]. Defaults to [224,224].
-            crop_fraction(float, optional): crop fraction. Defaults to 1.
 
-        Raises:
-            FileNotFoundError: _description_
         """
         YoloCore.__init__(self, model_path, device, data, fp16, **kwargs)
         self.task = "classify"

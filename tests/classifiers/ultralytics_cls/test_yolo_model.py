@@ -3,6 +3,7 @@ import os
 
 import cv2
 import pytest
+import torch
 
 from classifiers.cls_core.classifier import Classifier
 from classifiers.ultralytics_lmi.yolo.model import YoloCls
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 IMG_DIR = "tests/assets/images/coco"
 OUT_DIR = "tests/outputs/cls/yolov8"
 MODEL_SZ = 224
+DEVICE = "gpu" if torch.cuda.is_available() else "cpu"
 
 CLS_MODELS = [
     "tests/assets/models/cls/yolo26n-cls.pt",
@@ -22,7 +24,7 @@ CLS_MODELS = [
 
 @pytest.fixture
 def model_det():
-    return [YoloCls(model) for model in CLS_MODELS]
+    return [YoloCls(model, device=DEVICE, image_size=[MODEL_SZ, MODEL_SZ]) for model in CLS_MODELS]
 
 
 @pytest.fixture
@@ -36,7 +38,8 @@ def model_det_api():
                 framework="ultralytics",
                 model_path=model,
                 image_size=[MODEL_SZ, MODEL_SZ],
-            )
+            ),
+            device=DEVICE,
         )
         for model in CLS_MODELS
     ]
