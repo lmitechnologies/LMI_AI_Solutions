@@ -2,13 +2,16 @@ import os
 
 import cv2
 import pytest
+import torch
 
 from lmi_utils.pipeline_base.pipeline_base import PipelineBase
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 class PipelineOD(PipelineBase):
     def load(self, model_roles: dict, configs: dict):
-        self.load_models(model_roles, configs)
+        self.load_models(model_roles, configs, device=DEVICE)
 
     def warm_up(self, configs: dict):
         pass
@@ -104,7 +107,7 @@ def test_pipeline_OD(preprocessing_steps, expected_types):
 
 class PipelineAD(PipelineBase):
     def load(self, model_roles: dict, configs: dict):
-        self.load_models(model_roles, configs)
+        self.load_models(model_roles, configs, device=DEVICE)
 
     def warm_up(self, configs: dict):
         pass

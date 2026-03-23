@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 IMG_DIR = "tests/assets/images/coco"
 OUT_DIR = "tests/outputs/cls/yolov8"
 MODEL_SZ = 224
-DEVICE = "gpu" if torch.cuda.is_available() else "cpu"
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 CLS_MODELS = [
     "tests/assets/models/cls/yolo26n-cls.pt",

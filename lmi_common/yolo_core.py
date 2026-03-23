@@ -11,11 +11,11 @@ class YoloCore:
     logger = logging.getLogger("yolo-core")
     task = ""
 
-    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         """init the model
         Args:
             model_path (str): the path to the model_path file.
-            device (str, optional): the device to be used, either 'gpu' or 'cpu'. Defaults to 'gpu'.
+            device (str, optional): the device to be used, either 'cuda' or 'cpu'. Defaults to 'cuda'.
             data (str, optional): the path to dataset yaml file. Defaults to None.
             fp16 (bool, optional): Whether to use fp16. Defaults to False.
         Raises:
@@ -58,13 +58,13 @@ class YoloCore:
         """set up the computation device (CPU or GPU).
 
         Args:
-            device (str): The device to be used, either 'cpu' or 'gpu'.
+            device (str): The device to be used, either 'cpu' or 'cuda'.
         """
-        if device.lower() not in ["cpu", "gpu"]:
-            raise ValueError(f'Invalid device: {device}. Supported devices are "cpu" and "gpu".')
+        if device.lower() not in ["cpu", "cuda"]:
+            raise ValueError(f'Invalid device: {device}. Supported devices are "cpu" and "cuda".')
 
         self.device = torch.device("cpu")
-        if device.lower() in ["gpu", "cuda"]:
+        if device.lower() == "cuda":
             if torch.cuda.is_available():
                 self.device = torch.device("cuda:0")
             else:

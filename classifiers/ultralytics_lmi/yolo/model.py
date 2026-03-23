@@ -25,12 +25,12 @@ from lmi_common.yolo_core import YoloCore
 class YoloCls(YoloCore, ClassifierBase):
     logger = logging.getLogger("yolo-cls")
 
-    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         """init the model
 
         Args:
             model_path (str): the path to the model_path file.
-            device (str, optional): 'gpu' or 'cpu'. Defaults to 'gpu'.
+            device (str, optional): 'cuda', or 'cpu'. Defaults to 'cuda'.
             data (str, optional): the path to dataset yaml file. Defaults to None.
             fp16 (bool, optional): use fp16 precision. Defaults to False.
 

@@ -48,11 +48,11 @@ def to_numpy(data):
 class Yolo(YoloCore, ODBase):
     logger = logging.getLogger("yolo")
 
-    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         """init the model
         Args:
             model_path (str): the path to the model_path file.
-            device (str, optional): the device to be used, either 'gpu' or 'cpu'. Defaults to 'gpu'.
+            device (str, optional): the device to be used, either 'cuda' or 'cpu'. Defaults to 'cuda'.
             data (str, optional): the path to dataset yaml file. Defaults to None.
             fp16 (bool, optional): Whether to use fp16. Defaults to False.
         Raises:
@@ -358,7 +358,7 @@ class Yolo(YoloCore, ODBase):
 class YoloSeg(Yolo):
     logger = logging.getLogger("yolo-seg")
 
-    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.task = "segment"
 
@@ -468,7 +468,7 @@ class YoloSeg(Yolo):
 class YoloObb(Yolo):
     logger = logging.getLogger("yolo-obb")
 
-    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.task = "obb"
 
@@ -530,7 +530,7 @@ class YoloObb(Yolo):
 class YoloPose(Yolo):
     logger = logging.getLogger("yolo-pose")
 
-    def __init__(self, model_path: str, device="gpu", data=None, fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.task = "pose"
 
