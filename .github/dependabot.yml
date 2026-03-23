@@ -3,8 +3,22 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
       time: "04:00"
     open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "pip"
+    directory: "/tests"
+    schedule:
+      interval: "weekly"
+      time: "04:00"
+    open-pull-requests-limit: 3
+    groups:
+      torch:
+        patterns:
+          - "torch"
+          - "torchvision"
     labels:
       - "dependencies"

@@ -30,6 +30,12 @@ DOCS_PATTERNS: list[re.Pattern] = [
     re.compile(r"^\.pre-commit-config\.yaml$"),
 ]
 
+# Files whose change requires rebuilding the CI test Docker images
+REQ_PATTERNS: list[re.Pattern] = [
+    re.compile(r"^tests/requirements-ci\.txt$"),
+    re.compile(r"^tests/dockerfile\.ci$"),
+]
+
 # Files under .github/ are also skipped by default …
 GITHUB_DIR_PATTERNS: list[re.Pattern] = [re.compile(r"^\.github/")]
 
@@ -118,6 +124,13 @@ def main() -> None:
         print(f"   {f}", flush=True)
 
     code_files = [f for f in changed if is_code_file(f)]
+
+    req_files = [f for f in changed if any(p.match(f) for p in REQ_PATTERNS)]
+    if req_files:
+        print("\n🐳 CI image files changed — Docker rebuild required:", flush=True)
+        for f in req_files:
+            print(f"   {f}", flush=True)
+    write_output("req_changed", "true" if req_files else "false")
 
     if not code_files:
         print("\n✅ Only docs/config changed — skipping tests.", flush=True)
