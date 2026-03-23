@@ -4,8 +4,8 @@ scikit-learn
 tensorboard
 numba
 numpy<2.0
-ultralytics==8.4.21
+ultralytics==8.4.24
 onnx
 pytest
 pytest-html
-rfdetr
+rfdetr<1.6.0
