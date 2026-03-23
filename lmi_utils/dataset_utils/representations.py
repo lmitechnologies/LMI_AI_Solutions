@@ -20,6 +20,20 @@ from lmi_utils.label_utils.bbox_utils import get_rotated_bbox, rotate
 logger = logging.getLogger(__name__)
 
 
+def _validate_resize_dims(orig_h: int, orig_w: int, new_h: int, new_w: int):
+    if orig_w <= 0 or orig_h <= 0:
+        raise ValueError("Original dimensions must be positive")
+    if new_w <= 0 or new_h <= 0:
+        raise ValueError("New dimensions must be positive")
+
+
+def _validate_flip_dims(flipx: bool, flipy: bool, h: int, w: int):
+    if flipx and w <= 0:
+        raise ValueError("Width must be positive for horizontal flip")
+    if flipy and h <= 0:
+        raise ValueError("Height must be positive for vertical flip")
+
+
 class AnnotationType(enum.Enum):
     BOX = "Box"
     POLYGON = "Polygon"
@@ -74,8 +88,9 @@ class Point2d(Base):
         return cls(x=data["x"], y=data["y"])
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
-        rx = new_w / orig_w if orig_w else 1
-        ry = new_h / orig_h if orig_h else 1
+        _validate_resize_dims(orig_h, orig_w, new_h, new_w)
+        rx = new_w / orig_w
+        ry = new_h / orig_h
         self.x *= rx
         self.y *= ry
         return self
@@ -92,10 +107,7 @@ class Point2d(Base):
         flipy = kwargs.get("flipy", False)
         h = kwargs.get("h", 0)
         w = kwargs.get("w", 0)
-        if flipx and w <= 0:
-            raise ValueError("Width must be positive for horizontal flip")
-        if flipy and h <= 0:
-            raise ValueError("Height must be positive for vertical flip")
+        _validate_flip_dims(flipx, flipy, h, w)
         if flipx:
             self.x = w - self.x
         if flipy:
@@ -136,10 +148,7 @@ class Box(Base):
         return cls(**data)
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
-        if orig_w <= 0 or orig_h <= 0:
-            raise ValueError("Original dimensions must be positive")
-        if new_w <= 0 or new_h <= 0:
-            raise ValueError("New dimensions must be positive")
+        _validate_resize_dims(orig_h, orig_w, new_h, new_w)
         rx = new_w / orig_w
         ry = new_h / orig_h
         self.x_min *= rx
@@ -162,11 +171,7 @@ class Box(Base):
         flipy = kwargs.get("flipy", False)
         h0 = kwargs.get("h", 0)
         w0 = kwargs.get("w", 0)
-
-        if flipx and w0 <= 0:
-            raise ValueError("Width must be positive for horizontal flip")
-        if flipy and h0 <= 0:
-            raise ValueError("Height must be positive for vertical flip")
+        _validate_flip_dims(flipx, flipy, h0, w0)
 
         if self.angle != 0:
             # Get corner points of rotated box
@@ -315,8 +320,9 @@ class Polygon(Base):
         return cls(**data)
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
-        rx = new_w / orig_w if orig_w else 1
-        ry = new_h / orig_h if orig_h else 1
+        _validate_resize_dims(orig_h, orig_w, new_h, new_w)
+        rx = new_w / orig_w
+        ry = new_h / orig_h
         for point in self.points:
             point[0] *= rx
             point[1] *= ry
@@ -335,10 +341,7 @@ class Polygon(Base):
         flipy = kwargs.get("flipy", False)
         h = kwargs.get("h", 0)
         w = kwargs.get("w", 0)
-        if flipx and w <= 0:
-            raise ValueError("Width must be positive for horizontal flip")
-        if flipy and h <= 0:
-            raise ValueError("Height must be positive for vertical flip")
+        _validate_flip_dims(flipx, flipy, h, w)
         for point in self.points:
             if flipx:
                 point[0] = w - point[0]
@@ -400,20 +403,14 @@ class Mask(Base):
         return cls(**data)
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
-        if orig_h <= 0 or orig_w <= 0:
-            raise ValueError("Original height and width must be positive")
-        if new_h <= 0 or new_w <= 0:
-            raise ValueError("New height and width must be positive")
+        _validate_resize_dims(orig_h, orig_w, new_h, new_w)
         mask_array = rle2mask(self.mask, h=orig_h, w=orig_w)
         resized_mask = resize(mask_array, width=new_w, height=new_h)
         self.mask = mask2rle(resized_mask)
         return self
 
     def pad(self, **kwargs):
-        h = kwargs.get("h", None)
-        w = kwargs.get("w", None)
-        if h is None or w is None:
-            raise ValueError("Height and width cannot be None")
+        h, w = self._require_hw(kwargs)
         pad_h = kwargs.get("pad_h", 0)
         pad_w = kwargs.get("pad_w", 0)
         mask_array = rle2mask(self.mask, h=h, w=w)
@@ -424,10 +421,7 @@ class Mask(Base):
     def flip(self, **kwargs):
         flipx = kwargs.get("flipx", False)
         flipy = kwargs.get("flipy", False)
-        h = kwargs.get("h", 0)
-        w = kwargs.get("w", 0)
-        if h <= 0 or w <= 0:
-            raise ValueError("Height and width must be positive for mask flip")
+        h, w = self._require_hw(kwargs)
         mask_array = rle2mask(self.mask, h=h, w=w)
         if flipx:
             mask_array = np.flip(mask_array, axis=1)
@@ -439,8 +433,8 @@ class Mask(Base):
     def _require_hw(self, kwargs):
         h = kwargs.get("h")
         w = kwargs.get("w")
-        if h is None or w is None:
-            raise ValueError("Height and width cannot be None")
+        if not h or not w or h < 0 or w < 0:
+            raise ValueError("Height and width must be positive")
         return h, w
 
     def to_numpy(self, **kwargs):
@@ -670,11 +664,8 @@ class FileAnnotations(Base):
         return [ann for ann in self._get_target_list(list_type) if ann.type == annotation_type]
 
     def update_annotations(self, annotations: List[Annotation], list_type: str = "annotations"):
-        if list_type == "annotations":
-            self.annotations = annotations
-        else:
-            self._get_target_list(list_type)  # validates list_type
-            self.predictions = annotations
+        self._get_target_list(list_type)  # validates list_type
+        setattr(self, list_type, annotations)
 
     def assign_keypoints(self, target_ids=None):
         target_ids = target_ids or []
