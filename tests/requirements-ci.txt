@@ -6,6 +6,5 @@ numba==0.63.1
 numpy<2.0
 ultralytics==8.4.24
 onnx==1.20.1
-pytest
-pytest-html
+pytest==9.0.2
 rfdetr<1.6.0
