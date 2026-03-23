@@ -34,6 +34,14 @@ def _validate_flip_dims(flipx: bool, flipy: bool, h: int, w: int):
         raise ValueError("Height must be positive for vertical flip")
 
 
+def _require_hw(kwargs):
+    h = kwargs.get("h")
+    w = kwargs.get("w")
+    if not h or not w or h < 0 or w < 0:
+        raise ValueError("Height and width are required and must be positive")
+    return h, w
+
+
 class AnnotationType(enum.Enum):
     BOX = "Box"
     POLYGON = "Polygon"
@@ -166,6 +174,19 @@ class Box(Base):
         self.y_max += pt
         return self
 
+    def _rotated_corners(self, **kwargs) -> np.ndarray:
+        rot_center = kwargs.get("rot_center", "up_left")
+        angle_unit = kwargs.get("angle_unit", "degree")
+        return rotate(
+            x=self.x_min,
+            y=self.y_min,
+            w=self.x_max - self.x_min,
+            h=self.y_max - self.y_min,
+            angle=self.angle,
+            rot_center=rot_center,
+            unit=angle_unit,
+        )
+
     def flip(self, **kwargs):
         flipx = kwargs.get("flipx", False)
         flipy = kwargs.get("flipy", False)
@@ -175,7 +196,7 @@ class Box(Base):
 
         if self.angle != 0:
             # Get corner points of rotated box
-            pts = rotate(*self.to_xywh(), rot_center="up_left", unit="degree")
+            pts = self._rotated_corners(**kwargs)
 
             # Flip points
             if flipx:
@@ -220,20 +241,10 @@ class Box(Base):
     def to_yolo(self, h, w, **kwargs):
         use_obb = kwargs.get("use_obb", False)
 
-        width = self.x_max - self.x_min
-        height = self.y_max - self.y_min
         cx = (self.x_min + self.x_max) / 2
         cy = (self.y_min + self.y_max) / 2
         if self.angle > 0 and use_obb:
-            rotated_coords = rotate(
-                self.x_min,
-                self.y_min,
-                width,
-                height,
-                self.angle,
-                rot_center="up_left",
-                unit="degree",
-            )
+            rotated_coords = self._rotated_corners(**kwargs)
             for p in rotated_coords:
                 if p[0] > w:
                     raise ValueError(f"Rotated point x value {p[0]} is greater than image width {w}")
@@ -264,42 +275,26 @@ class Box(Base):
                 ]
 
     def to_mask(self, **kwargs):
-        mask_type = kwargs.get("mask_type", AnnotationType.MASK)
-        angle_unit = kwargs.get("angle_unit", "degree")
-        rot_center = kwargs.get("rot_center", "up_left")
+        h, w = _require_hw(kwargs)
+        mask = np.zeros((h, w), dtype=np.uint8)
         if self.angle != 0:
-            pts = rotate(
-                self.x_min,
-                self.y_min,
-                self.x_max - self.x_min,
-                self.y_max - self.y_min,
-                self.angle,
-                rot_center,
-                angle_unit,
-            )
-        if mask_type == AnnotationType.MASK:
-            img_h = kwargs.get("h")
-            img_w = kwargs.get("w")
-            mask = np.zeros((img_h, img_w), dtype=np.uint8)
-            if self.angle != 0:
-                cv2.fillPoly(mask, [pts], 1)
-            else:
-                mask[int(self.y_min) : int(self.y_max), int(self.x_min) : int(self.x_max)] = 1
-            return Mask(mask=mask)
-        elif mask_type == AnnotationType.POLYGON:
-            if self.angle == 0:
-                pts = [
-                    [self.x_min, self.y_min],
-                    [self.x_max, self.y_min],
-                    [self.x_max, self.y_max],
-                    [self.x_min, self.y_max],
-                ]
-            return Polygon(points=pts)
+            pts = self._rotated_corners(**kwargs)
+            cv2.fillPoly(mask, [pts], 1)
         else:
-            raise ValueError("Unsupported mask_type in Box.to_mask")
+            mask[int(self.y_min) : int(self.y_max), int(self.x_min) : int(self.x_max)] = 1
+        return Mask(mask=mask)
 
     def to_polygon(self, **kwargs):
-        return self.to_mask(mask_type=AnnotationType.POLYGON, **kwargs)
+        if self.angle != 0:
+            pts = self._rotated_corners(**kwargs)
+        else:
+            pts = [
+                [self.x_min, self.y_min],
+                [self.x_max, self.y_min],
+                [self.x_max, self.y_max],
+                [self.x_min, self.y_max],
+            ]
+        return Polygon(points=pts)
 
     def point_in_box(self, x: int, y: int):
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
@@ -368,9 +363,8 @@ class Polygon(Base):
         return [[point[0] / w, point[1] / h] for point in self.points]
 
     def to_mask(self, **kwargs):
-        img_h = kwargs.get("h")
-        img_w = kwargs.get("w")
-        mask = np.zeros((img_h, img_w), dtype=np.uint8)
+        h, w = _require_hw(kwargs)
+        mask = np.zeros((h, w), dtype=np.uint8)
         pts = self.to_numpy().astype(np.int32)
         cv2.fillPoly(mask, [pts], 1)
         return Mask(mask=mask)
@@ -410,7 +404,7 @@ class Mask(Base):
         return self
 
     def pad(self, **kwargs):
-        h, w = self._require_hw(kwargs)
+        h, w = _require_hw(kwargs)
         pad_h = kwargs.get("pad_h", 0)
         pad_w = kwargs.get("pad_w", 0)
         mask_array = rle2mask(self.mask, h=h, w=w)
@@ -421,7 +415,7 @@ class Mask(Base):
     def flip(self, **kwargs):
         flipx = kwargs.get("flipx", False)
         flipy = kwargs.get("flipy", False)
-        h, w = self._require_hw(kwargs)
+        h, w = _require_hw(kwargs)
         mask_array = rle2mask(self.mask, h=h, w=w)
         if flipx:
             mask_array = np.flip(mask_array, axis=1)
@@ -430,25 +424,18 @@ class Mask(Base):
         self.mask = mask2rle(mask_array)
         return self
 
-    def _require_hw(self, kwargs):
-        h = kwargs.get("h")
-        w = kwargs.get("w")
-        if not h or not w or h < 0 or w < 0:
-            raise ValueError("Height and width must be positive")
-        return h, w
-
     def to_numpy(self, **kwargs):
-        h, w = self._require_hw(kwargs)
+        h, w = _require_hw(kwargs)
         return rle2mask(self.mask, h, w)
 
     def coords(self, **kwargs):
-        h, w = self._require_hw(kwargs)
+        h, w = _require_hw(kwargs)
         mask = self.to_numpy(h=h, w=w)
         ys, xs = np.nonzero(mask == 1)
         return xs.tolist(), ys.tolist()
 
     def to_polygon(self, **kwargs) -> List[Polygon]:
-        h, w = self._require_hw(kwargs)
+        h, w = _require_hw(kwargs)
         mask_array = self.to_numpy(h=h, w=w)
         contours, _ = cv2.findContours(mask_array, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         polygons = [contour.reshape(-1, 2) for contour in contours]
@@ -456,7 +443,7 @@ class Mask(Base):
 
     def to_coco(self, **kwargs):
         """Convert the mask to COCO format."""
-        h, w = self._require_hw(kwargs)
+        h, w = _require_hw(kwargs)
         mask_array = self.to_numpy(h=h, w=w)
         mask = coco_mask.encode(np.asfortranarray(mask_array.astype(np.uint8)))
         mask["counts"] = mask["counts"].decode("utf-8")
@@ -477,7 +464,7 @@ class Mask(Base):
         return area
 
     def to_box(self, **kwargs):
-        h, w = self._require_hw(kwargs)
+        h, w = _require_hw(kwargs)
         merge_boxes = kwargs.get("merge_boxes", False)
         mask_array = self.to_numpy(h=h, w=w)
         boxes = masks_to_boxes(torch.from_numpy(mask_array).unsqueeze(0))
