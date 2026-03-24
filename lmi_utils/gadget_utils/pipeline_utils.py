@@ -680,6 +680,28 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     """
     Create models manifest from a static manifest json file.
     """
+
+    # Helper methods to convert camel case keys to snake case 
+    import re
+    def camel_to_snake(name):
+        """Convert camelCase or PascalCase to snake_case."""
+        name = re.sub(r'(.)([A-Z][a-z]+)', r'\1_\2', name)
+        name = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', name)
+        return name.lower()
+
+    def convert_keys(obj):
+        """Recursively convert dictionary keys from camelCase to snake_case."""
+        if isinstance(obj, dict):
+            return {
+                camel_to_snake(k): convert_keys(v)
+                for k, v in obj.items()
+            }
+        elif isinstance(obj, list):
+            return [convert_keys(i) for i in obj]
+        else:
+            return obj
+    # End helper functions
+
     manifest_path = Path(manifest_json_path).resolve()
     if not manifest_path.exists():
         raise FileNotFoundError(f"Manifest file not found: {manifest_path}")
@@ -687,10 +709,13 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     with open(manifest_path, "r") as f:
         models: List[Dict[str, Any]] = json.load(f)
 
+
     manifest = {}
     keys_to_copy = ["anomaly_size", "threshold_max", "threshold_min", "iou"]
 
     for model in models:
+        # convert camel case to snake
+        model=convert_keys(model)
         role = model.get("model_role")
         if role is None:
             continue
@@ -729,5 +754,7 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
 
         # Add to the manifest
         manifest[role] = model
+
+        
 
     return manifest
