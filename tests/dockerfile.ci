@@ -37,6 +37,6 @@ RUN git clone --depth 1 -b ${ANOMALIB_VERSION} https://github.com/open-edge-plat
     pip install --no-cache-dir ./anomalib && \
     if [ "${ANOMALIB_VERSION}" != "v2.2.0" ]; then \
         pip install --no-cache-dir "jsonargparse==4.27.7" && \
-        anomalib install; \
+        anomalib install --option core; \
     fi && \
     rm -rf anomalib
