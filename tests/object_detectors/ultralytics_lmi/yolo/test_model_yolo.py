@@ -159,11 +159,20 @@ def imgs_dota8():
     return images, resized_images, ops
 
 
+def _assert_batch_scores(out, key, min_conf):
+    """Assert all scores in a batch output are >= min_conf."""
+    for sc_list in out[key]:
+        for sc in sc_list:
+            assert sc >= min_conf
+
+
 class Test_Yolo_Det:
     def test_compare_with_ultralytics(self, imgs_coco):
+        # Force CPU for deterministic exact-equality comparison; GPU inference
+        # can produce non-deterministic NMS ordering across separate model instances.
         for model_path in OD_DET_MODELS:
             ults_model = YOLO(model_path)
-            our_model = Yolo(model_path, device=DEVICE, image_size=IMGSZ)
+            our_model = Yolo(model_path, device="cpu", image_size=IMGSZ)
             for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -171,7 +180,7 @@ class Test_Yolo_Det:
                     conf=0.5,
                     iou=0.4,
                     max_det=300,
-                    device=DEVICE,
+                    device="cpu",
                 )
                 ults_out = results[0].cpu().numpy()
 
@@ -211,12 +220,63 @@ class Test_Yolo_Det:
                     cv2.imwrite(os.path.join(OUT_DIR, f"det-{i}.png"), im_out)
                 i += 1
 
+    def test_predict_batch_empty(self, yolo_models, yolo_models_api):
+        batch = [np.zeros((640, 640, 3), dtype=np.uint8)] * 2
+        for model in yolo_models["det"] + yolo_models_api["det"]:
+            out, _ = model.predict(batch, configs=0.5)
+            assert len(out["boxes"]) == 2
+            assert len(out["boxes"][0]) == 0 and len(out["boxes"][1]) == 0
+            assert len(out["scores"]) == 2
+            assert len(out["scores"][0]) == 0 and len(out["scores"][1]) == 0
+
+    def test_predict_batch(self, yolo_models, yolo_models_api, imgs_coco):
+        _, resized_images, ops_list = imgs_coco
+        if len(resized_images) < 2:
+            pytest.skip("Not enough images for batch test")
+        batch_imgs = resized_images[:2]
+        batch_ops = ops_list[:2]
+
+        for model in yolo_models["det"] + yolo_models_api["det"]:
+            # per-image operators
+            out, _ = model.predict(batch_imgs, configs=0.5, operators=batch_ops)
+            assert len(out["boxes"]) == 2
+            assert len(out["scores"]) == 2
+            assert len(out["classes"]) == 2
+            _assert_batch_scores(out, "scores", 0.5)
+
+            # shared operators (list[dict] applied to all images)
+            out2, _ = model.predict(batch_imgs, configs=0.5, operators=batch_ops[0])
+            assert len(out2["boxes"]) == 2
+
+            # no operators
+            out3, _ = model.predict(batch_imgs, configs=0.5)
+            assert len(out3["boxes"]) == 2
+
+            if torch.cuda.is_available():
+                tensor_batch = [torch.from_numpy(img).cuda() for img in batch_imgs]
+                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=batch_ops)
+                assert len(out_gpu["boxes"]) == 2
+                for b, sc in zip(out_gpu["boxes"][0], out_gpu["scores"][0]):
+                    assert b.is_cuda and sc.is_cuda
+
+    def test_predict_batch_invalid_operators(self, yolo_models, imgs_coco):
+        _, resized_images, ops_list = imgs_coco
+        if len(resized_images) < 2:
+            pytest.skip("Not enough images for batch test")
+        batch_imgs = resized_images[:2]
+        model = yolo_models["det"][0]
+        # operators length (1) doesn't match batch size (2)
+        with pytest.raises(ValueError):
+            model.predict(batch_imgs, configs=0.5, operators=[ops_list[0]])
+
 
 class Test_Yolo_Seg:
     def test_compare_with_ultralytics(self, imgs_coco):
+        # Force CPU for deterministic exact-equality comparison; GPU inference
+        # can produce non-deterministic NMS ordering across separate model instances.
         for model_path in OD_SEG_MODELS:
             ults_model = YOLO(model_path)
-            our_model = YoloSeg(model_path, device=DEVICE, image_size=IMGSZ)
+            our_model = YoloSeg(model_path, device="cpu", image_size=IMGSZ)
             for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -225,7 +285,7 @@ class Test_Yolo_Seg:
                     iou=0.4,
                     max_det=300,
                     retina_masks=True,
-                    device=DEVICE,
+                    device="cpu",
                 )
                 ults_out = results[0].cpu().numpy()
 
@@ -271,12 +331,58 @@ class Test_Yolo_Seg:
                     cv2.imwrite(os.path.join(OUT_DIR, f"seg-{i}.png"), im_out)
                 i += 1
 
+    def test_predict_batch_empty(self, yolo_models, yolo_models_api):
+        batch = [np.zeros((640, 640, 3), dtype=np.uint8)] * 2
+        for model in yolo_models["seg"] + yolo_models_api["seg"]:
+            out, _ = model.predict(batch, configs=0.5)
+            assert len(out["boxes"]) == 2
+            assert len(out["boxes"][0]) == 0 and len(out["boxes"][1]) == 0
+            assert len(out["masks"]) == 2
+            assert len(out["masks"][0]) == 0 and len(out["masks"][1]) == 0
+            assert len(out["segments"]) == 2
+            assert len(out["segments"][0]) == 0 and len(out["segments"][1]) == 0
+            assert len(out["scores"]) == 2
+            assert len(out["scores"][0]) == 0 and len(out["scores"][1]) == 0
+
+    def test_predict_batch(self, yolo_models, yolo_models_api, imgs_coco):
+        _, resized_images, ops_list = imgs_coco
+        if len(resized_images) < 2:
+            pytest.skip("Not enough images for batch test")
+        batch_imgs = resized_images[:2]
+        batch_ops = ops_list[:2]
+
+        for model in yolo_models["seg"] + yolo_models_api["seg"]:
+            # per-image operators
+            out, _ = model.predict(batch_imgs, configs=0.5, operators=batch_ops)
+            assert len(out["boxes"]) == 2
+            assert len(out["masks"]) == 2
+            assert len(out["segments"]) == 2
+            assert len(out["scores"]) == 2
+            _assert_batch_scores(out, "scores", 0.5)
+
+            # shared operators
+            out2, _ = model.predict(batch_imgs, configs=0.5, operators=batch_ops[0])
+            assert len(out2["boxes"]) == 2
+
+            # no operators
+            out3, _ = model.predict(batch_imgs, configs=0.5)
+            assert len(out3["boxes"]) == 2
+
+            if torch.cuda.is_available():
+                tensor_batch = [torch.from_numpy(img).cuda() for img in batch_imgs]
+                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=batch_ops)
+                assert len(out_gpu["boxes"]) == 2
+                for seg, m, b, sc in zip(out_gpu["segments"][0], out_gpu["masks"][0], out_gpu["boxes"][0], out_gpu["scores"][0]):
+                    assert seg.is_cuda and m.is_cuda and b.is_cuda and sc.is_cuda
+
 
 class Test_Yolo_Obb:
     def compare_with_ultralytics(self, imgs, model_paths):
+        # Force CPU for deterministic comparison; GPU inference can produce
+        # non-deterministic NMS ordering across separate model instances.
         for model_path in model_paths:
             ults_model = YOLO(model_path)
-            our_model = YoloObb(model_path, device=DEVICE, image_size=IMGSZ)
+            our_model = YoloObb(model_path, device="cpu", image_size=IMGSZ)
             for _img, resized, _op in zip(*imgs):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -284,7 +390,7 @@ class Test_Yolo_Obb:
                     conf=0.5,
                     iou=0.4,
                     max_det=300,
-                    device=DEVICE,
+                    device="cpu",
                 )
                 ults_out = results[0].cpu().numpy()
 
@@ -356,12 +462,75 @@ class Test_Yolo_Obb:
                     cv2.imwrite(os.path.join(OUT_DIR, f"obb-{i}.png"), im_out)
                 i += 1
 
+    def test_predict_batch_empty(self, yolo_models, yolo_models_api):
+        batch = [np.zeros((640, 640, 3), dtype=np.uint8)] * 2
+        for model in yolo_models["obb_dota8"] + yolo_models["obb_dota"] + yolo_models_api["obb_dota8"] + yolo_models_api["obb_dota"]:
+            out, _ = model.predict(batch, configs=0.5)
+            assert len(out["boxes"]) == 2
+            assert len(out["boxes"][0]) == 0 and len(out["boxes"][1]) == 0
+            assert len(out["scores"]) == 2
+            assert len(out["scores"][0]) == 0 and len(out["scores"][1]) == 0
+
+    def test_predict_batch_dota8(self, yolo_models, yolo_models_api, imgs_dota8):
+        _, resized_images, ops_list = imgs_dota8
+        if len(resized_images) < 2:
+            pytest.skip("Not enough images for batch test")
+        batch_imgs = resized_images[:2]
+        batch_ops = ops_list[:2]
+
+        for model in yolo_models["obb_dota8"] + yolo_models_api["obb_dota8"]:
+            out, _ = model.predict(batch_imgs, configs=0.5, operators=batch_ops)
+            assert len(out["boxes"]) == 2
+            assert len(out["scores"]) == 2
+            _assert_batch_scores(out, "scores", 0.5)
+
+            out2, _ = model.predict(batch_imgs, configs=0.5, operators=batch_ops[0])
+            assert len(out2["boxes"]) == 2
+
+            out3, _ = model.predict(batch_imgs, configs=0.5)
+            assert len(out3["boxes"]) == 2
+
+            if torch.cuda.is_available():
+                tensor_batch = [torch.from_numpy(img).cuda() for img in batch_imgs]
+                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=batch_ops)
+                assert len(out_gpu["boxes"]) == 2
+                for b, sc in zip(out_gpu["boxes"][0], out_gpu["scores"][0]):
+                    assert b.is_cuda and sc.is_cuda
+
+    def test_predict_batch_dota(self, yolo_models, yolo_models_api, imgs_dota):
+        _, resized_images, ops_list = imgs_dota
+        if len(resized_images) < 2:
+            pytest.skip("Not enough images for batch test")
+        batch_imgs = resized_images[:2]
+        batch_ops = ops_list[:2]
+
+        for model in yolo_models["obb_dota"] + yolo_models_api["obb_dota"]:
+            out, _ = model.predict(batch_imgs, configs=0.5, operators=batch_ops)
+            assert len(out["boxes"]) == 2
+            assert len(out["scores"]) == 2
+            _assert_batch_scores(out, "scores", 0.5)
+
+            out2, _ = model.predict(batch_imgs, configs=0.5, operators=batch_ops[0])
+            assert len(out2["boxes"]) == 2
+
+            out3, _ = model.predict(batch_imgs, configs=0.5)
+            assert len(out3["boxes"]) == 2
+
+            if torch.cuda.is_available():
+                tensor_batch = [torch.from_numpy(img).cuda() for img in batch_imgs]
+                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=batch_ops)
+                assert len(out_gpu["boxes"]) == 2
+                for b, sc in zip(out_gpu["boxes"][0], out_gpu["scores"][0]):
+                    assert b.is_cuda and sc.is_cuda
+
 
 class Test_Yolo_Pose:
     def test_compare_with_ultralytics(self, imgs_coco):
+        # Force CPU for deterministic exact-equality comparison; GPU inference
+        # can produce non-deterministic NMS ordering across separate model instances.
         for model_path in OD_POSE_MODELS:
             ults_model = YOLO(model_path)
-            our_model = YoloPose(model_path, device=DEVICE, image_size=IMGSZ)
+            our_model = YoloPose(model_path, device="cpu", image_size=IMGSZ)
             for _img, resized, _op in zip(*imgs_coco):
                 resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
                 results = ults_model(
@@ -369,7 +538,7 @@ class Test_Yolo_Pose:
                     conf=0.5,
                     iou=0.4,
                     max_det=300,
-                    device=DEVICE,
+                    device="cpu",
                 )
                 ults_out = results[0].cpu().numpy()
 
@@ -410,3 +579,44 @@ class Test_Yolo_Pose:
                     os.makedirs(OUT_DIR, exist_ok=True)
                     cv2.imwrite(os.path.join(OUT_DIR, f"pose-{i}.png"), im_out)
                 i += 1
+
+    def test_predict_batch_empty(self, yolo_models, yolo_models_api):
+        batch = [np.zeros((640, 640, 3), dtype=np.uint8)] * 2
+        for model in yolo_models["pose"] + yolo_models_api["pose"]:
+            out, _ = model.predict(batch, configs=0.5)
+            assert len(out["boxes"]) == 2
+            assert len(out["boxes"][0]) == 0 and len(out["boxes"][1]) == 0
+            assert len(out["points"]) == 2
+            assert len(out["points"][0]) == 0 and len(out["points"][1]) == 0
+            assert len(out["scores"]) == 2
+            assert len(out["scores"][0]) == 0 and len(out["scores"][1]) == 0
+
+    def test_predict_batch(self, yolo_models, yolo_models_api, imgs_coco):
+        _, resized_images, ops_list = imgs_coco
+        if len(resized_images) < 2:
+            pytest.skip("Not enough images for batch test")
+        batch_imgs = resized_images[:2]
+        batch_ops = ops_list[:2]
+
+        for model in yolo_models["pose"] + yolo_models_api["pose"]:
+            # per-image operators
+            out, _ = model.predict(batch_imgs, configs=0.5, operators=batch_ops)
+            assert len(out["boxes"]) == 2
+            assert len(out["points"]) == 2
+            assert len(out["scores"]) == 2
+            _assert_batch_scores(out, "scores", 0.5)
+
+            # shared operators
+            out2, _ = model.predict(batch_imgs, configs=0.5, operators=batch_ops[0])
+            assert len(out2["boxes"]) == 2
+
+            # no operators
+            out3, _ = model.predict(batch_imgs, configs=0.5)
+            assert len(out3["boxes"]) == 2
+
+            if torch.cuda.is_available():
+                tensor_batch = [torch.from_numpy(img).cuda() for img in batch_imgs]
+                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=batch_ops)
+                assert len(out_gpu["boxes"]) == 2
+                for b, sc, kp in zip(out_gpu["boxes"][0], out_gpu["scores"][0], out_gpu["points"][0]):
+                    assert b.is_cuda and sc.is_cuda and kp.is_cuda
