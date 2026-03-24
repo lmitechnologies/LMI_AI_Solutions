@@ -176,8 +176,8 @@ class Test_Yolo_Det:
                 ults_out = results[0].cpu().numpy()
 
                 out, time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
-                assert np.array_equal(np.array(out["boxes"]), ults_out.boxes.xyxy)
-                assert np.array_equal(np.array(out["scores"]), ults_out.boxes.conf)
+                assert np.array_equal(np.array(out["boxes"][0]), ults_out.boxes.xyxy)
+                assert np.array_equal(np.array(out["scores"][0]), ults_out.boxes.conf)
 
     def test_warmup(self, yolo_models, yolo_models_api):
         for model in yolo_models["det"] + yolo_models_api["det"]:
@@ -186,25 +186,26 @@ class Test_Yolo_Det:
     def test_predict_empty(self, yolo_models, yolo_models_api):
         for model in yolo_models["det"] + yolo_models_api["det"]:
             out, time_info = model.predict(np.zeros((640, 640, 3), dtype=np.uint8), configs=0.5)
-            assert len(out["boxes"]) == 0 and len(out["scores"]) == 0
+            assert len(out["boxes"]) == 1 and len(out["boxes"][0]) == 0
+            assert len(out["scores"]) == 1 and len(out["scores"][0]) == 0
 
     def test_predict(self, yolo_models, yolo_models_api, imgs_coco):
         i = 0
         for model in yolo_models["det"] + yolo_models_api["det"]:
             for img, resized, op in zip(*imgs_coco):
                 out, time_info = model.predict(resized, configs=0.5, operators=op)
-                assert len(out["boxes"]) > 0
-                for sc in out["scores"]:
+                assert len(out["boxes"][0]) > 0
+                for sc in out["scores"][0]:
                     assert sc >= 0.5
-                im_out = model.annotate_image(out, img)
+                im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
 
                 if torch.cuda.is_available():
                     resized = torch.from_numpy(resized).cuda()
                     out, time_info = model.predict(resized, configs=0.5, operators=op)
-                    for b, sc in zip(out["boxes"], out["scores"]):
+                    for b, sc in zip(out["boxes"][0], out["scores"][0]):
                         assert b.is_cuda and sc.is_cuda
                     img = torch.from_numpy(img).cuda()
-                    im_out = model.annotate_image(out, img)
+                    im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
                     os.makedirs(OUT_DIR, exist_ok=True)
                     im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
                     cv2.imwrite(os.path.join(OUT_DIR, f"det-{i}.png"), im_out)
@@ -229,11 +230,11 @@ class Test_Yolo_Seg:
                 ults_out = results[0].cpu().numpy()
 
                 out, time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
-                assert np.array_equal(np.array(out["boxes"]), ults_out.boxes.xyxy)
-                assert np.array_equal(np.array(out["scores"]), ults_out.boxes.conf)
-                assert np.array_equal(np.array(out["masks"]), ults_out.masks.data)
-                assert len(out["segments"]) == len(results[0].masks.xy)
-                for s1, s2 in zip(out["segments"], results[0].masks.xy):
+                assert np.array_equal(np.array(out["boxes"][0]), ults_out.boxes.xyxy)
+                assert np.array_equal(np.array(out["scores"][0]), ults_out.boxes.conf)
+                assert np.array_equal(np.array(out["masks"][0]), ults_out.masks.data)
+                assert len(out["segments"][0]) == len(results[0].masks.xy)
+                for s1, s2 in zip(out["segments"][0], results[0].masks.xy):
                     assert np.array_equal(s1, s2)
 
     def test_warmup(self, yolo_models, yolo_models_api):
@@ -243,25 +244,28 @@ class Test_Yolo_Seg:
     def test_predict_empty(self, yolo_models, yolo_models_api):
         for model in yolo_models["seg"] + yolo_models_api["seg"]:
             out, time_info = model.predict(np.zeros((640, 640, 3), dtype=np.uint8), configs=0.5)
-            assert len(out["boxes"]) == 0 and len(out["masks"]) == 0 and len(out["segments"]) == 0 and len(out["scores"]) == 0
+            assert len(out["boxes"]) == 1 and len(out["boxes"][0]) == 0
+            assert len(out["masks"]) == 1 and len(out["masks"][0]) == 0
+            assert len(out["segments"]) == 1 and len(out["segments"][0]) == 0
+            assert len(out["scores"]) == 1 and len(out["scores"][0]) == 0
 
     def test_predict(self, yolo_models, yolo_models_api, imgs_coco):
         i = 0
         for model in yolo_models["seg"] + yolo_models_api["seg"]:
             for img, resized, op in zip(*imgs_coco):
                 out, time_info = model.predict(resized, configs=0.5, operators=op)
-                assert len(out["masks"]) > 0 and len(out["segments"]) > 0
-                for sc in out["scores"]:
+                assert len(out["masks"][0]) > 0 and len(out["segments"][0]) > 0
+                for sc in out["scores"][0]:
                     assert sc >= 0.5
-                im_out = model.annotate_image(out, img)
+                im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
 
                 if torch.cuda.is_available():
                     resized = torch.from_numpy(resized).cuda()
                     out, time_info = model.predict(resized, configs=0.5, operators=op)
-                    for seg, m, b, sc in zip(out["segments"], out["masks"], out["boxes"], out["scores"]):
+                    for seg, m, b, sc in zip(out["segments"][0], out["masks"][0], out["boxes"][0], out["scores"][0]):
                         assert seg.is_cuda and m.is_cuda and b.is_cuda and sc.is_cuda
                     img = torch.from_numpy(img).cuda()
-                    im_out = model.annotate_image(out, img)
+                    im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
                     im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
                     os.makedirs(OUT_DIR, exist_ok=True)
                     cv2.imwrite(os.path.join(OUT_DIR, f"seg-{i}.png"), im_out)
@@ -285,8 +289,8 @@ class Test_Yolo_Obb:
                 ults_out = results[0].cpu().numpy()
 
                 out, time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
-                assert np.allclose(np.array(out["boxes"]), ults_out.obb.xyxyxyxy, atol=1e-5)  # for floating point precision issue
-                assert np.array_equal(np.array(out["scores"]), ults_out.obb.conf)
+                assert np.allclose(np.array(out["boxes"][0]), ults_out.obb.xyxyxyxy, atol=1e-5)  # for floating point precision issue
+                assert np.array_equal(np.array(out["scores"][0]), ults_out.obb.conf)
 
     def test_compare_with_ultralytics_dota8(self, imgs_dota8):
         self.compare_with_ultralytics(imgs_dota8, OD_OBB_DOTA_8)
@@ -305,25 +309,26 @@ class Test_Yolo_Obb:
     def test_predict_empty(self, yolo_models, yolo_models_api):
         for model in yolo_models["obb_dota8"] + yolo_models["obb_dota"] + yolo_models_api["obb_dota8"] + yolo_models_api["obb_dota"]:
             out, time_info = model.predict(np.zeros((640, 640, 3), dtype=np.uint8), configs=0.5)
-            assert len(out["boxes"]) == 0 and len(out["scores"]) == 0
+            assert len(out["boxes"]) == 1 and len(out["boxes"][0]) == 0
+            assert len(out["scores"]) == 1 and len(out["scores"][0]) == 0
 
     def test_predict_dota8(self, yolo_models, yolo_models_api, imgs_dota8):
         i = 0
         for model in yolo_models["obb_dota8"] + yolo_models_api["obb_dota8"]:
             for img, resized, op in zip(*imgs_dota8):
                 out, time_info = model.predict(resized, configs=0.5, operators=op)
-                assert len(out["boxes"]) > 0
-                for sc in out["scores"]:
+                assert len(out["boxes"][0]) > 0
+                for sc in out["scores"][0]:
                     assert sc >= 0.5
-                im_out = model.annotate_image(out, img)
+                im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
 
                 if torch.cuda.is_available():
                     resized = torch.from_numpy(resized).cuda()
                     out, time_info = model.predict(resized, configs=0.5, operators=op)
-                    for b, sc in zip(out["boxes"], out["scores"]):
+                    for b, sc in zip(out["boxes"][0], out["scores"][0]):
                         assert b.is_cuda and sc.is_cuda
                     img = torch.from_numpy(img).cuda()
-                    im_out = model.annotate_image(out, img)
+                    im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
                     im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
                     os.makedirs(OUT_DIR, exist_ok=True)
                     cv2.imwrite(os.path.join(OUT_DIR, f"obb-{i}.png"), im_out)
@@ -334,18 +339,18 @@ class Test_Yolo_Obb:
         for model in yolo_models["obb_dota"] + yolo_models_api["obb_dota"]:
             for img, resized, op in zip(*imgs_dota):
                 out, time_info = model.predict(resized, configs=0.5, operators=op)
-                assert len(out["boxes"]) > 0
-                for sc in out["scores"]:
+                assert len(out["boxes"][0]) > 0
+                for sc in out["scores"][0]:
                     assert sc >= 0.5
-                im_out = model.annotate_image(out, img)
+                im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
 
                 if torch.cuda.is_available():
                     resized = torch.from_numpy(resized).cuda()
                     out, time_info = model.predict(resized, configs=0.5, operators=op)
-                    for b, sc in zip(out["boxes"], out["scores"]):
+                    for b, sc in zip(out["boxes"][0], out["scores"][0]):
                         assert b.is_cuda and sc.is_cuda
                     img = torch.from_numpy(img).cuda()
-                    im_out = model.annotate_image(out, img)
+                    im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
                     im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
                     os.makedirs(OUT_DIR, exist_ok=True)
                     cv2.imwrite(os.path.join(OUT_DIR, f"obb-{i}.png"), im_out)
@@ -369,9 +374,9 @@ class Test_Yolo_Pose:
                 ults_out = results[0].cpu().numpy()
 
                 out, time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
-                assert np.array_equal(np.array(out["boxes"]), ults_out.boxes.xyxy)
-                assert np.array_equal(np.array(out["scores"]), ults_out.boxes.conf)
-                assert np.array_equal(np.array(out["points"]), ults_out.keypoints.data)
+                assert np.array_equal(np.array(out["boxes"][0]), ults_out.boxes.xyxy)
+                assert np.array_equal(np.array(out["scores"][0]), ults_out.boxes.conf)
+                assert np.array_equal(np.array(out["points"][0]), ults_out.keypoints.data)
 
     def test_warmup(self, yolo_models, yolo_models_api):
         for model in yolo_models["pose"] + yolo_models_api["pose"]:
@@ -380,25 +385,27 @@ class Test_Yolo_Pose:
     def test_predict_empty(self, yolo_models, yolo_models_api):
         for model in yolo_models["pose"] + yolo_models_api["pose"]:
             out, time_info = model.predict(np.zeros((640, 640, 3), dtype=np.uint8), configs=0.5)
-            assert len(out["boxes"]) == 0 and len(out["points"]) == 0 and len(out["scores"]) == 0
+            assert len(out["boxes"]) == 1 and len(out["boxes"][0]) == 0
+            assert len(out["points"]) == 1 and len(out["points"][0]) == 0
+            assert len(out["scores"]) == 1 and len(out["scores"][0]) == 0
 
     def test_predict(self, yolo_models, yolo_models_api, imgs_coco):
         i = 0
         for model in yolo_models["pose"] + yolo_models_api["pose"]:
             for img, resized, op in zip(*imgs_coco):
                 out, time_info = model.predict(resized, configs=0.5, operators=op)
-                assert len(out["boxes"]) > 0
-                for sc in out["scores"]:
+                assert len(out["boxes"][0]) > 0
+                for sc in out["scores"][0]:
                     assert sc >= 0.5
-                im_out = model.annotate_image(out, img)
+                im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
 
                 if torch.cuda.is_available():
                     resized = torch.from_numpy(resized).cuda()
                     out, time_info = model.predict(resized, configs=0.5, operators=op)
-                    for b, sc, kp in zip(out["boxes"], out["scores"], out["points"]):
+                    for b, sc, kp in zip(out["boxes"][0], out["scores"][0], out["points"][0]):
                         assert b.is_cuda and sc.is_cuda and kp.is_cuda
                     img = torch.from_numpy(img).cuda()
-                    im_out = model.annotate_image(out, img)
+                    im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
                     im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
                     os.makedirs(OUT_DIR, exist_ok=True)
                     cv2.imwrite(os.path.join(OUT_DIR, f"pose-{i}.png"), im_out)

@@ -1,7 +1,7 @@
 import collections
 import logging
 import time
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 import cv2
 import numpy as np
@@ -62,11 +62,14 @@ class Yolo(YoloCore, ODBase):
         self.task = "detect"
 
     @smart_inference_mode()
-    def preprocess(self, im: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-        """Prepares input image before inference.
+    def _preprocess_single(self, im: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
+        """Prepares a single input image before inference.
 
         Args:
-            im (np.ndarray | tensor): BCHW for tensor, [(HWC) x B] for list.
+            im (np.ndarray | tensor): HWC image.
+
+        Returns:
+            (torch.Tensor): CHW tensor (no batch dim).
         """
         if isinstance(im, np.ndarray):
             im = self.from_numpy(im)
@@ -78,13 +81,28 @@ class Yolo(YoloCore, ODBase):
         if im.shape[-1] == 1:
             im = im.expand(-1, -1, 3)
 
-        im = im.unsqueeze(0)  # HWC -> BHWC
-        img = im.permute((0, 3, 1, 2))  # BHWC to BCHW, (n, 3, h, w)
+        img = im.permute((2, 0, 1))  # HWC to CHW, (3, h, w)
         img = img.contiguous()
 
         img = img.half() if self.model.fp16 else img.float()  # uint8 to fp16/32
         img /= 255  # 0 - 255 to 0.0 - 1.0
         return img
+
+    @smart_inference_mode()
+    def preprocess(self, images: Union[np.ndarray, torch.Tensor, List[Union[np.ndarray, torch.Tensor]]]) -> torch.Tensor:
+        """Prepares input image(s) before inference.
+
+        Args:
+            images: a single HWC image (np.ndarray | tensor) or a list of HWC images.
+                All images in a list must have the same dimensions.
+
+        Returns:
+            (torch.Tensor): BCHW tensor.
+        """
+        if isinstance(images, list):
+            imgs = [self._preprocess_single(im) for im in images]
+            return torch.stack(imgs)
+        return self._preprocess_single(images).unsqueeze(0)
 
     def _get_min_conf(self, conf: Union[float, dict]) -> float:
         """Get the minimum confidence level for non-maximum suppression.
@@ -196,57 +214,90 @@ class Yolo(YoloCore, ODBase):
         preds2 = self._run_nms(preds, min_conf, iou, agnostic, max_det)
         orig_imgs = orig_imgs if isinstance(orig_imgs, list) else [orig_imgs]
         list_results = self.construct_results(preds2, img, orig_imgs, conf, **kwargs)
-        # gather final results
+        # gather final results — always include one entry per image, even if empty
         results = collections.defaultdict(list)
         for result, orig_img in zip(list_results, orig_imgs):
             use_tensor = isinstance(orig_img, torch.Tensor)
-            result = result.to_dict(return_tensor=use_tensor)
-            for k, v in result.items():
-                results[k].append(v)
+            result_dict = result.to_dict(return_tensor=use_tensor)
+            for k in result._all_keys:
+                v = result_dict.get(k)
+                if v is not None:
+                    results[k].append(v)
+                else:
+                    results[k].append([])
         return results
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
-        """Reverts prediction coordinates to the original pre-transform space."""
-        # Assumes single-image batch processing from predict()
+        """Reverts prediction coordinates to the original pre-transform space for a single image."""
         if not operators:
             return results
         results["boxes"] = pipeline_utils.revert_to_origin(results["boxes"], operators, **kwargs)
         return results
 
     @smart_inference_mode()
-    def predict(self, image, configs, operators=None, iou=0.4, agnostic=False, max_det=300, **kwargs):
-        """run Yolo inference, where it runs the preprocess(), forward(), and postprocess() in sequence.
+    def predict(
+        self,
+        image: Union[np.ndarray, torch.Tensor, List[Union[np.ndarray, torch.Tensor]]],
+        configs,
+        operators: Optional[Union[List[Dict], List[List[Dict]]]] = None,
+        iou=0.4,
+        agnostic=False,
+        max_det=300,
+        **kwargs,
+    ):
+        """Run Yolo inference, where it runs the preprocess(), forward(), and postprocess() in sequence.
         It converts the results to the original coordinates space if the operators are provided.
         Return tensors if the input image is a tensor, otherwise return numpy arrays.
 
+        Supports both single image and batch inference. For batch inference, pass a list of images.
+
         Args:
-            model (Yolo | YoloSeg | YoloPose | YoloObb): one yolo model
-            image (np.ndarry | tensor): the input image
-            configs (dict | float): a float or a dictionary of the confidence thresholds for each class, e.g., {'classA':0.5, 'classB':0.6}
-            operators (list): a list of dictionaries of the image preprocess operators,
-                such as {'resize':[resized_w, resized_h, orig_w, orig_h]}, {'pad':[pad_left, pad_right, pad_top, pad_bot]}
+            image (np.ndarray | tensor | list): a single HWC image or a list of HWC images.
+                All images in a batch must have the same dimensions.
+            configs (dict | float): a float or a dictionary of the confidence thresholds for each class,
+                e.g., {'classA':0.5, 'classB':0.6}
+            operators: operators for coordinate reversion. Accepts:
+                - None: no coordinate reversion.
+                - list[dict]: a single operator chain, applied to all images in the batch.
+                - list[list[dict]]: per-image operator chains (length must match batch size).
             iou (float): the iou threshold for non-maximum suppression. defaults to 0.4
-            agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
+            agnostic (bool): If True, the model is agnostic to the number of classes,
+                and all classes will be considered as one.
             max_det (int): The maximum number of detections to return. defaults to 300.
             kwargs (dict): Additional keyword arguments, such as return_segments.
         Returns:
-            list of [results, time info]
-            results (dict): a dictionary of the results, e.g., {
-                'boxes': numpy or tensor
-                'classes': a list of strings (NOT tensor)
-                'scores': numpy or tensor
-                'masks': numpy or tensor
-                'segments': numpy or tensor
+            (results, time_info)
+            results (dict): a dictionary where each value is a list of length B (batch size), e.g., {
+                'boxes': [numpy or tensor, ...],    # each element shape (N_i, 4)
+                'classes': [list of strings, ...],
+                'scores': [numpy or tensor, ...],
+                'masks': [numpy or tensor, ...],    # if applicable
+                'segments': [list, ...],            # if applicable
             }
             time_info (dict): a dictionary of the time info, e.g., {'preproc':0.1, 'proc':0.2, 'postproc':0.3}
         """
         time_info = {}
+
+        # Normalize input to list
+        is_batch = isinstance(image, list)
+        images = image if is_batch else [image]
+        batch_size = len(images)
+
+        # Normalize operators to per-image list
         if operators is None:
-            operators = []
+            ops_list = [[] for _ in range(batch_size)]
+        elif len(operators) > 0 and isinstance(operators[0], dict):
+            # list[dict] — same operators for all images
+            ops_list = [operators] * batch_size
+        else:
+            # list[list[dict]] — per-image operators
+            if len(operators) != batch_size:
+                raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
+            ops_list = operators
 
         # preprocess
         t0 = time.time()
-        im = self.preprocess(image)
+        im = self.preprocess(images if is_batch else images[0])
         time_info["preproc"] = time.time() - t0
 
         # infer
@@ -264,23 +315,18 @@ class Yolo(YoloCore, ODBase):
         }
         if kwargs.get("return_segments"):
             post_args["return_segments"] = kwargs["return_segments"]
-        results = self.postprocess(pred, im, image, **post_args)
-        results_dict = collections.defaultdict(list)
+        results = self.postprocess(pred, im, images, **post_args)
 
-        # return empty results if no detection
-        if not len(results["boxes"]):
-            time_info["postproc"] = time.time() - t0
-            return results_dict, time_info
+        # Revert coordinates per image
+        final = collections.defaultdict(list)
+        for i in range(batch_size):
+            single = {k: v[i] for k, v in results.items()}
+            single = self._revert_coordinates(single, ops_list[i], **kwargs)
+            for k, v in single.items():
+                final[k].append(v)
 
-        # Extract results for single image
-        for k, v in results.items():
-            results_dict[k] = v[0]
-
-        # Revert coordinates if needed
-        results_dict = self._revert_coordinates(results_dict, operators, **kwargs)
         time_info["postproc"] = time.time() - t0
-
-        return results_dict, time_info
+        return final, time_info
 
     @staticmethod
     @smart_inference_mode()
