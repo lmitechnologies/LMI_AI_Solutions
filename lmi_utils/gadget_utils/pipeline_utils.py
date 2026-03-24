@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+import re
 import tarfile
 import tempfile
 from pathlib import Path
@@ -16,7 +17,9 @@ from torch.nn import functional as F
 BLACK = (0, 0, 0)
 TWO_TO_FIFTEEN = 2**15
 
+logging.basicConfig()
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 @torch.inference_mode()
@@ -609,6 +612,23 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     """
     version = kwargs.get("version", "3")
     logger.info(f"Loading static manifest from {manifest_json_path} with schema version {version}")
+
+    # Helper methods to convert camel case keys to snake case
+    def camel_to_snake(name):
+        """Convert camelCase or PascalCase to snake_case."""
+        name = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+        name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+        return name.lower()
+
+    def convert_keys(obj):
+        """Recursively convert dictionary keys from camelCase to snake_case."""
+        if isinstance(obj, dict):
+            return {camel_to_snake(k): convert_keys(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_keys(i) for i in obj]
+        else:
+            return obj
+
     manifest_path = Path(manifest_json_path).resolve()
     if not manifest_path.exists():
         raise FileNotFoundError(f"Manifest file not found: {manifest_path}")
@@ -633,6 +653,8 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     classes_key = "classes" if manifest_v3 else "object_class"
 
     for model in models:
+        # convert camel case to snake
+        model = convert_keys(model)
         role = model.get("model_role")
         if role is None:
             continue
