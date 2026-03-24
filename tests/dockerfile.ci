@@ -1,6 +1,6 @@
 # Use ARG to accept the version from the workflow
 ARG PYTHON_VERSION=3.10
-FROM python:${PYTHON_VERSION}
+FROM python:${PYTHON_VERSION}-slim
 
 # Define the argument for Anomalib version (default provided if needed)
 ARG ANOMALIB_VERSION=v1.1.1
@@ -9,27 +9,34 @@ WORKDIR /app
 
 # Install OS-level dependencies including git-lfs in one layer
 RUN apt-get update && \
-    apt-get install -y libgl1 curl gnupg && \
+    apt-get install -y --no-install-recommends libgl1 libglib2.0-0 git curl gnupg g++ gcc && \
     curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash && \
-    apt-get install -y git-lfs && \
+    apt-get install -y --no-install-recommends git-lfs && \
+    git lfs install && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy requirements file
 COPY ./tests/requirements-ci.txt .
 
 # Install Python requirements with architecture-specific PyTorch handling
-RUN pip install -r requirements-ci.txt --extra-index-url https://download.pytorch.org/whl/cpu
-
-# Install detectron2
-RUN git clone https://github.com/facebookresearch/detectron2 detectron2 && \
-    cd detectron2 && \
-    pip install --no-build-isolation -e .
-
-# Install anomalib using the build argument
-RUN git clone -b ${ANOMALIB_VERSION} https://github.com/open-edge-platform/anomalib.git && \
-    cd anomalib && \
-    pip install -e . && \
-    if [ "${ANOMALIB_VERSION}" != "v2.2.0" ]; then \
-        pip install "jsonargparse==4.27.7" && \
-        anomalib install; \
+ARG TARGETARCH
+RUN if [ "$TARGETARCH" = "amd64" ] || [ -z "$TARGETARCH" ]; then \
+        pip install --no-cache-dir -r requirements-ci.txt \
+            --extra-index-url https://download.pytorch.org/whl/cpu; \
+    else \
+        pip install --no-cache-dir -r requirements-ci.txt; \
     fi
+
+# Install detectron2 (shallow clone, remove source after install)
+RUN git clone --depth 1 https://github.com/facebookresearch/detectron2 detectron2 && \
+    pip install --no-cache-dir --no-build-isolation ./detectron2 && \
+    rm -rf detectron2
+
+# Install anomalib using the build argument (shallow clone, remove source after install)
+RUN git clone --depth 1 -b ${ANOMALIB_VERSION} https://github.com/open-edge-platform/anomalib.git anomalib && \
+    pip install --no-cache-dir ./anomalib && \
+    if [ "${ANOMALIB_VERSION}" != "v2.2.0" ]; then \
+        pip install --no-cache-dir "jsonargparse==4.27.7" && \
+        anomalib install --option core; \
+    fi && \
+    rm -rf anomalib
