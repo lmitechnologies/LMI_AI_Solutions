@@ -9,7 +9,7 @@ WORKDIR /app
 
 # Install OS-level dependencies including git-lfs in one layer
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libgl1 libglib2.0-0 git curl gnupg && \
+    apt-get install -y --no-install-recommends libgl1 libglib2.0-0 git curl gnupg g++ gcc && \
     curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash && \
     apt-get install -y --no-install-recommends git-lfs && \
     git lfs install && \
