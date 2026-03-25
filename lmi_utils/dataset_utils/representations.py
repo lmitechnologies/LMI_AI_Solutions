@@ -60,6 +60,8 @@ class Base:
 
     def save(self, path: str):
         """Save the dataclass as a JSON file."""
+        # create directory if it doesn't exist
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             f.write(self.to_json())
 
@@ -231,7 +233,7 @@ class Box(Base):
         height = self.y_max - self.y_min
         return np.array([self.x_min, self.y_min, width, height, self.angle])
 
-    def area(self):
+    def area(self, **kwargs):
         return (self.x_max - self.x_min) * (self.y_max - self.y_min)
 
     def to_coco(self, **kwargs):
@@ -347,17 +349,17 @@ class Polygon(Base):
     def to_numpy(self):
         return np.array(self.points)
 
-    def area(self):
-        x, y = self.coords()
+    def area(self, **kwargs):
+        x, y = self.coords(**kwargs)
         return ShapelyPolygon([(int(xi), int(yi)) for xi, yi in zip(x, y)]).area
 
     def coords(self, **kwargs):
         points = np.array(self.points)
         return points[:, 0].tolist(), points[:, 1].tolist()
 
-    def to_coco(self):
+    def to_coco(self, **kwargs):
         """convert to COCO format."""
-        return np.array(self.points).ravel().tolist()
+        return [np.array(self.points).ravel().tolist()]
 
     def to_yolo(self, h, w, **kwargs):
         return [[point[0] / w, point[1] / h] for point in self.points]
@@ -460,7 +462,7 @@ class Mask(Base):
         polygons = self.to_polygon(**kwargs)
         area = 0
         for polygon in polygons:
-            area += polygon.area()
+            area += polygon.area(**kwargs)
         return area
 
     def to_box(self, **kwargs):
