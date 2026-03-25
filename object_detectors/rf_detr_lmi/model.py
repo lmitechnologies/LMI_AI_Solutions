@@ -384,18 +384,15 @@ class RfdetrPTH(RfdetrBase):
             FileNotFoundError: If model_path does not exist
             ValueError: If model_type is not supported
         """
-        try:
-            from rfdetr import RFDETR2XLarge, RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall, RFDETRXLarge
-        except ImportError as e:
-            raise ImportError("rfdetr package is required for RfdetrPTH. Install it with: pip install rfdetr") from e
+        from rfdetr import RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
 
         model_configs = {
             "nano": (384, RFDETRNano),
             "small": (512, RFDETRSmall),
             "medium": (576, RFDETRMedium),
             "large": (704, RFDETRLarge),
-            "xlarge": (700, RFDETRXLarge),
-            "2xlarge": (880, RFDETR2XLarge),
+            # "xlarge": (700, RFDETRXLarge),
+            # "2xlarge": (880, RFDETR2XLarge),
         }
 
         self.logger.debug(f"Initializing RfdetrPTH with kwargs: {kwargs}")
@@ -492,7 +489,7 @@ class RfdetrPTH(RfdetrBase):
             return Results(boxes=[], scores=[], classes=[])
 
         # Convert class IDs to names
-        classes = np.array([self.class_names[c + 1] for c in class_ids])
+        classes = np.array([self.class_names[c] for c in class_ids])
 
         mask = scores >= np.vectorize(configs.get)(classes, 1.0)
         boxes = boxes[mask]

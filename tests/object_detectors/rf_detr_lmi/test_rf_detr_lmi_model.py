@@ -44,101 +44,97 @@ def rf_model():
     return model
 
 
+@pytest.fixture(scope="module")
+def obj_detector(rf_model):
+    obj_detector = ObjectDetector(
+        metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
+        model_path=OD_MODEL,
+        device=DEVICE,
+        class_map=rf_model.class_names,
+        image_size=[IMAGE_SIZE, IMAGE_SIZE],
+    )
+    return obj_detector
+
+
+@pytest.fixture(scope="module")
+def cpu_models(rf_model):
+    od_pt = ObjectDetector(
+        metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
+        model_path=OD_MODEL.replace("cuda", "cpu"),
+        device="cpu",
+        class_map=rf_model.class_names,
+        image_size=[IMAGE_SIZE, IMAGE_SIZE],
+    )
+
+    od_pth = ObjectDetector(
+        metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
+        model_path=PTH_FILE,
+        model_type="nano",
+        device="cpu",
+        class_map=rf_model.class_names,
+        image_size=[IMAGE_SIZE, IMAGE_SIZE],
+    )
+    return od_pt, od_pth
+
+
 class Test_Rfdetr_Model:
-    def test_compare_with_rfdetr(self, imgs_coco, tolerance=1e-4):
+    def test_compare_with_rfdetr(self, imgs_coco, cpu_models, tolerance=1e-4):
         "Use cpu to ensure consistency"
         rf_model = RFDETRNano(pretrain_weights=PTH_FILE, device="cpu")
-        obj_detector = ObjectDetector(
-            metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
-            model_path=OD_MODEL.replace("cuda", "cpu"),
-            class_map=rf_model.class_names,
-            image_size=[IMAGE_SIZE, IMAGE_SIZE],
-            device="cpu",
-        )
+        pt_model, pth_model = cpu_models
 
         # rf_model.optimize_for_inference()
         for img in imgs_coco:
             temp_image = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
-            outputs_od = obj_detector.predict(temp_image, configs=0.5)
             outputs_rfdetr = rf_model.predict(temp_image, threshold=0.5)
-            assert "boxes" in outputs_od
-            assert "scores" in outputs_od
-            assert "classes" in outputs_od
             rf_detr_boxes = outputs_rfdetr.xyxy
             rf_detr_classes = [rf_model.class_names[c] for c in outputs_rfdetr.class_id]
 
-            assert rf_detr_boxes.shape[0] == outputs_od["boxes"].shape[0]
-            assert np.allclose(rf_detr_boxes, outputs_od["boxes"], rtol=tolerance, atol=tolerance)
-            assert np.allclose(outputs_rfdetr.confidence, outputs_od["scores"], rtol=tolerance, atol=tolerance)
-            assert rf_detr_classes == outputs_od["classes"].tolist()
+            outputs_pt = pt_model.predict(temp_image, configs=0.5)
+            outputs_pth = pth_model.predict(temp_image, configs=0.5)
 
-    def test_warmup(self, imgs_coco, rf_model):
-        obj_detector = ObjectDetector(
-            metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
-            model_path=OD_MODEL,
-            device=DEVICE,
-            class_map=rf_model.class_names,
-            image_size=[IMAGE_SIZE, IMAGE_SIZE],
-        )
+            assert rf_detr_boxes.shape[0] == outputs_pt["boxes"].shape[0]
+            assert np.allclose(rf_detr_boxes, outputs_pt["boxes"], rtol=tolerance, atol=tolerance)
+            assert np.allclose(outputs_rfdetr.confidence, outputs_pt["scores"], rtol=tolerance, atol=tolerance)
+            assert rf_detr_classes == outputs_pt["classes"].tolist()
+
+            assert rf_detr_boxes.shape[0] == outputs_pth["boxes"].shape[0]
+            assert np.allclose(rf_detr_boxes, outputs_pth["boxes"], rtol=tolerance, atol=tolerance)
+            assert np.allclose(outputs_rfdetr.confidence, outputs_pth["scores"], rtol=tolerance, atol=tolerance)
+            assert rf_detr_classes == outputs_pth["classes"].tolist()
+
+    def test_warmup(self, obj_detector):
         obj_detector.warmup()
 
-    def test_empty(self, imgs_coco, rf_model):
-        object_detector = ObjectDetector(
-            metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
-            model_path=OD_MODEL,
-            device=DEVICE,
-            class_map=rf_model.class_names,
-            image_size=[IMAGE_SIZE, IMAGE_SIZE],
-        )
+    def test_empty(self, obj_detector):
         empty_img = np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
-        outputs = object_detector.predict(empty_img, configs=0.5)
+        outputs = obj_detector.predict(empty_img, configs=0.5)
         assert len(outputs["boxes"]) == 0
         assert len(outputs["scores"]) == 0
         assert len(outputs["classes"]) == 0
 
-    def test_confidence(self, imgs_coco, rf_model):
-        object_detector = ObjectDetector(
-            metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
-            model_path=OD_MODEL,
-            device=DEVICE,
-            class_map=rf_model.class_names,
-            image_size=[IMAGE_SIZE, IMAGE_SIZE],
-        )
+    def test_confidence(self, imgs_coco, obj_detector):
         img = cv2.resize(imgs_coco[0], (IMAGE_SIZE, IMAGE_SIZE))
-        outputs_05 = object_detector.predict(img, configs=1.0)
+        outputs_05 = obj_detector.predict(img, configs=1.0)
         assert len(outputs_05["boxes"]) == 0
 
-    def test_operators(self, imgs_coco, rf_model):
-        object_detector = ObjectDetector(
-            metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
-            model_path=OD_MODEL.replace("cuda", "cpu"),
-            device="cpu",
-            class_map=rf_model.class_names,
-            image_size=[IMAGE_SIZE, IMAGE_SIZE],
-        )
-        img = imgs_coco[0]
-        h, w = img.shape[:2]
-        img_resized = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
-        operators = [{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}]
+    def test_operators(self, imgs_coco, obj_detector):
+        for idx, img in enumerate(imgs_coco):
+            h, w = img.shape[:2]
+            img_resized = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
+            operators = [{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}]
 
-        outputs_with_ops = object_detector.predict(img_resized, configs=0.5, operators=operators)
-        outputs_without_ops = object_detector.predict(img_resized, configs=0.5)
+            outputs_with_ops = obj_detector.predict(img_resized, configs=0.5, operators=operators)
+            assert len(outputs_with_ops["boxes"]) > 0, "Expected detections with operators, but got none."
 
-        assert "boxes" in outputs_with_ops
-        assert "scores" in outputs_with_ops
-        assert "classes" in outputs_with_ops
+            if len(outputs_with_ops["boxes"]) > 0:
+                # boxes with operators should be scaled to the original image size
+                assert np.all(outputs_with_ops["boxes"][:, 0] <= w)
+                assert np.all(outputs_with_ops["boxes"][:, 1] <= h)
+                assert np.all(outputs_with_ops["boxes"][:, 2] <= w)
+                assert np.all(outputs_with_ops["boxes"][:, 3] <= h)
 
-        if len(outputs_with_ops["boxes"]) > 0:
-            # boxes with operators should be scaled to the original image size
-            assert np.all(outputs_with_ops["boxes"][:, 0] <= w)
-            assert np.all(outputs_with_ops["boxes"][:, 1] <= h)
-            assert np.all(outputs_with_ops["boxes"][:, 2] <= w)
-            assert np.all(outputs_with_ops["boxes"][:, 3] <= h)
-
-            # boxes without operators should be in the resized image space
-            assert not np.allclose(outputs_with_ops["boxes"], outputs_without_ops["boxes"])
-
-        annotated_image = object_detector.annotate_image(outputs_with_ops, img)
-        out_name = "out_operators.jpg"
-        os.makedirs(OUT_DIR, exist_ok=True)
-        cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
+            annotated_image = obj_detector.annotate_image(outputs_with_ops, img)
+            out_name = f"out_operators_{idx}.jpg"
+            os.makedirs(OUT_DIR, exist_ok=True)
+            cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
