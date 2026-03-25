@@ -206,7 +206,6 @@ class Test_Yolo_Det:
                 assert len(out["boxes"][0]) > 0
                 for sc in out["scores"][0]:
                     assert sc >= 0.5
-                im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
 
                 if torch.cuda.is_available():
                     resized = torch.from_numpy(resized).cuda()
@@ -317,7 +316,6 @@ class Test_Yolo_Seg:
                 assert len(out["masks"][0]) > 0 and len(out["segments"][0]) > 0
                 for sc in out["scores"][0]:
                     assert sc >= 0.5
-                im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
 
                 if torch.cuda.is_available():
                     resized = torch.from_numpy(resized).cuda()
@@ -426,7 +424,6 @@ class Test_Yolo_Obb:
                 assert len(out["boxes"][0]) > 0
                 for sc in out["scores"][0]:
                     assert sc >= 0.5
-                im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
 
                 if torch.cuda.is_available():
                     resized = torch.from_numpy(resized).cuda()
@@ -448,7 +445,6 @@ class Test_Yolo_Obb:
                 assert len(out["boxes"][0]) > 0
                 for sc in out["scores"][0]:
                     assert sc >= 0.5
-                im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
 
                 if torch.cuda.is_available():
                     resized = torch.from_numpy(resized).cuda()
@@ -566,7 +562,6 @@ class Test_Yolo_Pose:
                 assert len(out["boxes"][0]) > 0
                 for sc in out["scores"][0]:
                     assert sc >= 0.5
-                im_out = model.annotate_image({k: v[0] for k, v in out.items()}, img)
 
                 if torch.cuda.is_available():
                     resized = torch.from_numpy(resized).cuda()

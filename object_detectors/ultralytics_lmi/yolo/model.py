@@ -342,7 +342,7 @@ class Yolo(YoloCore, ODBase):
 
         Args:
             results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
-            image (np.ndarray): the input image
+            image (np.ndarray | torch.Tensor): the input image
             colors (list, optional): a dictionary of colormaps, e.g., {'class-A':(0,0,255), 'class-B':(0,255,0)}. Defaults to None.
             line_thickness (int, optional): the thickness of the bounding box. Defaults to None.
             hide_bbox (bool,optional): hide the bounding box
