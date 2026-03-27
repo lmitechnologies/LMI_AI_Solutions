@@ -170,23 +170,17 @@ class Test_Yolo_Det:
     def test_compare_with_ultralytics(self, imgs_coco):
         # Force CPU for deterministic exact-equality comparison; GPU inference
         # can produce non-deterministic NMS ordering across separate model instances.
+        _, resized_images, _ = imgs_coco
         for model_path in OD_DET_MODELS:
             ults_model = YOLO(model_path)
             our_model = Yolo(model_path, device="cpu", image_size=IMGSZ)
-            for _img, resized, _op in zip(*imgs_coco):
-                resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
-                results = ults_model(
-                    resized_bgr,
-                    conf=0.5,
-                    iou=0.4,
-                    max_det=300,
-                    device="cpu",
-                )
-                ults_out = results[0].cpu().numpy()
-
-                out, time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
-                assert np.array_equal(np.array(out["boxes"][0]), ults_out.boxes.xyxy)
-                assert np.array_equal(np.array(out["scores"][0]), ults_out.boxes.conf)
+            batch_bgr = [cv2.cvtColor(img, cv2.COLOR_RGB2BGR) for img in resized_images]
+            results = ults_model(batch_bgr, conf=0.5, iou=0.4, max_det=300, device="cpu")
+            out, _ = our_model.predict(resized_images, configs=0.5, iou=0.4, max_det=300)
+            for ults_result, our_boxes, our_scores in zip(results, out["boxes"], out["scores"]):
+                ults_out = ults_result.cpu().numpy()
+                assert np.array_equal(np.array(our_boxes), ults_out.boxes.xyxy)
+                assert np.array_equal(np.array(our_scores), ults_out.boxes.conf)
 
     def test_warmup(self, yolo_models, yolo_models_api):
         for model in yolo_models["det"] + yolo_models_api["det"]:
@@ -273,27 +267,22 @@ class Test_Yolo_Seg:
     def test_compare_with_ultralytics(self, imgs_coco):
         # Force CPU for deterministic exact-equality comparison; GPU inference
         # can produce non-deterministic NMS ordering across separate model instances.
+        _, resized_images, _ = imgs_coco
         for model_path in OD_SEG_MODELS:
             ults_model = YOLO(model_path)
             our_model = YoloSeg(model_path, device="cpu", image_size=IMGSZ)
-            for _img, resized, _op in zip(*imgs_coco):
-                resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
-                results = ults_model(
-                    resized_bgr,
-                    conf=0.5,
-                    iou=0.4,
-                    max_det=300,
-                    retina_masks=True,
-                    device="cpu",
-                )
-                ults_out = results[0].cpu().numpy()
-
-                out, time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
-                assert np.array_equal(np.array(out["boxes"][0]), ults_out.boxes.xyxy)
-                assert np.array_equal(np.array(out["scores"][0]), ults_out.boxes.conf)
-                assert np.array_equal(np.array(out["masks"][0]), ults_out.masks.data)
-                assert len(out["segments"][0]) == len(results[0].masks.xy)
-                for s1, s2 in zip(out["segments"][0], results[0].masks.xy):
+            batch_bgr = [cv2.cvtColor(img, cv2.COLOR_RGB2BGR) for img in resized_images]
+            results = ults_model(batch_bgr, conf=0.5, iou=0.4, max_det=300, retina_masks=True, device="cpu")
+            out, _ = our_model.predict(resized_images, configs=0.5, iou=0.4, max_det=300)
+            for ults_result, our_boxes, our_scores, our_masks, our_segs in zip(
+                results, out["boxes"], out["scores"], out["masks"], out["segments"]
+            ):
+                ults_out = ults_result.cpu().numpy()
+                assert np.array_equal(np.array(our_boxes), ults_out.boxes.xyxy)
+                assert np.array_equal(np.array(our_scores), ults_out.boxes.conf)
+                assert np.array_equal(np.array(our_masks), ults_out.masks.data)
+                assert len(our_segs) == len(ults_result.masks.xy)
+                for s1, s2 in zip(our_segs, ults_result.masks.xy):
                     assert np.array_equal(s1, s2)
 
     def test_warmup(self, yolo_models, yolo_models_api):
@@ -378,23 +367,17 @@ class Test_Yolo_Obb:
     def compare_with_ultralytics(self, imgs, model_paths):
         # Force CPU for deterministic comparison; GPU inference can produce
         # non-deterministic NMS ordering across separate model instances.
+        _, resized_images, _ = imgs
         for model_path in model_paths:
             ults_model = YOLO(model_path)
             our_model = YoloObb(model_path, device="cpu", image_size=IMGSZ)
-            for _img, resized, _op in zip(*imgs):
-                resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
-                results = ults_model(
-                    resized_bgr,
-                    conf=0.5,
-                    iou=0.4,
-                    max_det=300,
-                    device="cpu",
-                )
-                ults_out = results[0].cpu().numpy()
-
-                out, time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
-                assert np.allclose(np.array(out["boxes"][0]), ults_out.obb.xyxyxyxy, atol=1e-5)  # for floating point precision issue
-                assert np.array_equal(np.array(out["scores"][0]), ults_out.obb.conf)
+            batch_bgr = [cv2.cvtColor(img, cv2.COLOR_RGB2BGR) for img in resized_images]
+            results = ults_model(batch_bgr, conf=0.5, iou=0.4, max_det=300, device="cpu")
+            out, _ = our_model.predict(resized_images, configs=0.5, iou=0.4, max_det=300)
+            for ults_result, our_boxes, our_scores in zip(results, out["boxes"], out["scores"]):
+                ults_out = ults_result.cpu().numpy()
+                assert np.allclose(np.array(our_boxes), ults_out.obb.xyxyxyxy, atol=1e-5)  # for floating point precision issue
+                assert np.array_equal(np.array(our_scores), ults_out.obb.conf)
 
     def test_compare_with_ultralytics_dota8(self, imgs_dota8):
         self.compare_with_ultralytics(imgs_dota8, OD_OBB_DOTA_8)
@@ -524,24 +507,18 @@ class Test_Yolo_Pose:
     def test_compare_with_ultralytics(self, imgs_coco):
         # Force CPU for deterministic exact-equality comparison; GPU inference
         # can produce non-deterministic NMS ordering across separate model instances.
+        _, resized_images, _ = imgs_coco
         for model_path in OD_POSE_MODELS:
             ults_model = YOLO(model_path)
             our_model = YoloPose(model_path, device="cpu", image_size=IMGSZ)
-            for _img, resized, _op in zip(*imgs_coco):
-                resized_bgr = cv2.cvtColor(resized, cv2.COLOR_RGB2BGR)
-                results = ults_model(
-                    resized_bgr,
-                    conf=0.5,
-                    iou=0.4,
-                    max_det=300,
-                    device="cpu",
-                )
-                ults_out = results[0].cpu().numpy()
-
-                out, time_info = our_model.predict(resized, configs=0.5, iou=0.4, max_det=300)
-                assert np.array_equal(np.array(out["boxes"][0]), ults_out.boxes.xyxy)
-                assert np.array_equal(np.array(out["scores"][0]), ults_out.boxes.conf)
-                assert np.array_equal(np.array(out["points"][0]), ults_out.keypoints.data)
+            batch_bgr = [cv2.cvtColor(img, cv2.COLOR_RGB2BGR) for img in resized_images]
+            results = ults_model(batch_bgr, conf=0.5, iou=0.4, max_det=300, device="cpu")
+            out, _ = our_model.predict(resized_images, configs=0.5, iou=0.4, max_det=300)
+            for ults_result, our_boxes, our_scores, our_points in zip(results, out["boxes"], out["scores"], out["points"]):
+                ults_out = ults_result.cpu().numpy()
+                assert np.array_equal(np.array(our_boxes), ults_out.boxes.xyxy)
+                assert np.array_equal(np.array(our_scores), ults_out.boxes.conf)
+                assert np.array_equal(np.array(our_points), ults_out.keypoints.data)
 
     def test_warmup(self, yolo_models, yolo_models_api):
         for model in yolo_models["pose"] + yolo_models_api["pose"]:
