@@ -123,7 +123,7 @@ class RfdetrBase(ODBase):
         filtered_dets = dets_data[mask]
 
         if filtered_dets.shape[0] == 0:
-            return Results(boxes=[], scores=[], classes=[])
+            return Results()
 
         cx = filtered_dets[:, 0] * orig_w
         cy = filtered_dets[:, 1] * orig_h
@@ -136,7 +136,7 @@ class RfdetrBase(ODBase):
         if operators:
             final_boxes = pipeline_utils.revert_to_origin(final_boxes, operators)
 
-        return Results(boxes=torch.from_numpy(final_boxes), scores=torch.from_numpy(filtered_scores), classes=filtered_classes)
+        return Results(boxes=final_boxes, scores=filtered_scores, classes=filtered_classes)
 
     def postprocess(self, outputs, **kwargs) -> List[Results]:
         """Postprocess cxcywh logit outputs for a batch (used by RfdetrTRT and RfdetrPT).
@@ -616,7 +616,7 @@ class RfdetrPTH(RfdetrBase):
         class_ids = preds.class_id
 
         if len(boxes) == 0:
-            return Results(boxes=[], scores=[], classes=[])
+            return Results()
 
         classes = np.array([self.class_names[c] for c in class_ids])
 
@@ -629,9 +629,9 @@ class RfdetrPTH(RfdetrBase):
             boxes = pipeline_utils.revert_to_origin(boxes, operators)
 
         return Results(
-            boxes=torch.from_numpy(boxes) if len(boxes) > 0 else [],
-            scores=torch.from_numpy(scores) if len(scores) > 0 else [],
-            classes=classes if len(classes) > 0 else [],
+            boxes=boxes if len(boxes) > 0 else None,
+            scores=scores if len(scores) > 0 else None,
+            classes=classes if len(classes) > 0 else None,
         )
 
     def predict(

@@ -339,13 +339,11 @@ class Detectron2TRT(Detectron2Base):
 
             results.append(
                 Results(
-                    boxes=torch.from_numpy(batch_boxes) if len(batch_boxes) > 0 else None,
-                    scores=torch.from_numpy(batch_scores) if len(batch_scores) > 0 else None,
+                    boxes=batch_boxes if len(batch_boxes) > 0 else None,
+                    scores=batch_scores if len(batch_scores) > 0 else None,
                     classes=batch_classes if len(batch_classes) > 0 else None,
-                    masks=torch.from_numpy(np.array(batch_masks)) if len(batch_masks) > 0 else None,
-                    segments=[
-                        torch.from_numpy(np.array(s, dtype=np.float32)) if len(s) > 0 else torch.zeros((0, 2)) for s in batch_segments
-                    ]
+                    masks=batch_masks if len(batch_masks) > 0 else None,
+                    segments=[np.array(s, dtype=np.float32) if len(s) > 0 else np.zeros((0, 2), dtype=np.float32) for s in batch_segments]
                     if batch_segments
                     else None,
                 )
@@ -476,9 +474,7 @@ class Detectron2PT(Detectron2Base):
                     scores=batch_scores if len(batch_scores) > 0 else None,
                     classes=batch_classes if len(batch_classes) > 0 else None,
                     masks=masks_t,
-                    segments=[
-                        torch.from_numpy(np.array(s, dtype=np.float32)) if len(s) > 0 else torch.zeros((0, 2)) for s in batch_segments
-                    ]
+                    segments=[np.array(s, dtype=np.float32) if len(s) > 0 else np.zeros((0, 2), dtype=np.float32) for s in batch_segments]
                     if batch_segments
                     else None,
                 )
