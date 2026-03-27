@@ -601,7 +601,7 @@ class RfdetrPTH(RfdetrBase):
         return image
 
     def forward(self, images, **kwargs):
-        """Perform forward pass through the model using a for loop (RF-DETR library does not support batch inference).
+        """Perform forward pass through the model using a for loop (RF-DETR library throws an exception for batch size mismatch).
 
         Args:
             images: A single image or list of images in numpy array format (HWC, uint8, RGB).

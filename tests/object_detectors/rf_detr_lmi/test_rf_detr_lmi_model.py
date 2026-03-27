@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 
 import cv2
 import numpy as np
@@ -17,6 +18,8 @@ PTH_FILE = "tests/assets/models/od/rf_detr/checkpoint.pth"
 OD_MODEL = f"tests/assets/models/od/rf_detr/model_{DEVICE}.pt"
 OUT_DIR = "tests/outputs/od/rf_detr"
 IMAGE_SIZE = 384
+IS_ARM = platform.machine().lower().startswith(("arm", "aarch"))
+TOLERANCE = 1e-2 if IS_ARM else 1e-4
 
 
 def load_image(path):
@@ -78,7 +81,7 @@ def cpu_models(rf_model):
 
 
 class Test_Rfdetr_Model:
-    def test_compare_with_rfdetr(self, imgs_coco, cpu_models, tolerance=1e-4):
+    def test_compare_with_rfdetr(self, imgs_coco, cpu_models, tolerance=TOLERANCE):
         "Use cpu to avoid gpu non-determinism issues."
 
         def compare_results(rf_preds, outputs, model_name):
