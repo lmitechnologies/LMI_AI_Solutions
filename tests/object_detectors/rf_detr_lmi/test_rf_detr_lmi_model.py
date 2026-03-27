@@ -1,6 +1,5 @@
 import logging
 import os
-import platform
 
 import cv2
 import numpy as np
@@ -18,8 +17,7 @@ PTH_FILE = "tests/assets/models/od/rf_detr/checkpoint.pth"
 OD_MODEL = f"tests/assets/models/od/rf_detr/model_{DEVICE}.pt"
 OUT_DIR = "tests/outputs/od/rf_detr"
 IMAGE_SIZE = 384
-IS_ARM = platform.machine().lower().startswith(("arm", "aarch"))
-TOLERANCE = 1e-2 if IS_ARM else 1e-4
+TOLERANCE = 1e-4
 
 
 def load_image(path):
@@ -80,45 +78,33 @@ def cpu_models(rf_model):
     return od_pt, od_pth
 
 
+def assert_outputs_match_rf(rf_preds, class_names, outputs, label, tolerance):
+    rf_boxes = rf_preds.xyxy
+    rf_classes = [class_names[c] for c in rf_preds.class_id]
+    assert rf_boxes.shape[0] == outputs["boxes"].shape[0], f"{label}: Number of boxes mismatch"
+    assert np.allclose(rf_boxes, outputs["boxes"], rtol=tolerance, atol=tolerance), f"{label}: Box coordinates mismatch"
+    assert np.allclose(rf_preds.confidence, outputs["scores"], rtol=tolerance, atol=tolerance), f"{label}: Confidence scores mismatch"
+    assert rf_classes == outputs["classes"].tolist(), f"{label}: Class labels mismatch"
+
+
 class Test_Rfdetr_Model:
     def test_compare_with_rfdetr(self, imgs_coco, cpu_models, tolerance=TOLERANCE):
         "Use cpu to avoid gpu non-determinism issues."
 
-        def compare_results(rf_preds, outputs, model_name):
-            rf_boxes = rf_preds.xyxy
-            rf_classes = [rf_model.class_names[c] for c in rf_preds.class_id]
-
-            assert rf_boxes.shape[0] == outputs["boxes"].shape[0], f"{model_name}: Number of boxes mismatch"
-            assert np.allclose(rf_boxes, outputs["boxes"], rtol=tolerance, atol=tolerance), f"{model_name}: Box coordinates mismatch"
-            assert np.allclose(rf_preds.confidence, outputs["scores"], rtol=tolerance, atol=tolerance), (
-                f"{model_name}: Confidence scores mismatch"
-            )
-            assert rf_classes == outputs["classes"].tolist(), f"{model_name}: Class labels mismatch"
-
         rf_model = RFDETRNano(pretrain_weights=PTH_FILE, device="cpu")
         pt_model, pth_model = cpu_models
 
-        resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
+        for img in imgs_coco:
+            resized = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
+            rf_preds = rf_model.predict(resized, threshold=0.5)
 
-        # rfdetr batch predict returns a list of Detections
-        rf_batch_preds = rf_model.predict(resized, threshold=0.5)
-        if not isinstance(rf_batch_preds, list):
-            rf_batch_preds = [rf_batch_preds]
+            batch_pt, _ = pt_model.predict(resized, configs=0.5)
+            batch_pth, _ = pth_model.predict(resized, configs=0.5)
+            outputs_pt = {k: batch_pt[k][0] for k in ("boxes", "scores", "classes")}
+            outputs_pth = {k: batch_pth[k][0] for k in ("boxes", "scores", "classes")}
 
-        batch_pt, _ = pt_model.predict(resized, configs=0.5)
-        batch_pth, _ = pth_model.predict(resized, configs=0.5)
-
-        assert len(rf_batch_preds) == len(resized)
-        assert len(batch_pt["boxes"]) == len(resized)
-        assert len(batch_pth["boxes"]) == len(resized)
-
-        keys = ("boxes", "scores", "classes")
-        for i, rf_preds in enumerate(rf_batch_preds):
-            outputs_pt = {k: batch_pt[k][i] for k in keys}
-            outputs_pth = {k: batch_pth[k][i] for k in keys}
-
-            compare_results(rf_preds, outputs_pt, "pt_model")
-            compare_results(rf_preds, outputs_pth, "pth_model")
+            assert_outputs_match_rf(rf_preds, rf_model.class_names, outputs_pt, "pt_model", tolerance)
+            assert_outputs_match_rf(rf_preds, rf_model.class_names, outputs_pth, "pth_model", tolerance)
 
     def test_warmup(self, obj_detector):
         obj_detector.warmup()
