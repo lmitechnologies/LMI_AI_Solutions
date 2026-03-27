@@ -15,6 +15,7 @@ from lmi_utils.postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_
 from object_detectors.od_core.model_factory import ModelFactory
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
+from object_detectors.od_core.results import Results
 
 
 @ObjectDetectorRegistry.register(
@@ -81,20 +82,79 @@ class Detectron2Base(ODBase):
                 self.logger.error(f"Batch size mismatch: {images.shape[0]} != {self.batch_size}")
                 return {}
         batch_size = len(images) if isinstance(images, list) else images.shape[0]
-        ops_list = self._normalize_operators(operators, batch_size)
-        predictions = self.forward(self.preprocess(images))
-        predictions = self.postprocess(images, predictions, ops_list=ops_list, **kwargs)
+        operators = self._normalize_operators(operators, batch_size)
+        list_results = self.postprocess(images, self.forward(self.preprocess(images)), operators=operators, **kwargs)
         t1 = time.time()
         self.logger.debug(f"proc-time {(t1 - t0) * 1000.0:.2f} ms")
-        return predictions
+        final = {"boxes": [], "scores": [], "classes": [], "masks": [], "segments": []}
+        for r in list_results:
+            r_dict = r.to_dict(return_tensor=False)
+            for k in final:
+                final[k].append(r_dict.get(k, []))
+        return final
+
+    def _postprocess_masks(self, raw_masks, boxes, image_size, mask_threshold, ops, **kwargs):
+        """Rescale masks, apply revert_mask_to_origin, and optionally compute polygon segments.
+
+        Args:
+            raw_masks: Masks as torch.Tensor or np.ndarray. 4-D tensors (N,1,H,W) are squeezed to (N,H,W).
+            boxes: Bounding boxes as torch.Tensor or np.ndarray, used by rescale_masks.
+            image_size: (image_h, image_w) target size for rescale_masks.
+            mask_threshold: Binarization threshold for rescale_masks.
+            ops: List of operator dicts for revert_to_origin / revert_mask_to_origin.
+            **kwargs: Forwarded predict kwargs; reads ``return_segments``.
+
+        Returns:
+            tuple: (batch_masks, batch_segments)
+        """
+        batch_segments = []
+        if len(raw_masks) == 0:
+            return raw_masks, batch_segments
+
+        def _to_tensor(m):
+            if isinstance(m, np.ndarray):
+                return torch.from_numpy(m).to(self.device)
+            return m.to(self.device)
+
+        def _to_np(m):
+            return m.cpu().numpy() if isinstance(m, torch.Tensor) else m
+
+        masks_t = _to_tensor(raw_masks)
+        if masks_t.dim() == 4:
+            masks_t = masks_t.squeeze(1)
+        batch_masks = rescale_masks(masks_t, _to_tensor(boxes), image_size, mask_threshold)
+
+        if len(ops) > 0:
+            batch_masks = torch.stack([revert_mask_to_origin(m, ops) for m in batch_masks])
+
+        if kwargs.get("return_segments", False):
+            if len(ops) > 0:
+                batch_segments = [revert_to_origin(mask_to_polygon_cv2(_to_np(m)), ops) for m in batch_masks]
+            else:
+                batch_segments = [mask_to_polygon_cv2(_to_np(m)) for m in batch_masks]
+
+        return batch_masks, batch_segments
+
+    def _parse_postprocess_kwargs(self, kwargs: dict, batch_size: int) -> tuple:
+        """Extract common postprocess keyword arguments.
+
+        Returns:
+            tuple: (confs, mask_threshold, process_masks, operators)
+        """
+        return (
+            kwargs.get("confs", {}),
+            kwargs.get("mask_threshold", 0.5),
+            kwargs.get("process_masks", True),
+            kwargs.get("operators", [[] for _ in range(batch_size)]),
+        )
 
     def annotate_image(self, result, image, color_map=None, **kwargs):
-        for i in range(len(result["classes"])):
+        for i in range(len(result.get("classes", []))):
             plot_one_box(
                 result["boxes"][i],
                 image,
                 label=f"{result['classes'][i]}:{result['scores'][i]:.2f}",
-                mask=result["masks"][i] if len(result["masks"]) > 0 else None,
+                mask=result["masks"][i] if len(result.get("masks", [])) > 0 else None,
                 color=color_map,
             )
         return image
@@ -206,12 +266,7 @@ class Detectron2TRT(Detectron2Base):
         Returns:
             np.ndarray: A batch of preprocessed images with shape (batch_size, 3, image_h, image_w).
         """
-        image_h, image_w = self.image_size
-        inputs = np.zeros((self.batch_size, 3, image_h, image_w), dtype=self.input_dtype)
-        for i in range(0, self.batch_size):
-            image = images[i]
-            inputs[i] = image.astype(np.float32).transpose(2, 0, 1)
-        return inputs
+        return np.array([img.transpose(2, 0, 1) for img in images], dtype=self.input_dtype)
 
     def forward(self, inputs):
         """
@@ -234,31 +289,21 @@ class Detectron2TRT(Detectron2Base):
             common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
         return outputs
 
-    def postprocess(self, images, predictions, **kwargs):
-        """
-        Post-process the predictions from the object detection model.
+    def postprocess(self, images, predictions, **kwargs) -> List[Results]:
+        """Post-process the predictions from the TRT object detection model.
+
         Args:
             images (list): List of input images.
-            predictions (tuple): Tuple containing the number of predictions, bounding boxes, scores, classes, and masks.
-            **kwargs: Additional keyword arguments for processing.
-                - confs (dict): Dictionary of confidence thresholds for each class.
-                - mask_threshold (float): Threshold for mask binarization.
-                - process_masks (bool): Flag to indicate whether to process masks.
-        Returns:
-            dict: A dictionary containing the processed results with keys:
-                - "boxes" (list): List of processed bounding boxes for each image.
-                - "scores" (list): List of processed scores for each image.
-                - "classes" (list): List of processed class labels for each image.
-                - "masks" (list): List of processed masks for each image.
-        """
-        results = {"boxes": [], "scores": [], "classes": [], "masks": [], "segments": []}
+            predictions (tuple): Tuple of (num_preds, boxes, scores, classes[, masks]).
+            **kwargs: confs, mask_threshold, process_masks, operators.
 
+        Returns:
+            List of Results objects, one per image.
+        """
         if len(predictions) == 0:
-            return results
-        confs = kwargs.get("confs", {})
-        mask_threshold = kwargs.get("mask_threshold", 0.5)
-        process_masks = kwargs.get("process_masks", True)
-        ops_list = kwargs.get("ops_list", [[] for _ in range(self.batch_size)])
+            return []
+
+        confs, mask_threshold, process_masks, operators = self._parse_postprocess_kwargs(kwargs, self.batch_size)
         image_h, image_w = images[0].shape[0], images[0].shape[1]
 
         if len(predictions) == 5:
@@ -273,76 +318,38 @@ class Detectron2TRT(Detectron2Base):
             scale_factors = np.array([image_w, image_h, image_w, image_h])
             boxes = (boxes * scale_factors).astype(np.int32)
 
-        processed_masks = []
-        processed_boxes = []
-        processed_scores = []
-        processed_classes = []
-        processed_segments = []
-
+        results = []
         for idx in range(self.batch_size):
-            operators = ops_list[idx]
+            ops = operators[idx]
             valid_scores = scores[idx] >= np.vectorize(confs.get)(classes[idx], 1.0)
-            batch_boxes, batch_scores = (
-                boxes[idx][valid_scores],
-                scores[idx][valid_scores],
-            )
+            batch_boxes = boxes[idx][valid_scores]
+            batch_scores = scores[idx][valid_scores]
             batch_classes = classes[idx][valid_scores]
-            batch_segments = []
-            processed_boxes.append(batch_boxes)
-            processed_scores.append(batch_scores)
-            processed_classes.append(batch_classes)
             filtered_masks = masks[idx][valid_scores] if masks is not None else []
             batch_masks = []
+            batch_segments = []
             if process_masks and masks is not None:
-                batch_masks = rescale_masks(
-                    torch.from_numpy(filtered_masks).to(self.device),
-                    torch.from_numpy(batch_boxes).to(self.device),
-                    (
-                        image_h,
-                        image_w,
-                    ),
-                    mask_threshold,
+                batch_masks, batch_segments = self._postprocess_masks(
+                    filtered_masks, batch_boxes, (image_h, image_w), mask_threshold, ops, **kwargs
                 )
-                num_masks = len(batch_masks)
-                if len(operators) > 0 and num_masks > 0:
-                    batch_masks = np.array(
-                        [
-                            revert_mask_to_origin(
-                                mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask,
-                                operators,
-                            )
-                            for mask in batch_masks
-                        ]
-                    )
-                if kwargs.get("return_segments", False) and num_masks > 0:
-                    if len(operators) > 0:
-                        batch_segments = [
-                            revert_to_origin(
-                                mask_to_polygon_cv2(mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask),
-                                operators,
-                            )
-                            for mask in batch_masks
-                        ]
-                    else:
-                        batch_segments = [
-                            mask_to_polygon_cv2(mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask) for mask in batch_masks
-                        ]
-
             else:
                 batch_masks = filtered_masks
 
-            # apply revert to origin
-            batch_boxes = revert_to_origin(batch_boxes, operators)
-            processed_masks.append(batch_masks)
-            processed_segments.append(batch_segments)
+            batch_boxes = revert_to_origin(batch_boxes, ops)
 
-        results = {
-            "boxes": processed_boxes,
-            "scores": processed_scores,
-            "classes": processed_classes,
-            "masks": processed_masks,
-            "segments": processed_segments,
-        }
+            results.append(
+                Results(
+                    boxes=torch.from_numpy(batch_boxes) if len(batch_boxes) > 0 else None,
+                    scores=torch.from_numpy(batch_scores) if len(batch_scores) > 0 else None,
+                    classes=batch_classes if len(batch_classes) > 0 else None,
+                    masks=torch.from_numpy(np.array(batch_masks)) if len(batch_masks) > 0 else None,
+                    segments=[
+                        torch.from_numpy(np.array(s, dtype=np.float32)) if len(s) > 0 else torch.zeros((0, 2)) for s in batch_segments
+                    ]
+                    if batch_segments
+                    else None,
+                )
+            )
         return results
 
 
@@ -387,11 +394,7 @@ class Detectron2PT(Detectron2Base):
         image_size = kwargs.get("img_size", self.image_size)
         image_h, image_w = image_size[0], image_size[1]
         images = [np.random.rand(image_h, image_w, 3).astype(np.float32) for _ in range(self.batch_size)]
-        input = [
-            dict(image=torch.from_numpy(image.astype(np.float32)).permute(2, 0, 1).to(dtype=torch.float32).to(self.device))
-            for image in images
-        ]
-        self.forward(input)
+        self.forward(self.preprocess(images))
 
     def preprocess(self, images: np.ndarray) -> List[Dict[str, torch.Tensor]]:
         """
@@ -406,8 +409,6 @@ class Detectron2PT(Detectron2Base):
                   with the preprocessed image as a value. The image is converted to float32
                   and transposed to CHW format.
         """
-        image_h, image_w = images[0].shape[0], images[0].shape[1]
-        inputs = np.zeros((len(images), 3, image_h, image_w), dtype=np.float32)
         inputs = [
             dict(image=torch.from_numpy(image.astype(np.float32)).permute(2, 0, 1).to(dtype=torch.float32).to(self.device))
             for image in images
@@ -428,90 +429,58 @@ class Detectron2PT(Detectron2Base):
             predictions = self.model.forward(inputs)
         return predictions
 
-    def postprocess(self, images, predictions, **kwargs):
-        """
-        Post-processes the predictions from the model to filter and format the results.
+    def postprocess(self, images, predictions, **kwargs) -> List[Results]:
+        """Post-process the predictions from the TorchScript object detection model.
+
         Args:
             images (list): A list of input images.
-            predictions (list): A list of predictions from the model, where each prediction is a dictionary containing:
-            - "scores" (Tensor): Confidence scores for each detected object.
-            - "pred_classes" (Tensor): Predicted class indices for each detected object.
-            - "pred_boxes" (Tensor): Bounding boxes for each detected object.
-            - "pred_masks" (Tensor, optional): Segmentation masks for each detected object.
-            **kwargs: Additional keyword arguments for post-processing:
-            - confs (dict): A dictionary mapping class indices to confidence thresholds.
-            - mask_threshold (float): Threshold for binarizing masks.
-        Returns:
-            dict: A dictionary containing the post-processed results with the following keys:
-            - "boxes" (list): A list of numpy arrays containing bounding boxes for each image.
-            - "scores" (list): A list of numpy arrays containing confidence scores for each image.
-            - "classes" (list): A list of numpy arrays containing class indices for each image.
-            - "masks" (list): A list of numpy arrays containing segmentation masks for each image (if available).
-        """
-        results = {"boxes": [], "scores": [], "classes": [], "masks": [], "segments": []}
+            predictions (list): Per-image dicts with keys "scores", "pred_classes", "pred_boxes", "pred_masks" (optional).
+            **kwargs: confs, mask_threshold, process_masks, operators.
 
+        Returns:
+            List of Results objects, one per image.
+        """
         if len(predictions) == 0:
-            return results
-        confs = kwargs.get("confs", {})
-        mask_threshold = kwargs.get("mask_threshold", 0.5)
-        process_masks = kwargs.get("process_masks", True)
-        ops_list = kwargs.get("ops_list", [[] for _ in range(len(predictions))])
-        # if no predictions, return empty results
+            return []
+
+        confs, mask_threshold, process_masks, operators = self._parse_postprocess_kwargs(kwargs, len(predictions))
         if predictions[0]["pred_classes"].shape[0] == 0:
-            return results
+            return [Results() for _ in predictions]
+
+        results = []
         for idx, output in enumerate(predictions):
-            operators = ops_list[idx]
+            ops = operators[idx]
             image_h, image_w = images[idx].shape[:2]
-            batch_scores = output["scores"].cpu().numpy()
-            batch_classes = output["pred_classes"].cpu().numpy()
-            batch_segments = []
-            batch_masks = []
-            batch_classes = self.class_map_func(batch_classes)
-            keep = batch_scores >= np.vectorize(confs.get)(batch_classes, 0.5)
+            batch_scores = output["scores"]
+            batch_classes = self.class_map_func(output["pred_classes"].cpu().numpy())
+            threshold = torch.from_numpy(np.vectorize(confs.get)(batch_classes, 1.0).astype(np.float32)).to(batch_scores.device)
+            keep = batch_scores >= threshold
             batch_scores = batch_scores[keep]
-            batch_classes = batch_classes[keep]
+            batch_classes = batch_classes[keep.cpu().numpy()]
             batch_boxes = output["pred_boxes"][keep]
+            batch_masks = []
+            batch_segments = []
             if "pred_masks" in output:
                 batch_masks = output["pred_masks"][keep]
                 if process_masks and len(batch_masks) > 0:
-                    batch_masks = rescale_masks(
-                        batch_masks.to(self.device).squeeze(1),
-                        batch_boxes.to(self.device),
-                        (
-                            image_h,
-                            image_w,
-                        ),
-                        mask_threshold,
+                    batch_masks, batch_segments = self._postprocess_masks(
+                        batch_masks, batch_boxes, (image_h, image_w), mask_threshold, ops, **kwargs
                     )
 
-                    if len(operators) > 0:
-                        batch_masks = np.array(
-                            [
-                                revert_mask_to_origin(
-                                    mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask,
-                                    operators,
-                                )
-                                for mask in batch_masks
-                            ]
-                        )
-                    if kwargs.get("return_segments", False):
-                        if len(operators) > 0:
-                            batch_segments = [
-                                revert_to_origin(
-                                    mask_to_polygon_cv2(mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask),
-                                    operators,
-                                )
-                                for mask in batch_masks
-                            ]
-                        else:
-                            batch_segments = [
-                                mask_to_polygon_cv2(mask.cpu().numpy() if isinstance(mask, torch.Tensor) else mask) for mask in batch_masks
-                            ]
+            batch_boxes = revert_to_origin(batch_boxes, ops)
+            masks_t = batch_masks if len(batch_masks) > 0 else None
 
-            batch_boxes = revert_to_origin(batch_boxes, operators)
-            results["boxes"].append(batch_boxes.cpu().numpy())
-            results["scores"].append(batch_scores)
-            results["classes"].append(batch_classes)
-            results["masks"].append(batch_masks.cpu().numpy() if isinstance(batch_masks, torch.Tensor) else batch_masks)
-            results["segments"].append(batch_segments)
+            results.append(
+                Results(
+                    boxes=batch_boxes if len(batch_boxes) > 0 else None,
+                    scores=batch_scores if len(batch_scores) > 0 else None,
+                    classes=batch_classes if len(batch_classes) > 0 else None,
+                    masks=masks_t,
+                    segments=[
+                        torch.from_numpy(np.array(s, dtype=np.float32)) if len(s) > 0 else torch.zeros((0, 2)) for s in batch_segments
+                    ]
+                    if batch_segments
+                    else None,
+                )
+            )
         return results

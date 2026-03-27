@@ -150,14 +150,14 @@ class RfdetrBase(ODBase):
             **kwargs:
                 images (list[np.ndarray]): Original images, used to scale boxes.
                 configs: Confidence threshold (float) or per-class dict.
-                ops_list (list[list]): Per-image coordinate transform operators.
+                operators (list[list]): Per-image coordinate transform operators.
 
         Returns:
             List of Results objects, one per image.
         """
         images = kwargs["images"]
         configs = self._parse_confidence_config(kwargs.get("configs"), list(self.class_map.values()))
-        ops_list = kwargs.get("ops_list", [[] for _ in range(len(images))])
+        operators = kwargs.get("operators", [[] for _ in range(len(images))])
 
         if len(outputs) < 2:
             raise RuntimeError(f"Expected at least 2 output tensors, got {len(outputs)}")
@@ -168,7 +168,7 @@ class RfdetrBase(ODBase):
         results = []
         for i, image in enumerate(images):
             orig_h, orig_w = image.shape[:2]
-            results.append(self._postprocess_single(all_dets[i], all_labels[i], orig_h, orig_w, configs, ops_list[i]))
+            results.append(self._postprocess_single(all_dets[i], all_labels[i], orig_h, orig_w, configs, operators[i]))
         return results
 
     def predict(
@@ -206,7 +206,7 @@ class RfdetrBase(ODBase):
         images = image if is_batch else [image]
         batch_size = len(images)
 
-        ops_list = self._normalize_operators(operators, batch_size)
+        operators = self._normalize_operators(operators, batch_size)
 
         # preprocess
         t0 = time.time()
@@ -220,7 +220,7 @@ class RfdetrBase(ODBase):
 
         # postprocess
         t0 = time.time()
-        list_results = self.postprocess(outputs, images=images, configs=configs, ops_list=ops_list, **kwargs)
+        list_results = self.postprocess(outputs, images=images, configs=configs, operators=operators, **kwargs)
 
         final = collections.defaultdict(list)
         for result in list_results:
@@ -662,7 +662,7 @@ class RfdetrPTH(RfdetrBase):
         images = image if is_batch else [image]
         batch_size = len(images)
 
-        ops_list = self._normalize_operators(operators, batch_size)
+        operators = self._normalize_operators(operators, batch_size)
 
         configs = self._parse_confidence_config(
             configs if configs is not None else self.DEFAULT_CONFIDENCE,
@@ -678,7 +678,7 @@ class RfdetrPTH(RfdetrBase):
         # postprocess
         t0 = time.time()
         final = collections.defaultdict(list)
-        for pred, ops in zip(preds, ops_list):
+        for pred, ops in zip(preds, operators):
             result = self._postprocess_pth_single(pred, configs, ops)
             result_dict = result.to_dict(return_tensor=False)
             for k in ("boxes", "scores", "classes"):
