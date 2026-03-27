@@ -79,44 +79,60 @@ def cpu_models(rf_model):
 
 class Test_Rfdetr_Model:
     def test_compare_with_rfdetr(self, imgs_coco, cpu_models, tolerance=1e-4):
-        "Use cpu to ensure consistency"
+        "Use cpu to avoid gpu non-determinism issues."
+
+        def compare_results(rf_preds, outputs, model_name):
+            rf_boxes = rf_preds.xyxy
+            rf_classes = [rf_model.class_names[c] for c in rf_preds.class_id]
+
+            assert rf_boxes.shape[0] == outputs["boxes"].shape[0], f"{model_name}: Number of boxes mismatch"
+            assert np.allclose(rf_boxes, outputs["boxes"], rtol=tolerance, atol=tolerance), f"{model_name}: Box coordinates mismatch"
+            assert np.allclose(rf_preds.confidence, outputs["scores"], rtol=tolerance, atol=tolerance), (
+                f"{model_name}: Confidence scores mismatch"
+            )
+            assert rf_classes == outputs["classes"].tolist(), f"{model_name}: Class labels mismatch"
+
         rf_model = RFDETRNano(pretrain_weights=PTH_FILE, device="cpu")
         pt_model, pth_model = cpu_models
 
-        # rf_model.optimize_for_inference()
-        for img in imgs_coco:
-            temp_image = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
-            outputs_rfdetr = rf_model.predict(temp_image, threshold=0.5)
-            rf_detr_boxes = outputs_rfdetr.xyxy
-            rf_detr_classes = [rf_model.class_names[c] for c in outputs_rfdetr.class_id]
+        resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
 
-            outputs_pt = pt_model.predict(temp_image, configs=0.5)
-            outputs_pth = pth_model.predict(temp_image, configs=0.5)
+        # rfdetr batch predict returns a list of Detections
+        rf_batch_preds = rf_model.predict(resized, threshold=0.5)
+        if not isinstance(rf_batch_preds, list):
+            rf_batch_preds = [rf_batch_preds]
 
-            assert rf_detr_boxes.shape[0] == outputs_pt["boxes"].shape[0]
-            assert np.allclose(rf_detr_boxes, outputs_pt["boxes"], rtol=tolerance, atol=tolerance)
-            assert np.allclose(outputs_rfdetr.confidence, outputs_pt["scores"], rtol=tolerance, atol=tolerance)
-            assert rf_detr_classes == outputs_pt["classes"].tolist()
+        batch_pt, _ = pt_model.predict(resized, configs=0.5)
+        batch_pth, _ = pth_model.predict(resized, configs=0.5)
 
-            assert rf_detr_boxes.shape[0] == outputs_pth["boxes"].shape[0]
-            assert np.allclose(rf_detr_boxes, outputs_pth["boxes"], rtol=tolerance, atol=tolerance)
-            assert np.allclose(outputs_rfdetr.confidence, outputs_pth["scores"], rtol=tolerance, atol=tolerance)
-            assert rf_detr_classes == outputs_pth["classes"].tolist()
+        assert len(rf_batch_preds) == len(resized)
+        assert len(batch_pt["boxes"]) == len(resized)
+        assert len(batch_pth["boxes"]) == len(resized)
+
+        keys = ("boxes", "scores", "classes")
+        for i, rf_preds in enumerate(rf_batch_preds):
+            outputs_pt = {k: batch_pt[k][i] for k in keys}
+            outputs_pth = {k: batch_pth[k][i] for k in keys}
+
+            compare_results(rf_preds, outputs_pt, "pt_model")
+            compare_results(rf_preds, outputs_pth, "pth_model")
 
     def test_warmup(self, obj_detector):
         obj_detector.warmup()
 
     def test_empty(self, obj_detector):
         empty_img = np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
-        outputs = obj_detector.predict(empty_img, configs=0.5)
+        batch_outputs, _ = obj_detector.predict(empty_img, configs=0.5)
+        outputs = {k: v[0] for k, v in batch_outputs.items()}
         assert len(outputs["boxes"]) == 0
         assert len(outputs["scores"]) == 0
         assert len(outputs["classes"]) == 0
 
     def test_confidence(self, imgs_coco, obj_detector):
         img = cv2.resize(imgs_coco[0], (IMAGE_SIZE, IMAGE_SIZE))
-        outputs_05 = obj_detector.predict(img, configs=1.0)
-        assert len(outputs_05["boxes"]) == 0
+        batch_outputs, _ = obj_detector.predict(img, configs=1.0)
+        outputs = {k: v[0] for k, v in batch_outputs.items()}
+        assert len(outputs["boxes"]) == 0
 
     def test_operators(self, imgs_coco, obj_detector):
         for idx, img in enumerate(imgs_coco):
@@ -124,17 +140,43 @@ class Test_Rfdetr_Model:
             img_resized = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
             operators = [{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}]
 
-            outputs_with_ops = obj_detector.predict(img_resized, configs=0.5, operators=operators)
-            assert len(outputs_with_ops["boxes"]) > 0, "Expected detections with operators, but got none."
+            batch_outputs, _ = obj_detector.predict(img_resized, configs=0.5, operators=operators)
+            outputs = {k: v[0] for k, v in batch_outputs.items()}
+            assert len(outputs["boxes"]) > 0, "Expected detections with operators, but got none."
 
-            if len(outputs_with_ops["boxes"]) > 0:
+            if len(outputs["boxes"]) > 0:
                 # boxes with operators should be scaled to the original image size
-                assert np.all(outputs_with_ops["boxes"][:, 0] <= w)
-                assert np.all(outputs_with_ops["boxes"][:, 1] <= h)
-                assert np.all(outputs_with_ops["boxes"][:, 2] <= w)
-                assert np.all(outputs_with_ops["boxes"][:, 3] <= h)
+                assert np.all(outputs["boxes"][:, 0] <= w)
+                assert np.all(outputs["boxes"][:, 1] <= h)
+                assert np.all(outputs["boxes"][:, 2] <= w)
+                assert np.all(outputs["boxes"][:, 3] <= h)
 
-            annotated_image = obj_detector.annotate_image(outputs_with_ops, img)
+            annotated_image = obj_detector.annotate_image(outputs, img)
             out_name = f"out_operators_{idx}.jpg"
             os.makedirs(OUT_DIR, exist_ok=True)
+            cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
+
+    def test_operators_batch(self, imgs_coco, obj_detector):
+        original_sizes = [(img.shape[1], img.shape[0]) for img in imgs_coco]  # (w, h)
+        operators = [[{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}] for w, h in original_sizes]
+        imgs_resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
+
+        batch_outputs, _ = obj_detector.predict(imgs_resized, configs=0.5, operators=operators)
+
+        assert len(batch_outputs["boxes"]) == len(imgs_coco)
+
+        os.makedirs(OUT_DIR, exist_ok=True)
+        for idx, img in enumerate(imgs_coco):
+            w, h = original_sizes[idx]
+            outputs = {k: v[idx] for k, v in batch_outputs.items()}
+            assert len(outputs["boxes"]) > 0, f"Expected detections for image {idx}, but got none."
+
+            # boxes with operators should be scaled to the original image size
+            assert np.all(outputs["boxes"][:, 0] <= w)
+            assert np.all(outputs["boxes"][:, 1] <= h)
+            assert np.all(outputs["boxes"][:, 2] <= w)
+            assert np.all(outputs["boxes"][:, 3] <= h)
+
+            annotated_image = obj_detector.annotate_image(outputs, img)
+            out_name = f"out_operators_batch_{idx}.jpg"
             cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))

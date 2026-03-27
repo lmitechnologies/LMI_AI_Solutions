@@ -58,10 +58,12 @@ def inference_run(args):
         image = cv2.imread(img_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         t0 = time.time()
-        outputs = model.predict(image, configs=args.get("conf", 0.5))
+        batch_outputs, time_info = model.predict(image, configs=args.get("conf", 0.5))
         t1 = time.time()
         inference_times.append(t1 - t0)
-        logger.info(f"Processed image: {img_name}, found {outputs} objects")
+        # Extract single image results from batch output
+        outputs = {k: v[0] for k, v in batch_outputs.items()}
+        logger.info(f"Processed image: {img_name}, found {len(outputs.get('boxes', []))} objects")
         annotated_image = model.annotate_image(outputs, image)
 
         output_image_path = os.path.join(out_path, img_name)

@@ -8,7 +8,6 @@ import yaml
 
 try:
     from rfdetr import (
-        RFDETR2XLarge,
         RFDETRLarge,
         RFDETRMedium,
         RFDETRNano,
@@ -19,7 +18,6 @@ try:
         RFDETRSegSmall,
         RFDETRSegXLarge,
         RFDETRSmall,
-        RFDETRXLarge,
     )
 except ImportError as e:
     logging.error(f"Failed to import rfdetr models: {e}")
@@ -44,8 +42,8 @@ MODEL_REGISTRY = {
     (TASK_OD, "small"): RFDETRSmall,
     (TASK_OD, "medium"): RFDETRMedium,
     (TASK_OD, "large"): RFDETRLarge,
-    (TASK_OD, "xlarge"): RFDETRXLarge,
-    (TASK_OD, "2xlarge"): RFDETR2XLarge,
+    # (TASK_OD, "xlarge"): RFDETRXLarge,
+    # (TASK_OD, "2xlarge"): RFDETR2XLarge,
     (TASK_SEGMENTATION, "nano"): RFDETRSegNano,
     (TASK_SEGMENTATION, "small"): RFDETRSegSmall,
     (TASK_SEGMENTATION, "medium"): RFDETRSegMedium,

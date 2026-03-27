@@ -1,5 +1,8 @@
+import collections
 import logging
 import os
+import time
+from typing import Dict, List, Optional, Union
 
 import cv2
 import numpy as np
@@ -67,32 +70,20 @@ class RfdetrBase(ODBase):
             return configs
         raise ValueError(f"configs must be a float or dict, got {type(configs).__name__}")
 
-    def postprocess(self, outputs, **kwargs) -> Results:
-        """Postprocess cxcywh logit outputs (used by RfdetrTRT and RfdetrPT).
-
-        Expects outputs[0][0] to be box coordinates (N, 4) in cxcywh normalized format
-        and outputs[1][0] to be class logits (N, num_classes). Scales boxes to pixel
-        coordinates and filters by per-class confidence thresholds.
+    def _postprocess_single(self, dets_data, labels_data, orig_h, orig_w, configs, operators=None):
+        """Postprocess a single image's cxcywh logit outputs.
 
         Args:
-            outputs: Raw model outputs (list of at least 2 tensors/arrays).
-            **kwargs:
-                image (np.ndarray): Original image, used to scale boxes.
-                configs: Confidence threshold (float) or per-class dict.
-                operators (list): Coordinate transform operators to revert.
+            dets_data (np.ndarray): Box coordinates (N, 4) in cxcywh normalized format.
+            labels_data (np.ndarray): Class logits (N, num_classes).
+            orig_h (int): Original image height.
+            orig_w (int): Original image width.
+            configs (dict): Per-class confidence thresholds.
+            operators (list): Coordinate transform operators to revert.
 
         Returns:
             Results object with xyxy boxes, scores, and class names.
         """
-        image = kwargs["image"]
-        orig_h, orig_w = image.shape[:2]
-        configs = self._parse_confidence_config(kwargs.get("configs"), list(self.class_map.values()))
-
-        if len(outputs) < 2:
-            raise RuntimeError(f"Expected at least 2 output tensors, got {len(outputs)}")
-
-        dets_data = to_numpy(outputs[0][0])
-        labels_data = to_numpy(outputs[1][0])
         scores_all = sigmoid(labels_data)
 
         max_scores = np.max(scores_all, axis=1)
@@ -115,32 +106,111 @@ class RfdetrBase(ODBase):
         x_max, y_max = cx + w / 2.0, cy + h / 2.0
         final_boxes = np.stack([x_min, y_min, x_max, y_max], axis=1)
 
-        operators = kwargs.get("operators", [])
         if operators:
             final_boxes = pipeline_utils.revert_to_origin(final_boxes, operators)
 
         return Results(boxes=torch.from_numpy(final_boxes), scores=torch.from_numpy(filtered_scores), classes=filtered_classes)
 
-    def predict(self, image, configs, operators=None, **kwargs) -> dict:
-        """Run the full inference pipeline: preprocess → forward → postprocess.
+    def postprocess(self, outputs, **kwargs) -> List[Results]:
+        """Postprocess cxcywh logit outputs for a batch (used by RfdetrTRT and RfdetrPT).
+
+        Expects outputs[0] to be box coordinates (B, N, 4) in cxcywh normalized format
+        and outputs[1] to be class logits (B, N, num_classes). Scales boxes to pixel
+        coordinates and filters by per-class confidence thresholds.
 
         Args:
-            image (np.ndarray): Input image in HWC uint8 format.
-            configs: Confidence threshold (float) or per-class thresholds (dict).
-            operators (list, optional): Coordinate transform operators to revert.
+            outputs: Raw model outputs (list of at least 2 tensors/arrays).
+            **kwargs:
+                images (list[np.ndarray]): Original images, used to scale boxes.
+                configs: Confidence threshold (float) or per-class dict.
+                ops_list (list[list]): Per-image coordinate transform operators.
 
         Returns:
-            dict with keys 'boxes', 'scores', 'classes'.
+            List of Results objects, one per image.
         """
+        images = kwargs["images"]
+        configs = self._parse_confidence_config(kwargs.get("configs"), list(self.class_map.values()))
+        ops_list = kwargs.get("ops_list", [[] for _ in range(len(images))])
+
+        if len(outputs) < 2:
+            raise RuntimeError(f"Expected at least 2 output tensors, got {len(outputs)}")
+
+        all_dets = to_numpy(outputs[0])
+        all_labels = to_numpy(outputs[1])
+
+        results = []
+        for i, image in enumerate(images):
+            orig_h, orig_w = image.shape[:2]
+            results.append(self._postprocess_single(all_dets[i], all_labels[i], orig_h, orig_w, configs, ops_list[i]))
+        return results
+
+    def predict(
+        self,
+        image: Union[np.ndarray, List[np.ndarray]],
+        configs,
+        operators: Optional[Union[List[Dict], List[List[Dict]]]] = None,
+        **kwargs,
+    ) -> tuple:
+        """Run the full inference pipeline: preprocess → forward → postprocess.
+
+        Supports both single image and batch inference.
+
+        Args:
+            image: A single HWC image or a list of HWC images.
+                All images in a batch must have the same dimensions.
+            configs: Confidence threshold (float) or per-class thresholds (dict).
+            operators: Operators for coordinate reversion. Accepts:
+                - None: no coordinate reversion.
+                - list[dict]: a single operator chain, applied to all images.
+                - list[list[dict]]: per-image operator chains (length must match batch size).
+
+        Returns:
+            (results, time_info)
+            results (dict): a dictionary where each value is a list of length B (batch size), e.g., {
+                'boxes': [numpy, ...],
+                'scores': [numpy, ...],
+                'classes': [list of strings, ...],
+            }
+            time_info (dict): timing info with keys 'preproc', 'proc', 'postproc'.
+        """
+        time_info = {}
+
+        is_batch = isinstance(image, list)
+        images = image if is_batch else [image]
+        batch_size = len(images)
+
+        # Normalize operators to per-image list
         if operators is None:
-            operators = []
-        preprocessed = self.preprocess(image, **kwargs)
+            ops_list = [[] for _ in range(batch_size)]
+        elif len(operators) > 0 and isinstance(operators[0], dict):
+            ops_list = [operators] * batch_size
+        else:
+            if len(operators) != batch_size:
+                raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
+            ops_list = operators
+
+        # preprocess
+        t0 = time.time()
+        preprocessed = self.preprocess(images, **kwargs)
+        time_info["preproc"] = time.time() - t0
+
+        # forward
+        t0 = time.time()
         outputs = self.forward(preprocessed, **kwargs)
-        results = self.postprocess(outputs, image=image, configs=configs, operators=operators, **kwargs)
-        results_dict = results.to_dict(return_tensor=False)
-        if not results_dict:
-            results_dict = {"boxes": [], "scores": [], "classes": []}
-        return results_dict
+        time_info["proc"] = time.time() - t0
+
+        # postprocess
+        t0 = time.time()
+        list_results = self.postprocess(outputs, images=images, configs=configs, ops_list=ops_list, **kwargs)
+
+        final = collections.defaultdict(list)
+        for result in list_results:
+            result_dict = result.to_dict(return_tensor=False)
+            for k in ("boxes", "scores", "classes"):
+                final[k].append(result_dict.get(k, []))
+        time_info["postproc"] = time.time() - t0
+
+        return dict(final), time_info
 
     @staticmethod
     def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False) -> np.ndarray:
@@ -227,7 +297,7 @@ class RfdetrTRT(RfdetrBase):
 
         self.cuda = cuda
         self.trt = trt
-        self.image_size = kwargs.get("image_size", (640, 640))
+        # self.image_size = kwargs.get("image_size", (640, 640))
         self.means = [0.485, 0.456, 0.406]
         self.stds = [0.229, 0.224, 0.225]
         self.trt_logger = trt.Logger(trt.Logger.INFO)
@@ -237,84 +307,136 @@ class RfdetrTRT(RfdetrBase):
             self.engine = self.runtime.deserialize_cuda_engine(f.read())
 
         self.context = self.engine.create_execution_context()
-        self.current_idx = 0
-        self.streams = [cuda.Stream(), cuda.Stream()]
-        self.buffer_sets = [self._allocate_buffers() for _ in range(2)]
+        self.stream = cuda.Stream()
 
-        self.input_shape = self.buffer_sets[0]["inputs"][0]["shape"]
-        self.input_dtype = self.buffer_sets[0]["inputs"][0]["dtype"]
-        self.num_classes = self.buffer_sets[0]["outputs"][1]["shape"][-1]
+        # Inspect input tensor for shape and dynamic batch info
+        self.input_name = self.engine.get_tensor_name(0)
+        profile_shape = self.engine.get_tensor_profile_shape(self.input_name, 0)
+        self.input_dtype = self.trt.nptype(self.engine.get_tensor_dtype(self.input_name))
+
+        if profile_shape:
+            self.min_batch = profile_shape[0][0]
+            self.opt_batch = profile_shape[1][0]
+            self.max_batch = profile_shape[2][0]
+            # Use the opt shape (without batch) as the base input shape
+            self.input_shape_no_batch = tuple(profile_shape[1][1:])  # (C, H, W)
+        else:
+            # Static shape engine
+            static_shape = self.engine.get_tensor_shape(self.input_name)
+            self.min_batch = static_shape[0]
+            self.opt_batch = static_shape[0]
+            self.max_batch = static_shape[0]
+            self.input_shape_no_batch = tuple(static_shape[1:])
+
+        # Gather output tensor metadata
+        self.output_info = []
+        for i in range(self.engine.num_io_tensors):
+            name = self.engine.get_tensor_name(i)
+            if self.engine.get_tensor_mode(name) == self.trt.TensorIOMode.OUTPUT:
+                dtype = self.trt.nptype(self.engine.get_tensor_dtype(name))
+                # Get the shape with -1 for dynamic dims
+                shape = self.engine.get_tensor_shape(name)
+                self.output_info.append({"name": name, "dtype": dtype, "shape": tuple(shape)})
+
+        self.num_classes = self.output_info[1]["shape"][-1]
 
         class_map = kwargs.get("class_map")
         if class_map is None:
             raise ValueError("class_map is required for RfdetrTRT")
         self._setup_class_map(class_map)
 
-    def _allocate_buffers(self):
-        """Allocates one set of pinned host memory and device memory."""
-        inputs = []
-        outputs = []
-        all_bindings = []
+    def _allocate_for_batch(self, batch_size):
+        """Allocate host and device buffers for a given batch size."""
+        if batch_size > self.max_batch:
+            raise ValueError(f"Batch size {batch_size} exceeds engine max batch size {self.max_batch}")
 
-        for i in range(self.engine.num_io_tensors):
-            name = self.engine.get_tensor_name(i)
-            shape = self.engine.get_tensor_shape(name)
-            dtype = self.trt.nptype(self.engine.get_tensor_dtype(name))
+        # Set input shape with actual batch size
+        input_shape = (batch_size, *self.input_shape_no_batch)
+        self.context.set_input_shape(self.input_name, input_shape)
 
-            host_mem = self.cuda.pagelocked_empty(self.trt.volume(shape), dtype)
-            device_mem = self.cuda.mem_alloc(host_mem.nbytes)
+        buffers = {}
+        # Input buffer
+        input_nbytes = int(np.prod(input_shape)) * np.dtype(self.input_dtype).itemsize
+        buffers["input_host"] = self.cuda.pagelocked_empty(int(np.prod(input_shape)), self.input_dtype)
+        buffers["input_device"] = self.cuda.mem_alloc(input_nbytes)
+        buffers["input_shape"] = input_shape
 
-            binding = {
-                "name": name,
-                "shape": shape,
-                "dtype": dtype,
-                "host": host_mem,
-                "device": device_mem,
-            }
+        # Output buffers
+        buffers["outputs"] = []
+        for info in self.output_info:
+            # Replace dynamic batch dim (-1) with actual batch size
+            out_shape = tuple(batch_size if d == -1 else d for d in info["shape"])
+            out_nbytes = int(np.prod(out_shape)) * np.dtype(info["dtype"]).itemsize
+            buffers["outputs"].append(
+                {
+                    "name": info["name"],
+                    "shape": out_shape,
+                    "dtype": info["dtype"],
+                    "host": self.cuda.pagelocked_empty(int(np.prod(out_shape)), info["dtype"]),
+                    "device": self.cuda.mem_alloc(out_nbytes),
+                }
+            )
 
-            all_bindings.append(binding)
-            if self.engine.get_tensor_mode(name) == self.trt.TensorIOMode.INPUT:
-                inputs.append(binding)
-            else:
-                outputs.append(binding)
-
-        return {"inputs": inputs, "outputs": outputs, "all": all_bindings}
+        return buffers
 
     def warmup(self):
         """Warm up the model by running a dummy inference."""
-        dummy_input = np.zeros(self.input_shape, dtype=self.input_dtype)
+        dummy_input = np.zeros((1, *self.input_shape_no_batch), dtype=self.input_dtype)
         self.forward(np.ascontiguousarray(dummy_input, dtype=self.input_dtype))
 
-    def preprocess(self, image: np.ndarray, **kwargs):
-        """Preprocess the input image for TensorRT inference."""
+    def _preprocess_single(self, image: np.ndarray) -> np.ndarray:
+        """Preprocess a single HWC image to CHW normalized array."""
         input_img = image.astype(np.float32) / 255.0
         means = np.array(self.means, dtype=np.float32)
         stds = np.array(self.stds, dtype=np.float32)
         input_img = (input_img - means) / stds
-        input_img = input_img.transpose(2, 0, 1)
-        input_img = np.expand_dims(input_img, axis=0)
-        return np.array([input_img], dtype=self.input_dtype)
+        return input_img.transpose(2, 0, 1)
+
+    def preprocess(self, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> np.ndarray:
+        """Preprocess input image(s) for TensorRT inference.
+
+        Args:
+            images: A single HWC image or a list of HWC images.
+
+        Returns:
+            np.ndarray: BCHW array with dtype matching the engine input.
+        """
+        if isinstance(images, list):
+            batch = np.stack([self._preprocess_single(img) for img in images])
+        else:
+            batch = np.expand_dims(self._preprocess_single(images), axis=0)
+        return np.ascontiguousarray(batch, dtype=self.input_dtype)
 
     def forward(self, image: np.ndarray, **kwargs) -> list:
-        """Perform async TensorRT inference."""
-        bufs = self.buffer_sets[self.current_idx]
-        stream = self.streams[self.current_idx]
+        """Perform async TensorRT inference with dynamic batch size.
 
-        np.copyto(bufs["inputs"][0]["host"], image.ravel())
-        self.cuda.memcpy_htod_async(bufs["inputs"][0]["device"], bufs["inputs"][0]["host"], stream)
+        Args:
+            image: BCHW numpy array.
 
-        for b in bufs["all"]:
-            self.context.set_tensor_address(b["name"], int(b["device"]))
+        Returns:
+            List of output arrays, each with shape (B, ...).
+        """
+        batch_size = image.shape[0]
+        bufs = self._allocate_for_batch(batch_size)
 
-        self.context.execute_async_v3(stream_handle=stream.handle)
-        results = []
+        # Copy input to device
+        np.copyto(bufs["input_host"], image.ravel())
+        self.cuda.memcpy_htod_async(bufs["input_device"], bufs["input_host"], self.stream)
+
+        # Set tensor addresses
+        self.context.set_tensor_address(self.input_name, int(bufs["input_device"]))
         for out in bufs["outputs"]:
-            self.cuda.memcpy_dtoh_async(out["host"], out["device"], stream)
-            results.append(out)
-        stream.synchronize()
+            self.context.set_tensor_address(out["name"], int(out["device"]))
 
-        self.current_idx = 1 - self.current_idx
-        return [r["host"].reshape(r["shape"]) for r in results]
+        # Execute
+        self.context.execute_async_v3(stream_handle=self.stream.handle)
+
+        # Copy outputs back
+        for out in bufs["outputs"]:
+            self.cuda.memcpy_dtoh_async(out["host"], out["device"], self.stream)
+        self.stream.synchronize()
+
+        return [out["host"].reshape(out["shape"]) for out in bufs["outputs"]]
 
 
 @RfdetrModel.register("pt")
@@ -338,25 +460,52 @@ class RfdetrPT(RfdetrBase):
         dummy_input = torch.zeros((1, 3, self.image_size[0], self.image_size[1]), dtype=torch.float32).to(self.device)
         self.forward(dummy_input)
 
-    def preprocess(self, image: np.ndarray, **kwargs):
-        """Preprocess the input image for TorchScript inference."""
+    def _preprocess_single(self, image: np.ndarray) -> np.ndarray:
+        """Preprocess a single HWC image to CHW normalized array."""
         input_img = image.astype(np.float32) / 255.0
         means = np.array(self.means, dtype=np.float32)
         stds = np.array(self.stds, dtype=np.float32)
         input_img = (input_img - means) / stds
-        input_img = input_img.transpose(2, 0, 1)
-        input_img = np.expand_dims(input_img, axis=0)
-        return input_img
+        return input_img.transpose(2, 0, 1)
+
+    def preprocess(self, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> np.ndarray:
+        """Preprocess input image(s) for TorchScript inference.
+
+        Args:
+            images: A single HWC image or a list of HWC images.
+
+        Returns:
+            np.ndarray: BCHW array.
+        """
+        if isinstance(images, list):
+            return np.stack([self._preprocess_single(img) for img in images])
+        return np.expand_dims(self._preprocess_single(images), axis=0)
 
     def forward(self, image: np.ndarray, **kwargs) -> list:
-        """Perform TorchScript inference."""
+        """Perform TorchScript inference one image at a time.
+
+        Args:
+            image: BCHW numpy array or tensor.
+
+        Returns:
+            List of output tensors, each with batch dimension (B, ...).
+        """
         if isinstance(image, np.ndarray):
             input_tensor = torch.from_numpy(image)
         else:
             input_tensor = image
         input_tensor = input_tensor.to(self.device).float()
+
+        all_outputs = []
         with torch.no_grad():
-            return self.model(input_tensor)
+            for i in range(input_tensor.shape[0]):
+                single_input = input_tensor[i : i + 1]
+                outputs = self.model(single_input)
+                all_outputs.append(outputs)
+
+        # Concatenate along batch dimension: each element across images
+        num_outputs = len(all_outputs[0])
+        return [torch.cat([all_outputs[i][j] for i in range(len(all_outputs))], dim=0) for j in range(num_outputs)]
 
 
 @RfdetrModel.register("pth")
@@ -364,7 +513,7 @@ class RfdetrPTH(RfdetrBase):
     """RF-DETR PyTorch model wrapper for object detection.
 
     This class provides an interface for RF-DETR models loaded from PyTorch checkpoint files.
-    Supports multiple model variants: nano, small, medium, large, xlarge, and 2xlarge.
+    Supports multiple model variants: nano, small, medium, large.
     """
 
     DEFAULT_MODEL_TYPE = "medium"
@@ -376,7 +525,7 @@ class RfdetrPTH(RfdetrBase):
         Args:
             model_path: Path to the model checkpoint file (.pth)
             **kwargs: Additional configuration options:
-                - model_type: Model variant (nano/medium/large/xlarge/2xlarge). Default: medium
+                - model_type: Model variant (nano/small/medium/large). Default: medium
                 - device: Device to run on (cuda/cpu). Default: cuda if available
                 - image_size: Tuple of (height, width). Default: model-specific
 
@@ -391,8 +540,8 @@ class RfdetrPTH(RfdetrBase):
             "small": (512, RFDETRSmall),
             "medium": (576, RFDETRMedium),
             "large": (704, RFDETRLarge),
-            # "xlarge": (700, RFDETRXLarge),
-            # "2xlarge": (880, RFDETR2XLarge),
+            # "xlarge": (700, RFDETRXLarge),    # require license
+            # "2xlarge": (880, RFDETR2XLarge),  # require license
         }
 
         self.logger.debug(f"Initializing RfdetrPTH with kwargs: {kwargs}")
@@ -451,44 +600,37 @@ class RfdetrPTH(RfdetrBase):
         """
         return image
 
-    def forward(self, image: np.ndarray, **kwargs) -> dict:
-        """Perform forward pass through the model.
+    def forward(self, images, **kwargs):
+        """Perform forward pass through the model using a for loop (RF-DETR library does not support batch inference).
 
         Args:
-            image: Input image in numpy array format (HWC, uint8)
-            **kwargs: Additional inference parameters (unused)
+            images: A single image or list of images in numpy array format (HWC, uint8, RGB).
 
         Returns:
-            Model predictions containing bounding boxes, scores, and class IDs
+            List of model predictions, one per image.
         """
-        return self.model.predict(image)
+        if not isinstance(images, list):
+            images = [images]
+        return [self.model.predict(img) for img in images]
 
-    def postprocess(self, preds, **kwargs) -> Results:
-        """Postprocess rfdetr library predictions by applying confidence thresholds.
+    def _postprocess_pth_single(self, preds, configs, operators=None):
+        """Postprocess a single image's rfdetr library predictions.
 
         Args:
             preds: Predictions from rfdetr containing xyxy, confidence, and class_id.
-            **kwargs:
-                configs: Confidence threshold (float) or per-class thresholds (dict).
-                operators: List of coordinate transform operators to revert.
+            configs (dict): Per-class confidence thresholds.
+            operators (list): Coordinate transform operators to revert.
 
         Returns:
             Results object with filtered boxes, scores, and class names.
         """
-        configs = self._parse_confidence_config(
-            kwargs.get("configs", self.DEFAULT_CONFIDENCE),
-            self.class_names.values(),
-        )
-
         boxes = np.array(preds.xyxy)
         scores = np.array(preds.confidence)
         class_ids = preds.class_id
 
-        # Early return if no detections
         if len(boxes) == 0:
             return Results(boxes=[], scores=[], classes=[])
 
-        # Convert class IDs to names
         classes = np.array([self.class_names[c] for c in class_ids])
 
         mask = scores >= np.vectorize(configs.get)(classes, 1.0)
@@ -496,14 +638,72 @@ class RfdetrPTH(RfdetrBase):
         scores = scores[mask]
         classes = classes[mask]
 
-        # Apply coordinate transformations if operators provided
-        operators = kwargs.get("operators", [])
         if operators:
             boxes = pipeline_utils.revert_to_origin(boxes, operators)
 
-        # Convert to tensors if results exist
         return Results(
             boxes=torch.from_numpy(boxes) if len(boxes) > 0 else [],
             scores=torch.from_numpy(scores) if len(scores) > 0 else [],
             classes=classes if len(classes) > 0 else [],
         )
+
+    def predict(
+        self,
+        image: Union[np.ndarray, List[np.ndarray]],
+        configs=None,
+        operators: Optional[Union[List[Dict], List[List[Dict]]]] = None,
+        **kwargs,
+    ) -> tuple:
+        """Run inference using the rfdetr library's native batch support.
+
+        Args:
+            image: A single HWC image or a list of HWC images (RGB, uint8).
+            configs: Confidence threshold (float) or per-class thresholds (dict).
+            operators: Operators for coordinate reversion. Accepts:
+                - None: no coordinate reversion.
+                - list[dict]: a single operator chain, applied to all images.
+                - list[list[dict]]: per-image operator chains (length must match batch size).
+
+        Returns:
+            (results, time_info)
+            results (dict): dict where each value is a list of length B.
+            time_info (dict): timing info with keys 'preproc', 'proc', 'postproc'.
+        """
+        time_info = {}
+
+        is_batch = isinstance(image, list)
+        images = image if is_batch else [image]
+        batch_size = len(images)
+
+        # Normalize operators to per-image list
+        if operators is None:
+            ops_list = [[] for _ in range(batch_size)]
+        elif len(operators) > 0 and isinstance(operators[0], dict):
+            ops_list = [operators] * batch_size
+        else:
+            if len(operators) != batch_size:
+                raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
+            ops_list = operators
+
+        configs = self._parse_confidence_config(
+            configs if configs is not None else self.DEFAULT_CONFIDENCE,
+            self.class_names.values(),
+        )
+
+        # forward (rfdetr library handles preprocessing internally)
+        time_info["preproc"] = 0.0
+        t0 = time.time()
+        preds = self.forward(images, **kwargs)
+        time_info["proc"] = time.time() - t0
+
+        # postprocess
+        t0 = time.time()
+        final = collections.defaultdict(list)
+        for pred, ops in zip(preds, ops_list):
+            result = self._postprocess_pth_single(pred, configs, ops)
+            result_dict = result.to_dict(return_tensor=False)
+            for k in ("boxes", "scores", "classes"):
+                final[k].append(result_dict.get(k, []))
+        time_info["postproc"] = time.time() - t0
+
+        return dict(final), time_info
