@@ -9,6 +9,7 @@ import numpy as np
 import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from object_detectors.od_core.model_factory import ModelFactory
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
@@ -50,6 +51,32 @@ class RfdetrBase(ODBase):
         """Initialize class_map and a vectorized name-lookup from a {int_id: str_name} mapping."""
         self.class_map = {int(k): str(v) for k, v in class_map.items()}
         self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)))
+
+    def _preprocess_single(self, image: np.ndarray) -> np.ndarray:
+        """Preprocess a single HWC image to CHW normalized array."""
+        input_img = image.astype(np.float32) / 255.0
+        means = np.array(self.means, dtype=np.float32)
+        stds = np.array(self.stds, dtype=np.float32)
+        input_img = (input_img - means) / stds
+        return input_img.transpose(2, 0, 1)
+
+    def _normalize_operators(self, operators, batch_size: int) -> list:
+        """Normalize operators to a per-image list of operator chains.
+
+        Args:
+            operators: None, a single chain (list[dict]), or per-image chains (list[list[dict]]).
+            batch_size: Number of images in the batch.
+
+        Returns:
+            List of operator chains, one per image.
+        """
+        if operators is None:
+            return [[] for _ in range(batch_size)]
+        if len(operators) > 0 and isinstance(operators[0], dict):
+            return [operators] * batch_size
+        if len(operators) != batch_size:
+            raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
+        return operators
 
     def _parse_confidence_config(self, configs, class_names) -> dict:
         """Parse configs into a per-class threshold dict.
@@ -179,15 +206,7 @@ class RfdetrBase(ODBase):
         images = image if is_batch else [image]
         batch_size = len(images)
 
-        # Normalize operators to per-image list
-        if operators is None:
-            ops_list = [[] for _ in range(batch_size)]
-        elif len(operators) > 0 and isinstance(operators[0], dict):
-            ops_list = [operators] * batch_size
-        else:
-            if len(operators) != batch_size:
-                raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
-            ops_list = operators
+        ops_list = self._normalize_operators(operators, batch_size)
 
         # preprocess
         t0 = time.time()
@@ -258,7 +277,7 @@ class RfdetrBase(ODBase):
         versions=["v1"], model_names=["rfdetr"], tasks=["od", "seg", "instancesegmentation", "objectdetection"], frameworks=["rfdetr"]
     )
 )
-class RfdetrModel(ODBase):
+class RfdetrModel(ModelFactory, ODBase):
     """Factory that dispatches to the correct backend based on model file extension.
 
     Supported extensions:
@@ -269,26 +288,10 @@ class RfdetrModel(ODBase):
 
     _registry = {}
 
-    @classmethod
-    def register(cls, format):
-        def decorator(wrapper_cls):
-            cls._registry[format] = wrapper_cls
-            return wrapper_cls
-
-        return decorator
-
-    def __new__(cls, model_path, *args, **kwargs):
-        ext = model_path.split(".")[-1]
-        wrapper_cls = cls._registry.get(ext)
-        if wrapper_cls is None:
-            raise ValueError("Invalid model file extension")
-
-        return wrapper_cls(model_path, *args, **kwargs)
-
 
 @RfdetrModel.register("engine")
 class RfdetrTRT(RfdetrBase):
-    def __init__(self, model_path: str, device="cuda", fp16=False, **kwargs) -> None:
+    def __init__(self, model_path: str, **kwargs) -> None:
         try:
             import pycuda.driver as cuda
             import tensorrt as trt
@@ -384,14 +387,6 @@ class RfdetrTRT(RfdetrBase):
         dummy_input = np.zeros((1, *self.input_shape_no_batch), dtype=self.input_dtype)
         self.forward(np.ascontiguousarray(dummy_input, dtype=self.input_dtype))
 
-    def _preprocess_single(self, image: np.ndarray) -> np.ndarray:
-        """Preprocess a single HWC image to CHW normalized array."""
-        input_img = image.astype(np.float32) / 255.0
-        means = np.array(self.means, dtype=np.float32)
-        stds = np.array(self.stds, dtype=np.float32)
-        input_img = (input_img - means) / stds
-        return input_img.transpose(2, 0, 1)
-
     def preprocess(self, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> np.ndarray:
         """Preprocess input image(s) for TensorRT inference.
 
@@ -459,14 +454,6 @@ class RfdetrPT(RfdetrBase):
         """Warm up the model by running a dummy inference."""
         dummy_input = torch.zeros((1, 3, self.image_size[0], self.image_size[1]), dtype=torch.float32).to(self.device)
         self.forward(dummy_input)
-
-    def _preprocess_single(self, image: np.ndarray) -> np.ndarray:
-        """Preprocess a single HWC image to CHW normalized array."""
-        input_img = image.astype(np.float32) / 255.0
-        means = np.array(self.means, dtype=np.float32)
-        stds = np.array(self.stds, dtype=np.float32)
-        input_img = (input_img - means) / stds
-        return input_img.transpose(2, 0, 1)
 
     def preprocess(self, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> np.ndarray:
         """Preprocess input image(s) for TorchScript inference.
@@ -675,15 +662,7 @@ class RfdetrPTH(RfdetrBase):
         images = image if is_batch else [image]
         batch_size = len(images)
 
-        # Normalize operators to per-image list
-        if operators is None:
-            ops_list = [[] for _ in range(batch_size)]
-        elif len(operators) > 0 and isinstance(operators[0], dict):
-            ops_list = [operators] * batch_size
-        else:
-            if len(operators) != batch_size:
-                raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
-            ops_list = operators
+        ops_list = self._normalize_operators(operators, batch_size)
 
         configs = self._parse_confidence_config(
             configs if configs is not None else self.DEFAULT_CONFIDENCE,

@@ -12,6 +12,7 @@ from lmi_utils.gadget_utils.pipeline_utils import (
     revert_to_origin,
 )
 from lmi_utils.postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_masks
+from object_detectors.od_core.model_factory import ModelFactory
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 
@@ -24,52 +25,83 @@ from object_detectors.od_core.od_base import ODBase
         frameworks=["detectron2"],
     )
 )
-class Detectron2Model(ODBase):
-    """
-    Detectron2Model is a factory class for creating object detection models based on the Detectron2 framework.
-    Attributes:
-        _registry (dict): A dictionary that maps file extensions to their corresponding model wrapper classes.
-    Methods:
-        register(format):
-            Registers a model wrapper class for a specific file format.
-            Args:
-                format (str): The file extension format to register the wrapper class for.
-            Returns:
-                function: A decorator function that registers the wrapper class.
-        __new__(cls, model_path, class_map, *args, **kwargs):
-            Creates an instance of the appropriate model wrapper class based on the file extension of the model_path.
-            Args:
-                model_path (str): The file path to the model file.
-                class_map (dict): A dictionary mapping class IDs to class names.
-                *args: Additional positional arguments to pass to the model wrapper class.
-                **kwargs: Additional keyword arguments to pass to the model wrapper class.
-            Returns:
-                object: An instance of the appropriate model wrapper class.
-            Raises:
-                ValueError: If the file extension of model_path is not registered.
+class Detectron2Model(ModelFactory, ODBase):
+    """Factory that dispatches to the correct backend based on model file extension.
+
+    Supported extensions:
+        .engine → Detectron2TRT (TensorRT)
+        .pt     → Detectron2PT  (TorchScript)
     """
 
     _registry = {}
 
-    @classmethod
-    def register(cls, format):
-        def decorator(wrapper_cls):
-            cls._registry[format] = wrapper_cls
-            return wrapper_cls
 
-        return decorator
+class Detectron2Base(ODBase):
+    """Shared base class for all Detectron2 model backends.
 
-    def __new__(cls, model_path, *args, **kwargs):
-        ext = model_path.split(".")[-1]
-        wrapper_cls = cls._registry.get(ext)
-        if wrapper_cls is None:
-            raise ValueError("Invalid model file extension")
+    Provides common utilities: class-map setup, the predict pipeline, and image annotation.
+    """
 
-        return wrapper_cls(model_path, *args, **kwargs)
+    def _setup_class_map(self, class_map: dict) -> None:
+        """Initialize class_map and vectorized lookup.
+
+        Handles both {int_id: str_name} and reversed {str_name: int_id} mappings.
+        """
+        try:
+            self.class_map = {int(k): str(v) for k, v in class_map.items()}
+        except Exception:
+            self.class_map = {int(v): str(k) for k, v in class_map.items()}
+        self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)))
+
+    def _normalize_operators(self, operators, batch_size: int) -> list:
+        """Normalize operators to a per-image list of operator chains.
+
+        Args:
+            operators: None, a single chain (list[dict]), or per-image chains (list[list[dict]]).
+            batch_size: Number of images in the batch.
+
+        Returns:
+            List of operator chains, one per image.
+        """
+        if operators is None:
+            return [[] for _ in range(batch_size)]
+        if len(operators) > 0 and isinstance(operators[0], dict):
+            return [operators] * batch_size
+        if len(operators) != batch_size:
+            raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
+        return operators
+
+    def predict(self, images, operators=None, **kwargs):
+        t0 = time.time()
+        if isinstance(images, np.ndarray):
+            shp = images.shape
+            if len(shp) == 3:
+                images = [images]
+            elif len(shp) == 4 and images.shape[0] != self.batch_size:
+                self.logger.error(f"Batch size mismatch: {images.shape[0]} != {self.batch_size}")
+                return {}
+        batch_size = len(images) if isinstance(images, list) else images.shape[0]
+        ops_list = self._normalize_operators(operators, batch_size)
+        predictions = self.forward(self.preprocess(images))
+        predictions = self.postprocess(images, predictions, ops_list=ops_list, **kwargs)
+        t1 = time.time()
+        self.logger.debug(f"proc-time {(t1 - t0) * 1000.0:.2f} ms")
+        return predictions
+
+    def annotate_image(self, result, image, color_map=None, **kwargs):
+        for i in range(len(result["classes"])):
+            plot_one_box(
+                result["boxes"][i],
+                image,
+                label=f"{result['classes'][i]}:{result['scores'][i]:.2f}",
+                mask=result["masks"][i] if len(result["masks"]) > 0 else None,
+                color=color_map,
+            )
+        return image
 
 
 @Detectron2Model.register("engine")
-class Detectron2TRT(ODBase):
+class Detectron2TRT(Detectron2Base):
     logger = logging.getLogger("Detectron2TRT")
 
     def __init__(self, model_path, **kwargs):
@@ -140,11 +172,7 @@ class Detectron2TRT(ODBase):
         class_map = kwargs.get("class_map", None)
         if class_map is None:
             raise ValueError("class_map is required for [Detectron2TRT]")
-        try:
-            self.class_map = {int(k): str(v) for k, v in class_map.items()}
-        except Exception:
-            self.class_map = {int(v): str(k) for k, v in class_map.items()}
-        self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)))
+        self._setup_class_map(class_map)
 
     def warmup(self):
         """
@@ -230,7 +258,7 @@ class Detectron2TRT(ODBase):
         confs = kwargs.get("confs", {})
         mask_threshold = kwargs.get("mask_threshold", 0.5)
         process_masks = kwargs.get("process_masks", True)
-        operators = kwargs.get("operators", [])
+        ops_list = kwargs.get("ops_list", [[] for _ in range(self.batch_size)])
         image_h, image_w = images[0].shape[0], images[0].shape[1]
 
         if len(predictions) == 5:
@@ -252,6 +280,7 @@ class Detectron2TRT(ODBase):
         processed_segments = []
 
         for idx in range(self.batch_size):
+            operators = ops_list[idx]
             valid_scores = scores[idx] >= np.vectorize(confs.get)(classes[idx], 1.0)
             batch_boxes, batch_scores = (
                 boxes[idx][valid_scores],
@@ -316,66 +345,9 @@ class Detectron2TRT(ODBase):
         }
         return results
 
-    def predict(self, images, **kwargs):
-        """
-        Perform prediction on the given images.
-
-        Args:
-            images (list or np.ndarray): The input images to be processed.
-            **kwargs: Additional keyword arguments for postprocessing.
-
-        Returns:
-            list: The predictions after postprocessing.
-
-        Logs:
-            The time taken for postprocessing in milliseconds.
-        """
-        t0 = time.time()
-
-        if isinstance(images, np.ndarray):
-            # if the input is a single image
-            shp = images.shape
-            if len(shp) == 3:
-                images = [images]
-            elif len(shp) == 4 and images.shape[0] != self.batch_size:
-                self.logger.error(f"Batch size mismatch: {images.shape[0]} != {self.batch_size}")
-                return {}
-
-        predictions = self.forward(self.preprocess(images))
-        predictions = self.postprocess(images, predictions, **kwargs)
-        t1 = time.time()
-        self.logger.debug(f"proc-time {(t1 - t0) * 1000.0:.2f} ms")
-        return predictions
-
-    def annotate_image(self, result, image, color_map=None, **kwargs):
-        """
-        Annotates an image with bounding boxes, class labels, scores, and masks.
-
-        Args:
-            result (dict): A dictionary containing detection results with keys:
-                - "classes" (list): List of detected class labels.
-                - "scores" (list): List of confidence scores for each detected class.
-                - "boxes" (list): List of bounding boxes for each detected object.
-                - "masks" (list, optional): List of masks for each detected object.
-            image (numpy.ndarray): The image to annotate.
-            color_map (dict, optional): A dictionary mapping class labels to colors.
-
-        Returns:
-            numpy.ndarray: The annotated image.
-        """
-        for i in range(len(result["classes"])):
-            plot_one_box(
-                result["boxes"][i],
-                image,
-                label=f"{result['classes'][i]}:{result['scores'][i]:.2f}",
-                mask=result["masks"][i] if len(result["masks"]) > 0 else None,
-                color=color_map,
-            )
-        return image
-
 
 @Detectron2Model.register("pt")
-class Detectron2PT(ODBase):
+class Detectron2PT(Detectron2Base):
     logger = logging.getLogger("Detectron2PT")
 
     def __init__(self, model_path, **kwargs):
@@ -392,13 +364,8 @@ class Detectron2PT(ODBase):
         class_map = kwargs.get("class_map", None)
         if class_map is None:
             raise ValueError("class_map is required for [Detectron2PT]")
-        try:
-            self.class_map = {int(k): str(v) for k, v in class_map.items()}
-        except Exception:
-            # handle the case where class_map is in reverse order
-            self.class_map = {int(v): str(k) for k, v in class_map.items()}
+        self._setup_class_map(class_map)
         self.batch_size = kwargs.get("batch_size", 1)
-        self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)))
         self.image_size = kwargs.get("image_size", [640, 640])
 
     def warmup(self, **kwargs):
@@ -488,11 +455,12 @@ class Detectron2PT(ODBase):
         confs = kwargs.get("confs", {})
         mask_threshold = kwargs.get("mask_threshold", 0.5)
         process_masks = kwargs.get("process_masks", True)
-        operators = kwargs.get("operators", [])
+        ops_list = kwargs.get("ops_list", [[] for _ in range(len(predictions))])
         # if no predictions, return empty results
         if predictions[0]["pred_classes"].shape[0] == 0:
             return results
         for idx, output in enumerate(predictions):
+            operators = ops_list[idx]
             image_h, image_w = images[idx].shape[:2]
             batch_scores = output["scores"].cpu().numpy()
             batch_classes = output["pred_classes"].cpu().numpy()
@@ -547,64 +515,3 @@ class Detectron2PT(ODBase):
             results["masks"].append(batch_masks.cpu().numpy() if isinstance(batch_masks, torch.Tensor) else batch_masks)
             results["segments"].append(batch_segments)
         return results
-
-    def predict(self, images, **kwargs):
-        """
-        Perform prediction on the given images.
-
-        This method preprocesses the input images, performs forward pass to get predictions,
-        and then postprocesses the predictions to generate the final results.
-
-        Args:
-            images (list or array-like): The input images to be processed.
-            operators (optional): Not yet supported. Default is None.
-            **kwargs: Additional keyword arguments for postprocessing.
-
-        Returns:
-            results: The final processed results after prediction.
-
-        Raises:
-            NotImplementedError: If operators is not None, indicating that the feature is not yet supported.
-        """
-        t0 = time.time()
-        if isinstance(images, np.ndarray):
-            # if the input is a single image
-            shp = images.shape
-            if len(shp) == 3:
-                images = [images]
-
-        # preprocess
-        inputs = self.preprocess(images)
-        # forward
-        predictions = self.forward(inputs)
-        # postprocess
-        results = self.postprocess(images, predictions, **kwargs)
-        t1 = time.time()
-        self.logger.debug(f"proc-time {(t1 - t0) * 1000.0:.2f} ms")
-        return results
-
-    def annotate_image(self, result, image, color_map=None, **kwargs):
-        """
-        Annotates an image with bounding boxes, class labels, scores, and masks.
-
-        Args:
-            result (dict): A dictionary containing detection results with keys:
-                - "classes" (list): List of detected class labels.
-                - "scores" (list): List of confidence scores for each detected class.
-                - "boxes" (list): List of bounding boxes for each detected object.
-                - "masks" (list, optional): List of masks for each detected object.
-            image (numpy.ndarray): The image to annotate.
-            color_map (dict, optional): A dictionary mapping class labels to colors.
-
-        Returns:
-            numpy.ndarray: The annotated image.
-        """
-        for i in range(len(result["classes"])):
-            plot_one_box(
-                result["boxes"][i],
-                image,
-                label=f"{result['classes'][i]}:{result['scores'][i]:.2f}",
-                mask=result["masks"][i] if len(result["masks"]) > 0 else None,
-                color=color_map,
-            )
-        return image

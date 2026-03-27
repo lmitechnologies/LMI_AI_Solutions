@@ -14,18 +14,37 @@ from detectron2.modeling import build_model
 from object_detectors.detectron2_lmi.model import Detectron2Model
 from object_detectors.od_core.object_detector import ObjectDetector
 
+COCO_DIR = "tests/assets/images/coco"
 MASKRCNN_MODEL_CONFIG = "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
 COCO_CLASSMAP = "tests/assets/models/od/detectron2/class_map.json"
 MODEL_PATH = "tests/assets/models/od/detectron2/model.pt"
 OG_WEIGHTS_PATH = "tests/assets/models/od/detectron2/model_final_f10217.pkl"
-SAMPLE_IMAGE = "tests/assets/images/detectron2/sample_image.jpg"
 OUT_DIR = "tests/outputs/od/detectron2"
 USE_CUDA = torch.cuda.is_available()
+KEYS = ["boxes", "classes", "scores", "masks", "segments"]
 
 with open(COCO_CLASSMAP, "r") as f:
     class_map = json.load(f)
 
 logger = logging.getLogger(__name__)
+
+
+def load_image(path):
+    im = cv2.imread(path)
+    rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+    return rgb
+
+
+@pytest.fixture(scope="module")
+def imgs_coco():
+    paths = [os.path.join(COCO_DIR, img) for img in os.listdir(COCO_DIR)]
+    images = []
+    for p in paths:
+        if "png" not in p and "jpg" not in p:
+            continue
+        rgb = load_image(p)
+        images.append(rgb)
+    return images
 
 
 @pytest.fixture(scope="module")
@@ -55,16 +74,20 @@ def detectron2_model_api():
     return model
 
 
-class TestDetectron2ModelPT:
-    def test_model(self, og_model, detectron2_model):
-        img = torch.as_tensor(cv2.imread(SAMPLE_IMAGE).transpose(2, 0, 1).astype("float32"))
+@pytest.fixture(scope="module", params=["detectron2_model", "detectron2_model_api"])
+def model(request, detectron2_model, detectron2_model_api):
+    return detectron2_model if request.param == "detectron2_model" else detectron2_model_api
+
+
+def test_model(og_model, model, imgs_coco):
+    confs = {v: 0.00 for v in class_map.values()}
+    for image in imgs_coco:
+        img = torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))
         inputs = [{"image": img}]
         with torch.no_grad():
             orginal_preds = og_model.inference(inputs, do_postprocess=False)[0]
 
-        confs = {v: 0.00 for k, v in class_map.items()}
-        image = cv2.imread(SAMPLE_IMAGE)
-        preds = detectron2_model.predict(image, confs=confs, process_masks=False)
+        preds = model.predict(image, confs=confs, process_masks=False)
         assert orginal_preds.pred_boxes.tensor.shape == preds.get("boxes")[0].shape
         assert orginal_preds.pred_classes.shape == preds.get("classes")[0].shape
         assert orginal_preds.scores.shape == preds.get("scores")[0].shape
@@ -74,165 +97,66 @@ class TestDetectron2ModelPT:
         assert np.allclose(orginal_preds.scores.cpu().numpy(), preds.get("scores"))
         assert np.allclose(orginal_preds.pred_masks.cpu().numpy(), preds.get("masks"))
 
-    def test_annotations(self, detectron2_model):
-        confs = {v: 0.95 for k, v in class_map.items()}
-        image = cv2.imread(SAMPLE_IMAGE)
-        outputs = detectron2_model.predict(image, confs=confs, return_segments=True, process_masks=True)
-        outputs["boxes"] = outputs["boxes"][0]
-        outputs["classes"] = outputs["classes"][0]
-        outputs["scores"] = outputs["scores"][0]
-        outputs["masks"] = outputs["masks"][0]
-        outputs["segments"] = outputs["segments"][0]
 
-        assert (
-            len(outputs["boxes"]) == len(outputs["classes"]) == len(outputs["scores"]) == len(outputs["masks"]) == len(outputs["segments"])
-        )
+def test_operators(model, imgs_coco):
+    confs = {v: 0.95 for v in class_map.values()}
+    image = imgs_coco[0]
+    h, w = image.shape[:2]
+    image_resized = cv2.resize(image, (512, 512))
+    operators = [{"resize": [512, 512, w, h]}]
+    outputs = model.predict(
+        image_resized,
+        confs=confs,
+        return_segments=True,
+        process_masks=True,
+        operators=operators,
+    )
+    for key in KEYS:
+        outputs[key] = outputs[key][0]
 
-        annotated_image = detectron2_model.annotate_image(outputs, image, show_segments=True)
-        os.makedirs(OUT_DIR, exist_ok=True)
-        out_name = os.path.basename(SAMPLE_IMAGE).split(".")[0] + "_raw.jpg"
-        cv2.imwrite(os.path.join(OUT_DIR, out_name), annotated_image)
-
-    def test_operators(self, detectron2_model):
-        confs = {v: 0.95 for k, v in class_map.items()}
-        image = cv2.imread(SAMPLE_IMAGE)
-        h, w = image.shape[:2]
-        image2 = cv2.resize(image, (512, 512))
-        operators = [{"resize": [512, 512, w, h]}]
-        outputs = detectron2_model.predict(
-            image2,
-            confs=confs,
-            return_segments=True,
-            process_masks=True,
-            operators=operators,
-        )
-        outputs["boxes"] = outputs["boxes"][0]
-        outputs["classes"] = outputs["classes"][0]
-        outputs["scores"] = outputs["scores"][0]
-        outputs["masks"] = outputs["masks"][0]
-        outputs["segments"] = outputs["segments"][0]
-        assert (
-            len(outputs["boxes"]) == len(outputs["classes"]) == len(outputs["scores"]) == len(outputs["masks"]) == len(outputs["segments"])
-        )
-        assert outputs["masks"].shape[1] == h
-        assert outputs["masks"].shape[2] == w
-
-        annotated_image = detectron2_model.annotate_image(outputs, image, show_segments=True)
-        out_name = os.path.basename(SAMPLE_IMAGE).split(".")[0] + "_operators.jpg"
-        cv2.imwrite(os.path.join(OUT_DIR, out_name), annotated_image)
-
-    def test_operators_no_masks(self, detectron2_model: Detectron2Model):
-        confs = {v: 1.0 for k, v in class_map.items()}
-        image = cv2.imread(SAMPLE_IMAGE)
-        h, w = image.shape[:2]
-        image2 = cv2.resize(image, (512, 512))
-        operators = [{"resize": [512, 512, w, h]}]
-        outputs = detectron2_model.predict(
-            image2,
-            confs=confs,
-            return_segments=True,
-            process_masks=True,
-            operators=operators,
-        )
-        outputs["boxes"] = outputs["boxes"][0]
-        outputs["classes"] = outputs["classes"][0]
-        outputs["scores"] = outputs["scores"][0]
-        outputs["masks"] = outputs["masks"][0]
-        outputs["segments"] = outputs["segments"][0]
-        assert (
-            len(outputs["boxes"]) == len(outputs["classes"]) == len(outputs["scores"]) == len(outputs["masks"]) == len(outputs["segments"])
-        )
-        assert len(outputs["boxes"]) == 0
+    assert len(outputs["boxes"]) == len(outputs["classes"]) == len(outputs["scores"]) == len(outputs["masks"]) == len(outputs["segments"])
+    assert outputs["masks"].shape[1] == h
+    assert outputs["masks"].shape[2] == w
 
 
-class TestDetectron2ModelPT_API:
-    def test_model(self, og_model, detectron2_model_api):
-        img = torch.as_tensor(cv2.imread(SAMPLE_IMAGE).transpose(2, 0, 1).astype("float32"))
-        inputs = [{"image": img}]
-        with torch.no_grad():
-            orginal_preds = og_model.inference(inputs, do_postprocess=False)[0]
+def test_operators_no_masks(model, imgs_coco):
+    confs = {v: 1.0 for v in class_map.values()}
+    image = imgs_coco[0]
+    h, w = image.shape[:2]
+    image_resized = cv2.resize(image, (512, 512))
+    operators = [{"resize": [512, 512, w, h]}]
+    outputs = model.predict(
+        image_resized,
+        confs=confs,
+        return_segments=True,
+        process_masks=True,
+        operators=operators,
+    )
+    for key in KEYS:
+        outputs[key] = outputs[key][0]
 
-        confs = {v: 0.00 for k, v in class_map.items()}
+    assert len(outputs["boxes"]) == len(outputs["classes"]) == len(outputs["scores"]) == len(outputs["masks"]) == len(outputs["segments"])
+    assert len(outputs["boxes"]) == 0
 
-        image = cv2.imread(SAMPLE_IMAGE)
-        preds = detectron2_model_api.predict(image, confs=confs, process_masks=False)
-        assert orginal_preds.pred_boxes.tensor.shape == preds.get("boxes")[0].shape
-        assert orginal_preds.pred_classes.shape == preds.get("classes")[0].shape
-        assert orginal_preds.scores.shape == preds.get("scores")[0].shape
-        assert orginal_preds.pred_masks.shape == preds.get("masks")[0].shape
 
-        # check if the scores are all close
-        assert np.allclose(orginal_preds.scores.cpu().numpy(), preds.get("scores"))
-        assert np.allclose(orginal_preds.pred_masks.cpu().numpy(), preds.get("masks"))
-
-    def test_annotations(self, detectron2_model_api):
-        confs = {v: 0.95 for k, v in class_map.items()}
-
-        image = cv2.imread(SAMPLE_IMAGE)
-        outputs = detectron2_model_api.predict(image, confs=confs, return_segments=True, process_masks=True)
-        outputs["boxes"] = outputs["boxes"][0]
-        outputs["classes"] = outputs["classes"][0]
-        outputs["scores"] = outputs["scores"][0]
-        outputs["masks"] = outputs["masks"][0]
-        outputs["segments"] = outputs["segments"][0]
-
-        assert (
-            len(outputs["boxes"]) == len(outputs["classes"]) == len(outputs["scores"]) == len(outputs["masks"]) == len(outputs["segments"])
-        )
-
-        annotated_image = detectron2_model_api.annotate_image(outputs, image, show_segments=True)
-        out_name = os.path.basename(SAMPLE_IMAGE).split(".")[0] + "_raw_api.jpg"
-        cv2.imwrite(os.path.join(OUT_DIR, out_name), annotated_image)
-
-    def test_operators(self, detectron2_model_api):
-        confs = {v: 0.95 for k, v in class_map.items()}
-
-        image = cv2.imread(SAMPLE_IMAGE)
-        h, w = image.shape[:2]
-        image2 = cv2.resize(image, (512, 512))
-        operators = [{"resize": [512, 512, w, h]}]
-        outputs = detectron2_model_api.predict(
-            image2,
-            confs=confs,
-            return_segments=True,
-            process_masks=True,
-            operators=operators,
-        )
-        outputs["boxes"] = outputs["boxes"][0]
-        outputs["classes"] = outputs["classes"][0]
-        outputs["scores"] = outputs["scores"][0]
-        outputs["masks"] = outputs["masks"][0]
-        outputs["segments"] = outputs["segments"][0]
-        assert (
-            len(outputs["boxes"]) == len(outputs["classes"]) == len(outputs["scores"]) == len(outputs["masks"]) == len(outputs["segments"])
-        )
-        assert outputs["masks"].shape[1] == h
-        assert outputs["masks"].shape[2] == w
-
-        annotated_image = detectron2_model_api.annotate_image(outputs, image, show_segments=True)
-        out_name = os.path.basename(SAMPLE_IMAGE).split(".")[0] + "_operators_api.jpg"
-        cv2.imwrite(os.path.join(OUT_DIR, out_name), annotated_image)
-
-    def test_operators_no_masks(self, detectron2_model_api):
-        confs = {v: 1.0 for k, v in class_map.items()}
-
-        image = cv2.imread(SAMPLE_IMAGE)
-        h, w = image.shape[:2]
-        image2 = cv2.resize(image, (512, 512))
-        operators = [{"resize": [512, 512, w, h]}]
-        outputs = detectron2_model_api.predict(
-            image2,
-            confs=confs,
-            return_segments=True,
-            process_masks=True,
-            operators=operators,
-        )
-        outputs["boxes"] = outputs["boxes"][0]
-        outputs["classes"] = outputs["classes"][0]
-        outputs["scores"] = outputs["scores"][0]
-        outputs["masks"] = outputs["masks"][0]
-        outputs["segments"] = outputs["segments"][0]
-        assert (
-            len(outputs["boxes"]) == len(outputs["classes"]) == len(outputs["scores"]) == len(outputs["masks"]) == len(outputs["segments"])
-        )
-        assert len(outputs["boxes"]) == 0
+def test_batch_operators(model, imgs_coco):
+    confs = {v: 0.8 for v in class_map.values()}
+    images = imgs_coco
+    original_sizes = [img.shape[:2] for img in images]
+    images_resized = [cv2.resize(img, (512, 512)) for img in images]
+    operators = [[{"resize": [512, 512, w, h]}] for h, w in original_sizes]
+    outputs = model.predict(images_resized, confs=confs, process_masks=True, operators=operators)
+    assert len(outputs["boxes"]) == len(images)
+    assert len(outputs["scores"]) == len(images)
+    assert len(outputs["classes"]) == len(images)
+    assert len(outputs["masks"]) == len(images)
+    os.makedirs(OUT_DIR, exist_ok=True)
+    for i, (h, w) in enumerate(original_sizes):
+        assert len(outputs["boxes"][i]) == len(outputs["scores"][i]) == len(outputs["classes"][i]) == len(outputs["masks"][i])
+        if len(outputs["masks"][i]) > 0:
+            assert outputs["masks"][i].shape[1] == h
+            assert outputs["masks"][i].shape[2] == w
+        per_image = {k: v[i] for k, v in outputs.items()}
+        annotated = model.annotate_image(per_image, images[i].copy())
+        bgr = cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
+        cv2.imwrite(os.path.join(OUT_DIR, f"coco_{i}_batch_operators.jpg"), bgr)
