@@ -1,162 +1,41 @@
 # Pre-commit Setup Guide
 
-This repository uses [pre-commit](https://pre-commit.com/) with [Ruff](https://github.com/astral-sh/ruff) as the primary linting and formatting backend to maintain code quality and consistency.
+This repository uses [pre-commit](https://pre-commit.com/) with [Ruff](https://github.com/astral-sh/ruff) for linting and formatting. Hooks run automatically on every `git commit`.
 
-## What Ruff Checks
+**Ruff enforces:** code style, import sorting, common errors, and consistent formatting (line length 140, double quotes, rules E/F/I/B).
 
-Ruff performs comprehensive linting that includes:
-
-- Code style violations (similar to Flake8, pycodestyle)
-- Import sorting and organization (similar to isort)
-- Common programming errors and anti-patterns
-- Code complexity checks
-- Docstring conventions
-- Security issues
-- And many more rules from popular Python linters
-
-Ruff also formats your code (similar to Black) to ensure consistent style across the codebase.
-
-## Installation
-
-### Prerequisites
-
-- Python 3.8 or higher
-- pip package manager
-
-### Install Pre-commit
+## Setup
 
 ```bash
 pip install pre-commit
+pre-commit install       # run once after cloning
 ```
 
-### Install the Git Hook Scripts
-
-After cloning this repository, navigate to the project root and run:
+## Typical Commit Workflow
 
 ```bash
-pre-commit install
+git add <files>
+git commit -m "your message"
 ```
 
-This installs the pre-commit hook into your `.git/hooks/` directory. The hooks will now run automatically on `git commit`.
-
-## Usage
-
-### Automatic Usage
-
-Once installed, pre-commit runs automatically every time you commit:
+If hooks fail, the commit is aborted. Ruff may auto-fix some issues (formatting, import order). Re-stage and retry:
 
 ```bash
-git add .
-git commit -m "Your commit message"
+git add -u          # stage the auto-fixed changes
+git commit -m "your message"
 ```
 
-If any checks fail, the commit will be aborted and you'll see which files need fixing.
-
-### Manual Usage
-
-You can run pre-commit manually on all files:
+For errors that require manual fixes, edit the flagged files per the error output, then:
 
 ```bash
-pre-commit run --all-files
+git add <files>
+git commit -m "your message"
 ```
 
-Or on specific files:
+## Other Useful Commands
 
 ```bash
-pre-commit run --files path/to/file.py
+pre-commit run --all-files          # check all files without committing
+pre-commit run --files path/to/file.py  # check a specific file
+pre-commit autoupdate               # update hooks to latest versions
 ```
-
-## Common Workflows
-
-### First-Time Setup
-
-```bash
-# Install pre-commit
-pip install pre-commit
-
-# Install the hooks
-pre-commit install
-
-# Run on all files to check current state
-pre-commit run --all-files
-```
-
-### Skipping Hooks (Use Sparingly)
-
-If you need to commit without running hooks (not recommended):
-
-```bash
-git commit --no-verify -m "Emergency fix"
-```
-
-### Updating Hooks
-
-To update all hooks to their latest versions:
-
-```bash
-pre-commit autoupdate
-```
-
-## Handling Failures
-
-When pre-commit fails:
-
-1. **Review the output**: Pre-commit will show which files failed and why
-2. **Auto-fixed issues**: Some issues (like formatting) are fixed automatically. Stage the changes and commit again:
-   ```bash
-   git add .
-   git commit -m "Your message"
-   ```
-3. **Manual fixes required**: For issues that can't be auto-fixed, modify the code according to the error messages
-4. **Re-commit**: After fixing issues, stage and commit again
-
-## Configuration
-
-The pre-commit configuration is stored in `.pre-commit-config.yaml` at the repository root. Ruff-specific settings can be found in `pyproject.toml`.
-
-## VS Code Integration
-
-### Benefits of VS Code Integration
-
-- **Real-time feedback**: See linting errors as you type
-- **Auto-fix on save**: Automatically fix issues when saving files
-- **Import organization**: Automatically sort and organize imports
-- **Consistent formatting**: Match the pre-commit hook behavior in your editor
-
-This ensures your code is checked and formatted in VS Code the same way pre-commit will check it before commits.
-
-### Install Ruff Extension
-
-1. Open VS Code
-2. Go to Extensions (Ctrl+Shift+X or Cmd+Shift+X on Mac)
-3. Search for "Ruff"
-4. Install the official extension by Astral Software (charliermarsh.ruff)
-
-### Configure VS Code Settings
-
-Add the following to your VS Code settings (`.vscode/settings.json` in the repository or your user settings):
-
-```json
-{
-  // Enable Ruff as the default formatter
-  "[python]": {
-    "editor.defaultFormatter": "charliermarsh.ruff",
-    "editor.formatOnSave": true,
-    "editor.codeActionsOnSave": {
-      "source.fixAll": "explicit",
-      "source.organizeImports": "explicit"
-    }
-  },
-  // Enable Ruff linting
-  "ruff.enable": true,
-  "ruff.lint.enable": true,
-  "ruff.format.enable": true
-}
-```
-
-
-## Additional Resources
-
-- [Pre-commit Documentation](https://pre-commit.com/)
-- [Ruff Documentation](https://docs.astral.sh/ruff/)
-- [Ruff Rules Reference](https://docs.astral.sh/ruff/rules/)

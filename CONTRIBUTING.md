@@ -4,18 +4,36 @@
 
 The default branch is **`ais`**. All work targets `ais`.
 
+## Prerequisites
+
+**Install pre-commit hooks** (one-time setup, required before contributing):
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
 ## Workflow
 
 1. **Create a feature branch** off the latest `ais`:
 
    ```bash
    git checkout ais && git pull
-   git checkout -b feat/my-feature
+   git checkout -b YOUR-BRANCH
    ```
 
 2. **Develop & commit** on your branch — commit as often as you like locally.
 
-3. **Before opening a PR, rebase onto `ais`** to keep history linear:
+3. *(If pre-commit reported errors)* Auto-fixes are applied in place; fix any remaining errors manually, then re-stage and recommit (see [Pre-commit Guide](docs/PRECOMMIT_GUIDE.md)):
+
+   ```bash
+   # Fix the reported errors, then:
+   git add -u
+   git commit -m "your message"
+   ```
+   
+
+4. **Before opening a PR, rebase onto `ais`** to keep history linear:
 
    ```bash
    git fetch origin
@@ -28,9 +46,9 @@ The default branch is **`ais`**. All work targets `ais`.
    git push --force-with-lease
    ```
 
-4. **Open a PR** targeting `ais`.
+5. **Open a PR** targeting `ais`.
 
-5. **PRs are squash-merged** into a single commit. The PR title becomes the commit message, so write it as a conventional commit (see below).
+6. **PRs are squash-merged** into a single commit. The PR title becomes the commit message, so write it as a conventional commit (see below).
 
 ## Conventional Commits
 
