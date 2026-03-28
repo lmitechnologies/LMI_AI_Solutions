@@ -15,6 +15,7 @@ COCO_DIR = "tests/assets/images/coco"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 PTH_FILE = "tests/assets/models/od/rf_detr/checkpoint.pth"
 OD_MODEL = f"tests/assets/models/od/rf_detr/model_{DEVICE}.pt"
+TRT_MODEL = "tests/assets/models/od/rf_detr/inference_model.engine"
 OUT_DIR = "tests/outputs/od/rf_detr"
 IMAGE_SIZE = 384
 TOLERANCE = 1e-4
@@ -51,6 +52,19 @@ def obj_detector(rf_model):
         metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
         model_path=OD_MODEL,
         device=DEVICE,
+        class_map=rf_model.class_names,
+        image_size=[IMAGE_SIZE, IMAGE_SIZE],
+    )
+    return obj_detector
+
+
+@pytest.fixture(scope="module")
+def trt_model(rf_model):
+    if DEVICE != "cuda":
+        pytest.skip("TensorRT model can only be tested on CUDA device.")
+    obj_detector = ObjectDetector(
+        metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
+        model_path=TRT_MODEL,
         class_map=rf_model.class_names,
         image_size=[IMAGE_SIZE, IMAGE_SIZE],
     )
@@ -168,4 +182,29 @@ class Test_Rfdetr_Model:
 
             annotated_image = obj_detector.annotate_image(outputs, img)
             out_name = f"out_operators_batch_{idx}.jpg"
+            cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
+
+    def test_trt_operators_batch(self, imgs_coco, trt_model):
+        original_sizes = [(img.shape[1], img.shape[0]) for img in imgs_coco]  # (w, h)
+        operators = [[{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}] for w, h in original_sizes]
+        imgs_resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
+
+        batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators)
+
+        assert len(batch_outputs["boxes"]) == len(imgs_coco)
+
+        os.makedirs(OUT_DIR, exist_ok=True)
+        for idx, img in enumerate(imgs_coco):
+            w, h = original_sizes[idx]
+            outputs = {k: v[idx] for k, v in batch_outputs.items()}
+            assert len(outputs["boxes"]) > 0, f"Expected detections for image {idx}, but got none."
+
+            # boxes with operators should be scaled to the original image size
+            assert np.all(outputs["boxes"][:, 0] <= w)
+            assert np.all(outputs["boxes"][:, 1] <= h)
+            assert np.all(outputs["boxes"][:, 2] <= w)
+            assert np.all(outputs["boxes"][:, 3] <= h)
+
+            annotated_image = trt_model.annotate_image(outputs, img)
+            out_name = f"out_trt_operators_batch_{idx}.jpg"
             cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))

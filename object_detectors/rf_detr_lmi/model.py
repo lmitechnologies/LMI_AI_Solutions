@@ -293,29 +293,26 @@ class RfdetrModel(ModelFactory, ODBase):
 class RfdetrTRT(RfdetrBase):
     def __init__(self, model_path: str, **kwargs) -> None:
         try:
-            import pycuda.driver as cuda
             import tensorrt as trt
         except ImportError as e:
-            raise ImportError("pycuda and tensorrt are required for RfdetrTRT. Install them with: pip install pycuda tensorrt") from e
+            raise ImportError("tensorrt is required for RfdetrTRT. Install it with: pip install tensorrt") from e
 
-        self.cuda = cuda
-        self.trt = trt
-        # self.image_size = kwargs.get("image_size", (640, 640))
         self.means = [0.485, 0.456, 0.406]
         self.stds = [0.229, 0.224, 0.225]
-        self.trt_logger = trt.Logger(trt.Logger.INFO)
-        self.runtime = trt.Runtime(self.trt_logger)
+        trt_logger = trt.Logger(trt.Logger.INFO)
+        runtime = trt.Runtime(trt_logger)
 
         with open(model_path, "rb") as f:
-            self.engine = self.runtime.deserialize_cuda_engine(f.read())
+            self.engine = runtime.deserialize_cuda_engine(f.read())
 
         self.context = self.engine.create_execution_context()
-        self.stream = cuda.Stream()
+        self.torch_stream = torch.cuda.Stream()
 
         # Inspect input tensor for shape and dynamic batch info
         self.input_name = self.engine.get_tensor_name(0)
         profile_shape = self.engine.get_tensor_profile_shape(self.input_name, 0)
-        self.input_dtype = self.trt.nptype(self.engine.get_tensor_dtype(self.input_name))
+        self.input_dtype = trt.nptype(self.engine.get_tensor_dtype(self.input_name))
+        self.torch_dtype = torch.float16 if self.input_dtype == np.float16 else torch.float32
 
         if profile_shape:
             self.min_batch = profile_shape[0][0]
@@ -335,8 +332,8 @@ class RfdetrTRT(RfdetrBase):
         self.output_info = []
         for i in range(self.engine.num_io_tensors):
             name = self.engine.get_tensor_name(i)
-            if self.engine.get_tensor_mode(name) == self.trt.TensorIOMode.OUTPUT:
-                dtype = self.trt.nptype(self.engine.get_tensor_dtype(name))
+            if self.engine.get_tensor_mode(name) == trt.TensorIOMode.OUTPUT:
+                dtype = trt.nptype(self.engine.get_tensor_dtype(name))
                 # Get the shape with -1 for dynamic dims
                 shape = self.engine.get_tensor_shape(name)
                 self.output_info.append({"name": name, "dtype": dtype, "shape": tuple(shape)})
@@ -348,38 +345,35 @@ class RfdetrTRT(RfdetrBase):
             raise ValueError("class_map is required for RfdetrTRT")
         self._setup_class_map(class_map)
 
-    def _allocate_for_batch(self, batch_size):
-        """Allocate host and device buffers for a given batch size."""
+        self._buf_cache = {}
+
+    def _get_buffers(self, batch_size):
+        """Return cached GPU tensor buffers for a given batch size, allocating on first use."""
+        if batch_size in self._buf_cache:
+            return self._buf_cache[batch_size]
+
         if batch_size > self.max_batch:
             raise ValueError(f"Batch size {batch_size} exceeds engine max batch size {self.max_batch}")
 
-        # Set input shape with actual batch size
         input_shape = (batch_size, *self.input_shape_no_batch)
-        self.context.set_input_shape(self.input_name, input_shape)
 
         buffers = {}
-        # Input buffer
-        input_nbytes = int(np.prod(input_shape)) * np.dtype(self.input_dtype).itemsize
-        buffers["input_host"] = self.cuda.pagelocked_empty(int(np.prod(input_shape)), self.input_dtype)
-        buffers["input_device"] = self.cuda.mem_alloc(input_nbytes)
+        buffers["input"] = torch.empty(input_shape, dtype=self.torch_dtype, device="cuda")
         buffers["input_shape"] = input_shape
 
-        # Output buffers
         buffers["outputs"] = []
         for info in self.output_info:
-            # Replace dynamic batch dim (-1) with actual batch size
             out_shape = tuple(batch_size if d == -1 else d for d in info["shape"])
-            out_nbytes = int(np.prod(out_shape)) * np.dtype(info["dtype"]).itemsize
+            torch_dt = torch.float16 if info["dtype"] == np.float16 else torch.float32
             buffers["outputs"].append(
                 {
                     "name": info["name"],
                     "shape": out_shape,
-                    "dtype": info["dtype"],
-                    "host": self.cuda.pagelocked_empty(int(np.prod(out_shape)), info["dtype"]),
-                    "device": self.cuda.mem_alloc(out_nbytes),
+                    "tensor": torch.empty(out_shape, dtype=torch_dt, device="cuda"),
                 }
             )
 
+        self._buf_cache[batch_size] = buffers
         return buffers
 
     def warmup(self):
@@ -402,8 +396,37 @@ class RfdetrTRT(RfdetrBase):
             batch = np.expand_dims(self._preprocess_single(images), axis=0)
         return np.ascontiguousarray(batch, dtype=self.input_dtype)
 
+    def _forward_single_batch(self, image: np.ndarray, **kwargs) -> list:
+        """Run TensorRT inference for a single batch that fits within engine limits.
+
+        Args:
+            image: BCHW numpy array with batch_size <= self.max_batch.
+
+        Returns:
+            List of output numpy arrays, each with shape (B, ...).
+        """
+        batch_size = image.shape[0]
+        bufs = self._get_buffers(batch_size)
+
+        # Set input shape for this batch size
+        self.context.set_input_shape(self.input_name, bufs["input_shape"])
+
+        # Copy input numpy array into the pre-allocated GPU tensor
+        bufs["input"].copy_(torch.from_numpy(image))
+
+        # Set tensor addresses to GPU memory managed by PyTorch
+        self.context.set_tensor_address(self.input_name, bufs["input"].data_ptr())
+        for out in bufs["outputs"]:
+            self.context.set_tensor_address(out["name"], out["tensor"].data_ptr())
+
+        # Execute on the PyTorch CUDA stream
+        self.context.execute_async_v3(stream_handle=self.torch_stream.cuda_stream)
+        self.torch_stream.synchronize()
+
+        return [out["tensor"].cpu().numpy() for out in bufs["outputs"]]
+
     def forward(self, image: np.ndarray, **kwargs) -> list:
-        """Perform async TensorRT inference with dynamic batch size.
+        """Perform TensorRT inference with dynamic batch size.
 
         Args:
             image: BCHW numpy array.
@@ -412,26 +435,14 @@ class RfdetrTRT(RfdetrBase):
             List of output arrays, each with shape (B, ...).
         """
         batch_size = image.shape[0]
-        bufs = self._allocate_for_batch(batch_size)
 
-        # Copy input to device
-        np.copyto(bufs["input_host"], image.ravel())
-        self.cuda.memcpy_htod_async(bufs["input_device"], bufs["input_host"], self.stream)
+        # If batch exceeds engine max, process in chunks and concatenate
+        if batch_size > self.max_batch:
+            chunks = [image[i : i + self.max_batch] for i in range(0, batch_size, self.max_batch)]
+            all_outputs = [self._forward_single_batch(chunk, **kwargs) for chunk in chunks]
+            return [np.concatenate([chunk_out[i] for chunk_out in all_outputs], axis=0) for i in range(len(all_outputs[0]))]
 
-        # Set tensor addresses
-        self.context.set_tensor_address(self.input_name, int(bufs["input_device"]))
-        for out in bufs["outputs"]:
-            self.context.set_tensor_address(out["name"], int(out["device"]))
-
-        # Execute
-        self.context.execute_async_v3(stream_handle=self.stream.handle)
-
-        # Copy outputs back
-        for out in bufs["outputs"]:
-            self.cuda.memcpy_dtoh_async(out["host"], out["device"], self.stream)
-        self.stream.synchronize()
-
-        return [out["host"].reshape(out["shape"]) for out in bufs["outputs"]]
+        return self._forward_single_batch(image, **kwargs)
 
 
 @RfdetrModel.register("pt")
