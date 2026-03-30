@@ -2,7 +2,7 @@ torch==2.4.1
 torchvision==0.19.1
 scikit-learn==1.7.2
 tensorboard==2.20.0
-numba==0.63.1
+numba==0.64.0
 numpy<2.0
 ultralytics==8.4.31
 onnx==1.21.0
