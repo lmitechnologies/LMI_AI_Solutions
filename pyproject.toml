@@ -83,7 +83,6 @@ packages = [
 "shapes" = "lmi_utils.label_utils.shapes"
 "ops" = "lmi_utils.dataset_utils.ops"
 "preprocess_utils" = "lmi_utils.preprocess_utils"
-"dataset_utils" = "lmi_utils.dataset_utils"
 "pcl_utils" = "lmi_utils.pcl_utils"
 "postprocess_utils" = "lmi_utils.postprocess_utils"
 "image_utils" = "lmi_utils.image_utils"
