@@ -12,9 +12,9 @@ import numpy
 import torch
 
 # LMI AIS repo's modules
-from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
-from classifiers.cls_core.classifier import Classifier
-from lmi_utils.dataset_utils.representations import (
+from ad_core.anomaly_detector import AnomalyDetector
+from cls_core.classifier import Classifier
+from dataset_utils.representations import (
     Annotation,
     AnnotationType,
     Box,
