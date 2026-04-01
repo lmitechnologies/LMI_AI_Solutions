@@ -69,7 +69,7 @@ packages = [
 "anomalib_lmi" = "anomaly_detectors/anomalib_lmi"
 "ad_core" = "anomaly_detectors/ad_core"
 "gadget_utils" = "lmi_utils/gadget_utils"
-"yolov8_cls" = classifiers/yolov8_cls
+"yolov8_cls" = "classifiers/yolov8_cls"
 "cls_core" = "classifiers/cls_core"
 
 #[tool.setuptools.packages.find]
