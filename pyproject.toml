@@ -55,7 +55,8 @@ packages = [
     "anomaly_detectors",
     "anomaly_detectors.ad_core",
     "anomaly_detectors.anomalib_lmi",
-    "anomalib_lmi"
+    "anomalib_lmi",
+    "ad_core"
 ]
 [tool.setuptools.package-dir]
 "lmi_utils" = "lmi_utils"
