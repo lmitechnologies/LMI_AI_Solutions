@@ -22,8 +22,8 @@ from dataset_utils.representations import (
     Point2d,
     Polygon,
 )
-from lmi_utils.preprocess_utils.preprocessor import Preprocessor
-from object_detectors.od_core.object_detector import ObjectDetector
+from preprocess_utils.preprocessor import Preprocessor
+from od_core.object_detector import ObjectDetector
 
 from .core.schemas.schema_2 import ModelSchemaV_2
 
