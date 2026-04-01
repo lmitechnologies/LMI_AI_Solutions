@@ -56,7 +56,9 @@ packages = [
     "anomaly_detectors.ad_core",
     "anomaly_detectors.anomalib_lmi",
     "anomalib_lmi",
-    "ad_core"
+    "ad_core",
+    "cls_core",
+    "yolov8_cls"
 ]
 [tool.setuptools.package-dir]
 "lmi_utils" = "lmi_utils"
@@ -67,6 +69,8 @@ packages = [
 "anomalib_lmi" = "anomaly_detectors/anomalib_lmi"
 "ad_core" = "anomaly_detectors/ad_core"
 "gadget_utils" = "lmi_utils/gadget_utils"
+"yolov8_cls" = classifiers/yolov8_cls
+"cls_core" = "classifiers/cls_core"
 
 #[tool.setuptools.packages.find]
 #where = ["."]
