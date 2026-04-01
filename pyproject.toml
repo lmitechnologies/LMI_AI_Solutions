@@ -21,47 +21,40 @@ gadget-image = "lmi_utils.gadget_utils.gadget_image:main"
 include-package-data = true
 packages = [
     "lmi_utils",
-    "lmi_utils.system_utils",
-    "lmi_utils.dataset_utils",
-    "lmi_utils.eval_utils",
-    "lmi_utils.label_utils",
-    "lmi_utils.label_utils.shapes",
-    "lmi_utils.system_utils",
-    "lmi_utils.dataset_utils.ops",
-    "lmi_utils.preprocess_utils",
-    "lmi_utils.dataset_utils",
-    "lmi_utils.pcl_utils",
-    "lmi_utils.postprocess_utils",
-    "lmi_utils.image_utils",
-    "lmi_utils.pipeline_base",
-    "lmi_utils.gadget_utils",
+    "system_utils",
+    "dataset_utils",
+    "eval_utils",
+    "label_utils",
+    "shapes",
+    "ops",
+    "preprocess_utils",
+    "dataset_utils",
+    "pcl_utils",
+    "postprocess_utils",
+    "image_utils",
     "pipeline_base",
-    "pipeline_base.core",
-    "pipeline_base.core.schemas",
+    "core",
+    "schemas",
     "gadget_utils",
     "object_detectors",
-    "object_detectors.od_core",
-    "object_detectors.rf_detr_lmi",
-    "object_detectors.ultralytics_lmi.yolo",
-    "object_detectors.yolov5_lmi.trt",
-    "object_detectors.yolov5_lmi",
-    "object_detectors.yolov8_lmi",
-    "object_detectors.detectron2_lmi",
-    "object_detectors.submodules",
-    "object_detectors.submodules.yolov5",
-    "classifiers",
-    "classifiers.cls_core",
-    "classifiers.yolov8_cls",
+    "od_core",
+    "rf_detr_lmi",
+    "yolo",
+    "ultralytics_lmi",
+    "trt",
+    "yolov5_lmi",
+    "yolov8_lmi",
+    "detectron2_lmi",
+    "submodules",
+    "yolov5",
     "anomaly_detectors",
-    "anomaly_detectors.ad_core",
-    "anomaly_detectors.anomalib_lmi",
     "anomalib_lmi",
     "ad_core",
+    "classifiers",
     "cls_core",
     "yolov8_cls"
 ]
 [tool.setuptools.package-dir]
-"lmi_utils" = "lmi_utils"
 "pipeline_base" = "lmi_utils/pipeline_base"
 "object_detectors" = "object_detectors"
 "classifiers" = "classifiers"
@@ -71,6 +64,29 @@ packages = [
 "gadget_utils" = "lmi_utils/gadget_utils"
 "yolov8_cls" = "classifiers/yolov8_cls"
 "cls_core" = "classifiers/cls_core"
+"od_core" = "object_detectors.od_core"
+"rf_detr_lmi" = "object_detectors.rf_detr_lmi"
+"yolo" = "object_detectors.ultralytics_lmi.yolo"
+"ultralytics_lmi" = "object_detectors.ultralytics_lmi"
+"trt" = "object_detectors.yolov5_lmi.trt"
+"yolov5_lmi" = "object_detectors.yolov5_lmi"
+"yolov8_lmi" = "object_detectors.yolov8_lmi"
+"detectron2_lmi" = "object_detectors.detectron2_lmi"
+"submodules" = "object_detectors.submodules"
+"yolov5" = "object_detectors.submodules.yolov5"
+"core" = "pipeline_base.core"
+"schemas" = "pipeline_base.core.schemas"
+"system_utils" = "lmi_utils.system_utils"
+"dataset_utils" = "lmi_utils.dataset_utils"
+"eval_utils" = "lmi_utils.eval_utils"
+"label_utils" = "lmi_utils.label_utils"
+"shapes" = "lmi_utils.label_utils.shapes"
+"ops" = "lmi_utils.dataset_utils.ops"
+"preprocess_utils" = "lmi_utils.preprocess_utils"
+"dataset_utils" = "lmi_utils.dataset_utils"
+"pcl_utils" = "lmi_utils.pcl_utils"
+"postprocess_utils" = "lmi_utils.postprocess_utils"
+"image_utils" = "lmi_utils.image_utils"
 
 #[tool.setuptools.packages.find]
 #where = ["."]
