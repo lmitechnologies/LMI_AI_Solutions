@@ -23,7 +23,6 @@ from lmi_utils.dataset_utils.representations import (
     Polygon,
 )
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
-from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 from object_detectors.od_core.object_detector import ObjectDetector
 
 from .core.schemas.schema_2 import ModelSchemaV_2
@@ -76,13 +75,11 @@ class PipelineBase(metaclass=ABCMeta):
             _preprocessing: a dictionary of global preprocessing configs for each model role.
             version: the gadget version. It determines which model_roles handler to be used.
             preprocessor: an instance of Preprocessor class for preprocessing inputs.
-            reconstructor: an instance of Reconstructor class for reconstructing outputs.
         """
         self.models = collections.OrderedDict()
         self._preprocessing = collections.OrderedDict()
         self.version = kwargs.get("version", "2")
         self.preprocessor = Preprocessor()
-        self.reconstructor = Reconstructor()
         self.init_results()
 
     def _load_model(self, model_name: str, metadata: dict, **kwargs: Any) -> None:
@@ -216,20 +213,6 @@ class PipelineBase(metaclass=ABCMeta):
             raise ValueError(f"Not found global preprocessing steps for model role: {model_role}")
 
         return self.preprocessor.preprocess(images, self._preprocessing[model_role])
-
-    def reconstruct(
-        self, images: List[Union[numpy.ndarray, torch.Tensor]], ops: List[Dict[str, Any]]
-    ) -> List[Union[numpy.ndarray, torch.Tensor]]:
-        """reconstruct the images based on the preprocessing steps in ops.
-
-        Args:
-            images (list[numpy.ndarray | torch.Tensor]): the image(s) to be reconstructed.
-            ops (list[dict]): the preprocessing steps to be used for reconstruction.
-
-        Returns:
-            list[numpy.ndarray | torch.Tensor]: the reconstructed image(s).
-        """
-        return self.reconstructor.reconstruct(images, ops)
 
     def add_prediction(
         self,

@@ -29,6 +29,7 @@ packages = [
     "lmi_utils.system_utils",
     "lmi_utils.dataset_utils.ops",
     "lmi_utils.preprocess_utils",
+    "lmi_utils.preprocess_utils.reconstructor",
     "lmi_utils.pcl_utils",
     "lmi_utils.postprocess_utils",
     "lmi_utils.image_utils",
