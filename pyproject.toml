@@ -54,7 +54,8 @@ packages = [
     "classifiers.yolov8_cls",
     "anomaly_detectors",
     "anomaly_detectors.ad_core",
-    "anomaly_detectors.anomalib_lmi"
+    "anomaly_detectors.anomalib_lmi",
+    "anomalib_lmi"
 ]
 [tool.setuptools.package-dir]
 "lmi_utils" = "lmi_utils"
