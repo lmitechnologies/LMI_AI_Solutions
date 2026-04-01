@@ -62,6 +62,7 @@ packages = [
 "object_detectors" = "object_detectors"
 "classifiers" = "classifiers"
 "anomaly_detectors" = "anomaly_detectors"
+"anomalib_lmi" = "anomaly_detectors/anomalib_lmi"
 "gadget_utils" = "lmi_utils/gadget_utils"
 
 #[tool.setuptools.packages.find]
