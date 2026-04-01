@@ -35,7 +35,6 @@ packages = [
     "lmi_utils.image_utils",
     "lmi_utils.pipeline_base",
     "lmi_utils.gadget_utils",
-    "lmi_utils.preprocess_utils.handlers",
     "pipeline_base",
     "pipeline_base.core",
     "pipeline_base.core.schemas",
