@@ -36,12 +36,6 @@ class Details:
             defect_class_list=data.get("defect_class_list"),
         )
 
-    def get_preprocessing_by_type(self, preprocessing_type: str) -> Optional[Dict[str, Any]]:
-        for step in self.global_preprocessing:
-            if step.get("type") == preprocessing_type:
-                return step
-        return None
-
 
 @dataclass
 class Configs:
@@ -108,8 +102,6 @@ class Model:
 
     def get_metadata(self) -> Dict[str, Any]:
         """Returns the metadata of the model as a dictionary."""
-        # check for tiling preprocessing
-        tiling_config = self.details.get_preprocessing_by_type("tile")
         metadata = {
             "model_path": self.artifacts.get(self.format, {}).model_path if self.format in self.artifacts else "",
             "image_size": self.artifacts.get(self.format, {}).image_size if self.format in self.artifacts else [],
@@ -117,15 +109,6 @@ class Model:
             "algorithm": self.details.training_algorithm.lower(),
             "package": self.details.training_package.lower(),
         }
-        if tiling_config:
-            metadata["tile_size"] = [
-                tiling_config.get("configuration", {}).get("height", None),
-                tiling_config.get("configuration", {}).get("width", None),
-            ]
-            metadata["stride"] = [
-                tiling_config.get("configuration", {}).get("y_stride", None),
-                tiling_config.get("configuration", {}).get("x_stride", None),
-            ]
         return metadata
 
 
@@ -144,9 +127,45 @@ class ModelCollection:
 
     def get_metadata(self) -> Dict[str, Any]:
         configs = {}
-        for model in self.models.values():
-            configs[model.model_role] = model.get_metadata()
+        for role, model in self.models.items():
+            configs[role] = model.get_metadata()
         return configs
+
+    def get_global_preprocessing(self) -> Dict[str, Any]:
+        """Returns the global preprocessing steps of the model collection."""
+
+        def parse(steps: List[Dict[str, Any]]):
+            """Parses preprocessing steps and formats tiling configurations."""
+            supported_types = {"resize", "tile"}
+            tiling_keys = {"height", "width", "x_stride", "y_stride"}
+
+            ops = []
+            for preprocess in steps:
+                if "type" not in preprocess or "configuration" not in preprocess:
+                    raise ValueError("Must contain 'type' and 'configuration' keys.")
+
+                p_type = preprocess["type"]
+                config = preprocess["configuration"]
+
+                if p_type not in supported_types:
+                    raise ValueError(f"Unsupported type '{p_type}'.")
+
+                if p_type == "tile":
+                    if not tiling_keys.issubset(config.keys()):
+                        raise ValueError(f"Tiling configuration must contain keys: {tiling_keys}.")
+
+                    # Format the tile config immediately
+                    tile_config = {"tile_size": [config["height"], config["width"]], "stride": [config["y_stride"], config["x_stride"]]}
+                    ops.append({"type": "tile", "configuration": tile_config})
+                elif p_type == "resize":
+                    ops.append(preprocess)
+            return ops
+
+        global_preprocessing = {}
+        for role, model in self.models.items():
+            steps = model.details.global_preprocessing
+            global_preprocessing[role] = parse(steps)
+        return global_preprocessing
 
 
 class ModelSchemaV_2:
