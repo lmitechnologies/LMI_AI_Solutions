@@ -45,19 +45,17 @@ def parse_annotations(annotations:list[Annotation], h:int, w:int):
             masks.append(mask)
         else:
             raise Exception(f'Not supported type: {type(annot.type)}')
-    dt = {
+    return {
         'boxes': np.array(boxes),
+        'masks': np.array(masks),
         'classes': np.array(label_names)
     }
-    if len(masks) > 0:
-        dt['masks'] = np.array(masks)
-    return dt
-    
-    
-def calculate_iou_matrix(labels:dict, preds:dict, device):
+
+
+def calculate_iou_matrix(labels:dict, preds:dict, model_type:str, device):
     """calculate iou matrix for given labels and predictions."""
     ious = None
-    if 'masks' in preds:
+    if model_type == 'InstanceSegmentation':
         n_gt = len(labels['masks'])
         n_pred = len(preds['masks'])
         if n_gt and n_pred:
@@ -102,11 +100,12 @@ def check_annotation_types(annotations:list[Annotation]):
         raise Exception(f'Annotations contain multiple types: {types}. Only one type is supported for training.')
 
 
-def write_json(model_path, config_path, image_dir, label_path, out_pred_json, out_image_dir, out_iou_dir, image_size: tuple[int,int] | None, confidence=0.01, iou=0.45, max_det=600):
+def write_json(model_path, model_type, config_path, image_dir, label_path, out_pred_json, out_image_dir, out_iou_dir, image_size: tuple[int,int] | None, confidence=0.01, iou=0.45, max_det=600):
     """write predictions and labels to a json file
 
     Args:
         model_path (str): a path to a model weights file
+        model_type (str): a type of the model, either "ObjectDetection" or "InstanceSegmentation"
         config_path (str): a path to a model configuration file
         image_dir (str): a input image directory, where each image should have the same dimension as training images
         label_path (str): a path to a label json file
@@ -119,7 +118,10 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         max_det (int, optional): the max number of detections. Defaults to 600.
         
     """
-    model = Yolo(model_path)
+    if model_type in ('ObjectDetection', 'InstanceSegmentation'):
+        model = Yolo(model_path)
+    else:
+        raise Exception(f'Not supported model type: {model_type}')
     dataset = Dataset.load(label_path)
     
     pred_annot_id = 0 # sum([len(f.annotations) for f in dataset.files])
@@ -174,7 +176,7 @@ def write_json(model_path, config_path, image_dir, label_path, out_pred_json, ou
         # calculate iou matrix and write to json
         labels = parse_annotations(annotations_unpadded, h_unpad, w_unpad)
         preds = parse_annotations(preds_unpadded, h_unpad, w_unpad)
-        ious,n_gt,n_preds = calculate_iou_matrix(labels, preds, device=model.device)
+        ious,n_gt,n_preds = calculate_iou_matrix(labels, preds, model_type, device=model.device)
         write_iou_json(ious, n_gt, n_preds, out_iou_dir, file_annot.id)
         
         if len(annotations_unpadded) != n_gt:
@@ -203,6 +205,7 @@ if __name__ =='__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path',required=True,help='a path to a model weights file')
+    parser.add_argument('--model_type',required=True,help='a type of the model, either ObjectDetection or InstanceSegmentation')
     parser.add_argument('--config_path',default=None,help='[optional] a path to a model config file')
     parser.add_argument('--img_dir',required=True,help='a input image directory')
     parser.add_argument('--label_path',required=True,help='a path to a label json file')
@@ -225,5 +228,5 @@ if __name__ =='__main__':
         else:
             raise Exception(f'Invalid image size: {ap.image_size}; must be either w,h or a single number')
 
-    write_json(ap.model_path, ap.config_path, ap.img_dir, ap.label_path, ap.out_pred_json, ap.out_image_dir, ap.out_iou_dir, image_size, ap.confidence, ap.iou, ap.max_det)
+    write_json(ap.model_path, ap.model_type, ap.config_path, ap.img_dir, ap.label_path, ap.out_pred_json, ap.out_image_dir, ap.out_iou_dir, image_size, ap.confidence, ap.iou, ap.max_det)
     
