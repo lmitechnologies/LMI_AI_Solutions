@@ -435,10 +435,11 @@ class YoloSeg(Yolo):
         if pred.shape[0] == 0:
             masks = None
         else:
+            pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
             masks = ops.process_mask_native(proto, pred[:, 6:], pred[:, :4], orig_img.shape[:2])
-            keep = masks.amax((-2, -1)) > 0  # only keep predictions with masks
-            if not all(keep):  # most predictions have masks
-                pred, masks = pred[keep], masks[keep]  # indexing is slow
+            keep = masks.amax((-2, -1)) > 0  # only keep predictions with non-empty masks
+            if not all(keep):
+                pred, masks = pred[keep], masks[keep]
 
         results, M = super().construct_result(pred, img, orig_img, conf)
         if masks is not None:

@@ -1,36 +1,29 @@
-#
-# SPDX-FileCopyrightText: Copyright (c) 1993-2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-# http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#
+# source: https://github.com/NVIDIA/TensorRT/blob/main/samples/python/detectron2/create_onnx.py
 
 import logging
 import os
+import sys
 
 import cv2
-import detectron2_lmi.converter.onnx_utils  # noqa: F401
 import numpy as np
 import onnx
 import onnx_graphsurgeon as gs
 import torch
-from detectron2.config import get_cfg
-from detectron2.engine.defaults import DefaultPredictor
-from detectron2.modeling import build_model
-from detectron2.structures import ImageList
 from onnx import shape_inference
 
-log = logging.getLogger("ModelHelper")
+try:
+    from detectron2.config import get_cfg
+    from detectron2.engine.defaults import DefaultPredictor
+    from detectron2.modeling import build_model
+    from detectron2.structures import ImageList
+except ImportError:
+    print("Could not import Detectron 2 modules. Maybe you did not install Detectron 2")
+    print("Please install Detectron 2, check https://github.com/facebookresearch/detectron2/blob/main/INSTALL.md")
+    sys.exit(1)
+
+import object_detectors.detectron2_lmi.converter.onnx_utils  # noqa: F401
+
+log = logging.getLogger(__name__)
 
 
 class DET2GraphSurgeon:
@@ -65,7 +58,6 @@ class DET2GraphSurgeon:
         self.det2_cfg = det2_setup(config_file, weights)
 
         # Getting model characteristics.
-        self.mask_on = self.det2_cfg.MODEL.MASK_ON
         self.fpn_out_channels = self.det2_cfg.MODEL.FPN.OUT_CHANNELS
         self.num_classes = self.det2_cfg.MODEL.ROI_HEADS.NUM_CLASSES
         self.first_NMS_max_proposals = self.det2_cfg.MODEL.RPN.POST_NMS_TOPK_TEST
@@ -151,23 +143,28 @@ class DET2GraphSurgeon:
 
         # Image preprocessing.
         input_im = cv2.imread(sample_image)
-        input_im = cv2.cvtColor(input_im, cv2.COLOR_BGR2RGB)
+        if input_im is None:
+            raise ValueError(f"Failed to read image from path: {sample_image}")
+
+        log.info(f"Input image format: {self.det2_cfg.INPUT.FORMAT}")
+        log.info(f"Input image shape: {input_im.shape}")
+
+        if self.det2_cfg.INPUT.FORMAT == "RGB":
+            input_im = cv2.cvtColor(input_im, cv2.COLOR_BGR2RGB)
+
         raw_height, raw_width = input_im.shape[:2]
+        if raw_height % 32 != 0 or raw_width % 32 != 0:
+            raise ValueError("Input image height and width must be divisible by 32 for fixed anchor generation.")
+
         image = predictor.aug.get_transform(input_im).apply_image(input_im)
         image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
+        log.info(f"Transformed image shape: {image.shape[1:]}")
 
         # Model preprocessing.
         inputs = [{"image": image, "height": raw_height, "width": raw_width}]
         images = [x["image"].to(model.device) for x in inputs]
         images = [(x - model.pixel_mean) / model.pixel_std for x in images]
-        image_height = images[0].shape[-2]
-        image_width = images[0].shape[-1]
-
-        # check if the image size is divisible by 32
-        assert image_height % 32 == 0, "Image height must be divisible by 32, got {}".format(image_height)
-        assert image_width % 32 == 0, "Image width must be divisible by 32, got {}".format(image_width)
-        # asse
-        imagelist_images = ImageList.from_tensors(images, 512)
+        imagelist_images = ImageList.from_tensors(images, 32)
 
         # Get feature maps from backbone.
         features = predictor.model.backbone(imagelist_images.tensor)
@@ -194,6 +191,7 @@ class DET2GraphSurgeon:
         self.graph.cleanup().toposort()
         model = gs.export_onnx(self.graph)
         output_path = os.path.realpath(output_path)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         onnx.save(model, output_path)
         log.info("Saved ONNX model to {}".format(output_path))
 
@@ -586,124 +584,117 @@ class DET2GraphSurgeon:
                 second_nms_threshold,
                 "box_outputs",
             )
-            final_graph_reshape_node = None
-            if self.mask_on:
-                # Create ROIAlign node.
-                mask_pooler_output = self.ROIAlign(
-                    nms_outputs[1],
-                    p2,
-                    p3,
-                    p4,
-                    p5,
+
+            # Create ROIAlign node.
+            mask_pooler_output = self.ROIAlign(
+                nms_outputs[1],
+                p2,
+                p3,
+                p4,
+                p5,
+                self.second_ROIAlign_pooled_size,
+                self.second_ROIAlign_sampling_ratio,
+                self.second_ROIAlign_type,
+                self.second_NMS_max_proposals,
+                "mask_pooler",
+            )
+
+            # Reshape mask pooler output.
+            mask_pooler_shape = np.asarray(
+                [
+                    self.second_NMS_max_proposals * self.batch_size,
+                    self.fpn_out_channels,
                     self.second_ROIAlign_pooled_size,
-                    self.second_ROIAlign_sampling_ratio,
-                    self.second_ROIAlign_type,
+                    self.second_ROIAlign_pooled_size,
+                ],
+                dtype=np.int64,
+            )
+            mask_pooler_reshape_node = self.graph.op_with_const("Reshape", "mask_pooler/reshape", mask_pooler_output, mask_pooler_shape)
+
+            # Get first Conv op in mask head and connect ROIAlign's squeezed output to it.
+            mask_head_conv = self.graph.find_node_by_op_name("Conv", "/roi_heads/mask_head/mask_fcn1/Conv")
+            mask_head_conv.inputs[0] = mask_pooler_reshape_node[0]
+
+            # Reshape node that is preparing 2nd NMS class outputs for Add node that comes next.
+            classes_reshape_shape = np.asarray([self.second_NMS_max_proposals * self.batch_size], dtype=np.int64)
+            classes_reshape_node = self.graph.op_with_const(
+                "Reshape",
+                "box_outputs/reshape_classes",
+                nms_outputs[3],
+                classes_reshape_shape,
+            )
+
+            # This loop will generate an array used in Add node, which eventually will help Gather node to pick the single
+            # class of interest per bounding box, instead of creating 80 masks for every single bounding box.
+            add_array = []
+            for i in range(self.second_NMS_max_proposals * self.batch_size):
+                if i == 0:
+                    start_pos = 0
+                else:
+                    start_pos = i * self.num_classes
+                add_array.append(start_pos)
+
+            # This Add node is one of the Gather node inputs, Gather node performs gather on 0th axis of data tensor
+            # and requires indices that set tensors to be withing bounds, this Add node provides the bounds for Gather.
+            add_array = np.asarray(add_array, dtype=np.int32)
+            classes_add_node = self.graph.op_with_const("Add", "box_outputs/add", classes_reshape_node[0], add_array)
+
+            # Get the last Conv op in mask head and reshape it to correctly gather class of interest's masks.
+            last_conv = self.graph.find_node_by_op_name("Conv", "/roi_heads/mask_head/predictor/Conv")
+            last_conv_reshape_shape = np.asarray(
+                [
+                    self.second_NMS_max_proposals * self.num_classes * self.batch_size,
+                    self.mask_out_res,
+                    self.mask_out_res,
+                ],
+                dtype=np.int64,
+            )
+            last_conv_reshape_node = self.graph.op_with_const(
+                "Reshape",
+                "mask_head/reshape_all_masks",
+                last_conv.outputs[0],
+                last_conv_reshape_shape,
+            )
+
+            # Gather node that selects only masks belonging to detected class, 79 other masks are discarded.
+            final_gather = self.graph.gather(
+                "mask_head/final_gather",
+                last_conv_reshape_node[0],
+                classes_add_node[0],
+                0,
+            )
+
+            # Get last Sigmoid node and connect Gather node to it.
+            mask_head_sigmoid = self.graph.find_node_by_op_name("Sigmoid", "/roi_heads/mask_head/Sigmoid")
+            mask_head_sigmoid.inputs[0] = final_gather[0]
+
+            # Final Reshape node, reshapes output of Sigmoid, important for various batch_size support (not tested yet).
+            final_graph_reshape_shape = np.asarray(
+                [
+                    self.batch_size,
                     self.second_NMS_max_proposals,
-                    "mask_pooler",
-                )
+                    self.mask_out_res,
+                    self.mask_out_res,
+                ],
+                dtype=np.int64,
+            )
+            final_graph_reshape_node = self.graph.op_with_const(
+                "Reshape",
+                "mask_head/final_reshape",
+                mask_head_sigmoid.outputs[0],
+                final_graph_reshape_shape,
+            )
+            final_graph_reshape_node[0].dtype = np.float32
+            final_graph_reshape_node[0].name = "detection_masks"
 
-                # Reshape mask pooler output.
-                mask_pooler_shape = np.asarray(
-                    [
-                        self.second_NMS_max_proposals * self.batch_size,
-                        self.fpn_out_channels,
-                        self.second_ROIAlign_pooled_size,
-                        self.second_ROIAlign_pooled_size,
-                    ],
-                    dtype=np.int64,
-                )
-                mask_pooler_reshape_node = self.graph.op_with_const(
-                    "Reshape",
-                    "mask_pooler/reshape",
-                    mask_pooler_output,
-                    mask_pooler_shape,
-                )
-
-                # Get first Conv op in mask head and connect ROIAlign's squeezed output to it.
-                mask_head_conv = self.graph.find_node_by_op_name("Conv", "/roi_heads/mask_head/mask_fcn1/Conv")
-                mask_head_conv.inputs[0] = mask_pooler_reshape_node[0]
-
-                # Reshape node that is preparing 2nd NMS class outputs for Add node that comes next.
-                classes_reshape_shape = np.asarray([self.second_NMS_max_proposals * self.batch_size], dtype=np.int64)
-                classes_reshape_node = self.graph.op_with_const(
-                    "Reshape",
-                    "box_outputs/reshape_classes",
-                    nms_outputs[3],
-                    classes_reshape_shape,
-                )
-
-                # This loop will generate an array used in Add node, which eventually will help Gather node to pick the single
-                # class of interest per bounding box, instead of creating 80 masks for every single bounding box.
-                add_array = []
-                for i in range(self.second_NMS_max_proposals * self.batch_size):
-                    if i == 0:
-                        start_pos = 0
-                    else:
-                        start_pos = i * self.num_classes
-                    add_array.append(start_pos)
-
-                # This Add node is one of the Gather node inputs, Gather node performs gather on 0th axis of data tensor
-                # and requires indices that set tensors to be withing bounds, this Add node provides the bounds for Gather.
-                add_array = np.asarray(add_array, dtype=np.int32)
-                classes_add_node = self.graph.op_with_const("Add", "box_outputs/add", classes_reshape_node[0], add_array)
-
-                # Get the last Conv op in mask head and reshape it to correctly gather class of interest's masks.
-                last_conv = self.graph.find_node_by_op_name("Conv", "/roi_heads/mask_head/predictor/Conv")
-                last_conv_reshape_shape = np.asarray(
-                    [
-                        self.second_NMS_max_proposals * self.num_classes * self.batch_size,
-                        self.mask_out_res,
-                        self.mask_out_res,
-                    ],
-                    dtype=np.int64,
-                )
-                last_conv_reshape_node = self.graph.op_with_const(
-                    "Reshape",
-                    "mask_head/reshape_all_masks",
-                    last_conv.outputs[0],
-                    last_conv_reshape_shape,
-                )
-
-                # Gather node that selects only masks belonging to detected class, 79 other masks are discarded.
-                final_gather = self.graph.gather(
-                    "mask_head/final_gather",
-                    last_conv_reshape_node[0],
-                    classes_add_node[0],
-                    0,
-                )
-
-                # Get last Sigmoid node and connect Gather node to it.
-                mask_head_sigmoid = self.graph.find_node_by_op_name("Sigmoid", "/roi_heads/mask_head/Sigmoid")
-                mask_head_sigmoid.inputs[0] = final_gather[0]
-
-                # Final Reshape node, reshapes output of Sigmoid, important for various batch_size support (not tested yet).
-                final_graph_reshape_shape = np.asarray(
-                    [
-                        self.batch_size,
-                        self.second_NMS_max_proposals,
-                        self.mask_out_res,
-                        self.mask_out_res,
-                    ],
-                    dtype=np.int64,
-                )
-                final_graph_reshape_node = self.graph.op_with_const(
-                    "Reshape",
-                    "mask_head/final_reshape",
-                    mask_head_sigmoid.outputs[0],
-                    final_graph_reshape_shape,
-                )
-                final_graph_reshape_node[0].dtype = np.float32
-                final_graph_reshape_node[0].name = "detection_masks"
-
-            return nms_outputs, final_graph_reshape_node[0] if self.mask_on else None
+            return nms_outputs, final_graph_reshape_node[0]
 
         # Only Detectron 2's Mask-RCNN R50-FPN 3x is supported currently.
         p2, p3, p4, p5 = backbone()
         rpn_outputs = proposal_generator(anchors, first_nms_threshold)
         box_head_outputs, mask_head_output = roi_heads(rpn_outputs, p2, p3, p4, p5, second_nms_threshold)
         # Append segmentation head output.
-        if self.mask_on:
-            box_head_outputs.append(mask_head_output)
+        box_head_outputs.append(mask_head_output)
         # Set graph outputs, both bbox and segmentation heads.
         self.graph.outputs = box_head_outputs
         self.sanitize()
@@ -720,61 +711,3 @@ def onnx_gs(args):
         args.get("second_nms_threshold", None),
     )
     det2_gs.save(args.get("onnx_file_path"))
-
-
-# if __name__ == "__main__":
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument(
-#         "-i",
-#         "--exported_onnx",
-#         help="The exported to ONNX Detectron 2 Mask R-CNN",
-#         type=str,
-#         default="/home/weights/det2onnx.onnx",
-#     )
-#     parser.add_argument(
-#         "-o", "--onnx", help="The output ONNX model file to write", type=str, default="/home/weights/model.onnx",
-#     )
-#     parser.add_argument(
-#         "-c",
-#         "--det2_config",
-#         help="The Detectron 2 config file (.yaml) for the model",
-#         type=str,
-#         default="/home/weights/config.yaml",
-#     )
-#     parser.add_argument(
-#         "-w", "--det2_weights", help="The Detectron 2 model weights (.pkl)", type=str, default="/home/weights/model_final.pth",
-#     )
-#     parser.add_argument(
-#         "-s", "--sample_image", help="Sample image for anchors generation", type=str, default="/home/weights/sample_image.png",
-#     )
-#     parser.add_argument(
-#         "-b", "--batch_size", help="Batch size for the model", type=int, default=1
-#     )
-#     parser.add_argument(
-#         "-t1",
-#         "--first_nms_threshold",
-#         help="Override the score threshold for the 1st NMS operation",
-#         type=float,
-#     )
-#     parser.add_argument(
-#         "-t2",
-#         "--second_nms_threshold",
-#         help="Override the score threshold for the 2nd NMS operation",
-#         type=float,
-#     )
-#     args = parser.parse_args()
-#     if not all(
-#         [
-#             args.exported_onnx,
-#             args.onnx,
-#             args.det2_config,
-#             args.det2_weights,
-#             args.sample_image,
-#         ]
-#     ):
-#         parser.print_help()
-#         print(
-#             "\nThese arguments are required: --exported_onnx --onnx --det2_config --det2_weights and --sample_image"
-#         )
-#         sys.exit(1)
-#     onnx_exporter(args)

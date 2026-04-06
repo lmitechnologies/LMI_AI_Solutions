@@ -78,19 +78,36 @@ class Detectron2Base(ODBase):
             shp = images.shape
             if len(shp) == 3:
                 images = [images]
-            elif len(shp) == 4 and images.shape[0] != self.batch_size:
-                self.logger.error(f"Batch size mismatch: {images.shape[0]} != {self.batch_size}")
-                return {}
-        batch_size = len(images) if isinstance(images, list) else images.shape[0]
-        operators = self._normalize_operators(operators, batch_size)
-        list_results = self.postprocess(images, self.forward(self.preprocess(images)), operators=operators, **kwargs)
+            elif len(shp) == 4:
+                images = list(images)
+        n = len(images)
+        operators = self._normalize_operators(operators, n)
+
+        final = {"boxes": [], "scores": [], "classes": [], "masks": [], "segments": []}
+        for start in range(0, n, self.batch_size):
+            chunk_imgs = images[start : start + self.batch_size]
+            chunk_ops = operators[start : start + self.batch_size]
+            chunk_n = len(chunk_imgs)
+
+            # Pad the last chunk to the engine's batch size if needed
+            if chunk_n < self.batch_size:
+                pad = np.zeros_like(chunk_imgs[0])
+                chunk_imgs = chunk_imgs + [pad] * (self.batch_size - chunk_n)
+                chunk_ops = chunk_ops + [[]] * (self.batch_size - chunk_n)
+
+            list_results = self.postprocess(
+                chunk_imgs,
+                self.forward(self.preprocess(chunk_imgs)),
+                operators=chunk_ops,
+                **kwargs,
+            )
+            for r in list_results[:chunk_n]:
+                r_dict = r.to_dict(return_tensor=False)
+                for k in final:
+                    final[k].append(r_dict.get(k, []))
+
         t1 = time.time()
         self.logger.debug(f"proc-time {(t1 - t0) * 1000.0:.2f} ms")
-        final = {"boxes": [], "scores": [], "classes": [], "masks": [], "segments": []}
-        for r in list_results:
-            r_dict = r.to_dict(return_tensor=False)
-            for k in final:
-                final[k].append(r_dict.get(k, []))
         return final
 
     def _postprocess_masks(self, raw_masks, boxes, image_size, mask_threshold, ops, **kwargs):
@@ -335,7 +352,8 @@ class Detectron2TRT(Detectron2Base):
             else:
                 batch_masks = filtered_masks
 
-            batch_boxes = revert_to_origin(batch_boxes, ops)
+            if len(ops) > 0:
+                batch_boxes = revert_to_origin(batch_boxes, ops)
 
             results.append(
                 Results(
@@ -364,7 +382,7 @@ class Detectron2PT(Detectron2Base):
         try:
             self.model = torch.jit.load(model_path, map_location=self.device)
         except Exception as e:
-            self.logger.exception(f"鉂?Failed to load model: {e}")
+            raise RuntimeError(f"Failed to load model from {model_path}") from e
 
         class_map = kwargs.get("class_map", None)
         if class_map is None:
@@ -465,7 +483,8 @@ class Detectron2PT(Detectron2Base):
                         batch_masks, batch_boxes, (image_h, image_w), mask_threshold, ops, **kwargs
                     )
 
-            batch_boxes = revert_to_origin(batch_boxes, ops)
+            if len(ops) > 0:
+                batch_boxes = revert_to_origin(batch_boxes, ops)
             masks_t = batch_masks if len(batch_masks) > 0 else None
 
             results.append(

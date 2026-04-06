@@ -39,7 +39,7 @@ def inference_run(args):
     confidence = args.get("confidence")
 
     if not os.path.exists(out_path):
-        os.makedirs(args.output)
+        os.makedirs(out_path)
 
     with open(class_map_path, "r") as f:
         class_map = json.load(f)
