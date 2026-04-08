@@ -47,9 +47,18 @@ class RfdetrBase(ODBase):
 
     logger = logging.getLogger("RFDETR")
 
-    def _setup_class_map(self, class_map: dict) -> None:
-        """Initialize class_map and a vectorized name-lookup from a {int_id: str_name} mapping."""
-        self.class_map = {int(k): str(v) for k, v in class_map.items()}
+    def _setup_class_map(self, class_names) -> None:
+        """Initialize class_map and a vectorized name-lookup.
+
+        Args:
+            class_names: A dict mapping int class index to str class name
+                (e.g. {0: 'cat', 1: 'dog'} or COCO's non-sequential {1: 'person', 13: 'stop sign', ...}).
+        """
+        if class_names is None:
+            raise ValueError(f"class_map is required for {self.__class__.__name__}")
+        if not isinstance(class_names, dict):
+            raise TypeError(f"class_map must be a dict, got {type(class_names).__name__}")
+        self.class_map = {int(k): str(v) for k, v in class_names.items()}
         self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)))
 
     def _preprocess_single(self, image: np.ndarray) -> np.ndarray:
@@ -340,10 +349,7 @@ class RfdetrTRT(RfdetrBase):
 
         self.num_classes = self.output_info[1]["shape"][-1]
 
-        class_map = kwargs.get("class_map")
-        if class_map is None:
-            raise ValueError("class_map is required for RfdetrTRT")
-        self._setup_class_map(class_map)
+        self._setup_class_map(kwargs.get("class_map"))
 
         self._buf_cache = {}
 
@@ -456,10 +462,7 @@ class RfdetrPT(RfdetrBase):
         self.model = torch.jit.load(model_path, map_location=device)
         self.model.eval()
 
-        class_map = kwargs.get("class_map")
-        if class_map is None:
-            raise ValueError("class_map is required for RfdetrPT")
-        self._setup_class_map(class_map)
+        self._setup_class_map(kwargs.get("class_map"))
 
     def warmup(self):
         """Warm up the model by running a dummy inference."""
@@ -567,7 +570,11 @@ class RfdetrPTH(RfdetrBase):
             f"with resolution {self.image_size[0]}x{self.image_size[1]} on {self.device}"
         )
         self.model = model_class(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
-        self.class_names = self.model.class_names
+        self._setup_class_map(kwargs.get("class_map"))
+        if set(self.class_map.values()) != set(self.model.class_names):
+            raise ValueError(
+                f"Provided class_map values {set(self.class_map.values())} do not match model class names {set(self.model.class_names)}"
+            )
         self.model.optimize_for_inference()
 
     def _get_device(self, requested_device: str) -> str:
@@ -629,7 +636,7 @@ class RfdetrPTH(RfdetrBase):
         if len(boxes) == 0:
             return Results()
 
-        classes = np.array([self.class_names[c] for c in class_ids])
+        classes = np.array([self.class_map[c] for c in class_ids])
 
         mask = scores >= np.vectorize(configs.get)(classes, 1.0)
         boxes = boxes[mask]
@@ -677,7 +684,7 @@ class RfdetrPTH(RfdetrBase):
 
         configs = self._parse_confidence_config(
             configs if configs is not None else self.DEFAULT_CONFIDENCE,
-            self.class_names.values(),
+            self.class_map.values(),
         )
 
         # forward (rfdetr library handles preprocessing internally)

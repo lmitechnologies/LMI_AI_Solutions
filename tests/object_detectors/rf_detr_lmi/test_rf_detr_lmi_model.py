@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import torch
 from rfdetr import RFDETRNano
+from rfdetr.assets.coco_classes import COCO_CLASSES
 
 from object_detectors.od_core.object_detector import ObjectDetector
 
@@ -47,26 +48,26 @@ def rf_model():
 
 
 @pytest.fixture(scope="module")
-def obj_detector(rf_model):
+def obj_detector():
     obj_detector = ObjectDetector(
         metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
         model_path=OD_MODEL,
         device=DEVICE,
-        class_map=rf_model.class_names,
+        class_map=COCO_CLASSES,
         image_size=[IMAGE_SIZE, IMAGE_SIZE],
     )
     return obj_detector
 
 
 @pytest.fixture(scope="module")
-def trt_model(rf_model):
+def trt_model():
     if DEVICE != "cuda":
         pytest.skip("TensorRT model can only be tested on CUDA device.")
     try:
         return ObjectDetector(
             metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
             model_path=TRT_MODEL,
-            class_map=rf_model.class_names,
+            class_map=COCO_CLASSES,
             image_size=[IMAGE_SIZE, IMAGE_SIZE],
         )
     except Exception as e:
@@ -74,12 +75,12 @@ def trt_model(rf_model):
 
 
 @pytest.fixture(scope="module")
-def cpu_models(rf_model):
+def cpu_models():
     od_pt = ObjectDetector(
         metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
         model_path=OD_MODEL.replace("cuda", "cpu"),
         device="cpu",
-        class_map=rf_model.class_names,
+        class_map=COCO_CLASSES,
         image_size=[IMAGE_SIZE, IMAGE_SIZE],
     )
 
@@ -88,15 +89,15 @@ def cpu_models(rf_model):
         model_path=PTH_FILE,
         model_type="nano",
         device="cpu",
-        class_map=rf_model.class_names,
+        class_map=COCO_CLASSES,
         image_size=[IMAGE_SIZE, IMAGE_SIZE],
     )
     return od_pt, od_pth
 
 
-def assert_outputs_match_rf(rf_preds, class_names, outputs, label, tolerance):
+def assert_outputs_match_rf(rf_preds, outputs, label, tolerance):
     rf_boxes = rf_preds.xyxy
-    rf_classes = [class_names[c] for c in rf_preds.class_id]
+    rf_classes = [COCO_CLASSES[c] for c in rf_preds.class_id]
     assert rf_boxes.shape[0] == outputs["boxes"].shape[0], f"{label}: Number of boxes mismatch"
     assert np.allclose(rf_boxes, outputs["boxes"], rtol=tolerance, atol=tolerance), f"{label}: Box coordinates mismatch"
     assert np.allclose(rf_preds.confidence, outputs["scores"], rtol=tolerance, atol=tolerance), f"{label}: Confidence scores mismatch"
@@ -119,8 +120,8 @@ class Test_Rfdetr_Model:
             outputs_pt = {k: batch_pt[k][0] for k in ("boxes", "scores", "classes")}
             outputs_pth = {k: batch_pth[k][0] for k in ("boxes", "scores", "classes")}
 
-            assert_outputs_match_rf(rf_preds, rf_model.class_names, outputs_pt, "pt_model", tolerance)
-            assert_outputs_match_rf(rf_preds, rf_model.class_names, outputs_pth, "pth_model", tolerance)
+            assert_outputs_match_rf(rf_preds, outputs_pt, "pt_model", tolerance)
+            assert_outputs_match_rf(rf_preds, outputs_pth, "pth_model", tolerance)
 
     def test_warmup(self, obj_detector):
         obj_detector.warmup()
