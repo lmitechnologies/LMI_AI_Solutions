@@ -13,7 +13,6 @@ from detectron2.modeling import build_model, detector_postprocess
 from detectron2.utils.visualizer import GenericMask
 from od_base import ODBase
 
-from lmi_utils.gadget_utils.pipeline_utils import plot_one_box
 from lmi_utils.label_utils.csv_utils import write_to_csv
 from lmi_utils.label_utils.shapes import Mask, Rect
 
@@ -204,34 +203,6 @@ class Detectron2Model(ODBase):
             return_segments=kwargs.get("return_segments", False),
         )
         return results
-
-    def annotate_image(self, image, results, **kwargs):
-        """
-        The `annotate_image` function takes an image and the outputs of the model and visualizes the detected
-        objects on the image.
-
-        :param image: The `image` parameter is the input image on which the detected objects will be
-        visualized
-        :param outputs: The `outputs` parameter is the output of the model, which contains the detected
-        objects and their properties
-        """
-        colormap = kwargs.get("color_map", None)
-        for i in range(len(results["classes"])):
-            box = results["boxes"][i]
-            class_id = results["classes"][i]
-            color = colormap[class_id] if colormap is not None else None
-            mask = results["masks"][i] if len(results["masks"]) > 0 else None
-            score = results["scores"][i]
-            label = f"{class_id}:{score:.2f}"
-            plot_one_box(
-                box=box,
-                img=image,
-                mask=mask,
-                mask_threshold=0.5,
-                color=color,
-                label=label,
-            )
-        return image
 
 
 if __name__ == "__main__":

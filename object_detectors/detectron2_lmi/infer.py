@@ -70,7 +70,7 @@ def inference_run(args):
         outputs["scores"] = outputs["scores"][0]
         outputs["masks"] = outputs["masks"][0]
         outputs["segments"] = outputs["segments"][0]
-        annotated_image = model.annotate_image(outputs, img, show_segments=True)
+        annotated_image = model.annotate_image(outputs, img)
 
         # save the image
         fname = os.path.basename(img_path)

@@ -107,7 +107,7 @@ def detectron2_trt_model():
         pytest.skip(f"Failed to load TRT engine: {e}")
 
 
-def test_model(og_cpu_model, model_cpu, imgs_coco):
+def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
     confs = {v: 0.00 for v in class_map.values()}
     for image in imgs_coco:
         img = torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))
@@ -149,14 +149,13 @@ def test_operators(model, imgs_coco):
 
 
 def test_operators_no_masks(model, imgs_coco):
-    confs = {v: 1.0 for v in class_map.values()}
     image = imgs_coco[0]
     h, w = image.shape[:2]
     image_resized = cv2.resize(image, (512, 512))
     operators = [{"resize": [512, 512, w, h]}]
     outputs = model.predict(
         image_resized,
-        confs=confs,
+        confs=1,
         return_segments=True,
         process_masks=True,
         operators=operators,
@@ -175,14 +174,21 @@ def test_batch_operators(model, imgs_coco):
     original_sizes = [img.shape[:2] for img in images]
     images_resized = [cv2.resize(img, (tw, th)) for img in images]
     operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
-    outputs = model.predict(images_resized, confs=confs, process_masks=True, operators=operators)
+    outputs = model.predict(images_resized, confs=confs, process_masks=True, return_segments=True, operators=operators)
     assert len(outputs["boxes"]) == len(images)
     assert len(outputs["scores"]) == len(images)
     assert len(outputs["classes"]) == len(images)
     assert len(outputs["masks"]) == len(images)
+    assert len(outputs["segments"]) == len(images)
     os.makedirs(OUT_DIR, exist_ok=True)
     for i, (h, w) in enumerate(original_sizes):
-        assert len(outputs["boxes"][i]) == len(outputs["scores"][i]) == len(outputs["classes"][i]) == len(outputs["masks"][i])
+        assert (
+            len(outputs["boxes"][i])
+            == len(outputs["scores"][i])
+            == len(outputs["classes"][i])
+            == len(outputs["masks"][i])
+            == len(outputs["segments"][i])
+        )
         if len(outputs["masks"][i]) > 0:
             assert outputs["masks"][i].shape[1] == h
             assert outputs["masks"][i].shape[2] == w
@@ -201,15 +207,21 @@ def test_trt_batch_operators(detectron2_trt_model, imgs_coco):
     resized = [cv2.resize(img, (tw, th)) for img in images]
     operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
 
-    outputs = model.predict(resized, confs=confs, process_masks=True, operators=operators)
+    outputs = model.predict(resized, confs=confs, process_masks=True, return_segments=True, operators=operators)
     assert len(outputs["boxes"]) == len(images)
     assert len(outputs["scores"]) == len(images)
     assert len(outputs["classes"]) == len(images)
     assert len(outputs["masks"]) == len(images)
-
+    assert len(outputs["segments"]) == len(images)
     os.makedirs(OUT_DIR, exist_ok=True)
     for i, (h, w) in enumerate(original_sizes):
-        assert len(outputs["boxes"][i]) == len(outputs["scores"][i]) == len(outputs["classes"][i]) == len(outputs["masks"][i])
+        assert (
+            len(outputs["boxes"][i])
+            == len(outputs["scores"][i])
+            == len(outputs["classes"][i])
+            == len(outputs["masks"][i])
+            == len(outputs["segments"][i])
+        )
         if len(outputs["masks"][i]) > 0:
             assert outputs["masks"][i].shape[1] == h
             assert outputs["masks"][i].shape[2] == w

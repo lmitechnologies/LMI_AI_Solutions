@@ -3,7 +3,6 @@ import logging
 import time
 from typing import Dict, List, Optional, Union
 
-import cv2
 import numpy as np
 import torch
 from ultralytics.utils import nms, ops
@@ -15,26 +14,6 @@ from lmi_common.yolo_core import YoloCore
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
-
-
-@smart_inference_mode()
-def to_numpy(data):
-    """Converts a tensor or a list to numpy arrays.
-
-    Args:
-        data (torch.Tensor | list): The input tensor or list of tensors.
-
-    Returns:
-        (np.ndarray): The converted numpy array.
-    """
-    if isinstance(data, torch.Tensor):
-        return data.cpu().numpy()
-    elif isinstance(data, list):
-        return np.array(data)
-    elif isinstance(data, np.ndarray):
-        return data
-    else:
-        raise TypeError(f"Data type {type(data)} not supported")
 
 
 @ObjectDetectorRegistry.register(
@@ -119,31 +98,10 @@ class Yolo(YoloCore, ODBase):
                 if k in class_names:
                     min_conf = min(min_conf, v)
             if min_conf == 1:
-                self.logger.warning("No class matches in confidence dict, set to 1.0 for all classes.")
+                raise ValueError("No class matches in confidence dict.")
         else:
             raise TypeError(f"Confidence type {type(conf)} not supported")
         return min_conf
-
-    @smart_inference_mode()
-    def _get_thresholds(self, conf: Union[float, dict], num_preds: int, classes: list) -> torch.Tensor:
-        """Get the thresholds for each class.
-
-        Args:
-            conf (float | dict): float or dictionary of <class: confidence level>.
-            num_preds (int): the number of predictions.
-            classes (list): the list of class names for each prediction.
-
-        Returns:
-            (torch.Tensor): the thresholds for each prediction.
-        """
-        if isinstance(conf, float):
-            thres = np.array([conf] * num_preds)
-        elif isinstance(conf, dict):
-            # set to 1 if c is not in conf
-            thres = np.array([conf.get(c, 1) for c in classes])
-        else:
-            raise TypeError(f"Confidence type {type(conf)} not supported")
-        return self.from_numpy(thres)
 
     def construct_result(self, pred, img, orig_img, conf):
         """Constructs the result from the model prediction.
@@ -155,12 +113,11 @@ class Yolo(YoloCore, ODBase):
             conf (float | dict): float or dictionary of <class: confidence level>.
         """
         pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
-        xyxy, confs, clss = pred[:, :4], pred[:, 4], pred[:, 5]
+        xyxy, scores, clss = pred[:, :4], pred[:, 4], pred[:, 5]
         classes = np.array([self.model.names[c.item()] for c in clss])
-
-        # filter based on conf
-        M = confs > self._get_thresholds(conf, len(clss), classes)
-        return Results(xyxy[M], confs[M], classes[M.cpu().numpy()].tolist()), M
+        confs_dict = self._parse_confidence_config(conf, list(self.model.names.values()))
+        xyxy, scores, classes, _, keep = self._apply_confidence_filter(scores, xyxy, classes, confs_dict)
+        return Results(xyxy, scores, classes.tolist()), keep
 
     def construct_results(self, preds, img, orig_imgs, conf):
         """Constructs the results from the model predictions.
@@ -214,18 +171,8 @@ class Yolo(YoloCore, ODBase):
         preds2 = self._run_nms(preds, min_conf, iou, agnostic, max_det)
         orig_imgs = orig_imgs if isinstance(orig_imgs, list) else [orig_imgs]
         list_results = self.construct_results(preds2, img, orig_imgs, conf, **kwargs)
-        # gather final results — always include one entry per image, even if empty
-        results = collections.defaultdict(list)
-        for result, orig_img in zip(list_results, orig_imgs):
-            use_tensor = isinstance(orig_img, torch.Tensor)
-            result_dict = result.to_dict(return_tensor=use_tensor)
-            for k in result._all_keys:
-                v = result_dict.get(k)
-                if v is not None:
-                    results[k].append(v)
-                else:
-                    results[k].append([])
-        return results
+        use_tensor = any(isinstance(img, torch.Tensor) for img in orig_imgs)
+        return self._aggregate_results(list_results, return_tensor=use_tensor)
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
         """Reverts prediction coordinates to the original pre-transform space for a single image."""
@@ -284,16 +231,7 @@ class Yolo(YoloCore, ODBase):
         batch_size = len(images)
 
         # Normalize operators to per-image list
-        if operators is None:
-            ops_list = [[] for _ in range(batch_size)]
-        elif len(operators) > 0 and isinstance(operators[0], dict):
-            # list[dict] — same operators for all images
-            ops_list = [operators] * batch_size
-        else:
-            # list[list[dict]] — per-image operators
-            if len(operators) != batch_size:
-                raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
-            ops_list = operators
+        ops_list = self._normalize_operators(operators, batch_size)
 
         # preprocess
         t0 = time.time()
@@ -327,70 +265,6 @@ class Yolo(YoloCore, ODBase):
 
         time_info["postproc"] = time.time() - t0
         return final, time_info
-
-    @staticmethod
-    @smart_inference_mode()
-    def annotate_image(
-        results,
-        image,
-        colormap=None,
-        line_thickness=None,
-        hide_label=False,
-        hide_bbox=False,
-    ):
-        """annotate model results on the image. If colormap is None, it will use the random colors.
-
-        Args:
-            results (dict): the results of the object detection, e.g., {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[]}
-            image (np.ndarray | torch.Tensor): the input image
-            colors (list, optional): a dictionary of colormaps, e.g., {'class-A':(0,0,255), 'class-B':(0,255,0)}. Defaults to None.
-            line_thickness (int, optional): the thickness of the bounding box. Defaults to None.
-            hide_bbox (bool,optional): hide the bounding box
-        Returns:
-            np.ndarray: the annotated image
-        """
-        boxes = results["boxes"]
-        classes = results["classes"]
-        scores = results["scores"]
-        masks = results["masks"]
-        points = results["points"]
-
-        image = to_numpy(image).copy()
-        if not len(boxes):
-            return image
-
-        # convert to numpy
-        boxes = to_numpy(boxes)
-        points = to_numpy(points)
-        if len(masks):
-            masks = to_numpy(masks)
-
-        if image.ndim == 2:
-            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-
-        # plot boxes and masks
-        for i in range(len(boxes)):
-            label = "{}: {:.2f}".format(classes[i], scores[i])
-            args = {
-                "label": None if hide_label else label,
-                "color": None if colormap is None else colormap[classes[i]],
-                "line_thickness": line_thickness,
-                "hide_bbox": hide_bbox,
-            }
-
-            if boxes[i].shape == (4, 2):
-                pipeline_utils.plot_one_rbox(boxes[i], image, **args)
-            elif boxes[i].shape == (4,):
-                mask = masks[i] if len(masks) else None
-                pipeline_utils.plot_one_box(boxes[i], image, mask, **args)
-
-        # plot keypoints
-        points = points.astype(int)
-        for i in range(len(points)):
-            for j in range(len(points[i])):
-                cv2.circle(image, (points[i][j][0], points[i][j][1]), 4, (255, 255, 255), -1)
-
-        return image
 
 
 @ObjectDetectorRegistry.register(
@@ -546,15 +420,15 @@ class YoloObb(Yolo):
         """
         rboxes = torch.cat([pred[:, :4], pred[:, -1:]], dim=-1)
         rboxes[:, :4] = ops.scale_boxes(img.shape[2:], rboxes[:, :4], orig_img.shape, xywh=True)
-        confs, clss = pred[:, 4], pred[:, 5]
+        scores, clss = pred[:, 4], pred[:, 5]
         classes = np.array([self.model.names[c.item()] for c in clss])
 
         # covert the boxes from xywhr to xyxyxyxy format
         rboxes = ops.xywhr2xyxyxyxy(rboxes)  # [n_obj, 4, 2]
 
-        # filter based on conf
-        M = confs > self._get_thresholds(conf, len(clss), classes)
-        return Results(rboxes[M], confs[M], classes[M.cpu().numpy()].tolist()), M
+        confs_dict = self._parse_confidence_config(conf, list(self.model.names.values()))
+        rboxes, scores, classes, _, keep = self._apply_confidence_filter(scores, rboxes, classes, confs_dict)
+        return Results(rboxes, scores, classes.tolist()), keep
 
     def _revert_coordinates(self, results: Dict, operators: List[Dict], **kwargs) -> Dict:
         """Reverts OBB coordinates to the original pre-transform space."""
