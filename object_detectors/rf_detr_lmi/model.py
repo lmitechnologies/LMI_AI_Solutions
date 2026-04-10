@@ -1,14 +1,12 @@
 import logging
 import os
-import time
-from typing import Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 import cv2
 import numpy as np
 import torch
 from rfdetr.models.postprocess import PostProcess
 
-import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
 from object_detectors.od_core.model_factory import ModelFactory
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
@@ -56,7 +54,7 @@ class RfdetrBase(ODBase):
                 segments.append(np.zeros((0, 2), dtype=np.float32))
         return segments
 
-    def _postprocess_single(self, output, configs, ops) -> Results:
+    def _postprocess_single(self, output, configs, ops, orig_img) -> Results:
         """Postprocess a single image's decoded output from PostProcess.
 
         Args:
@@ -64,6 +62,7 @@ class RfdetrBase(ODBase):
                 and optionally 'masks'. Values are tensors on self.device.
             configs (dict): Per-class confidence thresholds.
             ops (list): Coordinate transform operators to revert.
+            orig_img: Original image used to determine tensor vs numpy output.
 
         Returns:
             Results object with filtered xyxy boxes, scores, class names, optional masks, and optional segments.
@@ -74,15 +73,8 @@ class RfdetrBase(ODBase):
         )
 
         segments = self._masks_to_segments(masks) if len(masks) > 0 else None
-
-        if ops:
-            boxes = pipeline_utils.revert_to_origin(boxes, ops)
-            if len(masks) > 0:
-                masks = pipeline_utils.revert_masks_to_origin(masks, ops)
-            if segments is not None:
-                segments = [pipeline_utils.revert_to_origin(seg, ops) if len(seg) else seg for seg in segments]
-
-        return Results(boxes=boxes, scores=scores, classes=classes, masks=masks if len(masks) > 0 else None, segments=segments)
+        result = Results(boxes=boxes, scores=scores, classes=classes, masks=masks if len(masks) > 0 else None, segments=segments)
+        return self._apply_revert_to_result(result, orig_img, ops)
 
     def preprocess(self, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> np.ndarray:
         """Preprocess input image(s) to BCHW normalized array."""
@@ -129,63 +121,7 @@ class RfdetrBase(ODBase):
         orig_sizes = [img.shape[:2] for img in images]
         target_sizes = torch.tensor(orig_sizes, device=self.device)
         rs = self.postprocessor(return_predictions, target_sizes=target_sizes)
-        return [self._postprocess_single(r, configs, operators[i]) for i, r in enumerate(rs)]
-
-    @torch.no_grad()  # for torchscript
-    def predict(
-        self,
-        image: Union[np.ndarray, List[np.ndarray]],
-        configs,
-        operators: Optional[Union[List[Dict], List[List[Dict]]]] = None,
-        **kwargs,
-    ) -> tuple:
-        """Run the full inference pipeline: preprocess → forward → postprocess.
-
-        Supports both single image and batch inference.
-
-        Args:
-            image: A single HWC image or a list of HWC images.
-                All images in a batch must have the same dimensions.
-            configs: Confidence threshold (float) or per-class thresholds (dict).
-            operators: Operators for coordinate reversion. Accepts:
-                - None: no coordinate reversion.
-                - list[dict]: a single operator chain, applied to all images.
-                - list[list[dict]]: per-image operator chains (length must match batch size).
-
-        Returns:
-            (results, time_info)
-            results (dict): a dictionary where each value is a list of length B (batch size), e.g., {
-                'boxes': [numpy, ...],
-                'scores': [numpy, ...],
-                'classes': [list of strings, ...],
-            }
-            time_info (dict): timing info with keys 'preproc', 'proc', 'postproc'.
-        """
-        time_info = {}
-
-        is_batch = isinstance(image, list)
-        images = image if is_batch else [image]
-        batch_size = len(images)
-
-        operators = self._normalize_operators(operators, batch_size)
-
-        # preprocess
-        t0 = time.time()
-        preprocessed = self.preprocess(images, **kwargs)
-        time_info["preproc"] = time.time() - t0
-
-        # forward
-        t0 = time.time()
-        outputs = self.forward(preprocessed, **kwargs)
-        time_info["proc"] = time.time() - t0
-
-        # postprocess
-        t0 = time.time()
-        list_results = self.postprocess(outputs, images=images, configs=configs, operators=operators, **kwargs)
-        final = self._aggregate_results(list_results)
-        time_info["postproc"] = time.time() - t0
-
-        return final, time_info
+        return [self._postprocess_single(r, configs, operators[i], images[i]) for i, r in enumerate(rs)]
 
 
 @ObjectDetectorRegistry.register(
@@ -480,7 +416,6 @@ class RfdetrPTH(RfdetrBase):
         """Warm up the model by running a dummy inference."""
         dummy_image = np.zeros((self.image_size[0], self.image_size[1], 3), dtype=np.uint8)
         self.model.predict(dummy_image)
-        self.logger.debug("Model warmup completed")
 
     def forward(self, images, **kwargs):
         """Perform forward pass through the model using a for loop (RF-DETR library throws an exception for batch size mismatch).
@@ -495,13 +430,14 @@ class RfdetrPTH(RfdetrBase):
             images = [images]
         return [self.model.predict(img) for img in images]
 
-    def _postprocess_single(self, preds, configs, operators=None):
+    def _postprocess_single(self, preds, configs, operators, orig_img):
         """Postprocess a single image's rfdetr library predictions.
 
         Args:
             preds: Predictions from rfdetr containing xyxy, confidence, and class_id.
             configs (dict): Per-class confidence thresholds.
             operators (list): Coordinate transform operators to revert.
+            orig_img: Original image used to determine tensor vs numpy output.
 
         Returns:
             Results object with filtered boxes, scores, class names, optional masks, and optional segments.
@@ -518,21 +454,14 @@ class RfdetrPTH(RfdetrBase):
         boxes, scores, classes, masks, _ = self._apply_confidence_filter(scores, boxes, classes, configs, masks=raw_masks)
 
         segments = self._masks_to_segments(masks) if len(masks) > 0 else None
-
-        if operators:
-            boxes = pipeline_utils.revert_to_origin(boxes, operators)
-            if len(masks) > 0:
-                masks = pipeline_utils.revert_masks_to_origin(masks, operators)
-            if segments is not None:
-                segments = [pipeline_utils.revert_to_origin(seg, operators) if len(seg) else seg for seg in segments]
-
-        return Results(
+        result = Results(
             boxes=boxes if len(boxes) > 0 else None,
             scores=scores if len(scores) > 0 else None,
             classes=classes if len(classes) > 0 else None,
             masks=masks if len(masks) > 0 else None,
             segments=segments,
         )
+        return self._apply_revert_to_result(result, orig_img, operators)
 
     def preprocess(self, images, **kwargs):
         """RF-DETR handles preprocessing internally; pass images through unchanged."""
@@ -555,4 +484,5 @@ class RfdetrPTH(RfdetrBase):
             self.class_map.values(),
         )
         operators = kwargs.get("operators", [[] for _ in range(len(outputs))])
-        return [self._postprocess_single(pred, configs, ops) for pred, ops in zip(outputs, operators)]
+        images = kwargs.get("images", [None] * len(outputs))
+        return [self._postprocess_single(pred, configs, ops, img) for pred, ops, img in zip(outputs, operators, images)]

@@ -61,7 +61,7 @@ def inference_run(args):
         csv_results = []
         img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        outputs = model.predict(img, confs=confidence_map, return_segments=True)
+        outputs, _ = model.predict(img, configs=confidence_map, return_segments=True)
         if len(outputs["boxes"]) == 0:
             logger.warning(f"No detections found for image: {img_path}")
             continue

@@ -2,6 +2,7 @@ import abc
 import collections
 import logging
 import random
+import time
 
 import cv2
 import numpy as np
@@ -31,12 +32,109 @@ class ODBase(abc.ABC):
     def postprocess(self, *args, **kwargs):
         pass
 
-    @abc.abstractmethod
-    def predict(self, *args, **kwargs):
+    @torch.no_grad()
+    def predict(self, image, configs, operators=None, **kwargs):
+        """Run the full inference pipeline: preprocess → forward → postprocess.
+
+        Supports both single image and batch inference. When ``self.fixed_batch_size``
+        is set (e.g. TRT engines with a hard-coded batch dimension), the input is
+        processed in chunks of that size and the last chunk is zero-padded.
+
+        Args:
+            image: A single HWC image, a list of HWC images, or a BHWC numpy array.
+                All images in a batch must have the same dimensions.
+            configs: Confidence threshold (float) or per-class thresholds (dict).
+            operators: Operators for coordinate reversion. Accepts:
+                - None: no coordinate reversion.
+                - list[dict]: a single operator chain, applied to all images.
+                - list[list[dict]]: per-image operator chains (length must match batch size).
+
+        Returns:
+            (results, time_info)
+            results (dict): a dictionary where each value is a list of length B (batch size), e.g., {
+                'boxes': [numpy, ...],
+                'scores': [numpy, ...],
+                'classes': [list of strings, ...],
+            }
+            time_info (dict): timing info with keys 'preproc', 'proc', 'postproc'.
         """
-        combine preprocess, forward, and postprocess
-        """
-        pass
+        time_info = {}
+
+        # Normalize input to a flat list of HWC images
+        if isinstance(image, np.ndarray) and image.ndim == 4:
+            images = list(image)
+        elif isinstance(image, list):
+            images = image
+        else:
+            images = [image]
+
+        n = len(images)
+        operators = self._normalize_operators(operators, n)
+
+        fixed_bs = getattr(self, "fixed_batch_size", None)
+
+        if fixed_bs:
+            # Fixed batch size (e.g. TRT engine): chunk input and pad the last chunk
+            all_results = []
+            t_preproc, t_proc, t_postproc = 0.0, 0.0, 0.0
+            for start in range(0, n, fixed_bs):
+                chunk_imgs = images[start : start + fixed_bs]
+                chunk_ops = operators[start : start + fixed_bs]
+                chunk_n = len(chunk_imgs)
+
+                if chunk_n < fixed_bs:
+                    pad = np.zeros_like(chunk_imgs[0])
+                    chunk_imgs = chunk_imgs + [pad] * (fixed_bs - chunk_n)
+                    chunk_ops = chunk_ops + [[]] * (fixed_bs - chunk_n)
+
+                t0 = time.time()
+                preprocessed = self.preprocess(chunk_imgs)
+                t_preproc += time.time() - t0
+
+                t0 = time.time()
+                outputs = self.forward(preprocessed)
+                t_proc += time.time() - t0
+
+                t0 = time.time()
+                list_results = self.postprocess(
+                    outputs,
+                    images=chunk_imgs,
+                    configs=configs,
+                    operators=chunk_ops,
+                    preprocessed=preprocessed,
+                    **kwargs,
+                )
+                t_postproc += time.time() - t0
+
+                all_results.extend(list_results[:chunk_n])
+
+            time_info["preproc"] = t_preproc
+            time_info["proc"] = t_proc
+            time_info["postproc"] = t_postproc
+        else:
+            # Dynamic batch: process everything in one shot
+            t0 = time.time()
+            preprocessed = self.preprocess(images)
+            time_info["preproc"] = time.time() - t0
+
+            t0 = time.time()
+            outputs = self.forward(preprocessed)
+            time_info["proc"] = time.time() - t0
+
+            t0 = time.time()
+            all_results = self.postprocess(
+                outputs,
+                images=images,
+                configs=configs,
+                operators=operators,
+                preprocessed=preprocessed,
+                **kwargs,
+            )
+            time_info["postproc"] = time.time() - t0
+
+        use_tensor = any(isinstance(img, torch.Tensor) for img in images)
+        final = self._aggregate_results(all_results, return_tensor=use_tensor)
+        return final, time_info
 
     # ---- shared utilities ----
 
@@ -135,6 +233,77 @@ class ODBase(abc.ABC):
         if len(operators) != batch_size:
             raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
         return operators
+
+    def _revert_coordinates(self, results: dict, operators: list, **kwargs) -> dict:
+        """Revert prediction coordinates to the original pre-transform space.
+
+        Handles all result types: boxes (regular and OBB), masks, segments, and points
+        (with optional visibility column). No-op when operators is empty.
+
+        Args:
+            results: Dict with keys like 'boxes', 'masks', 'segments', 'points'.
+            operators: Operator chain for coordinate reversion.
+
+        Returns:
+            The same results dict with coordinates reverted in-place.
+        """
+        if not operators:
+            return results
+
+        # boxes: (N,4) regular or (N,4,2) OBB
+        boxes = results.get("boxes")
+        if boxes is not None and len(boxes):
+            if hasattr(boxes, "ndim") and boxes.ndim == 3:
+                reverted = [pipeline_utils.revert_to_origin(box, operators, **kwargs) for box in boxes]
+                results["boxes"] = torch.stack(reverted) if isinstance(boxes, torch.Tensor) else np.array(reverted)
+            else:
+                results["boxes"] = pipeline_utils.revert_to_origin(boxes, operators, **kwargs)
+
+        # masks
+        masks = results.get("masks")
+        if masks is not None and len(masks):
+            results["masks"] = pipeline_utils.revert_masks_to_origin(masks, operators, **kwargs)
+
+        # segments
+        segments = results.get("segments")
+        if segments is not None and len(segments):
+            results["segments"] = [pipeline_utils.revert_to_origin(seg, operators, **kwargs) if len(seg) else seg for seg in segments]
+
+        # points (with optional visibility column)
+        points = results.get("points")
+        if points is not None and len(points):
+            visibility = None
+            if points.shape[-1] == 3:
+                visibility = points[:, :, -1]
+                points = points[:, :, :2]
+            reverted = [pipeline_utils.revert_to_origin(p, operators, **kwargs) for p in points]
+            is_tensor = isinstance(results["points"], torch.Tensor)
+            if visibility is not None:
+                reverted = [
+                    torch.cat((p, v.unsqueeze(-1)), dim=-1) if is_tensor else np.hstack((p, np.expand_dims(v, -1)))
+                    for p, v in zip(reverted, visibility)
+                ]
+            results["points"] = torch.stack(reverted) if is_tensor else np.array(reverted)
+
+        return results
+
+    def _apply_revert_to_result(self, result: Results, orig_img, operators, **kwargs) -> "Results":
+        """Apply coordinate reversion to a Results object and return a new Results.
+
+        Args:
+            result: Results object to revert.
+            orig_img: Original image; if a torch.Tensor, tensor outputs are preserved.
+            operators: Operator chain for coordinate reversion. No-op when empty.
+
+        Returns:
+            New Results object with reverted coordinates, or the original if operators is empty.
+        """
+        if not operators:
+            return result
+        use_tensor = isinstance(orig_img, torch.Tensor)
+        single = result.to_dict(return_tensor=use_tensor)
+        self._revert_coordinates(single, operators, **kwargs)
+        return Results(**{k: v for k, v in single.items() if v is not None and (not hasattr(v, "__len__") or len(v) > 0)})
 
     def _parse_confidence_config(self, configs, class_names) -> dict:
         """Parse configs into a per-class threshold dict.

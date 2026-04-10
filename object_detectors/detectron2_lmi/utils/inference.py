@@ -287,7 +287,7 @@ if __name__ == "__main__":
             logger.error(f"Error reading image {image_path}: {e}")
             continue
         t0 = time.time()
-        outputs = model.predict(image=image, confs=confidence_map, return_segments=False)
+        outputs, _ = model.predict(image=image, configs=confidence_map, return_segments=False)
         t1 = time.time()
         fname = os.path.basename(image_path)
 

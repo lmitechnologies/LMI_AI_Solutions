@@ -115,7 +115,7 @@ def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
         with torch.no_grad():
             orginal_preds = og_cpu_model.inference(inputs, do_postprocess=False)[0]
 
-        preds = model_cpu.predict(image, confs=confs, process_masks=False)
+        preds, _ = model_cpu.predict(image, configs=confs, process_masks=False)
         assert orginal_preds.pred_boxes.tensor.shape == preds.get("boxes")[0].shape
         assert orginal_preds.pred_classes.shape == preds.get("classes")[0].shape
         assert orginal_preds.scores.shape == preds.get("scores")[0].shape
@@ -133,9 +133,9 @@ def test_operators(model, imgs_coco):
     h, w = image.shape[:2]
     image_resized = cv2.resize(image, (512, 512))
     operators = [{"resize": [512, 512, w, h]}]
-    outputs = model.predict(
+    outputs, _ = model.predict(
         image_resized,
-        confs=confs,
+        configs=confs,
         return_segments=True,
         process_masks=True,
         operators=operators,
@@ -153,9 +153,9 @@ def test_operators_no_masks(model, imgs_coco):
     h, w = image.shape[:2]
     image_resized = cv2.resize(image, (512, 512))
     operators = [{"resize": [512, 512, w, h]}]
-    outputs = model.predict(
+    outputs, _ = model.predict(
         image_resized,
-        confs=1,
+        configs=1,
         return_segments=True,
         process_masks=True,
         operators=operators,
@@ -174,7 +174,7 @@ def test_batch_operators(model, imgs_coco):
     original_sizes = [img.shape[:2] for img in images]
     images_resized = [cv2.resize(img, (tw, th)) for img in images]
     operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
-    outputs = model.predict(images_resized, confs=confs, process_masks=True, return_segments=True, operators=operators)
+    outputs, _ = model.predict(images_resized, configs=confs, process_masks=True, return_segments=True, operators=operators)
     assert len(outputs["boxes"]) == len(images)
     assert len(outputs["scores"]) == len(images)
     assert len(outputs["classes"]) == len(images)
@@ -207,7 +207,7 @@ def test_trt_batch_operators(detectron2_trt_model, imgs_coco):
     resized = [cv2.resize(img, (tw, th)) for img in images]
     operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
 
-    outputs = model.predict(resized, confs=confs, process_masks=True, return_segments=True, operators=operators)
+    outputs, _ = model.predict(resized, configs=confs, process_masks=True, return_segments=True, operators=operators)
     assert len(outputs["boxes"]) == len(images)
     assert len(outputs["scores"]) == len(images)
     assert len(outputs["classes"]) == len(images)

@@ -1,15 +1,10 @@
 import logging
-import time
 from typing import Dict, List
 
 import numpy as np
 import torch
 import torchvision  # noqa: F401
 
-from lmi_utils.gadget_utils.pipeline_utils import (
-    revert_mask_to_origin,
-    revert_to_origin,
-)
 from lmi_utils.postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_masks
 from object_detectors.od_core.model_factory import ModelFactory
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
@@ -42,62 +37,14 @@ class Detectron2Base(ODBase):
     Provides common utilities: the predict pipeline, mask postprocessing, and image annotation.
     """
 
-    def predict(self, images, operators=None, **kwargs):
-        """
-
-        args:
-            images: np.ndarray or list of np.ndarray, each in HWC format.
-            operators: Optional list of operator dicts for each image, used by revert_to_origin / revert_mask_to_origin.
-            kwargs:
-                confs: dict mapping class names to confidence thresholds for filtering predictions.
-                mask_threshold: float threshold for binarizing masks during postprocessing.
-                process_masks: bool indicating whether to perform mask postprocessing (rescaling, reverting, segment extraction).
-                return_segments: bool indicating whether to return polygon segments extracted from masks.
-        """
-        t0 = time.time()
-        if isinstance(images, np.ndarray):
-            shp = images.shape
-            if len(shp) == 3:
-                images = [images]
-            elif len(shp) == 4:
-                images = list(images)
-        n = len(images)
-        operators = self._normalize_operators(operators, n)
-
-        all_results = []
-        for start in range(0, n, self.batch_size):
-            chunk_imgs = images[start : start + self.batch_size]
-            chunk_ops = operators[start : start + self.batch_size]
-            chunk_n = len(chunk_imgs)
-
-            # Pad the last chunk to the engine's batch size if needed
-            if chunk_n < self.batch_size:
-                pad = np.zeros_like(chunk_imgs[0])
-                chunk_imgs = chunk_imgs + [pad] * (self.batch_size - chunk_n)
-                chunk_ops = chunk_ops + [[]] * (self.batch_size - chunk_n)
-
-            list_results = self.postprocess(
-                chunk_imgs,
-                self.forward(self.preprocess(chunk_imgs)),
-                operators=chunk_ops,
-                **kwargs,
-            )
-            all_results.extend(list_results[:chunk_n])
-        final = self._aggregate_results(all_results)
-
-        t1 = time.time()
-        self.logger.debug(f"proc-time {(t1 - t0) * 1000.0:.2f} ms")
-        return final
-
-    def _postprocess_masks(self, raw_masks, boxes, image_size, mask_threshold, ops, **kwargs):
-        """Rescale masks, apply revert_mask_to_origin, and optionally compute polygon segments.
+    def _postprocess_masks(self, raw_masks, boxes, image_size, mask_threshold, **kwargs):
+        """Rescale masks and optionally compute polygon segments.
 
         Args:
             raw_masks: Masks as torch.Tensor or np.ndarray. 4-D tensors (N,1,H,W) are squeezed to (N,H,W).
             boxes: Bounding boxes as torch.Tensor or np.ndarray, used by rescale_masks.
             image_size: (image_h, image_w) target size for rescale_masks.
             mask_threshold: Binarization threshold for rescale_masks.
-            ops: List of operator dicts for revert_to_origin / revert_mask_to_origin.
             **kwargs: Forwarded predict kwargs; reads ``return_segments``.
 
         Returns:
@@ -120,9 +67,6 @@ class Detectron2Base(ODBase):
             masks_t = masks_t.squeeze(1)
         batch_masks = rescale_masks(masks_t, _to_tensor(boxes), image_size, mask_threshold)
 
-        if len(ops) > 0:
-            batch_masks = torch.stack([revert_mask_to_origin(m, ops) for m in batch_masks])
-
         if kwargs.get("return_segments", False):
             batch_segments = [mask_to_polygon_cv2(_to_np(m)) for m in batch_masks]
 
@@ -135,7 +79,7 @@ class Detectron2Base(ODBase):
             tuple: (confs, mask_threshold, process_masks, operators)
         """
         return (
-            self._parse_confidence_config(kwargs.pop("confs", None), list(self.class_map.values())),
+            self._parse_confidence_config(kwargs.pop("configs", None), list(self.class_map.values())),
             kwargs.pop("mask_threshold", 0.5),
             kwargs.pop("process_masks", True),
             kwargs.pop("operators", [[] for _ in range(batch_size)]),
@@ -151,19 +95,21 @@ class Detectron2Base(ODBase):
         image_size: tuple,
         process_masks: bool,
         mask_threshold: float,
+        orig_img,
         **kwargs,
     ) -> Results:
-        """Apply mask postprocessing, box reversion, and assemble a Results object.
+        """Apply mask postprocessing, assemble a Results object, and revert coordinates.
 
         Args:
             batch_boxes: Boxes for a single image (tensor or ndarray).
             batch_scores: Scores for a single image (tensor or ndarray).
             batch_classes: Class names for a single image (ndarray of str).
             raw_masks: Raw masks for a single image, or empty list when absent.
-            ops: Operator chain for revert_to_origin / revert_mask_to_origin.
+            ops: Operator chain for coordinate reversion.
             image_size: (image_h, image_w) for mask rescaling.
             process_masks: Whether to run mask postprocessing.
             mask_threshold: Binarization threshold passed to rescale_masks.
+            orig_img: Original image used to determine tensor vs numpy output.
             **kwargs: Forwarded to _postprocess_masks (reads ``return_segments``).
 
         Returns:
@@ -171,14 +117,11 @@ class Detectron2Base(ODBase):
         """
         batch_masks, batch_segments = [], []
         if process_masks and len(raw_masks) > 0:
-            batch_masks, batch_segments = self._postprocess_masks(raw_masks, batch_boxes, image_size, mask_threshold, ops, **kwargs)
+            batch_masks, batch_segments = self._postprocess_masks(raw_masks, batch_boxes, image_size, mask_threshold, **kwargs)
         else:
             batch_masks = raw_masks
 
-        if len(ops) > 0:
-            batch_boxes = revert_to_origin(batch_boxes, ops)
-
-        return Results(
+        result = Results(
             boxes=batch_boxes if len(batch_boxes) > 0 else None,
             scores=batch_scores if len(batch_scores) > 0 else None,
             classes=batch_classes if len(batch_classes) > 0 else None,
@@ -187,6 +130,7 @@ class Detectron2Base(ODBase):
             if batch_segments
             else None,
         )
+        return self._apply_revert_to_result(result, orig_img, ops)
 
 
 @Detectron2Model.register("engine")
@@ -237,6 +181,7 @@ class Detectron2TRT(Detectron2Base):
             shape = self.engine.get_tensor_shape(name)
             if is_input:
                 self.batch_size = shape[0]
+                self.fixed_batch_size = shape[0]
             size = np.dtype(trt.nptype(dtype)).itemsize
             for s in shape:
                 size *= s
@@ -318,13 +263,17 @@ class Detectron2TRT(Detectron2Base):
             common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
         return outputs
 
-    def postprocess(self, images, predictions, **kwargs) -> List[Results]:
+    def postprocess(self, predictions, **kwargs) -> List[Results]:
         """Post-process the predictions from the TRT object detection model.
 
         Args:
-            images (list): List of input images.
             predictions (tuple): Tuple of (num_preds, boxes, scores, classes[, masks]).
-            **kwargs: confs, mask_threshold, process_masks, operators.
+            **kwargs:
+                images (list): List of input images.
+                confs: dict mapping class names to confidence thresholds.
+                mask_threshold: float threshold for binarizing masks.
+                process_masks: bool indicating whether to perform mask postprocessing.
+                operators: per-image operator chains.
 
         Returns:
             List of Results objects, one per image.
@@ -332,6 +281,7 @@ class Detectron2TRT(Detectron2Base):
         if len(predictions) == 0:
             return []
 
+        images = kwargs.pop("images", [])
         confs, mask_threshold, process_masks, operators = self._parse_postprocess_kwargs(kwargs, self.batch_size)
         image_h, image_w = images[0].shape[0], images[0].shape[1]
 
@@ -363,6 +313,7 @@ class Detectron2TRT(Detectron2Base):
                     (image_h, image_w),
                     process_masks and masks is not None,
                     mask_threshold,
+                    images[idx],
                     **kwargs,
                 )
             )
@@ -445,13 +396,17 @@ class Detectron2PT(Detectron2Base):
             predictions = self.model.forward(inputs)
         return predictions
 
-    def postprocess(self, images, predictions, **kwargs) -> List[Results]:
+    def postprocess(self, predictions, **kwargs) -> List[Results]:
         """Post-process the predictions from the TorchScript object detection model.
 
         Args:
-            images (list): A list of input images.
             predictions (list): Per-image dicts with keys "scores", "pred_classes", "pred_boxes", "pred_masks" (optional).
-            **kwargs: confs, mask_threshold, process_masks, operators.
+            **kwargs:
+                images (list): A list of input images.
+                confs: dict mapping class names to confidence thresholds.
+                mask_threshold: float threshold for binarizing masks.
+                process_masks: bool indicating whether to perform mask postprocessing.
+                operators: per-image operator chains.
 
         Returns:
             List of Results objects, one per image.
@@ -459,6 +414,7 @@ class Detectron2PT(Detectron2Base):
         if len(predictions) == 0:
             return []
 
+        images = kwargs.pop("images", [])
         confs, mask_threshold, process_masks, operators = self._parse_postprocess_kwargs(kwargs, len(predictions))
         if predictions[0]["pred_classes"].shape[0] == 0:
             return [Results() for _ in predictions]
@@ -482,6 +438,7 @@ class Detectron2PT(Detectron2Base):
                     (image_h, image_w),
                     process_masks,
                     mask_threshold,
+                    images[idx],
                     **kwargs,
                 )
             )
