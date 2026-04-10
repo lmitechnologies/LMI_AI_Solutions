@@ -29,6 +29,33 @@ class Results:
         self.points = points
         self._keys = "boxes", "scores", "masks", "points", "segments"
         self._all_keys = self._keys + ("classes",)
+        self._validate_type_consistency()
+
+    def _validate_type_consistency(self):
+        """Raise TypeError if numeric fields mix torch.Tensor and np.ndarray."""
+        types_seen = set()
+        for k in self._keys:
+            v = getattr(self, k)
+            if v is None:
+                continue
+            if k == "segments":
+                for s in v:
+                    types_seen.add(type(s))
+            else:
+                types_seen.add(type(v))
+        if {torch.Tensor, np.ndarray}.issubset(types_seen):
+            raise TypeError(f"Results fields must all be torch.Tensor or all np.ndarray, got mixed types: {types_seen}")
+
+    @property
+    def is_tensor(self) -> bool:
+        """Return True if the data is stored as torch.Tensors, False for numpy arrays."""
+        for k in self._keys:
+            v = getattr(self, k)
+            if v is None:
+                continue
+            ref = v[0] if k == "segments" else v
+            return isinstance(ref, torch.Tensor)
+        return False
 
     def new(self):
         return Results(classes=self.classes)
@@ -76,12 +103,12 @@ class Results:
                         raise TypeError("Cannot move numpy array in 'segments' to CUDA. Convert to tensor first.")
         return self._apply("cuda")
 
-    def to_dict(self, return_tensor: bool) -> Dict[str, Union[TensorOrArray, List[TensorOrArray]]]:
+    def to_dict(self, return_numpy: bool = False) -> Dict[str, Union[TensorOrArray, List[TensorOrArray]]]:
         """Convert results to a dictionary.
-        Return tensors or numpy arrays based on `return_tensor`.
+        If return_numpy is True, convert tensors to numpy arrays; otherwise return as-is.
         """
         dt = {}
-        r = self if return_tensor else self.cpu().numpy()
+        r = self.cpu().numpy() if return_numpy else self
         for k in r._all_keys:
             v = getattr(r, k)
             if v is not None and len(v) > 0:

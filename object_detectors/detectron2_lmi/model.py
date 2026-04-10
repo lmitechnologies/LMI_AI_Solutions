@@ -95,7 +95,6 @@ class Detectron2Base(ODBase):
         image_size: tuple,
         process_masks: bool,
         mask_threshold: float,
-        orig_img,
         **kwargs,
     ) -> Results:
         """Apply mask postprocessing, assemble a Results object, and revert coordinates.
@@ -109,7 +108,6 @@ class Detectron2Base(ODBase):
             image_size: (image_h, image_w) for mask rescaling.
             process_masks: Whether to run mask postprocessing.
             mask_threshold: Binarization threshold passed to rescale_masks.
-            orig_img: Original image used to determine tensor vs numpy output.
             **kwargs: Forwarded to _postprocess_masks (reads ``return_segments``).
 
         Returns:
@@ -126,11 +124,16 @@ class Detectron2Base(ODBase):
             scores=batch_scores if len(batch_scores) > 0 else None,
             classes=batch_classes if len(batch_classes) > 0 else None,
             masks=batch_masks if len(batch_masks) > 0 else None,
-            segments=[np.array(s, dtype=np.float32) if len(s) > 0 else np.zeros((0, 2), dtype=np.float32) for s in batch_segments]
+            segments=[
+                torch.tensor(s, dtype=torch.float32, device=self.device)
+                if len(s) > 0
+                else torch.zeros((0, 2), dtype=torch.float32, device=self.device)
+                for s in batch_segments
+            ]
             if batch_segments
             else None,
         )
-        return self._apply_revert_to_result(result, orig_img, ops)
+        return self._apply_revert_to_result(result, ops)
 
 
 @Detectron2Model.register("engine")
@@ -153,12 +156,14 @@ class Detectron2TRT(Detectron2Base):
             input_dtype (numpy.dtype): Data type of the input tensor.
             class_map (dict): Dictionary mapping class IDs to class names.
         """
-        """source: https://github.com/NVIDIA/TensorRT/tree/release/10.4/samples/python/detectron2"""
-
         import tensorrt as trt
-        from cuda import cudart
 
-        import object_detectors.detectron2_lmi.utils.common_runtime as common
+        _np_to_torch_dtype = {
+            np.dtype("float16"): torch.float16,
+            np.dtype("float32"): torch.float32,
+            np.dtype("int32"): torch.int32,
+            np.dtype("int64"): torch.int64,
+        }
 
         trt_logger = trt.Logger(trt.Logger.ERROR)
         trt.init_libnvinfer_plugins(trt_logger, namespace="")
@@ -166,35 +171,24 @@ class Detectron2TRT(Detectron2Base):
             self.engine = runtime.deserialize_cuda_engine(f.read())
         self.context = self.engine.create_execution_context()
 
-        # Setup I/O bindings
-        self.model_inputs = []
-        self.model_outputs = []
-        self.allocations = []
         device = kwargs.get("device", "cuda")
         self.device = torch.device(device)
+
+        self.torch_stream = torch.cuda.Stream(device=self.device)
+
+        # Build I/O bindings using torch tensors — no cudaMalloc needed
+        self.model_inputs = []
+        self.model_outputs = []
         for i in range(self.engine.num_io_tensors):
             name = self.engine.get_tensor_name(i)
-            is_input = False
-            if self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT:
-                is_input = True
-            dtype = self.engine.get_tensor_dtype(name)
-            shape = self.engine.get_tensor_shape(name)
+            is_input = self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT
+            np_dtype = np.dtype(trt.nptype(self.engine.get_tensor_dtype(name)))
+            shape = list(self.engine.get_tensor_shape(name))
             if is_input:
                 self.batch_size = shape[0]
                 self.fixed_batch_size = shape[0]
-            size = np.dtype(trt.nptype(dtype)).itemsize
-            for s in shape:
-                size *= s
-            allocation = common.cuda_call(cudart.cudaMalloc(size))
-            binding = {
-                "index": i,
-                "name": name,
-                "dtype": np.dtype(trt.nptype(dtype)),
-                "shape": list(shape),
-                "allocation": allocation,
-                "size": size,
-            }
-            self.allocations.append(allocation)
+            tensor = torch.empty(shape, dtype=_np_to_torch_dtype.get(np_dtype, torch.float32), device=self.device)
+            binding = {"index": i, "name": name, "dtype": np_dtype, "shape": shape, "tensor": tensor}
             if is_input:
                 self.model_inputs.append(binding)
             else:
@@ -207,6 +201,8 @@ class Detectron2TRT(Detectron2Base):
         if class_map is None:
             raise ValueError("class_map is required for [Detectron2TRT]")
         self._setup_class_map(class_map)
+
+        self.output_tensors = [out["tensor"] for out in self.model_outputs]
 
     def warmup(self):
         """
@@ -250,18 +246,18 @@ class Detectron2TRT(Detectron2Base):
             inputs (numpy.ndarray): The input data to be processed by the model.
 
         Returns:
-            list: A list of numpy arrays containing the model's output data.
+            list: A list of CUDA tensors containing the model's output data.
         """
-        import object_detectors.detectron2_lmi.utils.common_runtime as common
+        self.model_inputs[0]["tensor"].copy_(torch.from_numpy(np.ascontiguousarray(inputs)))
 
-        outputs = []
+        for inp in self.model_inputs:
+            self.context.set_tensor_address(inp["name"], inp["tensor"].data_ptr())
         for out in self.model_outputs:
-            outputs.append(np.zeros(out["shape"], dtype=out["dtype"]))
-        common.memcpy_host_to_device(self.model_inputs[0]["allocation"], np.ascontiguousarray(inputs))
-        self.context.execute_v2(self.allocations)
-        for o in range(len(outputs)):
-            common.memcpy_device_to_host(outputs[o], self.model_outputs[o]["allocation"])
-        return outputs
+            self.context.set_tensor_address(out["name"], out["tensor"].data_ptr())
+
+        self.context.execute_async_v3(stream_handle=self.torch_stream.cuda_stream)
+        self.torch_stream.synchronize()
+        return self.output_tensors
 
     def postprocess(self, predictions, **kwargs) -> List[Results]:
         """Post-process the predictions from the TRT object detection model.
@@ -291,11 +287,14 @@ class Detectron2TRT(Detectron2Base):
             num_preds, boxes, scores, classes = predictions[:4]
             masks = None
 
-        classes = self.class_map_func(classes)
+        # classes is an int tensor — convert to numpy for class_map_func
+        classes = self.class_map_func(classes.cpu().numpy() if isinstance(classes, torch.Tensor) else classes)
 
-        if len(boxes) > 0:
-            scale_factors = np.array([image_w, image_h, image_w, image_h])
-            boxes = (boxes * scale_factors).astype(np.int32)
+        scale_factors = torch.tensor([image_w, image_h, image_w, image_h], dtype=torch.float32, device=self.device)
+        boxes = boxes.to(dtype=torch.float32) * scale_factors
+        scores = scores.to(dtype=torch.float32)
+        if masks is not None:
+            masks = masks.to(dtype=torch.float32)
 
         results = []
         for idx in range(self.batch_size):
@@ -313,7 +312,6 @@ class Detectron2TRT(Detectron2Base):
                     (image_h, image_w),
                     process_masks and masks is not None,
                     mask_threshold,
-                    images[idx],
                     **kwargs,
                 )
             )
@@ -438,7 +436,6 @@ class Detectron2PT(Detectron2Base):
                     (image_h, image_w),
                     process_masks,
                     mask_threshold,
-                    images[idx],
                     **kwargs,
                 )
             )

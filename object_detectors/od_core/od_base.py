@@ -133,7 +133,7 @@ class ODBase(abc.ABC):
             time_info["postproc"] = time.time() - t0
 
         use_tensor = any(isinstance(img, torch.Tensor) for img in images)
-        final = self._aggregate_results(all_results, return_tensor=use_tensor)
+        final = self._aggregate_results(all_results, return_numpy=not use_tensor)
         return final, time_info
 
     # ---- shared utilities ----
@@ -287,12 +287,11 @@ class ODBase(abc.ABC):
 
         return results
 
-    def _apply_revert_to_result(self, result: Results, orig_img, operators, **kwargs) -> "Results":
+    def _apply_revert_to_result(self, result: Results, operators, **kwargs) -> "Results":
         """Apply coordinate reversion to a Results object and return a new Results.
 
         Args:
             result: Results object to revert.
-            orig_img: Original image; if a torch.Tensor, tensor outputs are preserved.
             operators: Operator chain for coordinate reversion. No-op when empty.
 
         Returns:
@@ -300,8 +299,7 @@ class ODBase(abc.ABC):
         """
         if not operators:
             return result
-        use_tensor = isinstance(orig_img, torch.Tensor)
-        single = result.to_dict(return_tensor=use_tensor)
+        single = result.to_dict()
         self._revert_coordinates(single, operators, **kwargs)
         return Results(**{k: v for k, v in single.items() if v is not None and (not hasattr(v, "__len__") or len(v) > 0)})
 
@@ -324,19 +322,19 @@ class ODBase(abc.ABC):
         raise ValueError(f"configs must be a float or dict, got {type(configs).__name__}")
 
     @staticmethod
-    def _aggregate_results(list_results: list[Results], return_tensor: bool = False) -> dict:
+    def _aggregate_results(list_results: list[Results], return_numpy: bool = True) -> dict:
         """Aggregate a list of Results into a single dict with per-image lists.
 
         Args:
             list_results: List of Results objects.
-            return_tensor: If True, keep tensors; if False, convert to numpy arrays.
+            return_numpy: If True, convert tensors to numpy arrays; if False, keep as-is.
 
         Returns:
             Dict with keys from Results._all_keys (boxes, scores, classes, masks, points, segments).
         """
         final = collections.defaultdict(list)
         for result in list_results:
-            result_dict = result.to_dict(return_tensor=return_tensor)
+            result_dict = result.to_dict(return_numpy=return_numpy)
             for k in result._all_keys:
                 v = result_dict.get(k)
                 if v is not None:

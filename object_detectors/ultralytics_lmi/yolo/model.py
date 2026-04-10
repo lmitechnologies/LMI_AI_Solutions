@@ -115,7 +115,7 @@ class Yolo(YoloCore, ODBase):
         confs_dict = self._parse_confidence_config(conf, list(self.model.names.values()))
         xyxy, scores, classes, _, keep = self._apply_confidence_filter(scores, xyxy, classes, confs_dict)
         result = Results(xyxy, scores, classes.tolist())
-        result = self._apply_revert_to_result(result, orig_img, operators, **kwargs)
+        result = self._apply_revert_to_result(result, operators, **kwargs)
         return result, keep
 
     def construct_results(self, preds, img, orig_imgs, conf, operators=None, **kwargs):
@@ -228,7 +228,7 @@ class YoloSeg(Yolo):
             if return_segments:
                 segments = self.to_segments(masks[M], orig_img.shape)  # list of [ (n1,2), (n2,2), ... ]
                 results.segments = [self.from_numpy(x) for x in segments]
-        results = self._apply_revert_to_result(results, orig_img, operators, **kwargs)
+        results = self._apply_revert_to_result(results, operators, **kwargs)
         return results, M
 
     def construct_results(self, preds, img, orig_imgs, conf, operators=None, protos=None, return_segments=True, **kwargs):
@@ -309,7 +309,7 @@ class YoloObb(Yolo):
         confs_dict = self._parse_confidence_config(conf, list(self.model.names.values()))
         rboxes, scores, classes, _, keep = self._apply_confidence_filter(scores, rboxes, classes, confs_dict)
         result = Results(rboxes, scores, classes.tolist())
-        result = self._apply_revert_to_result(result, orig_img, operators, **kwargs)
+        result = self._apply_revert_to_result(result, operators, **kwargs)
         return result, keep
 
 
@@ -342,5 +342,5 @@ class YoloPose(Yolo):
         pred_kpts = pred[:, 6:].view(pred.shape[0], *self.model.kpt_shape)
         pred_kpts = ops.scale_coords(img.shape[2:], pred_kpts, orig_img.shape)
         results.points = pred_kpts[M]  # [n_obj,n_kp,3]
-        results = self._apply_revert_to_result(results, orig_img, operators, **kwargs)
+        results = self._apply_revert_to_result(results, operators, **kwargs)
         return results, M

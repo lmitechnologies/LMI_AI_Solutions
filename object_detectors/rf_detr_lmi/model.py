@@ -54,7 +54,7 @@ class RfdetrBase(ODBase):
                 segments.append(np.zeros((0, 2), dtype=np.float32))
         return segments
 
-    def _postprocess_single(self, output, configs, ops, orig_img) -> Results:
+    def _postprocess_single(self, output, configs, ops) -> Results:
         """Postprocess a single image's decoded output from PostProcess.
 
         Args:
@@ -62,7 +62,6 @@ class RfdetrBase(ODBase):
                 and optionally 'masks'. Values are tensors on self.device.
             configs (dict): Per-class confidence thresholds.
             ops (list): Coordinate transform operators to revert.
-            orig_img: Original image used to determine tensor vs numpy output.
 
         Returns:
             Results object with filtered xyxy boxes, scores, class names, optional masks, and optional segments.
@@ -72,9 +71,9 @@ class RfdetrBase(ODBase):
             output["scores"], output["boxes"], classes, configs, masks=output.get("masks")
         )
 
-        segments = self._masks_to_segments(masks) if len(masks) > 0 else None
+        segments = [torch.from_numpy(s).to(self.device) for s in self._masks_to_segments(masks)] if len(masks) > 0 else None
         result = Results(boxes=boxes, scores=scores, classes=classes, masks=masks if len(masks) > 0 else None, segments=segments)
-        return self._apply_revert_to_result(result, orig_img, ops)
+        return self._apply_revert_to_result(result, ops)
 
     def preprocess(self, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> np.ndarray:
         """Preprocess input image(s) to BCHW normalized array."""
@@ -106,22 +105,17 @@ class RfdetrBase(ODBase):
         if len(outputs) < 2:
             raise RuntimeError(f"Expected at least 2 output tensors, got {len(outputs)}")
 
-        def to_tensor(x):
-            if isinstance(x, np.ndarray):
-                return torch.from_numpy(x).to(self.device)
-            return x.to(self.device)
-
         return_predictions = {
-            "pred_logits": to_tensor(outputs[1]),
-            "pred_boxes": to_tensor(outputs[0]),
+            "pred_logits": outputs[1],
+            "pred_boxes": outputs[0],
         }
         if len(outputs) == 3:
-            return_predictions["pred_masks"] = to_tensor(outputs[2])
+            return_predictions["pred_masks"] = outputs[2]
 
         orig_sizes = [img.shape[:2] for img in images]
         target_sizes = torch.tensor(orig_sizes, device=self.device)
         rs = self.postprocessor(return_predictions, target_sizes=target_sizes)
-        return [self._postprocess_single(r, configs, operators[i], images[i]) for i, r in enumerate(rs)]
+        return [self._postprocess_single(r, configs, operators[i]) for i, r in enumerate(rs)]
 
 
 @ObjectDetectorRegistry.register(
@@ -197,27 +191,17 @@ class RfdetrTRT(RfdetrBase):
         self.postprocessor = PostProcess(num_select=300)
         self._setup_class_map(class_map)
 
-        self._buf_cache = {}
-
-    def _get_buffers(self, batch_size):
-        """Return cached GPU tensor buffers for a given batch size, allocating on first use."""
-        if batch_size in self._buf_cache:
-            return self._buf_cache[batch_size]
-
-        if batch_size > self.max_batch:
-            raise ValueError(f"Batch size {batch_size} exceeds engine max batch size {self.max_batch}")
-
-        input_shape = (batch_size, *self.input_shape_no_batch)
-
-        buffers = {}
-        buffers["input"] = torch.empty(input_shape, dtype=self.torch_dtype, device="cuda")
-        buffers["input_shape"] = input_shape
-
-        buffers["outputs"] = []
+        self.fixed_batch_size = self.opt_batch
+        input_shape = (self.fixed_batch_size, *self.input_shape_no_batch)
+        self._buffers = {
+            "input": torch.empty(input_shape, dtype=self.torch_dtype, device="cuda"),
+            "input_shape": input_shape,
+            "outputs": [],
+        }
         for info in self.output_info:
-            out_shape = tuple(batch_size if d == -1 else d for d in info["shape"])
+            out_shape = tuple(self.fixed_batch_size if d == -1 else d for d in info["shape"])
             torch_dt = torch.float16 if info["dtype"] == np.float16 else torch.float32
-            buffers["outputs"].append(
+            self._buffers["outputs"].append(
                 {
                     "name": info["name"],
                     "shape": out_shape,
@@ -225,12 +209,9 @@ class RfdetrTRT(RfdetrBase):
                 }
             )
 
-        self._buf_cache[batch_size] = buffers
-        return buffers
-
     def warmup(self):
         """Warm up the model by running a dummy inference."""
-        dummy_input = np.zeros((1, *self.input_shape_no_batch), dtype=self.input_dtype)
+        dummy_input = np.zeros((self.fixed_batch_size, *self.input_shape_no_batch), dtype=self.input_dtype)
         self.forward(np.ascontiguousarray(dummy_input, dtype=self.input_dtype))
 
     def preprocess(self, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> np.ndarray:
@@ -238,53 +219,26 @@ class RfdetrTRT(RfdetrBase):
         batch = super().preprocess(images, **kwargs)
         return np.ascontiguousarray(batch, dtype=self.input_dtype)
 
-    def _forward_single_batch(self, image: np.ndarray, **kwargs) -> list:
-        """Run TensorRT inference for a single batch that fits within engine limits.
+    def forward(self, image: np.ndarray) -> list:
+        """Perform TensorRT inference. Chunking is handled by predict() in ODBase.
 
         Args:
-            image: BCHW numpy array with batch_size <= self.max_batch.
+            image: BCHW numpy array with batch_size == self.fixed_batch_size.
 
         Returns:
-            List of output numpy arrays, each with shape (B, ...).
+            List of output tensors on self.device, each with shape (B, ...).
         """
-        batch_size = image.shape[0]
-        bufs = self._get_buffers(batch_size)
+        self.context.set_input_shape(self.input_name, self._buffers["input_shape"])
+        self._buffers["input"].copy_(torch.from_numpy(image))
 
-        # Set input shape for this batch size
-        self.context.set_input_shape(self.input_name, bufs["input_shape"])
-
-        # Copy input numpy array into the pre-allocated GPU tensor
-        bufs["input"].copy_(torch.from_numpy(image))
-
-        # Set tensor addresses to GPU memory managed by PyTorch
-        self.context.set_tensor_address(self.input_name, bufs["input"].data_ptr())
-        for out in bufs["outputs"]:
+        self.context.set_tensor_address(self.input_name, self._buffers["input"].data_ptr())
+        for out in self._buffers["outputs"]:
             self.context.set_tensor_address(out["name"], out["tensor"].data_ptr())
 
-        # Execute on the PyTorch CUDA stream
         self.context.execute_async_v3(stream_handle=self.torch_stream.cuda_stream)
         self.torch_stream.synchronize()
 
-        return [out["tensor"].cpu().numpy() for out in bufs["outputs"]]
-
-    def forward(self, image: np.ndarray, **kwargs) -> list:
-        """Perform TensorRT inference with dynamic batch size.
-
-        Args:
-            image: BCHW numpy array.
-
-        Returns:
-            List of output arrays, each with shape (B, ...).
-        """
-        batch_size = image.shape[0]
-
-        # If batch exceeds engine max, process in chunks and concatenate
-        if batch_size > self.max_batch:
-            chunks = [image[i : i + self.max_batch] for i in range(0, batch_size, self.max_batch)]
-            all_outputs = [self._forward_single_batch(chunk, **kwargs) for chunk in chunks]
-            return [np.concatenate([chunk_out[i] for chunk_out in all_outputs], axis=0) for i in range(len(all_outputs[0]))]
-
-        return self._forward_single_batch(image, **kwargs)
+        return [out["tensor"] for out in self._buffers["outputs"]]
 
 
 @RfdetrModel.register("pt")
@@ -430,14 +384,13 @@ class RfdetrPTH(RfdetrBase):
             images = [images]
         return [self.model.predict(img) for img in images]
 
-    def _postprocess_single(self, preds, configs, operators, orig_img):
+    def _postprocess_single(self, preds, configs, operators):
         """Postprocess a single image's rfdetr library predictions.
 
         Args:
             preds: Predictions from rfdetr containing xyxy, confidence, and class_id.
             configs (dict): Per-class confidence thresholds.
             operators (list): Coordinate transform operators to revert.
-            orig_img: Original image used to determine tensor vs numpy output.
 
         Returns:
             Results object with filtered boxes, scores, class names, optional masks, and optional segments.
@@ -461,7 +414,7 @@ class RfdetrPTH(RfdetrBase):
             masks=masks if len(masks) > 0 else None,
             segments=segments,
         )
-        return self._apply_revert_to_result(result, orig_img, operators)
+        return self._apply_revert_to_result(result, operators)
 
     def preprocess(self, images, **kwargs):
         """RF-DETR handles preprocessing internally; pass images through unchanged."""
@@ -484,5 +437,4 @@ class RfdetrPTH(RfdetrBase):
             self.class_map.values(),
         )
         operators = kwargs.get("operators", [[] for _ in range(len(outputs))])
-        images = kwargs.get("images", [None] * len(outputs))
-        return [self._postprocess_single(pred, configs, ops, img) for pred, ops, img in zip(outputs, operators, images)]
+        return [self._postprocess_single(pred, configs, ops) for pred, ops in zip(outputs, operators)]
