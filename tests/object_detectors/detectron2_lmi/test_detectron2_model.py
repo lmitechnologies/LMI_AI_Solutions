@@ -148,6 +148,16 @@ def test_operators(model, imgs_coco):
     assert outputs["masks"].shape[2] == w
 
 
+def test_empty(model):
+    blank_images = [np.zeros((512, 512, 3), dtype=np.uint8) for _ in range(2)]
+    confs = {v: 0.95 for v in class_map.values()}
+    outputs, _ = model.predict(blank_images, configs=confs, return_segments=True, process_masks=True)
+    for key in KEYS:
+        assert len(outputs[key]) == len(blank_images)
+        for item in outputs[key]:
+            assert len(item) == 0
+
+
 def test_operators_no_masks(model, imgs_coco):
     image = imgs_coco[0]
     h, w = image.shape[:2]

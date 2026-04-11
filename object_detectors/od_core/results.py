@@ -6,111 +6,91 @@ import torch
 
 logger = logging.getLogger(__name__)
 
-TensorOrArray = Union[torch.Tensor, np.ndarray]
-
 
 class Results:
-    """Object detection results for a single image."""
+    """Object detection results for a single image. All numeric fields are torch.Tensor.
+
+    boxes, scores, and classes always default to empty tensors/list so that to_dict()
+    always includes them even when there are no detections.
+    """
+
+    _keys = ("boxes", "scores", "masks", "points", "segments")
+    _all_keys = _keys + ("classes",)
+
+    # Default empty values — defined once here and reused in __init__ and to_dict.
+    # Lists are copied on assignment to avoid sharing a mutable default across instances.
+    EMPTY_BOXES: torch.Tensor = torch.zeros((0, 4), dtype=torch.float32)
+    EMPTY_SCORES: torch.Tensor = torch.zeros((0,), dtype=torch.float32)
+    EMPTY_MASKS: torch.Tensor = torch.zeros((0,), dtype=torch.float32)
+    EMPTY_CLASSES: List[str] = []
+    EMPTY_SEGMENTS: List[torch.Tensor] = []
 
     def __init__(
         self,
-        boxes: Optional[TensorOrArray] = None,
-        scores: Optional[TensorOrArray] = None,
-        classes: Optional[List[str]] = None,
-        masks: Optional[TensorOrArray] = None,
-        segments: Optional[List[TensorOrArray]] = None,
-        points: Optional[TensorOrArray] = None,
+        boxes: Optional[torch.Tensor] = None,
+        scores: Optional[torch.Tensor] = None,
+        classes=None,
+        masks: Optional[torch.Tensor] = None,
+        segments: Optional[List[torch.Tensor]] = None,
+        points: Optional[torch.Tensor] = None,
+        is_seg: bool = False,
     ):
-        self.boxes = boxes
-        self.scores = scores
-        self.classes = classes
+        self.boxes = boxes if boxes is not None else self.EMPTY_BOXES
+        self.scores = scores if scores is not None else self.EMPTY_SCORES
+        self.classes = classes if classes is not None else list(self.EMPTY_CLASSES)
         self.masks = masks
         self.segments = segments
         self.points = points
-        self._keys = "boxes", "scores", "masks", "points", "segments"
-        self._all_keys = self._keys + ("classes",)
-        self._validate_type_consistency()
+        self.is_seg = is_seg
 
-    def _validate_type_consistency(self):
-        """Raise TypeError if numeric fields mix torch.Tensor and np.ndarray."""
-        types_seen = set()
+    def new(self):
+        return Results(classes=self.classes, is_seg=self.is_seg)
+
+    def _apply(self, fn: str, *args, **kwargs):
+        """Apply a tensor method to all tensor fields."""
+        r = self.new()
         for k in self._keys:
             v = getattr(self, k)
             if v is None:
                 continue
             if k == "segments":
-                for s in v:
-                    types_seen.add(type(s))
+                setattr(r, k, [getattr(s, fn)(*args, **kwargs) for s in v])
             else:
-                types_seen.add(type(v))
-        if {torch.Tensor, np.ndarray}.issubset(types_seen):
-            raise TypeError(f"Results fields must all be torch.Tensor or all np.ndarray, got mixed types: {types_seen}")
-
-    @property
-    def is_tensor(self) -> bool:
-        """Return True if the data is stored as torch.Tensors, False for numpy arrays."""
-        for k in self._keys:
-            v = getattr(self, k)
-            if v is None:
-                continue
-            ref = v[0] if k == "segments" else v
-            return isinstance(ref, torch.Tensor)
-        return False
-
-    def new(self):
-        return Results(classes=self.classes)
-
-    def _apply(self, fn: str, *args, **kwargs):
-        """Apply a tensor method to all tensors; numpy arrays are passed through unchanged."""
-        r = self.new()
-        for k in self._keys:
-            v = getattr(self, k)
-            if isinstance(v, torch.Tensor):
                 setattr(r, k, getattr(v, fn)(*args, **kwargs))
-            elif isinstance(v, np.ndarray):
-                setattr(r, k, v)
-            elif k == "segments" and v is not None:
-                segs = []
-                for s in v:
-                    if isinstance(s, torch.Tensor):
-                        segs.append(getattr(s, fn)(*args, **kwargs))
-                    else:
-                        segs.append(s)
-                setattr(r, k, segs)
         return r
 
     def to(self, *args, **kwargs):
-        """Move all tensors to a device. Numpy arrays are passed through unchanged."""
+        """Move all tensors to a device."""
         return self._apply("to", *args, **kwargs)
 
     def cpu(self):
-        """Move all tensors to CPU. Numpy arrays are passed through unchanged."""
+        """Move all tensors to CPU."""
         return self._apply("cpu")
 
-    def numpy(self):
-        """Convert all tensors to numpy arrays. Numpy arrays are returned as-is."""
-        return self._apply("numpy")
-
     def cuda(self):
-        """Move all tensors to GPU. Raises TypeError if any value is a numpy array."""
-        for k in self._keys:
-            v = getattr(self, k)
-            if isinstance(v, np.ndarray):
-                raise TypeError(f"Cannot move numpy array '{k}' to CUDA. Convert to tensor first.")
-            if k == "segments" and v is not None:
-                for s in v:
-                    if isinstance(s, np.ndarray):
-                        raise TypeError("Cannot move numpy array in 'segments' to CUDA. Convert to tensor first.")
+        """Move all tensors to GPU."""
         return self._apply("cuda")
 
-    def to_dict(self, return_numpy: bool = False) -> Dict[str, Union[TensorOrArray, List[TensorOrArray]]]:
+    def to_dict(self, return_numpy: bool = False) -> Dict[str, Union[torch.Tensor, np.ndarray, List]]:
         """Convert results to a dictionary.
         If return_numpy is True, convert tensors to numpy arrays; otherwise return as-is.
+        boxes, scores, and classes are always present (empty tensor/list when no detections).
+        Other keys (masks, points, segments) are included only when not None.
+        When is_seg is True, 'masks' and 'segments' are always included even if there are no detections.
         """
+        r = self.cpu() if return_numpy else self
+
+        def to_numpy(v):
+            return v.numpy() if return_numpy and isinstance(v, torch.Tensor) else v
+
         dt = {}
-        r = self.cpu().numpy() if return_numpy else self
         for k in r._all_keys:
             v = getattr(r, k)
-            if v is not None and len(v) > 0:
-                dt[k] = v
+            if v is not None:
+                dt[k] = [to_numpy(s) for s in v] if k == "segments" else to_numpy(v)
+            elif r.is_seg:
+                if k == "masks":
+                    dt[k] = to_numpy(Results.EMPTY_MASKS)
+                elif k == "segments":
+                    dt[k] = list(Results.EMPTY_SEGMENTS)
         return dt

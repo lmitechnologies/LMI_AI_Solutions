@@ -101,7 +101,7 @@ def assert_outputs_match_rf(rf_preds, outputs, label, tolerance):
     assert rf_boxes.shape[0] == outputs["boxes"].shape[0], f"{label}: Number of boxes mismatch"
     assert np.allclose(rf_boxes, outputs["boxes"], rtol=tolerance, atol=tolerance), f"{label}: Box coordinates mismatch"
     assert np.allclose(rf_preds.confidence, outputs["scores"], rtol=tolerance, atol=tolerance), f"{label}: Confidence scores mismatch"
-    assert rf_classes == outputs["classes"].tolist(), f"{label}: Class labels mismatch"
+    assert rf_classes == outputs["classes"], f"{label}: Class labels mismatch"
 
 
 class Test_Rfdetr_Model:

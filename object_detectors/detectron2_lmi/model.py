@@ -119,19 +119,23 @@ class Detectron2Base(ODBase):
         else:
             batch_masks = raw_masks
 
-        result = Results(
-            boxes=batch_boxes if len(batch_boxes) > 0 else None,
-            scores=batch_scores if len(batch_scores) > 0 else None,
-            classes=batch_classes if len(batch_classes) > 0 else None,
-            masks=batch_masks if len(batch_masks) > 0 else None,
-            segments=[
+        segments = (
+            [
                 torch.tensor(s, dtype=torch.float32, device=self.device)
                 if len(s) > 0
                 else torch.zeros((0, 2), dtype=torch.float32, device=self.device)
                 for s in batch_segments
             ]
             if batch_segments
-            else None,
+            else None
+        )
+        result = Results(
+            boxes=batch_boxes,
+            scores=batch_scores,
+            classes=batch_classes,
+            masks=batch_masks if len(batch_masks) > 0 else None,
+            segments=segments,
+            is_seg=process_masks,
         )
         return self._apply_revert_to_result(result, ops)
 
@@ -171,8 +175,7 @@ class Detectron2TRT(Detectron2Base):
             self.engine = runtime.deserialize_cuda_engine(f.read())
         self.context = self.engine.create_execution_context()
 
-        device = kwargs.get("device", "cuda")
-        self.device = torch.device(device)
+        self._setup_device("cuda")
 
         self.torch_stream = torch.cuda.Stream(device=self.device)
 
@@ -324,9 +327,7 @@ class Detectron2PT(Detectron2Base):
 
     def __init__(self, model_path, **kwargs):
         device = kwargs.get("device", "cuda")
-        if not torch.cuda.is_available():
-            device = "cpu"
-        self.device = torch.device(device)
+        self._setup_device(device)
 
         try:
             self.model = torch.jit.load(model_path, map_location=self.device)
@@ -415,7 +416,7 @@ class Detectron2PT(Detectron2Base):
         images = kwargs.pop("images", [])
         confs, mask_threshold, process_masks, operators = self._parse_postprocess_kwargs(kwargs, len(predictions))
         if predictions[0]["pred_classes"].shape[0] == 0:
-            return [Results() for _ in predictions]
+            return [Results(is_seg=process_masks) for _ in predictions]
 
         results = []
         for idx, output in enumerate(predictions):

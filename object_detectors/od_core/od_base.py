@@ -1,8 +1,8 @@
 import abc
-import collections
 import logging
 import random
 import time
+from typing import List
 
 import cv2
 import numpy as np
@@ -157,6 +157,22 @@ class ODBase(abc.ABC):
         else:
             raise TypeError(f"Data type {type(data)} not supported")
 
+    def _setup_device(self, device: str) -> None:
+        """Set up the computation device (CPU or GPU).
+
+        Args:
+            device (str): The device to be used, either 'cpu' or 'cuda'.
+        """
+        if device.lower() not in ["cpu", "cuda"]:
+            raise ValueError(f'Invalid device: {device}. Supported devices are "cpu" and "cuda".')
+
+        self.device = torch.device("cpu")
+        if device.lower() == "cuda":
+            if torch.cuda.is_available():
+                self.device = torch.device("cuda:0")
+            else:
+                self.logger.warning("GPU not available, falling back to CPU")
+
     def _setup_class_map(self, class_names: dict) -> None:
         """Initialize class_map and a vectorized name-lookup.
 
@@ -197,7 +213,7 @@ class ODBase(abc.ABC):
             filtered_masks = masks[keep] if masks is not None and len(masks) > 0 else []
             return boxes[keep], scores[keep], classes[keep_np], filtered_masks, keep
         keep = scores >= thresholds
-        filtered_masks = masks[keep] if masks is not None else []
+        filtered_masks = masks[keep] if masks is not None and len(masks) > 0 else []
         return boxes[keep], scores[keep], classes[keep], filtered_masks, keep
 
     @staticmethod
@@ -226,10 +242,10 @@ class ODBase(abc.ABC):
         Returns:
             List of operator chains, one per image.
         """
-        if operators is None:
+        if not operators:
             return [[] for _ in range(batch_size)]
-        if len(operators) > 0 and isinstance(operators[0], dict):
-            return [operators] * batch_size
+        if isinstance(operators[0], dict):
+            return [list(operators) for _ in range(batch_size)]
         if len(operators) != batch_size:
             raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
         return operators
@@ -301,7 +317,7 @@ class ODBase(abc.ABC):
             return result
         single = result.to_dict()
         self._revert_coordinates(single, operators, **kwargs)
-        return Results(**{k: v for k, v in single.items() if v is not None and (not hasattr(v, "__len__") or len(v) > 0)})
+        return Results(**{k: v for k, v in single.items() if v is not None}, is_seg=result.is_seg)
 
     def _parse_confidence_config(self, configs, class_names) -> dict:
         """Parse configs into a per-class threshold dict.
@@ -322,7 +338,7 @@ class ODBase(abc.ABC):
         raise ValueError(f"configs must be a float or dict, got {type(configs).__name__}")
 
     @staticmethod
-    def _aggregate_results(list_results: list[Results], return_numpy: bool = True) -> dict:
+    def _aggregate_results(list_results: List[Results], return_numpy: bool = True) -> dict:
         """Aggregate a list of Results into a single dict with per-image lists.
 
         Args:
@@ -332,16 +348,14 @@ class ODBase(abc.ABC):
         Returns:
             Dict with keys from Results._all_keys (boxes, scores, classes, masks, points, segments).
         """
-        final = collections.defaultdict(list)
-        for result in list_results:
-            result_dict = result.to_dict(return_numpy=return_numpy)
-            for k in result._all_keys:
-                v = result_dict.get(k)
-                if v is not None:
-                    final[k].append(v)
-                else:
-                    final[k].append([])
-        return dict(final)
+        if not list_results:
+            return {}
+        all_dicts = [result.to_dict(return_numpy=return_numpy) for result in list_results]
+        active_keys = [k for k in Results._all_keys if any(k in d for d in all_dicts)]
+        result = {}
+        for k in active_keys:
+            result[k] = [d.get(k) for d in all_dicts]
+        return result
 
     @staticmethod
     def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False):
@@ -358,9 +372,9 @@ class ODBase(abc.ABC):
         Returns:
             np.ndarray: Annotated copy of the image.
         """
-        boxes = results["boxes"]
-        classes = results["classes"]
-        scores = results["scores"]
+        boxes = results.get("boxes", [])
+        classes = results.get("classes", [])
+        scores = results.get("scores", [])
         masks = results.get("masks", [])
         points = results.get("points", [])
 

@@ -223,6 +223,7 @@ class YoloSeg(Yolo):
                 pred, masks = pred[keep], masks[keep]
 
         results, M = super().construct_result(pred, img, orig_img, conf)
+        results.is_seg = True
         if masks is not None:
             results.masks = masks[M]
             if return_segments:
