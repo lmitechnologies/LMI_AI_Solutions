@@ -70,7 +70,7 @@ class RfdetrBase(ODBase):
                 segments.append(np.zeros((0, 2), dtype=np.float32))
         return segments
 
-    def _postprocess_single(self, output, configs, ops) -> Results:
+    def _postprocess_single(self, output, configs, ops, return_segments) -> Results:
         """Postprocess a single image's decoded output from PostProcess.
 
         Args:
@@ -78,6 +78,7 @@ class RfdetrBase(ODBase):
                 and optionally 'masks'. Values are tensors on self.device.
             configs (dict): Per-class confidence thresholds.
             ops (list): Coordinate transform operators to revert.
+            return_segments (bool): Whether to convert masks to segments.
 
         Returns:
             Results object with filtered xyxy boxes, scores, class names, optional masks, and optional segments.
@@ -91,7 +92,9 @@ class RfdetrBase(ODBase):
         # masks from rf-detr are (N, 1, H, W); squeeze to (N, H, W) for downstream use
         if len(masks) > 0:
             masks = masks.squeeze(1)
-        segments = [torch.from_numpy(s).to(self.device) for s in self._masks_to_segments(masks)] if len(masks) > 0 else None
+        segments = (
+            [torch.from_numpy(s).to(self.device) for s in self._masks_to_segments(masks)] if len(masks) > 0 and return_segments else None
+        )
         result = Results(
             boxes=boxes,
             scores=scores,
@@ -121,6 +124,7 @@ class RfdetrBase(ODBase):
                 images (list[np.ndarray]): Original images, used to determine target sizes.
                 configs: Confidence threshold (float) or per-class dict.
                 operators (list[list]): Per-image coordinate transform operators.
+                return_segments (bool): Whether to convert masks to segments.
 
         Returns:
             List of Results objects, one per image.
@@ -128,6 +132,7 @@ class RfdetrBase(ODBase):
         images = kwargs["images"]
         configs = self._parse_confidence_config(kwargs.get("configs"), list(self.class_map.values()))
         operators = kwargs.get("operators", [[] for _ in range(len(images))])
+        return_segments = kwargs.get("return_segments", False)
 
         if len(outputs) < 2:
             raise RuntimeError(f"Expected at least 2 output tensors, got {len(outputs)}")
@@ -142,7 +147,7 @@ class RfdetrBase(ODBase):
         orig_sizes = [img.shape[:2] for img in images]
         target_sizes = torch.tensor(orig_sizes, device=self.device)
         rs = self.postprocessor(return_predictions, target_sizes=target_sizes)
-        return [self._postprocess_single(r, configs, operators[i]) for i, r in enumerate(rs)]
+        return [self._postprocess_single(r, configs, operators[i], return_segments) for i, r in enumerate(rs)]
 
 
 @ObjectDetectorRegistry.register(

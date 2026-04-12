@@ -113,16 +113,14 @@ def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
         img = torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))
         inputs = [{"image": img}]
         with torch.no_grad():
-            orginal_preds = og_cpu_model.inference(inputs, do_postprocess=False)[0]
-
+            orginal_preds = og_cpu_model.inference(inputs, do_postprocess=True)[0]
         preds, _ = model_cpu.predict(image, configs=confs)
-        assert orginal_preds.pred_boxes.tensor.shape == preds.get("boxes")[0].shape
-        assert orginal_preds.pred_classes.shape == preds.get("classes")[0].shape
-        assert orginal_preds.scores.shape == preds.get("scores")[0].shape
 
         # check if the outputs are all close
-        assert np.allclose(orginal_preds.scores.cpu().numpy(), preds.get("scores")[0])
-        assert np.allclose(orginal_preds.pred_boxes.tensor.cpu().numpy(), preds.get("boxes")[0])
+        instances = orginal_preds["instances"]
+        assert np.array_equal(instances.scores.cpu().numpy(), preds.get("scores")[0])
+        assert np.array_equal(instances.pred_boxes.tensor.cpu().numpy(), preds.get("boxes")[0])
+        assert np.array_equal(instances.pred_masks.cpu().numpy(), preds.get("masks")[0])
 
 
 def test_operators(model, imgs_coco):
