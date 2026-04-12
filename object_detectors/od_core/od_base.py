@@ -187,7 +187,7 @@ class ODBase(abc.ABC):
             self.class_map = {int(k): str(v) for k, v in class_names.items()}
         except (ValueError, TypeError):
             raise
-        self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)))
+        self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)), otypes=[np.str_])
 
     def _apply_confidence_filter(self, scores, boxes, classes: np.ndarray, confs: dict, masks=None):
         """Filter predictions by per-class confidence thresholds.

@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import pytest
 import torch
-from rfdetr import RFDETRNano
+from rfdetr import RFDETRSegSmall
 from rfdetr.assets.coco_classes import COCO_CLASSES
 
 from object_detectors.od_core.object_detector import ObjectDetector
@@ -14,12 +14,12 @@ logger = logging.getLogger(__name__)
 
 COCO_DIR = "tests/assets/images/coco"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-PTH_FILE = "tests/assets/models/od/rf_detr/checkpoint.pth"
+PTH_FILE = "tests/assets/models/od/rf_detr/rf-detr-seg-small.pth"
 OD_MODEL = f"tests/assets/models/od/rf_detr/model_{DEVICE}.pt"
 TRT_MODEL = "tests/assets/models/od/rf_detr/inference_model.engine"
 OUT_DIR = "tests/outputs/od/rf_detr"
 IMAGE_SIZE = 384
-TOLERANCE = 1e-4
+MODEL_TYPE = "seg-small"
 
 
 def load_image(path):
@@ -43,7 +43,7 @@ def imgs_coco():
 
 @pytest.fixture(scope="module")
 def rf_model():
-    model = RFDETRNano(pretrain_weights=PTH_FILE, device=DEVICE)
+    model = RFDETRSegSmall(pretrain_weights=PTH_FILE, device=DEVICE)
     return model
 
 
@@ -76,6 +76,9 @@ def trt_model():
 
 @pytest.fixture(scope="module")
 def cpu_models():
+    rf_model = RFDETRSegSmall(pretrain_weights=PTH_FILE, device="cpu")
+    # rf_model.optimize_for_inference()
+
     od_pt = ObjectDetector(
         metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
         model_path=OD_MODEL.replace("cuda", "cpu"),
@@ -87,29 +90,31 @@ def cpu_models():
     od_pth = ObjectDetector(
         metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
         model_path=PTH_FILE,
-        model_type="nano",
+        model_type=MODEL_TYPE,
         device="cpu",
         class_map=COCO_CLASSES,
         image_size=[IMAGE_SIZE, IMAGE_SIZE],
     )
-    return od_pt, od_pth
+    return rf_model, od_pt, od_pth
 
 
-def assert_outputs_match_rf(rf_preds, outputs, label, tolerance):
+def assert_outputs_match_rf(rf_preds, outputs, label):
     rf_boxes = rf_preds.xyxy
+    rf_masks = rf_preds.mask
     rf_classes = [COCO_CLASSES[c] for c in rf_preds.class_id]
     assert rf_boxes.shape[0] == outputs["boxes"].shape[0], f"{label}: Number of boxes mismatch"
-    assert np.allclose(rf_boxes, outputs["boxes"], rtol=tolerance, atol=tolerance), f"{label}: Box coordinates mismatch"
-    assert np.allclose(rf_preds.confidence, outputs["scores"], rtol=tolerance, atol=tolerance), f"{label}: Confidence scores mismatch"
-    assert rf_classes == outputs["classes"], f"{label}: Class labels mismatch"
+    assert np.array_equal(rf_boxes, outputs["boxes"]), f"{label}: Box coordinates mismatch"
+    assert np.array_equal(rf_preds.confidence, outputs["scores"]), f"{label}: Confidence scores mismatch"
+    assert np.array_equal(rf_classes, outputs["classes"]), f"{label}: Class labels mismatch"
+    if rf_masks is not None:
+        assert np.array_equal(rf_masks, outputs["masks"]), f"{label}: Masks mismatch"
 
 
 class Test_Rfdetr_Model:
-    def test_compare_with_rfdetr(self, imgs_coco, cpu_models, tolerance=TOLERANCE):
+    def test_compare_with_rfdetr(self, imgs_coco, cpu_models):
         "Use cpu to avoid gpu non-determinism issues."
 
-        rf_model = RFDETRNano(pretrain_weights=PTH_FILE, device="cpu")
-        pt_model, pth_model = cpu_models
+        rf_model, pt_model, pth_model = cpu_models
 
         for img in imgs_coco:
             resized = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
@@ -117,11 +122,11 @@ class Test_Rfdetr_Model:
 
             batch_pt, _ = pt_model.predict(resized, configs=0.5)
             batch_pth, _ = pth_model.predict(resized, configs=0.5)
-            outputs_pt = {k: batch_pt[k][0] for k in ("boxes", "scores", "classes")}
-            outputs_pth = {k: batch_pth[k][0] for k in ("boxes", "scores", "classes")}
+            outputs_pt = {k: batch_pt[k][0] for k in ("boxes", "scores", "classes", "masks")}
+            outputs_pth = {k: batch_pth[k][0] for k in ("boxes", "scores", "classes", "masks")}
 
-            assert_outputs_match_rf(rf_preds, outputs_pt, "pt_model", tolerance)
-            assert_outputs_match_rf(rf_preds, outputs_pth, "pth_model", tolerance)
+            assert_outputs_match_rf(rf_preds, outputs_pt, "pt_model")
+            assert_outputs_match_rf(rf_preds, outputs_pth, "pth_model")
 
     def test_warmup(self, obj_detector):
         obj_detector.warmup()
@@ -133,6 +138,7 @@ class Test_Rfdetr_Model:
         assert len(outputs["boxes"]) == 0
         assert len(outputs["scores"]) == 0
         assert len(outputs["classes"]) == 0
+        assert len(outputs["masks"]) == 0
 
     def test_confidence(self, imgs_coco, obj_detector):
         img = cv2.resize(imgs_coco[0], (IMAGE_SIZE, IMAGE_SIZE))
@@ -211,3 +217,12 @@ class Test_Rfdetr_Model:
             annotated_image = trt_model.annotate_image(outputs, img)
             out_name = f"out_trt_operators_batch_{idx}.jpg"
             cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
+
+    def test_trt_empty(self, trt_model):
+        empty_img = np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
+        batch_outputs, _ = trt_model.predict(empty_img, configs=0.5)
+        outputs = {k: v[0] for k, v in batch_outputs.items()}
+        assert len(outputs["boxes"]) == 0
+        assert len(outputs["scores"]) == 0
+        assert len(outputs["classes"]) == 0
+        assert len(outputs["masks"]) == 0

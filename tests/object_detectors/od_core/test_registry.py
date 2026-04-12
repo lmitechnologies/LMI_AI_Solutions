@@ -20,6 +20,8 @@ def test_auto_registration():
         ("ultralytics", "yolov11", "instancesegmentation", "v1"),
         ("ultralytics", "yolo", "keypointdetection", "v1"),
         ("ultralytics", "yolo", "orientedobjectdetection", "v1"),
+        ("rfdetr", "rfdetr", "objectdetection", "v1"),
+        ("rfdetr", "rfdetr", "instancesegmentation", "v1"),
     ]
 
     for key in to_be_tested_keys:

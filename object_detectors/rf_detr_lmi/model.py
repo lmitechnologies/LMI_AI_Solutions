@@ -5,6 +5,7 @@ from typing import List, Optional, Union
 import cv2
 import numpy as np
 import torch
+import torchvision.transforms.functional as F
 from rfdetr.models.postprocess import PostProcess
 
 from object_detectors.od_core.model_factory import ModelFactory
@@ -31,24 +32,19 @@ class RfdetrBase(ODBase):
         self.stds = self.STDS
         self.postprocessor = PostProcess(num_select=300)
 
-    def _to_input_tensor(self, image: Union[np.ndarray, torch.Tensor]) -> torch.Tensor:
-        """Convert a numpy array or tensor to a float32 tensor on self.device."""
-        if isinstance(image, np.ndarray):
-            return torch.from_numpy(image).to(self.device).float()
-        return image.to(self.device).float()
-
     def warmup(self) -> None:
         """Warm up the model by running a dummy inference. Requires self.image_size."""
         dummy_input = torch.zeros((1, 3, self.image_size[0], self.image_size[1]), dtype=torch.float32).to(self.device)
         self.forward(dummy_input)
 
-    def _preprocess_single(self, image: np.ndarray) -> np.ndarray:
-        """Preprocess a single HWC image to CHW normalized array."""
-        input_img = image.astype(np.float32) / 255.0
-        means = np.array(self.means, dtype=np.float32)
-        stds = np.array(self.stds, dtype=np.float32)
-        input_img = (input_img - means) / stds
-        return input_img.transpose(2, 0, 1)
+    def _preprocess_single(self, image: np.ndarray) -> torch.Tensor:
+        """Preprocess a single HWC image: convert to CHW, normalize, and move to self.device."""
+        if image.dtype != np.uint8:
+            raise ValueError(f"Expected input image dtype uint8, got {image.dtype}")
+
+        img_tensor = F.to_tensor(image).to(self.device)
+        img_tensor = F.normalize(img_tensor, self.means, self.stds)
+        return img_tensor
 
     @staticmethod
     def _masks_to_segments(masks) -> List[np.ndarray]:
@@ -87,26 +83,30 @@ class RfdetrBase(ODBase):
             Results object with filtered xyxy boxes, scores, class names, optional masks, and optional segments.
         """
         classes = self.class_map_func(output["labels"].cpu().numpy())
+        is_seg = "masks" in output  # model specific
         boxes, scores, classes, masks, _ = self._apply_confidence_filter(
             output["scores"], output["boxes"], classes, configs, masks=output.get("masks")
         )
 
+        # masks from rf-detr are (N, 1, H, W); squeeze to (N, H, W) for downstream use
+        if len(masks) > 0:
+            masks = masks.squeeze(1)
         segments = [torch.from_numpy(s).to(self.device) for s in self._masks_to_segments(masks)] if len(masks) > 0 else None
         result = Results(
             boxes=boxes,
             scores=scores,
-            classes=classes.tolist(),
+            classes=classes,
             masks=masks if len(masks) > 0 else None,
             segments=segments,
-            is_seg="masks" in output,
+            is_seg=is_seg,
         )
         return self._apply_revert_to_result(result, ops)
 
-    def preprocess(self, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> np.ndarray:
+    def preprocess(self, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> torch.Tensor:
         """Preprocess input image(s) to BCHW normalized array."""
         if isinstance(images, list):
-            return np.stack([self._preprocess_single(img) for img in images])
-        return np.expand_dims(self._preprocess_single(images), axis=0)
+            return torch.stack([self._preprocess_single(img) for img in images])
+        return torch.unsqueeze(self._preprocess_single(images), dim=0)
 
     def postprocess(self, outputs, **kwargs) -> List[Results]:
         """Postprocess outputs for a batch using the rfdetr PostProcess decoder.
@@ -236,25 +236,20 @@ class RfdetrTRT(RfdetrBase):
 
     def warmup(self):
         """Warm up the model by running a dummy inference."""
-        dummy_input = np.zeros((self.fixed_batch_size, *self.input_shape_no_batch), dtype=self.input_dtype)
-        self.forward(np.ascontiguousarray(dummy_input, dtype=self.input_dtype))
+        dummy_input = torch.zeros((self.fixed_batch_size, *self.input_shape_no_batch), dtype=self.torch_dtype, device="cuda")
+        self.forward(dummy_input)
 
-    def preprocess(self, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> np.ndarray:
-        """Preprocess input image(s) for TensorRT inference, casting to engine input dtype."""
-        batch = super().preprocess(images, **kwargs)
-        return np.ascontiguousarray(batch, dtype=self.input_dtype)
-
-    def forward(self, image: np.ndarray) -> list:
+    def forward(self, image: torch.Tensor) -> list:
         """Perform TensorRT inference. Chunking is handled by predict() in ODBase.
 
         Args:
-            image: BCHW numpy array with batch_size == self.fixed_batch_size.
+            image: BCHW tensor with batch_size == self.fixed_batch_size.
 
         Returns:
             List of output tensors on self.device, each with shape (B, ...).
         """
         self.context.set_input_shape(self.input_name, self._buffers["input_shape"])
-        self._buffers["input"].copy_(torch.from_numpy(image))
+        self._buffers["input"].copy_(image)
 
         self.context.set_tensor_address(self.input_name, self._buffers["input"].data_ptr())
         for out in self._buffers["outputs"]:
@@ -279,16 +274,16 @@ class RfdetrPT(RfdetrBase):
         self.fixed_batch_size = 1
         self._setup_class_map(class_map)
 
-    def forward(self, image: Union[np.ndarray, torch.Tensor], **kwargs) -> list:
+    def forward(self, image: torch.Tensor, **kwargs) -> list:
         """Perform TorchScript inference on a single image (batch=1).
 
         Args:
-            image: BCHW numpy array or tensor with batch size 1.
+            image: BCHW tensor with batch size 1.
 
         Returns:
             List of output tensors, each with batch dimension (1, ...).
         """
-        return self.model(self._to_input_tensor(image))
+        return self.model(image)
 
 
 @RfdetrModel.register("pth")
@@ -323,7 +318,17 @@ class RfdetrPTH(RfdetrBase):
             FileNotFoundError: If model_path does not exist
             ValueError: If model_type is not supported
         """
-        from rfdetr import RFDETRLarge, RFDETRMedium, RFDETRNano, RFDETRSmall
+        from rfdetr import (
+            RFDETRLarge,
+            RFDETRMedium,
+            RFDETRNano,
+            RFDETRSeg2XLarge,
+            RFDETRSegLarge,
+            RFDETRSegMedium,
+            RFDETRSegNano,
+            RFDETRSegSmall,
+            RFDETRSmall,
+        )
 
         model_configs = {
             "nano": (384, RFDETRNano),
@@ -332,6 +337,11 @@ class RfdetrPTH(RfdetrBase):
             "large": (704, RFDETRLarge),
             # "xlarge": (700, RFDETRXLarge),    # require license
             # "2xlarge": (880, RFDETR2XLarge),  # require license
+            "seg-nano": (384, RFDETRSegNano),
+            "seg-small": (512, RFDETRSegSmall),
+            "seg-medium": (576, RFDETRSegMedium),
+            "seg-large": (704, RFDETRSegLarge),
+            "seg-xlarge": (700, RFDETRSeg2XLarge),
         }
 
         if not os.path.isfile(model_path):
@@ -365,13 +375,13 @@ class RfdetrPTH(RfdetrBase):
         self.fixed_batch_size = 1
         self._init_common()
 
-    def forward(self, image: Union[np.ndarray, torch.Tensor], **kwargs) -> list:
+    def forward(self, image: torch.Tensor, **kwargs) -> list:
         """Perform inference on a single image (batch=1).
 
         Args:
-            image: BCHW numpy array or tensor with batch size 1.
+            image: BCHW tensor with batch size 1.
 
         Returns:
             List of output tensors, each with batch dimension (1, ...).
         """
-        return self.model.model.inference_model(self._to_input_tensor(image))
+        return self.model.model.inference_model(image)

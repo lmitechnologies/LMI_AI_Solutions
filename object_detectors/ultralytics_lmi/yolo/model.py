@@ -114,7 +114,7 @@ class Yolo(YoloCore, ODBase):
         classes = np.array([self.model.names[c.item()] for c in clss])
         confs_dict = self._parse_confidence_config(conf, list(self.model.names.values()))
         xyxy, scores, classes, _, keep = self._apply_confidence_filter(scores, xyxy, classes, confs_dict)
-        result = Results(xyxy, scores, classes.tolist())
+        result = Results(xyxy, scores, classes)
         result = self._apply_revert_to_result(result, operators, **kwargs)
         return result, keep
 
@@ -309,7 +309,7 @@ class YoloObb(Yolo):
 
         confs_dict = self._parse_confidence_config(conf, list(self.model.names.values()))
         rboxes, scores, classes, _, keep = self._apply_confidence_filter(scores, rboxes, classes, confs_dict)
-        result = Results(rboxes, scores, classes.tolist())
+        result = Results(rboxes, scores, classes)
         result = self._apply_revert_to_result(result, operators, **kwargs)
         return result, keep
 

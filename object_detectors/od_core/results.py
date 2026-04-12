@@ -22,14 +22,14 @@ class Results:
     EMPTY_BOXES: torch.Tensor = torch.zeros((0, 4), dtype=torch.float32)
     EMPTY_SCORES: torch.Tensor = torch.zeros((0,), dtype=torch.float32)
     EMPTY_MASKS: torch.Tensor = torch.zeros((0,), dtype=torch.float32)
-    EMPTY_CLASSES: List[str] = []
+    EMPTY_CLASSES: np.ndarray = np.array([], dtype=np.str_)
     EMPTY_SEGMENTS: List[torch.Tensor] = []
 
     def __init__(
         self,
         boxes: Optional[torch.Tensor] = None,
         scores: Optional[torch.Tensor] = None,
-        classes=None,
+        classes: Optional[np.ndarray] = None,
         masks: Optional[torch.Tensor] = None,
         segments: Optional[List[torch.Tensor]] = None,
         points: Optional[torch.Tensor] = None,
@@ -37,14 +37,19 @@ class Results:
     ):
         self.boxes = boxes if boxes is not None else self.EMPTY_BOXES
         self.scores = scores if scores is not None else self.EMPTY_SCORES
-        self.classes = classes if classes is not None else list(self.EMPTY_CLASSES)
+        if classes is None:
+            self.classes = self.EMPTY_CLASSES.copy()
+        elif isinstance(classes, np.ndarray):
+            self.classes = classes
+        else:
+            self.classes = np.array(classes, dtype=np.str_)
         self.masks = masks
         self.segments = segments
         self.points = points
         self.is_seg = is_seg
 
     def new(self):
-        return Results(classes=self.classes, is_seg=self.is_seg)
+        return Results(classes=self.classes.copy(), is_seg=self.is_seg)
 
     def _apply(self, fn: str, *args, **kwargs):
         """Apply a tensor method to all tensor fields."""

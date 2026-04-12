@@ -115,16 +115,14 @@ def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
         with torch.no_grad():
             orginal_preds = og_cpu_model.inference(inputs, do_postprocess=False)[0]
 
-        preds, _ = model_cpu.predict(image, configs=confs, process_masks=False)
+        preds, _ = model_cpu.predict(image, configs=confs)
         assert orginal_preds.pred_boxes.tensor.shape == preds.get("boxes")[0].shape
         assert orginal_preds.pred_classes.shape == preds.get("classes")[0].shape
         assert orginal_preds.scores.shape == preds.get("scores")[0].shape
-        assert orginal_preds.pred_masks.shape == preds.get("masks")[0].shape
 
         # check if the outputs are all close
         assert np.allclose(orginal_preds.scores.cpu().numpy(), preds.get("scores")[0])
         assert np.allclose(orginal_preds.pred_boxes.tensor.cpu().numpy(), preds.get("boxes")[0])
-        assert np.allclose(orginal_preds.pred_masks.cpu().numpy(), preds.get("masks")[0])
 
 
 def test_operators(model, imgs_coco):
@@ -137,7 +135,6 @@ def test_operators(model, imgs_coco):
         image_resized,
         configs=confs,
         return_segments=True,
-        process_masks=True,
         operators=operators,
     )
     for key in KEYS:
@@ -151,7 +148,7 @@ def test_operators(model, imgs_coco):
 def test_empty(model):
     blank_images = [np.zeros((512, 512, 3), dtype=np.uint8) for _ in range(2)]
     confs = {v: 0.95 for v in class_map.values()}
-    outputs, _ = model.predict(blank_images, configs=confs, return_segments=True, process_masks=True)
+    outputs, _ = model.predict(blank_images, configs=confs, return_segments=True)
     for key in KEYS:
         assert len(outputs[key]) == len(blank_images)
         for item in outputs[key]:
@@ -167,7 +164,6 @@ def test_operators_no_masks(model, imgs_coco):
         image_resized,
         configs=1,
         return_segments=True,
-        process_masks=True,
         operators=operators,
     )
     for key in KEYS:
@@ -184,7 +180,7 @@ def test_batch_operators(model, imgs_coco):
     original_sizes = [img.shape[:2] for img in images]
     images_resized = [cv2.resize(img, (tw, th)) for img in images]
     operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
-    outputs, _ = model.predict(images_resized, configs=confs, process_masks=True, return_segments=True, operators=operators)
+    outputs, _ = model.predict(images_resized, configs=confs, return_segments=True, operators=operators)
     assert len(outputs["boxes"]) == len(images)
     assert len(outputs["scores"]) == len(images)
     assert len(outputs["classes"]) == len(images)
@@ -217,7 +213,7 @@ def test_trt_batch_operators(detectron2_trt_model, imgs_coco):
     resized = [cv2.resize(img, (tw, th)) for img in images]
     operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
 
-    outputs, _ = model.predict(resized, configs=confs, process_masks=True, return_segments=True, operators=operators)
+    outputs, _ = model.predict(resized, configs=confs, return_segments=True, operators=operators)
     assert len(outputs["boxes"]) == len(images)
     assert len(outputs["scores"]) == len(images)
     assert len(outputs["classes"]) == len(images)
@@ -238,3 +234,14 @@ def test_trt_batch_operators(detectron2_trt_model, imgs_coco):
         per_image = {k: v[i] for k, v in outputs.items()}
         annotated = model.annotate_image(per_image, images[i].copy())
         cv2.imwrite(os.path.join(OUT_DIR, f"coco_{i}_trt_batch_operators.jpg"), annotated)
+
+
+def test_trt_empty(detectron2_trt_model):
+    model = detectron2_trt_model
+    th, tw = model.image_size
+    empty_img = np.zeros((th, tw, 3), dtype=np.uint8)
+    batch_outputs, _ = model.predict(empty_img, configs=0.5)
+    outputs = {k: v[0] for k, v in batch_outputs.items()}
+    for key in KEYS:
+        assert key in outputs
+        assert len(outputs[key]) == 0
