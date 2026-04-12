@@ -48,6 +48,9 @@ class ODBase(abc.ABC):
                 - None: no coordinate reversion.
                 - list[dict]: a single operator chain, applied to all images.
                 - list[list[dict]]: per-image operator chains (length must match batch size).
+        kwargs:
+            Additional keyword arguments passed to postprocess and coordinate reversion.
+            return_segments (bool): Whether to return 'segments' in the output dict when available.
 
         Returns:
             (results, time_info)

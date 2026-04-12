@@ -273,7 +273,7 @@ class Test_Yolo_Seg:
             our_model = YoloSeg(model_path, device="cpu", image_size=IMGSZ)
             batch_bgr = [cv2.cvtColor(img, cv2.COLOR_RGB2BGR) for img in resized_images]
             results = ults_model(batch_bgr, conf=0.5, iou=0.4, max_det=300, retina_masks=True, device="cpu")
-            out, _ = our_model.predict(resized_images, configs=0.5, iou=0.4, max_det=300)
+            out, _ = our_model.predict(resized_images, configs=0.5, iou=0.4, max_det=300, return_segments=True)
             for ults_result, our_boxes, our_scores, our_masks, our_segs in zip(
                 results, out["boxes"], out["scores"], out["masks"], out["segments"]
             ):
@@ -301,14 +301,14 @@ class Test_Yolo_Seg:
         i = 0
         for model in yolo_models["seg"] + yolo_models_api["seg"]:
             for img, resized, op in zip(*imgs_coco):
-                out, time_info = model.predict(resized, configs=0.5, operators=op)
+                out, time_info = model.predict(resized, configs=0.5, operators=op, return_segments=True)
                 assert len(out["masks"][0]) > 0 and len(out["segments"][0]) > 0
                 for sc in out["scores"][0]:
                     assert sc >= 0.5
 
                 if torch.cuda.is_available():
                     resized = torch.from_numpy(resized).cuda()
-                    out, time_info = model.predict(resized, configs=0.5, operators=op)
+                    out, time_info = model.predict(resized, configs=0.5, operators=op, return_segments=True)
                     for seg, m, b, sc in zip(out["segments"][0], out["masks"][0], out["boxes"][0], out["scores"][0]):
                         assert seg.is_cuda and m.is_cuda and b.is_cuda and sc.is_cuda
                     img = torch.from_numpy(img).cuda()
@@ -346,6 +346,8 @@ class Test_Yolo_Seg:
             assert len(out["segments"]) == 2
             assert len(out["scores"]) == 2
             _assert_batch_scores(out, "scores", 0.5)
+            for i in range(2):
+                assert len(out["segments"][i]) == 0
 
             # shared operators
             out2, _ = model.predict(batch_imgs, configs=0.5, operators=batch_ops[0])

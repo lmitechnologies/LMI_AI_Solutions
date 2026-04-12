@@ -152,7 +152,7 @@ class Test_Rfdetr_Model:
             img_resized = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
             operators = [{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}]
 
-            batch_outputs, _ = obj_detector.predict(img_resized, configs=0.5, operators=operators)
+            batch_outputs, _ = obj_detector.predict(img_resized, configs=0.5, operators=operators, return_segments=True)
             outputs = {k: v[0] for k, v in batch_outputs.items()}
             assert len(outputs["boxes"]) > 0, "Expected detections with operators, but got none."
 
@@ -198,7 +198,7 @@ class Test_Rfdetr_Model:
         operators = [[{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}] for w, h in original_sizes]
         imgs_resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
 
-        batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators)
+        batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators, return_segments=True)
 
         assert len(batch_outputs["boxes"]) == len(imgs_coco)
 

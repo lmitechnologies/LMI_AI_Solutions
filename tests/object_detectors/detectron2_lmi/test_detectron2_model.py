@@ -129,12 +129,7 @@ def test_operators(model, imgs_coco):
     h, w = image.shape[:2]
     image_resized = cv2.resize(image, (512, 512))
     operators = [{"resize": [512, 512, w, h]}]
-    outputs, _ = model.predict(
-        image_resized,
-        configs=confs,
-        return_segments=True,
-        operators=operators,
-    )
+    outputs, _ = model.predict(image_resized, configs=confs, return_segments=True, operators=operators)
     for key in KEYS:
         outputs[key] = outputs[key][0]
 
@@ -146,7 +141,7 @@ def test_operators(model, imgs_coco):
 def test_empty(model):
     blank_images = [np.zeros((512, 512, 3), dtype=np.uint8) for _ in range(2)]
     confs = {v: 0.95 for v in class_map.values()}
-    outputs, _ = model.predict(blank_images, configs=confs, return_segments=True)
+    outputs, _ = model.predict(blank_images, configs=confs)
     for key in KEYS:
         assert len(outputs[key]) == len(blank_images)
         for item in outputs[key]:
@@ -158,12 +153,7 @@ def test_operators_no_masks(model, imgs_coco):
     h, w = image.shape[:2]
     image_resized = cv2.resize(image, (512, 512))
     operators = [{"resize": [512, 512, w, h]}]
-    outputs, _ = model.predict(
-        image_resized,
-        configs=1,
-        return_segments=True,
-        operators=operators,
-    )
+    outputs, _ = model.predict(image_resized, configs=1, operators=operators)
     for key in KEYS:
         outputs[key] = outputs[key][0]
 
@@ -178,7 +168,7 @@ def test_batch_operators(model, imgs_coco):
     original_sizes = [img.shape[:2] for img in images]
     images_resized = [cv2.resize(img, (tw, th)) for img in images]
     operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
-    outputs, _ = model.predict(images_resized, configs=confs, return_segments=True, operators=operators)
+    outputs, _ = model.predict(images_resized, configs=confs, operators=operators)
     assert len(outputs["boxes"]) == len(images)
     assert len(outputs["scores"]) == len(images)
     assert len(outputs["classes"]) == len(images)
@@ -186,13 +176,8 @@ def test_batch_operators(model, imgs_coco):
     assert len(outputs["segments"]) == len(images)
     os.makedirs(OUT_DIR, exist_ok=True)
     for i, (h, w) in enumerate(original_sizes):
-        assert (
-            len(outputs["boxes"][i])
-            == len(outputs["scores"][i])
-            == len(outputs["classes"][i])
-            == len(outputs["masks"][i])
-            == len(outputs["segments"][i])
-        )
+        assert len(outputs["boxes"][i]) == len(outputs["scores"][i]) == len(outputs["classes"][i]) == len(outputs["masks"][i])
+        assert len(outputs["segments"][i]) == 0
         if len(outputs["masks"][i]) > 0:
             assert outputs["masks"][i].shape[1] == h
             assert outputs["masks"][i].shape[2] == w
