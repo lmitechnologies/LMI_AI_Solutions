@@ -359,7 +359,7 @@ class Test_Yolo_Seg:
 
             if torch.cuda.is_available():
                 tensor_batch = [torch.from_numpy(img).cuda() for img in batch_imgs]
-                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=batch_ops)
+                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=batch_ops, return_segments=True)
                 assert len(out_gpu["boxes"]) == 2
                 for seg, m, b, sc in zip(out_gpu["segments"][0], out_gpu["masks"][0], out_gpu["boxes"][0], out_gpu["scores"][0]):
                     assert seg.is_cuda and m.is_cuda and b.is_cuda and sc.is_cuda

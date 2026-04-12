@@ -46,18 +46,19 @@ class ObjectDetectorRegistry:
         versions: Optional[List[str]] = metadata.get("versions")
         info: Dict[str, Any] = metadata.get("info", {})
 
+        if (
+            not isinstance(frameworks, list)
+            or not isinstance(model_names, list)
+            or not isinstance(tasks, list)
+            or not isinstance(versions, list)
+        ):
+            raise TypeError("'frameworks', 'model_names', 'tasks', and 'versions' must be lists.")
+
         if not all([frameworks, model_names, tasks, versions]):
             raise ValueError("Metadata must include 'frameworks', 'model_names', 'tasks', and 'versions' (all non-empty lists).")
 
         def decorator(wrapper_cls: Type) -> Type:
             """The actual decorator that registers the class."""
-            if (
-                not isinstance(frameworks, list)
-                or not isinstance(model_names, list)
-                or not isinstance(tasks, list)
-                or not isinstance(versions, list)
-            ):
-                raise TypeError("'frameworks', 'model_names', 'tasks', and 'versions' must be lists.")
 
             for framework in frameworks:
                 for model_name in model_names:
@@ -72,6 +73,7 @@ class ObjectDetectorRegistry:
                                     f"task='{task}', version='{version}', info='{json.dumps(info, sort_keys=True)}' "
                                     f"points to {existing_cls.__module__}. Cannot re-register with {wrapper_cls.__module__}."
                                 )
+                                continue
                             cls._registry[key] = wrapper_cls
             return wrapper_cls
 
@@ -95,7 +97,7 @@ class ObjectDetectorRegistry:
         wrapper_cls = cls._registry.get(key)
 
         if wrapper_cls is None:
-            available_keys = "\n".join(map(str, cls._registry.keys()))  # For debugging
+            available_keys = "\n".join(map(str, cls._registry.keys()))
             raise ValueError(
                 f"No class found registered for combination: "
                 f"framework='{framework.lower()}', model_name='{model_name.lower()}', "
@@ -114,14 +116,18 @@ class ObjectDetectorRegistry:
 
         logger.info("Starting auto-discovery of object detector models...")
         for package_name in PACKAGES:
-            package = importlib.import_module(package_name)
+            try:
+                package = importlib.import_module(package_name)
+            except ImportError as e:
+                logger.warning(f"Failed to import package '{package_name}': {e}. Skipping.")
+                continue
             package_path = package.__path__
 
             # search for target module in each package
             for _, module_name, _ in pkgutil.walk_packages(package_path, package_name + "."):
                 if any(module_name.endswith(target) for target in TARGET_MODULE_SUFFIXES):
                     try:
-                        importlib.import_module(f"{module_name}")
+                        importlib.import_module(module_name)
                         logger.info(f"Successfully imported {module_name}")
                     except ImportError as e:
                         logger.warning(f"Failed to import {module_name}: {e}")

@@ -138,6 +138,10 @@ def test_operators(model, imgs_coco):
     assert outputs["masks"].shape[2] == w
 
 
+def test_warmup(model):
+    model.warmup()
+
+
 def test_empty(model):
     blank_images = [np.zeros((512, 512, 3), dtype=np.uint8) for _ in range(2)]
     confs = {v: 0.95 for v in class_map.values()}
@@ -228,3 +232,8 @@ def test_trt_empty(detectron2_trt_model):
     for key in KEYS:
         assert key in outputs
         assert len(outputs[key]) == 0
+
+
+def test_trt_warmup(detectron2_trt_model):
+    model = detectron2_trt_model
+    model.warmup()

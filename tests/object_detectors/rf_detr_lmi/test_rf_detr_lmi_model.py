@@ -226,3 +226,6 @@ class Test_Rfdetr_Model:
         assert len(outputs["scores"]) == 0
         assert len(outputs["classes"]) == 0
         assert len(outputs["masks"]) == 0
+
+    def test_trt_warmup(self, trt_model):
+        trt_model.warmup()

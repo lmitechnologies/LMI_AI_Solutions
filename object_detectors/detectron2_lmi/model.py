@@ -349,10 +349,7 @@ class Detectron2PT(Detectron2Base):
         Args:
             **kwargs: Arbitrary keyword arguments.
                 img_size (tuple, optional): A tuple specifying the height and width of the image.
-                                            If not provided, an error is logged.
-
-        Raises:
-            ValueError: If 'img_size' is not provided in kwargs.
+                                            If not provided, the default image size is used.
         """
         image_size = kwargs.get("img_size", self.image_size)
         image_h, image_w = image_size[0], image_size[1]
