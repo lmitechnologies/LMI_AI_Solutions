@@ -139,10 +139,8 @@ class ODBase(abc.ABC):
         final = self._aggregate_results(all_results, return_numpy=not use_tensor)
         return final, time_info
 
-    # ---- shared utilities ----
-
     @staticmethod
-    def to_numpy(data):
+    def _to_numpy(data):
         """Converts a tensor or a list to numpy arrays.
 
         Args:
@@ -191,6 +189,24 @@ class ODBase(abc.ABC):
         except (ValueError, TypeError):
             raise
         self.class_map_func = np.vectorize(lambda c: self.class_map.get(int(c), str(c)), otypes=[np.str_])
+
+    def _parse_confidence_config(self, configs, class_names) -> dict:
+        """Parse configs into a per-class threshold dict.
+
+        Args:
+            configs: float/int (global threshold), or dict (per-class).
+            class_names: Iterable of class name strings used when building a uniform dict.
+
+        Returns:
+            dict mapping class name -> confidence threshold.
+        """
+        if configs is None:
+            raise ValueError("confs cannot be None, must be a float or dict")
+        if isinstance(configs, (int, float)):
+            return {name: float(configs) for name in class_names}
+        if isinstance(configs, dict):
+            return configs
+        raise ValueError(f"configs must be a float or dict, got {type(configs).__name__}")
 
     def _apply_confidence_filter(self, scores, boxes, classes: np.ndarray, confs: dict, masks=None):
         """Filter predictions by per-class confidence thresholds.
@@ -322,24 +338,6 @@ class ODBase(abc.ABC):
         self._revert_coordinates(single, operators, **kwargs)
         return Results(**{k: v for k, v in single.items() if v is not None}, is_seg=result.is_seg)
 
-    def _parse_confidence_config(self, configs, class_names) -> dict:
-        """Parse configs into a per-class threshold dict.
-
-        Args:
-            configs: float/int (global threshold), or dict (per-class).
-            class_names: Iterable of class name strings used when building a uniform dict.
-
-        Returns:
-            dict mapping class name -> confidence threshold.
-        """
-        if configs is None:
-            raise ValueError("confs cannot be None, must be a float or dict")
-        if isinstance(configs, (int, float)):
-            return {name: float(configs) for name in class_names}
-        if isinstance(configs, dict):
-            return configs
-        raise ValueError(f"configs must be a float or dict, got {type(configs).__name__}")
-
     @staticmethod
     def _aggregate_results(list_results: List[Results], return_numpy: bool = True) -> dict:
         """Aggregate a list of Results into a single dict with per-image lists.
@@ -381,17 +379,17 @@ class ODBase(abc.ABC):
         masks = results.get("masks", [])
         points = results.get("points", [])
 
-        image = ODBase.to_numpy(image).copy()
+        image = ODBase._to_numpy(image).copy()
         if not len(boxes):
             return image
 
-        boxes = ODBase.to_numpy(boxes)
+        boxes = ODBase._to_numpy(boxes)
 
         if image.ndim == 2:
             image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
 
         if len(masks):
-            masks = ODBase.to_numpy(masks)
+            masks = ODBase._to_numpy(masks)
         for i in range(len(boxes)):
             label = "{}: {:.2f}".format(classes[i], scores[i])
             args = {
@@ -407,7 +405,7 @@ class ODBase(abc.ABC):
                 pipeline_utils.plot_one_box(boxes[i], image, mask, **args)
 
         if len(points):
-            points = ODBase.to_numpy(points).astype(int)
+            points = ODBase._to_numpy(points).astype(int)
             for i in range(len(points)):
                 for j in range(len(points[i])):
                     cv2.circle(image, (points[i][j][0], points[i][j][1]), 4, (255, 255, 255), -1)
@@ -415,7 +413,7 @@ class ODBase(abc.ABC):
         segments = results.get("segments", [])
         if len(segments):
             for i, seg in enumerate(segments):
-                seg = ODBase.to_numpy(seg).astype(int)
+                seg = ODBase._to_numpy(seg).astype(int)
                 color = None if colormap is None else colormap.get(classes[i])
                 color = color or [random.randint(0, 255) for _ in range(3)]
                 pts = seg.reshape((-1, 1, 2))

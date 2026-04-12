@@ -79,41 +79,20 @@ class Yolo(YoloCore, ODBase):
             return torch.stack(imgs)
         return self._preprocess_single(images).unsqueeze(0)
 
-    def _get_min_conf(self, conf: Union[float, dict]) -> float:
-        """Get the minimum confidence level for non-maximum suppression.
-
-        Args:
-            conf (float | dict): float or dictionary of <class: confidence level>.
-        """
-        if isinstance(conf, float):
-            min_conf = conf
-        elif isinstance(conf, dict):
-            min_conf = 1
-            class_names = set(self.model.names.values())
-            for k, v in conf.items():
-                if k in class_names:
-                    min_conf = min(min_conf, v)
-            if min_conf == 1:
-                raise ValueError("No class matches in confidence dict.")
-        else:
-            raise TypeError(f"Confidence type {type(conf)} not supported")
-        return min_conf
-
-    def construct_result(self, pred, img, orig_img, conf, operators=None, **kwargs):
+    def construct_result(self, pred, img, orig_img, confs: dict, operators=None, **kwargs):
         """Constructs the result from the model prediction.
 
         Args:
             pred (torch.Tensor): Prediction from the model.
             img (torch.Tensor): the preprocessed image
             orig_img (np.ndarray | torch.Tensor): Original image. If this is a tensor, this function will return tensor results.
-            conf (float | dict): float or dictionary of <class: confidence level>.
+            confs (dict): per-class confidence thresholds, pre-parsed by postprocess.
             operators (list): operator chain for coordinate reversion.
         """
         pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
         xyxy, scores, clss = pred[:, :4], pred[:, 4], pred[:, 5]
         classes = np.array([self.model.names[c.item()] for c in clss])
-        confs_dict = self._parse_confidence_config(conf, list(self.model.names.values()))
-        xyxy, scores, classes, _, keep = self._apply_confidence_filter(scores, xyxy, classes, confs_dict)
+        xyxy, scores, classes, _, keep = self._apply_confidence_filter(scores, xyxy, classes, confs)
         result = Results(xyxy, scores, classes)
         result = self._apply_revert_to_result(result, operators, **kwargs)
         return result, keep
@@ -167,10 +146,10 @@ class Yolo(YoloCore, ODBase):
         agnostic = kwargs.pop("agnostic", False)
         max_det = kwargs.pop("max_det", 300)
 
-        min_conf = self._get_min_conf(conf)
-        preds2 = self._run_nms(preds, min_conf, iou, agnostic, max_det)
+        confs = self._parse_confidence_config(conf, list(self.model.names.values()))
+        preds2 = self._run_nms(preds, min(confs.values()), iou, agnostic, max_det)
         orig_imgs = orig_imgs if isinstance(orig_imgs, list) else [orig_imgs]
-        return self.construct_results(preds2, img, orig_imgs, conf, operators=operators, **kwargs)
+        return self.construct_results(preds2, img, orig_imgs, confs, operators=operators, **kwargs)
 
 
 @ObjectDetectorRegistry.register(
@@ -286,14 +265,14 @@ class YoloObb(Yolo):
             end2end=getattr(self.model, "end2end", False),
         )
 
-    def construct_result(self, pred, img, orig_img, conf, operators=None, **kwargs):
+    def construct_result(self, pred, img, orig_img, confs: dict, operators=None, **kwargs):
         """Constructs the result from the model prediction.
 
         Args:
             pred (torch.Tensor): Prediction from the model.
             img (torch.Tensor): the preprocessed image
             orig_img (torch.Tensor): the original image
-            conf (float | dict): float or dictionary of <class: confidence level>.
+            confs (dict): per-class confidence thresholds, pre-parsed by postprocess.
             operators (list): operator chain for coordinate reversion.
 
         Returns:
@@ -307,8 +286,7 @@ class YoloObb(Yolo):
         # covert the boxes from xywhr to xyxyxyxy format
         rboxes = ops.xywhr2xyxyxyxy(rboxes)  # [n_obj, 4, 2]
 
-        confs_dict = self._parse_confidence_config(conf, list(self.model.names.values()))
-        rboxes, scores, classes, _, keep = self._apply_confidence_filter(scores, rboxes, classes, confs_dict)
+        rboxes, scores, classes, _, keep = self._apply_confidence_filter(scores, rboxes, classes, confs)
         result = Results(rboxes, scores, classes)
         result = self._apply_revert_to_result(result, operators, **kwargs)
         return result, keep
