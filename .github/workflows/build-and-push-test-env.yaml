@@ -1,11 +1,6 @@
 name: Build and Publish Test Docker Image
 
 on:
-  push:
-    branches: ["ais"]
-    paths:
-      - "tests/dockerfile.ci"
-      - "tests/requirements-ci.txt"
   workflow_dispatch:
 
 concurrency:

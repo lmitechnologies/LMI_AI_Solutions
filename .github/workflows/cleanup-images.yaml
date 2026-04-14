@@ -1,8 +1,5 @@
 name: Cleanup Old Images
 on:
-  workflow_run:
-    workflows: ["Build and Publish Test Docker Image"]
-    types: [completed]
   pull_request:
     types: [closed]
   workflow_dispatch:
@@ -29,73 +26,22 @@ jobs:
       contents: read
       packages: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: false
+          submodules: false
+
       - name: Delete PR-tagged images
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OWNER: ${{ github.repository_owner }}
           PACKAGE_NAME: "ais-test-env"
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-
-          TAG_SUFFIX="-pr-${PR_NUMBER}"
-          echo "Deleting images tagged with suffix: ${TAG_SUFFIX}"
-
-          VERSIONS=$(gh api \
-            --paginate \
-            --jq '.[]' \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "/orgs/${OWNER}/packages/container/${PACKAGE_NAME}/versions")
-
-          PR_VERSIONS=$(echo "$VERSIONS" | jq -rs --arg suffix "$TAG_SUFFIX" '
-            .[]
-            | select(.metadata.container.tags | any(endswith($suffix)))
-            | .id
-          ')
-
-          if [ -z "$PR_VERSIONS" ]; then
-            echo "No images found for PR #${PR_NUMBER}. Nothing to delete."
-            exit 0
-          fi
-
-          COUNT=$(echo "$PR_VERSIONS" | grep -c .)
-          echo "Found ${COUNT} image(s) to delete."
-
-          DELETED=0
-          FAILED=0
-
-          for version_id in $PR_VERSIONS; do
-            echo "Deleting version ID: ${version_id}"
-            if gh api \
-              --method DELETE \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "/orgs/${OWNER}/packages/container/${PACKAGE_NAME}/versions/${version_id}"; then
-              DELETED=$((DELETED + 1))
-            else
-              echo "WARNING: Failed to delete version ID ${version_id}"
-              FAILED=$((FAILED + 1))
-            fi
-            sleep 1
-          done
-
-          {
-            echo "## PR Image Cleanup Summary"
-            echo "- **PR:** #${PR_NUMBER}"
-            echo "- **Deleted:** ${DELETED}"
-            echo "- **Failed:** ${FAILED}"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          if [ "$FAILED" -gt 0 ]; then
-            echo "Cleanup finished with ${FAILED} failure(s)."
-            exit 1
-          fi
-
-          echo "PR image cleanup complete."
+        run: bash .github/workflows/scripts/cleanup_pr_images.sh
 
   cleanup:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -103,6 +49,12 @@ jobs:
       packages: write
     
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: false
+          submodules: false
+
       - name: Delete untagged images older than retention period
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -110,94 +62,4 @@ jobs:
           PACKAGE_NAME: "ais-test-env"
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
           RETENTION_DAYS: ${{ inputs.retention_days || 7 }}
-        run: |
-          set -euo pipefail
-
-          # GitHub Actions 'number' inputs may arrive as floats (e.g. "7.0");
-          # truncate to integer for shell arithmetic and date command.
-          RETENTION_DAYS=${RETENTION_DAYS%.*}
-
-          # Validate retention period
-          if [ "${RETENTION_DAYS}" -lt 1 ]; then
-            echo "ERROR: retention_days must be >= 1, got: ${RETENTION_DAYS}"
-            exit 1
-          fi
-
-          # Compute cutoff as epoch seconds for reliable numeric comparison
-          CUTOFF_EPOCH=$(date -d "${RETENTION_DAYS} days ago" +%s)
-          CUTOFF_ISO=$(date -d "@${CUTOFF_EPOCH}" -Iseconds)
-          echo "Retention: ${RETENTION_DAYS} days — deleting untagged images older than ${CUTOFF_ISO}"
-          echo "Dry run: ${DRY_RUN}"
-
-          # Fetch all pages; --paginate emits concatenated JSON arrays so we
-          # stream individual objects with --jq to get valid input for slurp
-          VERSIONS=$(gh api \
-            --paginate \
-            --jq '.[]' \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "/orgs/${OWNER}/packages/container/${PACKAGE_NAME}/versions")
-
-          # Filter: untagged + older than cutoff (compare epoch timestamps)
-          OLD_VERSIONS=$(echo "$VERSIONS" | jq -rs --argjson cutoff "$CUTOFF_EPOCH" '
-            .[]
-            | select(.metadata.container.tags | length == 0)
-            | select((.created_at | fromdateiso8601) < $cutoff)
-            | .id
-          ')
-
-          if [ -z "$OLD_VERSIONS" ]; then
-            echo "No untagged images older than ${RETENTION_DAYS} days found. Nothing to delete."
-            exit 0
-          fi
-
-          COUNT=$(echo "$OLD_VERSIONS" | grep -c .)
-          echo "Found ${COUNT} untagged image(s) to delete."
-
-          DELETED=0
-          FAILED=0
-
-          for version_id in $OLD_VERSIONS; do
-            if [ "$DRY_RUN" = "true" ]; then
-              echo "[DRY RUN] Would delete version ID: ${version_id}"
-            else
-              echo "Deleting version ID: ${version_id}"
-              if gh api \
-                --method DELETE \
-                -H "Accept: application/vnd.github+json" \
-                -H "X-GitHub-Api-Version: 2022-11-28" \
-                "/orgs/${OWNER}/packages/container/${PACKAGE_NAME}/versions/${version_id}"; then
-                DELETED=$((DELETED + 1))
-              else
-                echo "WARNING: Failed to delete version ID ${version_id}"
-                FAILED=$((FAILED + 1))
-              fi
-              sleep 1  # Avoid hitting the GitHub API rate limit
-            fi
-          done
-
-          # Write summary to Actions UI
-          {
-            echo "## Cleanup Summary"
-            echo "- **Package:** \`${PACKAGE_NAME}\`"
-            echo "- **Retention:** ${RETENTION_DAYS} days"
-            echo "- **Dry run:** ${DRY_RUN}"
-            echo "- **Candidates found:** ${COUNT}"
-            if [ "$DRY_RUN" = "true" ]; then
-              echo ""
-              echo "### Candidates (dry run)"
-              for version_id in $OLD_VERSIONS; do
-                echo "- \`${version_id}\`"
-              done
-            else
-              echo "- **Deleted:** ${DELETED}"
-              echo "- **Failed:** ${FAILED}"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          if [ "$DRY_RUN" != "true" ] && [ "$FAILED" -gt 0 ]; then
-            echo "Cleanup finished with ${FAILED} failure(s)."
-            exit 1
-          fi
-
-          echo "Cleanup complete."
+        run: bash .github/workflows/scripts/cleanup_untagged_images.sh
