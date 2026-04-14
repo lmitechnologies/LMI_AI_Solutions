@@ -101,6 +101,12 @@ jobs:
       contents: read
       packages: write
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          lfs: false
+          submodules: false
+
       - name: Delete untagged images older than retention period
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
