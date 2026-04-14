@@ -98,6 +98,40 @@ def cpu_models():
     return rf_model, od_pt, od_pth
 
 
+KEYS = ["boxes", "scores", "masks", "segments", "classes"]
+
+
+def _assert_empty_out(out, keys=None):
+    """Assert all specified per-image output keys are empty."""
+    if keys is None:
+        keys = KEYS
+    for k in keys:
+        assert len(out[k]) == 0, f"Expected empty out['{k}'], got {len(out[k])}"
+
+
+def _assert_lengths_equal(out, keys=None):
+    """Assert all specified per-image output keys have equal lengths."""
+    if keys is None:
+        keys = KEYS
+    lengths = [len(out[k]) for k in keys]
+    assert len(set(lengths)) == 1, f"Unequal lengths: {dict(zip(keys, lengths))}"
+
+
+def _assert_nonempty_out(out, keys=None):
+    """Assert all specified per-image output keys are non-empty and have equal lengths."""
+    if keys is None:
+        keys = KEYS
+    _assert_lengths_equal(out, keys)
+    for k in keys:
+        assert len(out[k]) > 0, f"Expected non-empty out['{k}']"
+
+
+def _assert_scores_geq(out, min_conf):
+    """Assert all per-image scores are >= min_conf."""
+    for sc in out["scores"]:
+        assert sc >= min_conf, f"Score {sc} < {min_conf}"
+
+
 def assert_outputs_match_rf(rf_preds, outputs, label):
     rf_boxes = rf_preds.xyxy
     rf_masks = rf_preds.mask
@@ -134,17 +168,14 @@ class Test_Rfdetr_Model:
     def test_empty(self, obj_detector):
         empty_img = np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
         batch_outputs, _ = obj_detector.predict(empty_img, configs=0.5)
-        outputs = {k: v[0] for k, v in batch_outputs.items()}
-        assert len(outputs["boxes"]) == 0
-        assert len(outputs["scores"]) == 0
-        assert len(outputs["classes"]) == 0
-        assert len(outputs["masks"]) == 0
+        out = {k: v[0] for k, v in batch_outputs.items()}
+        _assert_empty_out(out)
 
     def test_confidence(self, imgs_coco, obj_detector):
         img = cv2.resize(imgs_coco[0], (IMAGE_SIZE, IMAGE_SIZE))
         batch_outputs, _ = obj_detector.predict(img, configs=1.0)
-        outputs = {k: v[0] for k, v in batch_outputs.items()}
-        assert len(outputs["boxes"]) == 0
+        out = {k: v[0] for k, v in batch_outputs.items()}
+        _assert_empty_out(out)
 
     def test_operators(self, imgs_coco, obj_detector):
         for idx, img in enumerate(imgs_coco):
@@ -152,18 +183,19 @@ class Test_Rfdetr_Model:
             img_resized = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
             operators = [{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}]
 
-            batch_outputs, _ = obj_detector.predict(img_resized, configs=0.5, operators=operators, return_segments=True)
-            outputs = {k: v[0] for k, v in batch_outputs.items()}
-            assert len(outputs["boxes"]) > 0, "Expected detections with operators, but got none."
+            batch_outputs, _ = obj_detector.predict(img_resized, configs=0.5, operators=operators, return_segments=False)
+            out = {k: v[0] for k, v in batch_outputs.items()}
+            _assert_nonempty_out(out, ["boxes", "scores", "classes", "masks"])
+            _assert_empty_out(out, ["segments"])
+            _assert_scores_geq(out, 0.5)
 
-            if len(outputs["boxes"]) > 0:
-                # boxes with operators should be scaled to the original image size
-                assert np.all(outputs["boxes"][:, 0] <= w)
-                assert np.all(outputs["boxes"][:, 1] <= h)
-                assert np.all(outputs["boxes"][:, 2] <= w)
-                assert np.all(outputs["boxes"][:, 3] <= h)
+            # boxes with operators should be scaled to the original image size
+            assert np.all(out["boxes"][:, 0] <= w)
+            assert np.all(out["boxes"][:, 1] <= h)
+            assert np.all(out["boxes"][:, 2] <= w)
+            assert np.all(out["boxes"][:, 3] <= h)
 
-            annotated_image = obj_detector.annotate_image(outputs, img)
+            annotated_image = obj_detector.annotate_image(out, img)
             out_name = f"out_operators_{idx}.jpg"
             os.makedirs(OUT_DIR, exist_ok=True)
             cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
@@ -180,16 +212,17 @@ class Test_Rfdetr_Model:
         os.makedirs(OUT_DIR, exist_ok=True)
         for idx, img in enumerate(imgs_coco):
             w, h = original_sizes[idx]
-            outputs = {k: v[idx] for k, v in batch_outputs.items()}
-            assert len(outputs["boxes"]) > 0, f"Expected detections for image {idx}, but got none."
+            out = {k: v[idx] for k, v in batch_outputs.items()}
+            _assert_nonempty_out(out)
+            _assert_scores_geq(out, 0.5)
 
             # boxes with operators should be scaled to the original image size
-            assert np.all(outputs["boxes"][:, 0] <= w)
-            assert np.all(outputs["boxes"][:, 1] <= h)
-            assert np.all(outputs["boxes"][:, 2] <= w)
-            assert np.all(outputs["boxes"][:, 3] <= h)
+            assert np.all(out["boxes"][:, 0] <= w)
+            assert np.all(out["boxes"][:, 1] <= h)
+            assert np.all(out["boxes"][:, 2] <= w)
+            assert np.all(out["boxes"][:, 3] <= h)
 
-            annotated_image = obj_detector.annotate_image(outputs, img)
+            annotated_image = obj_detector.annotate_image(out, img)
             out_name = f"out_operators_batch_{idx}.jpg"
             cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
 
@@ -198,34 +231,31 @@ class Test_Rfdetr_Model:
         operators = [[{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}] for w, h in original_sizes]
         imgs_resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
 
-        batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators, return_segments=True)
-
+        batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators)
         assert len(batch_outputs["boxes"]) == len(imgs_coco)
 
         os.makedirs(OUT_DIR, exist_ok=True)
         for idx, img in enumerate(imgs_coco):
             w, h = original_sizes[idx]
-            outputs = {k: v[idx] for k, v in batch_outputs.items()}
-            assert len(outputs["boxes"]) > 0, f"Expected detections for image {idx}, but got none."
+            out = {k: v[idx] for k, v in batch_outputs.items()}
+            _assert_nonempty_out(out)
+            _assert_scores_geq(out, 0.5)
 
             # boxes with operators should be scaled to the original image size
-            assert np.all(outputs["boxes"][:, 0] <= w)
-            assert np.all(outputs["boxes"][:, 1] <= h)
-            assert np.all(outputs["boxes"][:, 2] <= w)
-            assert np.all(outputs["boxes"][:, 3] <= h)
+            assert np.all(out["boxes"][:, 0] <= w)
+            assert np.all(out["boxes"][:, 1] <= h)
+            assert np.all(out["boxes"][:, 2] <= w)
+            assert np.all(out["boxes"][:, 3] <= h)
 
-            annotated_image = trt_model.annotate_image(outputs, img)
+            annotated_image = trt_model.annotate_image(out, img)
             out_name = f"out_trt_operators_batch_{idx}.jpg"
             cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
 
     def test_trt_empty(self, trt_model):
         empty_img = np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
         batch_outputs, _ = trt_model.predict(empty_img, configs=0.5)
-        outputs = {k: v[0] for k, v in batch_outputs.items()}
-        assert len(outputs["boxes"]) == 0
-        assert len(outputs["scores"]) == 0
-        assert len(outputs["classes"]) == 0
-        assert len(outputs["masks"]) == 0
+        out = {k: v[0] for k, v in batch_outputs.items()}
+        _assert_empty_out(out)
 
     def test_trt_warmup(self, trt_model):
         trt_model.warmup()

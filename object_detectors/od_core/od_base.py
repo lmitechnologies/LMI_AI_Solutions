@@ -1,6 +1,5 @@
 import abc
 import logging
-import random
 import time
 from typing import List
 
@@ -359,16 +358,19 @@ class ODBase(abc.ABC):
         return result
 
     @staticmethod
-    def annotate_image(results, image, colormap=None, line_thickness=None, hide_label=False, hide_bbox=False):
+    def annotate_image(results, image, colormap=None, **kwargs):
         """Annotate model results on the image.
 
         Args:
             results (dict): Detection results, e.g. {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[], 'points':[]}.
             image (np.ndarray | torch.Tensor): Input image.
             colormap (dict, optional): Maps class name to RGB tuple. Defaults to None (random colors).
-            line_thickness (int, optional): Bounding box line thickness. Defaults to None.
-            hide_label (bool): If True, suppress class/score labels.
-            hide_bbox (bool): If True, suppress bounding boxes.
+
+        kwargs:
+            line_thickness (int, optional): Bounding box line thickness.
+            hide_label (bool, optional): If True, suppress class/score labels.
+            hide_bbox (bool, optional): If True, suppress bounding boxes.
+            plot_segments (bool, optional): If True, plot segments when available.
 
         Returns:
             np.ndarray: Annotated copy of the image.
@@ -382,6 +384,10 @@ class ODBase(abc.ABC):
         image = ODBase._to_numpy(image).copy()
         if not len(boxes):
             return image
+
+        hide_label = kwargs.get("hide_label", False)
+        hide_bbox = kwargs.get("hide_bbox", False)
+        line_thickness = kwargs.get("line_thickness", None)
 
         boxes = ODBase._to_numpy(boxes)
 
@@ -411,11 +417,10 @@ class ODBase(abc.ABC):
                     cv2.circle(image, (points[i][j][0], points[i][j][1]), 4, (255, 255, 255), -1)
 
         segments = results.get("segments", [])
-        if len(segments):
-            for i, seg in enumerate(segments):
+        if len(segments) and kwargs.get("plot_segments", False):
+            for seg in segments:
                 seg = ODBase._to_numpy(seg).astype(int)
-                color = None if colormap is None else colormap.get(classes[i])
-                color = color or [random.randint(0, 255) for _ in range(3)]
+                color = (255, 255, 255)
                 pts = seg.reshape((-1, 1, 2))
                 cv2.polylines(image, [pts], isClosed=True, color=color, thickness=line_thickness or 2)
 

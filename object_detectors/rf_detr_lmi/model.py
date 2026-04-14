@@ -132,7 +132,7 @@ class RfdetrBase(ODBase):
         images = kwargs["images"]
         configs = self._parse_confidence_config(kwargs.get("configs"), list(self.class_map.values()))
         operators = kwargs.get("operators", [[] for _ in range(len(images))])
-        return_segments = kwargs.get("return_segments", False)
+        return_segments = kwargs.get("return_segments", True)
 
         if len(outputs) < 2:
             raise RuntimeError(f"Expected at least 2 output tensors, got {len(outputs)}")

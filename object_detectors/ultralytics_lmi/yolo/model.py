@@ -180,7 +180,7 @@ class YoloSeg(Yolo):
         segments = [ops.scale_coords(masks.shape[1:], x, img_shape, normalize=False) for x in ops.masks2segments(masks)]
         return segments
 
-    def construct_result(self, pred, img, orig_img, conf, operators=None, proto=None, return_segments=False, **kwargs):
+    def construct_result(self, pred, img, orig_img, conf, operators=None, proto=None, return_segments=True, **kwargs):
         """Constructs a Results object from the model prediction.
 
         Args:
@@ -211,7 +211,7 @@ class YoloSeg(Yolo):
         results = self._apply_revert_to_result(results, operators, **kwargs)
         return results, M
 
-    def construct_results(self, preds, img, orig_imgs, conf, operators=None, protos=None, return_segments=False, **kwargs):
+    def construct_results(self, preds, img, orig_imgs, conf, operators=None, protos=None, return_segments=True, **kwargs):
         """Constructs the results from the model predictions.
 
         Args:

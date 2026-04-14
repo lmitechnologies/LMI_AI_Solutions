@@ -48,8 +48,7 @@ class Detectron2Base(ODBase):
             **kwargs: Forwarded predict kwargs; reads ``return_segments``.
 
         Returns:
-            tuple: (batch_masks, batch_segments) where batch_segments is an empty list
-                   unless ``return_segments=True`` is passed in kwargs.
+            tuple: (batch_masks, batch_segments)
         """
         batch_segments = []
         if len(raw_masks) == 0:
@@ -62,7 +61,7 @@ class Detectron2Base(ODBase):
             raw_masks = raw_masks.squeeze(1)
         batch_masks = rescale_masks(raw_masks, boxes, image_size, mask_threshold)
 
-        if kwargs.get("return_segments", False):
+        if kwargs.get("return_segments", True):
             batch_segments = [mask_to_polygon_cv2(_to_np(m)) for m in batch_masks]
 
         return batch_masks, batch_segments
