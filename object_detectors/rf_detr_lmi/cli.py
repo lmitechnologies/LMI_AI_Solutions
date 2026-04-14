@@ -8,7 +8,6 @@ import yaml
 
 try:
     from rfdetr import (
-        RFDETR2XLarge,
         RFDETRLarge,
         RFDETRMedium,
         RFDETRNano,
@@ -19,7 +18,6 @@ try:
         RFDETRSegSmall,
         RFDETRSegXLarge,
         RFDETRSmall,
-        RFDETRXLarge,
     )
 except ImportError as e:
     logging.error(f"Failed to import rfdetr models: {e}")
@@ -44,8 +42,8 @@ MODEL_REGISTRY = {
     (TASK_OD, "small"): RFDETRSmall,
     (TASK_OD, "medium"): RFDETRMedium,
     (TASK_OD, "large"): RFDETRLarge,
-    (TASK_OD, "xlarge"): RFDETRXLarge,
-    (TASK_OD, "2xlarge"): RFDETR2XLarge,
+    # (TASK_OD, "xlarge"): RFDETRXLarge,
+    # (TASK_OD, "2xlarge"): RFDETR2XLarge,
     (TASK_SEGMENTATION, "nano"): RFDETRSegNano,
     (TASK_SEGMENTATION, "small"): RFDETRSegSmall,
     (TASK_SEGMENTATION, "medium"): RFDETRSegMedium,
@@ -190,6 +188,7 @@ def load_model(configs: Dict[str, Any]) -> Any:
         conversion_configs = configs.get("conversion_configs", {})
         if not conversion_configs:
             raise ValueError("Conversion configuration is missing.")
+        # conversion_configs.pop("output_dir", None)
         return model_class(**conversion_configs)
     else:
         raise ValueError(f"Unsupported operation: {operation}")
@@ -253,8 +252,9 @@ def get_conversion_output_dir(conversion_configs: Dict[str, Any]) -> str:
     Returns:
         Output directory path for converted models.
     """
-    output_dir = conversion_configs.get("output_dir")
+    output_dir = conversion_configs.pop("output_dir", None)
     if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
         return output_dir
 
     # Fallback: use the directory of pretrain_weights

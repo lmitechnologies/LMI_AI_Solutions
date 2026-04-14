@@ -39,7 +39,7 @@ def inference_run(args):
     confidence = args.get("confidence")
 
     if not os.path.exists(out_path):
-        os.makedirs(args.output)
+        os.makedirs(out_path)
 
     with open(class_map_path, "r") as f:
         class_map = json.load(f)
@@ -61,7 +61,7 @@ def inference_run(args):
         csv_results = []
         img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        outputs = model.predict(img, confs=confidence_map, return_segments=True)
+        outputs, _ = model.predict(img, configs=confidence_map, return_segments=True)
         if len(outputs["boxes"]) == 0:
             logger.warning(f"No detections found for image: {img_path}")
             continue
@@ -70,7 +70,7 @@ def inference_run(args):
         outputs["scores"] = outputs["scores"][0]
         outputs["masks"] = outputs["masks"][0]
         outputs["segments"] = outputs["segments"][0]
-        annotated_image = model.annotate_image(outputs, img, show_segments=True)
+        annotated_image = model.annotate_image(outputs, img)
 
         # save the image
         fname = os.path.basename(img_path)

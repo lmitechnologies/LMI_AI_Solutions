@@ -90,9 +90,5 @@ class YoloCore:
             imgsz = list(imgsz)
 
         imgsz = [1, 3] + imgsz
-        im = torch.empty(
-            *imgsz,
-            dtype=torch.half if self.model.fp16 else torch.float,
-            device=self.device,
-        )
+        im = torch.empty(*imgsz, dtype=torch.half if self.model.fp16 else torch.float, device=self.device)
         self.forward(im)

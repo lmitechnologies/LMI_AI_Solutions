@@ -118,7 +118,7 @@ Post-process the predictions from the object detection model.
 **Usage Example:**
 
 ```python
-predictions = model.postprocess(images, outputs, confs={"person": 0.5}, process_masks=True)
+predictions = model.postprocess(images, outputs, confs={"person": 0.5})
 ```
 
 ### Predict
@@ -143,7 +143,7 @@ Perform prediction on the given images.
 
 ```python
 # Running prediction
-results = model.predict(images, confs={"person": 0.5}, process_masks=True)
+results = model.predict(images, confs={"person": 0.5})
 ```
 
 ### Annotate Image

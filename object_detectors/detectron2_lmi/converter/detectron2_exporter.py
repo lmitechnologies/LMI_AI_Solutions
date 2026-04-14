@@ -135,15 +135,20 @@ def get_sample_inputs(args, cfg):
     else:
         # get a sample data
         original_image = cv2.imread(args.get("sample_image", None))
-        original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
-        logger.info(f"Processing image {args.get('sample_image', None)}")
+        if original_image is None:
+            raise ValueError(f"Could not read image {args.get('sample_image', None)}")
+
+        logger.info(f"Input image format: {cfg.INPUT.FORMAT}")
         logger.info(f"Image size (h,w): {original_image.shape[:2]}")
+
+        if cfg.INPUT.FORMAT == "RGB":
+            original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
         aug = T.ResizeShortestEdge([original_image.shape[0], original_image.shape[0]], original_image.shape[0])
         image = aug.get_transform(original_image).apply_image(original_image)
-        height, width = original_image.shape[:2]
         image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
+        logger.info(f"Transformed image shape: {image.shape[1:]}")
 
-        inputs = {"image": image, "height": height, "width": width}
+        inputs = {"image": image, "height": original_image.shape[0], "width": original_image.shape[1]}
 
         # Sample ready
         sample_inputs = [inputs]

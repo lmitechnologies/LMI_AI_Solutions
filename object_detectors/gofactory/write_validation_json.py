@@ -149,7 +149,8 @@ def write_json(
         im_padded, annotations_padded, _ = pad_annotated_image(im_resized, annotations_resized, w_train, h_train)
         labels = parse_annotations(annotations_padded, h_train, w_train, model_type)
 
-        preds, _ = model.predict(im_padded, confidence, iou=iou, max_det=max_det)
+        preds_batch, _ = model.predict(im_padded, confidence, iou=iou, max_det=max_det)
+        preds = {k: v[0] for k, v in preds_batch.items()}
 
         # get ious
         ious = None

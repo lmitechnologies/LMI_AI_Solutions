@@ -1,48 +1,39 @@
 import logging
-import os
-import subprocess
 
 logger = logging.getLogger(__name__)
 
 
 def trtexec(onnx_dir: str, **kwargs) -> None:
-    engine_dir = onnx_dir.replace(".onnx", ".engine")
-
-    # Base trtexec command
-    trt_command = " ".join(
-        [
-            "trtexec",
-            f"--onnx={onnx_dir}",
-            f"--saveEngine={engine_dir}",
-            "--memPoolSize=workspace:4096 --fp16",
-            "--useCudaGraph --useSpinWait --warmUp=500 --avgRuns=1000 --duration=10",
-            f"{'--verbose' if kwargs.get('verbose', False) else ''}",
-        ]
-    )
-
-    if kwargs.get("profile", False):
-        profile_dir = onnx_dir.replace(".onnx", ".nsys-rep")
-        # Wrap with nsys profile command
-        command = " ".join(["nsys profile", f"--output={profile_dir}", "--trace=cuda,nvtx", "--force-overwrite true", trt_command])
-        logger.info(f"Profile data will be saved to: {profile_dir}")
-    else:
-        command = trt_command
-
-    run_command_shell(command, kwargs.get("dry_run", False))
-
-
-def run_command_shell(command, dry_run: bool = False) -> int:
-    if dry_run:
-        logger.info("")
-        logger.info(f"CUDA_VISIBLE_DEVICES={os.environ['CUDA_VISIBLE_DEVICES']} {command}")
-        logger.info("")
     try:
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
-        return result
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Command failed with exit code {e.returncode}")
-        logger.error(f"Error output:\n{e.stderr.decode('utf-8')}")
-        raise
+        import tensorrt as trt
+    except ImportError as e:
+        raise ImportError("tensorrt is required for TensorRT conversion. Install it with: pip install tensorrt") from e
+
+    engine_dir = onnx_dir.replace(".onnx", ".engine")
+    workspace_mb = 4096
+    verbose = kwargs.get("verbose", False)
+
+    trt_logger = trt.Logger(trt.Logger.VERBOSE if verbose else trt.Logger.WARNING)
+    builder = trt.Builder(trt_logger)
+    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
+    parser = trt.OnnxParser(network, trt_logger)
+
+    with open(onnx_dir, "rb") as f:
+        if not parser.parse(f.read()):
+            for i in range(parser.num_errors):
+                logger.error(parser.get_error(i))
+            raise RuntimeError(f"Failed to parse ONNX: {onnx_dir}")
+
+    config = builder.create_builder_config()
+    config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace_mb << 20)
+    if builder.platform_has_fast_fp16:
+        config.set_flag(trt.BuilderFlag.FP16)
+
+    logger.info(f"Building TensorRT engine, saving to {engine_dir} ...")
+    engine_bytes = builder.build_serialized_network(network, config)
+    with open(engine_dir, "wb") as f:
+        f.write(engine_bytes)
+    logger.info("Done.")
 
 
 def convert_to_tensorrt(onnx_path: str, **kwargs) -> None:

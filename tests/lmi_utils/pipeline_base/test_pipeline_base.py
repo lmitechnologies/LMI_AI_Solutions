@@ -31,8 +31,7 @@ class PipelineOD(PipelineBase):
         preprocessed_images, ops_list = self.preprocess(model_role, images)
 
         # 2. Mock inference
-        for im in preprocessed_images:
-            self.models[model_role].predict(im, 0.5)
+        self.models[model_role].predict(preprocessed_images, 0.5)
 
         # 3. Reconstruct
         reconstructed_images = self.reconstruct(preprocessed_images, ops_list)

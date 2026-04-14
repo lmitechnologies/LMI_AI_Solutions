@@ -7,4 +7,4 @@ numpy<2.0
 ultralytics==8.4.31
 onnx==1.21.0
 pytest==9.0.2
-rfdetr<1.6.0
+rfdetr==1.6.3
