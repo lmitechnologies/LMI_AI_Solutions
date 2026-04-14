@@ -5,7 +5,7 @@ import pkgutil
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 PACKAGES = ["anomaly_detectors.anomalib_lmi", "anomaly_detectors.ad_core"]
-TARGET_MODULE_SUFFIXES = [".anomaly_model", ".anomaly_model2", ".anomaly_model_v2"]  # Target suffixes to look for in the packages
+TARGET_MODULE_SUFFIXES = [".anomaly_model_v0", ".anomaly_model_v1", ".anomaly_model_v2"]  # Target suffixes to look for in the packages
 
 
 logger = logging.getLogger(__name__)
@@ -41,19 +41,19 @@ class AnomalyDetectorRegistry:
         versions: Optional[List[str]] = metadata.get("versions")
         info: Dict[str, Any] = metadata.get("info", {})
 
+        if (
+            not isinstance(frameworks, list)
+            or not isinstance(model_names, list)
+            or not isinstance(tasks, list)
+            or not isinstance(versions, list)
+        ):
+            raise TypeError("'frameworks', 'model_names', 'tasks', and 'versions' must be lists.")
+
         if not all([frameworks, model_names, tasks, versions]):
             raise ValueError("Metadata must include 'frameworks', 'model_names', 'tasks', and 'versions' (all non-empty lists).")
 
         def decorator(wrapper_cls: Type) -> Type:
             """The actual decorator that registers the class."""
-            if (
-                not isinstance(frameworks, list)
-                or not isinstance(model_names, list)
-                or not isinstance(tasks, list)
-                or not isinstance(versions, list)
-            ):
-                raise TypeError("'frameworks', 'model_names', 'tasks', and 'versions' must be lists.")
-
             for framework in frameworks:
                 for model_name in model_names:
                     for task in tasks:
@@ -67,6 +67,7 @@ class AnomalyDetectorRegistry:
                                     f"task='{task}', version='{version}', info='{json.dumps(info, sort_keys=True)}' "
                                     f"points to {existing_cls.__module__}. Cannot re-register with {wrapper_cls.__module__}."
                                 )
+                                continue
                             cls._registry[key] = wrapper_cls
             return wrapper_cls
 
@@ -76,7 +77,7 @@ class AnomalyDetectorRegistry:
     def get_class(cls, metadata: Dict[str, Any]) -> Type:
         framework: Optional[str] = metadata.get("framework") or metadata.get("package")
         model_name: Optional[str] = metadata.get("model_name") or metadata.get("algorithm")
-        task: Optional[str] = metadata.get("task", "seg") or metadata.get("model_type", "seg")
+        task: Optional[str] = metadata.get("task") or metadata.get("model_type") or "seg"
 
         info: Dict[str, Any] = metadata.get("info", {})
 
@@ -84,6 +85,7 @@ class AnomalyDetectorRegistry:
             raise ValueError(
                 "Lookup metadata must include 'framework' (or 'package'), 'model_name' (or 'algorithm'), and 'task' (or 'model_type')."
             )
+        # TODO: improve version handling logic to be more robust
         version: str = metadata.get("version", "v0" if "0" in framework else "v1")
         key = cls._generate_key(framework, model_name, task, version, info)
 

@@ -173,7 +173,7 @@ services:
     runtime: nvidia
     command: >
       bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
-      python3 -m anomalib_lmi.anomaly_model
+      python3 -m anomalib_lmi.anomaly_model_v0
       --action convert -i /app/onnx/model.onnx -e /app/engine"
 ```
 ### 3.3 Convert model
@@ -209,7 +209,7 @@ services:
     runtime: nvidia
     command: >
       bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
-      python3 -m anomalib_lmi.anomaly_model
+      python3 -m anomalib_lmi.anomaly_model_v0
       --action test -i /app/model/model.engine --plot --generate_stats"
 ```
 ### 4.2 Validate model

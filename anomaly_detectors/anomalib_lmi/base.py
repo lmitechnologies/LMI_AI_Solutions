@@ -224,6 +224,7 @@ class Anomalib_Base(ABC):
         anom_threshold=None,
         anom_max=None,
         overlap_mode="average",
+        limit=None,
     ):
         """
         Desc: test model performance
@@ -236,6 +237,7 @@ class Anomalib_Base(ABC):
             - anom_threshold: user defined anomaly threshold (sets beginning of heat map)
             - anom_max: user defined anomaly max (sets end of the heat map)
             - overlap_mode: for tiling, can be "average", "max", "cosine", "linear", "gaussian"
+            - limit: if set, process only the first N images (useful for smoke tests)
         """
         import csv
         import time
@@ -275,6 +277,8 @@ class Anomalib_Base(ABC):
         # Input data
         directory_path = Path(images_path)
         images = list(directory_path.rglob("*.png")) + list(directory_path.rglob("*.jpg"))
+        if limit is not None:
+            images = images[:limit]
         self.logger.info(f"{len(images)} images from {images_path}")
         if not images:
             return

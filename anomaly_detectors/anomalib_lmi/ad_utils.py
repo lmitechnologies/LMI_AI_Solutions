@@ -269,7 +269,7 @@ def postprocess(
             - boolean
             - switch for turning on/off annotation (returns original image if useAnnotation=False)
     """
-    from anomaly_detectors.anomalib_lmi.anomaly_model import AnomalyModel
+    from anomaly_detectors.anomalib_lmi import AnomalyModelV0
 
     PASS = "PASS"
     FAIL = "FAIL"
@@ -290,7 +290,7 @@ def postprocess(
             raise ValueError("Required parameters (size_fail && contour_color_threshold) must be provided when useContours=True")
         heat_map = anomaly_map
         heat_map_rsz = cv2.resize(heat_map.astype(np.uint8), (w, h))
-        residual_gray = (AnomalyModel.normalize_anomaly_map(heat_map_rsz) * 255).astype(np.uint8)
+        residual_gray = (AnomalyModelV0.normalize_anomaly_map(heat_map_rsz) * 255).astype(np.uint8)
         residual_bgr = cv2.applyColorMap(np.expand_dims(residual_gray, -1), cv2.COLORMAP_TURBO).astype(np.float32)
         decision, contours = self.processContours(residual_bgr, anomaly_map, color_threshold, size_fail, size_ignore)
     else:
@@ -301,7 +301,7 @@ def postprocess(
 
     final_image = orig_image
     if useAnnotation:
-        annot = AnomalyModel.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
+        annot = AnomalyModelV0.annotate(orig_image.astype(np.uint8), cv2.resize(anomaly_map.astype(np.uint8), (w, h)))
         # cv2.putText(annot,
         #             text=f'ad:{decision},'+ str(max_error).strip("{}").replace(" ","").replace("\'",""),
         #             org=(4,h-20), fontFace=0, fontScale=1, color=[225, 255, 255],

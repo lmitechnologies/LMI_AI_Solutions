@@ -200,7 +200,7 @@ services:
     ipc: host
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && python -m anomaly_detectors.anomalib_lmi.anomaly_model2 convert -i /app/weights/torch/model.pt -e /app/weights/engine"
+      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && python -m anomaly_detectors.anomalib_lmi.anomaly_model_v1 convert -i /app/weights/torch/model.pt -e /app/weights/engine"
 
 ```
 
@@ -239,7 +239,7 @@ services:
     ipc: host
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && python -m anomaly_detectors.anomalib_lmi.anomaly_model2 test -i /app/weights/engine/model.engine -d /app/data -o /app/outputs -p"
+      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && python -m anomaly_detectors.anomalib_lmi.anomaly_model_v1 test -i /app/weights/engine/model.engine -d /app/data -o /app/outputs -p"
 
 ```
 
@@ -295,7 +295,7 @@ python -m lmi_utils.image_utils.img_tile --option tile -i PATH_DATA -o PATH_OUT 
 Use original images (not the tiles), where `PATH_DATA` is the path to the original images.
 
 ```bash
-python -m anomaly_detectors.anomalib_lmi.anomaly_model2 test -i PATH_MODEL -d PATH_DATA -o PATH_OUT -p --tile TILE_SZ TILE_SZ --stride STRIDE STRIDE
+python -m anomaly_detectors.anomalib_lmi.anomaly_model_v1 test -i PATH_MODEL -d PATH_DATA -o PATH_OUT -p --tile TILE_SZ TILE_SZ --stride STRIDE STRIDE
 ```
 
 ### 5.3 Convert to TensorRT
@@ -303,5 +303,5 @@ python -m anomaly_detectors.anomalib_lmi.anomaly_model2 test -i PATH_MODEL -d PA
 The script requires the original image size, tile size and stride for TensorRT conversion, where `H` and `W` are the height and width from original images (not the tiles).
 
 ```bash
-python -m anomaly_detectors.anomalib_lmi.anomaly_model2 convert -i MODEL_PATH -o EXPORT_PATH --hw H W --tile TILE TILE --stride STRIDE STRIDE
+python -m anomaly_detectors.anomalib_lmi.anomaly_model_v1 convert -i MODEL_PATH -o EXPORT_PATH --hw H W --tile TILE TILE --stride STRIDE STRIDE
 ```
