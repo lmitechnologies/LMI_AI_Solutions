@@ -9,9 +9,8 @@ import torch
 from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 from lmi_utils.image_utils.tiler import OverlapMode, ScaleMode, Tiler
 
-from .base import Anomalib_Base, to_list
+from ..base import Anomalib_Base, to_list
 
-MINIMUM_QUANT = 1e-12
 Binding = namedtuple("Binding", ("name", "dtype", "shape", "data", "ptr"))
 
 # TensorRT binding names
@@ -27,7 +26,7 @@ TRT_OUTPUT_NAME = "anomaly_map"
         versions=["v2"],
     )
 )
-class AnomalyModel_V2(Anomalib_Base):
+class AnomalyModel(Anomalib_Base):
     """
     Desc: Class used for AD model inference.
     """
@@ -42,7 +41,7 @@ class AnomalyModel_V2(Anomalib_Base):
         tile_mode: str = "padding",
         **kwargs: Any,
     ) -> None:
-        """Initialize the AnomalyModel_V2.
+        """Initialize the AnomalyModel.
 
         Args:
             model_path: Path to the model file (either .pt or .engine)
@@ -487,6 +486,7 @@ if __name__ == "__main__":
         default="gaussian",
         help='overlap mode for tiling, can be "average", "max", "cosine", "linear", "gaussian"',
     )
+    test_ap.add_argument("--limit", type=int, default=None, help="process only the first N images")
     test_ap.add_argument(
         "-device",
         "--device",
@@ -522,7 +522,7 @@ if __name__ == "__main__":
     model_path = args["model_path"]
 
     mode = "resize" if args["resize"] else "padding"
-    ad = AnomalyModel_V2(model_path, args["tile"], args["stride"], mode, device=args["device"])
+    ad = AnomalyModel(model_path, args["tile"], args["stride"], mode, device=args["device"])
 
     if action == "convert":
         export_dir = args["export_dir"]
@@ -542,4 +542,5 @@ if __name__ == "__main__":
             args["ad_threshold"],
             args["ad_max"],
             args["overlap_mode"],
+            args["limit"],
         )

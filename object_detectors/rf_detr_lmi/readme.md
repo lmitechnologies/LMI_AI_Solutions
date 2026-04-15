@@ -41,12 +41,10 @@ RUN git clone https://github.com/roboflow/rf-detr.git
 RUN pip install -e rf-detr
 RUN pip install onnxsim onnx-graphsurgeon pycuda seaborn
 
-
-
 # clone LMI AI Solutions repository
 WORKDIR /repos
 RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git
-RUN cd LMI_AI_Solutions && pip install -e .
+RUN pip install -e LMI_AI_Solutions
 ```
 
 ##### Configuration
@@ -121,7 +119,7 @@ services:
       - ./preprocessed/:/app/data/
       - ./output:/app/output
     command: >
-      python3 -m rf_detr_lmi.cli -c /app/configs/rf-detr.yaml
+      python3 -m object_detectors.rf_detr_lmi.cli -c /app/configs/rf-detr.yaml
 ```
 
 ##### Converting to TensorRT Engine
@@ -154,7 +152,7 @@ services:
       - ./preprocessed/:/app/data/
       - ./output:/app/output
     command: >
-      python3 -m rf_detr_lmi.cli -c /app/configs/rf-detr.convert.yaml
+      python3 -m object_detectors.rf_detr_lmi.cli -c /app/configs/rf-detr.convert.yaml
 ```
 
 ##### Inference
@@ -174,6 +172,6 @@ services:
       - ./preprocessed/:/app/data/ # images
       - ./output:/app/output # folder where the model is stored and outputs are generated (can be different if prefered)
     command: >
-      python3 -m rf_detr_lmi.infer --weights /app/output/v1/checkpoint_best_total.pth --input /app/data/images --output /app/output/predictions
+      python3 -m object_detectors.rf_detr_lmi.infer --weights /app/output/v1/checkpoint_best_total.pth --input /app/data/images --output /app/output/predictions
 ```
 

@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import auc, f1_score, precision_score, recall_score, roc_curve
 
-from anomaly_detectors.anomalib_lmi.anomaly_model2 import AnomalyModel2
+from anomaly_detectors.anomalib_lmi.v1.model import AnomalyModel as AnomalyModelV1
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
@@ -188,7 +188,7 @@ def load_and_validate_data(data_path: Path) -> Tuple[List[Path], List[Path]]:
     return good_list, bad_list
 
 
-def load_models(model1_path: Path, model2_path: Path) -> Tuple[AnomalyModel2, AnomalyModel2]:
+def load_models(model1_path: Path, model2_path: Path) -> Tuple[AnomalyModelV1, AnomalyModelV1]:
     """
     Load two anomaly detection models.
 
@@ -199,15 +199,15 @@ def load_models(model1_path: Path, model2_path: Path) -> Tuple[AnomalyModel2, An
     Returns:
         Tuple of (model1, model2).
     """
-    model1 = AnomalyModel2(model1_path)
-    model2 = AnomalyModel2(model2_path)
+    model1 = AnomalyModelV1(model1_path)
+    model2 = AnomalyModelV1(model2_path)
     return model1, model2
 
 
 def process_single_image(
     image: np.ndarray,
-    model1: AnomalyModel2,
-    model2: AnomalyModel2,
+    model1: AnomalyModelV1,
+    model2: AnomalyModelV1,
     ops1: List[Dict],
     ops2: List[Dict],
     preprocessor: Preprocessor,
@@ -251,7 +251,7 @@ def process_single_image(
 
 
 def run_inference(
-    image_paths: List[Path], model1: AnomalyModel2, model2: AnomalyModel2, ops1: List[Dict], ops2: List[Dict], topk: float
+    image_paths: List[Path], model1: AnomalyModelV1, model2: AnomalyModelV1, ops1: List[Dict], ops2: List[Dict], topk: float
 ) -> Tuple[List[float], List[float]]:
     """
     Run inference on images using both models and calculate anomaly scores.
@@ -321,8 +321,8 @@ def plot_and_save_roc(
 def annotate_and_save_images(
     image_paths: List[Path],
     good_list: List[Path],
-    model1: AnomalyModel2,
-    model2: AnomalyModel2,
+    model1: AnomalyModelV1,
+    model2: AnomalyModelV1,
     model1_scores: List[float],
     model2_scores: List[float],
     ops1: List[Dict],

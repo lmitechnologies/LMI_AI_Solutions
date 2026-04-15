@@ -14,8 +14,8 @@ from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
 
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
-from anomaly_detectors.anomalib_lmi.anomaly_model_v2 import AnomalyModel_V2
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v2_torchscript
+from anomaly_detectors.anomalib_lmi.v2.model import AnomalyModel as AnomalyModelV2
 from lmi_utils.gadget_utils import pipeline_utils
 
 os.environ["TRUST_REMOTE_CODE"] = "1"
@@ -53,7 +53,7 @@ def test_data():
     return out, names
 
 
-def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyModel_V2]):
+def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyModelV2]):
     paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
     for p in paths:
         # using anomalib code
@@ -79,11 +79,11 @@ def test_compare_results_with_anomalib():
     compare prediction results between current implementation and anomalib
     """
     model1 = TorchInferencer(MODEL_PATH, device=DEVICE)
-    model2 = AnomalyModel_V2(MODEL_PATH, device=DEVICE)
+    model2 = AnomalyModelV2(MODEL_PATH, device=DEVICE)
     if USE_GPU:
         compare_results(model1, [model2])
     else:
-        model3 = AnomalyModel_V2(TRACED_MODEL_PATH, device=DEVICE)
+        model3 = AnomalyModelV2(TRACED_MODEL_PATH, device=DEVICE)
         compare_results(model1, [model2, model3])
 
 
@@ -109,7 +109,7 @@ def test_warmup(init_args: Tuple, warmup_size: List[int]):
     """
     Test AnomalyModel2 warmup with default and specific sizes.
     """
-    ad = AnomalyModel_V2(MODEL_PATH, *init_args, device=DEVICE)
+    ad = AnomalyModelV2(MODEL_PATH, *init_args, device=DEVICE)
     ad.warmup()
     ad.warmup(warmup_size)
 
@@ -134,9 +134,9 @@ def test_warmup_api(warmup_size: List[int]):
 )
 def test_model(init_args: Tuple, sub_dir: str):
     """
-    Test AnomalyModel_V2 with various initialization parameters.
+    Test AnomalyModelV2 with various initialization parameters.
     """
-    model = AnomalyModel_V2(*init_args, device=DEVICE)
+    model = AnomalyModelV2(*init_args, device=DEVICE)
 
     # specific output path if sub_dir exists, else default OUTPUT_PATH
     save_path = os.path.join(OUTPUT_PATH, sub_dir) if sub_dir else OUTPUT_PATH
@@ -176,7 +176,7 @@ def test_annotate(
         annot[indices] = img[indices]
         return annot
 
-    ad = AnomalyModel_V2(MODEL_PATH, device=DEVICE)
+    ad = AnomalyModelV2(MODEL_PATH, device=DEVICE)
     for _ in range(1):
         ad.warmup()
 
@@ -217,7 +217,7 @@ def test_convert_to_torchscript():
         convert_v2_torchscript(MODEL_PATH, outpath, device="cpu")
         assert os.path.isfile(outpath)
 
-        model = AnomalyModel_V2(outpath, device="cpu")
+        model = AnomalyModelV2(outpath, device="cpu")
         inp = torch.randint(0, 255, (256, 256, 3), dtype=torch.uint8)
         model.predict(inp)
 
@@ -226,7 +226,7 @@ def test_convert_to_torchscript():
             convert_v2_torchscript(MODEL_PATH, outpath, device="cuda")
             assert os.path.isfile(outpath)
 
-            model = AnomalyModel_V2(outpath, device="cuda")
+            model = AnomalyModelV2(outpath, device="cuda")
             model.predict(inp.cuda())
 
 
@@ -235,7 +235,7 @@ def test_mini_batch(batch_size):
     """
     Test mini-batch inference combined with tiling.
     """
-    ad = AnomalyModel_V2(MODEL_PATH, tile=224, stride=224, device="cpu")
+    ad = AnomalyModelV2(MODEL_PATH, tile=224, stride=224, device="cpu")
     test_img = np.random.randint(0, 255, (672, 640, 3), dtype=np.uint8)
 
     result_normal = ad.predict(test_img)
@@ -251,7 +251,7 @@ def test_predict_invalid_overlap_mode():
     """
     Test that AnomalyModel2.predict raises ValueError for invalid overlap modes.
     """
-    ad = AnomalyModel_V2(MODEL_PATH, tile=224, stride=224, device=DEVICE)
+    ad = AnomalyModelV2(MODEL_PATH, tile=224, stride=224, device=DEVICE)
     test_img = np.zeros((224, 224, 3), dtype=np.uint8)
 
     with pytest.raises(ValueError, match="Invalid overlap mode"):
@@ -263,7 +263,7 @@ def test_predict_batch_size_edge_cases(batch_size):
     """
     Test mini-batch inference with various batch sizes relative to number of tiles.
     """
-    ad = AnomalyModel_V2(MODEL_PATH, tile=224, stride=224, device=DEVICE)
+    ad = AnomalyModelV2(MODEL_PATH, tile=224, stride=224, device=DEVICE)
     test_img = np.zeros((448, 448, 3), dtype=np.uint8)
 
     inference_settings = {"inference_batch_size": batch_size}
@@ -275,7 +275,7 @@ def test_predict_input_variants():
     """
     Test predict with different input formats (numpy, torch tensor, grayscale).
     """
-    ad = AnomalyModel_V2(MODEL_PATH, device=DEVICE)
+    ad = AnomalyModelV2(MODEL_PATH, device=DEVICE)
 
     # Numpy RGB
     img_np = np.zeros((224, 224, 3), dtype=np.uint8)
@@ -292,7 +292,7 @@ def test_predict_error_handling(monkeypatch):
     """
     Test that AnomalyModel2.predict raises RuntimeError when _infer returns None.
     """
-    ad = AnomalyModel_V2(MODEL_PATH, device=DEVICE)
+    ad = AnomalyModelV2(MODEL_PATH, device=DEVICE)
     test_img = np.zeros((224, 224, 3), dtype=np.uint8)
 
     # Mock _infer to return None

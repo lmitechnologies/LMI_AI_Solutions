@@ -31,8 +31,6 @@ elif [ "$ARGUMENT" == "utils" ]; then
     pytest --html=$outpath/lmi_utils.html tests/lmi_utils/
 elif [ "$ARGUMENT" == "cls" ]; then
     pytest --html=$outpath/classifiers.html tests/classifiers/
-elif [ "$ARGUMENT" == "ad-v0" ]; then
-    pytest --html=$outpath/anomaly_detectors_v0.html tests/anomaly_detectors/anomalib_lmi/test_anomaly_model_v0.py
 elif [ "$ARGUMENT" == "ad-v1" ]; then
     pytest --html=$outpath/anomaly_detectors_v1.html tests/anomaly_detectors/anomalib_lmi/test_anomaly_model_v1.py
 elif [ "$ARGUMENT" == "ad-v2" ]; then

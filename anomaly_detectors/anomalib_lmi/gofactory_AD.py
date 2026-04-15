@@ -7,7 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from anomaly_detectors.anomalib_lmi.anomaly_model2 import AnomalyModel2
+from anomaly_detectors.anomalib_lmi.v1.model import AnomalyModel as AnomalyModelV1
 
 MAX_UINT16 = 65535
 IMG_FORMATS = [".png", ".jpg"]
@@ -50,7 +50,7 @@ def predict(
         return
 
     logger.info(f"Loading model: {model_path}.")
-    model = AnomalyModel2(
+    model = AnomalyModelV1(
         model_path,
         image_size=image_size,
         tile=tile,

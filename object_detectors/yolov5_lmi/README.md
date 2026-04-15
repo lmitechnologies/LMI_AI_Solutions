@@ -62,6 +62,7 @@ RUN pip install ultralytics -U
 WORKDIR /repos
 RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 RUN cd LMI_AI_Solutions && git submodule update --init object_detectors/submodules/yolov5
+RUN pip install -e LMI_AI_Solutions
 ```
 
 ## Prepare the dataset
@@ -80,9 +81,6 @@ input_path=/app/data/allImages
 # modify the width and height according to your data
 W=640
 H=320
-
-# import the repo paths
-source /repos/LMI_AI_Solutions/lmi_ai.env
 
 # convert labels from VGG json to csv
 # python -m lmi_utils.label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
@@ -208,8 +206,7 @@ services:
       - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset info
       - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env && 
-      python3 -m yolov5_lmi.run_cmd"
+      python3 -m object_detectors.yolov5_lmi.run_cmd
 ```
 Note: Do **NOT** modify the required locations in the container, such as `/app/training`, `/app/data`, `/app/config/dataset.yaml`, `/app/config/hyp.yaml`.
 
@@ -277,9 +274,7 @@ services:
       - ./config/2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
       - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # contains class names
     command: >
-      
-      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env && 
-      python3 -m yolov5_lmi.run_cmd"
+      python3 -m object_detectors.yolov5_lmi.run_cmd
 ```
 
 
@@ -324,8 +319,7 @@ services:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # contains a best.pt
       - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
-      bash -c "source /repos/LMI_AI_Solutions/lmi_ai.env && 
-      python3 -m yolov5_lmi.run_cmd"
+      python3 -m object_detectors.yolov5_lmi.run_cmd
 ```
 
 ### Engine generation on x86 systems
@@ -351,6 +345,7 @@ RUN pip3 install ultralytics -U
 WORKDIR /repos
 RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
 RUN cd LMI_AI_Solutions && git submodule update --init object_detectors/submodules/yolov5
+RUN pip install -e LMI_AI_Solutions
 ```
 
 Replace the `dockerfile: dockerfile` in `./docker-compose_trt.yaml` with `dockerfile: arm.dockerfile`.

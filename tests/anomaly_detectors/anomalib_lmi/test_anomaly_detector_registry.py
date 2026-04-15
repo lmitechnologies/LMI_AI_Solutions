@@ -16,6 +16,7 @@ def test_auto_register_models():
 
     # Check if specific known detectors are registered
     known_keys = [
+        ("anomalib2", "patchcore", "anomalydetection", "v2"),
         ("anomalib1", "patchcore", "anomalydetection", "v1"),
         ("anomalib", "patchcore", "anomalydetection", "v0"),
         ("anomalib0", "padim", "anomalydetection", "v0"),
