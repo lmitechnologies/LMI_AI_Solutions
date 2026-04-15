@@ -94,7 +94,7 @@ services:
     ipc: host
     runtime: nvidia 
     command: >
-      python3 -m anomalib_lmi.anomalib_v2.train --config /app/configs/padim.yaml 
+      python3 -m anomaly_detectors.anomalib_lmi.v2.train --config /app/configs/padim.yaml 
 ```
 ### Inference
 
@@ -114,7 +114,7 @@ services:
     ipc: host
     runtime: nvidia 
     command: >
-      python3 -m anomalib_lmi.anomalib_model_v2 test -i /app/weights/Patchcore/dataset/v0/weights/torch/model.pt -d /app/data/toothbrush/ -o /app/output/predictions/ -p
+      python3 -m anomaly_detectors.anomalib_lmi.v2.model test -i /app/weights/Patchcore/dataset/v0/weights/torch/model.pt -d /app/data/toothbrush/ -o /app/output/predictions/ -p
 ```
 
 ### Convert to TensorRT

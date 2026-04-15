@@ -7,7 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from anomaly_detectors.anomalib_lmi import AnomalyModelV1
+from anomaly_detectors.anomalib_lmi.v1.model import AnomalyModel as AnomalyModelV1
 
 MAX_UINT16 = 65535
 IMG_FORMATS = [".png", ".jpg"]

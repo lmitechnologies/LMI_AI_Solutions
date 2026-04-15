@@ -14,8 +14,8 @@ from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
 
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
-from anomaly_detectors.anomalib_lmi import AnomalyModelV2
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v2_torchscript
+from anomaly_detectors.anomalib_lmi.v2.model import AnomalyModel as AnomalyModelV2
 from lmi_utils.gadget_utils import pipeline_utils
 
 os.environ["TRUST_REMOTE_CODE"] = "1"

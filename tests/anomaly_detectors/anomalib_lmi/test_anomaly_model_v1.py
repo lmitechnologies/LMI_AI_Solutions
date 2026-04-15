@@ -16,8 +16,8 @@ from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
 
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
-from anomaly_detectors.anomalib_lmi import AnomalyModelV1
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v1_torchscript
+from anomaly_detectors.anomalib_lmi.v1.model import AnomalyModel as AnomalyModelV1
 from lmi_utils.gadget_utils import pipeline_utils
 
 logger = logging.getLogger(__name__)
@@ -234,7 +234,7 @@ def test_cmds():
     """smoke-test: verify CLI commands run without errors on a single image"""
     with tempfile.TemporaryDirectory() as t:
         my_env = os.environ.copy()
-        cmd = f"python -m anomaly_detectors.anomalib_lmi.anomaly_model_v1 test -i {MODEL_PATH} -d {DATA_PATH} -o {str(t)} \
+        cmd = f"python -m anomaly_detectors.anomalib_lmi.v1.model test -i {MODEL_PATH} -d {DATA_PATH} -o {str(t)} \
             -g -p --tile 224 224 --stride 224 224 --resize --limit 1"
         logger.info(f"running cmd: {cmd}")
         result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
@@ -247,7 +247,7 @@ def test_cmds():
         if USE_GPU:
             t2 = os.path.join(t, "recon")
             cmd = (
-                f"python -m anomaly_detectors.anomalib_lmi.anomaly_model_v1 convert"
+                f"python -m anomaly_detectors.anomalib_lmi.v1.model convert"
                 f" -i {MODEL_PATH} -o {t2} --hw 1120 1120 --tile 224 224 --stride 224 224"
             )
             logger.info(f"running cmd: {cmd}")

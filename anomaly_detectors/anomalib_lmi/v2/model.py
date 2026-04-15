@@ -9,9 +9,8 @@ import torch
 from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 from lmi_utils.image_utils.tiler import OverlapMode, ScaleMode, Tiler
 
-from .base import Anomalib_Base, to_list
+from ..base import Anomalib_Base, to_list
 
-MINIMUM_QUANT = 1e-12
 Binding = namedtuple("Binding", ("name", "dtype", "shape", "data", "ptr"))
 
 # TensorRT binding names

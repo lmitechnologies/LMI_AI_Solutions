@@ -5,7 +5,7 @@ import pkgutil
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 PACKAGES = ["anomaly_detectors.anomalib_lmi", "anomaly_detectors.ad_core"]
-TARGET_MODULE_SUFFIXES = [".anomaly_model_v0", ".anomaly_model_v1", ".anomaly_model_v2"]  # Target suffixes to look for in the packages
+TARGET_MODULE_SUFFIXES = [".model"]  # Target suffixes to look for in the packages
 
 
 logger = logging.getLogger(__name__)

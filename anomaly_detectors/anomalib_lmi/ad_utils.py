@@ -269,7 +269,7 @@ def postprocess(
             - boolean
             - switch for turning on/off annotation (returns original image if useAnnotation=False)
     """
-    from anomaly_detectors.anomalib_lmi import AnomalyModelV0
+    from anomaly_detectors.anomalib_lmi.v0.model import AnomalyModel as AnomalyModelV0
 
     PASS = "PASS"
     FAIL = "FAIL"

@@ -9,11 +9,7 @@ import torch
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
 from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 
-from .base import Anomalib_Base
-
-PASS = "PASS"
-FAIL = "FAIL"
-MINIMUM_QUANT = 1e-12
+from ..base import Anomalib_Base
 
 Binding = namedtuple("Binding", ("name", "dtype", "shape", "data", "ptr"))
 

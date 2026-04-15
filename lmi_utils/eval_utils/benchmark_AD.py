@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import auc, f1_score, precision_score, recall_score, roc_curve
 
-from anomaly_detectors.anomalib_lmi import AnomalyModelV1
+from anomaly_detectors.anomalib_lmi.v1.model import AnomalyModel as AnomalyModelV1
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 

@@ -173,7 +173,7 @@ services:
     runtime: nvidia
     command: >
       bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
-      python3 -m anomalib_lmi.anomaly_model_v0
+      python3 -m anomalib_lmi.v0.model
       --action convert -i /app/onnx/model.onnx -e /app/engine"
 ```
 ### 3.3 Convert model
@@ -209,7 +209,7 @@ services:
     runtime: nvidia
     command: >
       bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
-      python3 -m anomalib_lmi.anomaly_model_v0
+      python3 -m anomalib_lmi.v0.model
       --action test -i /app/model/model.engine --plot --generate_stats"
 ```
 ### 4.2 Validate model
@@ -223,8 +223,8 @@ docker compose up
 ```
 
 ### 4.3 Determine Optimum Threshold
-![pdf](gamma_pdf_fit.png)
-![cdf](gamma_cdf_fit.png)
+![pdf](../gamma_pdf_fit.png)
+![cdf](../gamma_cdf_fit.png)
 
 
 | Threshold | 2 | 7 | 11 | 16 | 21 | 25 | 30 | 35 | 39 | 44 |
