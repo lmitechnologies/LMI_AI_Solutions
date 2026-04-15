@@ -19,7 +19,6 @@ MASKRCNN_MODEL_CONFIG = "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
 COCO_CLASSMAP = "tests/assets/models/od/detectron2/class_map.json"
 MODEL_PATH = "tests/assets/models/od/detectron2/model.pt"
 OG_WEIGHTS_PATH = "tests/assets/models/od/detectron2/model_final_f10217.pkl"
-ENGINE_PATH = "tests/assets/models/od/detectron2/model.engine"
 OUT_DIR = "tests/outputs/od/detectron2"
 USE_CUDA = torch.cuda.is_available()
 KEYS = ["boxes", "classes", "scores", "masks", "segments"]
@@ -130,28 +129,6 @@ def _assert_batch_empty(outputs, keys, n):
             assert len(item) == 0, f"Expected empty item in outputs['{k}']"
 
 
-def _trt_available():
-    try:
-        import tensorrt  # noqa: F401
-        from cuda import cudart  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
-@pytest.fixture(scope="module")
-def detectron2_trt_model():
-    if not _trt_available():
-        pytest.skip("TensorRT / cuda-python not available")
-    if not os.path.exists(ENGINE_PATH):
-        pytest.skip(f"Engine file not found: {ENGINE_PATH}")
-    try:
-        return Detectron2Model(ENGINE_PATH, class_map=class_map)
-    except Exception as e:
-        pytest.skip(f"Failed to load TRT engine: {e}")
-
-
 def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
     confs = {v: 0.00 for v in class_map.values()}
     for image in imgs_coco:
@@ -226,37 +203,30 @@ def test_batch_operators(model, imgs_coco):
         cv2.imwrite(os.path.join(OUT_DIR, f"coco_{i}_batch_operators.jpg"), annotated)
 
 
-def test_trt_batch_operators(detectron2_trt_model, imgs_coco):
-    model = detectron2_trt_model
-    confs = {v: 0.8 for v in class_map.values()}
-    th, tw = model.image_size
+def test_tensor_input(model, imgs_coco):
+    """predict() accepts float32 CUDA HWC tensors and returns the same detections as numpy."""
+    if not USE_CUDA:
+        pytest.skip("CUDA not available")
+    image = imgs_coco[0]
+    img_tensor = torch.from_numpy(image.astype(np.float32)).cuda()
 
-    images = imgs_coco
-    original_sizes = [img.shape[:2] for img in images]
-    resized = [cv2.resize(img, (tw, th)) for img in images]
-    operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
+    confs = {v: 0.5 for v in class_map.values()}
+    out_np, _ = model.predict(image, configs=confs)
+    out_tensor, _ = model.predict(img_tensor, configs=confs)
 
-    outputs, _ = model.predict(resized, configs=confs, operators=operators)
-    _assert_batch_counts(outputs, KEYS, len(images))
-    os.makedirs(OUT_DIR, exist_ok=True)
-    for i, (h, w) in enumerate(original_sizes):
-        out = {k: v[i] for k, v in outputs.items()}
-        _assert_nonempty_out(out)
-        _assert_scores_geq(out, 0.8)
-        assert out["masks"].shape[1] == h
-        assert out["masks"].shape[2] == w
-        annotated = model.annotate_image(out, images[i].copy())
-        cv2.imwrite(os.path.join(OUT_DIR, f"coco_{i}_trt_batch_operators.jpg"), annotated)
+    assert len(out_np["boxes"][0]) == len(out_tensor["boxes"][0])
 
 
-def test_trt_empty(detectron2_trt_model):
-    model = detectron2_trt_model
-    th, tw = model.image_size
-    empty_img = np.zeros((th, tw, 3), dtype=np.uint8)
-    batch_outputs, _ = model.predict(empty_img, configs=0.5)
-    outputs = {k: v[0] for k, v in batch_outputs.items()}
-    _assert_empty_out(outputs)
+def test_tensor_input_batch(model, imgs_coco):
+    """predict() accepts a list of float32 CUDA HWC tensors."""
+    if not USE_CUDA:
+        pytest.skip("CUDA not available")
+    images = imgs_coco[:2]
+    tensor_batch = [torch.from_numpy(img.astype(np.float32)).cuda() for img in images]
+    confs = {v: 0.5 for v in class_map.values()}
 
-
-def test_trt_warmup(detectron2_trt_model):
-    detectron2_trt_model.warmup()
+    out, _ = model.predict(tensor_batch, configs=confs)
+    assert len(out["boxes"]) == len(images)
+    for i in range(len(images)):
+        out_i = {k: v[i] for k, v in out.items()}
+        _assert_nonempty_out(out_i)

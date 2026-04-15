@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import cv2
 import numpy as np
@@ -8,6 +8,7 @@ import torch
 import torchvision.transforms.functional as F
 from rfdetr.models.postprocess import PostProcess
 
+from lmi_utils.image_utils.types import ImageBatch, ImageLike
 from object_detectors.od_core.model_factory import ModelFactory
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
@@ -37,14 +38,20 @@ class RfdetrBase(ODBase):
         dummy_input = torch.zeros((1, 3, self.image_size[0], self.image_size[1]), dtype=torch.float32).to(self.device)
         self.forward(dummy_input)
 
-    def _preprocess_single(self, image: np.ndarray) -> torch.Tensor:
-        """Preprocess a single HWC image: convert to CHW, normalize, and move to self.device."""
-        if image.dtype != np.uint8:
-            raise ValueError(f"Expected input image dtype uint8, got {image.dtype}")
+    def _preprocess_single(self, image: ImageLike) -> torch.Tensor:
+        """Preprocess a single HWC image: convert to CHW float [0, 1], normalize, move to device.
 
-        img_tensor = F.to_tensor(image).to(self.device)
-        img_tensor = F.normalize(img_tensor, self.means, self.stds)
-        return img_tensor
+        Accepts either a uint8 HWC numpy array or a uint8/float HWC torch tensor.
+        """
+        if isinstance(image, np.ndarray):
+            if image.dtype != np.uint8:
+                raise ValueError(f"Expected input image dtype uint8, got {image.dtype}")
+            img_tensor = F.to_tensor(image).to(self.device)
+        else:
+            img_tensor = image.permute(2, 0, 1).to(self.device)
+            if img_tensor.dtype == torch.uint8:
+                img_tensor = img_tensor.float() / 255.0
+        return F.normalize(img_tensor, self.means, self.stds)
 
     @staticmethod
     def _masks_to_segments(masks) -> List[np.ndarray]:
@@ -105,8 +112,8 @@ class RfdetrBase(ODBase):
         )
         return self._apply_revert_to_result(result, ops)
 
-    def preprocess(self, images: Union[np.ndarray, List[np.ndarray]], **kwargs) -> torch.Tensor:
-        """Preprocess input image(s) to BCHW normalized array."""
+    def preprocess(self, images: ImageBatch) -> torch.Tensor:
+        """Preprocess input image(s) to BCHW normalized tensor."""
         if isinstance(images, list):
             return torch.stack([self._preprocess_single(img) for img in images])
         return torch.unsqueeze(self._preprocess_single(images), dim=0)
@@ -176,6 +183,15 @@ class RfdetrTRT(RfdetrBase):
         except ImportError as e:
             raise ImportError("tensorrt is required for RfdetrTRT. Install it with: pip install tensorrt") from e
 
+        _trt_to_torch_dtype = {
+            trt.DataType.FLOAT: torch.float32,
+            trt.DataType.HALF: torch.float16,
+            trt.DataType.INT32: torch.int32,
+            trt.DataType.INT64: torch.int64,
+            trt.DataType.INT8: torch.int8,
+            trt.DataType.BOOL: torch.bool,
+        }
+
         trt_logger = trt.Logger(trt.Logger.INFO)
         runtime = trt.Runtime(trt_logger)
 
@@ -188,8 +204,7 @@ class RfdetrTRT(RfdetrBase):
         # Inspect input tensor for shape and dynamic batch info
         self.input_name = self.engine.get_tensor_name(0)
         profile_shape = self.engine.get_tensor_profile_shape(self.input_name, 0)
-        self.input_dtype = trt.nptype(self.engine.get_tensor_dtype(self.input_name))
-        self.torch_dtype = torch.float16 if self.input_dtype == np.float16 else torch.float32
+        self.input_dtype = _trt_to_torch_dtype.get(self.engine.get_tensor_dtype(self.input_name), torch.float32)
 
         if profile_shape:
             self.min_batch = profile_shape[0][0]
@@ -210,7 +225,7 @@ class RfdetrTRT(RfdetrBase):
         for i in range(self.engine.num_io_tensors):
             name = self.engine.get_tensor_name(i)
             if self.engine.get_tensor_mode(name) == trt.TensorIOMode.OUTPUT:
-                dtype = trt.nptype(self.engine.get_tensor_dtype(name))
+                dtype = _trt_to_torch_dtype.get(self.engine.get_tensor_dtype(name), torch.float32)
                 # Get the shape with -1 for dynamic dims
                 shape = self.engine.get_tensor_shape(name)
                 self.output_info.append({"name": name, "dtype": dtype, "shape": tuple(shape)})
@@ -224,24 +239,23 @@ class RfdetrTRT(RfdetrBase):
         self.fixed_batch_size = self.opt_batch
         input_shape = (self.fixed_batch_size, *self.input_shape_no_batch)
         self._buffers = {
-            "input": torch.empty(input_shape, dtype=self.torch_dtype, device="cuda"),
+            "input": torch.empty(input_shape, dtype=self.input_dtype, device="cuda"),
             "input_shape": input_shape,
             "outputs": [],
         }
         for info in self.output_info:
             out_shape = tuple(self.fixed_batch_size if d == -1 else d for d in info["shape"])
-            torch_dt = torch.float16 if info["dtype"] == np.float16 else torch.float32
             self._buffers["outputs"].append(
                 {
                     "name": info["name"],
                     "shape": out_shape,
-                    "tensor": torch.empty(out_shape, dtype=torch_dt, device="cuda"),
+                    "tensor": torch.empty(out_shape, dtype=info["dtype"], device="cuda"),
                 }
             )
 
     def warmup(self):
         """Warm up the model by running a dummy inference."""
-        dummy_input = torch.zeros((self.fixed_batch_size, *self.input_shape_no_batch), dtype=self.torch_dtype, device="cuda")
+        dummy_input = torch.zeros((self.fixed_batch_size, *self.input_shape_no_batch), dtype=self.input_dtype, device="cuda")
         self.forward(dummy_input)
 
     def forward(self, image: torch.Tensor) -> list:
@@ -254,7 +268,7 @@ class RfdetrTRT(RfdetrBase):
             List of output tensors on self.device, each with shape (B, ...).
         """
         self.context.set_input_shape(self.input_name, self._buffers["input_shape"])
-        self._buffers["input"].copy_(image)
+        self._buffers["input"].copy_(image.contiguous())
 
         self.context.set_tensor_address(self.input_name, self._buffers["input"].data_ptr())
         for out in self._buffers["outputs"]:

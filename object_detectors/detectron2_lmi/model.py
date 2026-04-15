@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torchvision  # noqa: F401
 
+from lmi_utils.image_utils.types import ImageBatch
 from lmi_utils.postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_masks
 from object_detectors.od_core.model_factory import ModelFactory
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
@@ -157,11 +158,13 @@ class Detectron2TRT(Detectron2Base):
         """
         import tensorrt as trt
 
-        _np_to_torch_dtype = {
-            np.dtype("float16"): torch.float16,
-            np.dtype("float32"): torch.float32,
-            np.dtype("int32"): torch.int32,
-            np.dtype("int64"): torch.int64,
+        _trt_to_torch_dtype = {
+            trt.DataType.FLOAT: torch.float32,
+            trt.DataType.HALF: torch.float16,
+            trt.DataType.INT32: torch.int32,
+            trt.DataType.INT64: torch.int64,
+            trt.DataType.INT8: torch.int8,
+            trt.DataType.BOOL: torch.bool,
         }
 
         trt_logger = trt.Logger(trt.Logger.ERROR)
@@ -180,13 +183,14 @@ class Detectron2TRT(Detectron2Base):
         for i in range(self.engine.num_io_tensors):
             name = self.engine.get_tensor_name(i)
             is_input = self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT
-            np_dtype = np.dtype(trt.nptype(self.engine.get_tensor_dtype(name)))
+            trt_dtype = self.engine.get_tensor_dtype(name)
+            torch_dtype = _trt_to_torch_dtype.get(trt_dtype, torch.float32)
             shape = list(self.engine.get_tensor_shape(name))
             if is_input:
                 self.batch_size = shape[0]
                 self.fixed_batch_size = shape[0]
-            tensor = torch.empty(shape, dtype=_np_to_torch_dtype.get(np_dtype, torch.float32), device=self.device)
-            binding = {"index": i, "name": name, "dtype": np_dtype, "shape": shape, "tensor": tensor}
+            tensor = torch.empty(shape, dtype=torch_dtype, device=self.device)
+            binding = {"index": i, "name": name, "dtype": torch_dtype, "shape": shape, "tensor": tensor}
             if is_input:
                 self.model_inputs.append(binding)
             else:
@@ -221,21 +225,26 @@ class Detectron2TRT(Detectron2Base):
         """
         for _ in range(1):
             image_h, image_w = self.image_size
-            input = torch.rand(self.batch_size, 3, image_h, image_w, dtype=self.model_inputs[0]["tensor"].dtype, device=self.device)
+            input = torch.rand(self.batch_size, 3, image_h, image_w, dtype=self.input_dtype, device=self.device)
             self.forward(input)
 
-    def preprocess(self, images: np.ndarray):
+    def preprocess(self, images: ImageBatch):
         """
         Preprocesses a batch of images for input into the model.
 
         Args:
-            images (np.ndarray): A batch of images to preprocess. Each image should be in the format (H, W, C).
+            images: A list of HWC images as numpy arrays or torch tensors.
 
         Returns:
             torch.Tensor: A batch of preprocessed images with shape (batch_size, 3, image_h, image_w) on the model device.
         """
-        batch = np.array([img.transpose(2, 0, 1) for img in images], dtype=self.input_dtype)
-        return torch.from_numpy(batch).to(self.device)
+        tensors = []
+        for img in images:
+            if isinstance(img, torch.Tensor):
+                tensors.append(img.permute(2, 0, 1).to(dtype=self.input_dtype, device=self.device))
+            else:
+                tensors.append(torch.from_numpy(img.transpose(2, 0, 1)).to(dtype=self.input_dtype, device=self.device))
+        return torch.stack(tensors)
 
     def forward(self, inputs):
         """
@@ -247,7 +256,11 @@ class Detectron2TRT(Detectron2Base):
         Returns:
             list: A list of CUDA tensors containing the model's output data.
         """
-        self.model_inputs[0]["tensor"].copy_(inputs)
+        self.model_inputs[0]["tensor"].copy_(inputs.contiguous())
+
+        # Clear output buffers so unwritten slots don't retain stale values from the previous run.
+        for out in self.model_outputs:
+            out["tensor"].zero_()
 
         for inp in self.model_inputs:
             self.context.set_tensor_address(inp["name"], inp["tensor"].data_ptr())
@@ -297,9 +310,14 @@ class Detectron2TRT(Detectron2Base):
 
         results = []
         for idx in range(self.batch_size):
+            n_valid = int(num_preds[idx].item())
             ops = operators[idx]
             batch_boxes, batch_scores, batch_classes, raw_masks, _ = self._apply_confidence_filter(
-                scores[idx], boxes[idx], classes[idx], confs, masks=masks[idx] if masks is not None else None
+                scores[idx, :n_valid],
+                boxes[idx, :n_valid],
+                classes[idx, :n_valid],
+                confs,
+                masks=masks[idx, :n_valid] if masks is not None else None,
             )
             results.append(
                 self._build_single_result(
@@ -355,23 +373,23 @@ class Detectron2PT(Detectron2Base):
         images = [np.random.rand(image_h, image_w, 3).astype(np.float32) for _ in range(self.batch_size)]
         self.forward(self.preprocess(images))
 
-    def preprocess(self, images: np.ndarray) -> List[Dict[str, torch.Tensor]]:
+    def preprocess(self, images: ImageBatch) -> List[Dict[str, torch.Tensor]]:
         """
         Preprocesses a batch of images for input into the model.
 
         Args:
-            images (np.ndarray): A numpy array of images to be preprocessed.
-                                 Each image is expected to be in HWC format.
+            images: A list of HWC images as numpy arrays or torch tensors.
 
         Returns:
-            list: A list of dictionaries where each dictionary contains a single key 'image'
-                  with the preprocessed image as a value. The image is converted to float32
-                  and transposed to CHW format.
+            list: A list of dicts with key 'image' mapping to a CHW float32 tensor on self.device.
         """
-        inputs = [
-            dict(image=torch.from_numpy(image.astype(np.float32)).permute(2, 0, 1).to(dtype=torch.float32).to(self.device))
-            for image in images
-        ]
+        inputs = []
+        for image in images:
+            if isinstance(image, torch.Tensor):
+                t = image.permute(2, 0, 1).to(dtype=torch.float32, device=self.device)
+            else:
+                t = torch.from_numpy(image.astype(np.float32)).permute(2, 0, 1).to(self.device)
+            inputs.append(dict(image=t))
         return inputs
 
     def forward(self, inputs):

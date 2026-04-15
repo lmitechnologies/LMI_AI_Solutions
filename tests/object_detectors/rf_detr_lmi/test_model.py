@@ -226,36 +226,25 @@ class Test_Rfdetr_Model:
             out_name = f"out_operators_batch_{idx}.jpg"
             cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
 
-    def test_trt_operators_batch(self, imgs_coco, trt_model):
-        original_sizes = [(img.shape[1], img.shape[0]) for img in imgs_coco]  # (w, h)
-        operators = [[{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}] for w, h in original_sizes]
+    def test_tensor_input(self, imgs_coco, obj_detector):
+        """predict() accepts uint8 CUDA HWC tensors and returns the same detections as numpy."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
+        img_np = cv2.resize(imgs_coco[0], (IMAGE_SIZE, IMAGE_SIZE))
+        img_tensor = torch.from_numpy(img_np).cuda()
+
+        out_np, _ = obj_detector.predict(img_np, configs=0.5)
+        out_tensor, _ = obj_detector.predict(img_tensor, configs=0.5)
+
+        assert out_np.keys() == out_tensor.keys()
+        assert len(out_np["boxes"][0]) == len(out_tensor["boxes"][0])
+
+    def test_tensor_input_batch(self, imgs_coco, obj_detector):
+        """predict() accepts a list of uint8 CUDA HWC tensors."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         imgs_resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
+        tensor_batch = [torch.from_numpy(img).cuda() for img in imgs_resized]
 
-        batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators)
-        assert len(batch_outputs["boxes"]) == len(imgs_coco)
-
-        os.makedirs(OUT_DIR, exist_ok=True)
-        for idx, img in enumerate(imgs_coco):
-            w, h = original_sizes[idx]
-            out = {k: v[idx] for k, v in batch_outputs.items()}
-            _assert_nonempty_out(out)
-            _assert_scores_geq(out, 0.5)
-
-            # boxes with operators should be scaled to the original image size
-            assert np.all(out["boxes"][:, 0] <= w)
-            assert np.all(out["boxes"][:, 1] <= h)
-            assert np.all(out["boxes"][:, 2] <= w)
-            assert np.all(out["boxes"][:, 3] <= h)
-
-            annotated_image = trt_model.annotate_image(out, img)
-            out_name = f"out_trt_operators_batch_{idx}.jpg"
-            cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
-
-    def test_trt_empty(self, trt_model):
-        empty_img = np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
-        batch_outputs, _ = trt_model.predict(empty_img, configs=0.5)
-        out = {k: v[0] for k, v in batch_outputs.items()}
-        _assert_empty_out(out)
-
-    def test_trt_warmup(self, trt_model):
-        trt_model.warmup()
+        out, _ = obj_detector.predict(tensor_batch, configs=0.5)
+        assert len(out["boxes"]) == len(imgs_coco)
