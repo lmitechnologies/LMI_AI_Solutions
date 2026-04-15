@@ -85,11 +85,12 @@ RUN pip install albumentations
 RUN python3 -m pip install --upgrade pip
 RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git && cd LMI_AI_Solutions/anomaly_detectors && git submodule update --init submodules/anomalib
 RUN cd LMI_AI_Solutions/anomaly_detectors/submodules/anomalib && pip install -e .
+RUN pip install -e LMI_AI_Solutions
 ```
 
 ### 2.2 Initialize/modify docker-compose.yaml
 Install the [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).   
-The following sample yaml file references training data at `./training/2024-02-28` and trains a PaDiM model. The [padim.yaml](https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/anomaly_detectors/anomalib_lmi/configs/old/padim.yaml) should exist in `./configs/old`. 
+The following sample yaml file references training data at `./training/2024-02-28` and trains a PaDiM model. The [padim.yaml](./configs/padim.yaml) should exist in `./configs/old`. 
 
 ```yaml
 version: "3.9"
@@ -146,6 +147,7 @@ RUN pip3 install opencv-python --user
 
 RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git && cd LMI_AI_Solutions/anomaly_detectors && git submodule update --init submodules/anomalib
 RUN cd LMI_AI_Solutions/anomaly_detectors/submodules/anomalib && pip install -e .
+RUN pip install -e LMI_AI_Solutions
 
 # trtexec
 ENV PATH=$PATH:/usr/src/tensorrt/bin/
@@ -172,8 +174,8 @@ services:
     shm_size: '20gb' 
     runtime: nvidia
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
-      python3 -m anomalib_lmi.v0.model
+      bash -c "
+      python3 -m anomaly_detectors.anomalib_lmi.v0.model
       --action convert -i /app/onnx/model.onnx -e /app/engine"
 ```
 ### 3.3 Convert model
@@ -208,8 +210,8 @@ services:
     shm_size: '20gb' 
     runtime: nvidia
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && 
-      python3 -m anomalib_lmi.v0.model
+      bash -c "
+      python3 -m anomaly_detectors.anomalib_lmi.v0.model
       --action test -i /app/model/model.engine --plot --generate_stats"
 ```
 ### 4.2 Validate model

@@ -81,12 +81,13 @@ RUN git clone -b v1.1.1 https://github.com/openvinotoolkit/anomalib.git && cd an
 RUN anomalib install --option core
 
 RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN pip install -e LMI_AI_Solutions
 ```
 
 ### 2.2 Initialize/modify docker-compose.yaml
 
 Install the [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
-The following sample yaml file trains a PaDiM model and outputs the model at `./training/2024-09-06`. The [patchcore.yaml](https://github.com/lmitechnologies/LMI_AI_Solutions/blob/ais/anomaly_detectors/anomalib_lmi/configs/patchcore.yaml) should exist in `./configs`.
+The following sample yaml file trains a PaDiM model and outputs the model at `./training/2024-09-06`. The [patchcore.yaml](./configs/patchcore.yaml) should exist in `./configs`.
 
 ```yaml
 services:
@@ -185,6 +186,7 @@ RUN git clone --branch 0.19.0 https://github.com/pytorch/vision torchvision   # 
 RUN cd torchvision && export BUILD_VERSION=0.19.0 && python3 setup.py install --user
 
 RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN pip install -e LMI_AI_Solutions
 ```
 
 ### 3.2 Initialize/modify docker-compose file
@@ -200,7 +202,7 @@ services:
     ipc: host
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && python -m anomaly_detectors.anomalib_lmi.v1.model convert -i /app/weights/torch/model.pt -e /app/weights/engine"
+      bash -c "python -m anomaly_detectors.anomalib_lmi.v1.model convert -i /app/weights/torch/model.pt -e /app/weights/engine"
 
 ```
 
@@ -239,7 +241,7 @@ services:
     ipc: host
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     command: >
-      bash -c "source /app/LMI_AI_Solutions/lmi_ai.env && python -m anomaly_detectors.anomalib_lmi.v1.model test -i /app/weights/engine/model.engine -d /app/data -o /app/outputs -p"
+      bash -c "python -m anomaly_detectors.anomalib_lmi.v1.model test -i /app/weights/engine/model.engine -d /app/data -o /app/outputs -p"
 
 ```
 
@@ -259,7 +261,7 @@ docker compose up
 
 ### 4.3 Determine Optimum Threshold
 
-![pdf](gamma_pdf_fit.png)
+![pdf](../gamma_pdf_fit.png)
 
 | Threshold | 2 | 7 | 11 | 16 | 21 | 25 | 30 | 35 | 39 | 44 |
 |:-------:|:--------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|:-------:|
