@@ -208,7 +208,7 @@ def test_tensor_input(model, imgs_coco):
     if not USE_CUDA:
         pytest.skip("CUDA not available")
     image = imgs_coco[0]
-    img_tensor = torch.from_numpy(image.astype(np.float32)).cuda()
+    img_tensor = torch.from_numpy(image).cuda()
 
     confs = {v: 0.5 for v in class_map.values()}
     out_np, _ = model.predict(image, configs=confs)
@@ -222,7 +222,7 @@ def test_tensor_input_batch(model, imgs_coco):
     if not USE_CUDA:
         pytest.skip("CUDA not available")
     images = imgs_coco[:2]
-    tensor_batch = [torch.from_numpy(img.astype(np.float32)).cuda() for img in images]
+    tensor_batch = [torch.from_numpy(img).cuda() for img in images]
     confs = {v: 0.5 for v in class_map.values()}
 
     out, _ = model.predict(tensor_batch, configs=confs)

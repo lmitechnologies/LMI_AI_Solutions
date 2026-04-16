@@ -169,13 +169,12 @@ class Detectron2TRT(Detectron2Base):
 
         trt_logger = trt.Logger(trt.Logger.ERROR)
         trt.init_libnvinfer_plugins(trt_logger, namespace="")
-        with open(model_path, "rb") as f, trt.Runtime(trt_logger) as runtime:
+        runtime = trt.Runtime(trt_logger)
+        with open(model_path, "rb") as f:
             self.engine = runtime.deserialize_cuda_engine(f.read())
         self.context = self.engine.create_execution_context()
 
         self._setup_device("cuda")
-
-        self.torch_stream = torch.cuda.Stream(device=self.device)
 
         # Build I/O bindings using torch tensors — no cudaMalloc needed
         self.model_inputs = []
@@ -205,6 +204,10 @@ class Detectron2TRT(Detectron2Base):
         self._setup_class_map(class_map)
 
         self.output_tensors = [out["tensor"] for out in self.model_outputs]
+
+        # Pre-compute binding addresses in engine tensor order — pointers are stable.
+        all_tensors = sorted(self.model_inputs + self.model_outputs, key=lambda x: x["index"])
+        self._bindings = [t["tensor"].data_ptr() for t in all_tensors]
 
     def warmup(self):
         """
@@ -257,18 +260,7 @@ class Detectron2TRT(Detectron2Base):
             list: A list of CUDA tensors containing the model's output data.
         """
         self.model_inputs[0]["tensor"].copy_(inputs.contiguous())
-
-        # Clear output buffers so unwritten slots don't retain stale values from the previous run.
-        for out in self.model_outputs:
-            out["tensor"].zero_()
-
-        for inp in self.model_inputs:
-            self.context.set_tensor_address(inp["name"], inp["tensor"].data_ptr())
-        for out in self.model_outputs:
-            self.context.set_tensor_address(out["name"], out["tensor"].data_ptr())
-
-        self.context.execute_async_v3(stream_handle=self.torch_stream.cuda_stream)
-        self.torch_stream.synchronize()
+        self.context.execute_v2(self._bindings)
         return self.output_tensors
 
     def postprocess(self, predictions, **kwargs) -> List[Results]:

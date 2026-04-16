@@ -138,3 +138,32 @@ def test_empty_cuda(trt_model):
     batch_outputs, _ = trt_model.predict(empty_img, configs=0.5)
     out = {k: v[0] for k, v in batch_outputs.items()}
     _assert_empty_out(out)
+
+
+def test_no_cross_chunk_contamination(imgs_coco, trt_model):
+    """
+    The test creates a batch of interleaved rich/blank images large enough to force
+    multiple chunks, then verifies blank images never acquire ghost detections from
+    adjacent chunks' buffer state.
+    """
+    CONF = 0.5
+    blank = np.zeros((IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
+    rich = cv2.resize(imgs_coco[0], (IMAGE_SIZE, IMAGE_SIZE))
+
+    # Interleave rich and blank to make contamination detectable in either direction.
+    # Use enough images to guarantee chunking regardless of fixed_batch_size.
+    n_pairs = 8
+    batch = []
+    for _ in range(n_pairs):
+        batch.append(rich)
+        batch.append(blank)
+
+    # Run several times — a race condition failure is probabilistic, repetition helps
+    for _ in range(10):
+        batch_out, _ = trt_model.predict(batch, configs=CONF)
+        for idx in range(len(batch)):
+            out = {k: v[idx] for k, v in batch_out.items()}
+            if idx % 2 == 0:
+                _assert_nonempty_out(out, ["boxes", "scores", "classes"])
+            else:
+                _assert_empty_out(out, ["boxes", "scores", "classes"])

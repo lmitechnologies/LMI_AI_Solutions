@@ -39,18 +39,11 @@ class RfdetrBase(ODBase):
         self.forward(dummy_input)
 
     def _preprocess_single(self, image: ImageLike) -> torch.Tensor:
-        """Preprocess a single HWC image: convert to CHW float [0, 1], normalize, move to device.
-
-        Accepts either a uint8 HWC numpy array or a uint8/float HWC torch tensor.
-        """
+        """Preprocess a single HWC uint8 image: convert to CHW float [0, 1], normalize, move to device."""
         if isinstance(image, np.ndarray):
-            if image.dtype != np.uint8:
-                raise ValueError(f"Expected input image dtype uint8, got {image.dtype}")
             img_tensor = F.to_tensor(image).to(self.device)
         else:
-            img_tensor = image.permute(2, 0, 1).to(self.device)
-            if img_tensor.dtype == torch.uint8:
-                img_tensor = img_tensor.float() / 255.0
+            img_tensor = image.permute(2, 0, 1).to(self.device).float() / 255.0
         return F.normalize(img_tensor, self.means, self.stds)
 
     @staticmethod
@@ -199,7 +192,6 @@ class RfdetrTRT(RfdetrBase):
             self.engine = runtime.deserialize_cuda_engine(f.read())
 
         self.context = self.engine.create_execution_context()
-        self.torch_stream = torch.cuda.Stream()
 
         # Inspect input tensor for shape and dynamic batch info
         self.input_name = self.engine.get_tensor_name(0)
@@ -253,6 +245,9 @@ class RfdetrTRT(RfdetrBase):
                 }
             )
 
+        # Pre-compute binding addresses — tensors are fixed allocations, pointers are stable.
+        self._bindings = [self._buffers["input"].data_ptr()] + [out["tensor"].data_ptr() for out in self._buffers["outputs"]]
+
     def warmup(self):
         """Warm up the model by running a dummy inference."""
         dummy_input = torch.zeros((self.fixed_batch_size, *self.input_shape_no_batch), dtype=self.input_dtype, device="cuda")
@@ -260,6 +255,9 @@ class RfdetrTRT(RfdetrBase):
 
     def forward(self, image: torch.Tensor) -> list:
         """Perform TensorRT inference. Chunking is handled by predict() in ODBase.
+
+        Uses execute_v2 (synchronous, default CUDA stream) so that TRT execution is
+        serialized with postprocessing ops on the same stream — no cross-stream race.
 
         Args:
             image: BCHW tensor with batch_size == self.fixed_batch_size.
@@ -270,12 +268,7 @@ class RfdetrTRT(RfdetrBase):
         self.context.set_input_shape(self.input_name, self._buffers["input_shape"])
         self._buffers["input"].copy_(image.contiguous())
 
-        self.context.set_tensor_address(self.input_name, self._buffers["input"].data_ptr())
-        for out in self._buffers["outputs"]:
-            self.context.set_tensor_address(out["name"], out["tensor"].data_ptr())
-
-        self.context.execute_async_v3(stream_handle=self.torch_stream.cuda_stream)
-        self.torch_stream.synchronize()
+        self.context.execute_v2(self._bindings)
 
         return [out["tensor"] for out in self._buffers["outputs"]]
 

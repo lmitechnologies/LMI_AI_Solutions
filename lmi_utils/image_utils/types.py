@@ -6,8 +6,47 @@ import torch
 # A single HWC image as either a numpy array or a torch tensor.
 ImageLike = Union[np.ndarray, torch.Tensor]
 
-# Any supported batch input: a single HWC image, a list of HWC images,
-# or a BHWC array/tensor.
+
+def assert_image_like(image: object) -> None:
+    """Raise TypeError if *image* is not a numpy array or torch tensor.
+
+    Args:
+        image: Object to validate.
+
+    Raises:
+        TypeError: If image is neither np.ndarray nor torch.Tensor.
+    """
+    if not isinstance(image, (np.ndarray, torch.Tensor)):
+        raise TypeError(f"Expected np.ndarray or torch.Tensor, got {type(image).__name__}")
+
+
+def assert_uint8(image: ImageLike) -> None:
+    """Raise ValueError if *image* dtype is not uint8.
+
+    Args:
+        image: np.ndarray or torch.Tensor to validate.
+
+    Raises:
+        ValueError: If image dtype is not uint8.
+    """
+    if image.dtype not in [np.uint8, torch.uint8]:
+        raise ValueError(f"Expected image dtype uint8, got {image.dtype}")
+
+
+def assert_hwc(image: ImageLike) -> None:
+    """Raise ValueError if *image* is not a 3-dimensional HWC array/tensor.
+
+    Args:
+        image: np.ndarray or torch.Tensor to validate.
+
+    Raises:
+        ValueError: If image.ndim != 3.
+    """
+    if image.ndim != 3:
+        raise ValueError(f"Expected 3-dimensional HWC image, got {image.ndim}D array with shape {image.shape}")
+
+
+# Any supported batch input: a single HWC image, a list of HWC images, or a BHWC array/tensor.
 ImageBatch = Union[ImageLike, List[ImageLike]]
 
 
@@ -25,13 +64,24 @@ def normalize_image_batch(image: ImageBatch) -> List[ImageLike]:
         List of HWC images (numpy arrays or torch tensors).
 
     Raises:
+        TypeError: If image is not a numpy array, torch tensor, or list thereof.
         TypeError: If images in the batch mix numpy arrays and torch tensors.
+        ValueError: If any image dtype is not uint8.
+        ValueError: If any image is not 3-dimensional (HWC).
     """
-    if isinstance(image, (np.ndarray, torch.Tensor)) and image.ndim == 4:
-        return list(image)
     if isinstance(image, list):
+        for img in image:
+            assert_image_like(img)
+            assert_uint8(img)
+            assert_hwc(img)
         _assert_consistent_types(image)
         return image
+
+    assert_image_like(image)
+    assert_uint8(image)
+    if image.ndim == 4:
+        return list(image)
+    assert_hwc(image)
     return [image]
 
 
