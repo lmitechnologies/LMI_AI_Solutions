@@ -35,7 +35,6 @@ def imgs_coco():
         if "png" not in p and "jpg" not in p:
             continue
         rgb = load_image(p)
-        h, w = rgb.shape[:2]
         images.append(rgb)
     return images
 
