@@ -6,9 +6,10 @@ import cv2
 import numpy as np
 import pytest
 import torch
-from test_model import _assert_batch_counts, _assert_empty_out, _assert_nonempty_out, _assert_scores_geq
 
 from object_detectors.detectron2_lmi.model import Detectron2Model
+
+from .test_model import _assert_batch_counts, _assert_empty_out, _assert_nonempty_out, _assert_scores_geq
 
 COCO_DIR = "tests/assets/images/coco"
 COCO_CLASSMAP = "tests/assets/models/od/detectron2/class_map.json"

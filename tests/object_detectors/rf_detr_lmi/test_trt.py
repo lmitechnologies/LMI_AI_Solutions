@@ -6,9 +6,10 @@ import numpy as np
 import pytest
 import torch
 from rfdetr.assets.coco_classes import COCO_CLASSES
-from test_model import _assert_empty_out, _assert_nonempty_out, _assert_scores_geq
 
 from object_detectors.od_core.object_detector import ObjectDetector
+
+from .test_model import _assert_empty_out, _assert_nonempty_out, _assert_scores_geq
 
 logger = logging.getLogger(__name__)
 

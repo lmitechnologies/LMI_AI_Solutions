@@ -6,14 +6,14 @@ class ModelFactory:
 
     Usage::
 
-        class MyModel(ModelFactory, ODBase):
+        class MyModel(ModelFactory, SomeBase):
             _registry = {}
 
         @MyModel.register("engine")
-        class MyModelTRT(ODBase): ...
+        class MyModelTRT(SomeBase): ...
 
         @MyModel.register("pt")
-        class MyModelPT(ODBase): ...
+        class MyModelPT(SomeBase): ...
     """
 
     @classmethod

@@ -5,9 +5,9 @@ import numpy as np
 import torch
 import torchvision  # noqa: F401
 
+from lmi_common.model_factory import ModelFactory
 from lmi_utils.image_utils.types import ImageBatch
 from lmi_utils.postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_masks
-from object_detectors.od_core.model_factory import ModelFactory
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results

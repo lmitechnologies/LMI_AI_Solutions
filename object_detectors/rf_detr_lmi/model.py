@@ -8,8 +8,8 @@ import torch
 import torchvision.transforms.functional as F
 from rfdetr.models.postprocess import PostProcess
 
+from lmi_common.model_factory import ModelFactory
 from lmi_utils.image_utils.types import ImageBatch, ImageLike
-from object_detectors.od_core.model_factory import ModelFactory
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
