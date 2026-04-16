@@ -5,7 +5,7 @@ from lmi_common.model_registry import ModelRegistry
 
 class AnomalyDetectorRegistry(ModelRegistry):
     PACKAGES = ["anomaly_detectors.anomalib_lmi", "anomaly_detectors.ad_core"]
-    TARGET_MODULE_SUFFIXES = [".anomaly_model", ".anomaly_model2", ".anomaly_model_v2"]
+    TARGET_MODULE_SUFFIXES = [".model"]
     _registry = {}
 
     @classmethod
