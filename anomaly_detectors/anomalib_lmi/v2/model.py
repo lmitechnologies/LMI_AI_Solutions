@@ -103,9 +103,9 @@ class AnomalyModel(Anomalib_Base):
         """
         import tensorrt as trt
 
+        runtime = trt.Runtime(trt.Logger(trt.Logger.WARNING))
         with open(model_path, "rb") as f:
-            with trt.Runtime(trt.Logger(trt.Logger.WARNING)) as runtime:
-                model = runtime.deserialize_cuda_engine(f.read())
+            model = runtime.deserialize_cuda_engine(f.read())
 
         self.context = model.create_execution_context()
         self.bindings = OrderedDict()

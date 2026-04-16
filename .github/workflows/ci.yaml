@@ -193,7 +193,7 @@ jobs:
             pytest tests/anomaly_detectors/anomalib_lmi/test_anomaly_model_v2.py
           else
             echo "Running Standard (No-AD) Tests..."
-            OTHER_TEST_SUITE=(lmi_utils object_detectors classifiers)
+            OTHER_TEST_SUITE=(lmi_common lmi_utils object_detectors classifiers)
             for suite in "${OTHER_TEST_SUITE[@]}"; do
               pytest tests/${suite}
             done

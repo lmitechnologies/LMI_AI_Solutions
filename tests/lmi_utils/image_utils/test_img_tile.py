@@ -12,7 +12,7 @@ from lmi_utils.system_utils import path_utils
 
 logger = logging.getLogger(__name__)
 
-PATH_IMG = "tests/assets/images/dota"
+PATH_IMG = "tests/assets/images/dota8"
 
 
 def load_imgs(im_dir, recursive=True):

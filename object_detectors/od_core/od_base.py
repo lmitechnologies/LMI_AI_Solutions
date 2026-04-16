@@ -8,12 +8,18 @@ import numpy as np
 import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from lmi_utils.image_utils.types import ImageBatch, normalize_image_batch
 
 from .results import Results
 
 
 class ODBase(abc.ABC):
     logger = logging.getLogger(__name__)
+
+    # Set to a positive integer in subclasses that use a fixed-batch-size engine
+    # (e.g. TensorRT). ODBase.predict will chunk inputs and zero-pad the last
+    # chunk to match this size. Leave as None for dynamic-batch backends.
+    fixed_batch_size: int = None
 
     @abc.abstractmethod
     def warmup(self, *args, **kwargs):
@@ -32,16 +38,19 @@ class ODBase(abc.ABC):
         pass
 
     @torch.no_grad()
-    def predict(self, image, configs, operators=None, **kwargs):
+    def predict(self, image: ImageBatch, configs, operators=None, **kwargs):
         """Run the full inference pipeline: preprocess → forward → postprocess.
 
         Supports both single image and batch inference. When ``self.fixed_batch_size``
         is set (e.g. TRT engines with a hard-coded batch dimension), the input is
         processed in chunks of that size and the last chunk is zero-padded.
 
+        Return tensors if input image are tensors, otherwise return numpy arrays.
+
         Args:
-            image: A single HWC image, a list of HWC images, or a BHWC numpy array.
-                All images in a batch must have the same dimensions.
+            image: A single HWC image, a list of HWC images, or a BHWC batch.
+                Accepts both numpy arrays and torch tensors. All images in a batch
+                must have the same dimensions.
             configs: Confidence threshold (float) or per-class thresholds (dict).
             operators: Operators for coordinate reversion. Accepts:
                 - None: no coordinate reversion.
@@ -54,26 +63,22 @@ class ODBase(abc.ABC):
         Returns:
             (results, time_info)
             results (dict): a dictionary where each value is a list of length B (batch size), e.g., {
-                'boxes': [numpy, ...],
-                'scores': [numpy, ...],
-                'classes': [list of strings, ...],
+                'boxes': [numpy or tensor, ...],
+                'scores': [numpy or tensor, ...],
+                'classes': [numpy strings, ...],
+                'masks': [numpy or tensor, ...],
+                'segments': [[numpy or tensor], ...],
             }
             time_info (dict): timing info with keys 'preproc', 'proc', 'postproc'.
         """
         time_info = {}
 
-        # Normalize input to a flat list of HWC images
-        if isinstance(image, np.ndarray) and image.ndim == 4:
-            images = list(image)
-        elif isinstance(image, list):
-            images = image
-        else:
-            images = [image]
+        images = normalize_image_batch(image)
 
         n = len(images)
         operators = self._normalize_operators(operators, n)
 
-        fixed_bs = getattr(self, "fixed_batch_size", None)
+        fixed_bs = self.fixed_batch_size
 
         if fixed_bs:
             # Fixed batch size (e.g. TRT engine): chunk input and pad the last chunk
@@ -85,7 +90,9 @@ class ODBase(abc.ABC):
                 chunk_n = len(chunk_imgs)
 
                 if chunk_n < fixed_bs:
-                    pad = np.zeros_like(chunk_imgs[0])
+                    self.logger.info(f"Last chunk with {chunk_n} images, padding to {fixed_bs}")
+                    ref = chunk_imgs[0]
+                    pad = torch.zeros_like(ref) if isinstance(ref, torch.Tensor) else np.zeros_like(ref)
                     chunk_imgs = chunk_imgs + [pad] * (fixed_bs - chunk_n)
                     chunk_ops = chunk_ops + [[]] * (fixed_bs - chunk_n)
 
