@@ -4,20 +4,6 @@ if [ "$#" -eq 0 ]; then
     exit 1
 fi
 
-# Git LFS pull all the artifacts
-echo "current directory: $(pwd)"
-git config --global --add safe.directory "$(pwd)"
-echo "running git lfs pull"
-git lfs pull
-if [ $? -ne 0 ]; then
-    echo "git lfs pull failed"
-    exit 1
-fi
-echo "git lfs pull complete"
-
-# install the mounted ais packages
-pip install -e .
-
 outpath=tests/outputs
 ARGUMENT=$1
 if [ "$ARGUMENT" == "v1-all" ]; then

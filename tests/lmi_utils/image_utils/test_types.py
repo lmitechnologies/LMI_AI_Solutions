@@ -2,7 +2,14 @@ import numpy as np
 import pytest
 import torch
 
-from lmi_utils.image_utils.types import _assert_consistent_types, assert_hwc, assert_image_like, assert_uint8, normalize_image_batch
+from lmi_utils.image_utils.types import (
+    _assert_consistent_types,
+    assert_image_like,
+    assert_ndim,
+    assert_uint8,
+    normalize_image_batch,
+    to_rgb,
+)
 
 H, W, C = 64, 64, 3
 
@@ -77,26 +84,29 @@ class TestNormalizeImageBatch:
         with pytest.raises(ValueError, match="uint8"):
             normalize_image_batch([np.zeros((H, W, C), dtype=np.float32)])
 
-    def test_non_3d_single_raises(self):
-        with pytest.raises(ValueError, match="3-dimensional"):
-            normalize_image_batch(np.zeros((H, W), dtype=np.uint8))
+    def test_2d_single_passes(self):
+        result = normalize_image_batch(np.zeros((H, W), dtype=np.uint8))
+        assert len(result) == 1 and result[0].shape == (H, W)
 
-    def test_non_3d_in_list_raises(self):
-        with pytest.raises(ValueError, match="3-dimensional"):
-            normalize_image_batch([np.zeros((H, W), dtype=np.uint8)])
+    def test_2d_in_list_passes(self):
+        result = normalize_image_batch([np.zeros((H, W), dtype=np.uint8)])
+        assert len(result) == 1 and result[0].shape == (H, W)
+
+    def test_4d_single_raises(self):
+        with pytest.raises(ValueError, match="2D.*or.*3D"):
+            normalize_image_batch(np.zeros((H, W, C, 1), dtype=np.uint8))
 
 
-class TestAssertHwc:
+class TestAssertImageNdim:
     def test_3d_passes(self):
-        assert_hwc(_np())  # no raise
+        assert_ndim(_np())  # no raise
 
-    def test_2d_raises(self):
-        with pytest.raises(ValueError, match="3-dimensional"):
-            assert_hwc(np.zeros((H, W), dtype=np.uint8))
+    def test_2d_passes(self):
+        assert_ndim(np.zeros((H, W), dtype=np.uint8))  # no raise
 
     def test_4d_raises(self):
-        with pytest.raises(ValueError, match="3-dimensional"):
-            assert_hwc(np.zeros((2, H, W, C), dtype=np.uint8))
+        with pytest.raises(ValueError, match="2D.*or.*3D"):
+            assert_ndim(np.zeros((2, H, W, C), dtype=np.uint8))
 
 
 class TestAssertUint8:
@@ -133,6 +143,58 @@ class TestAssertImageLike:
     def test_none_raises(self):
         with pytest.raises(TypeError, match="np.ndarray or torch.Tensor"):
             assert_image_like(None)
+
+
+class TestToRgb:
+    def test_numpy_3ch_passthrough(self):
+        img = np.zeros((H, W, 3), dtype=np.uint8)
+        out = to_rgb(img)
+        assert out is img
+
+    def test_tensor_3ch_passthrough(self):
+        img = torch.zeros((H, W, 3), dtype=torch.uint8)
+        out = to_rgb(img)
+        assert out is img
+
+    def test_numpy_1ch_expands(self):
+        img = np.zeros((H, W, 1), dtype=np.uint8)
+        out = to_rgb(img)
+        assert out.shape == (H, W, 3)
+        assert isinstance(out, np.ndarray)
+
+    def test_tensor_1ch_expands(self):
+        img = torch.zeros((H, W, 1), dtype=torch.uint8)
+        out = to_rgb(img)
+        assert out.shape == (H, W, 3)
+        assert isinstance(out, torch.Tensor)
+
+    def test_numpy_2d_expands(self):
+        img = np.zeros((H, W), dtype=np.uint8)
+        out = to_rgb(img)
+        assert out.shape == (H, W, 3)
+        assert isinstance(out, np.ndarray)
+
+    def test_tensor_2d_expands(self):
+        img = torch.zeros((H, W), dtype=torch.uint8)
+        out = to_rgb(img)
+        assert out.shape == (H, W, 3)
+        assert isinstance(out, torch.Tensor)
+
+    def test_numpy_4ch_raises(self):
+        with pytest.raises(ValueError, match="1 or 3 channels"):
+            to_rgb(np.zeros((H, W, 4), dtype=np.uint8))
+
+    def test_tensor_4ch_raises(self):
+        with pytest.raises(ValueError, match="1 or 3 channels"):
+            to_rgb(torch.zeros((H, W, 4), dtype=torch.uint8))
+
+    def test_numpy_4d_raises(self):
+        with pytest.raises(ValueError, match="2D or 3D"):
+            to_rgb(np.zeros((2, H, W, 3), dtype=np.uint8))
+
+    def test_tensor_4d_raises(self):
+        with pytest.raises(ValueError, match="2D or 3D"):
+            to_rgb(torch.zeros((2, H, W, 3), dtype=torch.uint8))
 
 
 class TestAssertConsistentTypes:

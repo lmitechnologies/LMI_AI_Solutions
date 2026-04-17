@@ -2,13 +2,19 @@ import json
 import logging
 import os
 import subprocess
-from abc import ABC, abstractmethod
+from abc import abstractmethod
+from typing import List, Union
 
 import cv2
 import numpy as np
 import torch
+from torchvision.transforms import v2
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from anomaly_detectors.ad_core.ad_base import ADBase
+from lmi_common.trt_engine import TRTEngine
+from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
 MINIMUM_QUANT = 1e-12
 
@@ -29,69 +35,39 @@ def to_list(data):
     return list(data)
 
 
-class Anomalib_Base(ABC):
+class Anomalib_Base(ADBase):
     logger = logging.getLogger("Anomalib Base")
-
-    tiler = None
-    _colormap_tensor = None
-    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
     @abstractmethod
     def __init__(self) -> None:
         pass
 
-    @property
-    def colormap_tensor(self):
-        """
-        lazy initialize a turbo colormap tensor for annotation
-        """
-        if self._colormap_tensor is None:
-            # 1. Generate a gradient from 0 to 255
-            gradient = np.arange(256, dtype=np.uint8).reshape(1, 256)
+    def _load_tensorrt_model(self, model_path: str) -> None:
+        """Load a TensorRT engine and populate model_shape, batch_size, fp16, and inference_mode."""
+        self.trt = TRTEngine(model_path, device=str(self.device))
+        if len(self.trt._input_names) != 1:
+            raise ValueError(f"Expected a single-input TRT engine, got inputs: {self.trt._input_names}")
+        self.model_shape = list(self.trt.input_shape[-2:])
+        self.image_size = self.model_shape
+        self.batch_size = self.trt.max_batch
+        self.fp16 = self.trt.fp16
+        self.inference_mode = "TRT"
 
-            # 2. Use OpenCV to generate the Look-Up Table
-            lut_bgr = cv2.applyColorMap(gradient, cv2.COLORMAP_TURBO)
-            lut_rgb = cv2.cvtColor(lut_bgr, cv2.COLOR_BGR2RGB)
-
-            # 3. Reshape to [256, 3] and convert to Tensor
-            self._colormap_tensor = self.from_numpy(lut_rgb).squeeze(0)
-        return self._colormap_tensor
-
-    @torch.inference_mode()
-    def from_numpy(self, x):
-        """
-        convert numpy array to torch tensor
-        """
-        return torch.from_numpy(x).to(self.device) if isinstance(x, np.ndarray) else x
-
-    def convert_to_onnx(self, export_path, input_hw=None, opset_version=14):
+    def convert_to_onnx(self, export_path, opset_version=14):
         """
         Desc: Convert existing .pt file to onnx
         Args:
             - path to output .onnx file
-            - input_hw: a int if h==w or a list of (h,w)
             - opset_version: onnx version ID
         """
         # write metadata to export path
         json_file = os.path.join(os.path.dirname(export_path), "metadata.json")
         if hasattr(self, "pt_metadata"):
-            with open(
-                json_file,
-                "w",
-                encoding="utf-8",
-            ) as metadata_file:
+            with open(json_file, "w", encoding="utf-8") as metadata_file:
                 json.dump(self.pt_metadata, metadata_file, ensure_ascii=False, indent=4)
 
-        if self.tiler is not None:
-            if input_hw is None:
-                raise Exception("Must provide input (h,w) when convert model to onnx and use tiling")
-            hw = to_list(input_hw)
-            zeros = torch.zeros(1, 3, *hw, device=self.device)
-            tiles = self.tiler.tile(zeros)
-            b, c, h, w = tiles.shape
-        else:
-            b, c = 1, 3
-            h, w = self.model_shape
+        b, c = 1, 3
+        h, w = self.model_shape
         torch.onnx.export(
             self.pt_model,
             torch.zeros((b, c, h, w)).to(self.device),
@@ -135,73 +111,74 @@ class Anomalib_Base(ABC):
         else:
             self.logger.warning(f"metadata.json not found in {onnx_dir}")
 
-    def convert(self, model_path, export_path, input_hw=None, fp16=True):
+    def convert(self, model_path, export_path, fp16=True, convert_type="trt"):
         """
-        Desc: Converts .onnx or .pt file to tensorRT engine
+        Desc: Converts .onnx or .pt file to ONNX or TensorRT engine.
 
         Args:
-            - model path: model file path .pt or .onnx
-            - export path: engine file path
-            - input_hw: a int if h==w or a list of input height and width
-            - fp16: floating point number length
+            - model_path: model file path (.pt or .onnx)
+            - export_path: output directory
+            - fp16: use half precision for TRT conversion
+            - convert_type: "onnx" to export ONNX only, "trt" to export TensorRT engine
         """
         if os.path.isfile(export_path):
             raise Exception("Export path should be a directory.")
         ext = os.path.splitext(model_path)[1]
-        if ext == ".onnx":
-            self.logger.info("Converting onnx to trt...")
-            trt_path = os.path.join(export_path, "model.engine")
-            self.convert_trt(model_path, trt_path, fp16)
-        elif ext == ".pt":
-            # convert to onnx
+
+        if convert_type == "onnx":
+            if ext != ".pt":
+                raise ValueError(f"ONNX export requires a .pt input, got {ext}")
             self.logger.info("Converting pt to onnx...")
             onnx_path = os.path.join(export_path, "model.onnx")
-            self.convert_to_onnx(onnx_path, input_hw)
-            self.logger.info(f"the onnx model is saved at {onnx_path}")
-            # # convert to trt
-            self.logger.info("Converting onnx to trt engine...")
-            trt_path = os.path.join(export_path, "model.engine")
-            self.convert_trt(onnx_path, trt_path, fp16)
+            self.convert_to_onnx(onnx_path)
+            self.logger.info(f"ONNX model saved at {onnx_path}")
+        elif convert_type == "trt":
+            if ext == ".onnx":
+                self.logger.info("Converting onnx to trt...")
+                trt_path = os.path.join(export_path, "model.engine")
+                self.convert_trt(model_path, trt_path, fp16)
+            elif ext == ".pt":
+                self.logger.info("Converting pt to onnx...")
+                onnx_path = os.path.join(export_path, "model.onnx")
+                self.convert_to_onnx(onnx_path)
+                self.logger.info(f"ONNX model saved at {onnx_path}")
+                self.logger.info("Converting onnx to trt engine...")
+                trt_path = os.path.join(export_path, "model.engine")
+                self.convert_trt(onnx_path, trt_path, fp16)
+            else:
+                raise ValueError(f"TRT export requires a .pt or .onnx input, got {ext}")
+        else:
+            raise ValueError(f"Unknown convert_type: {convert_type!r}. Expected 'onnx' or 'trt'")
 
     @torch.inference_mode()
-    def annotate(self, img, ad_scores, ad_threshold, ad_max):
-        """generate an annotated image
+    def preprocess(self, images) -> torch.Tensor:
+        """Convert a list of HWC uint8 images to a batched [N,C,H,W] float tensor.
 
         Args:
-            img (numpy | tensor): an intensity image with a shape of [h,w,c]
-            ad_scores (numpy | tensor): an error distance map with a shape of [h,w]
-            ad_threshold (float): threshold for determining anomaly area
-            ad_max (float): max AD score for normalizing the annotated images
+            images: List of uint8 numpy arrays or torch tensors [H,W,C] or [H,W]
 
         Returns:
-            numpy: an annotated image
-        """
-        # ensure that ad_max > ad_threshold
-        ad_max = max(ad_max, ad_threshold + 1e-8)
-        # convert to tensor
-        ad_scores = self.from_numpy(ad_scores)
-        img = self.from_numpy(img)
-        ad_threshold = self.from_numpy(np.array(ad_threshold)).to(ad_scores.dtype)
-        ad_max = self.from_numpy(np.array(ad_max)).to(ad_scores.dtype)
-        # Resize AD score to match input image
-        h_img, w_img = img.shape[:2]
-        ad_scores = pipeline_utils.resize_image(ad_scores, H=h_img, W=w_img)
-        # shrink the min-max range
-        ad_scores[ad_scores < ad_threshold] = ad_threshold
-        ad_scores[ad_scores > ad_max] = ad_max
-        # apply colormap
-        ad_norm = (ad_scores - ad_threshold) / (ad_max - ad_threshold)
-        ad_gray = (ad_norm * 255).to(torch.uint8)
-        residual_rgb = self.colormap_tensor[ad_gray.flatten().long()].view(*ad_gray.shape, 3).to(torch.uint8)
+            Preprocessed tensor [N,C,H,W] float32 (or float16 if fp16)
 
-        # Overlay anomaly heat map with input image
-        annot = img * 0.6 + residual_rgb * 0.4
-        annot = annot.round().to(torch.uint8)
-        img = img.to(torch.uint8)
-        m = ad_gray == 0
-        # replace all below-threshold pixels with input image indicating no anomaly
-        annot[m] = img[m]
-        return annot.cpu().numpy()
+        Raises:
+            ValueError: If batch size exceeds TensorRT engine limit
+        """
+        tensors = []
+        for image in images:
+            img = self.from_numpy(image).float()
+            tensors.append(img.permute((2, 0, 1)))  # [C,H,W]
+
+        img = torch.stack(tensors) / 255.0  # [N,C,H,W]
+
+        batch = img.shape[0]
+        if self.inference_mode == "TRT" and batch > self.batch_size:
+            raise ValueError(f"Batch size {batch} exceeds TensorRT engine max batch size {self.batch_size}")
+
+        if self.inference_mode == "TRT" and (img.shape[2] != self.model_shape[0] or img.shape[3] != self.model_shape[1]):
+            img = v2.Resize(self.model_shape, antialias=True)(img)
+
+        img = img.contiguous()
+        return img.half() if self.fp16 else img
 
     @staticmethod
     def compute_ad_contour_bbox(ad_scores, ad_max):
@@ -215,6 +192,35 @@ class Anomalib_Base(ABC):
             bboxes.append([x, y, x + w, y + h])
         return sorted_contours, bboxes
 
+    def postprocess(self, output: torch.Tensor, return_numpy: bool = True) -> List[Union[np.ndarray, torch.Tensor]]:
+        """Convert raw model output to a list of per-image anomaly maps.
+
+        Args:
+            output: Model output tensor [N,H,W] or [N,1,H,W].
+            return_numpy: If True, return numpy arrays; otherwise return tensors.
+
+        Returns:
+            List of anomaly maps [H,W], one per input image.
+        """
+        output = output.squeeze(1) if output.ndim == 4 else output
+        if return_numpy:
+            output_np = output.cpu().numpy()
+            return [np.squeeze(output_np[i]) for i in range(output_np.shape[0])]
+        return [output[i].squeeze() for i in range(output.shape[0])]
+
+    def warmup(self, input_hw=None):
+        """Warm up model using a dummy zeros array.
+
+        Args:
+            input_hw: Input height and width as int (h==w) or [h, w]. Defaults to the model's built-in shape.
+        """
+        if input_hw is None:
+            input_hw = self.model_shape
+        input_hw = to_list(input_hw)
+        zeros = np.zeros(input_hw + [3], dtype=np.uint8)
+        self.logger.info(f"Warming up model with input shape: {zeros.shape}")
+        self.predict([zeros])
+
     def test(
         self,
         images_path,
@@ -223,7 +229,10 @@ class Anomalib_Base(ABC):
         annotate_inputs=True,
         anom_threshold=None,
         anom_max=None,
-        overlap_mode="average",
+        tile=None,
+        stride=None,
+        overlap_mode="gaussian",
+        scale_mode="padding",
         limit=None,
     ):
         """
@@ -236,7 +245,10 @@ class Anomalib_Base(ABC):
             - annotate_inputs: option to show anomaly score histogram and heat map for each image in thd dataset (def: True)
             - anom_threshold: user defined anomaly threshold (sets beginning of heat map)
             - anom_max: user defined anomaly max (sets end of the heat map)
-            - overlap_mode: for tiling, can be "average", "max", "cosine", "linear", "gaussian"
+            - tile: tile size [h,w]. If set, tiling is performed via Preprocessor before inference.
+            - stride: stride size [h,w]. Required when tile is set.
+            - overlap_mode: overlap blending for tiling, can be "average", "max", "cosine", "linear", "gaussian"
+            - scale_mode: tile scaling mode, "padding" or "interpolation"
             - limit: if set, process only the first N images (useful for smoke tests)
         """
         import csv
@@ -288,7 +300,19 @@ class Anomalib_Base(ABC):
         if not os.path.exists(out_path):
             os.makedirs(out_path)
 
-        kwargs = {"tiling_settings": {"overlap_mode": overlap_mode}}
+        steps = []
+        if tile is not None:
+            if stride is None:
+                raise ValueError("Must provide stride when using tiling")
+            steps = [
+                {
+                    "type": "tile",
+                    "configuration": {"tile_size": tile, "stride": stride, "overlap_mode": overlap_mode, "scale_mode": scale_mode},
+                }
+            ]
+        preprocessor = Preprocessor()
+        reconstructor = Reconstructor()
+
         proctime = []
         img_all, anom_all, fname_all, path_all = [], [], [], []
         for image_path in images:
@@ -296,10 +320,17 @@ class Anomalib_Base(ABC):
             image_path = str(image_path)
             img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
             t0 = time.time()
-            anom_map = self.predict(img, **kwargs)
+            if steps:
+                tiles, history = preprocessor.preprocess([img], steps)
+                ad_maps = self.predict(tiles)
+                anom_map = reconstructor.reconstruct(ad_maps, history)[0]
+                if isinstance(anom_map, torch.Tensor):
+                    anom_map = anom_map.cpu().numpy()
+            else:
+                anom_map = self.predict([img])[0]
             proctime.append(time.time() - t0)
             fname = os.path.split(image_path)[1]
-            if self.tiler is None:
+            if not steps:
                 h, w = self.model_shape
                 img = pipeline_utils.resize_image(img, H=h, W=w)
             img_all.append(img)

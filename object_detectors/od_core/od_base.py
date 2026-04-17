@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
-from lmi_utils.image_utils.types import ImageBatch, normalize_image_batch
+from lmi_utils.image_utils.types import ImageBatch, normalize_image_batch, to_rgb
 
 from .results import Results
 
@@ -48,9 +48,9 @@ class ODBase(abc.ABC):
         Return tensors if input image are tensors, otherwise return numpy arrays.
 
         Args:
-            image: A single HWC image, a list of HWC images, or a BHWC batch.
-                Accepts both numpy arrays and torch tensors. All images in a batch
-                must have the same dimensions.
+            image: A single HW or HWC image, a list of HW/HWC images, or a BHWC batch.
+                Accepts both numpy arrays and torch tensors. 2D (HW) images are
+                expanded to 3-channel RGB. All images in a batch must have the same dimensions.
             configs: Confidence threshold (float) or per-class thresholds (dict).
             operators: Operators for coordinate reversion. Accepts:
                 - None: no coordinate reversion.
@@ -73,7 +73,7 @@ class ODBase(abc.ABC):
         """
         time_info = {}
 
-        images = normalize_image_batch(image)
+        images = [to_rgb(img) for img in normalize_image_batch(image)]
 
         n = len(images)
         operators = self._normalize_operators(operators, n)

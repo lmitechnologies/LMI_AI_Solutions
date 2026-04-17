@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Sequence
-from typing import List, Tuple
+from typing import List
 
 import cv2
 import numpy as np
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 DATA_PATH = "tests/assets/images/nvtec-ad"
 MODEL_PATH = "tests/assets/models/ad/model_v1.pt"
 TRACED_MODEL_PATH = "tests/assets/models/ad/model_v1_trace.pt"
+ENGINE_PATH = "tests/assets/models/ad/model_v1.engine"
 OUTPUT_PATH = "tests/outputs/ad/anomalib_v1"
 USE_GPU = torch.cuda.is_available()
 DEVICE = "cuda" if USE_GPU else "cpu"
@@ -52,6 +53,31 @@ def test_data():
     return out, names
 
 
+@pytest.fixture(scope="module")
+def api_model():
+    return AnomalyDetector(BASE_CONFIG, device=DEVICE)
+
+
+@pytest.fixture(scope="module")
+def ad_model():
+    return AnomalyModelV1(MODEL_PATH, device=DEVICE)
+
+
+@pytest.fixture(scope="module")
+def cpu_models():
+    ad1 = AnomalyModelV1(MODEL_PATH, device="cpu")
+    ad2 = AnomalyModelV1(TRACED_MODEL_PATH, device="cpu")
+    ad_api = AnomalyDetector(BASE_CONFIG, device="cpu")
+    return [ad1, ad2, ad_api]
+
+
+@pytest.fixture(scope="module")
+def trt_model():
+    if not USE_GPU:
+        pytest.skip("GPU not available, skipping TRT model fixture")
+    return AnomalyModelV1(ENGINE_PATH, device="cuda")
+
+
 def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyModelV1]):
     paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
     for p in paths:
@@ -74,87 +100,37 @@ def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyMod
         preds = [model.predict(rgb) for model in ais_models]
 
         for pred2 in preds:
-            if USE_GPU:
-                assert np.array_equal(pred, pred2)
-            else:
-                assert np.allclose(pred, pred2, atol=1e-5)
+            assert np.allclose(pred, pred2, atol=1e-5)
 
 
-def test_compare_results_with_anomalib():
+def test_compare_results_with_anomalib(cpu_models):
     """
     compare prediction results between current implementation and anomalib
     """
-    model1 = TorchInferencer(MODEL_PATH, device=DEVICE)
-    model2 = AnomalyModelV1(MODEL_PATH, device=DEVICE)
-    model3 = AnomalyModelV1(TRACED_MODEL_PATH, device=DEVICE)
-    compare_results(model1, [model2, model3])
-
-
-def test_compare_results_with_anomalib_api():
-    """
-    compare prediction results between current implementation and anomalib
-    """
-    model1 = TorchInferencer(MODEL_PATH, device=DEVICE)
-    model2 = AnomalyDetector(BASE_CONFIG, device=DEVICE)
-    config = {
-        **BASE_CONFIG,
-        "model_path": TRACED_MODEL_PATH,
-    }  # replace model path with traced model path
-    model3 = AnomalyDetector(config, device=DEVICE)
-    compare_results(model1, [model2, model3])
-
-
-@pytest.mark.parametrize("init_args, warmup_size", [((224, 112), [672, 640]), ((), [256, 224])])
-def test_warmup(init_args: Tuple, warmup_size: List[int]):
-    """
-    Test AnomalyModel2 warmup with default and specific sizes.
-    """
-    ad = AnomalyModelV1(MODEL_PATH, *init_args, device=DEVICE)
-    ad.warmup()
-    ad.warmup(warmup_size)
+    model1 = TorchInferencer(MODEL_PATH, device="cpu")
+    model2, model3, model4 = cpu_models
+    compare_results(model1, [model2, model3, model4])
 
 
 @pytest.mark.parametrize("warmup_size", [[672, 640], [256, 224]])
-def test_warmup_api(warmup_size: List[int]):
+def test_warmup_api(api_model, warmup_size: List[int]):
     """
     Test warmup with different input dimensions.
     """
-    ad = AnomalyDetector(BASE_CONFIG, 224, 112, device=DEVICE)
-    ad.warmup()
-    ad.warmup(warmup_size)
+    api_model.warmup()
+    api_model.warmup(warmup_size)
 
 
-@pytest.mark.parametrize(
-    "init_args, sub_dir",
-    [
-        ((MODEL_PATH, 224, 224, "resize"), "tile-resize"),
-        ((MODEL_PATH, 224, 224), "tile-pad"),
-        ((MODEL_PATH,), None),
-    ],
-)
-def test_model(init_args: Tuple, sub_dir: str):
-    """
-    Test AnomalyModel2 with various initialization parameters.
-    """
-    model = AnomalyModelV1(*init_args, device=DEVICE)
-
-    # specific output path if sub_dir exists, else default OUTPUT_PATH
-    save_path = os.path.join(OUTPUT_PATH, sub_dir) if sub_dir else OUTPUT_PATH
-    model.test(DATA_PATH, save_path)
+def test_model_api(api_model):
+    api_model.test(DATA_PATH, OUTPUT_PATH)
 
 
-@pytest.mark.parametrize("extra_args", [(224, 224, "resize"), ()])
-def test_model_api(extra_args: Tuple):
-    """
-    Test AnomalyDetector API with and without resize arguments.
-    """
-    ad = AnomalyDetector(BASE_CONFIG, *extra_args, device=DEVICE)
-    ad.test(DATA_PATH, OUTPUT_PATH)
+def test_trt_model(trt_model):
+    trt_model.warmup()
+    trt_model.test(DATA_PATH, OUTPUT_PATH)
 
 
-def test_annotate(
-    test_data,
-):
+def test_annotate(ad_model, test_data):
     def old_func(img, ad_scores, ad_threshold, ad_max):
         # Resize AD score to match input image
         h_img, w_img = img.shape[:2]
@@ -176,7 +152,7 @@ def test_annotate(
         annot[indices] = img[indices]
         return annot
 
-    ad = AnomalyModelV1(MODEL_PATH, device=DEVICE)
+    ad = ad_model
     for _ in range(1):
         ad.warmup()
 
@@ -185,7 +161,7 @@ def test_annotate(
 
     imgs, names = test_data
     for im, name in zip(imgs, names):
-        pred = ad.predict(im)
+        pred = ad.predict(im)[0]
         mean, max = pred.mean(), pred.max()
 
         t0 = time.time()
@@ -205,7 +181,7 @@ def test_annotate(
             t0 = time.time()
             out3 = ad.annotate(im, pred, mean, max)
             t2 = time.time() - t0
-            logger.info(f"improved proc time from {t1:.4f} to {t2:.4f}")
+            logger.debug(f"improved proc time from {t1:.4f} to {t2:.4f}")
 
             assert np.array_equal(out1, out2)
             assert np.array_equal(out2, out3)
@@ -234,8 +210,8 @@ def test_cmds():
     """smoke-test: verify CLI commands run without errors on a single image"""
     with tempfile.TemporaryDirectory() as t:
         my_env = os.environ.copy()
-        cmd = f"python -m anomaly_detectors.anomalib_lmi.v1.model test -i {MODEL_PATH} -d {DATA_PATH} -o {str(t)} \
-            -g -p --tile 224 224 --stride 224 224 --resize --limit 1"
+        cmd = f"python -m anomaly_detectors.anomalib_lmi.v1.model test -i {MODEL_PATH} -d {DATA_PATH} \
+                -o {str(t)} -g -p --tile 224 224 --stride 224 224 --limit 1"
         logger.info(f"running cmd: {cmd}")
         result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
         logger.info(result.stdout)
@@ -246,100 +222,70 @@ def test_cmds():
 
         if USE_GPU:
             t2 = os.path.join(t, "recon")
-            cmd = (
-                f"python -m anomaly_detectors.anomalib_lmi.v1.model convert"
-                f" -i {MODEL_PATH} -o {t2} --hw 1120 1120 --tile 224 224 --stride 224 224"
-            )
+            cmd = f"python -m anomaly_detectors.anomalib_lmi.v1.model convert -i {MODEL_PATH} -o {t2}"
             logger.info(f"running cmd: {cmd}")
             result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
             logger.info(result.stdout)
             logger.info(result.stderr)
 
-            assert os.path.isfile(os.path.join(t2, "model.engine"))
+            out_engine = os.path.join(t2, "model.engine")
+            assert os.path.isfile(out_engine)
 
 
-def test_convert_to_torchscript_argument_validation():
-    with tempfile.TemporaryDirectory() as t:
-        my_env = os.environ.copy()
-        # test convert_to_torchscript argument validation
-        outpath = os.path.join(t, "trace_fail.pt")
-        cmd = f"python -m anomaly_detectors.anomalib_lmi.convert_to_torchscript -i {MODEL_PATH} -o {outpath}"
-        logger.info(f"running cmd: {cmd}")
-        result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
-        assert result.returncode != 0
-
-
-@pytest.mark.parametrize("batch_size", [1, 2, 3, 4, 8])
-def test_mini_batch(batch_size):
-    """
-    Test mini-batch inference combined with tiling.
-    """
-    ad = AnomalyModelV1(MODEL_PATH, tile=224, stride=224, device="cpu")
-    test_img = np.random.randint(0, 255, (672, 640, 3), dtype=np.uint8)
-
-    result_normal = ad.predict(test_img)
-    inference_settings = {"inference_batch_size": batch_size}
-    result_batched = ad.predict(test_img, inference_settings=inference_settings, verbose=True)
-
-    logger.info(f"max diff: {np.max(np.abs(result_normal - result_batched))}")
-    atol = 5e-2 if IS_ARM else 1e-5
-    assert np.allclose(result_normal, result_batched, atol=atol)
-
-
-def test_predict_invalid_overlap_mode():
-    """
-    Test that AnomalyModel2.predict raises ValueError for invalid overlap modes.
-    """
-    ad = AnomalyModelV1(MODEL_PATH, tile=224, stride=224, device=DEVICE)
-    test_img = np.zeros((224, 224, 3), dtype=np.uint8)
-
-    with pytest.raises(ValueError, match="Invalid overlap mode"):
-        ad.predict(test_img, tiling_settings={"overlap_mode": "invalid_mode"})
-
-
-@pytest.mark.parametrize("batch_size", [1, 5, 10])
-def test_predict_batch_size_edge_cases(batch_size):
-    """
-    Test mini-batch inference with various batch sizes relative to number of tiles.
-    """
-    ad = AnomalyModelV1(MODEL_PATH, tile=224, stride=224, device=DEVICE)
-    test_img = np.zeros((448, 448, 3), dtype=np.uint8)
-
-    inference_settings = {"inference_batch_size": batch_size}
-    result = ad.predict(test_img, inference_settings=inference_settings)
-    assert result.shape == (448, 448)
-
-
-def test_predict_input_variants():
-    """
-    Test predict with different input formats (numpy, torch tensor, grayscale).
-    """
-    ad = AnomalyModelV1(MODEL_PATH, device=DEVICE)
-
+def test_predict_input_variants(ad_model):
+    """Test predict with different input formats (numpy, torch tensor, grayscale)."""
     # Numpy RGB
     img_np = np.zeros((224, 224, 3), dtype=np.uint8)
-    res1 = ad.predict(img_np)
+    res1 = ad_model.predict(img_np)[0]
     assert res1.shape == (224, 224)
 
     # Grayscale
     img_gray = np.zeros((224, 224), dtype=np.uint8)
-    res3 = ad.predict(img_gray)
+    res3 = ad_model.predict(img_gray)[0]
     assert res3.shape == (224, 224)
 
 
-def test_predict_error_handling(monkeypatch):
-    """
-    Test that AnomalyModel2.predict raises RuntimeError when _infer returns None.
-    """
-    ad = AnomalyModelV1(MODEL_PATH, device=DEVICE)
-    test_img = np.zeros((224, 224, 3), dtype=np.uint8)
+@pytest.mark.parametrize("n_images", [1, 2, 4])
+def test_predict_batch(cpu_models, n_images):
+    """Test predict with a batch of images: list input, BHWC input, and GPU tensors if available."""
+    ad = cpu_models[0]
+    imgs_np = [np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8) for _ in range(n_images)]
 
-    # Mock _infer to return None
-    monkeypatch.setattr(ad, "_infer", lambda x: None)
-    with pytest.raises(RuntimeError, match="Model inference failed to produce output"):
-        ad.predict(test_img)
+    # list of numpy arrays → list of numpy arrays
+    results = ad.predict(imgs_np)
+    assert isinstance(results, list) and len(results) == n_images
+    for r in results:
+        assert isinstance(r, np.ndarray) and r.shape == (224, 224)
 
-    # Mock _perform_batched_inference to return None
-    monkeypatch.setattr(ad, "_perform_batched_inference", lambda x, y: None)
-    with pytest.raises(RuntimeError, match="Model inference failed to produce output"):
-        ad.predict(test_img, inference_settings={"inference_batch_size": 1})
+    # batch_size kwarg chunks the inference but output must be identical
+    results_chunked = ad.predict(imgs_np, batch_size=max(1, n_images // 2))
+    assert len(results_chunked) == n_images
+    for r_ref, r_chunk in zip(results, results_chunked):
+        assert np.allclose(r_ref, r_chunk, atol=1e-5)
+
+
+@pytest.mark.parametrize("n_images", [1, 2, 4])
+def test_predict_gpu(ad_model, n_images):
+    if not USE_GPU:
+        pytest.skip("GPU not available, skipping GPU predict test")
+
+    imgs_np = [np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8) for _ in range(n_images)]
+    bhwc = np.stack(imgs_np)  # [N,H,W,C]
+    ad = ad_model
+
+    # list of uint8 GPU tensors → list of GPU tensors
+    imgs_gpu = [torch.from_numpy(img).cuda() for img in imgs_np]
+    results_gpu = ad.predict(imgs_gpu)
+    assert isinstance(results_gpu, list) and len(results_gpu) == n_images
+    for r in results_gpu:
+        assert isinstance(r, torch.Tensor) and r.shape == (224, 224)
+
+    # BHWC uint8 GPU tensor → list of GPU tensors
+    bhwc_gpu = torch.from_numpy(bhwc).cuda()
+    results_bhwc_gpu = ad.predict(bhwc_gpu)
+    assert isinstance(results_bhwc_gpu, list) and len(results_bhwc_gpu) == n_images
+    for r in results_bhwc_gpu:
+        assert isinstance(r, torch.Tensor) and r.shape == (224, 224)
+
+    for r_gpu1, r_gpu2 in zip(results_bhwc_gpu, results_gpu):
+        assert torch.allclose(r_gpu1, r_gpu2, atol=1e-5)

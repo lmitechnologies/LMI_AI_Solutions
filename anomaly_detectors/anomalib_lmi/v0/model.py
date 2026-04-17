@@ -34,6 +34,7 @@ class AnomalyModel(Anomalib_Base):
     logger = logging.getLogger("AnomalyModel v0")
 
     def __init__(self, model_path, **kwargs):
+        self.logger.warning("AnomalyModel v0 is deprecated and will be removed in future versions.")
         if not os.path.isfile(model_path):
             raise Exception(f"Cannot find the model file: {model_path}")
 
