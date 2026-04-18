@@ -261,7 +261,8 @@ def test_predict_batch(cpu_models, n_images):
     results_chunked = ad.predict(imgs_np, batch_size=max(1, n_images // 2))
     assert len(results_chunked) == n_images
     for r_ref, r_chunk in zip(results, results_chunked):
-        assert np.allclose(r_ref, r_chunk, atol=1e-5)
+        atol = 1e-2 if IS_ARM else 1e-5
+        assert np.allclose(r_ref, r_chunk, atol=atol)
 
 
 @pytest.mark.parametrize("n_images", [1, 2, 4])

@@ -92,9 +92,9 @@ class TestNormalizeImageBatch:
         result = normalize_image_batch([np.zeros((H, W), dtype=np.uint8)])
         assert len(result) == 1 and result[0].shape == (H, W)
 
-    def test_4d_single_raises(self):
+    def test_5d_single_raises(self):
         with pytest.raises(ValueError, match="2D.*or.*3D"):
-            normalize_image_batch(np.zeros((H, W, C, 1), dtype=np.uint8))
+            normalize_image_batch(np.zeros((2, H, W, C, 1), dtype=np.uint8))
 
 
 class TestAssertImageNdim:

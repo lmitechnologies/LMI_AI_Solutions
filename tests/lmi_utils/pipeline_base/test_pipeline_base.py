@@ -126,9 +126,7 @@ class PipelineAD(PipelineBase):
         preprocessed_images, ops_list = self.preprocess(model_role, images)
 
         # 2. Mock inference
-        scores = []
-        for im in preprocessed_images:
-            scores.append(self.models[model_role].predict(im))
+        scores = self.models[model_role].predict(preprocessed_images)
 
         # 3. Reconstruct
         heatmap = self.reconstruct(scores, ops_list)
