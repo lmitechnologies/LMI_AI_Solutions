@@ -81,6 +81,12 @@ def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyMod
             assert np.allclose(pred, pred2, atol=1e-5)
 
 
+def test_model_class_comparison(ad_models):
+    direct = ad_models[0]
+    api = ad_models[1]
+    assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
+
+
 def test_compare_results_with_anomalib(cpu_models):
     """
     compare prediction results between current implementation and anomalib
@@ -131,7 +137,7 @@ def test_convert_to_torchscript():
 
 def test_predict_input_variants():
     """Test predict with different input formats (numpy, torch tensor, grayscale)."""
-    ad = AnomalyModelV2(MODEL_PATH, device=DEVICE)
+    ad = AnomalyDetector(BASE_CONFIG, device=DEVICE)
 
     # Numpy RGB
     img_np = np.zeros((224, 224, 3), dtype=np.uint8)
@@ -147,7 +153,7 @@ def test_predict_input_variants():
 @pytest.mark.parametrize("n_images", [1, 2, 4, 7])
 def test_predict_batch(cpu_models, n_images):
     """Test predict with a batch of images: list input, BHWC input, and GPU tensors if available."""
-    ad = cpu_models[0]
+    ad = cpu_models[1]
     imgs_np = [np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8) for _ in range(n_images)]
 
     # list of numpy arrays → list of numpy arrays
@@ -174,7 +180,7 @@ def test_predict_gpu_batch(ad_models, n_images):
     if not USE_GPU:
         pytest.skip("GPU not available, skipping GPU batch test.")
 
-    ad = ad_models[0]
+    ad = ad_models[1]
     imgs_np = [np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8) for _ in range(n_images)]
     bhwc = np.stack(imgs_np)  # [N,H,W,C]
 

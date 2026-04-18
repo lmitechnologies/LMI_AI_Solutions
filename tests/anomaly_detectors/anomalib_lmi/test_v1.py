@@ -128,7 +128,13 @@ def test_trt_model(trt_model):
     trt_model.test(DATA_PATH, OUTPUT_PATH)
 
 
-def test_annotate(ad_model, test_data):
+def test_model_class_comparison(ad_model, api_model):
+    direct = ad_model
+    api = api_model
+    assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
+
+
+def test_annotate(api_model, test_data):
     def old_func(img, ad_scores, ad_threshold, ad_max):
         # Resize AD score to match input image
         h_img, w_img = img.shape[:2]
@@ -150,7 +156,7 @@ def test_annotate(ad_model, test_data):
         annot[indices] = img[indices]
         return annot
 
-    ad = ad_model
+    ad = api_model
     for _ in range(1):
         ad.warmup()
 
@@ -230,23 +236,23 @@ def test_cmds():
             assert os.path.isfile(out_engine)
 
 
-def test_predict_input_variants(ad_model):
+def test_predict_input_variants(api_model):
     """Test predict with different input formats (numpy, torch tensor, grayscale)."""
     # Numpy RGB
     img_np = np.zeros((224, 224, 3), dtype=np.uint8)
-    res1 = ad_model.predict(img_np)[0]
+    res1 = api_model.predict(img_np)[0]
     assert res1.shape == (224, 224)
 
     # Grayscale
     img_gray = np.zeros((224, 224), dtype=np.uint8)
-    res3 = ad_model.predict(img_gray)[0]
+    res3 = api_model.predict(img_gray)[0]
     assert res3.shape == (224, 224)
 
 
 @pytest.mark.parametrize("n_images", [1, 2, 4, 7])
 def test_predict_batch(cpu_models, n_images):
     """Test predict with a batch of images: list input, BHWC input, and GPU tensors if available."""
-    ad = cpu_models[0]
+    ad = cpu_models[2]
     imgs_np = [np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8) for _ in range(n_images)]
 
     # list of numpy arrays → list of numpy arrays
@@ -262,13 +268,13 @@ def test_predict_batch(cpu_models, n_images):
 
 
 @pytest.mark.parametrize("n_images", [1, 2, 4, 7])
-def test_predict_gpu(ad_model, n_images):
+def test_predict_gpu(api_model, n_images):
     if not USE_GPU:
         pytest.skip("GPU not available, skipping GPU predict test")
 
     imgs_np = [np.random.randint(0, 255, (224, 224, 3), dtype=np.uint8) for _ in range(n_images)]
     bhwc = np.stack(imgs_np)  # [N,H,W,C]
-    ad = ad_model
+    ad = api_model
 
     # list of uint8 GPU tensors → list of GPU tensors
     imgs_gpu = [torch.from_numpy(img).cuda() for img in imgs_np]
