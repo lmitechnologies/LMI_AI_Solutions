@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LMI AI Solutions is a Python monorepo providing unified wrappers and utilities for AI/ML model frameworks used in industrial computer vision: object detection, anomaly detection, and classification.
+LMI AI Solutions is a Python monorepo providing unified wrappers for AI/ML model frameworks used in industrial computer vision: object detection, anomaly detection, and classification.
 
 ## Commands
 
 ### Installation
 ```bash
-pip install -e .                # Development install
-source lmi_ai.env               # Set PYTHONPATH for running scripts directly
+pip install -e .
+source lmi_ai.env                            # Set PYTHONPATH for scripts
+git submodule update --init --recursive      # After cloning
 ```
 
 ### Testing
@@ -19,70 +20,60 @@ source lmi_ai.env               # Set PYTHONPATH for running scripts directly
 pytest tests/lmi_utils
 pytest tests/object_detectors
 pytest tests/classifiers
-pytest tests/anomaly_detectors/anomalib_lmi/test_anomaly_model_v1.py
-pytest tests/anomaly_detectors/anomalib_lmi/test_anomaly_model_v2.py
-bash tests/run_tests.sh         # Run all tests via script
+pytest tests/anomaly_detectors/anomalib_lmi/test_v0.py
+pytest tests/anomaly_detectors/anomalib_lmi/test_v1.py
+pytest tests/anomaly_detectors/anomalib_lmi/test_v2.py
+bash tests/run_tests.sh v1-all  # Also: od, utils, cls, ad-v1, ad-v2
 ```
 
-### Linting & Formatting
+### Linting
 ```bash
-ruff check .
-ruff format .
-pre-commit run --all-files      # Run all pre-commit hooks (Ruff + large file check)
+ruff check . && ruff format .
+pre-commit run --all-files
 ```
 
-Pre-commit hooks run Ruff automatically on commit. Line length is 140, target Python 3.8+, double quotes, rules E/F/I/B enforced.
+Line length 140, Python 3.8+, double quotes, rules E/F/I/B. Pre-commit runs Ruff automatically on commit.
 
 ## Architecture
 
 ### Registry / Factory Pattern
 
-The core design across all model domains (object detection, anomaly detection, classification) uses a **registry + factory** pattern:
+All three domains (`od_core/`, `ad_core/`, `cls_core/`) share the same pattern: framework wrappers register themselves with metadata (`framework`, `model_name`, `task`, `version`), and a top-level factory class (`ObjectDetector`, `AnomalyDetector`, etc.) instantiates the correct backend at runtime.
 
-- `od_core/`, `ad_core/`, `cls_core/` define base classes and a registry
-- Each framework wrapper (e.g., `ultralytics_lmi/`, `detectron2_lmi/`) registers itself with the registry using metadata: `framework`, `model_name`, `task`, `version`
-- The top-level factory class (`ObjectDetector`, etc.) uses the registry to instantiate the correct backend at runtime based on these keys
+### Subclass Contract
 
-### Module Structure
+Every backend implements exactly four abstract methods — `warmup`, `preprocess`, `forward`, `postprocess` — and the base class orchestrates the full inference pipeline.
 
-| Module | Purpose |
-|--------|---------|
-| `lmi_utils/` | Shared utilities: image, data, dataset, label (incl. `json_to_factory`), eval, pre/post-processing, point cloud, pipeline base, system utils |
-| `lmi_common/` | Cross-domain shared code (`YoloCore` wrapping Ultralytics AutoBackend, shared by both detectors and classifiers) |
-| `object_detectors/` | Object detection: Ultralytics YOLO (v8–v12 / yolo26), Detectron2, RF-DETR; YOLOv5 (legacy, do not modify) |
-| `anomaly_detectors/` | Anomaly detection: Anomalib v1.1.1 and v2.2.0 wrappers |
-| `classifiers/` | Classification: Ultralytics YOLO classifier (`ultralytics_lmi/yolo`); legacy `yolov8_cls` in `deprecated/` |
+### ADBase (`ad_core/ad_base.py`)
 
-### Object Detection Base Class (`od_core/`)
+- `predict(image, batch_size=None)` — accepts a single image, list, or BHWC numpy/tensor batch. When `batch_size` is set, delegates to `_run_batched_predict` which chunks inputs **before** preprocessing. Set `self.fixed_batch_size` on TRT subclasses for automatic zero-padding.
+- `annotate(img, ad_scores, ad_threshold, ad_max)` — GPU-accelerated turbo-colormap heatmap overlay; returns `uint8` HWC numpy.
+- `colormap_tensor` — lazily initialized `[256, 3]` turbo LUT on `self.device`.
 
-The `ODBase` class in `od_core/od_base.py` implements the **shared inference pipeline** used by all object detection backends. Subclasses only need to implement `warmup`, `preprocess`, `forward`, and `postprocess` — the rest is handled by the base:
+### Anomalib_Base (`anomalib_lmi/base.py`)
 
-- `predict(image, configs, operators)` — full pipeline: preprocess → forward → postprocess, with support for single images, lists, and BHWC numpy arrays. Fixed batch sizes (e.g. TRT engines) are handled via zero-padding.
-- `annotate_image(results, image, ...)` — draws bounding boxes / masks on an image.
-- `_apply_confidence_filter` / `_compute_thresholds` — per-class confidence filtering.
-- `_normalize_operators` / `_revert_coordinates` — coordinate reversion via operator chains.
-- `_parse_confidence_config` — normalizes a float or dict config into a per-class threshold dict.
-- `_aggregate_results` — collects a list of `Results` objects into a batched output dict.
+Subclasses `ADBase`; shared by v1 and v2 backends. Adds:
+- `_load_tensorrt_model` — loads TRT engine, sets `fixed_batch_size`, shape, fp16.
+- `convert(model_path, export_path, fp16=True, convert_type="trt")` — `.pt` → ONNX → TRT.
+- `test(images_path, ...)` — evaluation with gamma-fit threshold suggestions, CSV stats, optional tiling, annotated outputs.
 
-`Results` (`od_core/results.py`) stores all numeric fields (`boxes`, `scores`, `masks`, `points`, `segments`) as **`torch.Tensor`** internally. `boxes`, `scores`, and `classes` always default to empty tensors/lists so `to_dict()` is safe even with zero detections.
+### ODBase (`od_core/od_base.py`)
 
-### Git Submodules
+- `predict(image, configs, operators=None, batch_size=None)` — returns `(results_dict, time_info)`. `results_dict` keys: `boxes`, `scores`, `classes`, `masks`, `segments`, `points` (each a per-image list). Fixed-batch TRT engines are zero-padded.
+- `annotate_image(results, image, ...)` — draws boxes, masks, segments, keypoints; handles OBB.
+- Helpers: `_parse_confidence_config`, `_apply_confidence_filter`, `_normalize_operators`, `_revert_coordinates`, `_aggregate_results`.
 
-External dependencies (YOLOv5, Anomalib forks) are included as git submodules under `*/submodules/`. After cloning, run `git submodule update --init --recursive`.
+`Results` (`od_core/results.py`) — all numeric fields stored as `torch.Tensor`; defaults to empty tensors so `to_dict()` is safe with zero detections.
 
-> Note: The EfficientNet, TF OD API models, and PaddleOCR submodules have been removed. The `tf_objdet/` folder may remain but TensorFlow Object Detection API support has been dropped.
+### CI/CD
 
-### Supported Model Backends
+Three Docker test scenarios (Python 3.10, linux/amd64 + arm64): `no_ad` (utils/od/cls), `ad_v1` (Anomalib v1.1.1), `ad_v2` (Anomalib v2.2.0). Images tagged `py310-{arch}-{version}` on GHCR.
 
-- **Ultralytics YOLO** (v8–v12, "yolo26" generation): detection, segmentation, pose, OBB, classification — v0 support dropped; `yolov8_lmi` and `yolov8_cls` moved to `deprecated/`
-- **YOLOv5** (custom fork submodule) — **LEGACY: do not modify unless explicitly instructed**
-- **Detectron2** (Facebook Research)
-- **RF-DETR**
-- ~~**TensorFlow Object Detection API**~~ — removed
-- **Anomalib** (v1.x and v2.x — separate class hierarchies due to API differences)
-- **SAM2** (Segment Anything Model 2)
-- ~~**PaddleOCR**~~ — removed
+### Legacy / Do Not Modify
 
-### Versioning & Releases
+- `yolov5_lmi/` (git submodule), `anomalib_lmi/v0/`, `deprecated/` — do not modify unless explicitly instructed.
+- `tf_objdet/` folder may remain; TensorFlow OD support has been dropped.
 
-Automated semantic versioning via `.releaserc.json`. Default branch is `ais`. CI/CD in `.github/workflows/`.
+### Versioning
+
+Automated semantic versioning via `.releaserc.json`. Default branch is `ais`.

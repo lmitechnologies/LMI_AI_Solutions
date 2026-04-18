@@ -187,10 +187,10 @@ jobs:
           # Check if the mode string starts with 'ad_'
           if [[ "$MODE" == ad_v1 ]]; then
             echo "Running Anomaly Detection Tests..."
-            pytest tests/anomaly_detectors/anomalib_lmi/test_anomaly_model_v1.py
+            pytest tests/anomaly_detectors/anomalib_lmi/test_v1.py
           elif [[ "$MODE" == ad_v2 ]]; then
             echo "Running Anomaly Detection Tests with Anomalib v2.2.0..."
-            pytest tests/anomaly_detectors/anomalib_lmi/test_anomaly_model_v2.py
+            pytest tests/anomaly_detectors/anomalib_lmi/test_v2.py
           else
             echo "Running Standard (No-AD) Tests..."
             OTHER_TEST_SUITE=(lmi_common lmi_utils object_detectors classifiers)

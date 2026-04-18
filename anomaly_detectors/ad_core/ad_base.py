@@ -15,6 +15,9 @@ class ADBase(ABC):
     _colormap_tensor = None
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
+    # Set to a positive integer in subclasses that use a fixed-batch-size model.
+    fixed_batch_size: int = None
+
     @property
     def colormap_tensor(self):
         """Lazily initialize and return a [256, 3] turbo colormap tensor on self.device."""
@@ -72,54 +75,75 @@ class ADBase(ABC):
     def predict(self, image: ImageBatch, **kwargs) -> List[ImageLike]:
         """Run the full inference pipeline: normalize → preprocess → forward → postprocess.
 
+        Fixed-batch path (self.fixed_batch_size is set): images are chunked before preprocessing,
+        the last chunk is zero-padded to match the engine's required batch size, and padding is
+        trimmed before collecting results. Use this for TRT engines with a fixed batch dimension.
+
+        Dynamic-batch path (batch_size kwarg): images are chunked before preprocessing so that
+        preprocess, forward, and postprocess all operate on at most batch_size images at a time,
+        keeping peak memory proportional to chunk size rather than total N.
+
         Args:
             image: A single HW or HWC uint8 image, a list of HW/HWC images, or a BHWC batch.
                 2D (HW) images are expanded to 3-channel RGB before preprocessing.
             **kwargs:
-                batch_size (int): chunk size for mini-batch inference (default: None = all at once)
+                batch_size (int): chunk size for mini-batch inference (default: None = all at once).
+                    Ignored when self.fixed_batch_size is set.
 
         Returns:
             List of per-image anomaly maps [H,W]. dtype mirrors input:
             numpy arrays if input was numpy, tensors if input was tensors.
         """
         images = [to_rgb(img) for img in normalize_image_batch(image)]
-        use_tensor = any(isinstance(img, torch.Tensor) for img in images)
+        use_tensor = isinstance(images[0], torch.Tensor) if images else False
 
-        input_batch = self.preprocess(images)
+        fixed_bs = self.fixed_batch_size
+        batch_size = fixed_bs or kwargs.get("batch_size", None)
 
-        batch_size = kwargs.get("batch_size", None)
-        if batch_size is not None:
-            output = self._perform_batched_inference(input_batch, batch_size)
-        else:
+        if batch_size is None:
+            input_batch = self.preprocess(images)
             output = self.forward(input_batch)
+            return self.postprocess(output, return_numpy=not use_tensor)
 
-        return self.postprocess(output, return_numpy=not use_tensor)
+        return self._run_batched_predict(images, batch_size, pad_last=fixed_bs is not None, return_numpy=not use_tensor)
 
-    def _perform_batched_inference(self, input_batch: torch.Tensor, batch_size: int) -> torch.Tensor:
-        """Run forward() in mini-batches and concatenate the results.
+    @torch.inference_mode()
+    def _run_batched_predict(
+        self, images: List[ImageLike], batch_size: int, pad_last: bool = False, return_numpy: bool = True
+    ) -> List[ImageLike]:
+        """Run preprocess → forward → postprocess in chunks and collect per-image results.
+
+        Each chunk is preprocessed, forwarded, and postprocessed independently so that peak
+        memory is proportional to batch_size rather than total N.
 
         Args:
-            input_batch: Preprocessed [N,C,H,W] tensor.
-            batch_size: Maximum number of samples per forward call.
+            images: Flat list of HWC images (numpy or tensor).
+            batch_size: Number of images per chunk.
+            pad_last: If True, zero-pad the last chunk to exactly batch_size (required
+                for fixed-batch TRT engines). If False, the last chunk may be smaller.
+            return_numpy: Passed through to postprocess.
 
         Returns:
-            Concatenated output tensor from all mini-batches.
+            Flat list of per-image anomaly maps in input order, length == len(images).
         """
-        if not (0 < batch_size and batch_size <= input_batch.shape[0]):
-            raise ValueError(f"batch_size must be positive and less than or equal to the input batch size, got {batch_size}")
+        if batch_size <= 0:
+            raise ValueError(f"batch_size must be a positive integer, got {batch_size}")
 
-        outputs = []
-        for start in range(0, input_batch.shape[0], batch_size):
-            mini = input_batch[start : start + batch_size]
-            out = self.forward(mini)
+        results = []
+        for start in range(0, len(images), batch_size):
+            chunk = images[start : start + batch_size]
+            chunk_n = len(chunk)
+            if pad_last and chunk_n < batch_size:
+                ref = chunk[0]
+                pad_img = np.zeros_like(ref) if isinstance(ref, np.ndarray) else torch.zeros_like(ref)
+                chunk = chunk + [pad_img] * (batch_size - chunk_n)
+            input_batch = self.preprocess(chunk)
+            out = self.forward(input_batch)
             if out is None:
-                raise RuntimeError(f"forward() returned None for mini-batch [{start}:{start + batch_size}]")
-            outputs.append(out)
+                raise RuntimeError(f"forward() returned None for chunk [{start}:{start + batch_size}]")
+            results.extend(self.postprocess(out, return_numpy=return_numpy)[:chunk_n])
 
-        if not outputs:
-            raise RuntimeError(f"No outputs produced. Input batch size: {input_batch.shape[0]}, batch_size: {batch_size}")
-
-        return torch.cat(outputs, dim=0)
+        return results
 
     @torch.inference_mode()
     def annotate(self, img, ad_scores, ad_threshold, ad_max):

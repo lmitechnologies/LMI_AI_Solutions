@@ -52,6 +52,8 @@ class Anomalib_Base(ADBase):
         self.batch_size = self.trt.max_batch
         self.fp16 = self.trt.fp16
         self.inference_mode = "TRT"
+        if not self.trt.is_dynamic:
+            self.fixed_batch_size = self.trt.max_batch
 
     def convert_to_onnx(self, export_path, opset_version=14):
         """
