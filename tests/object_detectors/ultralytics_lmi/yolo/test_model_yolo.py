@@ -100,9 +100,15 @@ def yolo_models_api():
     return models
 
 
-@pytest.fixture(params=["direct", "api"], scope="module")
-def all_models(request, yolo_models, yolo_models_api):
-    return yolo_models if request.param == "direct" else yolo_models_api
+@pytest.fixture(scope="module")
+def all_models(yolo_models_api):
+    return yolo_models_api
+
+
+def test_model_class_comparison(yolo_models, yolo_models_api):
+    for key in yolo_models:
+        for d, a in zip(yolo_models[key], yolo_models_api[key]):
+            assert type(d) is type(a), f"{key} [{d.test_name}]: direct={type(d).__name__}, api={type(a).__name__}"
 
 
 def load_image(path):

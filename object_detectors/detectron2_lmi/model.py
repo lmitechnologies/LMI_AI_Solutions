@@ -6,6 +6,7 @@ import torch
 import torchvision  # noqa: F401
 
 from lmi_common.model_factory import ModelFactory
+from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageBatch
 from lmi_utils.postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_masks
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
@@ -141,73 +142,20 @@ class Detectron2TRT(Detectron2Base):
     logger = logging.getLogger("Detectron2TRT")
 
     def __init__(self, model_path, **kwargs):
-        """
-        Initialize the Detectron2 model with TensorRT engine.
-        Args:
-            model_path (str): Path to the serialized TensorRT engine file.
-            class_map (dict): Dictionary mapping class IDs to class names.
-        Attributes:
-            engine (trt.ICudaEngine): The TensorRT engine.
-            context (trt.IExecutionContext): The execution context for the engine.
-            model_inputs (list): List of input tensor bindings.
-            model_outputs (list): List of output tensor bindings.
-            allocations (list): List of memory allocations for input and output tensors.
-            input_shape (list): Shape of the input tensor.
-            input_dtype (numpy.dtype): Data type of the input tensor.
-            class_map (dict): Dictionary mapping class IDs to class names.
-        """
-        import tensorrt as trt
-
-        _trt_to_torch_dtype = {
-            trt.DataType.FLOAT: torch.float32,
-            trt.DataType.HALF: torch.float16,
-            trt.DataType.INT32: torch.int32,
-            trt.DataType.INT64: torch.int64,
-            trt.DataType.INT8: torch.int8,
-            trt.DataType.BOOL: torch.bool,
-        }
-
-        trt_logger = trt.Logger(trt.Logger.ERROR)
-        trt.init_libnvinfer_plugins(trt_logger, namespace="")
-        runtime = trt.Runtime(trt_logger)
-        with open(model_path, "rb") as f:
-            self.engine = runtime.deserialize_cuda_engine(f.read())
-        self.context = self.engine.create_execution_context()
-
         self._setup_device("cuda")
+        self.trt = TRTEngine(model_path, device=str(self.device))
+        if len(self.trt._input_names) != 1:
+            raise ValueError(f"Expected a single-input TRT engine, got inputs: {self.trt._input_names}")
+        self.input_dtype = self.trt.input_dtype
+        self.image_size = list(self.trt.input_shape[-2:])
+        self.batch_size = self.trt.max_batch
+        if not self.trt.is_dynamic:
+            self.fixed_batch_size = self.trt.max_batch
 
-        # Build I/O bindings using torch tensors — no cudaMalloc needed
-        self.model_inputs = []
-        self.model_outputs = []
-        for i in range(self.engine.num_io_tensors):
-            name = self.engine.get_tensor_name(i)
-            is_input = self.engine.get_tensor_mode(name) == trt.TensorIOMode.INPUT
-            trt_dtype = self.engine.get_tensor_dtype(name)
-            torch_dtype = _trt_to_torch_dtype.get(trt_dtype, torch.float32)
-            shape = list(self.engine.get_tensor_shape(name))
-            if is_input:
-                self.batch_size = shape[0]
-                self.fixed_batch_size = shape[0]
-            tensor = torch.empty(shape, dtype=torch_dtype, device=self.device)
-            binding = {"index": i, "name": name, "dtype": torch_dtype, "shape": shape, "tensor": tensor}
-            if is_input:
-                self.model_inputs.append(binding)
-            else:
-                self.model_outputs.append(binding)
-
-        self.input_shape = self.model_inputs[0]["shape"]
-        self.input_dtype = self.model_inputs[0]["dtype"]
-        self.image_size = [self.input_shape[2], self.input_shape[3]]
         class_map = kwargs.get("class_map", None)
         if class_map is None:
             raise ValueError("class_map is required for [Detectron2TRT]")
         self._setup_class_map(class_map)
-
-        self.output_tensors = [out["tensor"] for out in self.model_outputs]
-
-        # Pre-compute binding addresses in engine tensor order — pointers are stable.
-        all_tensors = sorted(self.model_inputs + self.model_outputs, key=lambda x: x["index"])
-        self._bindings = [t["tensor"].data_ptr() for t in all_tensors]
 
     def warmup(self):
         """
@@ -250,18 +198,15 @@ class Detectron2TRT(Detectron2Base):
         return torch.stack(tensors)
 
     def forward(self, inputs):
-        """
-        Perform a forward pass through the model.
+        """Run TensorRT inference.
 
         Args:
-            inputs (torch.Tensor): The input data to be processed by the model.
+            inputs (torch.Tensor): BCHW input tensor.
 
         Returns:
-            list: A list of CUDA tensors containing the model's output data.
+            list: Output tensors from the engine.
         """
-        self.model_inputs[0]["tensor"].copy_(inputs.contiguous())
-        self.context.execute_v2(self._bindings)
-        return self.output_tensors
+        return self.trt.infer(inputs)
 
     def postprocess(self, predictions, **kwargs) -> List[Results]:
         """Post-process the predictions from the TRT object detection model.

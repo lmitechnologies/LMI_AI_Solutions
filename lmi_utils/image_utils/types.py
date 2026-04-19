@@ -33,47 +33,77 @@ def assert_uint8(image: ImageLike) -> None:
         raise ValueError(f"Expected image dtype uint8, got {image.dtype}")
 
 
-def assert_hwc(image: ImageLike) -> None:
-    """Raise ValueError if *image* is not a 3-dimensional HWC array/tensor.
+def assert_ndim(image: ImageLike) -> None:
+    """Raise ValueError if *image* is not a 2-dimensional (HW) or 3-dimensional (HWC) array/tensor.
 
     Args:
         image: np.ndarray or torch.Tensor to validate.
 
     Raises:
-        ValueError: If image.ndim != 3.
+        ValueError: If image.ndim is not 2 or 3.
     """
+    if image.ndim not in (2, 3):
+        raise ValueError(f"Expected 2D (HW) or 3D (HWC) image, got {image.ndim}D array with shape {image.shape}")
+
+
+def to_rgb(image: ImageLike) -> ImageLike:
+    """Convert a grayscale image to RGB by repeating the single channel.
+
+    Args:
+        image: np.ndarray or torch.Tensor with shape (H, W), (H, W, 1), or (H, W, 3).
+
+    Returns:
+        Image with shape (H, W, 3). (H, W, 3) inputs are returned unchanged.
+
+    Raises:
+        ValueError: If the channel dimension is not 1 or 3.
+    """
+    if image.ndim == 2:
+        if isinstance(image, torch.Tensor):
+            image = image.unsqueeze(-1)
+        else:
+            image = np.expand_dims(image, axis=-1)
     if image.ndim != 3:
-        raise ValueError(f"Expected 3-dimensional HWC image, got {image.ndim}D array with shape {image.shape}")
+        raise ValueError(f"Expected 2D or 3D image, got {image.ndim}D array with shape {image.shape}")
+    c = image.shape[-1]
+    if c == 3:
+        return image
+    if c == 1:
+        if isinstance(image, torch.Tensor):
+            return image.repeat(1, 1, 3)
+        return np.repeat(image, 3, axis=-1)
+    raise ValueError(f"Expected image with 1 or 3 channels, got {c} channels with shape {image.shape}")
 
 
-# Any supported batch input: a single HWC image, a list of HWC images, or a BHWC array/tensor.
+# Any supported batch input: a single HW/HWC image, a list of HW/HWC images, or a BHWC array/tensor.
 ImageBatch = Union[ImageLike, List[ImageLike]]
 
 
 def normalize_image_batch(image: ImageBatch) -> List[ImageLike]:
-    """Normalize any image input to a flat list of HWC images.
+    """Normalize any image input to a flat list of images.
 
-    Accepts a single HWC image (numpy or tensor), a list of HWC images,
+    Accepts a single HW or HWC image (numpy or tensor), a list of HW/HWC images,
     or a BHWC batch (numpy or tensor), and always returns a plain list
-    of HWC images preserving the original type.
+    preserving the original type. 2D (HW) images are passed through as-is;
+    callers are responsible for expanding channels (e.g. via to_rgb).
 
     Args:
-        image: A single HWC image, list of HWC images, or BHWC batch.
+        image: A single HW/HWC image, list of HW/HWC images, or BHWC batch.
 
     Returns:
-        List of HWC images (numpy arrays or torch tensors).
+        List of images (numpy arrays or torch tensors).
 
     Raises:
         TypeError: If image is not a numpy array, torch tensor, or list thereof.
         TypeError: If images in the batch mix numpy arrays and torch tensors.
         ValueError: If any image dtype is not uint8.
-        ValueError: If any image is not 3-dimensional (HWC).
+        ValueError: If any image is not 2-dimensional (HW) or 3-dimensional (HWC).
     """
     if isinstance(image, list):
         for img in image:
             assert_image_like(img)
             assert_uint8(img)
-            assert_hwc(img)
+            assert_ndim(img)
         _assert_consistent_types(image)
         return image
 
@@ -81,7 +111,7 @@ def normalize_image_batch(image: ImageBatch) -> List[ImageLike]:
     assert_uint8(image)
     if image.ndim == 4:
         return list(image)
-    assert_hwc(image)
+    assert_ndim(image)
     return [image]
 
 

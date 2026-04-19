@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
-from lmi_utils.image_utils.types import ImageBatch, normalize_image_batch
+from lmi_utils.image_utils.types import ImageBatch, normalize_image_batch, to_rgb
 
 from .results import Results
 
@@ -16,9 +16,7 @@ from .results import Results
 class ODBase(abc.ABC):
     logger = logging.getLogger(__name__)
 
-    # Set to a positive integer in subclasses that use a fixed-batch-size engine
-    # (e.g. TensorRT). ODBase.predict will chunk inputs and zero-pad the last
-    # chunk to match this size. Leave as None for dynamic-batch backends.
+    # Set to a positive integer in subclasses that use a fixed-batch-size model.
     fixed_batch_size: int = None
 
     @abc.abstractmethod
@@ -48,16 +46,17 @@ class ODBase(abc.ABC):
         Return tensors if input image are tensors, otherwise return numpy arrays.
 
         Args:
-            image: A single HWC image, a list of HWC images, or a BHWC batch.
-                Accepts both numpy arrays and torch tensors. All images in a batch
-                must have the same dimensions.
+            image: A single HW or HWC image, a list of HW/HWC images, or a BHWC batch.
+                Accepts both numpy arrays and torch tensors. 2D (HW) images are
+                expanded to 3-channel RGB. All images in a batch must have the same dimensions.
             configs: Confidence threshold (float) or per-class thresholds (dict).
             operators: Operators for coordinate reversion. Accepts:
                 - None: no coordinate reversion.
                 - list[dict]: a single operator chain, applied to all images.
                 - list[list[dict]]: per-image operator chains (length must match batch size).
         kwargs:
-            Additional keyword arguments passed to postprocess and coordinate reversion.
+            batch_size (int): chunk size for dynamic mini-batch inference (default: None = all at once).
+                Ignored when self.fixed_batch_size is set.
             return_segments (bool): Whether to return 'segments' in the output dict when available.
 
         Returns:
@@ -71,60 +70,22 @@ class ODBase(abc.ABC):
             }
             time_info (dict): timing info with keys 'preproc', 'proc', 'postproc'.
         """
-        time_info = {}
-
-        images = normalize_image_batch(image)
-
-        n = len(images)
-        operators = self._normalize_operators(operators, n)
+        images = [to_rgb(img) for img in normalize_image_batch(image)]
+        operators = self._normalize_operators(operators, len(images))
+        use_tensor = isinstance(images[0], torch.Tensor) if images else False
 
         fixed_bs = self.fixed_batch_size
+        batch_size = kwargs.pop("batch_size", None)
+        effective_bs = fixed_bs or batch_size
 
-        if fixed_bs:
-            # Fixed batch size (e.g. TRT engine): chunk input and pad the last chunk
-            all_results = []
-            t_preproc, t_proc, t_postproc = 0.0, 0.0, 0.0
-            for start in range(0, n, fixed_bs):
-                chunk_imgs = images[start : start + fixed_bs]
-                chunk_ops = operators[start : start + fixed_bs]
-                chunk_n = len(chunk_imgs)
-
-                if chunk_n < fixed_bs:
-                    self.logger.info(f"Last chunk with {chunk_n} images, padding to {fixed_bs}")
-                    ref = chunk_imgs[0]
-                    pad = torch.zeros_like(ref) if isinstance(ref, torch.Tensor) else np.zeros_like(ref)
-                    chunk_imgs = chunk_imgs + [pad] * (fixed_bs - chunk_n)
-                    chunk_ops = chunk_ops + [[]] * (fixed_bs - chunk_n)
-
-                t0 = time.time()
-                preprocessed = self.preprocess(chunk_imgs)
-                t_preproc += time.time() - t0
-
-                t0 = time.time()
-                outputs = self.forward(preprocessed)
-                t_proc += time.time() - t0
-
-                t0 = time.time()
-                list_results = self.postprocess(
-                    outputs,
-                    images=chunk_imgs,
-                    configs=configs,
-                    operators=chunk_ops,
-                    preprocessed=preprocessed,
-                    **kwargs,
-                )
-                t_postproc += time.time() - t0
-
-                all_results.extend(list_results[:chunk_n])
-
-            time_info["preproc"] = t_preproc
-            time_info["proc"] = t_proc
-            time_info["postproc"] = t_postproc
+        if effective_bs:
+            all_results, time_info = self._run_batched_predict(
+                images, operators, configs, effective_bs, pad_last=fixed_bs is not None, **kwargs
+            )
         else:
-            # Dynamic batch: process everything in one shot
             t0 = time.time()
             preprocessed = self.preprocess(images)
-            time_info["preproc"] = time.time() - t0
+            time_info = {"preproc": time.time() - t0}
 
             t0 = time.time()
             outputs = self.forward(preprocessed)
@@ -132,18 +93,56 @@ class ODBase(abc.ABC):
 
             t0 = time.time()
             all_results = self.postprocess(
-                outputs,
-                images=images,
-                configs=configs,
-                operators=operators,
-                preprocessed=preprocessed,
-                **kwargs,
+                outputs, images=images, configs=configs, operators=operators, preprocessed=preprocessed, **kwargs
             )
             time_info["postproc"] = time.time() - t0
 
-        use_tensor = any(isinstance(img, torch.Tensor) for img in images)
-        final = self._aggregate_results(all_results, return_numpy=not use_tensor)
-        return final, time_info
+        return self._aggregate_results(all_results, return_numpy=not use_tensor), time_info
+
+    def _run_batched_predict(self, images, operators, configs, batch_size, pad_last=False, **kwargs):
+        """Run preprocess → forward → postprocess in chunks and collect per-image results.
+
+        Args:
+            images: Flat list of HWC images (numpy or tensor).
+            operators: Per-image operator chains, length == len(images).
+            configs: Confidence threshold passed through to postprocess.
+            batch_size: Number of images per chunk.
+            pad_last: If True, zero-pad the last chunk to exactly batch_size (for fixed-batch TRT engines).
+
+        Returns:
+            (List[Results], time_info dict with keys 'preproc', 'proc', 'postproc').
+        """
+        all_results = []
+        t_preproc, t_proc, t_postproc = 0.0, 0.0, 0.0
+
+        for start in range(0, len(images), batch_size):
+            chunk_imgs = images[start : start + batch_size]
+            chunk_ops = operators[start : start + batch_size]
+            chunk_n = len(chunk_imgs)
+
+            if pad_last and chunk_n < batch_size:
+                ref = chunk_imgs[0]
+                pad = torch.zeros_like(ref) if isinstance(ref, torch.Tensor) else np.zeros_like(ref)
+                chunk_imgs = chunk_imgs + [pad] * (batch_size - chunk_n)
+                chunk_ops = chunk_ops + [[]] * (batch_size - chunk_n)
+
+            t0 = time.time()
+            preprocessed = self.preprocess(chunk_imgs)
+            t_preproc += time.time() - t0
+
+            t0 = time.time()
+            outputs = self.forward(preprocessed)
+            t_proc += time.time() - t0
+
+            t0 = time.time()
+            list_results = self.postprocess(
+                outputs, images=chunk_imgs, configs=configs, operators=chunk_ops, preprocessed=preprocessed, **kwargs
+            )
+            t_postproc += time.time() - t0
+
+            all_results.extend(list_results[:chunk_n])
+
+        return all_results, {"preproc": t_preproc, "proc": t_proc, "postproc": t_postproc}
 
     @staticmethod
     def _to_numpy(data):

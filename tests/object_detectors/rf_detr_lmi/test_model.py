@@ -9,6 +9,7 @@ from rfdetr import RFDETRSegSmall
 from rfdetr.assets.coco_classes import COCO_CLASSES
 
 from object_detectors.od_core.object_detector import ObjectDetector
+from object_detectors.rf_detr_lmi.model import RfdetrModel
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +143,12 @@ def assert_outputs_match_rf(rf_preds, outputs, label):
     assert np.array_equal(rf_classes, outputs["classes"]), f"{label}: Class labels mismatch"
     if rf_masks is not None:
         assert np.array_equal(rf_masks, outputs["masks"]), f"{label}: Masks mismatch"
+
+
+def test_model_class_comparison(obj_detector):
+    direct = RfdetrModel(OD_MODEL, device=DEVICE, class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
+    api = obj_detector
+    assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
 
 
 class Test_Rfdetr_Model:

@@ -9,6 +9,7 @@ import torchvision.transforms.functional as F
 from rfdetr.models.postprocess import PostProcess
 
 from lmi_common.model_factory import ModelFactory
+from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageBatch, ImageLike
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
@@ -45,6 +46,12 @@ class RfdetrBase(ODBase):
         else:
             img_tensor = image.permute(2, 0, 1).to(self.device).float() / 255.0
         return F.normalize(img_tensor, self.means, self.stds)
+
+    def preprocess(self, images: ImageBatch) -> torch.Tensor:
+        """Preprocess input image(s) to BCHW normalized tensor."""
+        if isinstance(images, list):
+            return torch.stack([self._preprocess_single(img) for img in images])
+        return torch.unsqueeze(self._preprocess_single(images), dim=0)
 
     @staticmethod
     def _masks_to_segments(masks) -> List[np.ndarray]:
@@ -105,12 +112,6 @@ class RfdetrBase(ODBase):
         )
         return self._apply_revert_to_result(result, ops)
 
-    def preprocess(self, images: ImageBatch) -> torch.Tensor:
-        """Preprocess input image(s) to BCHW normalized tensor."""
-        if isinstance(images, list):
-            return torch.stack([self._preprocess_single(img) for img in images])
-        return torch.unsqueeze(self._preprocess_single(images), dim=0)
-
     def postprocess(self, outputs, **kwargs) -> List[Results]:
         """Postprocess outputs for a batch using the rfdetr PostProcess decoder.
 
@@ -170,107 +171,32 @@ class RfdetrModel(ModelFactory, ODBase):
 @RfdetrModel.register("engine")
 class RfdetrTRT(RfdetrBase):
     def __init__(self, model_path: str, class_map: dict, **kwargs) -> None:
-        # keep kwargs for the required image_size argument in object detection classes.
-        try:
-            import tensorrt as trt
-        except ImportError as e:
-            raise ImportError("tensorrt is required for RfdetrTRT. Install it with: pip install tensorrt") from e
-
-        _trt_to_torch_dtype = {
-            trt.DataType.FLOAT: torch.float32,
-            trt.DataType.HALF: torch.float16,
-            trt.DataType.INT32: torch.int32,
-            trt.DataType.INT64: torch.int64,
-            trt.DataType.INT8: torch.int8,
-            trt.DataType.BOOL: torch.bool,
-        }
-
-        trt_logger = trt.Logger(trt.Logger.INFO)
-        runtime = trt.Runtime(trt_logger)
-
-        with open(model_path, "rb") as f:
-            self.engine = runtime.deserialize_cuda_engine(f.read())
-
-        self.context = self.engine.create_execution_context()
-
-        # Inspect input tensor for shape and dynamic batch info
-        self.input_name = self.engine.get_tensor_name(0)
-        profile_shape = self.engine.get_tensor_profile_shape(self.input_name, 0)
-        self.input_dtype = _trt_to_torch_dtype.get(self.engine.get_tensor_dtype(self.input_name), torch.float32)
-
-        if profile_shape:
-            self.min_batch = profile_shape[0][0]
-            self.opt_batch = profile_shape[1][0]
-            self.max_batch = profile_shape[2][0]
-            # Use the opt shape (without batch) as the base input shape
-            self.input_shape_no_batch = tuple(profile_shape[1][1:])  # (C, H, W)
-        else:
-            # Static shape engine
-            static_shape = self.engine.get_tensor_shape(self.input_name)
-            self.min_batch = static_shape[0]
-            self.opt_batch = static_shape[0]
-            self.max_batch = static_shape[0]
-            self.input_shape_no_batch = tuple(static_shape[1:])
-
-        # Gather output tensor metadata
-        self.output_info = []
-        for i in range(self.engine.num_io_tensors):
-            name = self.engine.get_tensor_name(i)
-            if self.engine.get_tensor_mode(name) == trt.TensorIOMode.OUTPUT:
-                dtype = _trt_to_torch_dtype.get(self.engine.get_tensor_dtype(name), torch.float32)
-                # Get the shape with -1 for dynamic dims
-                shape = self.engine.get_tensor_shape(name)
-                self.output_info.append({"name": name, "dtype": dtype, "shape": tuple(shape)})
-
-        self.num_classes = self.output_info[1]["shape"][-1]
-
         self._setup_device("cuda")
+        self.trt = TRTEngine(model_path, device=str(self.device))
+        if len(self.trt._input_names) != 1:
+            raise ValueError(f"Expected a single-input TRT engine, got inputs: {self.trt._input_names}")
+        self.input_shape = self.trt.input_shape  # (C, H, W)
+        self.input_dtype = self.trt.input_dtype
+        if not self.trt.is_dynamic:
+            self.fixed_batch_size = self.trt.max_batch
         self._init_common()
         self._setup_class_map(class_map)
 
-        self.fixed_batch_size = self.opt_batch
-        input_shape = (self.fixed_batch_size, *self.input_shape_no_batch)
-        self._buffers = {
-            "input": torch.empty(input_shape, dtype=self.input_dtype, device="cuda"),
-            "input_shape": input_shape,
-            "outputs": [],
-        }
-        for info in self.output_info:
-            out_shape = tuple(self.fixed_batch_size if d == -1 else d for d in info["shape"])
-            self._buffers["outputs"].append(
-                {
-                    "name": info["name"],
-                    "shape": out_shape,
-                    "tensor": torch.empty(out_shape, dtype=info["dtype"], device="cuda"),
-                }
-            )
-
-        # Pre-compute binding addresses — tensors are fixed allocations, pointers are stable.
-        self._bindings = [self._buffers["input"].data_ptr()] + [out["tensor"].data_ptr() for out in self._buffers["outputs"]]
-
     def warmup(self):
         """Warm up the model by running a dummy inference."""
-        dummy_input = torch.zeros((self.fixed_batch_size, *self.input_shape_no_batch), dtype=self.input_dtype, device="cuda")
-        self.forward(dummy_input)
+        dummy = torch.zeros((self.fixed_batch_size, *self.input_shape), dtype=self.input_dtype, device=self.device)
+        self.forward(dummy)
 
     def forward(self, image: torch.Tensor) -> list:
-        """Perform TensorRT inference. Chunking is handled by predict() in ODBase.
-
-        Uses execute_v2 (synchronous, default CUDA stream) so that TRT execution is
-        serialized with postprocessing ops on the same stream — no cross-stream race.
+        """Perform TensorRT inference.
 
         Args:
-            image: BCHW tensor with batch_size == self.fixed_batch_size.
+            image: BCHW tensor with batch_size <= self.fixed_batch_size.
 
         Returns:
             List of output tensors on self.device, each with shape (B, ...).
         """
-        self.context.set_input_shape(self.input_name, self._buffers["input_shape"])
-        self._buffers["input"].copy_(image.contiguous())
-
-        self.context.execute_v2(self._bindings)
-
-        return [out["tensor"] for out in self._buffers["outputs"]]
+        return self.trt.infer(image)
 
 
 @RfdetrModel.register("pt")

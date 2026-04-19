@@ -73,15 +73,22 @@ def _make_model(device):
     }
 
 
-@pytest.fixture(scope="module", params=["direct", "api"])
-def model(request):
+@pytest.fixture(scope="module")
+def model():
     device = "cuda" if USE_CUDA else "cpu"
-    return _make_model(device)[request.param]()
+    return _make_model(device)["api"]()
 
 
-@pytest.fixture(scope="module", params=["direct", "api"])
-def model_cpu(request):
-    return _make_model("cpu")[request.param]()
+@pytest.fixture(scope="module")
+def model_cpu():
+    return _make_model("cpu")["api"]()
+
+
+def test_model_class_comparison():
+    device = "cuda" if USE_CUDA else "cpu"
+    direct = _make_model(device)["direct"]()
+    api = _make_model(device)["api"]()
+    assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
 
 
 def _assert_empty_out(out, keys=None):
