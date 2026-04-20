@@ -35,23 +35,19 @@ def resize(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[tor
         output_images.append(processed)
         image_ops_list.append(ops)
 
-    return output_images, {"ops": image_ops_list}
+    return output_images, {"metadata": image_ops_list}
 
 
 @torch.inference_mode()
-def revert_resize(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torch.Tensor]:
+def revert_resize(images: List[torch.Tensor], metadata: List[Any]) -> List[torch.Tensor]:
     """
     Reverses the composite 'resize_and_pad' operation.
     Args:
         images (list[torch.Tensor]): List of input images (H, W, C).
-        meta (dict): Configuration containing 'ops' for each image.
+        metadata (list): Per-image ops list returned by resize.
     """
-    if "ops" not in meta:
-        raise KeyError("Metadata missing required key 'ops'")
+    if len(images) != len(metadata):
+        raise ValueError(f"Image count ({len(images)}) doesn't match ops count ({len(metadata)})")
 
-    image_ops_list = meta["ops"]
-    if len(images) != len(image_ops_list):
-        raise ValueError(f"Image count ({len(images)}) doesn't match ops count ({len(image_ops_list)})")
-
-    output_images = [revert_mask_to_origin(image, ops) for image, ops in zip(images, image_ops_list)]
+    output_images = [revert_mask_to_origin(image, ops) for image, ops in zip(images, metadata)]
     return output_images

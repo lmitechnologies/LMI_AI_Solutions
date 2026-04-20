@@ -25,8 +25,6 @@ def tile(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch
 
     for img in images:
         ndim = img.dim()
-        if ndim not in {2, 3}:
-            raise ValueError(f"Input image must have 2 or 3 dimensions (H, W) or (H, W, C). Got {ndim} dimensions.")
 
         # Handle single channel
         add_channel = False
@@ -51,21 +49,18 @@ def tile(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch
         metadata["scale_mode"] = scale_mode
         tiler_metadata.append(metadata)
 
-    return output_images, {"tiler_metadata": tiler_metadata}
+    return output_images, {"metadata": tiler_metadata}
 
 
 @torch.inference_mode()
-def revert_tile(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torch.Tensor]:
+def revert_tile(images: List[torch.Tensor], metadata: List[Dict[str, Any]]) -> List[torch.Tensor]:
     """
     undoes the 'tile' operation.
     Args:
         images (list[torch.Tensor]): List of input tiles (H, W, C).
-        meta (dict): Metadata containing 'tiler_metadata'.
+        metadata (list): Per-image tiler metadata list returned by tile.
     """
-    if "tiler_metadata" not in meta:
-        raise KeyError(f"Metadata missing required key 'tiler_metadata'. Got keys: {list(meta.keys())}")
-
-    tiler_meta_list = meta["tiler_metadata"]
+    tiler_meta_list = metadata
     restored_images = []
     cursor = 0
 

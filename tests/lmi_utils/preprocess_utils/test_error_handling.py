@@ -34,10 +34,9 @@ def test_preprocessor_invalid_inputs(prep, invalid_input):
 def test_preprocessor_one_dim_image(prep):
     """Test that preprocessor rejects one-dimensional images."""
     image = np.zeros((10,), dtype=np.uint8)
-    tiler_meta = {"tile_size": [8, 8], "stride": [8, 8]}
-    ops = [{"type": "tile", "configuration": tiler_meta}]
+    ops = [{"type": "tile", "configuration": {"tile_size": [8, 8], "stride": [8, 8]}}]
 
-    with pytest.raises(ValueError, match="Input image must have 2 or 3 dimensions"):
+    with pytest.raises(ValueError, match="Expected 2D .HW. or 3D .HWC. image"):
         prep.preprocess([image], ops)
 
 
@@ -97,7 +96,7 @@ def test_unregistered_handler(prep, recon):
         prep.preprocess(image, [{"type": "unknown", "configuration": {}}])
 
     with pytest.raises(ValueError, match="Undo handler for 'unknown' is not registered"):
-        recon.reconstruct([image], [{"type": "unknown", "configuration": {}}])
+        recon.reconstruct([image], [{"type": "unknown", "metadata": []}])
 
 
 def test_register_non_callable(prep, recon):
@@ -135,13 +134,21 @@ def test_preprocessor_handler_returns(prep):
     with pytest.raises(TypeError, match="Handler 'bad2' must return metadata as dict"):
         prep.preprocess(image, [{"type": "bad2", "configuration": {}}])
 
-    # 3. Returns numpy arrays instead of tensors
-    def returns_numpy(images, config):
-        return [np.zeros((10, 10, 3))], {}
+    # 3. Returns dict missing required "metadata" key
+    def returns_missing_metadata_key(images, config):
+        return images, {"wrong_key": []}
 
-    prep.register_handler("bad3", returns_numpy)
-    with pytest.raises(TypeError, match="Handler 'bad3' returned non-tensor images"):
+    prep.register_handler("bad3", returns_missing_metadata_key)
+    with pytest.raises(KeyError, match="Handler 'bad3' metadata dict must contain key 'metadata'"):
         prep.preprocess(image, [{"type": "bad3", "configuration": {}}])
+
+    # 4. Returns numpy arrays instead of tensors
+    def returns_numpy(images, config):
+        return [np.zeros((10, 10, 3))], {"metadata": []}
+
+    prep.register_handler("bad4", returns_numpy)
+    with pytest.raises(TypeError, match="Handler 'bad4' returned non-tensor images"):
+        prep.preprocess(image, [{"type": "bad4", "configuration": {}}])
 
 
 def test_reconstructor_handler_returns(recon):
@@ -154,7 +161,7 @@ def test_reconstructor_handler_returns(recon):
 
     recon.register_undo_handler("bad1", returns_non_list)
     with pytest.raises(TypeError, match="Undo handler 'bad1' must return a list of images"):
-        recon.reconstruct([image], [{"type": "bad1", "configuration": {}}])
+        recon.reconstruct([image], [{"type": "bad1", "metadata": []}])
 
     # 2. Returns numpy arrays instead of tensors
     def returns_numpy(images, metadata):
@@ -163,7 +170,7 @@ def test_reconstructor_handler_returns(recon):
     recon.register_undo_handler("bad2", returns_numpy)
     tensor_image = torch.zeros((10, 10, 3))
     with pytest.raises(TypeError, match="Undo handler 'bad2' returned non-tensor images"):
-        recon.reconstruct([tensor_image], [{"type": "bad2", "configuration": {}}])
+        recon.reconstruct([tensor_image], [{"type": "bad2", "metadata": []}])
 
 
 # ==========================================
@@ -181,8 +188,7 @@ def test_tile_count_integrity(recon):
         "tile_size": [8, 8],
         "stride": [8, 8],
     }
-    meta = {"tiler_metadata": [tiler_meta]}
-    ops = [{"type": "tile", "configuration": meta}]
+    ops = [{"type": "tile", "metadata": [tiler_meta]}]
 
     # Provide only 1 image instead of 4
     with pytest.raises(RuntimeError, match="Expected 4 tiles, found 1"):

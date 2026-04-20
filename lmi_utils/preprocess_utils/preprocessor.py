@@ -1,7 +1,6 @@
-from typing import Any, Callable, Dict, List, Tuple, Union
+from typing import Any, Callable, Dict, List, Tuple
 
-import numpy as np
-import torch
+from lmi_utils.image_utils.types import ImageBatch, ImageLike
 
 from .base import BaseProcessor
 from .handlers import resize, tile
@@ -11,8 +10,7 @@ class Preprocessor(BaseProcessor):
     """
     A class to run a dynamic pipeline of preprocessing steps on an image.
 
-    Handlers (processing functions) are registered with the instance and
-    called based on a list of processing steps.
+    Handlers (processing functions) are registered with the instance and called based on a list of processing steps.
     """
 
     def __init__(self):
@@ -40,28 +38,34 @@ class Preprocessor(BaseProcessor):
                 - config: Handler-specific configuration dictionary
                 - Returns: (processed_images, metadata_dict)
                     - processed_images: List of (H, W, C) tensors
-                    - metadata_dict: Dictionary containing operation metadata
+                    - metadata_dict: Must be a dict with a "metadata" key (enforced by validate_handler_metadata)
 
         """
         if not callable(handler_func):
             raise TypeError(f"Handler for '{name}' must be a callable function.")
         self._handlers[name] = handler_func
 
-    def preprocess(
-        self, images: Union[List[Union[np.ndarray, torch.Tensor]], np.ndarray, torch.Tensor], processing_steps: List[Dict[str, Any]]
-    ) -> Tuple[List[Union[np.ndarray, torch.Tensor]], List[Dict[str, Any]]]:
+    def preprocess(self, images: ImageBatch, processing_steps: List[Dict[str, Any]]) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
         """
         Runs the preprocessing pipeline.
 
         Args:
-            images (np.ndarray | torch.Tensor | list): Input image(s) in format (H, W, C).
-            processing_steps (list): List of config dictionaries.
+            images: A single HW/HWC image, list of HW/HWC images, or a BHWC batch (numpy array or torch tensor). Any dtype is accepted.
+            processing_steps: List of step dicts, each with keys:
+                - "type" (str): Registered handler name (e.g. "resize", "tile").
+                - "configuration" (dict): Handler-specific config passed as-is.
 
         Returns:
-            processed_imgs (list[np.ndarray | torch.Tensor]): list of (H, W, C).
-            history (list[dict]): Metadata chain for reconstruction.
+            processed_imgs: List of (H, W, C) images, same type as input.
+            history: List of step records for reconstruction, each with keys:
+                - "type" (str): Handler name.
+                - "metadata" (list): Per-image metadata returned by the handler.
         """
-        if not isinstance(images, list):
+        if isinstance(images, list):
+            pass
+        elif hasattr(images, "ndim") and images.ndim == 4:
+            images = list(images)
+        else:
             images = [images]
         self.validate_image_list(images, stage="preprocessing")
         self.validate_steps(processing_steps)
@@ -82,11 +86,10 @@ class Preprocessor(BaseProcessor):
 
             # Validate handler output
             self.validate_handler_output(new_images, op_name, expected_type="handler")
-            if not isinstance(metadata, dict):
-                raise TypeError(f"Handler '{op_name}' must return metadata as dict, got {type(metadata)}")
+            self.validate_handler_metadata(metadata, op_name)
 
             # Save Metadata for reconstruction
-            step_record = {"type": op_name, "configuration": metadata}
+            step_record = {"type": op_name, "metadata": metadata["metadata"]}
             history.append(step_record)
             processed_imgs = new_images
 
