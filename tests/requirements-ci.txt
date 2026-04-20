@@ -6,6 +6,6 @@ numba==0.65.0
 numpy<2.0
 ultralytics==8.4.39
 onnx==1.21.0
-pytest==9.0.2
+pytest==9.0.3
 rfdetr==1.6.4
 albumentations>=1.4.24,<3.0.0
