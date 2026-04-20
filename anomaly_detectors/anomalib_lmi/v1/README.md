@@ -272,19 +272,14 @@ In this example, setting a threshold at 11 would lead to a 2.6595% failure rate 
 
 ## 5 Tiling (optional)
 
-It splits the original images into tiles. The current AIS implementation supports two modes for tiling validation and tensorRT conversion: batch mode and single mode. Batch mode makes predictions on all tiles of a image in one forward pass, whereas single mode makes predictions on a single tile.
-
 Steps:
 
-1. Generate tiles
+1. Generate tiles for training
 2. Train a model using tiles
 3. Validate/test
 4. Convert to TensorRT
 
-The [5.2 Validate/Test](#52-validatetest) and [5.3 Convert to TensorRT](#53-convert-to-tensorrt) are for batch mode.
-If using single mode, please refer to the steps in [4. Validate Model](#4-validate-model) and [3. Generate TensorRT Engine](#3-generate-tensorrt-engine) for validation and tensorRT conversion.
-
-### 5.1 Generate Tiles
+### 5.1 Generate Tiles for training
 
 Generate tiles as the training dataset, where `TILE_SZ` and `STRIDE` are integers for the tile size and stride step respectively. **Note:** if original images have varying sizes, make the image size consistent before generating tiles.
 
@@ -302,8 +297,6 @@ python -m anomaly_detectors.anomalib_lmi.v1.model test -i PATH_MODEL -d PATH_DAT
 
 ### 5.3 Convert to TensorRT
 
-The script requires the original image size, tile size and stride for TensorRT conversion, where `H` and `W` are the height and width from original images (not the tiles).
-
 ```bash
-python -m anomaly_detectors.anomalib_lmi.v1.model convert -i MODEL_PATH -o EXPORT_PATH --hw H W --tile TILE TILE --stride STRIDE STRIDE
+python -m anomaly_detectors.anomalib_lmi.v1.model convert -i MODEL_PATH -o EXPORT_PATH
 ```

@@ -33,30 +33,24 @@ class AnomalyModel(Anomalib_Base):
                 device (str): Device to run on ('cuda' or 'cpu')
                 image_size (List[int]): Input image size [h, w]
 
-        Raises:
-            FileNotFoundError: If model file does not exist
-            ValueError: If device is unsupported
-            RuntimeError: If model loading fails
-
         Attributes:
             device: Device to run model on
             fp16: Flag for half precision
-            model_shape: Model input shape (h,w)
+            image_size: Model input shape (h,w)
             inference_mode: Model inference mode ('TRT' or 'PT')
         """
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f"Cannot find the model file: {model_path}")
 
         # set device
-        device = kwargs.get("device", "cuda").lower()
+        device = kwargs.get("device", "cuda")
         self._setup_device(device)
 
         self.image_size = kwargs.get("image_size", [224, 224])
         self.fp16 = False
 
-        _, ext = os.path.splitext(model_path)
         self.logger.info(f"Loading model on {self.device}: {model_path}")
-
+        _, ext = os.path.splitext(model_path)
         if ext == ".engine":
             self._load_tensorrt_model(model_path)
         elif ext == ".pt":
@@ -65,20 +59,10 @@ class AnomalyModel(Anomalib_Base):
             raise ValueError(f"Unsupported model format: {ext}. Expected .pt or .engine")
 
     def _load_pytorch_model(self, model_path: str) -> None:
-        """Load PyTorch model (TorchScript or checkpoint).
-
-        Args:
-            model_path: Path to .pt file
-
-        Raises:
-            RuntimeError: If PyTorch model loading fails
-        """
         try:
             # Try loading as TorchScript model
             self.pt_model = torch.jit.load(model_path, map_location=self.device)
-            self.model_shape = self.image_size
-            self.logger.info(f"Loaded TorchScript model with shape: {self.model_shape}")
-            # self.model_shape = self.image_size
+            self.logger.info(f"Loaded TorchScript model with shape: {self.image_size}")
         except Exception:
             # Fall back to loading as checkpoint
             checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
@@ -89,12 +73,14 @@ class AnomalyModel(Anomalib_Base):
                 self.logger.info(f"Model metadata: {self.pt_metadata}")
 
             # Extract model shape from preprocessor transforms
+            model_shape = None
             for transform in self.pt_model.pre_processor.transform.transforms:
                 if type(transform).__name__ == "Resize":
-                    self.model_shape = to_list(transform.size)
-                    self.image_size = to_list(transform.size)
-                    self.logger.info(f"Model shape from transforms: {self.model_shape}")
+                    model_shape = to_list(transform.size)
+                    self.logger.info(f"Model shape from transforms: {model_shape}")
                     break
+            if model_shape is not None and model_shape != list(self.image_size):
+                raise ValueError(f"Model input shape {model_shape} does not match the provided image_size {self.image_size}") from None
 
         self.pt_model.eval()
         self.inference_mode = "PT"
@@ -120,7 +106,6 @@ class AnomalyModel(Anomalib_Base):
                 output_tensor = preds[2]
             else:
                 output_tensor = preds.anomaly_map
-            self.logger.debug(f"PT model output shape: {output_tensor.shape}, input shape: {input_batch.shape}")
         else:
             raise ValueError(f"Unknown inference mode: {self.inference_mode}")
 
@@ -137,12 +122,7 @@ if __name__ == "__main__":
     test_ap = subs.add_parser("test", help="test model")
     test_ap.add_argument("-i", "--model_path", default="/app/model/model.pt", help="Input model file path.")
     test_ap.add_argument("-d", "--data_dir", default="/app/data", help="Data file directory.")
-    test_ap.add_argument(
-        "-o",
-        "--annot_dir",
-        default="/app/annotation_results",
-        help="Annot file directory.",
-    )
+    test_ap.add_argument("-o", "--annot_dir", default="/app/annotation_results", help="Annot file directory.")
     test_ap.add_argument("-g", "--generate_stats", action="store_true", help="generate the data stats")
     test_ap.add_argument("-p", "--plot", action="store_true", help="plot the annotated images")
     test_ap.add_argument("-t", "--ad_threshold", type=float, default=None, help="AD patch threshold.")
@@ -156,31 +136,20 @@ if __name__ == "__main__":
         help='overlap blending mode for tiling: "average", "max", "cosine", "linear", "gaussian"',
     )
     test_ap.add_argument(
-        "--scale_mode",
-        default="padding",
-        choices=["padding", "interpolation"],
-        help="tile scaling mode: padding or interpolation",
+        "--scale_mode", default="padding", choices=["padding", "interpolation"], help="tile scaling mode: padding or interpolation"
     )
     test_ap.add_argument("--limit", type=int, default=None, help="process only the first N images")
-    test_ap.add_argument("-device", "--device", type=str, default="cuda", help="device for inference")
 
     convert_ap = subs.add_parser("convert", help="convert model to trt engine")
     convert_ap.add_argument("-i", "--model_path", default="/app/model/model.pt", help="Input model file path.")
     convert_ap.add_argument("-o", "--export_dir", default="/app/export")
-    convert_ap.add_argument(
-        "-c",
-        "--convert_type",
-        default="trt",
-        type=str,
-        choices=["trt", "onnx"],
-        help="convert type: trt or onnx",
-    )
+    convert_ap.add_argument("-c", "--convert_type", default="trt", choices=["trt", "onnx"], help="convert type: trt or onnx")
     args = vars(ap.parse_args())
 
     action = args["action"]
     model_path = args["model_path"]
 
-    ad = AnomalyModel(model_path, device=args["device"])
+    ad = AnomalyModel(model_path)
 
     if action == "convert":
         export_dir = args["export_dir"]

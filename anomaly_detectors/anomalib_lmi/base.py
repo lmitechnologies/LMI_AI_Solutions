@@ -43,17 +43,74 @@ class Anomalib_Base(ADBase):
         pass
 
     def _load_tensorrt_model(self, model_path: str) -> None:
-        """Load a TensorRT engine and populate model_shape, batch_size, fp16, and inference_mode."""
         self.trt = TRTEngine(model_path, device=str(self.device))
         if len(self.trt._input_names) != 1:
             raise ValueError(f"Expected a single-input TRT engine, got inputs: {self.trt._input_names}")
-        self.model_shape = list(self.trt.input_shape[-2:])
-        self.image_size = self.model_shape
+        self.image_size = list(self.trt.input_shape[-2:])
         self.batch_size = self.trt.max_batch
         self.fp16 = self.trt.fp16
         self.inference_mode = "TRT"
         if not self.trt.is_dynamic:
             self.fixed_batch_size = self.trt.max_batch
+
+    @torch.inference_mode()
+    def preprocess(self, images) -> torch.Tensor:
+        """Convert a list of HWC uint8 images to a batched [N,C,H,W] float tensor.
+
+        Args:
+            images: List of uint8 numpy arrays or torch tensors [H,W,C] or [H,W]
+
+        Returns:
+            Preprocessed tensor [N,C,H,W] float32 (or float16 if fp16)
+
+        Raises:
+            ValueError: If batch size exceeds TensorRT engine limit
+        """
+        tensors = []
+        for image in images:
+            img = self.from_numpy(image).float()
+            tensors.append(img.permute((2, 0, 1)))  # [C,H,W]
+
+        img = torch.stack(tensors) / 255.0  # [N,C,H,W]
+
+        batch = img.shape[0]
+        if self.inference_mode == "TRT" and batch > self.batch_size:
+            raise ValueError(f"Batch size {batch} exceeds TensorRT engine max batch size {self.batch_size}")
+
+        if self.inference_mode == "TRT" and (img.shape[2] != self.image_size[0] or img.shape[3] != self.image_size[1]):
+            img = v2.Resize(self.image_size, antialias=True)(img)
+
+        img = img.contiguous()
+        return img.half() if self.fp16 else img
+
+    def postprocess(self, output: torch.Tensor, return_numpy: bool = True) -> List[Union[np.ndarray, torch.Tensor]]:
+        """Convert raw model output to a list of per-image anomaly maps.
+
+        Args:
+            output: Model output tensor [N,H,W] or [N,1,H,W].
+            return_numpy: If True, return numpy arrays; otherwise return tensors.
+
+        Returns:
+            List of anomaly maps [H,W], one per input image.
+        """
+        output = output.squeeze(1) if output.ndim == 4 else output
+        if return_numpy:
+            output_np = output.cpu().numpy()
+            return [np.squeeze(output_np[i]) for i in range(output_np.shape[0])]
+        return [output[i].squeeze() for i in range(output.shape[0])]
+
+    def warmup(self, input_hw=None):
+        """Warm up model using a dummy zeros array.
+
+        Args:
+            input_hw: Input height and width as int (h==w) or [h, w]. Defaults to the model's built-in shape.
+        """
+        if input_hw is None:
+            input_hw = self.image_size
+        input_hw = to_list(input_hw)
+        zeros = np.zeros(input_hw + [3], dtype=np.uint8)
+        self.logger.info(f"Warming up model with input shape: {zeros.shape}")
+        self.predict([zeros])
 
     def convert_to_onnx(self, export_path, opset_version=14):
         """
@@ -69,7 +126,7 @@ class Anomalib_Base(ADBase):
                 json.dump(self.pt_metadata, metadata_file, ensure_ascii=False, indent=4)
 
         b, c = 1, 3
-        h, w = self.model_shape
+        h, w = self.image_size
         torch.onnx.export(
             self.pt_model,
             torch.zeros((b, c, h, w)).to(self.device),
@@ -151,77 +208,6 @@ class Anomalib_Base(ADBase):
                 raise ValueError(f"TRT export requires a .pt or .onnx input, got {ext}")
         else:
             raise ValueError(f"Unknown convert_type: {convert_type!r}. Expected 'onnx' or 'trt'")
-
-    @torch.inference_mode()
-    def preprocess(self, images) -> torch.Tensor:
-        """Convert a list of HWC uint8 images to a batched [N,C,H,W] float tensor.
-
-        Args:
-            images: List of uint8 numpy arrays or torch tensors [H,W,C] or [H,W]
-
-        Returns:
-            Preprocessed tensor [N,C,H,W] float32 (or float16 if fp16)
-
-        Raises:
-            ValueError: If batch size exceeds TensorRT engine limit
-        """
-        tensors = []
-        for image in images:
-            img = self.from_numpy(image).float()
-            tensors.append(img.permute((2, 0, 1)))  # [C,H,W]
-
-        img = torch.stack(tensors) / 255.0  # [N,C,H,W]
-
-        batch = img.shape[0]
-        if self.inference_mode == "TRT" and batch > self.batch_size:
-            raise ValueError(f"Batch size {batch} exceeds TensorRT engine max batch size {self.batch_size}")
-
-        if self.inference_mode == "TRT" and (img.shape[2] != self.model_shape[0] or img.shape[3] != self.model_shape[1]):
-            img = v2.Resize(self.model_shape, antialias=True)(img)
-
-        img = img.contiguous()
-        return img.half() if self.fp16 else img
-
-    @staticmethod
-    def compute_ad_contour_bbox(ad_scores, ad_max):
-        canvas = np.zeros(ad_scores.shape, dtype=np.uint8)
-        canvas[ad_scores >= ad_max] = 255
-        contours, _ = cv2.findContours(canvas, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        sorted_contours = sorted(contours, key=cv2.contourArea, reverse=True)
-        bboxes = []
-        for contour in sorted_contours:
-            x, y, w, h = cv2.boundingRect(contour)
-            bboxes.append([x, y, x + w, y + h])
-        return sorted_contours, bboxes
-
-    def postprocess(self, output: torch.Tensor, return_numpy: bool = True) -> List[Union[np.ndarray, torch.Tensor]]:
-        """Convert raw model output to a list of per-image anomaly maps.
-
-        Args:
-            output: Model output tensor [N,H,W] or [N,1,H,W].
-            return_numpy: If True, return numpy arrays; otherwise return tensors.
-
-        Returns:
-            List of anomaly maps [H,W], one per input image.
-        """
-        output = output.squeeze(1) if output.ndim == 4 else output
-        if return_numpy:
-            output_np = output.cpu().numpy()
-            return [np.squeeze(output_np[i]) for i in range(output_np.shape[0])]
-        return [output[i].squeeze() for i in range(output.shape[0])]
-
-    def warmup(self, input_hw=None):
-        """Warm up model using a dummy zeros array.
-
-        Args:
-            input_hw: Input height and width as int (h==w) or [h, w]. Defaults to the model's built-in shape.
-        """
-        if input_hw is None:
-            input_hw = self.model_shape
-        input_hw = to_list(input_hw)
-        zeros = np.zeros(input_hw + [3], dtype=np.uint8)
-        self.logger.info(f"Warming up model with input shape: {zeros.shape}")
-        self.predict([zeros])
 
     def test(
         self,
@@ -333,7 +319,7 @@ class Anomalib_Base(ADBase):
             proctime.append(time.time() - t0)
             fname = os.path.split(image_path)[1]
             if not steps:
-                h, w = self.model_shape
+                h, w = self.image_size
                 img = pipeline_utils.resize_image(img, H=h, W=w)
             img_all.append(img)
             anom_all.append(anom_map)
