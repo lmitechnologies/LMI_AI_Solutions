@@ -1,7 +1,6 @@
-from typing import Any, Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List
 
-import numpy as np
-import torch
+from lmi_utils.image_utils.types import ImageLike
 
 from .base import BaseProcessor
 from .handlers import revert_resize, revert_tile
@@ -38,9 +37,7 @@ class Reconstructor(BaseProcessor):
             raise TypeError(f"Undo handler for '{name}' must be callable.")
         self._undo_handlers[name] = undo_func
 
-    def reconstruct(
-        self, images: List[Union[torch.Tensor, np.ndarray]], steps: List[Dict[str, Any]]
-    ) -> List[Union[torch.Tensor, np.ndarray]]:
+    def reconstruct(self, images: List[ImageLike], steps: List[Dict[str, Any]]) -> List[ImageLike]:
         """
         Reconstructs the original image from images and history.
 
@@ -52,14 +49,14 @@ class Reconstructor(BaseProcessor):
             List: The reconstructed image(s) (H, W, C).
         """
         self.validate_image_list(images, stage="reconstruction")
-        self.validate_steps(steps)
+        self.validate_history_steps(steps)
 
         restored_images, is_numpy = self.to_tensor_list(images)
 
         # Iterate BACKWARDS through steps
         for step in reversed(steps):
             op_name = step["type"]
-            meta = step["configuration"]
+            meta = step["metadata"]
             if op_name not in self._undo_handlers:
                 raise ValueError(f"Undo handler for '{op_name}' is not registered.")
 

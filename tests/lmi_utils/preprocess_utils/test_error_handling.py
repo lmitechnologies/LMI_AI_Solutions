@@ -97,7 +97,7 @@ def test_unregistered_handler(prep, recon):
         prep.preprocess(image, [{"type": "unknown", "configuration": {}}])
 
     with pytest.raises(ValueError, match="Undo handler for 'unknown' is not registered"):
-        recon.reconstruct([image], [{"type": "unknown", "configuration": {}}])
+        recon.reconstruct([image], [{"type": "unknown", "metadata": []}])
 
 
 def test_register_non_callable(prep, recon):
@@ -162,7 +162,7 @@ def test_reconstructor_handler_returns(recon):
 
     recon.register_undo_handler("bad1", returns_non_list)
     with pytest.raises(TypeError, match="Undo handler 'bad1' must return a list of images"):
-        recon.reconstruct([image], [{"type": "bad1", "configuration": {}}])
+        recon.reconstruct([image], [{"type": "bad1", "metadata": []}])
 
     # 2. Returns numpy arrays instead of tensors
     def returns_numpy(images, metadata):
@@ -171,7 +171,7 @@ def test_reconstructor_handler_returns(recon):
     recon.register_undo_handler("bad2", returns_numpy)
     tensor_image = torch.zeros((10, 10, 3))
     with pytest.raises(TypeError, match="Undo handler 'bad2' returned non-tensor images"):
-        recon.reconstruct([tensor_image], [{"type": "bad2", "configuration": {}}])
+        recon.reconstruct([tensor_image], [{"type": "bad2", "metadata": []}])
 
 
 # ==========================================
@@ -189,8 +189,7 @@ def test_tile_count_integrity(recon):
         "tile_size": [8, 8],
         "stride": [8, 8],
     }
-    meta = {"metadata": [tiler_meta]}
-    ops = [{"type": "tile", "configuration": meta}]
+    ops = [{"type": "tile", "metadata": [tiler_meta]}]
 
     # Provide only 1 image instead of 4
     with pytest.raises(RuntimeError, match="Expected 4 tiles, found 1"):

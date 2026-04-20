@@ -1,7 +1,6 @@
-from typing import Any, Callable, Dict, List, Tuple, Union
+from typing import Any, Callable, Dict, List, Tuple
 
-import numpy as np
-import torch
+from lmi_utils.image_utils.types import ImageBatch, ImageLike
 
 from .base import BaseProcessor
 from .handlers import resize, tile
@@ -47,9 +46,7 @@ class Preprocessor(BaseProcessor):
             raise TypeError(f"Handler for '{name}' must be a callable function.")
         self._handlers[name] = handler_func
 
-    def preprocess(
-        self, images: Union[List[Union[np.ndarray, torch.Tensor]], np.ndarray, torch.Tensor], processing_steps: List[Dict[str, Any]]
-    ) -> Tuple[List[Union[np.ndarray, torch.Tensor]], List[Dict[str, Any]]]:
+    def preprocess(self, images: ImageBatch, processing_steps: List[Dict[str, Any]]) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
         """
         Runs the preprocessing pipeline.
 
@@ -85,7 +82,7 @@ class Preprocessor(BaseProcessor):
             self.validate_handler_metadata(metadata, op_name)
 
             # Save Metadata for reconstruction
-            step_record = {"type": op_name, "configuration": metadata}
+            step_record = {"type": op_name, "metadata": metadata["metadata"]}
             history.append(step_record)
             processed_imgs = new_images
 

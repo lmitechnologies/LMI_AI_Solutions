@@ -1,13 +1,16 @@
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List
 
 import numpy as np
 import torch
 
+from lmi_utils.image_utils.types import ImageLike
+
 
 class BaseProcessor:
     _STEP_REQUIRED_KEYS = {"type", "configuration"}
+    _HISTORY_REQUIRED_KEYS = {"type", "metadata"}
 
-    def to_tensor_list(self, images: List[Union[torch.Tensor, np.ndarray]]) -> tuple[List[torch.Tensor], bool]:
+    def to_tensor_list(self, images: List[ImageLike]) -> tuple[List[torch.Tensor], bool]:
         """
         Convert image list to tensors if needed.
 
@@ -19,13 +22,13 @@ class BaseProcessor:
             return [torch.from_numpy(img) for img in images], True
         return images, False
 
-    def from_tensor_list(self, images: List[torch.Tensor], to_numpy: bool) -> List[Union[torch.Tensor, np.ndarray]]:
+    def from_tensor_list(self, images: List[torch.Tensor], to_numpy: bool) -> List[ImageLike]:
         """Convert tensor list back to numpy if needed."""
         if to_numpy:
             return [img.cpu().numpy() for img in images]
         return images
 
-    def validate_image_list(self, images: List[Union[torch.Tensor, np.ndarray]], stage: str = "processing") -> None:
+    def validate_image_list(self, images: List[ImageLike], stage: str = "processing") -> None:
         """Validate that images is a proper list of tensors or arrays."""
         if not isinstance(images, list):
             raise TypeError("Images must be a list.")
@@ -70,3 +73,13 @@ class BaseProcessor:
         # validate each step
         for step in steps:
             self.validate_step_keys(step, self._STEP_REQUIRED_KEYS)
+
+    def validate_history_steps(self, steps: List[Dict[str, Any]]) -> None:
+        """Validate that history steps each contain 'type' and 'metadata' keys."""
+        if not isinstance(steps, list):
+            raise TypeError("Steps must be a list.")
+        if not all(isinstance(step, dict) for step in steps):
+            raise TypeError("All steps must be dictionaries.")
+
+        for step in steps:
+            self.validate_step_keys(step, self._HISTORY_REQUIRED_KEYS)
