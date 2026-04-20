@@ -19,6 +19,7 @@ RUN pip install 'numpy<2' ultralytics==8.4.24 onnx rfdetr
 # Installing from anomalib src
 RUN pip install jsonargparse==4.27.7
 RUN pip install anomalib==1.1.1 && anomalib install --option core
+RUN pip install 'numpy<2'
 
 # install git lfs 
 RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
