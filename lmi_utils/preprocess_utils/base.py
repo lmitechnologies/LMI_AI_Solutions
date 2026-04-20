@@ -46,6 +46,13 @@ class BaseProcessor:
         if not all(isinstance(img, torch.Tensor) for img in output):
             raise TypeError(f"{expected_type.capitalize()} '{handler_name}' returned non-tensor images")
 
+    def validate_handler_metadata(self, metadata: Any, handler_name: str) -> None:
+        """Validate that handler metadata is a dict containing the required 'metadata' key."""
+        if not isinstance(metadata, dict):
+            raise TypeError(f"Handler '{handler_name}' must return metadata as dict, got {type(metadata)}")
+        if "metadata" not in metadata:
+            raise KeyError(f"Handler '{handler_name}' metadata dict must contain key 'metadata'")
+
     def validate_step_keys(self, step: Dict[str, Any], required_keys: set) -> None:
         """Validate that a step dictionary contains required keys."""
         if not isinstance(step, dict):

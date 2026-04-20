@@ -51,7 +51,7 @@ def tile(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch
         metadata["scale_mode"] = scale_mode
         tiler_metadata.append(metadata)
 
-    return output_images, {"tiler_metadata": tiler_metadata}
+    return output_images, {"metadata": tiler_metadata}
 
 
 @torch.inference_mode()
@@ -62,10 +62,10 @@ def revert_tile(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torch.
         images (list[torch.Tensor]): List of input tiles (H, W, C).
         meta (dict): Metadata containing 'tiler_metadata'.
     """
-    if "tiler_metadata" not in meta:
-        raise KeyError(f"Metadata missing required key 'tiler_metadata'. Got keys: {list(meta.keys())}")
+    if "metadata" not in meta:
+        raise KeyError(f"Metadata missing required key 'metadata'. Got keys: {list(meta.keys())}")
 
-    tiler_meta_list = meta["tiler_metadata"]
+    tiler_meta_list = meta["metadata"]
     restored_images = []
     cursor = 0
 

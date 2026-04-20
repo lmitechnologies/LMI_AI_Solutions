@@ -35,7 +35,7 @@ def resize(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[tor
         output_images.append(processed)
         image_ops_list.append(ops)
 
-    return output_images, {"ops": image_ops_list}
+    return output_images, {"metadata": image_ops_list}
 
 
 @torch.inference_mode()
@@ -46,10 +46,10 @@ def revert_resize(images: List[torch.Tensor], meta: Dict[str, Any]) -> List[torc
         images (list[torch.Tensor]): List of input images (H, W, C).
         meta (dict): Configuration containing 'ops' for each image.
     """
-    if "ops" not in meta:
-        raise KeyError("Metadata missing required key 'ops'")
+    if "metadata" not in meta:
+        raise KeyError("Metadata missing required key 'metadata'")
 
-    image_ops_list = meta["ops"]
+    image_ops_list = meta["metadata"]
     if len(images) != len(image_ops_list):
         raise ValueError(f"Image count ({len(images)}) doesn't match ops count ({len(image_ops_list)})")
 

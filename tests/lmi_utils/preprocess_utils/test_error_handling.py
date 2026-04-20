@@ -135,13 +135,21 @@ def test_preprocessor_handler_returns(prep):
     with pytest.raises(TypeError, match="Handler 'bad2' must return metadata as dict"):
         prep.preprocess(image, [{"type": "bad2", "configuration": {}}])
 
-    # 3. Returns numpy arrays instead of tensors
-    def returns_numpy(images, config):
-        return [np.zeros((10, 10, 3))], {}
+    # 3. Returns dict missing required "metadata" key
+    def returns_missing_metadata_key(images, config):
+        return images, {"wrong_key": []}
 
-    prep.register_handler("bad3", returns_numpy)
-    with pytest.raises(TypeError, match="Handler 'bad3' returned non-tensor images"):
+    prep.register_handler("bad3", returns_missing_metadata_key)
+    with pytest.raises(KeyError, match="Handler 'bad3' metadata dict must contain key 'metadata'"):
         prep.preprocess(image, [{"type": "bad3", "configuration": {}}])
+
+    # 4. Returns numpy arrays instead of tensors
+    def returns_numpy(images, config):
+        return [np.zeros((10, 10, 3))], {"metadata": []}
+
+    prep.register_handler("bad4", returns_numpy)
+    with pytest.raises(TypeError, match="Handler 'bad4' returned non-tensor images"):
+        prep.preprocess(image, [{"type": "bad4", "configuration": {}}])
 
 
 def test_reconstructor_handler_returns(recon):
@@ -181,7 +189,7 @@ def test_tile_count_integrity(recon):
         "tile_size": [8, 8],
         "stride": [8, 8],
     }
-    meta = {"tiler_metadata": [tiler_meta]}
+    meta = {"metadata": [tiler_meta]}
     ops = [{"type": "tile", "configuration": meta}]
 
     # Provide only 1 image instead of 4

@@ -40,7 +40,7 @@ class Preprocessor(BaseProcessor):
                 - config: Handler-specific configuration dictionary
                 - Returns: (processed_images, metadata_dict)
                     - processed_images: List of (H, W, C) tensors
-                    - metadata_dict: Dictionary containing operation metadata
+                    - metadata_dict: Must be a dict with a "metadata" key (enforced by validate_handler_metadata)
 
         """
         if not callable(handler_func):
@@ -82,8 +82,7 @@ class Preprocessor(BaseProcessor):
 
             # Validate handler output
             self.validate_handler_output(new_images, op_name, expected_type="handler")
-            if not isinstance(metadata, dict):
-                raise TypeError(f"Handler '{op_name}' must return metadata as dict, got {type(metadata)}")
+            self.validate_handler_metadata(metadata, op_name)
 
             # Save Metadata for reconstruction
             step_record = {"type": op_name, "configuration": metadata}
