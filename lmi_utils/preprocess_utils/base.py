@@ -41,6 +41,9 @@ class BaseProcessor:
             raise TypeError("Images must be torch.Tensors or np.ndarrays")
         if not all(isinstance(img, first_type) for img in images):
             raise TypeError("All images must be the same type")
+        for img in images:
+            if img.ndim not in (2, 3):
+                raise ValueError(f"Expected 2D (HW) or 3D (HWC) image, got {img.ndim}D array with shape {img.shape}")
 
     def validate_handler_output(self, output: Any, handler_name: str, expected_type: str = "handler") -> None:
         """Validate handler output format."""

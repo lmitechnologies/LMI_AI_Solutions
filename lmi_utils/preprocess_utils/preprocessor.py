@@ -10,8 +10,7 @@ class Preprocessor(BaseProcessor):
     """
     A class to run a dynamic pipeline of preprocessing steps on an image.
 
-    Handlers (processing functions) are registered with the instance and
-    called based on a list of processing steps.
+    Handlers (processing functions) are registered with the instance and called based on a list of processing steps.
     """
 
     def __init__(self):
@@ -51,14 +50,22 @@ class Preprocessor(BaseProcessor):
         Runs the preprocessing pipeline.
 
         Args:
-            images (np.ndarray | torch.Tensor | list): Input image(s) in format (H, W, C).
-            processing_steps (list): List of config dictionaries.
+            images: A single HW/HWC image, list of HW/HWC images, or a BHWC batch (numpy array or torch tensor). Any dtype is accepted.
+            processing_steps: List of step dicts, each with keys:
+                - "type" (str): Registered handler name (e.g. "resize", "tile").
+                - "configuration" (dict): Handler-specific config passed as-is.
 
         Returns:
-            processed_imgs (list[np.ndarray | torch.Tensor]): list of (H, W, C).
-            history (list[dict]): Metadata chain for reconstruction.
+            processed_imgs: List of (H, W, C) images, same type as input.
+            history: List of step records for reconstruction, each with keys:
+                - "type" (str): Handler name.
+                - "metadata" (list): Per-image metadata returned by the handler.
         """
-        if not isinstance(images, list):
+        if isinstance(images, list):
+            pass
+        elif hasattr(images, "ndim") and images.ndim == 4:
+            images = list(images)
+        else:
             images = [images]
         self.validate_image_list(images, stage="preprocessing")
         self.validate_steps(processing_steps)

@@ -34,10 +34,9 @@ def test_preprocessor_invalid_inputs(prep, invalid_input):
 def test_preprocessor_one_dim_image(prep):
     """Test that preprocessor rejects one-dimensional images."""
     image = np.zeros((10,), dtype=np.uint8)
-    tiler_meta = {"tile_size": [8, 8], "stride": [8, 8]}
-    ops = [{"type": "tile", "configuration": tiler_meta}]
+    ops = [{"type": "tile", "configuration": {"tile_size": [8, 8], "stride": [8, 8]}}]
 
-    with pytest.raises(ValueError, match="Input image must have 2 or 3 dimensions"):
+    with pytest.raises(ValueError, match="Expected 2D .HW. or 3D .HWC. image"):
         prep.preprocess([image], ops)
 
 

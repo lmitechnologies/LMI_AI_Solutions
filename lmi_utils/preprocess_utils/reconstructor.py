@@ -27,10 +27,10 @@ class Reconstructor(BaseProcessor):
         Args:
             name (str): Operation name (must match forward handler name).
             undo_func (callable): Undo function with signature:
-                (images: list[torch.Tensor], configuration: dict) -> list[torch.Tensor]
+                (images: list[torch.Tensor], metadata: list) -> list[torch.Tensor]
 
                 - images: List of processed (H, W, C) tensors
-                - configuration: Dictionary containing operation configuration
+                - metadata: Per-image metadata list from the history step
                 - Returns: List of (H, W, C) tensors
         """
         if not callable(undo_func):

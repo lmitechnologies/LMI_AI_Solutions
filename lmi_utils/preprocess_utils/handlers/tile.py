@@ -25,8 +25,6 @@ def tile(images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch
 
     for img in images:
         ndim = img.dim()
-        if ndim not in {2, 3}:
-            raise ValueError(f"Input image must have 2 or 3 dimensions (H, W) or (H, W, C). Got {ndim} dimensions.")
 
         # Handle single channel
         add_channel = False
