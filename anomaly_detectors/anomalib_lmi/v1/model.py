@@ -29,47 +29,58 @@ class AnomalyModel(Anomalib_Base):
         """
         Args:
             model_path (str): the path to the model file, either a pt or trt engine file
-        attributes:
-            - self.device: device to run model on
-            - self.fp16: flag for half precision
-            - self.model_shape: model input shape (h,w)
-            - self.inference_mode: model inference mode (TRT or PT)
+            **kwargs: Additional keyword arguments
+                    device (str): Device to run on ('cuda' or 'cpu')
+                    image_size (List[int]): Input image size [h, w]
+
+        Attributes:
+            - device: device to run model on
+            - fp16: flag for half precision
+            - image_size: model input shape (h,w)
+            - inference_mode: model inference mode (TRT or PT)
         """
         if not os.path.isfile(model_path):
             raise Exception(f"Cannot find the model file: {model_path}")
 
         # set device
-        device = kwargs.get("device", "cuda").lower()
+        device = kwargs.get("device", "cuda")
         self._setup_device(device)
 
         self.image_size = kwargs.get("image_size", [224, 224])
-
-        _, ext = os.path.splitext(model_path)
         self.fp16 = False
+
         self.logger.info(f"Loading model using {self.device}: {model_path}")
+        _, ext = os.path.splitext(model_path)
         if ext == ".engine":
             self._load_tensorrt_model(model_path)
         elif ext == ".pt":
             self._load_pytorch_model(model_path)
         else:
-            raise Exception(f"Unknown model format: {ext}")
+            raise Exception(f"Unknown model format: {ext}. Expected .pt or .engine")
 
     def _load_pytorch_model(self, model_path: str) -> None:
         try:
-            # try loading the model using torchscript
+            # Try loading as TorchScript model
             self.pt_model = torch.jit.load(model_path, map_location=self.device)
-            self.model_shape = self.image_size
-            self.logger.info(f"Traced model shape: {self.model_shape}")
+            self.logger.info(f"Traced model shape: {self.image_size}")
         except Exception:
+            # Fall back to loading as checkpoint
             checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
             self.pt_model = checkpoint["model"]
-            self.pt_metadata = checkpoint["metadata"]
-            self.logger.info(f"Model metadata: {self.pt_metadata}")
+
+            if "metadata" in checkpoint:
+                self.pt_metadata = checkpoint["metadata"]
+                self.logger.info(f"Model metadata: {self.pt_metadata}")
+
+            # Extract model shape from preprocessor transforms
+            model_shape = None
             for d in self.pt_model.transform.transforms:
                 if isinstance(d, v2.Resize):
-                    self.model_shape = to_list(d.size)
-                    self.image_size = to_list(d.size)
-                    self.logger.info(f"Model shape: {self.model_shape}")
+                    model_shape = to_list(d.size)
+                    self.logger.info(f"Model shape from transforms: {model_shape}")
+                    break
+            if model_shape is not None and model_shape != list(self.image_size):
+                raise Exception(f"Model input shape {model_shape} does not match the provided image_size {self.image_size}") from None
 
         self.pt_model.eval()
         self.inference_mode = "PT"
@@ -109,12 +120,7 @@ if __name__ == "__main__":
     test_ap = subs.add_parser("test", help="test model")
     test_ap.add_argument("-i", "--model_path", default="/app/model/model.pt", help="Input model file path.")
     test_ap.add_argument("-d", "--data_dir", default="/app/data", help="Data file directory.")
-    test_ap.add_argument(
-        "-o",
-        "--annot_dir",
-        default="/app/annotation_results",
-        help="Annot file directory.",
-    )
+    test_ap.add_argument("-o", "--annot_dir", default="/app/annotation_results", help="Annot file directory.")
     test_ap.add_argument("-g", "--generate_stats", action="store_true", help="generate the data stats")
     test_ap.add_argument("-p", "--plot", action="store_true", help="plot the annotated images")
     test_ap.add_argument("-t", "--ad_threshold", type=float, default=None, help="AD patch threshold.")
@@ -128,24 +134,14 @@ if __name__ == "__main__":
         help='overlap blending mode for tiling: "average", "max", "cosine", "linear", "gaussian"',
     )
     test_ap.add_argument(
-        "--scale_mode",
-        default="padding",
-        choices=["padding", "interpolation"],
-        help="tile scaling mode: padding or interpolation",
+        "--scale_mode", default="padding", choices=["padding", "interpolation"], help="tile scaling mode: padding or interpolation"
     )
     test_ap.add_argument("--limit", type=int, default=None, help="process only the first N images")
 
     convert_ap = subs.add_parser("convert", help="convert model to trt engine")
     convert_ap.add_argument("-i", "--model_path", default="/app/model/model.pt", help="Input model file path.")
     convert_ap.add_argument("-o", "--export_dir", default="/app/export")
-    convert_ap.add_argument(
-        "-c",
-        "--convert_type",
-        default="trt",
-        type=str,
-        choices=["trt", "onnx"],
-        help="convert type: trt or onnx",
-    )
+    convert_ap.add_argument("-c", "--convert_type", default="trt", choices=["trt", "onnx"], help="convert type: trt or onnx")
     args = vars(ap.parse_args())
 
     action = args["action"]
