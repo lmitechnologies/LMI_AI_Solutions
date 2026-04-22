@@ -23,9 +23,11 @@ logger = logging.getLogger(__name__)
 
 
 DATA_PATH = "tests/assets/images/nvtec-ad"
-MODEL_PATH = "tests/assets/models/ad/model_v1.pt"
-TRACED_MODEL_PATH = "tests/assets/models/ad/model_v1_trace.pt"
-ENGINE_PATH = "tests/assets/models/ad/model_v1.engine"
+AD_MODELS = "tests/assets/models/ad"
+MODEL_PATH = os.path.join(AD_MODELS, "model_v1.pt")
+TRACED_MODEL_PATH = os.path.join(AD_MODELS, "model_v1_trace.pt")
+ENGINE_PATH_TEMPLATE = os.path.join(AD_MODELS, "model_v1_{}.engine")
+DEFAULT_ENGINE_VERSION = "89"
 OUTPUT_PATH = "tests/outputs/ad/anomalib_v1"
 USE_GPU = torch.cuda.is_available()
 DEVICE = "cuda" if USE_GPU else "cpu"
@@ -73,7 +75,23 @@ def cpu_models():
 def trt_model():
     if not USE_GPU:
         pytest.skip("GPU not available, skipping TRT model fixture")
-    return AnomalyModelV1(ENGINE_PATH, device="cuda")
+    major, minor = torch.cuda.get_device_capability()
+    capability_str = f"{major}{minor}"
+    logger.info(f"Device capability: {capability_str}")
+    engine_path = ENGINE_PATH_TEMPLATE.format(capability_str)
+    if not os.path.exists(engine_path):
+        try:
+            import shutil
+            logger.info("Engine for current environment not found, rebuilding engine...")
+            ad = AnomalyModelV1(MODEL_PATH)
+            convert_dir, _ = os.path.splitext(engine_path)
+            os.makedirs(convert_dir)
+            result_path = ad.convert(MODEL_PATH, convert_dir)
+            shutil.move(result_path, engine_path)
+            shutil.rmtree(convert_dir)  # Cleanup
+        except Exception as e:
+            raise Exception("Failed to generate engine") from e
+    return AnomalyModelV1(engine_path, device="cuda")
 
 
 def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyModelV1]):

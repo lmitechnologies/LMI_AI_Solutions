@@ -184,30 +184,32 @@ class Anomalib_Base(ADBase):
             raise Exception("Export path should be a directory.")
         ext = os.path.splitext(model_path)[1]
 
-        if convert_type == "onnx":
+        def pt_to_onnx():
             if ext != ".pt":
                 raise ValueError(f"ONNX export requires a .pt input, got {ext}")
             self.logger.info("Converting pt to onnx...")
             onnx_path = os.path.join(export_path, "model.onnx")
             self.convert_to_onnx(onnx_path)
             self.logger.info(f"ONNX model saved at {onnx_path}")
-        elif convert_type == "trt":
+            return onnx_path
+
+        def onnx_to_trt(onnx_path):
+            self.logger.info("Converting onnx to trt engine...")
+            trt_path = os.path.join(export_path, "model.engine")
+            self.convert_trt(onnx_path, trt_path, fp16)
+            return trt_path
+
+        if convert_type == "onnx":
+            return pt_to_onnx()
+
+        if convert_type == "trt":
             if ext == ".onnx":
-                self.logger.info("Converting onnx to trt...")
-                trt_path = os.path.join(export_path, "model.engine")
-                self.convert_trt(model_path, trt_path, fp16)
-            elif ext == ".pt":
-                self.logger.info("Converting pt to onnx...")
-                onnx_path = os.path.join(export_path, "model.onnx")
-                self.convert_to_onnx(onnx_path)
-                self.logger.info(f"ONNX model saved at {onnx_path}")
-                self.logger.info("Converting onnx to trt engine...")
-                trt_path = os.path.join(export_path, "model.engine")
-                self.convert_trt(onnx_path, trt_path, fp16)
-            else:
-                raise ValueError(f"TRT export requires a .pt or .onnx input, got {ext}")
-        else:
-            raise ValueError(f"Unknown convert_type: {convert_type!r}. Expected 'onnx' or 'trt'")
+                return onnx_to_trt(model_path)
+            if ext == ".pt":
+                return onnx_to_trt(pt_to_onnx())
+            raise ValueError(f"TRT export requires a .pt or .onnx input, got {ext}")
+
+        raise ValueError(f"Unknown convert_type: {convert_type!r}. Expected 'onnx' or 'trt'")
 
     def test(
         self,
