@@ -20,7 +20,7 @@ This is the tutorial how to train and test the yolov5 object detection models.
 ## Directory structure
 The folder structure below will be created when we go through the tutorial. By convention, we use today's date (i.e. 2023-07-19) as the file name.
 ```
-├── config
+├── configs
 │   ├── 2023-07-19_dataset.yaml
 │   ├── 2023-07-19_train.yaml
 │   ├── 2023-07-19_val.yaml
@@ -148,11 +148,11 @@ names: # class names must match with the names in class_map.json
   1: scuff
   2: white
 ```
-Save it as `./config/2023-07-19_dataset.yaml`.
+Save it as `./configs/2023-07-19_dataset.yaml`.
 
 
 ### Create a hyperparameter file
-Create a file `./config/2023-07-19_train.yaml`. Below shows an example of training a **medium-size yolov5 instance segmentation model** with the image size of 640. To train object detection models, set `task` to `detect`.
+Create a file `./configs/2023-07-19_train.yaml`. Below shows an example of training a **medium-size yolov5 instance segmentation model** with the image size of 640. To train object detection models, set `task` to `detect`.
 
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment
@@ -201,8 +201,8 @@ services:
     volumes:
       - ./training:/app/training   # training output
       - ./data/resized_yolo:/app/data  # training data
-      - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset info
-      - ./config/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./configs/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # dataset info
+      - ./configs/2023-07-19_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 -m object_detectors.yolov5_lmi.run_cmd
 ```
@@ -226,7 +226,7 @@ Execuate the command above and go to http://localhost:6006 to monitor the traini
 
 
 ## Validation
-Create a hyperparameter file `./config/2023-07-19_val.yaml`. The `imgsz` should be a list of [h,w].
+Create a hyperparameter file `./configs/2023-07-19_val.yaml`. The `imgsz` should be a list of [h,w].
 
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
@@ -268,8 +268,8 @@ services:
       - ./validation:/app/validation  # validation output
       - ./data/test:/app/data  # input data
       - ./training/2023-07-19/weights:/app/trained-inference-models   # contains a best.pt
-      - ./config/2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
-      - ./config/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # contains class names
+      - ./configs/2023-07-19_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./configs/2023-07-19_dataset.yaml:/app/config/dataset.yaml  # contains class names
     command: >
       python3 -m object_detectors.yolov5_lmi.run_cmd
 ```
@@ -282,7 +282,7 @@ Spin up the container as shown in [spin-up-the-container](#spin-up-the-container
 ## Generate TensorRT engines
 The TensorRT egnines can be generated in two systems: x86 and arm. Both systems share the same hyperparameter file, while the dockerfile and docker-compose files are different.
 
-Create a file `./config/2023-07-19_trt.yaml`
+Create a file `./configs/2023-07-19_trt.yaml`
 
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment
@@ -313,7 +313,7 @@ services:
     runtime: nvidia
     volumes:
       - ./training/2023-07-19/weights:/app/trained-inference-models   # contains a best.pt
-      - ./config/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./configs/2023-07-19_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 -m object_detectors.yolov5_lmi.run_cmd
 ```
