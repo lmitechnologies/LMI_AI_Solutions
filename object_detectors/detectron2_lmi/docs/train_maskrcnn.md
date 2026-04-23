@@ -108,28 +108,17 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install libgl1 -y
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install --user opencv-python
-RUN pip install ultralytics -U
 
 # clone LMI AI Solutions repository
 WORKDIR /home
 RUN python -m pip install --upgrade pip
-RUN pip install torch torchvision torchaudio
-RUN pip install --user 'git+https://github.com/facebookresearch/fvcore'
 RUN git clone https://github.com/facebookresearch/detectron2 detectron2
 RUN pip install --user -e detectron2 
 RUN pip install tensorboard
-RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && pip install -e LMI_AI_Solutions
 RUN pip install onnx-graphsurgeon onnxruntime
 RUN pip install numba
 
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/lmi_utils"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/anomaly_detectors"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/anomaly_detectors/submodules"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/object_detectors"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/object_detectors/submodules"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/object_detectors/tf_objdet/models/research"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/classifiers"
 ```
 
 #### Train
@@ -137,7 +126,6 @@ ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/classifiers"
 Example docker-compose.yaml file to start a training job
 
 ```yaml
-version: "3.9"
 services:
   detectron2_lmi_train:
     container_name: detectron2_lmi_train
@@ -145,13 +133,7 @@ services:
       context: .
       dockerfile: dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    runtime: nvidia
     ports:
       - 6006:6006 # tensorboard
     volumes:
@@ -180,13 +162,7 @@ services:
       context: .
       dockerfile: dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    runtime: nvidia
     ports:
       - 6006:6006 # tensorboard
     volumes:
@@ -202,7 +178,6 @@ services:
 To run inference please use the following docker-compose.yaml file:
 
 ```yaml
-version: "3.9"
 services:
   detectron2_lmi_infer:
     container_name: detectron2_lmi_infer
@@ -210,13 +185,7 @@ services:
       context: .
       dockerfile: dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    runtime: nvidia
     ports:
       - 6006:6006 # tensorboard
     volumes:
@@ -247,13 +216,7 @@ services:
       context: .
       dockerfile: dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    runtime: nvidia
     ports:
       - 6006:6006 # tensorboard
     volumes:

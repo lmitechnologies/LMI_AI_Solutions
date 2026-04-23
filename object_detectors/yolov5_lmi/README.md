@@ -99,7 +99,6 @@ python -m lmi_utils.label_utils.csv_to_yolo -i /app/data/resized -o /app/data/re
 ### Create a docker-compose file
 To run the bash script in the container, we need to create a file `./docker-compose_preprocess.yaml`.
 ```yaml
-version: "3.9"
 services:
   yolov5_preprocess:
     container_name: yolov5_preprocess
@@ -189,7 +188,6 @@ copy_paste: 0.0  # (float) segment copy-paste (probability)
 Create a file `./docker-compose_train.yaml`. It mounts the host locations to the required locations in the container and run the script `run_cmd.py`, which load the hyperparameters and perform the specified task. 
 
 ```yaml
-version: "3.9"
 services:
   yolov5_train:
     container_name: yolov5_train
@@ -258,7 +256,6 @@ retina_masks: False  # (bool) use high-resolution segmentation masks
 Create a file `./docker-compose_val.yaml`
 
 ```yaml
-version: "3.9"
 services:
   yolov5_val:
     container_name: yolov5_val
@@ -306,7 +303,6 @@ workspace: 4  # (int) TensorRT: workspace size (GB)
 
 Create a file `./docker-compose_trt.yaml`
 ```yaml
-version: "3.9"
 services:
   yolov5_trt:
     container_name: yolov5_trt

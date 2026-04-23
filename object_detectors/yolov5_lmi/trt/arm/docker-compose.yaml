@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   generate_trt_arm:
     build:

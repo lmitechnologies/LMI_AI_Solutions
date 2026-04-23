@@ -2,6 +2,7 @@ import glob
 import json
 import logging
 import os
+import time
 
 import cv2
 
@@ -61,25 +62,25 @@ def inference_run(args):
         csv_results = []
         img = cv2.imread(img_path)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        t0 = time.time()
         outputs, _ = model.predict(img, configs=confidence_map, return_segments=True)
-        if len(outputs["boxes"]) == 0:
+        t1 = time.time()
+        n_boxes = len(outputs["boxes"])
+        if n_boxes == 0:
             logger.warning(f"No detections found for image: {img_path}")
             continue
-        outputs["boxes"] = outputs["boxes"][0]
-        outputs["classes"] = outputs["classes"][0]
-        outputs["scores"] = outputs["scores"][0]
-        outputs["masks"] = outputs["masks"][0]
-        outputs["segments"] = outputs["segments"][0]
+
+        logger.info(f"Found {n_boxes} detections for image: {os.path.basename(img_path)} in {t1 - t0:.2f} seconds")
+        outputs = {k: v[0] for k, v in outputs.items()}  # get the first batch output
         annotated_image = model.annotate_image(outputs, img)
 
         # save the image
         fname = os.path.basename(img_path)
         out_img_path = os.path.join(out_path, fname)
-
-        cv2.imwrite(out_img_path, annotated_image)
+        cv2.imwrite(out_img_path, cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
 
         # save to csv file
-
         for idx, box in enumerate(outputs["boxes"]):
             score = outputs["scores"][idx]
             csv_results.append(
