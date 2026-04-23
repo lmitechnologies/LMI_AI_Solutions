@@ -266,9 +266,6 @@ class RfdetrPTH(RfdetrBase):
     Supports multiple model variants: nano, small, medium, large.
     """
 
-    DEFAULT_MODEL_TYPE = "medium"
-    DEFAULT_CONFIDENCE = 0.5
-
     def __init__(
         self,
         model_path: str,
