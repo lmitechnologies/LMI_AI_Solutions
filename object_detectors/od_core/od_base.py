@@ -365,10 +365,10 @@ class ODBase(abc.ABC):
 
     @staticmethod
     def annotate_image(results, image, colormap=None, **kwargs):
-        """Annotate model results on the image.
+        """Annotate model results on a single image.
 
         Args:
-            results (dict): Detection results, e.g. {'boxes':[], 'classes':[], 'scores':[], 'masks':[], 'segments':[], 'points':[]}.
+            results (dict): Detection results with the keys: boxes, classes, scores, masks, segments, points.
             image (np.ndarray | torch.Tensor): Input image.
             colormap (dict, optional): Maps class name to RGB tuple. Defaults to None (random colors).
 

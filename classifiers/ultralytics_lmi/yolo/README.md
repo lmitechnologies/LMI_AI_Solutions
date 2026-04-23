@@ -16,7 +16,7 @@ This tutorial walks through training and testing YOLO classification models.
 ## Directory structure
 The folder structure below will be created when we go through the tutorial. By convention, we use today's date (i.e. 2026-03-11) as the folder and file name.
 ```
-├── config
+├── configs
 │   ├── 2026-03-11_train.yaml
 │   ├── 2026-03-11_val.yaml
 │   ├── 2026-03-11_trt.yaml
@@ -137,7 +137,7 @@ The preprocessed datasets will be generated in `./data/out`.
 ## Train the model
 
 ### Create a hyperparameter file
-Create `./config/2026-03-11_train.yaml`. Below shows an example of training a **small-size yolo classification model** with the image size of 224x224:
+Create `./configs/2026-03-11_train.yaml`. Below shows an example of training a **small-size yolo classification model** with the image size of 224x224:
 ```yaml
 task: classify # (str) YOLO task, i.e. detect, segment, classify, pose
 mode: train # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
@@ -196,7 +196,7 @@ services:
     volumes:
       - ./training:/app/training   # training output
       - ./data/out:/app/dataset  # training data, which should include a "train" subfolder and a "val"/"test" subfolder
-      - ./config/2026-03-11_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./configs/2026-03-11_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 -m classifiers.ultralytics_lmi.run_cmd
 
@@ -225,7 +225,7 @@ Monitor the training at http://localhost:6006.
 
 
 ## Validation
-Create `./config/2026-03-11_val.yaml`:
+Create `./configs/2026-03-11_val.yaml`:
 ```yaml
 task: classify # (str) YOLO task, i.e. detect, segment, classify, pose
 mode: val # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
@@ -251,7 +251,7 @@ services:
       - ./validation:/app/validation  # output path
       - ./training/2026-03-11/weights:/app/trained-inference-models   # trained model path, where it has best.pt
       - ./data/out:/app/dataset  # input data path
-      - ./config/2026-03-11_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./configs/2026-03-11_val.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 -m classifiers.ultralytics_lmi.run_cmd
 
@@ -262,7 +262,7 @@ Run the container (see [Spin up the container](#spin-up-the-container)) using `d
 
 
 ## Prediction
-Create `./config/2026-03-11_predict.yaml`. The `imgsz` should be a list of [h,w]:
+Create `./configs/2026-03-11_predict.yaml`. The `imgsz` should be a list of [h,w]:
 ```yaml
 task: classify # (str) YOLO task, i.e. detect, segment, classify, pose
 mode: predict # (str) YOLO mode, i.e. train, val, predict, export, track, benchmark
@@ -286,7 +286,7 @@ services:
       - ./prediction:/app/prediction  # output path
       - ./training/2026-03-11/weights:/app/trained-inference-models   # trained model path, where it has best.pt
       - ./data/out/test/distil:/app/data  # input data path
-      - ./config/2026-03-11_test.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./configs/2026-03-11_test.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 -m classifiers.ultralytics_lmi.run_cmd
 ```
@@ -299,7 +299,7 @@ Run the container (see [Spin up the container](#spin-up-the-container)) using `d
 The TensorRT engines can be generated in two systems: x86 and ARM. Both systems share the same hyperparameter file, while the dockerfile and docker-compose files are different.
 
 ### Create a hyperparameter file
-Create `./config/2026-03-11_trt.yaml` that works for both systems:
+Create `./configs/2026-03-11_trt.yaml` that works for both systems:
 ```yaml
 task: classify  # (str) YOLO task, i.e. detect, segment, classify, pose, where classify, pose are NOT tested
 mode: export  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark, where track, benchmark are NOT tested
@@ -331,7 +331,7 @@ services:
     runtime: nvidia
     volumes:
       - ./training/2026-03-11/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
-      - ./config/2026-03-11_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./configs/2026-03-11_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 -m classifiers.ultralytics_lmi.run_cmd
 ```

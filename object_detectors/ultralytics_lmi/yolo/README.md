@@ -21,7 +21,7 @@ This tutorial walks through how to train and test Ultralytics YOLO models.
 ## 📁 Directory Structure
 The folder structure below will be created when we go through the tutorial. By convention, we use today's date (e.g., `2026-03-11`) for file and folder names.
 ```
-├── config
+├── configs
 │   ├── 2026-03-11_train.yaml
 │   ├── 2026-03-11_predict.yaml
 │   ├── 2026-03-11_trt.yaml
@@ -126,7 +126,7 @@ Once it finishes, the YOLO format dataset will be created at `./data/resized_yol
 ## Train the model
 
 ### Create a hyperparameter file
-Create `./config/2026-03-11_train.yaml`. (To train object detection models, set `task` to `detect`): 
+Create `./configs/2026-03-11_train.yaml`. (To train object detection models, set `task` to `detect`): 
 
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose
@@ -183,7 +183,7 @@ services:
       - ./training:/app/training   # training output
       - ./data/resized_yolo:/app/data  # training data
       - ./data/resized_yolo/dataset.yaml:/app/config/dataset.yaml  # dataset settings
-      - ./config/2026-03-11_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./configs/2026-03-11_train.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 -m object_detectors.ultralytics_lmi.run_cmd
 
@@ -212,7 +212,7 @@ Monitor the training at http://localhost:6006.
 
 
 ## Prediction
-Create `./config/2026-03-11_predict.yaml`. (`imgsz` should be a list of [h,w]):
+Create `./configs/2026-03-11_predict.yaml`. (`imgsz` should be a list of [h,w]):
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose
 mode: predict  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark
@@ -256,7 +256,7 @@ services:
       - ./prediction:/app/prediction  # output path
       - ./training/2026-03-11/weights:/app/trained-inference-models   # trained model path, where it has best.pt
       - ./data/resized_yolo/images:/app/data  # input data path
-      - ./config/2026-03-11_predict.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./configs/2026-03-11_predict.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 -m object_detectors.ultralytics_lmi.run_cmd
 
@@ -268,7 +268,7 @@ Spin up the container as shown in [Spin up the container](#spin-up-the-container
 
 ## Generate TensorRT engines
 
-Create `./config/2026-03-11_trt.yaml`:
+Create `./configs/2026-03-11_trt.yaml`:
 ```yaml
 task: segment  # (str) YOLO task, i.e. detect, segment, classify, pose
 mode: export  # (str) YOLO mode, i.e. train, predict, export, val, track, benchmark
@@ -300,7 +300,7 @@ services:
     runtime: nvidia
     volumes:
       - ./training/2026-03-11/weights:/app/trained-inference-models   # trained model path, which includes a best.pt
-      - ./config/2026-03-11_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
+      - ./configs/2026-03-11_trt.yaml:/app/config/hyp.yaml  # customized hyperparameters
     command: >
       python3 -m object_detectors.ultralytics_lmi.run_cmd
 ```

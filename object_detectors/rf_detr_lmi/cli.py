@@ -23,7 +23,7 @@ except ImportError as e:
     logging.error(f"Failed to import rfdetr models: {e}")
     raise
 
-from object_detectors.rf_detr_lmi.convert import convert_to_onnx, convert_to_tensorrt
+from object_detectors.rf_detr_lmi.convert import _write_class_names, convert_to_onnx, convert_to_tensorrt
 
 logger = logging.getLogger(__name__)
 
@@ -51,42 +51,6 @@ MODEL_REGISTRY = {
     (TASK_SEGMENTATION, "xlarge"): RFDETRSegXLarge,
     (TASK_SEGMENTATION, "2xlarge"): RFDETRSeg2XLarge,
 }
-
-
-def setup_argparser() -> argparse.ArgumentParser:
-    """Set up the argument parser for training configuration.
-
-    Returns:
-        argparse.ArgumentParser: Configured argument parser.
-    """
-    parser = argparse.ArgumentParser(description="Train RF-DETR-LMI Object Detector")
-    parser.add_argument("-c", "--config", type=str, required=True, help="Path to the YAML configuration file.")
-    return parser
-
-
-def load_config(config_path: str) -> Dict[str, Any]:
-    """Load configuration from a YAML file.
-
-    Args:
-        config_path: Path to the YAML configuration file.
-
-    Returns:
-        Configuration parameters.
-
-    Raises:
-        FileNotFoundError: If the config file doesn't exist.
-        yaml.YAMLError: If the YAML file is invalid.
-    """
-    try:
-        with open(config_path, "r") as file:
-            config = yaml.safe_load(file)
-        return config
-    except FileNotFoundError:
-        logger.error(f"Configuration file not found: {config_path}")
-        raise
-    except yaml.YAMLError as e:
-        logger.error(f"Error parsing YAML configuration: {e}")
-        raise
 
 
 def validate_training_config(training_configs: Dict[str, Any]) -> None:
@@ -188,7 +152,6 @@ def load_model(configs: Dict[str, Any]) -> Any:
         conversion_configs = configs.get("conversion_configs", {})
         if not conversion_configs:
             raise ValueError("Conversion configuration is missing.")
-        # conversion_configs.pop("output_dir", None)
         return model_class(**conversion_configs)
     else:
         raise ValueError(f"Unsupported operation: {operation}")
@@ -271,8 +234,9 @@ def convert_model_to_torchscript(model: Any, output_dir: str) -> None:
     """
     logger.info("Optimizing model for TorchScript conversion...")
     model.optimize_for_inference()
-    output_path = os.path.join(output_dir, "model.pt")
+    output_path = os.path.join(output_dir, "model.ts")
     model.model.inference_model.save(output_path)
+    _write_class_names(output_path, model.class_names)
     logger.info(f"TorchScript model saved to: {output_path}")
 
 
@@ -284,7 +248,9 @@ def convert_model_to_onnx(model: Any, output_dir: str) -> None:
         output_dir: Directory to save the converted model.
     """
     logger.info("Starting model conversion to ONNX format...")
-    convert_to_onnx(model, output_dir=output_dir)
+    convert_to_onnx(model, output_dir)
+    onnx_path = os.path.join(output_dir, "inference_model.onnx")
+    _write_class_names(onnx_path, model.class_names)
     logger.info(f"ONNX model saved to: {output_dir}")
 
 
@@ -299,8 +265,7 @@ def convert_model_to_tensorrt(model: Any, output_dir: str) -> None:
 
     # Convert to ONNX first if not already done
     if not os.path.exists(onnx_model_path):
-        logger.info("ONNX model not found. Converting to ONNX format first...")
-        convert_to_onnx(model, output_dir=output_dir)
+        convert_model_to_onnx(model, output_dir=output_dir)
 
     logger.info("Converting to TensorRT engine...")
     convert_to_tensorrt(onnx_model_path)
@@ -336,25 +301,22 @@ def handle_conversion(configs: Dict[str, Any]) -> None:
 def main() -> None:
     """Main entry point for the CLI application."""
     logging.basicConfig(level=logging.INFO)
-    parser = setup_argparser()
+
+    parser = argparse.ArgumentParser(description="RF-DETR-LMI Object Detector")
+    parser.add_argument("-c", "--config", type=str, required=True, help="Path to the YAML configuration file.")
     args = parser.parse_args()
 
-    try:
-        config = load_config(args.config)
-        configs = parse_config(config)
+    with open(args.config, "r") as file:
+        config = yaml.safe_load(file)
+    configs = parse_config(config)
 
-        operation = configs.get("model_configs", {}).get("operation")
-
-        if operation == OPERATION_TRAIN:
-            initiate_training(configs)
-        elif operation == OPERATION_CONVERT:
-            handle_conversion(configs)
-        else:
-            raise ValueError(f"Unsupported operation: {operation}")
-
-    except Exception as e:
-        logger.error(f"Error during execution: {e}")
-        raise
+    operation = configs.get("model_configs", {}).get("operation")
+    if operation == OPERATION_TRAIN:
+        initiate_training(configs)
+    elif operation == OPERATION_CONVERT:
+        handle_conversion(configs)
+    else:
+        raise ValueError(f"Unsupported operation: {operation}")
 
 
 if __name__ == "__main__":

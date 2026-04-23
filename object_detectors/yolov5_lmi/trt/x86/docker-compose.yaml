@@ -1,4 +1,3 @@
-version: "3.9"
 services:
   generate_trt_x86:
     build:

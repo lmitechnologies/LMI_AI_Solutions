@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from typing import List, Optional
@@ -32,7 +33,33 @@ class RfdetrBase(ODBase):
         """Initialize normalization constants and postprocessor shared by all backends."""
         self.means = self.MEANS
         self.stds = self.STDS
-        self.postprocessor = PostProcess(num_select=300)
+        self.postprocessor = PostProcess(num_select=200)
+
+    @staticmethod
+    def _load_class_map(model_path: str, provided: Optional[dict]) -> dict:
+        """Resolve class_map from explicit argument or sidecar <stem>.classes.json.
+
+        Args:
+            model_path: Path to the model file.
+            provided: Caller-supplied class_map, or None to auto-discover.
+
+        Returns:
+            Dict mapping int index to str class name.
+
+        Raises:
+            FileNotFoundError: If class_map is None and no sidecar exists.
+        """
+        if provided is not None:
+            return provided
+        sidecar = os.path.splitext(model_path)[0] + ".classes.json"
+        if os.path.isfile(sidecar):
+            RfdetrBase.logger.info(f"Loading class names from sidecar: {sidecar}")
+            with open(sidecar, encoding="utf-8") as f:
+                return {i: n for i, n in enumerate(json.load(f))}
+        raise FileNotFoundError(
+            f"class_map not provided and no sidecar found at {sidecar}. "
+            "Pass class_map explicitly or place a <model>.classes.json next to the model."
+        )
 
     def warmup(self) -> None:
         """Warm up the model by running a dummy inference. Requires self.image_size."""
@@ -170,7 +197,7 @@ class RfdetrModel(ModelFactory, ODBase):
 
 @RfdetrModel.register("engine")
 class RfdetrTRT(RfdetrBase):
-    def __init__(self, model_path: str, class_map: dict, **kwargs) -> None:
+    def __init__(self, model_path: str, class_map: Optional[dict] = None, **kwargs) -> None:
         self._setup_device("cuda")
         self.trt = TRTEngine(model_path, device=str(self.device))
         if len(self.trt._input_names) != 1:
@@ -180,7 +207,7 @@ class RfdetrTRT(RfdetrBase):
         if not self.trt.is_dynamic:
             self.fixed_batch_size = self.trt.max_batch
         self._init_common()
-        self._setup_class_map(class_map)
+        self._setup_class_map(self._load_class_map(model_path, class_map))
 
     def warmup(self):
         """Warm up the model by running a dummy inference."""
@@ -199,18 +226,25 @@ class RfdetrTRT(RfdetrBase):
         return self.trt.infer(image)
 
 
+@RfdetrModel.register("ts")
 @RfdetrModel.register("pt")
 class RfdetrPT(RfdetrBase):
-    def __init__(self, model_path: str, class_map: dict, device: str = "cuda", image_size: Optional[List[int]] = None) -> None:
+    def __init__(
+        self, model_path: str, class_map: Optional[dict] = None, device: str = "cuda", image_size: Optional[List[int]] = None, **kwargs
+    ) -> None:
         self.image_size = image_size or [640, 640]
         self._setup_device(device)
         self._init_common()
 
-        self.model = torch.jit.load(model_path, map_location=self.device)
+        try:
+            self.model = torch.jit.load(model_path, map_location=self.device)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load TorchScript model from {model_path}") from e
+
         self.model.eval()
 
         self.fixed_batch_size = 1
-        self._setup_class_map(class_map)
+        self._setup_class_map(self._load_class_map(model_path, class_map))
 
     def forward(self, image: torch.Tensor, **kwargs) -> list:
         """Perform TorchScript inference on a single image (batch=1).
@@ -232,24 +266,22 @@ class RfdetrPTH(RfdetrBase):
     Supports multiple model variants: nano, small, medium, large.
     """
 
-    DEFAULT_MODEL_TYPE = "medium"
-    DEFAULT_CONFIDENCE = 0.5
-
     def __init__(
         self,
         model_path: str,
-        class_map: dict,
+        model_type: str,
+        class_map: Optional[dict] = None,
         device: str = "cuda",
-        model_type: str = DEFAULT_MODEL_TYPE,
         image_size: Optional[tuple] = None,
     ) -> None:
         """Initialize RF-DETR model from checkpoint.
 
         Args:
             model_path: Path to the model checkpoint file (.pth)
-            class_map: Dict mapping class indices to names (required)
+            model_type: Model variant (nano/small/medium/large/ or seg-nano/seg-small/seg-medium/seg-large/seg-xlarge/seg-2xlarge).
+            class_map: Dict mapping class indices to class names. If None, inferred from the model's built-in class names.
+                If provided, values must exactly match the model's class names.
             device: Device to run on (cuda/cpu). Default: cuda if available
-            model_type: Model variant (nano/small/medium/large). Default: medium
             image_size: Tuple of (height, width). Default: model-specific
 
         Raises:
@@ -265,6 +297,7 @@ class RfdetrPTH(RfdetrBase):
             RFDETRSegMedium,
             RFDETRSegNano,
             RFDETRSegSmall,
+            RFDETRSegXLarge,
             RFDETRSmall,
         )
 
@@ -275,11 +308,12 @@ class RfdetrPTH(RfdetrBase):
             "large": (704, RFDETRLarge),
             # "xlarge": (700, RFDETRXLarge),    # require license
             # "2xlarge": (880, RFDETR2XLarge),  # require license
-            "seg-nano": (384, RFDETRSegNano),
-            "seg-small": (512, RFDETRSegSmall),
-            "seg-medium": (576, RFDETRSegMedium),
-            "seg-large": (704, RFDETRSegLarge),
-            "seg-xlarge": (700, RFDETRSeg2XLarge),
+            "seg-nano": (312, RFDETRSegNano),
+            "seg-small": (384, RFDETRSegSmall),
+            "seg-medium": (432, RFDETRSegMedium),
+            "seg-large": (504, RFDETRSegLarge),
+            "seg-xlarge": (624, RFDETRSegXLarge),
+            "seg-2xlarge": (768, RFDETRSeg2XLarge),
         }
 
         if not os.path.isfile(model_path):
@@ -304,11 +338,13 @@ class RfdetrPTH(RfdetrBase):
             f"with resolution {self.image_size[0]}x{self.image_size[1]} on {self.device}"
         )
         self.model = model_class(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
-        self._setup_class_map(class_map)
-        if set(self.class_map.values()) != set(self.model.class_names):
+        if class_map is None:
+            class_map = {i: n for i, n in enumerate(self.model.class_names)}
+        elif set(class_map.values()) != set(self.model.class_names):
             raise ValueError(
-                f"Provided class_map values {set(self.class_map.values())} do not match model class names {set(self.model.class_names)}"
+                f"Provided class_map values {set(class_map.values())} do not match model class names {set(self.model.class_names)}"
             )
+        self._setup_class_map(class_map)
         self.model.optimize_for_inference()
         self.fixed_batch_size = 1
         self._init_common()

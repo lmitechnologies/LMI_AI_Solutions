@@ -1,6 +1,6 @@
-## Training MaskRCNN
+# Train MaskRCNN
 
-### Dataset
+## Dataset
 
 The required dataset format is COCO, in the following structure:
 
@@ -24,13 +24,13 @@ coco/
 
 *Dataset name should be the same name as the name declared in the config yaml file*
 
-### Training
+## Training
 
 - [Configuration](#configuration)
 - [Dockerfile](#dockerfile)
 - [Training](#train)
 
-#### Configuration
+### Configuration
 
 The following is an example configuration file for training a maskrcnn model
 
@@ -97,9 +97,8 @@ AUGMENTATIONS:
 
 ```
 
-#### Dockerfile
+### Dockerfile
 
-##### x86
 ```dockerfile
 FROM nvcr.io/nvidia/pytorch:23.04-py3
 ARG DEBIAN_FRONTEND=noninteractive
@@ -108,36 +107,23 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install libgl1 -y
 RUN pip install --upgrade pip setuptools wheel
 RUN pip install --user opencv-python
-RUN pip install ultralytics -U
 
 # clone LMI AI Solutions repository
 WORKDIR /home
-RUN python -m pip install --upgrade pip
-RUN pip install torch torchvision torchaudio
-RUN pip install --user 'git+https://github.com/facebookresearch/fvcore'
-RUN git clone https://github.com/facebookresearch/detectron2 detectron2
-RUN pip install --user -e detectron2 
+RUN git clone https://github.com/facebookresearch/detectron2
+RUN pip install --user -e detectron2
 RUN pip install tensorboard
-RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git
+RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && pip install -e LMI_AI_Solutions
 RUN pip install onnx-graphsurgeon onnxruntime
 RUN pip install numba
 
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/lmi_utils"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/anomaly_detectors"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/anomaly_detectors/submodules"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/object_detectors"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/object_detectors/submodules"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/object_detectors/tf_objdet/models/research"
-ENV PYTHONPATH="${PYTHONPATH}:/home/LMI_AI_Solutions/classifiers"
 ```
 
-#### Train
+### Train
 
 Example docker-compose.yaml file to start a training job
 
 ```yaml
-version: "3.9"
 services:
   detectron2_lmi_train:
     container_name: detectron2_lmi_train
@@ -145,13 +131,7 @@ services:
       context: .
       dockerfile: dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    runtime: nvidia
     ports:
       - 6006:6006 # tensorboard
     volumes:
@@ -163,12 +143,12 @@ services:
 ```
 *The training process automatically starts tensorboard*
 
-##### Tensorboard
+### Tensorboard
 
 Served up at the following address [localhost:6006](http://localhost:6006)
 *6006 is the default port*
 
-### Convert to PT
+## Convert to PT
 
 Detectron2 outputs a `.pth` file. To convert it to a regular Pytorch `pt` file please convert it the following way:
 
@@ -180,13 +160,7 @@ services:
       context: .
       dockerfile: dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    runtime: nvidia
     ports:
       - 6006:6006 # tensorboard
     volumes:
@@ -197,12 +171,11 @@ services:
       python3 -m detectron2_lmi.cli convert --pt
 ```
 
-#### Inference
+## Inference
 
 To run inference please use the following docker-compose.yaml file:
 
 ```yaml
-version: "3.9"
 services:
   detectron2_lmi_infer:
     container_name: detectron2_lmi_infer
@@ -210,13 +183,7 @@ services:
       context: .
       dockerfile: dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    runtime: nvidia
     ports:
       - 6006:6006 # tensorboard
     volumes:
@@ -229,11 +196,11 @@ services:
     command: >
       python3 -m detectron2_lmi.cli test -w /home/weights/model.pt
 ```
-###### Outputs:
+### Outputs
 
 A LMI formated csv file with all predictions is automatically saved in the the the output folder defined in the docker compose file.
 
-### Convert to TensorRT
+## Convert to TensorRT
 
 To convert to tensorrt a `sample_image.png` is required to be in folder where the weights are stored. The image should be of size thats divizeable by 32. The imagesize should be defined in the config.yaml file shown above for training.
 
@@ -247,13 +214,7 @@ services:
       context: .
       dockerfile: dockerfile
     ipc: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    runtime: nvidia
     ports:
       - 6006:6006 # tensorboard
     volumes:

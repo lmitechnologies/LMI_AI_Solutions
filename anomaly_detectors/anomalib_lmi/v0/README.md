@@ -93,7 +93,6 @@ Install the [Nvidia Container Toolkit](https://docs.nvidia.com/datacenter/cloud-
 The following sample yaml file references training data at `./training/2024-02-28` and trains a PaDiM model. The [padim.yaml](./configs/padim.yaml) should exist in `./configs/old`. 
 
 ```yaml
-version: "3.9"
 services:
   anomalib_train:
     build:
@@ -162,7 +161,6 @@ RUN pip3 install numpy==1.23.1
 
 ### 3.2 Initialize/modify docker-compose file
 ```yaml
-version: "3.9"
 services:
   anomalib_convert:
     build:
@@ -197,7 +195,6 @@ docker compose up
 ### 4.1 Initialize/modify docker-compose.yaml
 
 ```yaml
-version: "3.9"
 services:
   anomalib_test:
     build:

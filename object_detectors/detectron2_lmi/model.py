@@ -272,6 +272,7 @@ class Detectron2TRT(Detectron2Base):
         return results
 
 
+@Detectron2Model.register("ts")
 @Detectron2Model.register("pt")
 class Detectron2PT(Detectron2Base):
     logger = logging.getLogger("Detectron2PT")
@@ -283,7 +284,7 @@ class Detectron2PT(Detectron2Base):
         try:
             self.model = torch.jit.load(model_path, map_location=self.device)
         except Exception as e:
-            raise RuntimeError(f"Failed to load model from {model_path}") from e
+            raise RuntimeError(f"Failed to load TorchScript model from {model_path}") from e
 
         class_map = kwargs.get("class_map", None)
         if class_map is None:

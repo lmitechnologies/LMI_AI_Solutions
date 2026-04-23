@@ -1,10 +1,12 @@
-## RF-Detr
+# RF-Detr
 
-### Training
+Last updated: 2026-04-23
 
-##### Dataset
+## Training
 
-The dataset for training should be a coco formated dataset, with the category id starting from 0 instead of 1. The dataset should be in the following format.
+### Dataset
+
+The dataset for training should be a coco formated dataset. The dataset should be in the following format:
 
 ```
 dataset/
@@ -26,7 +28,7 @@ dataset/
 ```
 *All three folders are required for training and should consist of _annotations.coco.json*
 
-##### Dockerfile
+### Dockerfile
 
 ```Dockerfile
 FROM nvcr.io/nvidia/pytorch:25.04-py3
@@ -34,36 +36,37 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies
 RUN apt-get update && apt-get install libgl1 -y
-RUN pip install --upgrade pip setuptools wheel
-RUN pip install --user opencv-python-headless
-RUN pip install ultralytics label-studio-sdk shapely roboflow python-dotenv
-RUN git clone https://github.com/roboflow/rf-detr.git
-RUN pip install -e rf-detr
-RUN pip install onnxsim onnx-graphsurgeon pycuda seaborn
+RUN pip install --user opencv-python
+RUN sed -i '/lightning-utilities/d;/pycocotools/d' /etc/pip/constraint.txt && \
+    pip install label_studio_sdk shapely "rfdetr[train]==1.6.4"
 
-# clone LMI AI Solutions repository
+# clone repos
 WORKDIR /repos
-RUN git clone -b ais https://github.com/lmitechnologies/LMI_AI_Solutions.git
-RUN pip install -e LMI_AI_Solutions
+RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && pip install -e LMI_AI_Solutions
+
 ```
 
-##### Configuration
+### Configuration
 
-The following is an example yaml configuration to train an object detector.
+The following is an example yaml configuration to train an object detector. **Seg model resolutions must be divisible by 24 and detection models by 32.**
 
 ```yaml
-model_type: medium
-operation: train # or convert
+model_type: small
+operation: train  # train or convert
+task: seg         # od or seg
 training:
     dataset_dir: /app/data/coco/dataset # the path to the dataset directory
-    epochs: 10 # number of epochs to train
-    batch_size: 4 # batch size
-    grad_accum_steps: 4 # gradient accumulation steps
-    lr: 1e-4 # learning rate
-    output_dir: /app/output/ # output directory
-    resolution: 256 # image size (square image only)
+    epochs: 20                          # number of epochs to train
+    batch_size: 4                       # batch size
+    grad_accum_steps: 4                 # gradient accumulation steps
+    lr: 1e-4                            # learning rate
+    output_dir: /app/training           # output directory
+    resolution: 384                     # image size (square image only)
 ```
-Other traning parameters that can be passed in:
+
+<details>
+<summary>Other training parameters that can be passed in</summary>
+
 | Parameter | Description |
 | :--- | :--- |
 | **dataset_dir** | Specifies the COCO-formatted dataset location with `train`, `valid`, and `test` folders, each containing `_annotations.coco.json`. Ensures the model can properly read and parse data. |
@@ -73,7 +76,7 @@ Other traning parameters that can be passed in:
 | **grad_accum_steps** | Accumulates gradients over multiple mini-batches, effectively raising the total batch size without requiring as much memory at once. Helps train on smaller GPUs at the cost of slightly more time per update. |
 | **lr** | Learning rate for most parts of the model. Influences how quickly or cautiously the model adjusts its parameters. |
 | **lr_encoder** | Learning rate specifically for the encoder portion of the model. Useful for fine-tuning encoder layers at a different pace. |
-| **resolution** | Sets the input image dimensions. Higher values can improve accuracy but require more memory and can slow training. Must be divisible by 56. |
+| **resolution** | Sets the input image dimensions. Higher values can improve accuracy but require more memory and can slow training. |
 | **weight_decay** | Coefficient for L2 regularization. Helps prevent overfitting by penalizing large weights, often improving generalization. |
 | **device** | Specifies the hardware (e.g., `cpu` or `cuda`) to run training on. GPU significantly speeds up training. |
 | **use_ema** | Enables Exponential Moving Average of weights, producing a smoothed checkpoint. Often improves final performance with slight overhead. |
@@ -89,20 +92,13 @@ Other traning parameters that can be passed in:
 | **early_stopping_min_delta** | Minimum change in mAP to qualify as an improvement. Ensures that trivial gains don’t reset the early stopping counter. |
 | **early_stopping_use_ema** | Whether to track improvements using the EMA version of the model. Uses EMA metrics if available, otherwise falls back to regular mAP. |
 
-The following are the available models for training:
+</details>
 
-* RF-DETR Nano
-* RF-DETR Small
-* RF-DETR Base
-* RF-DETR Medium
-* RF-DETR Large
-
-##### Initiating Training
+### Initiating Training
 
 The following is an example docker compose file for training:
 
 ```yaml
-version: "3.9"
 services:
   postprocess:
     container_name: train
@@ -111,37 +107,35 @@ services:
       dockerfile: dockerfile
     ipc: host
     runtime: nvidia
-    # ports:
-    # ports:
-    #   - 6006:6006 # tensorboard
     volumes:
       - ./configs/:/app/configs/
       - ./preprocessed/:/app/data/
-      - ./output:/app/output
+      - ./training:/app/training
     command: >
-      python3 -m object_detectors.rf_detr_lmi.cli -c /app/configs/rf-detr.yaml
+      python3 -m object_detectors.rf_detr_lmi.cli -c /app/configs/train.yaml
 ```
 
-##### Converting to TensorRT Engine
+## Converting to TensorRT Engine
 
 conversion config file:
 
 ```yaml
-model_type: medium
-operation: convert 
-format: torchscript # onnx tensorrt
+model_type: small
+operation: convert
+task: seg         # od or seg
+format: tensorrt  # torchscript onnx tensorrt
 conversion:
-    pretrain_weights: /app/output/v1/checkpoint_best_total.pth # the pth file
-    resolution: 256 # image size
-    device: cuda # cpu for torchscript export
+    pretrain_weights: /app/training/checkpoint_best_total.pth   # must be .pth file
+    resolution: 384
+    device: cuda  # cpu for torchscript export
+    output_dir: /app/training
 ```
 
 docker-compose file
 ```yaml
-version: "3.9"
 services:
   postprocess:
-    container_name: train
+    container_name: convert
     build:
       context: .
       dockerfile: dockerfile
@@ -149,17 +143,15 @@ services:
     runtime: nvidia
     volumes:
       - ./configs/:/app/configs/
-      - ./preprocessed/:/app/data/
-      - ./output:/app/output
+      - ./training/2026-04-22-v1:/app/training
     command: >
-      python3 -m object_detectors.rf_detr_lmi.cli -c /app/configs/rf-detr.convert.yaml
+      python3 -m object_detectors.rf_detr_lmi.cli -c /app/configs/convert.yaml
 ```
 
-##### Inference
+## Inference
 
 docker-compose file
 ```yaml
-version: "3.9"
 services:
   postprocess:
     container_name: inference
@@ -169,9 +161,8 @@ services:
     ipc: host
     runtime: nvidia
     volumes:
-      - ./preprocessed/:/app/data/ # images
-      - ./output:/app/output # folder where the model is stored and outputs are generated (can be different if prefered)
+      - ./preprocessed/test:/app/data/
+      - ./training:/app/training
     command: >
-      python3 -m object_detectors.rf_detr_lmi.infer --weights /app/output/v1/checkpoint_best_total.pth --input /app/data/images --output /app/output/predictions
+      python3 -m object_detectors.rf_detr_lmi.infer --weights /app/training/checkpoint_best_total.pth --input /app/data/test --output /app/training/predictions --model_type seg-small --image_size 384 384
 ```
-
