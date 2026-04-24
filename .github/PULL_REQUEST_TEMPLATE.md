@@ -1,4 +1,4 @@
-<!-- Please read [CONTRIBUTING.md](../CONTRIBUTING.md) before submitting. -->
+<!-- Please read [CONTRIBUTING.md](../docs/CONTRIBUTING.md) before submitting. -->
 
 ## Summary
 

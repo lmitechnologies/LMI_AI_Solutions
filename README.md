@@ -56,4 +56,4 @@ python -m lmi_utils.label_utils.plot_with_json -h
 
 ## Contributing
 
-Please read the [Contributing Guide](CONTRIBUTING.md) before submitting a pull request. It covers branch workflow, commit conventions, pre-commit / Ruff setup, and PR requirements.
+Please read the [Contributing Guide](docs/CONTRIBUTING.md) before submitting a pull request. It covers branch workflow, commit conventions, pre-commit / Ruff setup, and PR requirements.
