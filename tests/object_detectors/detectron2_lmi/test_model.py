@@ -137,13 +137,14 @@ def _assert_batch_empty(outputs, keys, n):
 
 
 def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
-    confs = {v: 0.00 for v in class_map.values()}
     for image in imgs_coco:
         img = torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))
         inputs = [{"image": img}]
         with torch.no_grad():
             orginal_preds = og_cpu_model.inference(inputs, do_postprocess=True)[0]
-        preds, _ = model_cpu.predict(image, configs=confs)
+        # to rgb
+        image2 = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        preds, _ = model_cpu.predict(image2, configs=0)
 
         # check if the outputs are all close
         instances = orginal_preds["instances"]
@@ -153,12 +154,11 @@ def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
 
 
 def test_operators(model, imgs_coco):
-    confs = {v: 0.95 for v in class_map.values()}
     image = imgs_coco[0]
     h, w = image.shape[:2]
     image_resized = cv2.resize(image, (512, 512))
     operators = [{"resize": [512, 512, w, h]}]
-    outputs, _ = model.predict(image_resized, configs=confs, return_segments=False, operators=operators)
+    outputs, _ = model.predict(image_resized, configs=0.9, return_segments=False, operators=operators)
     outputs = {k: v[0] for k, v in outputs.items()}
 
     _assert_nonempty_out(outputs, ["boxes", "classes", "scores", "masks"])
@@ -191,13 +191,12 @@ def test_operators_no_masks(model, imgs_coco):
 
 
 def test_batch_operators(model, imgs_coco):
-    confs = {v: 0.8 for v in class_map.values()}
     images = imgs_coco
     th, tw = 640, 640
     original_sizes = [img.shape[:2] for img in images]
     images_resized = [cv2.resize(img, (tw, th)) for img in images]
     operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
-    outputs, _ = model.predict(images_resized, configs=confs, operators=operators)
+    outputs, _ = model.predict(images_resized, configs=0.8, operators=operators)
     _assert_batch_counts(outputs, KEYS, len(images))
     os.makedirs(OUT_DIR, exist_ok=True)
     for i, (h, w) in enumerate(original_sizes):
@@ -217,9 +216,8 @@ def test_tensor_input(model, imgs_coco):
     image = imgs_coco[0]
     img_tensor = torch.from_numpy(image).cuda()
 
-    confs = {v: 0.5 for v in class_map.values()}
-    out_np, _ = model.predict(image, configs=confs)
-    out_tensor, _ = model.predict(img_tensor, configs=confs)
+    out_np, _ = model.predict(image, configs=0.5)
+    out_tensor, _ = model.predict(img_tensor, configs=0.5)
 
     assert len(out_np["boxes"][0]) == len(out_tensor["boxes"][0])
 
@@ -230,9 +228,8 @@ def test_tensor_input_batch(model, imgs_coco):
         pytest.skip("CUDA not available")
     images = imgs_coco[:2]
     tensor_batch = [torch.from_numpy(img).cuda() for img in images]
-    confs = {v: 0.5 for v in class_map.values()}
 
-    out, _ = model.predict(tensor_batch, configs=confs)
+    out, _ = model.predict(tensor_batch, configs=0.5)
     assert len(out["boxes"]) == len(images)
     for i in range(len(images)):
         out_i = {k: v[i] for k, v in out.items()}
