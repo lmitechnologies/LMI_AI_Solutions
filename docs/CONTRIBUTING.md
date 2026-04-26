@@ -24,7 +24,7 @@ pre-commit install
 
 2. **Develop & commit** on your branch — commit as often as you like locally.
 
-3. *(If pre-commit reported errors)* Auto-fixes are applied in place; fix any remaining errors manually, then re-stage and recommit (see [Pre-commit Guide](docs/PRECOMMIT_GUIDE.md)):
+3. *(If pre-commit reported errors)* Auto-fixes are applied in place; fix any remaining errors manually, then re-stage and recommit (see [Pre-commit Guide](PRECOMMIT_GUIDE.md)):
 
    ```bash
    # Fix the reported errors, then:
