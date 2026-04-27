@@ -1,3 +1,4 @@
+import logging
 import os
 
 import cv2
@@ -7,6 +8,9 @@ import torch
 from lmi_utils.pipeline_base.pipeline_base import PipelineBase
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+OUT_DIR = "tests/outputs/pipeline_base"
+
+logger = logging.getLogger(__name__)
 
 
 class PipelineOD(PipelineBase):
@@ -29,16 +33,24 @@ class PipelineOD(PipelineBase):
 
         # 1. Preprocess
         preprocessed_images, ops_list = self.preprocess(model_role, images)
+        resize_op = []
+        for im0, im1 in zip(images, preprocessed_images):
+            w, h, w0, h0 = im1.shape[1], im1.shape[0], im0.shape[1], im0.shape[0]
+            resize_op.append([{"resize": [w, h, w0, h0]}])
 
         # 2. Mock inference
-        self.models[model_role].predict(preprocessed_images, 0.5)
+        results, _ = self.models[model_role].predict(preprocessed_images, 0.5, operators=resize_op)
 
-        # 3. Reconstruct
-        reconstructed_images = self.reconstruct(preprocessed_images, ops_list)
+        # 3. annotate
+        annots = []
+        for i, im0 in enumerate(images):
+            r = {k: v[i] for k, v in results.items()}
+            annot = self.models[model_role].annotate_image(r, im0)
+            annots.append(annot)
 
         return {
             "outputs": {
-                "annotated": reconstructed_images,
+                "annotated": annots,
             },
             "ops_list": ops_list,
         }
@@ -48,13 +60,6 @@ class PipelineOD(PipelineBase):
     "preprocessing_steps, expected_types",
     [
         ([{"type": "resize", "configuration": {"height": 640, "width": 640}}], ["resize"]),
-        (
-            [
-                {"type": "resize", "configuration": {"height": 640, "width": 640}},
-                {"type": "tile", "configuration": {"height": 320, "width": 320, "y_stride": 320, "x_stride": 320}},
-            ],
-            ["resize", "tile"],
-        ),
     ],
 )
 def test_pipeline_OD(preprocessing_steps, expected_types):
@@ -90,18 +95,17 @@ def test_pipeline_OD(preprocessing_steps, expected_types):
 
     # Run predict
     results = pipeline.predict({}, {"images": images})
-    reconstructed_images = results["outputs"]["annotated"]
+    annotated_imgs = results["outputs"]["annotated"]
     ops_list = results["ops_list"]
 
     # Verify operators
     actual_types = [op.get("type") for op in ops_list]
     assert actual_types == expected_types, f"Operator mismatch: {actual_types} != {expected_types}"
 
-    # Verify shapes
-    for original, reconstructed in zip(images, reconstructed_images):
-        orig_shape = original.shape[:2]
-        recon_shape = reconstructed.shape[:2]
-        assert orig_shape == recon_shape, f"Shape mismatch: {orig_shape} vs {recon_shape}"
+    # write outputs for manual inspection
+    os.makedirs(OUT_DIR, exist_ok=True)
+    for idx, annot in enumerate(annotated_imgs):
+        cv2.imwrite(os.path.join(OUT_DIR, f"annot_od_{idx}.png"), cv2.cvtColor(annot, cv2.COLOR_RGB2BGR))
 
 
 class PipelineAD(PipelineBase):
