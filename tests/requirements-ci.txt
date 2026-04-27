@@ -8,4 +8,4 @@ ultralytics==8.4.39
 onnx==1.21.0
 pytest==9.0.3
 rfdetr==1.6.4
-albumentations>=1.4.24,<3.0.0
+albumentations>=2.0.8,<3.0.0
