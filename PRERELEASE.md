@@ -221,11 +221,21 @@ class MyODPipeline(PipelineBase):
         self.load_models(model_roles, configs, device=device)
 
     def predict(self, configs, inputs):
-        images = inputs["images"]
-        preprocessed_images, ops_list = self.preprocess("od-model", images)
-        self.models["od-model"].predict(preprocessed_images, 0.5)
-        reconstructed_images = self.reconstruct(preprocessed_images, ops_list)
-        return {"outputs": {"annotated": reconstructed_images}}
+        image = inputs["image"]  # single HWC numpy image
+
+        # 1. Preprocess
+        preprocessed, ops_list = self.preprocess("od-model", image) # preprocessed is a list of images
+        w, h, w0, h0 = preprocessed[0].shape[1], preprocessed[0].shape[0], image.shape[1], image.shape[0]
+        resize_op = [[{"resize": [w, h, w0, h0]}]]
+
+        # 2. Inference
+        results, _ = self.models["od-model"].predict(preprocessed, 0.5, operators=resize_op)
+
+        # 3. Annotate
+        r = {k: v[0] for k, v in results.items()}
+        annotated = self.models["od-model"].annotate_image(r, image)
+
+        return {"outputs": {"annotated": annotated}}
 
 
 model_roles = {
@@ -257,9 +267,9 @@ class MyADPipeline(PipelineBase):
         self.load_models(model_roles, configs, device=device)
 
     def predict(self, configs, inputs):
-        images = inputs["images"]
-        preprocessed_images, ops_list = self.preprocess("ad-model", images)
-        scores = self.models["ad-model"].predict(preprocessed_images)
+        image = inputs["image"]
+        preprocessed_image, ops_list = self.preprocess("ad-model", image)
+        scores = self.models["ad-model"].predict(preprocessed_image)
         heatmap = self.reconstruct(scores, ops_list)
         return {"outputs": {"annotated": heatmap}}
 

@@ -38,8 +38,9 @@ def inference_run(args):
     class_map_path = args.class_map
     image_size = args.image_size
     model_type = args.model_type
-    if model_path.split(".")[-1] == "pth":
-        if model_type is None or model_type == "":
+    model_ext = os.path.splitext(model_path)[1].lower()
+    if model_ext == ".pth":
+        if not model_type:
             raise ValueError("Model type must be specified when using .pth weights")
     if not os.path.exists(out_path):
         os.makedirs(out_path)

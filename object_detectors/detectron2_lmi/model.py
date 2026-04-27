@@ -184,17 +184,19 @@ class Detectron2TRT(Detectron2Base):
         Preprocesses a batch of images for input into the model.
 
         Args:
-            images: A list of HWC images as numpy arrays or torch tensors.
+            images: A list of HWC RGB images as numpy arrays or torch tensors.
 
         Returns:
-            torch.Tensor: A batch of preprocessed images with shape (batch_size, 3, image_h, image_w) on the model device.
+            torch.Tensor: A batch of CHW BGR preprocessed images with shape (batch_size, 3, image_h, image_w) on the model device.
         """
         tensors = []
         for img in images:
             if isinstance(img, torch.Tensor):
-                tensors.append(img.permute(2, 0, 1).to(dtype=self.input_dtype, device=self.device))
+                t = img.permute(2, 0, 1).to(dtype=self.input_dtype, device=self.device)
             else:
-                tensors.append(torch.from_numpy(img.transpose(2, 0, 1)).to(dtype=self.input_dtype, device=self.device))
+                t = torch.from_numpy(img.transpose(2, 0, 1)).to(dtype=self.input_dtype, device=self.device)
+            # to BGR
+            tensors.append(t.flip(0))
         return torch.stack(tensors)
 
     def forward(self, inputs):
@@ -316,10 +318,10 @@ class Detectron2PT(Detectron2Base):
         Preprocesses a batch of images for input into the model.
 
         Args:
-            images: A list of HWC images as numpy arrays or torch tensors.
+            images: A list of HWC RGB images as numpy arrays or torch tensors.
 
         Returns:
-            list: A list of dicts with key 'image' mapping to a CHW float32 tensor on self.device.
+            list: A list of dicts with key 'image' mapping to a CHW BGR float32 tensor on self.device.
         """
         inputs = []
         for image in images:
@@ -327,7 +329,8 @@ class Detectron2PT(Detectron2Base):
                 t = image.permute(2, 0, 1).to(dtype=torch.float32, device=self.device)
             else:
                 t = torch.from_numpy(image.astype(np.float32)).permute(2, 0, 1).to(self.device)
-            inputs.append(dict(image=t))
+            # to BGR
+            inputs.append(dict(image=t.flip(0)))
         return inputs
 
     def forward(self, inputs):
