@@ -146,7 +146,7 @@ class ADBase(ABC):
         return results
 
     @torch.inference_mode()
-    def annotate(self, img, ad_scores, ad_threshold, ad_max):
+    def annotate(self, img: ImageLike, ad_scores, ad_threshold, ad_max) -> np.ndarray:
         """Overlay an anomaly heatmap on the input image.
 
         Args:

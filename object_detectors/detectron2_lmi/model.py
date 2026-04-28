@@ -7,7 +7,7 @@ import torchvision  # noqa: F401
 
 from lmi_common.model_factory import ModelFactory
 from lmi_common.trt_engine import TRTEngine
-from lmi_utils.image_utils.types import ImageBatch
+from lmi_utils.image_utils.types import ImageLike
 from lmi_utils.postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_masks
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
@@ -179,7 +179,7 @@ class Detectron2TRT(Detectron2Base):
             input = torch.rand(self.batch_size, 3, image_h, image_w, dtype=self.input_dtype, device=self.device)
             self.forward(input)
 
-    def preprocess(self, images: ImageBatch):
+    def preprocess(self, images: List[ImageLike]):
         """
         Preprocesses a batch of images for input into the model.
 
@@ -313,7 +313,7 @@ class Detectron2PT(Detectron2Base):
         images = [np.random.rand(image_h, image_w, 3).astype(np.float32) for _ in range(self.batch_size)]
         self.forward(self.preprocess(images))
 
-    def preprocess(self, images: ImageBatch) -> List[Dict[str, torch.Tensor]]:
+    def preprocess(self, images: List[ImageLike]) -> List[Dict[str, torch.Tensor]]:
         """
         Preprocesses a batch of images for input into the model.
 

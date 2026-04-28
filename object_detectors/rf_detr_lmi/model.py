@@ -11,7 +11,7 @@ from rfdetr.models.postprocess import PostProcess
 
 from lmi_common.model_factory import ModelFactory
 from lmi_common.trt_engine import TRTEngine
-from lmi_utils.image_utils.types import ImageBatch, ImageLike
+from lmi_utils.image_utils.types import ImageLike
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
@@ -74,7 +74,7 @@ class RfdetrBase(ODBase):
             img_tensor = image.permute(2, 0, 1).to(self.device).float() / 255.0
         return F.normalize(img_tensor, self.means, self.stds)
 
-    def preprocess(self, images: ImageBatch) -> torch.Tensor:
+    def preprocess(self, images: List[ImageLike]) -> torch.Tensor:
         """Preprocess input image(s) to BCHW normalized tensor."""
         if isinstance(images, list):
             return torch.stack([self._preprocess_single(img) for img in images])
