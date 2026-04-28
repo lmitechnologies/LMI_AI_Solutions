@@ -27,22 +27,18 @@ def model_det():
     return [YoloCls(model, device=DEVICE, image_size=[MODEL_SZ, MODEL_SZ]) for model in CLS_MODELS]
 
 
-@pytest.fixture
-def model_det_api():
-    return [
-        Classifier(
-            metadata=dict(
-                version="v1",
-                model_name="yolov8",
-                task="classification",
-                framework="ultralytics",
-                model_path=model,
-                image_size=[MODEL_SZ, MODEL_SZ],
-            ),
-            device=DEVICE,
-        )
-        for model in CLS_MODELS
-    ]
+def _make_api_model(model_path):
+    return Classifier(
+        metadata=dict(
+            version="v1",
+            model_name="yolov8",
+            task="classification",
+            framework="ultralytics",
+            model_path=model_path,
+            image_size=[MODEL_SZ, MODEL_SZ],
+        ),
+        device=DEVICE,
+    )
 
 
 def load_image(path):
@@ -70,60 +66,56 @@ def imgs_coco():
     return images, resized_images, ops
 
 
-class Test_Yolo_Det:
-    def test_warmup(self, model_det):
-        for model in model_det:
-            model.warmup()
-
-    def test_predict(self, model_det, imgs_coco):
-        i = 0
-        for model in model_det:
-            for img, resized, _op in zip(*imgs_coco):
-                out, time_info = model.predict(resized)
-                assert len(out["classes"]) > 0
-                for sc in out["scores"]:
-                    assert sc > 0
-                label = f"{out['classes'][0]}:{out['scores'][0]:.2f}"
-                im_out = cv2.putText(
-                    img.copy(),
-                    label,
-                    (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    (0, 255, 0),
-                    2,
-                )
-                os.makedirs(OUT_DIR, exist_ok=True)
-                im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
-                cv2.imwrite(os.path.join(OUT_DIR, f"cls-{i}.png"), im_out)
-                i += 1
+def _assert_results(out, n):
+    assert len(out["classes"]) == n
+    assert len(out["scores"]) == n
+    for sc in out["scores"]:
+        assert sc > 0
 
 
-class Test_Yolo_Det_API:
-    def test_warmup(self, model_det_api):
-        for model in model_det_api:
-            model.warmup()
+def test_model_class_comparison():
+    for model_path in CLS_MODELS:
+        direct = YoloCls(model_path, device=DEVICE, image_size=[MODEL_SZ, MODEL_SZ])
+        api = _make_api_model(model_path)
+        assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
 
-    def test_predict(self, model_det_api, imgs_coco):
-        i = 0
-        for model in model_det_api:
-            for img, resized, _op in zip(*imgs_coco):
-                out, time_info = model.predict(resized)
-                assert len(out["classes"]) > 0
-                for sc in out["scores"]:
-                    assert sc > 0
 
-                label = f"{out['classes'][0]}:{out['scores'][0]:.2f}"
-                im_out = cv2.putText(
-                    img.copy(),
-                    label,
-                    (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    (0, 255, 0),
-                    2,
-                )
-                os.makedirs(OUT_DIR, exist_ok=True)
-                im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
-                cv2.imwrite(os.path.join(OUT_DIR, f"cls-{i}.png"), im_out)
-                i += 1
+def test_warmup(model_det):
+    for model in model_det:
+        model.warmup()
+
+
+def test_predict(model_det, imgs_coco):
+    i = 0
+    for model in model_det:
+        for img, resized, _op in zip(*imgs_coco):
+            out, time_info = model.predict(resized)
+            _assert_results(out, 1)
+            label = f"{out['classes'][0]}:{out['scores'][0]:.2f}"
+            im_out = cv2.putText(
+                img.copy(),
+                label,
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (0, 255, 0),
+                2,
+            )
+            os.makedirs(OUT_DIR, exist_ok=True)
+            im_out = cv2.cvtColor(im_out, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(os.path.join(OUT_DIR, f"cls-{i}.png"), im_out)
+            i += 1
+
+
+def test_predict_batch(model_det, imgs_coco):
+    _, resized_images, _ = imgs_coco
+    for model in model_det:
+        out, time_info = model.predict(resized_images)
+        _assert_results(out, len(resized_images))
+
+
+def test_predict_batch_size(model_det, imgs_coco):
+    _, resized_images, _ = imgs_coco
+    for model in model_det:
+        out, time_info = model.predict(resized_images, batch_size=2)
+        _assert_results(out, len(resized_images))

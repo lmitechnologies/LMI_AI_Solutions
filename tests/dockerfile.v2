@@ -4,7 +4,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 # Install dependencies
 RUN apt-get update && apt-get install libgl1 -y
 # weights_only issue will raise in pytorch>=2.6 when loading anomalib models
-RUN pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
 
 WORKDIR /home/gadget
 
