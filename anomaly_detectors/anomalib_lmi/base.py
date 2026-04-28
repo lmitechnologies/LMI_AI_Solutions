@@ -3,7 +3,7 @@ import logging
 import os
 import subprocess
 from abc import abstractmethod
-from typing import List, Union
+from typing import List
 
 import cv2
 import numpy as np
@@ -13,6 +13,7 @@ from torchvision.transforms import v2
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
 from anomaly_detectors.ad_core.ad_base import ADBase
 from lmi_common.trt_engine import TRTEngine
+from lmi_utils.image_utils.types import ImageLike
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
@@ -54,11 +55,11 @@ class Anomalib_Base(ADBase):
             self.fixed_batch_size = self.trt.max_batch
 
     @torch.inference_mode()
-    def preprocess(self, images) -> torch.Tensor:
+    def preprocess(self, images: List[ImageLike]) -> torch.Tensor:
         """Convert a list of HWC uint8 images to a batched [N,C,H,W] float tensor.
 
         Args:
-            images: List of uint8 numpy arrays or torch tensors [H,W,C] or [H,W]
+            images (List[ImageLike]): List of uint8 numpy arrays or torch tensors [H,W,C] or [H,W]
 
         Returns:
             Preprocessed tensor [N,C,H,W] float32 (or float16 if fp16)
@@ -83,7 +84,7 @@ class Anomalib_Base(ADBase):
         img = img.contiguous()
         return img.half() if self.fp16 else img
 
-    def postprocess(self, output: torch.Tensor, return_numpy: bool = True) -> List[Union[np.ndarray, torch.Tensor]]:
+    def postprocess(self, output: torch.Tensor, return_numpy: bool = True) -> List[ImageLike]:
         """Convert raw model output to a list of per-image anomaly maps.
 
         Args:

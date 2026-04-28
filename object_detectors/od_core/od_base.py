@@ -8,7 +8,7 @@ import numpy as np
 import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
-from lmi_utils.image_utils.types import ImageBatch, normalize_image_batch, to_rgb
+from lmi_utils.image_utils.types import ImageBatch, ImageLike, normalize_image_batch, to_rgb
 
 from .results import Results
 
@@ -364,7 +364,7 @@ class ODBase(abc.ABC):
         return result
 
     @staticmethod
-    def annotate_image(results, image, colormap=None, **kwargs):
+    def annotate_image(results, image: ImageLike, colormap=None, **kwargs) -> np.ndarray:
         """Annotate model results on a single image.
 
         Args:

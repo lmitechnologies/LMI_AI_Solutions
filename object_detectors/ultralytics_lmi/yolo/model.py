@@ -7,7 +7,7 @@ from ultralytics.utils import nms, ops
 from ultralytics.utils.torch_utils import smart_inference_mode
 
 from lmi_common.yolo_core import YoloCore
-from lmi_utils.image_utils.types import ImageBatch, ImageLike, to_rgb
+from lmi_utils.image_utils.types import ImageLike, to_rgb
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
@@ -61,7 +61,7 @@ class Yolo(YoloCore, ODBase):
         return img
 
     @smart_inference_mode()
-    def preprocess(self, images: ImageBatch) -> torch.Tensor:
+    def preprocess(self, images: List[ImageLike]) -> torch.Tensor:
         """Prepares input image(s) before inference.
 
         Args:
