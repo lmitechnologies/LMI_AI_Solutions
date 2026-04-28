@@ -104,7 +104,7 @@ class PipelineBase(metaclass=ABCMeta):
 
         # Default to v1, but downgrade to v0 for specific cases
         meta_copy.setdefault("version", "v1")
-        if (meta_copy["package"] == "detectron2") or (model_type == "classification"):
+        if meta_copy["package"] == "detectron2":
             meta_copy["version"] = "v0"
 
         model_classes: Dict[str, Type] = {
