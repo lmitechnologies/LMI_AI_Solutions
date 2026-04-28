@@ -104,7 +104,7 @@ class PipelineBase(metaclass=ABCMeta):
 
         # Default to v1, but downgrade to v0 for specific cases
         meta_copy.setdefault("version", "v1")
-        if (meta_copy["package"] == "detectron2") or (model_type == "classification"):
+        if meta_copy["package"] == "detectron2":
             meta_copy["version"] = "v0"
 
         model_classes: Dict[str, Type] = {
@@ -392,13 +392,13 @@ class PipelineBase(metaclass=ABCMeta):
         """
         clean up the pipeline in REVERSED order, i.e., the last models get destroyed first
         """
-        L = list(reversed(self.models.keys())) if self.models else []
-        for model_name in L:
-            del self.models[model_name]
+        while self.models:
+            model_name, model = self.models.popitem(last=True)
+            del model
             self.logger.info(f"{model_name} has been cleaned up")
-        self.models.clear()
         self.logger.info("pipeline is cleaned up")
 
+        self.init_results()
         self._preprocessing.clear()
         self.logger.info("preprocessing is cleaned up")
 
