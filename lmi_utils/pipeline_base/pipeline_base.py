@@ -231,7 +231,7 @@ class PipelineBase(metaclass=ABCMeta):
             ops (list[dict]): Preprocessing history returned by preprocess().
 
         Returns:
-            Same type as ``data``, with transforms inverted.
+            type: list for AD path or dict for OD path.
         """
         if isinstance(data, dict):
             return self.reconstructor.reconstruct_coordinates(data, ops)

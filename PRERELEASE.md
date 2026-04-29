@@ -212,7 +212,26 @@ model = ObjectDetector(
 
 Supported step types: `resize`, `tile`. Steps can be chained and nested (e.g. resize → tile → tile).
 
-**Resize with Object Detection:**
+**Resize with Object Detection**
+
+OD model role from gofactory:
+```json
+"od-model": {
+    "format": "pt",
+    "configs": {},
+    "details": {
+        "training_package": "Ultralytics",
+        "training_algorithm": "Yolo",
+        "global_preprocessing": [{"type": "resize", "configuration": {"height": 640, "width": 640}}],
+    },
+    "artifacts": {"pt": {"image_size": [640, 640], "model_path": model_path}},
+    "model_role": "od-model",
+    "model_type": "InstanceSegmentation",
+    "model_version": "1",
+}
+```
+
+Pipeline example:
 ```python
 from lmi_utils.pipeline_base.pipeline_base import PipelineBase
 
@@ -227,39 +246,42 @@ class MyODPipeline(PipelineBase):
         preprocessed, ops_list = self.preprocess("od-model", image)  # preprocessed is a list of images
 
         # 2. Inference
-        results, _ = self.models["od-model"].predict(preprocessed, 0.5)
+        results1, _ = self.models["od-model"].predict(preprocessed, 0.5)
 
         # 3. Revert coordinates to original image space
-        results = self.revert_preprocess(results, ops_list)
+        results2 = self.revert_preprocess(results1, ops_list)
 
         # 4. Annotate
-        r = {k: v[0] for k, v in results.items()}
+        r = {k: v[0] for k, v in results2.items()}  # remove the batch dim
         annotated = self.models["od-model"].annotate_image(r, image)
 
-        return {"outputs": {"annotated": annotated}}
-
-
-model_roles = {
-    "od-model": {
-        "format": "pt",
-        "configs": {},
-        "details": {
-            "training_package": "Ultralytics",
-            "training_algorithm": "Yolo",
-            "global_preprocessing": [{"type": "resize", "configuration": {"height": 640, "width": 640}}],
-        },
-        "artifacts": {"pt": {"image_size": [640, 640], "model_path": model_path}},
-        "model_role": "od-model",
-        "model_type": "InstanceSegmentation",
-        "model_version": "1",
-    }
-}
 ```
 
-**Tiling with anomaly detection:**
+**Tiling with anomaly detection**
 
 `Tiler` is no longer embedded inside anomaly model subclasses ([#263](../../pull/263)). Tiling must now be orchestrated explicitly via `preprocess()` before calling `predict()`, and `revert_preprocess()` stitches the per-tile anomaly maps back into a full-resolution map.
 
+AD model role from gofactory:
+```json
+"ad-model": {
+    "format": "pt",
+    "configs": {},
+    "details": {
+        "training_package": "Anomalib1",
+        "training_algorithm": "Patchcore",
+        "global_preprocessing": [
+            {"type": "resize", "configuration": {"height": 224, "width": 448}},
+            {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}},
+        ],
+    },
+    "artifacts": {"pt": {"image_size": [224, 224], "model_path": model_path}},
+    "model_role": "ad-model",
+    "model_type": "AnomalyDetection",
+    "model_version": "1",
+}
+```
+
+Pipeline example:
 ```python
 from lmi_utils.pipeline_base.pipeline_base import PipelineBase
 
@@ -269,28 +291,15 @@ class MyADPipeline(PipelineBase):
 
     def predict(self, configs, inputs):
         image = inputs["image"]
+
+        # 1. Preprocess: resize -> tile
         preprocessed_image, ops_list = self.preprocess("ad-model", image)
+
+        # 2. Inference on tiles
         scores = self.models["ad-model"].predict(preprocessed_image)
-        heatmap = self.revert_preprocess(scores, ops_list)
-        return {"outputs": {"annotated": heatmap}}
 
+        # 3. reconstruct the score with the same shape as image
+        final_scores = self.revert_preprocess(scores, ops_list)  # returns a list of images
+        final_score = final_scores[0]
 
-model_roles = {
-    "ad-model": {
-        "format": "pt",
-        "configs": {},
-        "details": {
-            "training_package": "Anomalib1",
-            "training_algorithm": "Patchcore",
-            "global_preprocessing": [
-                {"type": "resize", "configuration": {"height": 224, "width": 448}},
-                {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}},
-            ],
-        },
-        "artifacts": {"pt": {"image_size": [224, 224], "model_path": model_path}},
-        "model_role": "ad-model",
-        "model_type": "AnomalyDetection",
-        "model_version": "1",
-    }
-}
 ```
