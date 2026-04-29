@@ -204,11 +204,11 @@ model = ObjectDetector(
 
 ## New Features
 
-### 7. Preprocessor & Reconstructor — batch processing with history-based reconstruction
+### 7. `preprocess` & `revert_preprocess` — batch processing with history-based reconstruction
 
 **PRs:** [#180](../../pull/180), [#269](../../pull/269)
 
-`Preprocessor` and `Reconstructor` are a new pair of classes that replace the old single-image preprocessing helpers. `Preprocessor.preprocess()` accepts a single image, a list of images, or a BHWC array and returns `(processed_images, history)`. `Reconstructor.reconstruct()` uses the history to invert the operations and restore the original resolution.
+`PipelineBase` now exposes `preprocess()` and `revert_preprocess()` as the standard preprocessing pair. `preprocess()` accepts a single image, a list of images, or a BHWC array and returns `(processed_images, history)`. `revert_preprocess()` uses the history to invert the operations — restoring original resolution for images (AD) or reverting coordinates back to the original image space (OD).
 
 Supported step types: `resize`, `tile`. Steps can be chained and nested (e.g. resize → tile → tile).
 
@@ -224,14 +224,15 @@ class MyODPipeline(PipelineBase):
         image = inputs["image"]  # single HWC numpy image
 
         # 1. Preprocess
-        preprocessed, ops_list = self.preprocess("od-model", image) # preprocessed is a list of images
-        w, h, w0, h0 = preprocessed[0].shape[1], preprocessed[0].shape[0], image.shape[1], image.shape[0]
-        resize_op = [[{"resize": [w, h, w0, h0]}]]
+        preprocessed, ops_list = self.preprocess("od-model", image)  # preprocessed is a list of images
 
         # 2. Inference
-        results, _ = self.models["od-model"].predict(preprocessed, 0.5, operators=resize_op)
+        results, _ = self.models["od-model"].predict(preprocessed, 0.5)
 
-        # 3. Annotate
+        # 3. Revert coordinates to original image space
+        results = self.revert_preprocess(results, ops_list)
+
+        # 4. Annotate
         r = {k: v[0] for k, v in results.items()}
         annotated = self.models["od-model"].annotate_image(r, image)
 
@@ -257,7 +258,7 @@ model_roles = {
 
 **Tiling with anomaly detection:**
 
-`Tiler` is no longer embedded inside anomaly model subclasses ([#263](../../pull/263)). Tiling must now be orchestrated explicitly via `preprocess()` before calling `predict()`, and `reconstruct()` stitches the per-tile anomaly maps back into a full-resolution map.
+`Tiler` is no longer embedded inside anomaly model subclasses ([#263](../../pull/263)). Tiling must now be orchestrated explicitly via `preprocess()` before calling `predict()`, and `revert_preprocess()` stitches the per-tile anomaly maps back into a full-resolution map.
 
 ```python
 from lmi_utils.pipeline_base.pipeline_base import PipelineBase
@@ -270,7 +271,7 @@ class MyADPipeline(PipelineBase):
         image = inputs["image"]
         preprocessed_image, ops_list = self.preprocess("ad-model", image)
         scores = self.models["ad-model"].predict(preprocessed_image)
-        heatmap = self.reconstruct(scores, ops_list)
+        heatmap = self.revert_preprocess(scores, ops_list)
         return {"outputs": {"annotated": heatmap}}
 
 

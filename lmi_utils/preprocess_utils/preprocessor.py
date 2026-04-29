@@ -42,7 +42,7 @@ class Preprocessor(BaseProcessor):
 
         """
         if not callable(handler_func):
-            raise TypeError(f"Handler for '{name}' must be a callable function.")
+            raise TypeError(f"Preprocess handler for '{name}' must be a callable function.")
         self._handlers[name] = handler_func
 
     def preprocess(self, images: ImageBatch, processing_steps: List[Dict[str, Any]]) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
@@ -85,7 +85,7 @@ class Preprocessor(BaseProcessor):
             new_images, metadata = handler(processed_imgs, config)
 
             # Validate handler output
-            self.validate_handler_output(new_images, op_name, expected_type="handler")
+            self.validate_image_handler_output(new_images, op_name, expected_type="preprocess handler")
             self.validate_handler_metadata(metadata, op_name)
 
             # Save Metadata for reconstruction

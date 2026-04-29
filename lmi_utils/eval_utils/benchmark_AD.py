@@ -234,14 +234,14 @@ def process_single_image(
     # Model 1 processing
     imgs1, ops1_recon = preprocessor.preprocess(image, ops1)
     scores1 = [model1.predict(i1) for i1 in imgs1]
-    scores1_recon = reconstructor.reconstruct(scores1, ops1_recon)[0]
-    im1_recon = reconstructor.reconstruct(imgs1, ops1_recon)[0]
+    scores1_recon = reconstructor.reconstruct_images(scores1, ops1_recon)[0]
+    im1_recon = reconstructor.reconstruct_images(imgs1, ops1_recon)[0]
 
     # Model 2 processing
     imgs2, ops2_recon = preprocessor.preprocess(image, ops2)
     scores2 = [model2.predict(i2) for i2 in imgs2]
-    scores2_recon = reconstructor.reconstruct(scores2, ops2_recon)[0]
-    im2_recon = reconstructor.reconstruct(imgs2, ops2_recon)[0]
+    scores2_recon = reconstructor.reconstruct_images(scores2, ops2_recon)[0]
+    im2_recon = reconstructor.reconstruct_images(imgs2, ops2_recon)[0]
 
     # Calculate aggregate scores if topk is provided
     score1 = get_average_of_top_k(scores1_recon, topk) if topk is not None else None

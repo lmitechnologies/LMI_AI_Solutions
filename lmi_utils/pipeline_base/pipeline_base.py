@@ -201,6 +201,8 @@ class PipelineBase(metaclass=ABCMeta):
     def preprocess(self, model_role: str, images: ImageBatch) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
         """preprocess the image(s) based on the preprocessing steps in model_role.
 
+        Pairs with revert_preprocess() as its inverse.
+
         Args:
             model_role (str): the model role to be used for preprocessing.
             images (ImageBatch): the image(s) to be preprocessed.
@@ -214,17 +216,29 @@ class PipelineBase(metaclass=ABCMeta):
 
         return self.preprocessor.preprocess(images, self._preprocessing[model_role])
 
-    def reconstruct(self, images: List[ImageLike], ops: List[Dict[str, Any]]) -> List[ImageLike]:
-        """reconstruct the images based on the preprocessing steps in ops.
+    def revert_preprocess(self, data, ops: List[Dict[str, Any]]):
+        """Invert preprocessing transforms on either image data (AD) or detection coordinates (OD).
+
+        Dispatches based on the type of ``data``:
+        - ``list`` → invert spatial transforms on images or score maps (AD path).
+        - ``dict`` → revert coordinates to original image space (OD path).
+
+        Pairs with ``preprocess()`` as its inverse.
 
         Args:
-            images (list[ImageLike]): the image(s) to be reconstructed.
-            ops (list[dict]): the preprocessing steps to be used for reconstruction.
+            data: Either a list of images (AD) or a batch results dict with keys
+                  boxes, scores, classes, masks, segments, points (OD).
+            ops (list[dict]): Preprocessing history returned by preprocess().
 
         Returns:
-            list[ImageLike]: the reconstructed image(s).
+            Same type as ``data``, with transforms inverted.
         """
-        return self.reconstructor.reconstruct(images, ops)
+        if isinstance(data, dict):
+            return self.reconstructor.reconstruct_coordinates(data, ops)
+        elif isinstance(data, list):
+            return self.reconstructor.reconstruct_images(data, ops)
+        else:
+            raise ValueError(f"Unsupported data type for revert_preprocess: {type(data)}")
 
     def add_prediction(
         self,

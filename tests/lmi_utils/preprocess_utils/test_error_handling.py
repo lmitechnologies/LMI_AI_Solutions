@@ -52,7 +52,7 @@ def test_preprocessor_one_dim_image(prep):
 def test_reconstructor_invalid_inputs(recon, bad_input, error_type, match_msg):
     """Test that reconstructor validates input structure and consistency."""
     with pytest.raises(error_type, match=match_msg):
-        recon.reconstruct(bad_input, [])
+        recon.reconstruct_images(bad_input, [])
 
 
 # ==========================================
@@ -69,17 +69,17 @@ def test_invalid_step_keys(prep, recon, invalid_step):
     with pytest.raises(TypeError, match="Steps must be a list"):
         prep.preprocess(im, "not_a_list")
     with pytest.raises(TypeError, match="Steps must be a list"):
-        recon.reconstruct([im], "not_a_list")
+        recon.reconstruct_images([im], "not_a_list")
 
     with pytest.raises(TypeError, match="All steps must be dictionaries"):
         prep.preprocess(im, ["not_a_dict"])
     with pytest.raises(TypeError, match="All steps must be dictionaries"):
-        recon.reconstruct([im], ["not_a_dict"])
+        recon.reconstruct_images([im], ["not_a_dict"])
 
     with pytest.raises(ValueError, match="Each step must contain keys"):
         prep.preprocess(im, [invalid_step])
     with pytest.raises(ValueError, match="Each step must contain keys"):
-        recon.reconstruct([im], [invalid_step])
+        recon.reconstruct_images([im], [invalid_step])
 
 
 # ==========================================
@@ -95,8 +95,8 @@ def test_unregistered_handler(prep, recon):
     with pytest.raises(ValueError, match="Handler for 'unknown' is not registered"):
         prep.preprocess(image, [{"type": "unknown", "configuration": {}}])
 
-    with pytest.raises(ValueError, match="Undo handler for 'unknown' is not registered"):
-        recon.reconstruct([image], [{"type": "unknown", "metadata": []}])
+    with pytest.raises(ValueError, match="Revert image handler for 'unknown' is not registered"):
+        recon.reconstruct_images([image], [{"type": "unknown", "metadata": []}])
 
 
 def test_register_non_callable(prep, recon):
@@ -104,8 +104,8 @@ def test_register_non_callable(prep, recon):
     with pytest.raises(TypeError, match="must be a callable function"):
         prep.register_handler("test", "not_callable")
 
-    with pytest.raises(TypeError, match="Undo handler for 'test' must be callable"):
-        recon.register_undo_handler("test", "not_callable")
+    with pytest.raises(TypeError, match="Revert image handler for 'test' must be callable"):
+        recon.register_images_handler("test", "not_callable")
 
 
 # ==========================================
@@ -123,7 +123,7 @@ def test_preprocessor_handler_returns(prep):
         return images[0], {}
 
     prep.register_handler("bad1", returns_non_list)
-    with pytest.raises(TypeError, match="Handler 'bad1' must return a list of images"):
+    with pytest.raises(TypeError, match="Preprocess handler 'bad1' must return a list of images"):
         prep.preprocess(image, [{"type": "bad1", "configuration": {}}])
 
     # 2. Returns non-dict metadata
@@ -147,7 +147,7 @@ def test_preprocessor_handler_returns(prep):
         return [np.zeros((10, 10, 3))], {"metadata": []}
 
     prep.register_handler("bad4", returns_numpy)
-    with pytest.raises(TypeError, match="Handler 'bad4' returned non-tensor images"):
+    with pytest.raises(TypeError, match="Preprocess handler 'bad4' returned non-tensor images"):
         prep.preprocess(image, [{"type": "bad4", "configuration": {}}])
 
 
@@ -159,18 +159,18 @@ def test_reconstructor_handler_returns(recon):
     def returns_non_list(images, metadata):
         return images[0]
 
-    recon.register_undo_handler("bad1", returns_non_list)
-    with pytest.raises(TypeError, match="Undo handler 'bad1' must return a list of images"):
-        recon.reconstruct([image], [{"type": "bad1", "metadata": []}])
+    recon.register_images_handler("bad1", returns_non_list)
+    with pytest.raises(TypeError, match="Revert image handler 'bad1' must return a list of images"):
+        recon.reconstruct_images([image], [{"type": "bad1", "metadata": []}])
 
     # 2. Returns numpy arrays instead of tensors
     def returns_numpy(images, metadata):
         return [np.zeros((10, 10, 3))]
 
-    recon.register_undo_handler("bad2", returns_numpy)
+    recon.register_images_handler("bad2", returns_numpy)
     tensor_image = torch.zeros((10, 10, 3))
-    with pytest.raises(TypeError, match="Undo handler 'bad2' returned non-tensor images"):
-        recon.reconstruct([tensor_image], [{"type": "bad2", "metadata": []}])
+    with pytest.raises(TypeError, match="Revert image handler 'bad2' returned non-tensor images"):
+        recon.reconstruct_images([tensor_image], [{"type": "bad2", "metadata": []}])
 
 
 # ==========================================
@@ -192,4 +192,4 @@ def test_tile_count_integrity(recon):
 
     # Provide only 1 image instead of 4
     with pytest.raises(RuntimeError, match="Expected 4 tiles, found 1"):
-        recon.reconstruct([image], ops)
+        recon.reconstruct_images([image], ops)

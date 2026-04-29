@@ -33,18 +33,16 @@ class PipelineOD(PipelineBase):
 
         # 1. Preprocess
         preprocessed_images, ops_list = self.preprocess(model_role, images)
-        resize_op = []
-        for im0, im1 in zip(images, preprocessed_images):
-            w, h, w0, h0 = im1.shape[1], im1.shape[0], im0.shape[1], im0.shape[0]
-            resize_op.append([{"resize": [w, h, w0, h0]}])
 
         # 2. Mock inference
-        results, _ = self.models[model_role].predict(preprocessed_images, 0.5, operators=resize_op)
+        results, _ = self.models[model_role].predict(preprocessed_images, 0.5)
+
+        results2 = self.revert_preprocess(results, ops_list)  # test revert preprocess can run without error
 
         # 3. annotate
         annots = []
         for i, im0 in enumerate(images):
-            r = {k: v[i] for k, v in results.items()}
+            r = {k: v[i] for k, v in results2.items()}
             annot = self.models[model_role].annotate_image(r, im0)
             annots.append(annot)
 
@@ -133,7 +131,7 @@ class PipelineAD(PipelineBase):
         scores = self.models[model_role].predict(preprocessed_images)
 
         # 3. Reconstruct
-        heatmap = self.reconstruct(scores, ops_list)
+        heatmap = self.revert_preprocess(scores, ops_list)
 
         return {
             "outputs": {
