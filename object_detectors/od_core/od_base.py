@@ -269,10 +269,26 @@ class ODBase(abc.ABC):
         if not operators:
             return [[] for _ in range(batch_size)]
         if isinstance(operators[0], dict):
+            ODBase._reject_preprocessor_history(operators)
             return [list(operators) for _ in range(batch_size)]
         if len(operators) != batch_size:
             raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
+        for chain in operators:
+            if chain and isinstance(chain[0], dict):
+                ODBase._reject_preprocessor_history(chain)
         return operators
+
+    @staticmethod
+    def _reject_preprocessor_history(chain: list) -> None:
+        # Preprocessor.preprocess() returns history dicts with keys {"type","metadata"};
+        # od_base expects legacy revert_to_origin dicts keyed by op name (resize/pad/stretch/flip).
+        # Passing the former silently corrupts coordinates, so fail fast with a redirect.
+        if any(isinstance(op, dict) and "type" in op and "metadata" in op for op in chain):
+            raise ValueError(
+                "Operators appears to be a Preprocessor history (dicts with 'type'/'metadata'). "
+                "Use self.revert_preprocess(results, ops_list) to invert a Preprocessor pipeline. "
+                "Or, pass legacy revert_to_origin list of dicts with 'resize'/'pad'/'stretch'/'flip' keys."
+            )
 
     def _revert_coordinates(self, results: dict, operators: list, **kwargs) -> dict:
         """Revert prediction coordinates to the original pre-transform space.
