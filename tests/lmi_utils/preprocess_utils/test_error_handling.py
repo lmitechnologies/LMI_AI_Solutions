@@ -2,8 +2,23 @@ import numpy as np
 import pytest
 import torch
 
+from lmi_utils.preprocess_utils.operation import Operation
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
+
+
+def _make_op(name, forward=None, revert_images=None, revert_coords=None):
+    """Build a one-off Operation subclass with caller-provided behavior."""
+    fwd = forward if forward is not None else (lambda images, config: (images, []))
+    attrs = {
+        "name": name,
+        "forward": lambda self, images, config: fwd(images, config),
+    }
+    if revert_images is not None:
+        attrs["revert_images"] = lambda self, images, metadata: revert_images(images, metadata)
+    if revert_coords is not None:
+        attrs["revert_coords"] = lambda self, results, metadata: revert_coords(results, metadata)
+    return type("_TestOp", (Operation,), attrs)()
 
 
 @pytest.fixture
@@ -92,20 +107,19 @@ def test_unregistered_handler(prep, recon):
     """Test that classes reject operations with unknown handlers."""
     image = np.zeros((10, 10, 3), dtype=np.uint8)
 
-    with pytest.raises(ValueError, match="Handler for 'unknown' is not registered"):
+    with pytest.raises(ValueError, match="Operation 'unknown' is not registered"):
         prep.preprocess(image, [{"type": "unknown", "configuration": {}}])
 
     with pytest.raises(ValueError, match="Revert image handler for 'unknown' is not registered"):
         recon.reconstruct_images([image], [{"type": "unknown", "metadata": []}])
 
 
-def test_register_non_callable(prep, recon):
-    """Test that only callable functions can be registered."""
-    with pytest.raises(TypeError, match="must be a callable function"):
-        prep.register_handler("test", "not_callable")
-
-    with pytest.raises(TypeError, match="Revert image handler for 'test' must be callable"):
-        recon.register_images_handler("test", "not_callable")
+def test_register_non_operation(prep, recon):
+    """Test that only Operation instances can be registered."""
+    with pytest.raises(TypeError, match="Expected Operation"):
+        prep.register("not_an_op")
+    with pytest.raises(TypeError, match="Expected Operation"):
+        recon.register("not_an_op")
 
 
 # ==========================================
@@ -115,62 +129,59 @@ def test_register_non_callable(prep, recon):
 
 
 def test_preprocessor_handler_returns(prep):
-    """Test that preprocessor handlers return (list of tensors, dict)."""
+    """Test that preprocessor ops return (list of tensors, dict)."""
     image = np.zeros((10, 10, 3), dtype=np.uint8)
 
-    # 1. Returns single image instead of list
-    def returns_non_list(images, config):
-        return images[0], {}
-
-    prep.register_handler("bad1", returns_non_list)
+    prep.register(_make_op("bad1", forward=lambda images, config: (images[0], [])))
     with pytest.raises(TypeError, match="Preprocess handler 'bad1' must return a list of images"):
         prep.preprocess(image, [{"type": "bad1", "configuration": {}}])
 
-    # 2. Returns non-dict metadata
-    def returns_non_dict_metadata(images, config):
-        return images, "not_a_dict"
-
-    prep.register_handler("bad2", returns_non_dict_metadata)
-    with pytest.raises(TypeError, match="Handler 'bad2' must return metadata as dict"):
+    prep.register(_make_op("bad2", forward=lambda images, config: (images, "not_a_list")))
+    with pytest.raises(TypeError, match="Handler 'bad2' must return metadata as list"):
         prep.preprocess(image, [{"type": "bad2", "configuration": {}}])
 
-    # 3. Returns dict missing required "metadata" key
-    def returns_missing_metadata_key(images, config):
-        return images, {"wrong_key": []}
-
-    prep.register_handler("bad3", returns_missing_metadata_key)
-    with pytest.raises(KeyError, match="Handler 'bad3' metadata dict must contain key 'metadata'"):
+    prep.register(_make_op("bad3", forward=lambda images, config: (images, {"wrapped": []})))
+    with pytest.raises(TypeError, match="Handler 'bad3' must return metadata as list"):
         prep.preprocess(image, [{"type": "bad3", "configuration": {}}])
 
-    # 4. Returns numpy arrays instead of tensors
-    def returns_numpy(images, config):
-        return [np.zeros((10, 10, 3))], {"metadata": []}
-
-    prep.register_handler("bad4", returns_numpy)
+    prep.register(_make_op("bad4", forward=lambda images, config: ([np.zeros((10, 10, 3))], [])))
     with pytest.raises(TypeError, match="Preprocess handler 'bad4' returned non-tensor images"):
         prep.preprocess(image, [{"type": "bad4", "configuration": {}}])
 
 
 def test_reconstructor_handler_returns(recon):
-    """Test that reconstructor undo handlers return list of tensors."""
+    """Test that reconstructor revert ops return list of tensors."""
     image = np.zeros((10, 10, 3), dtype=np.uint8)
 
-    # 1. Returns single image instead of list
-    def returns_non_list(images, metadata):
-        return images[0]
-
-    recon.register_images_handler("bad1", returns_non_list)
+    recon.register(_make_op("bad1", revert_images=lambda images, metadata: images[0]))
     with pytest.raises(TypeError, match="Revert image handler 'bad1' must return a list of images"):
         recon.reconstruct_images([image], [{"type": "bad1", "metadata": []}])
 
-    # 2. Returns numpy arrays instead of tensors
-    def returns_numpy(images, metadata):
-        return [np.zeros((10, 10, 3))]
-
-    recon.register_images_handler("bad2", returns_numpy)
+    recon.register(_make_op("bad2", revert_images=lambda images, metadata: [np.zeros((10, 10, 3))]))
     tensor_image = torch.zeros((10, 10, 3))
     with pytest.raises(TypeError, match="Revert image handler 'bad2' returned non-tensor images"):
         recon.reconstruct_images([tensor_image], [{"type": "bad2", "metadata": []}])
+
+
+def test_revert_coords_drops_field(recon):
+    """A coord handler that silently drops a populated field must raise."""
+
+    def drop_masks(results, metadata):
+        # Strip 'masks' from every per-image dict — simulates a buggy handler.
+        return [{k: v for k, v in r.items() if k != "masks"} for r in results]
+
+    recon.register(_make_op("dropper", revert_coords=drop_masks))
+
+    results = {
+        "boxes": [torch.tensor([[0.0, 0.0, 5.0, 5.0]])],
+        "masks": [torch.ones((1, 10, 10))],
+        "scores": [torch.tensor([0.9])],
+        "classes": [np.array([0])],
+    }
+    steps = [{"type": "dropper", "metadata": [None]}]
+
+    with pytest.raises(KeyError, match="dropped non-empty coord field.*masks"):
+        recon.reconstruct_coordinates(results, steps)
 
 
 # ==========================================

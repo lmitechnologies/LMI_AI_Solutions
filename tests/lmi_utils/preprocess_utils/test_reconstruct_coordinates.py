@@ -90,20 +90,23 @@ def _assert_coords(reverted, image_idx, expected_boxes, atol=1.0):
 # ---------------------------------------------------------------------------
 
 
-class TestReconstructCoordinatesResize:
-    def test_uniform_scale_revert(self, pipeline):
-        """2x downscale (200→100) should double every coordinate on revert."""
+class TestResize:
+    def test_uniform_scale(self, pipeline):
+        """2x downscale (200→100) should double every coordinate on revert; masks are resized back."""
         prep, recon = pipeline
         image = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
         steps = [{"type": "resize", "configuration": {"width": 100, "height": 100, "preserve_aspect": False}}]
         _, history = prep.preprocess(image, steps)
 
         boxes = torch.tensor([[10.0, 20.0, 40.0, 45.0]])
-        reverted = recon.reconstruct_coordinates(_make_full_results([boxes]), history)
+        results = _make_full_results([boxes])
+        results["masks"] = [torch.ones(1, 100, 100)]
+        reverted = recon.reconstruct_coordinates(results, history)
         _assert_coords(reverted, 0, torch.tensor([[20.0, 40.0, 80.0, 90.0]]))
+        assert reverted["masks"][0].shape == (1, 200, 200)
 
     def test_independent_xy_scales(self, pipeline):
-        """x and y axes scale independently; each reverts by its own factor."""
+        """x and y axes scale independently; each reverts by its own factor; masks revert to original dims."""
         prep, recon = pipeline
         # 300(H)×200(W) → 100×100: x_revert=×2, y_revert=×3
         image = np.random.randint(0, 256, (300, 200, 3), dtype=np.uint8)
@@ -111,12 +114,31 @@ class TestReconstructCoordinatesResize:
         _, history = prep.preprocess(image, steps)
 
         boxes = torch.tensor([[10.0, 20.0, 40.0, 60.0]])
-        reverted = recon.reconstruct_coordinates(_make_full_results([boxes]), history)
+        results = _make_full_results([boxes])
+        results["masks"] = [torch.ones(1, 100, 100)]
+        reverted = recon.reconstruct_coordinates(results, history)
         # x: ×2 → [20, 80];  y: ×3 → [60, 180]
         _assert_coords(reverted, 0, torch.tensor([[20.0, 60.0, 80.0, 180.0]]))
+        assert reverted["masks"][0].shape == (1, 300, 200)
+
+    def test_empty_boxes_all_keys_preserved(self, pipeline):
+        """All result keys survive revert even when every coordinate field is an empty tensor."""
+        prep, recon = pipeline
+        image = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
+        steps = [{"type": "resize", "configuration": {"width": 100, "height": 100, "preserve_aspect": False}}]
+        _, history = prep.preprocess(image, steps)
+
+        empty = torch.zeros((0, 4))
+        results = _make_full_results([empty])
+        reverted = recon.reconstruct_coordinates(results, history)
+
+        assert set(reverted.keys()) == set(results.keys())
+        assert len(reverted["boxes"][0]) == 0
+        assert len(reverted["segments"][0]) == 0
+        assert len(reverted["points"][0]) == 0
 
     def test_multiple_images_resize(self, pipeline):
-        """Reversion is applied independently per image."""
+        """Reversion is applied independently per image; each image's masks revert to its own original dims."""
         prep, recon = pipeline
         images = [np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8) for _ in range(2)]
         steps = [{"type": "resize", "configuration": {"width": 100, "height": 100, "preserve_aspect": False}}]
@@ -124,38 +146,18 @@ class TestReconstructCoordinatesResize:
 
         boxes0 = torch.tensor([[10.0, 15.0, 30.0, 35.0]])
         boxes1 = torch.tensor([[20.0, 25.0, 45.0, 40.0]])
-        reverted = recon.reconstruct_coordinates(_make_full_results([boxes0, boxes1]), history)
+        results = _make_full_results([boxes0, boxes1])
+        results["masks"] = [torch.ones(1, 100, 100), torch.ones(1, 100, 100)]
+        reverted = recon.reconstruct_coordinates(results, history)
 
         assert len(reverted["boxes"]) == 2
         _assert_coords(reverted, 0, torch.tensor([[20.0, 30.0, 60.0, 70.0]]))
         _assert_coords(reverted, 1, torch.tensor([[40.0, 50.0, 90.0, 80.0]]))
-
-
-# ---------------------------------------------------------------------------
-# Preserve-aspect resize  (Gap 2: 'pad' op path; Gap 3: masks in resize context)
-# ---------------------------------------------------------------------------
-
-
-class TestReconstructCoordinatesPreserveAspect:
-    """preserve_aspect=True causes resize_and_pad to emit a 'resize' op then a 'pad' op.
-    The pad shift must be undone before the scale is reversed."""
-
-    def test_plain_resize_masks_reverted_to_original_size(self, pipeline):
-        """Masks are resized back to the original image dimensions after a plain resize."""
-        prep, recon = pipeline
-        image = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
-        steps = [{"type": "resize", "configuration": {"width": 100, "height": 100, "preserve_aspect": False}}]
-        _, history = prep.preprocess(image, steps)
-
-        boxes = torch.tensor([[10.0, 20.0, 40.0, 60.0]])
-        results = _make_full_results([boxes])
-        results["masks"] = [torch.ones(1, 100, 100)]
-        reverted = recon.reconstruct_coordinates(results, history)
-
         assert reverted["masks"][0].shape == (1, 200, 200)
+        assert reverted["masks"][1].shape == (1, 200, 200)
 
-    def test_preserve_aspect_masks_reverted_to_original_size(self, pipeline):
-        """After preserve_aspect resize, masks are unpadded then resized back to original dims."""
+    def test_preserve_aspect_resize(self, pipeline):
+        """preserve_aspect=True pads after resize; masks are unpadded then resized back to original dims."""
         prep, recon = pipeline
         # 200(H)×100(W) → 100×100 preserve_aspect: resize to 50×100, pad 25 left/right
         image = np.random.randint(0, 256, (200, 100, 3), dtype=np.uint8)
@@ -178,7 +180,7 @@ class TestReconstructCoordinatesPreserveAspect:
 # ---------------------------------------------------------------------------
 
 
-class TestReconstructCoordinatesTile:
+class TestTile:
     def test_shifts_all_fields_by_tile_offset(self, pipeline):
         """Each tile's boxes, segments, points, and masks are shifted by that tile's offset."""
         prep, recon = pipeline
@@ -211,15 +213,17 @@ class TestReconstructCoordinatesTile:
         _assert_mask_quadrant(out, 3, slice(50, 100), slice(50, 100), 100, 100)
 
     def test_empty_detections_per_tile(self, pipeline):
-        """Tiles with no detections produce empty results for every field."""
+        """Tiles with no detections produce empty results for every field, and all keys are preserved."""
         prep, recon = pipeline
         image = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
         steps = [{"type": "tile", "configuration": {"tile_size": 50, "stride": 50}}]
         _, history = prep.preprocess(image, steps)
 
         empty = torch.zeros((0, 4))
-        reverted = recon.reconstruct_coordinates(_make_full_results([empty] * 4, tile_hw=(50, 50)), history)
+        results = _make_full_results([empty] * 4, tile_hw=(50, 50))
+        reverted = recon.reconstruct_coordinates(results, history)
 
+        assert set(reverted.keys()) == set(results.keys())
         assert len(reverted["boxes"][0]) == 0
         assert len(reverted["segments"][0]) == 0
         assert len(reverted["points"][0]) == 0
@@ -286,13 +290,55 @@ class TestReconstructCoordinatesTile:
         assert torch.all(out[0, 50:100, 50:100] == 1.0)
         assert torch.all(out[0, :50, :] == 0.0) and torch.all(out[0, 50:, :50] == 0.0)
 
+    def test_overlapping_stride_shifts_all_fields(self, pipeline):
+        """stride < tile_size → overlapping tiles; offsets are still col*stride / row*stride."""
+        prep, recon = pipeline
+        # 90×90, tile=60, stride=30 → 2×2 grid; offsets (x,y): (0,0),(30,0),(0,30),(30,30)
+        image = np.random.randint(0, 256, (90, 90, 3), dtype=np.uint8)
+        steps = [{"type": "tile", "configuration": {"tile_size": 60, "stride": 30}}]
+        _, history = prep.preprocess(image, steps)
+
+        tile_box = torch.tensor([[5.0, 8.0, 20.0, 25.0]])
+        results = _make_full_results([tile_box] * 4, tile_hw=(60, 60))
+        reverted = recon.reconstruct_coordinates(results, history)
+
+        expected = torch.tensor(
+            [
+                [5.0, 8.0, 20.0, 25.0],  # tile (0,0): no offset
+                [35.0, 8.0, 50.0, 25.0],  # tile (0,1): x+30
+                [5.0, 38.0, 20.0, 55.0],  # tile (1,0): y+30
+                [35.0, 38.0, 50.0, 55.0],  # tile (1,1): x+30, y+30
+            ]
+        )
+        _assert_coords(reverted, 0, expected, atol=1e-3)
+
+        # Tile (1,1) mask (det index 3) is pasted at (paste_y=30, paste_x=30)
+        out = reverted["masks"][0]  # (4, 90, 90)
+        assert out.shape == (4, 90, 90)
+        assert torch.all(out[3, 30:90, 30:90] == 1.0)
+        assert torch.all(out[3, :30, :] == 0.0) and torch.all(out[3, :, :30] == 0.0)
+
+    def test_overlapping_stride_three_column_grid_middle_tile(self, pipeline):
+        """stride=25, tile=50 on a 100x50 (HxW) image → 1x3 grid; middle tile offset is x=25."""
+        prep, recon = pipeline
+        image = np.random.randint(0, 256, (50, 100, 3), dtype=np.uint8)
+        steps = [{"type": "tile", "configuration": {"tile_size": 50, "stride": 25}}]
+        _, history = prep.preprocess(image, steps)
+
+        empty = torch.zeros((0, 4))
+        det = torch.tensor([[2.0, 6.0, 18.0, 30.0]])
+        # Tile index 1 is (row=0, col=1) → offset x=25, y=0
+        reverted = recon.reconstruct_coordinates(_make_full_results([empty, det, empty]), history)
+
+        _assert_coords(reverted, 0, torch.tensor([[27.0, 6.0, 43.0, 30.0]]), atol=1e-3)
+
 
 # ---------------------------------------------------------------------------
 # Resize + Tile combined
 # ---------------------------------------------------------------------------
 
 
-class TestReconstructCoordinatesResizeTile:
+class TestPipeline:
     def test_resize_then_tile_reverts_both(self, pipeline):
         """Coordinates pass through tile revert then resize revert in order."""
         prep, recon = pipeline
@@ -331,62 +377,11 @@ class TestReconstructCoordinatesResizeTile:
 
 
 # ---------------------------------------------------------------------------
-# Tile – fractional (overlapping) stride
+# OBB — oriented bounding boxes
 # ---------------------------------------------------------------------------
 
 
-class TestReconstructCoordinatesTileFractionalStride:
-    """stride < tile_size → tiles overlap; offsets are still col*stride / row*stride."""
-
-    def test_shifts_all_fields_by_overlapping_tile_offset(self, pipeline):
-        """All coordinate fields and masks are correctly shifted for overlapping tiles."""
-        prep, recon = pipeline
-        # 90×90, tile=60, stride=30 → 2×2 grid; offsets (x,y): (0,0),(30,0),(0,30),(30,30)
-        image = np.random.randint(0, 256, (90, 90, 3), dtype=np.uint8)
-        steps = [{"type": "tile", "configuration": {"tile_size": 60, "stride": 30}}]
-        _, history = prep.preprocess(image, steps)
-
-        tile_box = torch.tensor([[5.0, 8.0, 20.0, 25.0]])
-        results = _make_full_results([tile_box] * 4, tile_hw=(60, 60))
-        reverted = recon.reconstruct_coordinates(results, history)
-
-        expected = torch.tensor(
-            [
-                [5.0, 8.0, 20.0, 25.0],  # tile (0,0): no offset
-                [35.0, 8.0, 50.0, 25.0],  # tile (0,1): x+30
-                [5.0, 38.0, 20.0, 55.0],  # tile (1,0): y+30
-                [35.0, 38.0, 50.0, 55.0],  # tile (1,1): x+30, y+30
-            ]
-        )
-        _assert_coords(reverted, 0, expected, atol=1e-3)
-
-        # Tile (1,1) mask (det index 3) is pasted at (paste_y=30, paste_x=30)
-        out = reverted["masks"][0]  # (4, 90, 90)
-        assert out.shape == (4, 90, 90)
-        assert torch.all(out[3, 30:90, 30:90] == 1.0)
-        assert torch.all(out[3, :30, :] == 0.0) and torch.all(out[3, :, :30] == 0.0)
-
-    def test_three_column_grid_middle_tile_offset(self, pipeline):
-        """stride=25, tile=50 on a 100×50 (H×W) image → 1×3 grid; middle tile offset is x=25."""
-        prep, recon = pipeline
-        image = np.random.randint(0, 256, (50, 100, 3), dtype=np.uint8)
-        steps = [{"type": "tile", "configuration": {"tile_size": 50, "stride": 25}}]
-        _, history = prep.preprocess(image, steps)
-
-        empty = torch.zeros((0, 4))
-        det = torch.tensor([[2.0, 6.0, 18.0, 30.0]])
-        # Tile index 1 is (row=0, col=1) → offset x=25, y=0
-        reverted = recon.reconstruct_coordinates(_make_full_results([empty, det, empty]), history)
-
-        _assert_coords(reverted, 0, torch.tensor([[27.0, 6.0, 43.0, 30.0]]), atol=1e-3)
-
-
-# ---------------------------------------------------------------------------
-# OBB — oriented bounding boxes  (Gap 1: boxes.ndim == 3 branch)
-# ---------------------------------------------------------------------------
-
-
-class TestReconstructCoordinatesOBB:
+class TestOBB:
     """Oriented bounding boxes have shape (N, 4, 2) and take a separate code path in both
     the resize and tile revert handlers."""
 
@@ -429,11 +424,11 @@ class TestReconstructCoordinatesOBB:
 
 
 # ---------------------------------------------------------------------------
-# Points variants  (Gap 4: no-visibility path; Gap 5: K > 1 keypoints)
+# Points variants
 # ---------------------------------------------------------------------------
 
 
-class TestReconstructCoordinatesPointsVariants:
+class TestPoints:
     def test_points_shapes_and_visibility(self, pipeline):
         """(N,K,2) without visibility and (N,K,3) with mixed visibility are both reverted
         correctly; xy coords are scaled and the visibility channel is left unchanged."""
@@ -466,7 +461,7 @@ class TestReconstructCoordinatesPointsVariants:
 # ---------------------------------------------------------------------------
 
 
-class TestReconstructCoordinatesEdgeCases:
+class TestEdgeCases:
     def test_empty_steps_returns_results_unchanged(self, pipeline):
         _, recon = pipeline
         boxes = torch.tensor([[1.0, 2.0, 3.0, 4.0]])

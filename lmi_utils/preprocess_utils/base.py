@@ -10,6 +10,8 @@ class BaseProcessor:
     _STEP_REQUIRED_KEYS = {"type", "configuration"}
     _HISTORY_REQUIRED_KEYS = {"type", "metadata"}
     _COORD_FIELDS = frozenset({"boxes", "segments", "points", "masks"})
+    # Subset of _COORD_FIELDS whose value is a list-of-tensors instead of a single tensor.
+    _COORD_LIST_FIELDS = frozenset({"segments"})
 
     def to_tensor_list(self, images: List[ImageLike]) -> Tuple[List[torch.Tensor], bool]:
         """
@@ -55,7 +57,7 @@ class BaseProcessor:
                 val = r.get(field)
                 if val is None or len(val) == 0:
                     continue
-                probe = val[0] if field == "segments" else val
+                probe = val[0] if field in self._COORD_LIST_FIELDS else val
                 if not len(probe):
                     continue
                 t = type(probe)
@@ -73,7 +75,7 @@ class BaseProcessor:
             val = result.get(field)
             if val is None or len(val) == 0:
                 continue
-            if field == "segments":
+            if field in self._COORD_LIST_FIELDS:
                 out[field] = [torch.from_numpy(s.astype(np.float32)) if isinstance(s, np.ndarray) and len(s) else s for s in val]
             elif isinstance(val, np.ndarray):
                 out[field] = torch.from_numpy(val.astype(np.float32))
@@ -85,7 +87,7 @@ class BaseProcessor:
             val = result.get(field)
             if val is None or len(val) == 0:
                 continue
-            if field == "segments":
+            if field in self._COORD_LIST_FIELDS:
                 out[field] = [s.cpu().numpy() if isinstance(s, torch.Tensor) and len(s) else s for s in val]
             elif isinstance(val, torch.Tensor):
                 out[field] = val.cpu().numpy()
@@ -115,19 +117,49 @@ class BaseProcessor:
         if not all(isinstance(img, torch.Tensor) for img in output):
             raise TypeError(f"{expected_type.capitalize()} '{handler_name}' returned non-tensor images")
 
-    def validate_coord_handler_output(self, output: Any, handler_name: str) -> None:
-        """Validate coord handler output is a list of dicts containing all _COORD_FIELDS."""
+    def validate_coord_handler_output(self, output: Any, handler_name: str, input_populated: set = None) -> None:
+        """
+        Validate coord handler output:
+          - is a list of dicts.
+          - preserves every coord field that was non-empty in the input.
+
+        `input_populated` is the set of coord field names that had at least one
+        non-empty value across the input batch. The output must also have at
+        least one non-empty value in each of those fields.
+        """
         if not isinstance(output, list) or not all(isinstance(d, dict) for d in output):
             raise TypeError(f"Revert coordinate handler '{handler_name}' must return a list of dicts, got {type(output)}")
-        if output and "boxes" not in output[0]:
-            raise KeyError(f"Revert coordinate handler '{handler_name}' output missing required key 'boxes'")
+        if not input_populated:
+            return
+        output_populated = self._populated_coord_fields(output)
+        dropped = input_populated - output_populated
+        if dropped:
+            raise KeyError(
+                f"Revert coordinate handler '{handler_name}' dropped non-empty coord field(s): {sorted(dropped)}. "
+                f"Input had {sorted(input_populated)}, output has {sorted(output_populated)}."
+            )
+
+    def _populated_coord_fields(self, per_image: List[Dict[str, Any]]) -> set:
+        """Return the set of _COORD_FIELDS that have at least one non-empty value across the batch."""
+        populated = set()
+        for r in per_image:
+            for field in self._COORD_FIELDS:
+                if field in populated:
+                    continue
+                val = r.get(field)
+                if val is None:
+                    continue
+                if field in self._COORD_LIST_FIELDS:
+                    if any(len(s) for s in val):
+                        populated.add(field)
+                elif len(val):
+                    populated.add(field)
+        return populated
 
     def validate_handler_metadata(self, metadata: Any, handler_name: str) -> None:
-        """Validate that handler metadata is a dict containing the required 'metadata' key."""
-        if not isinstance(metadata, dict):
-            raise TypeError(f"Handler '{handler_name}' must return metadata as dict, got {type(metadata)}")
-        if "metadata" not in metadata:
-            raise KeyError(f"Handler '{handler_name}' metadata dict must contain key 'metadata'")
+        """Validate that handler metadata is a list (one entry per input image)."""
+        if not isinstance(metadata, list):
+            raise TypeError(f"Handler '{handler_name}' must return metadata as list, got {type(metadata)}")
 
     def _validate_steps(self, steps: List[Dict[str, Any]], required_keys: set) -> None:
         if not isinstance(steps, list):
