@@ -34,7 +34,7 @@ def test_tiling_lossless_reconstruction(pipeline, input_type):
     assert len(final_images) == 4
     assert final_images[0].shape == (50, 50, 3)
 
-    restored_images = recon.reconstruct(final_images, ops)
+    restored_images = recon.reconstruct_images(final_images, ops)
 
     assert len(restored_images) == 1
     restored_image = restored_images[0]
@@ -67,7 +67,7 @@ def test_nested_pipeline_flow(pipeline, input_type):
     assert len(final_images) == 16
     assert final_images[0].shape == (16, 16, 3)
 
-    restored_images = recon.reconstruct(final_images, ops)
+    restored_images = recon.reconstruct_images(final_images, ops)
     assert len(restored_images) == 1
     restored_image = restored_images[0]
 
@@ -100,7 +100,7 @@ def test_nested_tiling_lossless(pipeline, input_shape, tile_configs, expected_co
     for img in final_images:
         assert img.shape == final_shape
 
-    restored_images = recon.reconstruct(final_images, ops)
+    restored_images = recon.reconstruct_images(final_images, ops)
     assert len(restored_images) == 1
     restored_image = restored_images[0]
 
@@ -158,7 +158,7 @@ def test_incremental_reconstruction(pipeline, input_type):
     for i in range(len(intermediate_states) - 1, 0, -1):  # skip resize because lossy
         inputs = intermediate_states[i - 1][0]
         images, ops = intermediate_states[i]
-        restored = recon.reconstruct(images, ops[-1:])
+        restored = recon.reconstruct_images(images, ops[-1:])
         check_integrity(inputs, restored)
 
 
@@ -183,7 +183,7 @@ def test_tiling_images_with_varying_channels(pipeline):
             idx = sum(expected_tile_counts[:i]) + j
             assert final_images[idx].shape == expected_shape
 
-    restored_images = recon.reconstruct(final_images, ops)
+    restored_images = recon.reconstruct_images(final_images, ops)
 
     for restored_image, input_image in zip(restored_images, input_images):
         assert isinstance(restored_image, torch.Tensor)

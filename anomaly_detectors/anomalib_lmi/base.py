@@ -312,7 +312,7 @@ class Anomalib_Base(ADBase):
             if steps:
                 tiles, history = preprocessor.preprocess([img], steps)
                 ad_maps = self.predict(tiles)
-                anom_map = reconstructor.reconstruct(ad_maps, history)[0]
+                anom_map = reconstructor.reconstruct_images(ad_maps, history)[0]
                 if isinstance(anom_map, torch.Tensor):
                     anom_map = anom_map.cpu().numpy()
             else:
