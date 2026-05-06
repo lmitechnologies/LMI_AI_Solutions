@@ -7,6 +7,6 @@ numpy<2.0
 ultralytics==8.4.46
 onnx==1.21.0
 pytest==9.0.3
-rfdetr==1.6.5
+rfdetr==1.6.5.post0
 albumentations>=2.0.8,<3.0.0
 transformers<5.8
