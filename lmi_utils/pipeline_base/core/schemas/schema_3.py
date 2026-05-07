@@ -97,7 +97,7 @@ class ModelCollection(BaseModel):
     def get_metadata(self) -> Dict[str, Any]:
         return {role: model.get_metadata() for role, model in self.models.items()}
 
-    def get_preprocessing(self) -> Dict[str, List[Dict[str, Any]]]:
+    def get_global_preprocessing(self) -> Dict[str, List[Dict[str, Any]]]:
         supported = {"resize", "tile"}
         tiling_keys = {"height", "width", "x_stride", "y_stride"}
 

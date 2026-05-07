@@ -38,7 +38,7 @@ def test_schema3(schema3):
         assert len(model["algorithm"]) > 0
         assert len(model["package"]) > 0
 
-    preprocessing = data.get_preprocessing()
+    preprocessing = data.get_global_preprocessing()
     assert isinstance(preprocessing, dict)
     for _key, ops in preprocessing.items():
         assert isinstance(ops, list)

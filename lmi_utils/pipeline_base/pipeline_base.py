@@ -26,6 +26,7 @@ from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 from object_detectors.od_core.object_detector import ObjectDetector
 
 from .core.schemas.schema_2 import ModelSchemaV_2
+from .core.schemas.schema_3 import ModelSchemaV_3
 
 
 class PipelineBase(metaclass=ABCMeta):
@@ -62,6 +63,7 @@ class PipelineBase(metaclass=ABCMeta):
     _MODEL_ROLES_HANDLERS = {
         "1": None,  # no longer supported
         "2": ModelSchemaV_2.from_dict,
+        "3": ModelSchemaV_3.from_dict,
     }
 
     def __init__(self, **kwargs: Any) -> None:
@@ -79,7 +81,7 @@ class PipelineBase(metaclass=ABCMeta):
         """
         self.models = collections.OrderedDict()
         self._preprocessing = collections.OrderedDict()
-        self.version = kwargs.get("version", "2")
+        self.version = kwargs.get("version", "3")
         self.preprocessor = Preprocessor()
         self.reconstructor = Reconstructor()
         self.init_results()
@@ -209,7 +211,9 @@ class PipelineBase(metaclass=ABCMeta):
 
         Returns:
             list[ImageLike]: the preprocessed image(s).
-            list[dict]: the preprocessing steps.
+            list[dict]: the preprocessing steps, each with keys:
+                - "type" (str): the type of the preprocessing operation.
+                - "metadata" (list): the metadata returned by the preprocessing operation, used for reconstruction.
         """
         if model_role not in self._preprocessing:
             raise ValueError(f"Not found global preprocessing steps for model role: {model_role}")
@@ -220,7 +224,7 @@ class PipelineBase(metaclass=ABCMeta):
         """Invert preprocessing transforms on either image data (AD) or detection coordinates (OD).
 
         Dispatches based on the type of ``data``:
-        - ``list`` → invert spatial transforms on images or score maps (AD path).
+        - ``list`` → invert spatial transforms on images (AD path, including anomaly score maps).
         - ``dict`` → revert coordinates to original image space (OD path).
 
         Pairs with ``preprocess()`` as its inverse.
@@ -231,7 +235,8 @@ class PipelineBase(metaclass=ABCMeta):
             ops (list[dict]): Preprocessing history returned by preprocess().
 
         Returns:
-            type: list for AD path or dict for OD path.
+            list[ImageLike] for the AD path (reconstructed images), or
+            dict for the OD path (results with coordinates reverted to original image space).
         """
         if isinstance(data, dict):
             return self.reconstructor.reconstruct_coordinates(data, ops)
