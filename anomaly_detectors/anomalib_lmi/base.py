@@ -13,14 +13,12 @@ from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
 
 
-def to_list(data):
+def to_list(data) -> List:
     """convert to a two element list
 
     Args:
         data (int | list): a int or a two element list
 
-    Returns:
-        list: _description_
     """
     if isinstance(data, int):
         return [data] * 2
@@ -259,20 +257,17 @@ class Anomalib_Base(ADBase):
             self.convert_to_onnx(onnx_path)
             self.logger.info(f"ONNX model saved at {onnx_path}")
         elif convert_type == "trt":
-            if ext == ".onnx":
-                self.logger.info("Converting onnx to trt...")
-                trt_path = os.path.join(export_path, "model.engine")
-                self.convert_trt(model_path, trt_path, fp16)
-            elif ext == ".pt":
+            if ext not in (".pt", ".onnx"):
+                raise ValueError(f"TRT export requires a .pt or .onnx input, got {ext}")
+            onnx_path = model_path
+            if ext == ".pt":
                 self.logger.info("Converting pt to onnx...")
                 onnx_path = os.path.join(export_path, "model.onnx")
                 self.convert_to_onnx(onnx_path)
                 self.logger.info(f"ONNX model saved at {onnx_path}")
-                self.logger.info("Converting onnx to trt engine...")
-                trt_path = os.path.join(export_path, "model.engine")
-                self.convert_trt(onnx_path, trt_path, fp16)
-            else:
-                raise ValueError(f"TRT export requires a .pt or .onnx input, got {ext}")
+            self.logger.info("Converting onnx to trt engine...")
+            trt_path = os.path.join(export_path, "model.engine")
+            self.convert_trt(onnx_path, trt_path, fp16)
         else:
             raise ValueError(f"Unknown convert_type: {convert_type!r}. Expected 'onnx' or 'trt'")
 
