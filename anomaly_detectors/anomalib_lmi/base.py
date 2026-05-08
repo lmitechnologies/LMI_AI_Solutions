@@ -2,32 +2,23 @@ import json
 import logging
 import os
 import subprocess
-from abc import abstractmethod
-from typing import List
+from typing import Any, Iterable, List
 
-import cv2
 import numpy as np
 import torch
 from torchvision.transforms import v2
 
-import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
 from anomaly_detectors.ad_core.ad_base import ADBase
 from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
-from lmi_utils.preprocess_utils.preprocessor import Preprocessor
-from lmi_utils.preprocess_utils.reconstructor import Reconstructor
-
-MINIMUM_QUANT = 1e-12
 
 
-def to_list(data):
+def to_list(data) -> List:
     """convert to a two element list
 
     Args:
         data (int | list): a int or a two element list
 
-    Returns:
-        list: _description_
     """
     if isinstance(data, int):
         return [data] * 2
@@ -39,9 +30,82 @@ def to_list(data):
 class Anomalib_Base(ADBase):
     logger = logging.getLogger("Anomalib Base")
 
-    @abstractmethod
-    def __init__(self) -> None:
-        pass
+    def __init__(self, model_path: str, **kwargs: Any) -> None:
+        """Initialize the AnomalyModel.
+
+        Args:
+            model_path: Path to the model file (either .pt or .engine)
+            **kwargs:
+                device (str): Device to run on ('cuda' or 'cpu')
+                image_size (List[int]): Input image size [h, w]
+        """
+        if not os.path.isfile(model_path):
+            raise FileNotFoundError(f"Cannot find the model file: {model_path}")
+
+        self._setup_device(kwargs.get("device", "cuda"))
+        self.image_size = kwargs.get("image_size", [224, 224])
+        self.fp16 = False
+
+        self.logger.info(f"Loading model on {self.device}: {model_path}")
+        ext = os.path.splitext(model_path)[1]
+        if ext == ".engine":
+            self._load_tensorrt_model(model_path)
+        elif ext in [".pt", ".torchscript", ".ts"]:
+            self._load_pytorch_model(model_path)
+        else:
+            raise ValueError(f"Unsupported model format: {ext}. Expected '.pt', '.torchscript', '.ts', or '.engine'")
+
+    def _load_pytorch_model(self, model_path: str) -> None:
+        try:
+            # Try loading as TorchScript model
+            self.pt_model = torch.jit.load(model_path, map_location=self.device)
+            self.logger.info(f"Loaded TorchScript model with shape: {self.image_size}")
+        except Exception:
+            # Fall back to loading as checkpoint
+            checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
+            self.pt_model = checkpoint["model"]
+
+            if "metadata" in checkpoint:
+                self.pt_metadata = checkpoint["metadata"]
+                self.logger.info(f"Model metadata: {self.pt_metadata}")
+
+            model_shape = None
+            for transform in self._get_pt_transforms():
+                if type(transform).__name__ == "Resize":
+                    model_shape = to_list(transform.size)
+                    self.logger.info(f"Model shape from transforms: {model_shape}")
+                    break
+            if model_shape is not None and model_shape != list(self.image_size):
+                raise ValueError(f"Model input shape {model_shape} does not match the provided image_size {self.image_size}") from None
+
+        self.pt_model.eval()
+        self.inference_mode = "PT"
+
+    def _get_pt_transforms(self) -> Iterable:
+        """Return iterable of preprocessor transforms on the loaded pt_model.
+
+        Subclasses override to point at the framework-version-specific transform location.
+        """
+        return self.pt_model.transform.transforms
+
+    def _extract_pt_output(self, preds: Any) -> torch.Tensor:
+        """Extract the anomaly map tensor from the framework-specific PT model output."""
+        raise NotImplementedError
+
+    def forward(self, input_batch: torch.Tensor) -> torch.Tensor:
+        """Run inference on the input batch.
+
+        Args:
+            input_batch: Preprocessed input tensor [B,C,H,W]
+
+        Returns:
+            Model output anomaly map tensor.
+        """
+        if self.inference_mode == "TRT":
+            return self.trt.infer(input_batch)[0]
+        if self.inference_mode == "PT":
+            return self._extract_pt_output(self.pt_model(input_batch))
+        raise ValueError(f"Unknown inference mode: {self.inference_mode}")
 
     def _load_tensorrt_model(self, model_path: str) -> None:
         self.trt = TRTEngine(model_path, device=str(self.device))
@@ -193,238 +257,22 @@ class Anomalib_Base(ADBase):
             self.convert_to_onnx(onnx_path)
             self.logger.info(f"ONNX model saved at {onnx_path}")
         elif convert_type == "trt":
-            if ext == ".onnx":
-                self.logger.info("Converting onnx to trt...")
-                trt_path = os.path.join(export_path, "model.engine")
-                self.convert_trt(model_path, trt_path, fp16)
-            elif ext == ".pt":
+            if ext not in (".pt", ".onnx"):
+                raise ValueError(f"TRT export requires a .pt or .onnx input, got {ext}")
+            onnx_path = model_path
+            if ext == ".pt":
                 self.logger.info("Converting pt to onnx...")
                 onnx_path = os.path.join(export_path, "model.onnx")
                 self.convert_to_onnx(onnx_path)
                 self.logger.info(f"ONNX model saved at {onnx_path}")
-                self.logger.info("Converting onnx to trt engine...")
-                trt_path = os.path.join(export_path, "model.engine")
-                self.convert_trt(onnx_path, trt_path, fp16)
-            else:
-                raise ValueError(f"TRT export requires a .pt or .onnx input, got {ext}")
+            self.logger.info("Converting onnx to trt engine...")
+            trt_path = os.path.join(export_path, "model.engine")
+            self.convert_trt(onnx_path, trt_path, fp16)
         else:
             raise ValueError(f"Unknown convert_type: {convert_type!r}. Expected 'onnx' or 'trt'")
 
-    def test(
-        self,
-        images_path,
-        annot_dir,
-        generate_stats=True,
-        annotate_inputs=True,
-        anom_threshold=None,
-        anom_max=None,
-        tile=None,
-        stride=None,
-        overlap_mode="gaussian",
-        scale_mode="padding",
-        limit=None,
-    ):
-        """
-        Desc: test model performance
-        Args:
-            - engine_path: .pt or .engine file path
-            - images_path: Path to image data
-            - annot_dir: Path to annotation data dir
-            - generate_stats: Fit gamma distribution to all data in dataset.  Propose resonable thresholds for different failure rates.
-            - annotate_inputs: option to show anomaly score histogram and heat map for each image in thd dataset (def: True)
-            - anom_threshold: user defined anomaly threshold (sets beginning of heat map)
-            - anom_max: user defined anomaly max (sets end of the heat map)
-            - tile: tile size [h,w]. If set, tiling is performed via Preprocessor before inference.
-            - stride: stride size [h,w]. Required when tile is set.
-            - overlap_mode: overlap blending for tiling, can be "average", "max", "cosine", "linear", "gaussian"
-            - scale_mode: tile scaling mode, "padding" or "interpolation"
-            - limit: if set, process only the first N images (useful for smoke tests)
-        """
-        import csv
-        import time
-        from pathlib import Path
+    def test(self, *args, **kwargs):
+        """Run evaluation on a directory of images. See `anomalib_lmi.evaluate.evaluate` for arguments."""
+        from anomaly_detectors.anomalib_lmi.evaluate import evaluate
 
-        import matplotlib.pyplot as plt
-        from scipy import interpolate
-        from scipy.stats import gamma
-        from tabulate import tabulate
-
-        from anomaly_detectors.anomalib_lmi.ad_utils import plot_fig
-
-        def find_p(thresh_array, p_patch_array, p_sample_array, p_sample_target):
-            """
-            Desc: Find the p-value that acheives the desired sample failure rate.  We start by estimating the threshold
-                from the empiracal p_sample_array.  Then we use that threshold to estimate the corresponding p_patch.
-
-            Args:
-                - thresh_array: input threshold array
-                - p_patch_array: corresponding p-value at the patch level (generated using gamma dist model)
-                - p_sample_array: corresponding p-value at the sample level (generated empirically)
-                - p_sample_target: desired sample level p-value
-            """
-            x1 = p_sample_array
-            x2 = thresh_array
-            x3 = p_patch_array
-            # interpolation function to find threshold for a specified p_sample
-            f1 = interpolate.interp1d(x1, x2)
-            # estimate the threshold for p_sample_target
-            thresh_target = f1(p_sample_target)
-            # interpolation function to find p_patch for a specified threshold
-            f2 = interpolate.interp1d(x2, x3)
-            # find the threshold for the p_patch that corresponds to p_sample_target
-            p_target = f2(thresh_target)
-            return p_target
-
-        # Input data
-        directory_path = Path(images_path)
-        images = list(directory_path.rglob("*.png")) + list(directory_path.rglob("*.jpg"))
-        if limit is not None:
-            images = images[:limit]
-        self.logger.info(f"{len(images)} images from {images_path}")
-        if not images:
-            return
-
-        # Output overhead
-        out_path = annot_dir
-        if not os.path.exists(out_path):
-            os.makedirs(out_path)
-
-        steps = []
-        if tile is not None:
-            if stride is None:
-                raise ValueError("Must provide stride when using tiling")
-            steps = [
-                {
-                    "type": "tile",
-                    "configuration": {"tile_size": tile, "stride": stride, "overlap_mode": overlap_mode, "scale_mode": scale_mode},
-                }
-            ]
-        preprocessor = Preprocessor()
-        reconstructor = Reconstructor()
-
-        proctime = []
-        img_all, anom_all, fname_all, path_all = [], [], [], []
-        for image_path in images:
-            self.logger.debug(f"Processing image: {image_path}.")
-            image_path = str(image_path)
-            img = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
-            t0 = time.time()
-            if steps:
-                tiles, history = preprocessor.preprocess([img], steps)
-                ad_maps = self.predict(tiles)
-                anom_map = reconstructor.reconstruct_images(ad_maps, history)[0]
-                if isinstance(anom_map, torch.Tensor):
-                    anom_map = anom_map.cpu().numpy()
-            else:
-                anom_map = self.predict([img])[0]
-            proctime.append(time.time() - t0)
-            fname = os.path.split(image_path)[1]
-            if not steps:
-                h, w = self.image_size
-                img = pipeline_utils.resize_image(img, H=h, W=w)
-            img_all.append(img)
-            anom_all.append(anom_map)
-            fname_all.append(fname)
-            path_all.append(image_path)
-
-        if generate_stats:
-            # Compute & Validate pdf
-            self.logger.info("Computing anomaly score PDF for all data.")
-            anom_sq = np.squeeze(np.array(anom_all))
-            data = np.ravel(anom_sq)
-            # Fit gamma distribution to anomaly data across entire data set
-            eps = 1e-6
-            alpha_hat, loc_hat, beta_hat = gamma.fit(data + eps, floc=0)
-            # Plot histogram and gamma dist fit
-            x = np.linspace(min(data), max(data), 1000)
-            pdf_fitted = gamma.pdf(x, alpha_hat, loc=loc_hat, scale=beta_hat)
-            plt.hist(data, bins=100, density=True, alpha=0.7, label="Observed Data")
-            plt.plot(x, pdf_fitted, "r-", label="Fitted Gamma")
-            plt.legend()
-            plt.savefig(os.path.join(annot_dir, "gamma_pdf_fit.png"))
-            max_data = max(data)
-            # Generate uniform anomaly threshold samples across available anomaly score range
-            threshold = np.linspace(min(data), max_data, 10)
-            # Determine percentage of failed parts for each threshold
-            quantile_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
-            # Reduce threshold range when threshold values are too far into the tail of the gamma distribution (quantile goes to zero)
-            while quantile_patch.min() < MINIMUM_QUANT:
-                self.logger.warning(f"Patch quantile saturated with max anomaly score: {max_data}, reducing to {max_data / 2}")
-                max_data = max_data / 1.2
-                threshold = np.linspace(min(data), max_data, 10)
-                quantile_patch = 1 - gamma.cdf(threshold, alpha_hat, loc=loc_hat, scale=beta_hat)
-            # Extract patch level distribution table data
-            quantile_patch_str = ["{:.{}e}".format(item * 100, 2) for item in np.squeeze(quantile_patch).tolist()]
-            quantile_patch_str = ["Prob of Patch Defect"] + quantile_patch_str
-            quantile_sample_str = ["Prob of Sample Defect"]
-            quantile_sample = []
-            for t in threshold:
-                ind = np.where(anom_sq > t)
-                ind_u = np.unique(ind[0])
-                percent = len(ind_u) / len(fname_all)
-                quantile_sample.append(percent)
-                quantile_sample_str.append("{:.{}e}".format(percent * 100, 2))
-
-            quantile_sample = np.array(quantile_sample)
-            threshold_str = ["{:.{}e}".format(item, 2) for item in np.squeeze(threshold).tolist()]
-            threshold_str = ["Threshold"] + threshold_str
-
-            tp = [threshold_str, quantile_patch_str, quantile_sample_str]
-            # Print statistics
-            tp_print = tabulate(tp, tablefmt="grid")
-            self.logger.info("Threshold options:\n" + tp_print)
-
-        if annotate_inputs:
-            if anom_threshold is None and generate_stats:
-                anom_threshold = gamma.ppf(0.5, alpha_hat, loc=loc_hat, scale=beta_hat)
-                self.logger.info(f"Anomaly patch threshold for 50% patch failure rate:{anom_threshold}")
-            if anom_max is None and generate_stats:
-                # Sample target hard coded for 3% failure rate
-                p_sample_target = 0.03
-                if p_sample_target > quantile_sample.min():
-                    # estimate p_patch from target p_sample_target
-                    p_target = find_p(threshold, quantile_patch, quantile_sample, p_sample_target)
-                    # find the anomaly score coresponding to that p_patch
-                    anom_max = gamma.ppf(1 - p_target, alpha_hat, loc=loc_hat, scale=beta_hat)
-                    self.logger.info(f"Anomaly max set to 97 percentile:{anom_max}")
-                else:
-                    anom_max = threshold.max()
-                    self.logger.warning(
-                        f"Anomaly patch max set to minimum discernable value: {anom_max} due to vanishing gradient in the patch quantile.  \
-                            Sample failure rate: {quantile_sample.min() * 100:.2e}"
-                    )
-
-            results = zip(img_all, anom_all, fname_all)
-            plot_fig(results, annot_dir, err_thresh=anom_threshold, err_max=anom_max)
-
-        # get anom stats
-        means = np.array([anom.mean() for anom in anom_all])
-        maxs = np.array([anom.max() for anom in anom_all])
-        stds = np.array([np.std(anom) for anom in anom_all])
-
-        # sort based on anom maxs
-        idx = np.argsort(maxs)[::-1]
-        maxs = maxs[idx]
-        means = means[idx]
-        stds = stds[idx]
-        fname_all = np.array(fname_all)[idx]
-
-        # write to a csv file
-        with open(os.path.join(annot_dir, "stats.csv"), "w") as csvfile:
-            fieldnames = ["fname", "mean", "max", "std"]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            for data in zip(fname_all, means, maxs, stds):
-                tmp_dict = {f: d for f, d in zip(fieldnames, data)}
-                writer.writerow(tmp_dict)
-
-        if proctime:
-            proctime = np.asarray(proctime)
-            self.logger.info(f"Min Proc Time: {proctime.min()}")
-            self.logger.info(f"Max Proc Time: {proctime.max()}")
-            self.logger.info(f"Avg Proc Time: {proctime.mean()}")
-            self.logger.info(f"Median Proc Time: {np.median(proctime)}")
-        self.logger.info(f"Test results saved to {out_path}")
-        if generate_stats:
-            # Repeat error table
-            self.logger.info("Threshold options:\n" + tp_print)
+        return evaluate(self, *args, **kwargs)
