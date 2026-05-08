@@ -1,0 +1,200 @@
+{
+  "top_seg_foreground": {
+    "format": "pt",
+    "configs": {
+      "to-fail": {
+        "board": true
+      },
+      "confidence": {
+        "board": 0.5
+      }
+    },
+    "details": {
+      "classes": [
+        "board"
+      ],
+      "image_size": [
+        640,
+        640
+      ],
+      "preprocessing": [
+        {
+          "id": "2f79f4ac-4d3d-47bf-913b-24ff9817e374",
+          "type": "resize",
+          "configuration": {
+            "width": 640,
+            "height": 640,
+            "preserve_aspect": true
+          }
+        }
+      ],
+      "training_package": "Ultralytics8",
+      "training_algorithm": "Yolo",
+      "confidence_threshold": 0.5
+    },
+    "artifacts": {
+      "pt": {
+        "attributes": {},
+        "model_path": "/app/models/top_seg_foreground/InstanceSegmentation/top-foreground/1/model.pt"
+      },
+      "onnx": {
+        "attributes": {},
+        "model_path": "/app/models/top_seg_foreground/InstanceSegmentation/top-foreground/1/model.onnx"
+      }
+    },
+    "model_name": "top-foreground",
+    "model_role": "top_seg_foreground",
+    "model_type": "InstanceSegmentation",
+    "model_version": "1"
+  },
+  "top_ad": {
+    "format": "torchscript",
+    "configs": {
+      "max_threshold": 24.5,
+      "min_threshold": 18.1
+    },
+    "details": {
+      "image_size": [
+        224,
+        224
+      ],
+      "preprocessing": [],
+      "training_package": "Anomalib1",
+      "training_algorithm": "PatchCore"
+    },
+    "artifacts": {
+      "onnx": {
+        "attributes": {},
+        "model_path": "/app/models/top_ad/AnomalyDetection/Anomaly/1/model.onnx"
+      },
+      "torchscript": {
+        "attributes": {},
+        "model_path": "/app/models/top_ad/AnomalyDetection/Anomaly/1/model.torchscript"
+      }
+    },
+    "model_name": "Anomaly",
+    "model_role": "top_ad",
+    "model_type": "AnomalyDetection",
+    "model_version": "1"
+  },
+  "top_od_defect": {
+    "format": "pt",
+    "configs": {
+      "to-fail": {
+        "IL_Grooves": true,
+        "KE_Wrinkle": true,
+        "LC_Die_Line": true,
+        "I3_Cold_Spot": true,
+        "L8_Tear_Drag": true,
+        "ZH_Streaking": true,
+        "ZK_Fish_Eyes": true,
+        "Operator_Hand": true,
+        "ZL_Water_Spots": true,
+        "K2_Damage_Gouge": true,
+        "KF_Blister_Edge": true,
+        "K7_Streaker_Bumps": true,
+        "ZP_Embossing_Shine": true,
+        "IF_Cleanout_Startup": true,
+        "I6_Cracks_Bad_Corners": true,
+        "KD_Cold_Shell_Deposit": true,
+        "ZG_Base_Color_Too_Dark": true,
+        "JW_Contamination_Rubber": true,
+        "LA_Blister_Core_Moisture": true,
+        "I9_Surface_Roughness_Pits": true,
+        "LB_Blister_Shell_Moisture": true,
+        "ACG_Embossing_Not_Centered": true,
+        "JH_Contamination_Hard_Plastic": true,
+        "I5_Embossing_Equipment_Failure": true,
+        "ACH_Embossing_Primary_not_at_edge": true
+      },
+      "confidence": {
+        "IL_Grooves": 0.5,
+        "KE_Wrinkle": 0.5,
+        "LC_Die_Line": 0.5,
+        "I3_Cold_Spot": 0.5,
+        "L8_Tear_Drag": 0.5,
+        "ZH_Streaking": 0.5,
+        "ZK_Fish_Eyes": 0.5,
+        "Operator_Hand": 0.5,
+        "ZL_Water_Spots": 0.5,
+        "K2_Damage_Gouge": 0.5,
+        "KF_Blister_Edge": 0.5,
+        "K7_Streaker_Bumps": 0.5,
+        "ZP_Embossing_Shine": 0.5,
+        "IF_Cleanout_Startup": 0.5,
+        "I6_Cracks_Bad_Corners": 0.5,
+        "KD_Cold_Shell_Deposit": 0.5,
+        "ZG_Base_Color_Too_Dark": 0.5,
+        "JW_Contamination_Rubber": 0.5,
+        "LA_Blister_Core_Moisture": 0.5,
+        "I9_Surface_Roughness_Pits": 0.5,
+        "LB_Blister_Shell_Moisture": 0.5,
+        "ACG_Embossing_Not_Centered": 0.5,
+        "JH_Contamination_Hard_Plastic": 0.5,
+        "I5_Embossing_Equipment_Failure": 0.5,
+        "ACH_Embossing_Primary_not_at_edge": 0.5
+      }
+    },
+    "details": {
+      "classes": [
+        "IL_Grooves",
+        "KE_Wrinkle",
+        "LC_Die_Line",
+        "I3_Cold_Spot",
+        "L8_Tear_Drag",
+        "ZH_Streaking",
+        "ZK_Fish_Eyes",
+        "Operator_Hand",
+        "ZL_Water_Spots",
+        "K2_Damage_Gouge",
+        "KF_Blister_Edge",
+        "K7_Streaker_Bumps",
+        "ZP_Embossing_Shine",
+        "IF_Cleanout_Startup",
+        "I6_Cracks_Bad_Corners",
+        "KD_Cold_Shell_Deposit",
+        "ZG_Base_Color_Too_Dark",
+        "JW_Contamination_Rubber",
+        "LA_Blister_Core_Moisture",
+        "I9_Surface_Roughness_Pits",
+        "LB_Blister_Shell_Moisture",
+        "ACG_Embossing_Not_Centered",
+        "JH_Contamination_Hard_Plastic",
+        "I5_Embossing_Equipment_Failure",
+        "ACH_Embossing_Primary_not_at_edge"
+      ],
+      "image_size": [
+        640,
+        640
+      ],
+      "preprocessing": [
+        {
+          "id": "48b25381-d9cf-491e-87f8-959fbdc84171",
+          "type": "resize",
+          "configuration": {
+            "width": 640,
+            "height": 640,
+            "preserve_aspect": true
+          }
+        }
+      ],
+      "training_package": "Ultralytics8",
+      "training_algorithm": "Yolo",
+      "confidence_threshold": 0.5
+    },
+    "artifacts": {
+      "pt": {
+        "attributes": {},
+        "model_path": "/app/models/top_od_defect/ObjectDetection/top-defect/1/model.pt"
+      },
+      "onnx": {
+        "attributes": {},
+        "model_path": "/app/models/top_od_defect/ObjectDetection/top-defect/1/model.onnx"
+      }
+    },
+    "model_name": "top-defect",
+    "model_role": "top_od_defect",
+    "model_type": "ObjectDetection",
+    "model_version": "1"
+  }
+}

@@ -674,10 +674,30 @@ def load_pipeline_def(filepath):
     return kwargs
 
 
+def _resolve_artifact_paths(model: Dict[str, Any], manifest_dir: Path) -> None:
+    """Resolve relative artifact model_path values in-place against manifest_dir."""
+    for _, artifact_data in model.get("artifacts", {}).items():
+        raw_path = artifact_data.get("model_path")
+        if raw_path:
+            path_obj = Path(raw_path)
+            if not path_obj.is_absolute():
+                artifact_data["model_path"] = str((manifest_dir / path_obj).resolve())
+
+
 def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     """
     Create models manifest from a static manifest json file.
+
+    Args:
+        manifest_json_path (str): path to the manifest JSON file.
+        **kwargs: optional keyword arguments. Recognized:
+            version (str): schema version of the manifest. Defaults to "3".
+                "2" expects flat fields under `details` and synthesizes a `configs` block;
+                "3" expects a manifest already shaped per schema_3 and only resolves
+                artifact paths.
     """
+    version = kwargs.get("version", "3")
+    logger.info(f"Loading static manifest from {manifest_json_path} with schema version {version}")
     manifest_path = Path(manifest_json_path).resolve()
     if not manifest_path.exists():
         raise FileNotFoundError(f"Manifest file not found: {manifest_path}")
@@ -685,7 +705,20 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     with open(manifest_path, "r") as f:
         models: List[Dict[str, Any]] = json.load(f)
 
-    manifest = {}
+    manifest: Dict[str, Any] = {}
+
+    if version == "3":
+        for model in models:
+            role = model.get("model_role")
+            if role is None:
+                continue
+            _resolve_artifact_paths(model, manifest_path.parent)
+            manifest[role] = model
+        return manifest
+
+    if version != "2":
+        raise ValueError(f"Unsupported static manifest version: {version}")
+
     keys_to_copy = ["anomaly_size", "threshold_max", "threshold_min", "iou"]
 
     for model in models:
@@ -693,15 +726,7 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
         if role is None:
             continue
 
-        # Update model paths
-        artifacts = model.get("artifacts", {})
-        for _, artifact_data in artifacts.items():
-            raw_path = artifact_data.get("model_path")
-            if raw_path:
-                path_obj = Path(raw_path)
-                # Resolve relative paths against the JSON file's directory
-                if not path_obj.is_absolute():
-                    artifact_data["model_path"] = str((manifest_path.parent / path_obj).resolve())
+        _resolve_artifact_paths(model, manifest_path.parent)
 
         # Create object configs
         model["configs"] = {}

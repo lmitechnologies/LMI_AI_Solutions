@@ -218,16 +218,24 @@ OD model role from gofactory:
 ```json
 "od-model": {
     "format": "pt",
-    "configs": {},
-    "details": {
-        "training_package": "Ultralytics",
-        "training_algorithm": "Yolo",
-        "global_preprocessing": [{"type": "resize", "configuration": {"height": 640, "width": 640}}],
+    "configs": {
+        "to-fail": {"defect_a": true},
+        "confidence": {"defect_a": 0.5}
     },
-    "artifacts": {"pt": {"image_size": [640, 640], "model_path": model_path}},
+    "details": {
+        "classes": ["defect_a"],
+        "image_size": [640, 640],
+        "preprocessing": [
+            {"type": "resize", "configuration": {"height": 640, "width": 640, "preserve_aspect": true}}
+        ],
+        "training_package": "Ultralytics",
+        "training_algorithm": "Yolo"
+    },
+    "artifacts": {"pt": {"attributes": {}, "model_path": model_path}},
     "model_role": "od-model",
+    "model_name": "od-model",
     "model_type": "InstanceSegmentation",
-    "model_version": "1",
+    "model_version": "1"
 }
 ```
 
@@ -265,19 +273,21 @@ AD model role from gofactory:
 ```json
 "ad-model": {
     "format": "pt",
-    "configs": {},
+    "configs": {"min_threshold": 0.0, "max_threshold": 1.0},
     "details": {
-        "training_package": "Anomalib1",
-        "training_algorithm": "Patchcore",
-        "global_preprocessing": [
-            {"type": "resize", "configuration": {"height": 224, "width": 448}},
-            {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}},
+        "image_size": [224, 224],
+        "preprocessing": [
+            {"type": "resize", "configuration": {"height": 224, "width": 448, "preserve_aspect": true}},
+            {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}}
         ],
+        "training_package": "Anomalib1",
+        "training_algorithm": "Patchcore"
     },
-    "artifacts": {"pt": {"image_size": [224, 224], "model_path": model_path}},
+    "artifacts": {"pt": {"attributes": {}, "model_path": model_path}},
     "model_role": "ad-model",
+    "model_name": "ad-model",
     "model_type": "AnomalyDetection",
-    "model_version": "1",
+    "model_version": "1"
 }
 ```
 

@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 LMI AI Solutions is a Python monorepo providing unified wrappers for AI/ML model frameworks used in industrial computer vision: object detection, anomaly detection, and classification.
 
+## Working Rules
+
+- **No assumptions.** When something is unclear, ask before implementing. Do not invent based on guesses.
+- **Keep this file concise.** Prefer pointers to source files over duplicated detail. Remove anything derivable from the code itself.
+- **Update on significant changes.** When introducing a new domain, base class, top-level pattern, or breaking change to existing architecture, update this file in the same change.
+
 ## Commands
 
 ### Installation
@@ -44,26 +50,12 @@ All three domains (`od_core/`, `ad_core/`, `cls_core/`) share the same pattern: 
 
 Every backend implements exactly four abstract methods — `warmup`, `preprocess`, `forward`, `postprocess` — and the base class orchestrates the full inference pipeline.
 
-### ADBase (`ad_core/ad_base.py`)
+### Domain base classes
 
-- `predict(image, batch_size=None)` — accepts a single image, list, or BHWC numpy/tensor batch. When `batch_size` is set, delegates to `_run_batched_predict` which chunks inputs **before** preprocessing. Set `self.fixed_batch_size` on TRT subclasses for automatic zero-padding.
-- `annotate(img, ad_scores, ad_threshold, ad_max)` — GPU-accelerated turbo-colormap heatmap overlay; returns `uint8` HWC numpy.
-- `colormap_tensor` — lazily initialized `[256, 3]` turbo LUT on `self.device`.
-
-### Anomalib_Base (`anomalib_lmi/base.py`)
-
-Subclasses `ADBase`; shared by v1 and v2 backends. Adds:
-- `_load_tensorrt_model` — loads TRT engine, sets `fixed_batch_size`, shape, fp16.
-- `convert(model_path, export_path, fp16=True, convert_type="trt")` — `.pt` → ONNX → TRT.
-- `test(images_path, ...)` — evaluation with gamma-fit threshold suggestions, CSV stats, optional tiling, annotated outputs.
-
-### ODBase (`od_core/od_base.py`)
-
-- `predict(image, configs, operators=None, batch_size=None)` — returns `(results_dict, time_info)`. `results_dict` keys: `boxes`, `scores`, `classes`, `masks`, `segments`, `points` (each a per-image list). Fixed-batch TRT engines are zero-padded.
-- `annotate_image(results, image, ...)` — draws boxes, masks, segments, keypoints; handles OBB.
-- Helpers: `_parse_confidence_config`, `_apply_confidence_filter`, `_normalize_operators`, `_revert_coordinates`, `_aggregate_results`.
-
-`Results` (`od_core/results.py`) — all numeric fields stored as `torch.Tensor`; defaults to empty tensors so `to_dict()` is safe with zero detections.
+- AD: `ad_core/ad_base.py` — orchestrates AD inference, GPU heatmap annotation.
+- AD (Anomalib): `anomalib_lmi/base.py` — extends `ADBase` with TRT loading, `.pt` → ONNX → TRT export, and evaluation.
+- OD: `od_core/od_base.py` — orchestrates OD inference; `Results` (`od_core/results.py`) stores numeric fields as `torch.Tensor` (empty by default, so zero-detection cases are safe).
+- CLS: `cls_core/cls_base.py` — orchestrates classification inference.
 
 ### CI/CD
 

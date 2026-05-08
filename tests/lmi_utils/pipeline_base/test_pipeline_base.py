@@ -54,35 +54,59 @@ class PipelineOD(PipelineBase):
         }
 
 
+def _build_od_model_roles(version, model_path, preprocessing_steps):
+    if version == "2":
+        return {
+            "mock-model": {
+                "format": "pt",
+                "configs": {},
+                "details": {
+                    "training_package": "Ultralytics",
+                    "training_algorithm": "Yolo",
+                    "global_preprocessing": preprocessing_steps,
+                },
+                "artifacts": {"pt": {"image_size": [640, 640], "model_path": model_path}},
+                "model_role": "mock-model",
+                "model_type": "InstanceSegmentation",
+                "model_version": "1",
+            }
+        }
+    if version == "3":
+        return {
+            "mock-model": {
+                "format": "pt",
+                "configs": {"to-fail": {}, "confidence": {}},
+                "details": {
+                    "image_size": [640, 640],
+                    "preprocessing": preprocessing_steps,
+                    "training_package": "Ultralytics",
+                    "training_algorithm": "Yolo",
+                },
+                "artifacts": {"pt": {"attributes": {}, "model_path": model_path}},
+                "model_role": "mock-model",
+                "model_name": "mock-model",
+                "model_type": "InstanceSegmentation",
+                "model_version": "1",
+            }
+        }
+    raise ValueError(f"Unsupported schema version: {version}")
+
+
 @pytest.mark.parametrize(
-    "preprocessing_steps, expected_types",
+    "version, preprocessing_steps, expected_types",
     [
-        ([{"type": "resize", "configuration": {"height": 640, "width": 640}}], ["resize"]),
+        ("2", [{"type": "resize", "configuration": {"height": 640, "width": 640}}], ["resize"]),
+        ("3", [{"type": "resize", "configuration": {"height": 640, "width": 640, "preserve_aspect": True}}], ["resize"]),
     ],
 )
-def test_pipeline_OD(preprocessing_steps, expected_types):
+def test_pipeline_OD(version, preprocessing_steps, expected_types):
     # Asset paths
     model_path = os.path.abspath("tests/assets/models/od/ultralytics/yolo11n-seg.pt")
     image_dir = os.path.abspath("tests/assets/images/coco")
 
-    # Mock model_roles (Schema V2)
-    model_roles = {
-        "mock-model": {
-            "format": "pt",
-            "configs": {},
-            "details": {
-                "training_package": "Ultralytics",
-                "training_algorithm": "Yolo",
-                "global_preprocessing": preprocessing_steps,
-            },
-            "artifacts": {"pt": {"image_size": [640, 640], "model_path": model_path}},
-            "model_role": "mock-model",
-            "model_type": "InstanceSegmentation",
-            "model_version": "1",
-        }
-    }
+    model_roles = _build_od_model_roles(version, model_path, preprocessing_steps)
 
-    pipeline = PipelineOD(version="2")
+    pipeline = PipelineOD(version=version)
     pipeline.load(model_roles, {})
 
     # Load images
@@ -141,11 +165,59 @@ class PipelineAD(PipelineBase):
         }
 
 
+def _build_ad_model_roles(version, model_path, preprocessing_steps):
+    if version == "2":
+        return {
+            "mock-model": {
+                "format": "pt",
+                "configs": {},
+                "details": {
+                    "training_package": "Anomalib1",
+                    "training_algorithm": "Patchcore",
+                    "global_preprocessing": preprocessing_steps,
+                },
+                "artifacts": {"pt": {"image_size": [224, 224], "model_path": model_path}},
+                "model_role": "mock-model",
+                "model_type": "AnomalyDetection",
+                "model_version": "1",
+            }
+        }
+    if version == "3":
+        return {
+            "mock-model": {
+                "format": "pt",
+                "configs": {"min_threshold": 0.0, "max_threshold": 1.0},
+                "details": {
+                    "image_size": [224, 224],
+                    "preprocessing": preprocessing_steps,
+                    "training_package": "Anomalib1",
+                    "training_algorithm": "Patchcore",
+                },
+                "artifacts": {"pt": {"attributes": {}, "model_path": model_path}},
+                "model_role": "mock-model",
+                "model_name": "mock-model",
+                "model_type": "AnomalyDetection",
+                "model_version": "1",
+            }
+        }
+    raise ValueError(f"Unsupported schema version: {version}")
+
+
 @pytest.mark.parametrize(
-    "preprocessing_steps, expected_types",
+    "version, preprocessing_steps, expected_types",
     [
-        ([{"type": "resize", "configuration": {"height": 224, "width": 224}}], ["resize"]),
+        ("2", [{"type": "resize", "configuration": {"height": 224, "width": 224}}], ["resize"]),
         (
+            "2",
+            [
+                {"type": "resize", "configuration": {"height": 224, "width": 448}},
+                {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}},
+            ],
+            ["resize", "tile"],
+        ),
+        ("3", [{"type": "resize", "configuration": {"height": 224, "width": 224}}], ["resize"]),
+        (
+            "3",
             [
                 {"type": "resize", "configuration": {"height": 224, "width": 448}},
                 {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}},
@@ -154,29 +226,14 @@ class PipelineAD(PipelineBase):
         ),
     ],
 )
-def test_pipeline_AD(preprocessing_steps, expected_types):
+def test_pipeline_AD(version, preprocessing_steps, expected_types):
     # Asset paths
     model_path = os.path.abspath("tests/assets/models/ad/model_v1_trace.pt")
     image_dir = os.path.abspath("tests/assets/images/nvtec-ad")
 
-    # Mock model_roles (Schema V2)
-    model_roles = {
-        "mock-model": {
-            "format": "pt",
-            "configs": {},
-            "details": {
-                "training_package": "Anomalib1",
-                "training_algorithm": "Patchcore",
-                "global_preprocessing": preprocessing_steps,
-            },
-            "artifacts": {"pt": {"image_size": [224, 224], "model_path": model_path}},
-            "model_role": "mock-model",
-            "model_type": "AnomalyDetection",
-            "model_version": "1",
-        }
-    }
+    model_roles = _build_ad_model_roles(version, model_path, preprocessing_steps)
 
-    pipeline = PipelineAD(version="2")
+    pipeline = PipelineAD(version=version)
     pipeline.load(model_roles, {})
 
     # Load images
