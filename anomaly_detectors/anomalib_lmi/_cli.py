@@ -34,6 +34,7 @@ def run_cli(model_cls):
     convert_ap.add_argument("-i", "--model_path", default="/app/model/model.pt", help="Input model file path.")
     convert_ap.add_argument("-o", "--export_dir", default="/app/export")
     convert_ap.add_argument("-c", "--convert_type", default="trt", choices=["trt", "onnx"], help="convert type: trt or onnx")
+    convert_ap.add_argument("--fp32", action="store_true", help="disable fp16 and use fp32 for TRT conversion")
     args = vars(ap.parse_args())
 
     action = args["action"]
@@ -43,7 +44,10 @@ def run_cli(model_cls):
     if action == "convert":
         export_dir = args["export_dir"]
         os.makedirs(export_dir, exist_ok=True)
-        ad.convert(model_path, export_dir, convert_type=args["convert_type"])
+        if args["convert_type"] == "onnx":
+            ad.export_onnx(os.path.join(export_dir, "model.onnx"))
+        else:
+            ad.export_trt(export_dir, fp16=not args["fp32"])
     elif action == "test":
         os.makedirs(args["annot_dir"], exist_ok=True)
         ad.test(
