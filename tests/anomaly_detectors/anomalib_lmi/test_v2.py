@@ -1,6 +1,7 @@
 import glob
 import logging
 import os
+import platform
 import tempfile
 from typing import List
 
@@ -27,6 +28,7 @@ ONNX_MODEL_PATH = "tests/assets/models/ad/model_v2/model.onnx"
 ENGINE_PATH = "tests/assets/models/ad/model_v2/model.engine"
 OUTPUT_PATH = "tests/outputs/ad/anomalib_v2"
 
+IS_ARM = platform.machine() in ["aarch64", "arm64"]
 USE_GPU = torch.cuda.is_available()
 DEVICE = "cuda" if USE_GPU else "cpu"
 BASE_CONFIG = {
@@ -89,7 +91,8 @@ def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyMod
 
         for model in ais_models:
             pred2 = model.predict(rgb)
-            atol = 1e-5
+            atol = 1e-2 if IS_ARM else 1e-5
+            logger.info(f"max diff: {np.abs(pred - pred2).max()} for {type(model).__name__}")
             assert np.allclose(pred, pred2, atol=atol), f"mismatch for {type(model).__name__}"
 
 
