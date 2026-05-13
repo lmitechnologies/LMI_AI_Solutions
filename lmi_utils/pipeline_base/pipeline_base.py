@@ -25,8 +25,8 @@ from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 from object_detectors.od_core.object_detector import ObjectDetector
 
-from .core.schemas.schema_2 import ModelSchemaV_2
-from .core.schemas.schema_3 import ModelSchemaV_3
+from .core.schemas.schema_2 import ModelCollectionV2
+from .core.schemas.schema_3 import ModelCollectionV3
 
 
 class PipelineBase(metaclass=ABCMeta):
@@ -62,8 +62,8 @@ class PipelineBase(metaclass=ABCMeta):
     # Maps gadget version to model_roles handler
     _MODEL_ROLES_HANDLERS = {
         "1": None,  # no longer supported
-        "2": ModelSchemaV_2.from_dict,
-        "3": ModelSchemaV_3.from_dict,
+        "2": ModelCollectionV2.from_dict,
+        "3": ModelCollectionV3.from_dict,
     }
 
     def __init__(self, **kwargs: Any) -> None:
@@ -153,7 +153,8 @@ class PipelineBase(metaclass=ABCMeta):
 
         # Version 2+: Supports global preprocessing
         instance = handler(model_roles)
-        return instance.get_metadata(), instance.get_global_preprocessing()
+        load_ad_onnx = kwargs.get("load_ad_onnx", False)
+        return instance.get_metadata(load_ad_onnx), instance.get_global_preprocessing()
 
     def load_models(self, model_roles: dict, configs: dict, filter: str = "-model", **kwargs: Any) -> None:
         """
@@ -166,7 +167,9 @@ class PipelineBase(metaclass=ABCMeta):
             model_roles (dict): a dictionary from gofactory or static_models.
             configs (dict): the configs from pipeline_def.json or the runtime.
             filter (str, optional): filter models by name. Defaults to "-model".
+        kwargs:
             verbose (bool, optional): whether to log the original and parsed model roles. Defaults to False.
+            load_ad_onnx (bool, optional): whether to load onnx artifact for anomaly detection model. Defaults to False.
         """
         parsed_model_roles, global_preprocessing = self._parse_model_roles(model_roles, **kwargs)
         if not global_preprocessing:

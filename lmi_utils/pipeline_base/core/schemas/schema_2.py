@@ -1,5 +1,8 @@
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -113,19 +116,21 @@ class Model:
 
 
 @dataclass
-class ModelCollection:
+class ModelCollectionV2:
     """Represents the top-level object containing all models."""
 
     models: Dict[str, Model]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ModelCollection":
-        """Creates a ModelCollection from the root dictionary."""
+    def from_dict(cls, data: Dict[str, Any]) -> "ModelCollectionV2":
+        """Creates a ModelCollectionV2 from the root dictionary."""
         # The root dictionary has a single key "model"
         models = {role: Model.from_dict(model_info) for role, model_info in data.items() if model_info is not None}
         return cls(models=models)
 
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self, load_ad_onnx: bool = False) -> Dict[str, Any]:
+        if load_ad_onnx:
+            logger.warning("load_ad_onnx=True is not supported in schema v2; ignoring and using the default format artifact.")
         configs = {}
         for role, model in self.models.items():
             configs[role] = model.get_metadata()
@@ -166,17 +171,3 @@ class ModelCollection:
             steps = model.details.global_preprocessing
             global_preprocessing[role] = parse(steps)
         return global_preprocessing
-
-
-class ModelSchemaV_2:
-    """Schema for model version 2."""
-
-    @staticmethod
-    def from_dict(data: Dict[str, Any]) -> ModelCollection:
-        """Creates a ModelCollection instance from a dictionary."""
-        return ModelCollection.from_dict(data)
-
-    @staticmethod
-    def get_metadata(model_collection: ModelCollection) -> Dict[str, Any]:
-        """Returns the metadata of the model collection."""
-        return model_collection.get_metadata()

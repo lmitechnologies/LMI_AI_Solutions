@@ -7,8 +7,7 @@ from pydantic import ValidationError
 from lmi_utils.pipeline_base.core.schemas.schema_3 import (
     ADConfigs,
     ADModel,
-    ModelCollection,
-    ModelSchemaV_3,
+    ModelCollectionV3,
     ODConfigs,
     ODModel,
 )
@@ -25,10 +24,10 @@ def schema3():
 
 
 def test_schema3(schema3):
-    data = ModelSchemaV_3.from_dict(schema3)
+    data = ModelCollectionV3.from_dict(schema3)
     models = data.get_metadata()
 
-    assert isinstance(data, ModelCollection)
+    assert isinstance(data, ModelCollectionV3)
 
     for _key, model in models.items():
         assert isinstance(model, dict)
@@ -56,7 +55,7 @@ def test_schema3(schema3):
 
 
 def test_discriminator_routes_ad(schema3):
-    data = ModelSchemaV_3.from_dict(schema3)
+    data = ModelCollectionV3.from_dict(schema3)
     ad = data.models["top_ad"]
     assert isinstance(ad, ADModel)
     assert isinstance(ad.configs, ADConfigs)
@@ -65,7 +64,7 @@ def test_discriminator_routes_ad(schema3):
 
 
 def test_discriminator_routes_od_and_alias(schema3):
-    data = ModelSchemaV_3.from_dict(schema3)
+    data = ModelCollectionV3.from_dict(schema3)
     od = data.models["top_od_defect"]
     assert isinstance(od, ODModel)
     assert isinstance(od.configs, ODConfigs)
@@ -77,16 +76,42 @@ def test_discriminator_routes_od_and_alias(schema3):
 def test_ad_model_missing_threshold_fails(schema3):
     schema3["top_ad"]["configs"].pop("min_threshold")
     with pytest.raises(ValidationError):
-        ModelSchemaV_3.from_dict(schema3)
+        ModelCollectionV3.from_dict(schema3)
 
 
 def test_unknown_model_type_fails(schema3):
     schema3["top_ad"]["model_type"] = "Bogus"
     with pytest.raises(ValidationError):
-        ModelSchemaV_3.from_dict(schema3)
+        ModelCollectionV3.from_dict(schema3)
 
 
 def test_none_entries_skipped(schema3):
     schema3["disabled_model"] = None
-    mc = ModelSchemaV_3.from_dict(schema3)
+    mc = ModelCollectionV3.from_dict(schema3)
     assert "disabled_model" not in mc.models
+
+
+def test_load_ad_onnx_swaps_ad_artifact(schema3):
+    mc = ModelCollectionV3.from_dict(schema3)
+
+    default_meta = mc.get_metadata()
+    onnx_meta = mc.get_metadata(load_ad_onnx=True)
+
+    # AD model: default uses the declared format (torchscript), load_ad_onnx swaps to onnx.
+    assert default_meta["top_ad"]["model_path"].endswith(".torchscript")
+    assert onnx_meta["top_ad"]["model_path"].endswith(".onnx")
+
+    # Non-AD models are unaffected by load_ad_onnx.
+    for role in ("top_seg_foreground", "top_od_defect"):
+        assert onnx_meta[role]["model_path"] == default_meta[role]["model_path"]
+
+
+def test_load_ad_onnx_missing_onnx_artifact_raises(schema3):
+    schema3["top_ad"]["artifacts"].pop("onnx")
+    mc = ModelCollectionV3.from_dict(schema3)
+
+    with pytest.raises(ValueError, match="no 'onnx' artifact"):
+        mc.get_metadata(load_ad_onnx=True)
+
+    # Without the flag, the default artifact still resolves fine.
+    assert mc.get_metadata()["top_ad"]["model_path"].endswith(".torchscript")
