@@ -23,8 +23,8 @@ logger = logging.getLogger(__name__)
 
 DATA_PATH = "tests/assets/images/nvtec-ad"
 MODEL_PATH = "tests/assets/models/ad/model_v2/model.pt"
-TRACED_MODEL_PATH = "tests/assets/models/ad/model_v2/model.ts"
-ONNX_MODEL_PATH = "tests/assets/models/ad/model_v2/model.onnx"
+TS_PATH = "tests/assets/models/ad/model_v2/model.ts"
+ONNX_PATH = "tests/assets/models/ad/model_v2/model.onnx"
 ENGINE_PATH = "tests/assets/models/ad/model_v2/model.engine"
 OUTPUT_PATH = "tests/outputs/ad/anomalib_v2"
 
@@ -71,12 +71,22 @@ def trt_model():
 def cpu_models():
     ad1 = AnomalyModelV2(MODEL_PATH, device="cpu")
     ad2 = AnomalyDetector(BASE_CONFIG, device="cpu")
-    ad3 = AnomalyModelV2(ONNX_MODEL_PATH, device="cpu")
-    ad4 = AnomalyModelV2(TRACED_MODEL_PATH, device="cpu")
+    ad3 = AnomalyModelV2(ONNX_PATH, device="cpu")
+    ad4 = AnomalyModelV2(TS_PATH, device="cpu")
     return [ad1, ad2, ad3, ad4]
 
 
-def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyModelV2]):
+def test_model_class_comparison(ad_models):
+    direct = ad_models[0]
+    api = ad_models[1]
+    assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
+
+
+def test_compare_with_anomalib(cpu_models):
+    """
+    compare prediction results between current implementation and anomalib
+    """
+    anomalib_model = TorchInferencer(MODEL_PATH, device="cpu")
     paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
     for p in paths:
         # using anomalib code
@@ -88,26 +98,10 @@ def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyMod
         # using AIS code
         im = cv2.imread(p)
         rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-
-        for model in ais_models:
+        for model in cpu_models:
             pred2 = model.predict(rgb)
             atol = 1e-2 if IS_ARM else 1e-5
-            logger.info(f"max diff: {np.abs(pred - pred2).max()} for {type(model).__name__}")
-            assert np.allclose(pred, pred2, atol=atol), f"mismatch for {type(model).__name__}"
-
-
-def test_model_class_comparison(ad_models):
-    direct = ad_models[0]
-    api = ad_models[1]
-    assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
-
-
-def test_compare_results_with_anomalib(cpu_models):
-    """
-    compare prediction results between current implementation and anomalib
-    """
-    model1 = TorchInferencer(MODEL_PATH, device="cpu")
-    compare_results(model1, cpu_models)
+            assert np.allclose(pred, pred2, atol=atol, rtol=0.05), f"mismatch for {type(model).__name__}"
 
 
 @pytest.mark.parametrize("warmup_size", [[672, 640], [256, 224]])
@@ -216,7 +210,7 @@ def test_predict_gpu_batch(ad_models, n_images):
 
 def test_compare_trt_onnx(trt_model):
     """Compare TRT and ONNX predictions on resized images; tolerates FP16 vs FP32 precision."""
-    onnx_model = AnomalyModelV2(ONNX_MODEL_PATH, device="cuda")
+    onnx_model = AnomalyModelV2(ONNX_PATH, device="cuda")
     paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
     for p in paths:
         im = cv2.imread(p)

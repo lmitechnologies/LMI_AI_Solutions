@@ -18,7 +18,6 @@ from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
 from anomaly_detectors.anomalib_lmi.base import AnomalibONNX
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v1_torchscript
 from anomaly_detectors.anomalib_lmi.v1.model import AnomalyModel as AnomalyModelV1
-from lmi_common.onnx_engine import ONNXEngine
 from lmi_utils.gadget_utils import pipeline_utils
 
 logger = logging.getLogger(__name__)
@@ -26,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 DATA_PATH = "tests/assets/images/nvtec-ad"
 MODEL_PATH = "tests/assets/models/ad/model_v1/model.pt"
-TRACED_MODEL_PATH = "tests/assets/models/ad/model_v1/model.ts"
-ONNX_MODEL_PATH = "tests/assets/models/ad/model_v1/model.onnx"
+TS_PATH = "tests/assets/models/ad/model_v1/model.ts"
+ONNX_PATH = "tests/assets/models/ad/model_v1/model.onnx"
 ENGINE_PATH = "tests/assets/models/ad/model_v1/model.engine"
 OUTPUT_PATH = "tests/outputs/ad/anomalib_v1"
 USE_GPU = torch.cuda.is_available()
@@ -67,9 +66,9 @@ def ad_model():
 @pytest.fixture(scope="module")
 def cpu_models():
     ad1 = AnomalyModelV1(MODEL_PATH, device="cpu")
-    ad2 = AnomalyModelV1(TRACED_MODEL_PATH, device="cpu")
+    ad2 = AnomalyModelV1(TS_PATH, device="cpu")
     ad_api = AnomalyDetector(BASE_CONFIG, device="cpu")
-    ad_onnx = AnomalyModelV1(ONNX_MODEL_PATH, device="cpu")
+    ad_onnx = AnomalyModelV1(ONNX_PATH, device="cpu")
     return [ad1, ad2, ad_api, ad_onnx]
 
 
@@ -122,9 +121,7 @@ def test_compare_onnx_with_resized(anomalib_model, cpu_models):
     """Compare the ONNX-loaded AIS model against anomalib using resized images"""
     onnx_models = [m for m in cpu_models if isinstance(m, AnomalibONNX)]
     assert onnx_models, "expected at least one ONNX-loaded model in cpu_models"
-
-    engine = ONNXEngine(ONNX_MODEL_PATH, device="cpu")
-    h, w = list(engine.input_shape[-2:])
+    h, w = onnx_models[0].image_size
 
     paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
     for p in paths:
@@ -253,21 +250,19 @@ def test_cmds():
                 -o {str(t)} -g -p --tile 224 224 --stride 224 224 --limit 1"
         logger.info(f"running cmd: {cmd}")
         result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
-        logger.info(result.stdout)
-        logger.info(result.stderr)
 
-        assert result.returncode == 0, f"Command failed:\n{result.stderr}"
+        assert result.returncode == 0, f"Command failed:\n{result.stdout}"
         assert len(glob.glob(os.path.join(t, "*_annot.png"))) == 1
 
         if USE_GPU:
             t2 = os.path.join(t, "recon")
-            cmd = f"python -m anomaly_detectors.anomalib_lmi.v1.model convert -i {MODEL_PATH} -o {t2} -c onnx"
+            cmd = f"python -m anomaly_detectors.anomalib_lmi.v1.model convert -i {MODEL_PATH} -o {t2}"
             logger.info(f"running cmd: {cmd}")
             result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
             logger.info(result.stdout)
             logger.info(result.stderr)
 
-            out_engine = os.path.join(t2, "model.onnx")
+            out_engine = os.path.join(t2, "model.engine")
             assert os.path.isfile(out_engine)
 
 
@@ -336,7 +331,7 @@ def test_trt_model(trt_model):
 
 def test_compare_trt_onnx(trt_model):
     """Compare TRT and ONNX predictions on resized images; tolerates FP16 vs FP32 precision."""
-    onnx_model = AnomalyModelV1(ONNX_MODEL_PATH, device="cuda")
+    onnx_model = AnomalyModelV1(ONNX_PATH, device="cuda")
     paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
     for p in paths:
         im = cv2.imread(p)

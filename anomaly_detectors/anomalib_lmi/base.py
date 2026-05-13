@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-import subprocess
+import shutil
 from typing import Any, Iterable, List
 
 import numpy as np
@@ -10,6 +10,7 @@ from torchvision.transforms import v2
 
 from anomaly_detectors.ad_core.ad_base import ADBase
 from lmi_common.onnx_engine import ONNXEngine
+from lmi_common.trt_convert import onnx_to_trt
 from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
 
@@ -28,41 +29,12 @@ def to_list(data) -> List:
     return list(data)
 
 
-def onnx_to_trt(onnx_path: str, out_engine_path: str, fp16: bool = True, workspace: int = 4096) -> None:
-    """Convert an ONNX file to a TRT engine via trtexec.
-
-    Args:
-        onnx_path: source .onnx path.
-        out_engine_path: destination .engine path.
-        fp16: use half precision.
-        workspace: trtexec memory pool size in MB.
-    """
-    if not out_engine_path.endswith(".engine"):
-        raise Exception("trt engine file must end with '.engine'")
-
-    out_dir = os.path.dirname(out_engine_path)
-    os.makedirs(out_dir, exist_ok=True)
-
-    cmd = ["trtexec", f"--onnx={onnx_path}", f"--saveEngine={out_engine_path}", f"--memPoolSize=workspace:{workspace}"]
-    if fp16:
-        cmd.append("--fp16")
-    subprocess.run(cmd, check=True)
-
-    # Copy metadata.json sidecar if present next to the source onnx.
-    onnx_dir = os.path.dirname(onnx_path)
-    if os.path.isfile(f"{onnx_dir}/metadata.json"):
-        subprocess.run([f"cp -sf {onnx_dir}/metadata.json {out_dir}"], shell=True)
-    else:
-        Anomalib_Base.logger.warning(f"metadata.json not found in {onnx_dir}")
-
-
 class Anomalib_Base(ADBase):
     """Shared base for Anomalib AD backends.
 
     Concrete inference behavior lives in the per-format subclasses (`AnomalibTRT`,
     `AnomalibONNX`, `AnomalibPT`). This base owns preprocess/postprocess/warmup,
-    the `export_onnx`/`export_trt` methods, and shared helpers. ONNX → TRT as a
-    pure file-to-file conversion is available via the module-level `onnx_to_trt`.
+    the `export_onnx`/`export_trt` methods, and shared helpers.
 
     Public entry points are the per-version factories in `v1/model.py` and
     `v2/model.py`, each subclassing `ModelFactory` to dispatch on file extension.
@@ -176,7 +148,7 @@ class Anomalib_Base(ADBase):
         )
         self.logger.info(f"ONNX model saved at {export_path}")
 
-    def export_trt(self, export_path, fp16=True, workspace=4096):
+    def export_trt(self, export_path, fp16=True, workspace_gb=4, min_batch=1, opt_batch=None, max_batch=1):
         """Export to a TRT engine in `export_path`.
 
         PT-loaded instance: chains PT → ONNX → TRT.
@@ -196,7 +168,19 @@ class Anomalib_Base(ADBase):
         else:
             raise TypeError(f"{type(self).__name__} cannot export to TRT; load a .pt or .onnx model first")
 
-        onnx_to_trt(onnx_path, trt_path, fp16=fp16, workspace=workspace)
+        onnx_to_trt(
+            onnx_path,
+            trt_path,
+            fp16=fp16,
+            workspace_gb=workspace_gb,
+            min_batch=min_batch,
+            opt_batch=opt_batch,
+            max_batch=max_batch,
+        )
+
+        sidecar = os.path.join(os.path.dirname(onnx_path), "metadata.json")
+        if os.path.isfile(sidecar) and os.path.dirname(sidecar) != export_path:
+            shutil.copyfile(sidecar, os.path.join(export_path, "metadata.json"))
 
     def test(self, *args, **kwargs):
         """Run evaluation on a directory of images. See `anomalib_lmi.evaluate.evaluate` for arguments."""
