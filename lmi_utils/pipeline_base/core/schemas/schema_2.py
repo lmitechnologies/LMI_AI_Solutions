@@ -1,8 +1,5 @@
-import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -128,9 +125,7 @@ class ModelCollectionV2:
         models = {role: Model.from_dict(model_info) for role, model_info in data.items() if model_info is not None}
         return cls(models=models)
 
-    def get_metadata(self, load_ad_onnx: bool = False) -> Dict[str, Any]:
-        if load_ad_onnx:
-            logger.warning("load_ad_onnx=True is not supported in schema v2; ignoring and using the default format artifact.")
+    def get_metadata(self) -> Dict[str, Any]:
         configs = {}
         for role, model in self.models.items():
             configs[role] = model.get_metadata()

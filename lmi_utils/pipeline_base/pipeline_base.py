@@ -153,8 +153,7 @@ class PipelineBase(metaclass=ABCMeta):
 
         # Version 2+: Supports global preprocessing
         instance = handler(model_roles)
-        load_ad_onnx = kwargs.get("load_ad_onnx", False)
-        return instance.get_metadata(load_ad_onnx), instance.get_global_preprocessing()
+        return instance.get_metadata(), instance.get_global_preprocessing()
 
     def load_models(self, model_roles: dict, configs: dict, filter: str = "-model", **kwargs: Any) -> None:
         """
@@ -169,7 +168,6 @@ class PipelineBase(metaclass=ABCMeta):
             filter (str, optional): filter models by name. Defaults to "-model".
         kwargs:
             verbose (bool, optional): whether to log the original and parsed model roles. Defaults to False.
-            load_ad_onnx (bool, optional): whether to load onnx artifact for anomaly detection model. Defaults to False.
         """
         parsed_model_roles, global_preprocessing = self._parse_model_roles(model_roles, **kwargs)
         if not global_preprocessing:

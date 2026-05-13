@@ -58,17 +58,8 @@ class _ModelBase(BaseModel):
     artifacts: Dict[str, Artifact] = Field(default_factory=dict)
     details: Details
 
-    def get_metadata(self, load_ad_onnx=False) -> Dict[str, Any]:
-        if load_ad_onnx and self.model_type == "AnomalyDetection":
-            artifact = self.artifacts.get("onnx")
-            if artifact is None:
-                raise ValueError(
-                    f"load_ad_onnx=True but no 'onnx' artifact found for AD model "
-                    f"'{self.model_role}' (available artifacts: {sorted(self.artifacts.keys())})."
-                )
-        else:
-            artifact = self.artifacts.get(self.format)
-
+    def get_metadata(self) -> Dict[str, Any]:
+        artifact = self.artifacts.get(self.format)
         return {
             "model_path": artifact.model_path if artifact else "",
             "image_size": self.details.image_size,
@@ -105,8 +96,8 @@ class ModelCollectionV3(BaseModel):
     def from_dict(cls, data: Dict[str, Any]) -> "ModelCollectionV3":
         return cls.model_validate({"models": {k: v for k, v in data.items() if v is not None}})
 
-    def get_metadata(self, load_ad_onnx=False) -> Dict[str, Any]:
-        return {role: model.get_metadata(load_ad_onnx) for role, model in self.models.items()}
+    def get_metadata(self) -> Dict[str, Any]:
+        return {role: model.get_metadata() for role, model in self.models.items()}
 
     def get_global_preprocessing(self) -> Dict[str, List[Dict[str, Any]]]:
         supported = {"resize", "tile"}

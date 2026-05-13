@@ -89,29 +89,3 @@ def test_none_entries_skipped(schema3):
     schema3["disabled_model"] = None
     mc = ModelCollectionV3.from_dict(schema3)
     assert "disabled_model" not in mc.models
-
-
-def test_load_ad_onnx_swaps_ad_artifact(schema3):
-    mc = ModelCollectionV3.from_dict(schema3)
-
-    default_meta = mc.get_metadata()
-    onnx_meta = mc.get_metadata(load_ad_onnx=True)
-
-    # AD model: default uses the declared format (torchscript), load_ad_onnx swaps to onnx.
-    assert default_meta["top_ad"]["model_path"].endswith(".torchscript")
-    assert onnx_meta["top_ad"]["model_path"].endswith(".onnx")
-
-    # Non-AD models are unaffected by load_ad_onnx.
-    for role in ("top_seg_foreground", "top_od_defect"):
-        assert onnx_meta[role]["model_path"] == default_meta[role]["model_path"]
-
-
-def test_load_ad_onnx_missing_onnx_artifact_raises(schema3):
-    schema3["top_ad"]["artifacts"].pop("onnx")
-    mc = ModelCollectionV3.from_dict(schema3)
-
-    with pytest.raises(ValueError, match="no 'onnx' artifact"):
-        mc.get_metadata(load_ad_onnx=True)
-
-    # Without the flag, the default artifact still resolves fine.
-    assert mc.get_metadata()["top_ad"]["model_path"].endswith(".torchscript")
