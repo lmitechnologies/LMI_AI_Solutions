@@ -7,33 +7,16 @@ logger = logging.getLogger(__name__)
 
 
 class TRTEngine:
-    """TensorRT engine wrapper supporting static and dynamic-batch engines (TensorRT 8.5+).
+    """TensorRT engine wrapper for static and dynamic-batch engines (TensorRT 8.5+).
 
-    Allocates all I/O buffers as torch CUDA tensors at init time (at max shape for dynamic
-    engines). Binding addresses are computed once and reused — tensor pointers are stable for
-    the lifetime of this object.
+    I/O buffers are allocated as torch CUDA tensors at init (at max-batch shape for
+    dynamic engines). Only a dynamic batch dim (dim 0) is supported; dynamic spatial
+    dims raise ``NotImplementedError``.
 
-    Dynamic shape support
-    ---------------------
-    If the input tensor's batch dimension is -1 (dynamic), the engine is treated as dynamic:
-    - I/O buffers are allocated at the max-batch shape from optimization profile 0.
-    - ``set_input_shape`` is called before every ``execute_v2``.
-    - Outputs are sliced to ``[:actual_batch]`` before being returned.
-    Only a dynamic batch dimension (dim 0) is supported. Dynamic spatial dimensions (H, W)
-    raise ``NotImplementedError`` at init time.
-
-    Output aliasing
-    ---------------
-    ``infer()`` returns views into internal buffers. Clone the outputs if you need to hold
-    them across multiple ``infer()`` calls — the next call overwrites the same memory.
-
-    Thread safety
-    -------------
-    NOT thread-safe. The execution context and I/O buffers are shared mutable state.
-    Create one ``TRTEngine`` instance per thread for concurrent inference.
+    Not thread-safe — create one instance per thread.
 
     Args:
-        engine_path: Path to the serialized TensorRT ``.engine`` file.
+        engine_path: Path to the serialized ``.engine`` file.
         device: CUDA device string, e.g. ``"cuda"`` or ``"cuda:0"``.
         log_level: TensorRT logger severity. Defaults to ``trt.Logger.WARNING``.
     """
@@ -64,6 +47,8 @@ class TRTEngine:
 
         self._engine = engine
         self.context = engine.create_execution_context()
+        if self.context is None:
+            raise RuntimeError(f"Failed to create execution context for: {engine_path}")
         self.device = torch.device(device)
 
         # Enumerate I/O tensors in engine order — order matters for execute_v2.
@@ -80,7 +65,8 @@ class TRTEngine:
 
         # Detect dynamic batch and validate no dynamic spatial dims.
         is_dynamic = False
-        for name in input_names:
+        max_batch: int = 0
+        for i, name in enumerate(input_names):
             shape = tuple(engine.get_tensor_shape(name))
             if shape[0] == -1:
                 is_dynamic = True
@@ -89,12 +75,29 @@ class TRTEngine:
                     f"Dynamic spatial dimensions in input tensor '{name}' (shape={shape}) are not "
                     f"supported. Only a dynamic batch dimension (dim 0) is supported."
                 )
+            if is_dynamic:
+                resolved_batch = int(engine.get_tensor_profile_shape(name, 0)[2][0])
+            else:
+                resolved_batch = shape[0]
+            if i == 0:
+                max_batch = resolved_batch
+            elif resolved_batch != max_batch:
+                raise ValueError(
+                    f"Input '{name}' batch dim ({resolved_batch}) differs from first input ({max_batch}). "
+                    f"All inputs must share the same batch dimension."
+                )
+
+        def _resolve_dtype(name: str) -> torch.dtype:
+            trt_dtype = engine.get_tensor_dtype(name)
+            if trt_dtype not in _dtype_map:
+                raise NotImplementedError(f"Unsupported TensorRT dtype {trt_dtype} for tensor '{name}'")
+            return _dtype_map[trt_dtype]
 
         # Allocate input buffers.
         input_buffers: Dict[str, torch.Tensor] = {}
         for name in input_names:
             shape = tuple(engine.get_tensor_shape(name))
-            dtype = _dtype_map.get(engine.get_tensor_dtype(name), torch.float32)
+            dtype = _resolve_dtype(name)
             if is_dynamic:
                 alloc_shape = tuple(engine.get_tensor_profile_shape(name, 0)[2])  # max shape
             else:
@@ -102,15 +105,26 @@ class TRTEngine:
             input_buffers[name] = torch.empty(alloc_shape, dtype=dtype, device=self.device)
             logger.info(f"TRT input  '{name}': shape={alloc_shape}, dtype={dtype}")
 
+        # For dynamic engines, output shapes depend on input shapes. Set the context to max
+        # input shapes so we can query each output's max shape via the context.
+        if is_dynamic:
+            for name, buf in input_buffers.items():
+                self.context.set_input_shape(name, tuple(buf.shape))
+
         # Allocate output buffers.
         output_buffers: List[torch.Tensor] = []
         for name in output_names:
-            shape = tuple(engine.get_tensor_shape(name))
-            dtype = _dtype_map.get(engine.get_tensor_dtype(name), torch.float32)
+            dtype = _resolve_dtype(name)
+            out_shape = tuple(engine.get_tensor_shape(name))
+            if is_dynamic and (len(out_shape) == 0 or out_shape[0] != -1):
+                raise NotImplementedError(
+                    f"Output '{name}' has static dim 0 ({out_shape[0] if out_shape else 'scalar'}) but the engine "
+                    f"has a dynamic input batch. Outputs whose dim 0 does not scale with batch are not supported."
+                )
             if is_dynamic:
-                alloc_shape = tuple(engine.get_tensor_profile_shape(name, 0)[2])  # max shape
+                alloc_shape = tuple(self.context.get_tensor_shape(name))
             else:
-                alloc_shape = shape
+                alloc_shape = out_shape
             output_buffers.append(torch.empty(alloc_shape, dtype=dtype, device=self.device))
             logger.info(f"TRT output '{name}': shape={alloc_shape}, dtype={dtype}")
 
@@ -125,37 +139,38 @@ class TRTEngine:
 
         # Public attributes consumed by model __init__ and preprocess.
         first_input_buf = input_buffers[input_names[0]]
-        self.max_batch: int = first_input_buf.shape[0]
+        self.max_batch: int = max_batch
         self.input_dtype: torch.dtype = first_input_buf.dtype
         self.input_shape: Tuple[int, ...] = tuple(first_input_buf.shape[1:])  # (C, H, W)
         self.fp16: bool = first_input_buf.dtype == torch.float16
         self.is_dynamic: bool = is_dynamic
 
-    def infer(self, *inputs: torch.Tensor) -> List[torch.Tensor]:
-        """Run synchronous TensorRT inference.
+    def infer(self, *inputs: torch.Tensor, copy: bool = True) -> List[torch.Tensor]:
+        """Run synchronous inference.
 
         Args:
-            *inputs: One contiguous CUDA tensor per engine input, in the same order as
-                     ``self._input_names``. Each tensor's batch size must not exceed
-                     ``self.max_batch``.
+            *inputs: One CUDA tensor per engine input, in ``self._input_names`` order.
+                Each must live on ``self.device`` with ``shape[0] <= self.max_batch``.
+                Non-contiguous inputs incur a ``.contiguous()`` copy.
+            copy: If True (default), return independent clones — safe to hold across
+                calls. If False, return views into internal buffers; the caller must
+                consume them before the next ``infer()`` overwrites the memory.
 
         Returns:
-            List of output tensors in engine output order. For dynamic engines the tensors
-            are sliced to ``[:actual_batch]``. For static engines they are the full
-            pre-allocated buffers.
-
-            **The returned tensors are views into internal buffers.** Clone them with
-            ``.clone()`` if you need to hold them across multiple ``infer()`` calls.
-
-        Raises:
-            ValueError: If the number of inputs doesn't match, or batch size exceeds max.
-            RuntimeError: If ``execute_v2`` reports failure.
+            Output tensors in engine output order. Dynamic engines slice to ``[:actual_batch]``.
         """
+        if torch.cuda.current_stream(self.device) != torch.cuda.default_stream(self.device):
+            raise RuntimeError(
+                "TRTEngine.infer() must run on the default CUDA stream; do not call inside a torch.cuda.stream(...) context."
+            )
+
         if len(inputs) != len(self._input_names):
             raise ValueError(f"Expected {len(self._input_names)} input(s), got {len(inputs)}")
 
         for name, x in zip(self._input_names, inputs):
             buf = self._input_buffers[name]
+            if x.device != buf.device:
+                raise ValueError(f"Input '{name}': expected device {buf.device}, got {x.device}")
             if x.dtype != buf.dtype:
                 raise ValueError(f"Input '{name}': expected dtype {buf.dtype}, got {x.dtype}")
             if x.shape[1:] != buf.shape[1:]:
@@ -175,9 +190,12 @@ class TRTEngine:
                 self.context.set_input_shape(name, tuple(x.shape))
             self._input_buffers[name][:actual_batch].copy_(x.contiguous())
 
-        if not self.context.execute_v2(self._bindings):
-            raise RuntimeError("TensorRT execute_v2 failed")
+        with torch.cuda.device(self.device):
+            if not self.context.execute_v2(self._bindings):
+                raise RuntimeError("TensorRT execute_v2 failed")
 
         if self.is_dynamic:
-            return [out[:actual_batch] for out in self._output_buffers]
-        return self._output_buffers
+            outs = [out[:actual_batch] for out in self._output_buffers]
+        else:
+            outs = list(self._output_buffers)
+        return [o.clone() for o in outs] if copy else outs

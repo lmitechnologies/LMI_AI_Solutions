@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
@@ -19,7 +20,7 @@ _NP_TO_TORCH_DTYPE: Dict[str, torch.dtype] = {
     "tensor(bool)": torch.bool,
 }
 
-_TORCH_TO_NP_DTYPE: Dict[torch.dtype, np.dtype] = {
+_TORCH_TO_NP_DTYPE: Dict[torch.dtype, type] = {
     torch.float32: np.float32,
     torch.float16: np.float16,
     torch.float64: np.float64,
@@ -36,46 +37,41 @@ def _is_static_dim(d) -> bool:
     return isinstance(d, int) and d > 0
 
 
+def _torch_dtype_from_ort(ort_type: str, where: str) -> torch.dtype:
+    try:
+        return _NP_TO_TORCH_DTYPE[ort_type]
+    except KeyError:
+        raise NotImplementedError(
+            f"Unsupported ONNX tensor type '{ort_type}' for {where}. Supported types: {sorted(_NP_TO_TORCH_DTYPE)}"
+        ) from None
+
+
+@dataclass
+class _OutputBinding:
+    buffer: torch.Tensor
+    np_dtype: type
+    dynamic_batch: bool
+
+
 class ONNXEngine:
-    """ONNX Runtime wrapper with the same public surface as ``lmi_common.trt_engine.TRTEngine``.
+    """ONNX Runtime wrapper mirroring ``lmi_common.trt_engine.TRTEngine``'s public surface.
 
-    On CUDA, both inputs and outputs are bound to torch CUDA tensors via ORT's IOBinding so
-    the entire pipeline stays on GPU — zero host/device copies. Output buffers are pre-allocated
-    once at the model's max shape and reused, matching ``TRTEngine``'s contract.
+    On CUDA, I/O is bound to torch CUDA tensors via ORT's IOBinding for a zero-copy GPU
+    pipeline. Output buffers are pre-allocated once at max shape. Only a symbolic batch
+    dim (dim 0) is supported; symbolic non-batch dims raise ``NotImplementedError``.
 
-    Dynamic shape support
-    ---------------------
-    Symbolic dimensions are detected from ``session.get_inputs()`` / ``session.get_outputs()``:
-    - Symbolic batch dimension (dim 0) is supported. ``is_dynamic`` reports True.
-    - Symbolic non-batch dimensions raise ``NotImplementedError``.
-    For dynamic-batch outputs, the symbolic dim is assumed to track the input batch size
-    (standard CV-model behavior); ``infer()`` returns ``out[:actual_batch]``.
-
-    Output aliasing
-    ---------------
-    On CUDA, returned tensors are **views into pre-allocated internal buffers**. Clone them
-    with ``.clone()`` if you need to hold them across multiple ``infer()`` calls — the next
-    call overwrites the same memory. On CPU, outputs are fresh tensors.
-
-    Thread safety
-    -------------
-    NOT thread-safe. The IO binding and CUDA buffers are shared mutable state.
+    Not thread-safe — create one instance per thread.
 
     Args:
         onnx_path: Path to the ``.onnx`` model file.
         device: ``"cuda"``, ``"cuda:0"``, or ``"cpu"``.
-        providers: Optional ORT execution providers list. Defaults to
-            ``["CUDAExecutionProvider", "CPUExecutionProvider"]`` on CUDA, ``["CPUExecutionProvider"]`` on CPU.
-        session_options: Optional ``onnxruntime.SessionOptions`` instance.
-        dynamic_max_batch: Max batch size to advertise for dynamic-batch models. Defaults to 32.
+        dynamic_max_batch: Max batch size for dynamic-batch models. Defaults to 32.
     """
 
     def __init__(
         self,
         onnx_path: str,
         device: str = "cuda",
-        providers: Optional[Sequence[str]] = None,
-        session_options=None,
         dynamic_max_batch: int = 32,
     ) -> None:
         try:
@@ -89,35 +85,49 @@ class ONNXEngine:
 
         self.device = torch.device(device)
         self._is_cuda = self.device.type == "cuda"
-        self._device_id = self.device.index if self.device.index is not None else 0
-
-        if providers is None:
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if self._is_cuda else ["CPUExecutionProvider"]
-        resolved_providers = []
-        for p in providers:
-            if p == "CUDAExecutionProvider":
-                resolved_providers.append((p, {"device_id": self._device_id}))
+        if self._is_cuda:
+            # Resolve unindexed "cuda" against the current CUDA device so torch allocations
+            # and ORT bindings agree on which GPU we're on.
+            if self.device.index is None:
+                self._device_id = torch.cuda.current_device()
+                self.device = torch.device(f"cuda:{self._device_id}")
             else:
-                resolved_providers.append(p)
+                self._device_id = self.device.index
+        else:
+            self._device_id = 0
 
-        self._session = ort.InferenceSession(onnx_path, sess_options=session_options, providers=resolved_providers)
+        if self._is_cuda:
+            providers = [("CUDAExecutionProvider", {"device_id": self._device_id}), "CPUExecutionProvider"]
+        else:
+            providers = ["CPUExecutionProvider"]
+
+        self._session = ort.InferenceSession(onnx_path, providers=providers)
         active = self._session.get_providers()
         logger.info(f"ONNX session loaded with providers: {active}")
         if self._is_cuda and "CUDAExecutionProvider" not in active:
-            logger.warning("CUDA requested but CUDAExecutionProvider unavailable; running on CPU.")
-            self.device = torch.device("cpu")
-            self._is_cuda = False
+            raise RuntimeError(
+                f"device='cuda' was requested but CUDAExecutionProvider is unavailable "
+                f"(active providers: {active}). Install onnxruntime-gpu matching your CUDA/cuDNN, "
+                f"or construct with device='cpu'."
+            )
 
         # Inputs.
         input_names: List[str] = []
+        input_dtypes: Dict[str, torch.dtype] = {}
+        input_spatial: Dict[str, Tuple[int, ...]] = {}
         is_dynamic = False
         first_shape: Optional[Tuple[int, ...]] = None
         first_dtype: Optional[torch.dtype] = None
         max_batch = 0
-        for meta in self._session.get_inputs():
+        ort_inputs = self._session.get_inputs()
+        if not ort_inputs:
+            raise ValueError(f"ONNX model '{onnx_path}' has no inputs.")
+        for meta in ort_inputs:
             input_names.append(meta.name)
             shape = meta.shape
-            dtype = _NP_TO_TORCH_DTYPE.get(meta.type, torch.float32)
+            if not shape:
+                raise NotImplementedError(f"Scalar input '{meta.name}' (rank 0) is not supported; at least a batch dimension is required.")
+            dtype = _torch_dtype_from_ort(meta.type, f"input '{meta.name}'")
             batch_dim = shape[0]
             dyn = not _is_static_dim(batch_dim)
             if dyn:
@@ -129,22 +139,32 @@ class ONNXEngine:
                         f"supported. Only a dynamic batch dimension (dim 0) is supported."
                     )
             resolved_batch = dynamic_max_batch if dyn else batch_dim
-            max_batch = max(max_batch, resolved_batch)
+            input_dtypes[meta.name] = dtype
+            input_spatial[meta.name] = tuple(shape[1:])
             if first_shape is None:
                 first_shape = tuple(shape[1:])
                 first_dtype = dtype
+                max_batch = resolved_batch
+            elif resolved_batch != max_batch:
+                raise ValueError(
+                    f"Input '{meta.name}' batch dim ({resolved_batch}) differs from first input ({max_batch}). "
+                    f"All inputs must share the same batch dimension."
+                )
             logger.info(f"ONNX input  '{meta.name}': shape={shape}, dtype={dtype}, dynamic_batch={dyn}")
 
         # Outputs — pre-allocate at max shape; track which outputs have a dynamic batch dim.
         output_names: List[str] = []
-        output_buffers: Dict[str, torch.Tensor] = {}
-        output_dtypes: Dict[str, np.dtype] = {}
-        output_dynamic_batch: Dict[str, bool] = {}
+        outputs: Dict[str, _OutputBinding] = {}
         for meta in self._session.get_outputs():
             output_names.append(meta.name)
             shape = meta.shape
-            dtype = _NP_TO_TORCH_DTYPE.get(meta.type, torch.float32)
+            dtype = _torch_dtype_from_ort(meta.type, f"output '{meta.name}'")
             dyn_batch = len(shape) > 0 and not _is_static_dim(shape[0])
+            if is_dynamic and not dyn_batch:
+                raise NotImplementedError(
+                    f"Output '{meta.name}' has static dim 0 ({shape[0] if shape else 'scalar'}) but the model "
+                    f"has a dynamic input batch. Outputs whose dim 0 does not scale with batch are not supported."
+                )
             for d in shape[1:]:
                 if not _is_static_dim(d):
                     raise NotImplementedError(
@@ -155,54 +175,61 @@ class ONNXEngine:
                 alloc_shape: Tuple[int, ...] = ()
             else:
                 alloc_shape = ((dynamic_max_batch if dyn_batch else shape[0]),) + tuple(shape[1:])
-            buf = torch.empty(alloc_shape, dtype=dtype, device=self.device) if self._is_cuda else torch.empty(alloc_shape, dtype=dtype)
-            output_buffers[meta.name] = buf
-            output_dtypes[meta.name] = _TORCH_TO_NP_DTYPE[dtype]
-            output_dynamic_batch[meta.name] = dyn_batch
+            buf = torch.empty(alloc_shape, dtype=dtype, device=self.device)
+            outputs[meta.name] = _OutputBinding(buffer=buf, np_dtype=_TORCH_TO_NP_DTYPE[dtype], dynamic_batch=dyn_batch)
             logger.info(f"ONNX output '{meta.name}': alloc_shape={alloc_shape}, dtype={dtype}, dynamic_batch={dyn_batch}")
 
         self._input_names = input_names
         self._output_names = output_names
-        self._input_meta = {m.name: m for m in self._session.get_inputs()}
-        self._output_buffers = output_buffers
-        self._output_dtypes = output_dtypes
-        self._output_dynamic_batch = output_dynamic_batch
+        self._input_dtypes = input_dtypes
+        self._input_spatial = input_spatial
+        self._outputs = outputs
 
-        # Public attributes — mirror TRTEngine.
+        # Public attributes
+        assert first_dtype is not None and first_shape is not None
         self.max_batch: int = max_batch
-        self.input_dtype: torch.dtype = first_dtype or torch.float32
-        self.input_shape: Tuple[int, ...] = first_shape or ()
+        self.input_dtype: torch.dtype = first_dtype
+        self.input_shape: Tuple[int, ...] = first_shape
         self.fp16: bool = self.input_dtype == torch.float16
         self.is_dynamic: bool = is_dynamic
 
-        # Reusable IOBinding (CUDA only). Output buffer pointers are stable, so bind once.
+        # Reusable IOBinding (CUDA only). Static outputs are bound once; dynamic-batch outputs
+        # must be rebound each call so ORT's reported shape matches the actual computed shape.
         if self._is_cuda:
             self._io_binding = self._session.io_binding()
             for name in self._output_names:
-                buf = self._output_buffers[name]
+                b = self._outputs[name]
+                if b.dynamic_batch:
+                    continue
                 self._io_binding.bind_output(
                     name=name,
                     device_type="cuda",
                     device_id=self._device_id,
-                    element_type=self._output_dtypes[name],
-                    shape=tuple(buf.shape),
-                    buffer_ptr=buf.data_ptr(),
+                    element_type=b.np_dtype,
+                    shape=tuple(b.buffer.shape),
+                    buffer_ptr=b.buffer.data_ptr(),
                 )
         else:
             self._io_binding = None
 
-    def infer(self, *inputs: torch.Tensor) -> List[torch.Tensor]:
+    @property
+    def _output_buffers(self) -> List[torch.Tensor]:
+        """List of output buffers in engine output order. Mirrors ``TRTEngine._output_buffers``."""
+        return [self._outputs[n].buffer for n in self._output_names]
+
+    def infer(self, *inputs: torch.Tensor, copy: bool = True) -> List[torch.Tensor]:
         """Run synchronous inference.
 
         Args:
-            *inputs: One contiguous tensor per engine input, in ``self._input_names`` order.
-                On CUDA, inputs must be CUDA tensors; on CPU, CPU tensors. Each input's
-                batch size must not exceed ``self.max_batch``.
+            *inputs: One tensor per engine input, in ``self._input_names`` order. Must
+                match the engine device (CUDA or CPU) with ``shape[0] <= self.max_batch``.
+                Non-contiguous inputs incur a ``.contiguous()`` copy.
+            copy: If True (default), return independent clones — safe to hold across
+                calls. If False, on CUDA return views into internal buffers that must be
+                consumed before the next ``infer()``. Ignored on CPU (always fresh).
 
         Returns:
-            List of output tensors in engine output order. For dynamic-batch outputs the
-            tensors are sliced to ``[:actual_batch]``. On CUDA they are views into internal
-            buffers — clone if held across calls.
+            Output tensors in engine output order. Dynamic-batch outputs slice to ``[:actual_batch]``.
         """
         if len(inputs) != len(self._input_names):
             raise ValueError(f"Expected {len(self._input_names)} input(s), got {len(inputs)}")
@@ -217,45 +244,72 @@ class ONNXEngine:
             raise ValueError(f"Static engine requires batch size {self.max_batch}, got {actual_batch}")
 
         for name, x in zip(self._input_names, inputs):
-            expected_dtype = _NP_TO_TORCH_DTYPE.get(self._input_meta[name].type, torch.float32)
+            expected_dtype = self._input_dtypes[name]
             if x.dtype != expected_dtype:
                 raise ValueError(f"Input '{name}': expected dtype {expected_dtype}, got {x.dtype}")
+            expected_spatial = self._input_spatial[name]
+            if tuple(x.shape[1:]) != expected_spatial:
+                raise ValueError(f"Input '{name}': expected spatial shape {expected_spatial}, got {tuple(x.shape[1:])}")
 
         if self._is_cuda:
-            return self._infer_cuda(inputs, actual_batch)
+            return self._infer_cuda(inputs, actual_batch, copy=copy)
         return self._infer_cpu(inputs)
 
-    def _infer_cuda(self, inputs: Sequence[torch.Tensor], actual_batch: int) -> List[torch.Tensor]:
+    def _infer_cuda(self, inputs: Sequence[torch.Tensor], actual_batch: int, *, copy: bool) -> List[torch.Tensor]:
         binding = self._io_binding
         binding.clear_binding_inputs()
 
+        # Keep strong refs to any freshly allocated contiguous copies until after run_with_iobinding
+        contiguous_tensors: List[torch.Tensor] = []
         for name, x in zip(self._input_names, inputs):
             if not x.is_cuda:
                 raise ValueError(f"Input '{name}' must be a CUDA tensor on a CUDA engine, got device {x.device}")
-            x = x.contiguous()
+            xc = x.contiguous()
+            contiguous_tensors.append(xc)
             binding.bind_input(
                 name=name,
                 device_type="cuda",
                 device_id=self._device_id,
-                element_type=_TORCH_TO_NP_DTYPE[x.dtype],
-                shape=tuple(x.shape),
-                buffer_ptr=x.data_ptr(),
+                element_type=_TORCH_TO_NP_DTYPE[xc.dtype],
+                shape=tuple(xc.shape),
+                buffer_ptr=xc.data_ptr(),
             )
 
-        # Output bindings persist across calls (buffer pointers are stable). For dynamic-batch
-        # outputs, ORT writes to the first actual_batch rows of the pre-allocated buffer.
+        # Rebind dynamic-batch outputs each call with the actual batch (buffer_ptr is stable,
+        # only the shape field changes). Static outputs were bound once in __init__.
+        for name in self._output_names:
+            b = self._outputs[name]
+            if not b.dynamic_batch:
+                continue
+            out_shape = (actual_batch,) + tuple(b.buffer.shape[1:])
+            binding.bind_output(
+                name=name,
+                device_type="cuda",
+                device_id=self._device_id,
+                element_type=b.np_dtype,
+                shape=out_shape,
+                buffer_ptr=b.buffer.data_ptr(),
+            )
+
         self._session.run_with_iobinding(binding)
+        del contiguous_tensors
 
         outputs: List[torch.Tensor] = []
         for name in self._output_names:
-            buf = self._output_buffers[name]
-            if self._output_dynamic_batch[name]:
+            b = self._outputs[name]
+            buf = b.buffer
+            if b.dynamic_batch:
                 outputs.append(buf[:actual_batch])
             else:
                 outputs.append(buf)
+        if copy:
+            outputs = [o.clone() for o in outputs]
         return outputs
 
     def _infer_cpu(self, inputs: Sequence[torch.Tensor]) -> List[torch.Tensor]:
-        feeds = {name: x.contiguous().cpu().numpy() for name, x in zip(self._input_names, inputs)}
+        for name, x in zip(self._input_names, inputs):
+            if x.device.type != "cpu":
+                raise ValueError(f"Input '{name}' must be a CPU tensor on a CPU engine, got device {x.device}")
+        feeds = {name: x.contiguous().numpy() for name, x in zip(self._input_names, inputs)}
         results = self._session.run(self._output_names, feeds)
         return [torch.from_numpy(r) for r in results]
