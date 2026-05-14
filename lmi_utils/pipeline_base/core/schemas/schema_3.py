@@ -3,6 +3,8 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
+PREPROC_TO_IGNORE = ["crop-to-label"]
+
 
 class Artifact(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -107,6 +109,8 @@ class ModelCollectionV3(BaseModel):
         for role, model in self.models.items():
             ops: List[Dict[str, Any]] = []
             for step in model.details.preprocessing:
+                if step.type in PREPROC_TO_IGNORE:
+                    continue
                 if step.type not in supported:
                     raise ValueError(f"Unsupported type '{step.type}'.")
                 if step.type == "tile":
