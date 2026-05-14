@@ -5,22 +5,15 @@ from typing import Any, Iterable
 import torch
 
 from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
+from lmi_common.model_factory import ModelFactory
 
-from ..base import Anomalib_Base
+from ..base import Anomalib_Base, AnomalibPT, register_backends
 
 
-@AnomalyDetectorRegistry.register(
-    metadata=dict(
-        frameworks=["anomalib1"],
-        model_names=["patchcore", "padim", "efficientad"],
-        tasks=["anomalydetection", "seg"],
-        versions=["v1"],
-    )
-)
-class AnomalyModel(Anomalib_Base):
-    """AD model inference for Anomalib v1."""
+class AnomalibPTv1(AnomalibPT):
+    """PT/TorchScript backend with Anomalib v1-specific transform and output extraction."""
 
-    logger = logging.getLogger("AnomalyModel v1")
+    logger = logging.getLogger("AnomalyModel v1 PT")
 
     def _get_pt_transforms(self) -> Iterable:
         return self.pt_model.transform.transforms
@@ -33,6 +26,30 @@ class AnomalyModel(Anomalib_Base):
         if isinstance(preds, Sequence):
             return preds[1]
         raise TypeError(f"Unknown prediction type: {type(preds)}")
+
+
+@AnomalyDetectorRegistry.register(
+    metadata=dict(
+        frameworks=["anomalib1"],
+        model_names=["patchcore", "padim", "efficientad"],
+        tasks=["anomalydetection", "seg"],
+        versions=["v1"],
+    )
+)
+class AnomalyModel(ModelFactory, Anomalib_Base):
+    """AD model factory for Anomalib v1. Dispatches on file extension.
+
+    Supported extensions:
+        .engine             -> AnomalibTRT  (TensorRT)
+        .onnx               -> AnomalibONNX (ONNX Runtime)
+        .pt / .ts / .torchscript -> AnomalibPTv1 (PyTorch / TorchScript)
+    """
+
+    logger = logging.getLogger("AnomalyModel v1")
+    _registry = {}
+
+
+register_backends(AnomalyModel, AnomalibPTv1)
 
 
 if __name__ == "__main__":

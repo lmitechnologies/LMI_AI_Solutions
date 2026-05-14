@@ -190,7 +190,7 @@ if __name__ == "__main__":
 
     if action == "convert":
         os.makedirs(export_dir, exist_ok=True)
-        ad.convert(model_path, export_dir)
+        ad.export_trt(export_dir)
 
     if action == "test":
         os.makedirs(args["annot_dir"], exist_ok=True)
