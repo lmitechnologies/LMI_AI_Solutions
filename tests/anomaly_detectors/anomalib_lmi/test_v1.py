@@ -15,6 +15,7 @@ from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
 
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
+from anomaly_detectors.anomalib_lmi.base import AnomalibONNX
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v1_torchscript
 from anomaly_detectors.anomalib_lmi.v1.model import AnomalyModel as AnomalyModelV1
 from lmi_utils.gadget_utils import pipeline_utils
@@ -23,9 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 DATA_PATH = "tests/assets/images/nvtec-ad"
-MODEL_PATH = "tests/assets/models/ad/model_v1.pt"
-TRACED_MODEL_PATH = "tests/assets/models/ad/model_v1_trace.pt"
-ENGINE_PATH = "tests/assets/models/ad/model_v1.engine"
+MODEL_PATH = "tests/assets/models/ad/model_v1/model.pt"
+TS_PATH = "tests/assets/models/ad/model_v1/model.ts"
+ONNX_PATH = "tests/assets/models/ad/model_v1/model.onnx"
+ENGINE_PATH = "tests/assets/models/ad/model_v1/model.engine"
 OUTPUT_PATH = "tests/outputs/ad/anomalib_v1"
 USE_GPU = torch.cuda.is_available()
 DEVICE = "cuda" if USE_GPU else "cpu"
@@ -64,9 +66,15 @@ def ad_model():
 @pytest.fixture(scope="module")
 def cpu_models():
     ad1 = AnomalyModelV1(MODEL_PATH, device="cpu")
-    ad2 = AnomalyModelV1(TRACED_MODEL_PATH, device="cpu")
+    ad2 = AnomalyModelV1(TS_PATH, device="cpu")
     ad_api = AnomalyDetector(BASE_CONFIG, device="cpu")
-    return [ad1, ad2, ad_api]
+    ad_onnx = AnomalyModelV1(ONNX_PATH, device="cpu")
+    return [ad1, ad2, ad_api, ad_onnx]
+
+
+@pytest.fixture(scope="module")
+def anomalib_model():
+    return TorchInferencer(MODEL_PATH, device="cpu")
 
 
 @pytest.fixture(scope="module")
@@ -76,7 +84,15 @@ def trt_model():
     return AnomalyModelV1(ENGINE_PATH, device="cuda")
 
 
-def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyModelV1]):
+def test_compare_with_raw(anomalib_model, cpu_models):
+    """
+    Compare prediction results between current implementation and anomalib's TorchInferencer.
+
+    ONNX-loaded models are excluded: anomalib v1.1.1 disables antialiasing only on the ONNX
+    export path (``InferenceModel(..., disable_antialias=True)``), not on ``to_torch``, so
+    ``.pt`` and ``.onnx`` are not numerically equivalent in v1.
+    """
+    ais_models = [m for m in cpu_models if not isinstance(m, AnomalibONNX)]
     paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
     for p in paths:
         # using anomalib code
@@ -95,19 +111,40 @@ def compare_results(anomalib_model: TorchInferencer, ais_models: List[AnomalyMod
         # using AIS code
         im = cv2.imread(p)
         rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        preds = [model.predict(rgb) for model in ais_models]
+        for model in ais_models:
+            pred2 = model.predict(rgb)
+            atol = 1e-3
+            assert np.allclose(pred, pred2, atol=atol), f"mismatch for {type(model).__name__}"
 
-        for pred2 in preds:
-            assert np.allclose(pred, pred2, atol=1e-5)
 
+def test_compare_onnx_with_resized(anomalib_model, cpu_models):
+    """Compare the ONNX-loaded AIS model against anomalib using resized images"""
+    onnx_models = [m for m in cpu_models if isinstance(m, AnomalibONNX)]
+    assert onnx_models, "expected at least one ONNX-loaded model in cpu_models"
+    h, w = onnx_models[0].image_size
 
-def test_compare_results_with_anomalib(cpu_models):
-    """
-    compare prediction results between current implementation and anomalib
-    """
-    model1 = TorchInferencer(MODEL_PATH, device="cpu")
-    model2, model3, model4 = cpu_models
-    compare_results(model1, [model2, model3, model4])
+    paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
+    for p in paths:
+        im = cv2.imread(p)
+        rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+        resized = cv2.resize(rgb, (w, h))
+        tensor = torch.from_numpy(resized).permute(2, 0, 1).unsqueeze(0).float()  # [1,3,H,W]
+        pred = anomalib_model.forward(anomalib_model.pre_process(tensor / 255))
+        if isinstance(pred, dict):
+            pred = pred["anomaly_map"]
+        elif isinstance(pred, Sequence):
+            pred = pred[1]
+        elif isinstance(pred, torch.Tensor):
+            pass
+        else:
+            raise Exception(f"Not supported output: {type(pred)}")
+        pred = pred.cpu().numpy().squeeze()
+
+        # using AIS code
+        for model in onnx_models:
+            pred2 = model.predict(resized)
+            atol = 1e-3
+            assert np.allclose(pred, pred2, atol=atol), f"mismatch for {type(model).__name__}"
 
 
 @pytest.mark.parametrize("warmup_size", [[672, 640], [256, 224]])
@@ -121,11 +158,6 @@ def test_warmup_api(api_model, warmup_size: List[int]):
 
 def test_model_api(api_model):
     api_model.test(DATA_PATH, OUTPUT_PATH)
-
-
-def test_trt_model(trt_model):
-    trt_model.warmup()
-    trt_model.test(DATA_PATH, OUTPUT_PATH)
 
 
 def test_model_class_comparison(ad_model, api_model):
@@ -218,10 +250,8 @@ def test_cmds():
                 -o {str(t)} -g -p --tile 224 224 --stride 224 224 --limit 1"
         logger.info(f"running cmd: {cmd}")
         result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
-        logger.info(result.stdout)
-        logger.info(result.stderr)
 
-        assert result.returncode == 0, f"Command failed:\n{result.stderr}"
+        assert result.returncode == 0, f"Command failed:\n{result.stdout}"
         assert len(glob.glob(os.path.join(t, "*_annot.png"))) == 1
 
         if USE_GPU:
@@ -292,3 +322,20 @@ def test_predict_gpu(api_model, n_images):
 
     for r_gpu1, r_gpu2 in zip(results_bhwc_gpu, results_gpu):
         assert torch.allclose(r_gpu1, r_gpu2, atol=1e-5)
+
+
+def test_trt_model(trt_model):
+    trt_model.warmup()
+    trt_model.test(DATA_PATH, OUTPUT_PATH)
+
+
+def test_compare_trt_onnx(trt_model):
+    """Compare TRT and ONNX predictions on resized images; tolerates FP16 vs FP32 precision."""
+    onnx_model = AnomalyModelV1(ONNX_PATH, device="cuda")
+    paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
+    for p in paths:
+        im = cv2.imread(p)
+        rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
+        pred_trt = trt_model.predict(rgb)[0]
+        pred_onnx = onnx_model.predict(rgb)[0]
+        assert np.allclose(pred_trt, pred_onnx, atol=0.01, rtol=0.05), f"TRT vs ONNX mismatch for {os.path.basename(p)}"

@@ -1,0 +1,9 @@
+{
+    "task": "segmentation",
+    "image_threshold": 27.615890502929688,
+    "pixel_threshold": 46.97408676147461,
+    "anomaly_maps.min": 6.475015640258789,
+    "anomaly_maps.max": 59.93198776245117,
+    "pred_scores.min": 27.615890502929688,
+    "pred_scores.max": 61.39303970336914
+}

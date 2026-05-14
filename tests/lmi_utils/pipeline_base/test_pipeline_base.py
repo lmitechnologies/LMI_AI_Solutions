@@ -228,7 +228,7 @@ def _build_ad_model_roles(version, model_path, preprocessing_steps):
 )
 def test_pipeline_AD(version, preprocessing_steps, expected_types):
     # Asset paths
-    model_path = os.path.abspath("tests/assets/models/ad/model_v1_trace.pt")
+    model_path = os.path.abspath("tests/assets/models/ad/model_v1/model.ts")
     image_dir = os.path.abspath("tests/assets/images/nvtec-ad")
 
     model_roles = _build_ad_model_roles(version, model_path, preprocessing_steps)

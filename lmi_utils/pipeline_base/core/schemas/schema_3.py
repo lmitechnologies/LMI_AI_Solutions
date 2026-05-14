@@ -85,13 +85,15 @@ Model = Annotated[
 ]
 
 
-class ModelCollection(BaseModel):
+class ModelCollectionV3(BaseModel):
+    """Schema for model version 3."""
+
     model_config = ConfigDict(protected_namespaces=())
 
     models: Dict[str, Model]
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ModelCollection":
+    def from_dict(cls, data: Dict[str, Any]) -> "ModelCollectionV3":
         return cls.model_validate({"models": {k: v for k, v in data.items() if v is not None}})
 
     def get_metadata(self) -> Dict[str, Any]:
@@ -124,15 +126,3 @@ class ModelCollection(BaseModel):
                     ops.append(step.model_dump(exclude_none=True))
             out[role] = ops
         return out
-
-
-class ModelSchemaV_3:
-    """Schema for model version 3."""
-
-    @staticmethod
-    def from_dict(data: Dict[str, Any]) -> ModelCollection:
-        return ModelCollection.from_dict(data)
-
-    @staticmethod
-    def get_metadata(model_collection: ModelCollection) -> Dict[str, Any]:
-        return model_collection.get_metadata()

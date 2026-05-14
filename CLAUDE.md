@@ -11,6 +11,8 @@ LMI AI Solutions is a Python monorepo providing unified wrappers for AI/ML model
 - **No assumptions.** When something is unclear, ask before implementing. Do not invent based on guesses.
 - **Keep this file concise.** Prefer pointers to source files over duplicated detail. Remove anything derivable from the code itself.
 - **Update on significant changes.** When introducing a new domain, base class, top-level pattern, or breaking change to existing architecture, update this file in the same change.
+- **Keep docstrings concise.** State the public contract — what it does, args, returns, non-obvious caveats — and stop. Skip internal mechanism and restated implementation. Merge related notes into the relevant arg description rather than adding separate sections.
+- **Preserve valid comments.** Do not delete existing comments that still accurately describe the code. Only remove a comment if it is wrong, stale, or made redundant by the change you are making.
 
 ## Commands
 
@@ -40,11 +42,15 @@ pre-commit run --all-files
 
 Line length 140, Python 3.8+, double quotes, rules E/F/I/B. Pre-commit runs Ruff automatically on commit.
 
+### Runtime requirements
+
+- TensorRT ≥ 8.5
+
 ## Architecture
 
 ### Registry / Factory Pattern
 
-All three domains (`od_core/`, `ad_core/`, `cls_core/`) share the same pattern: framework wrappers register themselves with metadata (`framework`, `model_name`, `task`, `version`), and a top-level factory class (`ObjectDetector`, `AnomalyDetector`, etc.) instantiates the correct backend at runtime.
+All three domains (`object_detectors/od_core/`, `anomaly_detectors/ad_core/`, `classifiers/cls_core/`) share the same pattern: framework wrappers register themselves with metadata (`framework`, `model_name`, `task`, `version`), and a top-level factory class (`ObjectDetector`, `AnomalyDetector`, etc.) instantiates the correct backend at runtime.
 
 ### Subclass Contract
 
@@ -52,10 +58,10 @@ Every backend implements exactly four abstract methods — `warmup`, `preprocess
 
 ### Domain base classes
 
-- AD: `ad_core/ad_base.py` — orchestrates AD inference, GPU heatmap annotation.
-- AD (Anomalib): `anomalib_lmi/base.py` — extends `ADBase` with TRT loading, `.pt` → ONNX → TRT export, and evaluation.
-- OD: `od_core/od_base.py` — orchestrates OD inference; `Results` (`od_core/results.py`) stores numeric fields as `torch.Tensor` (empty by default, so zero-detection cases are safe).
-- CLS: `cls_core/cls_base.py` — orchestrates classification inference.
+- AD: `anomaly_detectors/ad_core/ad_base.py` — orchestrates AD inference, GPU heatmap annotation.
+- AD (Anomalib): `anomaly_detectors/anomalib_lmi/base.py` — extends `ADBase` with TRT loading, `.pt` → ONNX → TRT export, and evaluation.
+- OD: `object_detectors/od_core/od_base.py` — orchestrates OD inference; `Results` (`object_detectors/od_core/results.py`) stores numeric fields as `torch.Tensor` (empty by default, so zero-detection cases are safe).
+- CLS: `classifiers/cls_core/cls_base.py` — orchestrates classification inference.
 
 ### CI/CD
 
