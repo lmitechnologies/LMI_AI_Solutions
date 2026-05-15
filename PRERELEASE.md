@@ -17,6 +17,7 @@ This document covers all **breaking changes and new features** introduced after 
 **New Features**
 
 7. [Preprocessor & Reconstructor — batch processing with history-based reconstruction](#7-preprocessor--reconstructor--batch-processing-with-history-based-reconstruction)
+8. [`crop-to-label` preprocessing step with runtime channel](#8-crop-to-label-preprocessing-step-with-runtime-channel)
 
 
 ---
@@ -311,3 +312,45 @@ class MyADPipeline(PipelineBase):
         final_score = final_scores[0]
 
 ```
+
+---
+
+### 8. `crop-to-label` preprocessing step with runtime channel
+
+`preprocess()` now accepts an optional `runtime` argument: a list of step patches keyed by `(type, instance)` that supply caller-side data which isn't known until inference time. The first consumer is the new `crop-to-label` step, which declares "this model expects a crop around region `<label>`" in the manifest and gets the actual per-image box at runtime from an upstream detector. `revert_preprocess()` automatically maps coordinates back through the crop offset.
+
+Supported step types are now: `resize`, `tile`, `crop-to-label`.
+
+**Two-stage pipeline: foreground detector → defect detector on the bottle crop**
+
+Manifest declares the crop intent on the defect model:
+```json
+"bottom-defect": {
+    "details": {
+        "preprocessing": [
+            {"type": "crop-to-label", "configuration": {"label": "BOTTLE-BBOX"}},
+            {"type": "resize", "configuration": {"height": 640, "width": 640, "preserve_aspect": true}}
+        ],
+        ...
+    },
+    ...
+}
+```
+
+Pipeline supplies the box from the foreground model at runtime:
+```python
+# 1. Foreground detector (no runtime needed)
+fg_in, fg_hist = self.preprocess("bottom-foreground", image)
+fg_out, _ = self.models["bottom-foreground"].predict(fg_in, 0.5)
+fg_out = self.revert_preprocess(fg_out, fg_hist)   # boxes now in original image space
+
+# 2. Defect detector — pass the bottle box through the runtime channel
+bottle_box = fg_out["boxes"][0][0].tolist()        # [x1, y1, x2, y2]
+runtime = [{"type": "crop-to-label", "runtime": {"boxes": [bottle_box]}}]
+
+def_in, def_hist = self.preprocess("bottom-defect", image, runtime=runtime)
+def_out, _ = self.models["bottom-defect"].predict(def_in, 0.5)
+def_out = self.revert_preprocess(def_out, def_hist)  # offsets added back automatically
+```
+
+Use the optional `instance` field on both the manifest step and the runtime patch when a single model has multiple crop-to-label steps.

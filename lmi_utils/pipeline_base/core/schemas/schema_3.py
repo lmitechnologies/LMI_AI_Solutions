@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
@@ -17,6 +17,7 @@ class PreprocessStep(BaseModel):
     type: str
     configuration: Dict[str, Any]
     id: Optional[str] = None
+    instance: Optional[str] = None
 
 
 class Details(BaseModel):
@@ -100,12 +101,13 @@ class ModelCollectionV3(BaseModel):
         return {role: model.get_metadata() for role, model in self.models.items()}
 
     def get_global_preprocessing(self) -> Dict[str, List[Dict[str, Any]]]:
-        supported = {"resize", "tile"}
+        supported = {"resize", "tile", "crop-to-label"}
         tiling_keys = {"height", "width", "x_stride", "y_stride"}
 
         out: Dict[str, List[Dict[str, Any]]] = {}
         for role, model in self.models.items():
             ops: List[Dict[str, Any]] = []
+            ctl_keys: List[Tuple[str, Optional[str]]] = []
             for step in model.details.preprocessing:
                 if step.type not in supported:
                     raise ValueError(f"Unsupported type '{step.type}'.")
@@ -113,16 +115,33 @@ class ModelCollectionV3(BaseModel):
                     if not tiling_keys.issubset(step.configuration.keys()):
                         raise ValueError(f"Tiling configuration must contain keys: {tiling_keys}.")
                     cfg = step.configuration
-                    ops.append(
-                        {
-                            "type": "tile",
-                            "configuration": {
-                                "tile_size": [cfg["height"], cfg["width"]],
-                                "stride": [cfg["y_stride"], cfg["x_stride"]],
-                            },
-                        }
-                    )
+                    entry: Dict[str, Any] = {
+                        "type": "tile",
+                        "configuration": {
+                            "tile_size": [cfg["height"], cfg["width"]],
+                            "stride": [cfg["y_stride"], cfg["x_stride"]],
+                        },
+                    }
+                    if step.instance is not None:
+                        entry["instance"] = step.instance
+                    ops.append(entry)
+                elif step.type == "crop-to-label":
+                    if "label" not in step.configuration:
+                        raise ValueError("crop-to-label configuration must contain key 'label'.")
+                    entry = {
+                        "type": "crop-to-label",
+                        "configuration": {"label": step.configuration["label"]},
+                    }
+                    if step.instance is not None:
+                        entry["instance"] = step.instance
+                    ctl_keys.append((step.type, step.instance))
+                    ops.append(entry)
                 else:
-                    ops.append(step.model_dump(exclude_none=True))
+                    ops.append(step.model_dump(exclude={"id"}, exclude_none=True))
+
+            if len(ctl_keys) != len(set(ctl_keys)):
+                raise ValueError(
+                    f"Model '{role}' has multiple crop-to-label steps with the same (type, instance). Add a unique 'instance' to each."
+                )
             out[role] = ops
         return out

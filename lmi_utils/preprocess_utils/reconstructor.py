@@ -4,7 +4,7 @@ from lmi_utils.image_utils.types import ImageLike
 
 from .base import BaseProcessor
 from .operation import Operation
-from .ops import ResizeOperation, TileOperation
+from .ops import CropOperation, ResizeOperation, TileOperation
 
 
 class Reconstructor(BaseProcessor):
@@ -27,6 +27,7 @@ class Reconstructor(BaseProcessor):
     def _register_defaults(self) -> None:
         self.register(ResizeOperation())
         self.register(TileOperation())
+        self.register(CropOperation())
 
     def register(self, op: Operation) -> None:
         """

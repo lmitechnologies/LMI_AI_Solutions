@@ -201,25 +201,35 @@ class PipelineBase(metaclass=ABCMeta):
             self.logger.info(f"Successfully loaded {model_source} model: {model_key}\n")
         self.logger.info(f"Final loaded models: {list(self.models.keys())}\n")
 
-    def preprocess(self, model_role: str, images: ImageBatch) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
+    def preprocess(
+        self,
+        model_role: str,
+        images: ImageBatch,
+        runtime: Optional[List[Dict[str, Any]]] = None,
+    ) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
         """preprocess the image(s) based on the preprocessing steps in model_role.
 
         Pairs with revert_preprocess() as its inverse.
 
         Args:
-            model_role (str): the model role to be used for preprocessing.
-            images (ImageBatch): the image(s) to be preprocessed.
+            model_role: the model role to be used for preprocessing.
+            images: the image(s) to be preprocessed.
+            runtime: optional list of runtime patches for ops that need
+                caller-supplied data (e.g. crop-to-label needs boxes from an
+                upstream detector). Each patch is `{"type", "instance"?,
+                "runtime": {...}}` and is matched to a step by `(type, instance)`.
 
         Returns:
             list[ImageLike]: the preprocessed image(s).
             list[dict]: the preprocessing steps, each with keys:
                 - "type" (str): the type of the preprocessing operation.
                 - "metadata" (list): the metadata returned by the preprocessing operation, used for reconstruction.
+                - "instance" (str, optional): preserved from the manifest step.
         """
         if model_role not in self._preprocessing:
             raise ValueError(f"Not found global preprocessing steps for model role: {model_role}")
 
-        return self.preprocessor.preprocess(images, self._preprocessing[model_role])
+        return self.preprocessor.preprocess(images, self._preprocessing[model_role], runtime=runtime)
 
     def revert_preprocess(self, data, ops: List[Dict[str, Any]]):
         """Invert preprocessing transforms on either image data (AD) or detection coordinates (OD).

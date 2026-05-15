@@ -26,6 +26,23 @@ class Operation(ABC):
 
     name: str = ""
 
+    def bind(self, step: Dict[str, Any], runtime: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Resolve a caller-supplied runtime patch into a concrete step before forward.
+
+        Args:
+            step: The manifest step `{type, configuration, instance?}`.
+            runtime: The matched runtime patch's payload (the `runtime` field).
+                     Empty dict when no patch matched this step.
+
+        Returns:
+            A resolved step. May rewrite `type` (macro ops like crop-to-label →
+            crop) and/or extend `configuration` with runtime-derived fields.
+            Default implementation returns the step unchanged — appropriate for
+            any op that does not consume caller runtime data.
+        """
+        return step
+
     @abstractmethod
     def forward(self, images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], List[Any]]:
         """
