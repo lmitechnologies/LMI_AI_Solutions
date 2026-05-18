@@ -18,10 +18,10 @@ class Preprocessor(BaseProcessor):
     Runtime channel:
         Ops that need caller-supplied data (e.g. crop-to-label needs the box
         from an upstream detector) receive it through the optional `runtime`
-        argument to `preprocess`. Each runtime patch is a step record
-        `{"type": <op>, "instance"?: <name>, "runtime": {...}}` matched to a
-        manifest step by `(type, instance)`. The matched op's `bind` method
-        resolves the patch into a concrete step before forward dispatch.
+        argument to `preprocess`. `runtime` is a `{id: value}` dict whose
+        keys must match the `id` of the target manifest step; the matched op's
+        `bind` method resolves the value into a concrete step before forward
+        dispatch.
 
     Device contract:
         Output tensors live on the same device as the input tensors. Every
@@ -57,7 +57,7 @@ class Preprocessor(BaseProcessor):
         self,
         images: ImageBatch,
         processing_steps: List[Dict[str, Any]],
-        runtime: Optional[List[Dict[str, Any]]] = None,
+        runtime: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
         """
         Runs the preprocessing pipeline.
@@ -67,18 +67,20 @@ class Preprocessor(BaseProcessor):
             processing_steps: List of step dicts, each with keys:
                 - "type" (str): Registered Operation name (e.g. "resize", "tile", "crop-to-label").
                 - "configuration" (dict): Op-specific config passed as-is.
-                - "instance" (str, optional): Disambiguates multiple instances of the same op type.
-            runtime: Optional list of runtime patches, each:
-                - "type" (str): Must match a step's type.
-                - "instance" (str, optional): Must match a step's instance when present.
-                - "runtime" (dict): Op-specific payload consumed by the op's `bind`.
+                - "id" (str, optional): Unique step identifier. Required for steps targeted by `runtime`.
+            runtime: Optional `{id: value}` dict. Each key must match a step's `id`;
+                the value is consumed by that op's `bind`. Supported values
+                by op type:
+                  - "crop-to-label": {"boxes": [[x1, y1, x2, y2], ...]} —
+                    per-image boxes in original-image coordinates supplied by
+                    an upstream detector.
 
         Returns:
             processed_imgs: List of (H, W, C) images, same type as input.
             history: List of step records for reconstruction, each with keys:
                 - "type" (str): Resolved Operation name (after bind).
                 - "metadata" (list): Per-image metadata returned by the op.
-                - "instance" (str, optional): Preserved from the manifest step.
+                - "id" (str, optional): Preserved from the manifest step.
         """
         if isinstance(images, list):
             pass
@@ -88,21 +90,20 @@ class Preprocessor(BaseProcessor):
             images = [images]
         self.validate_image_list(images, stage="preprocessing")
         self.validate_steps(processing_steps)
-        self._validate_runtime(runtime)
-
-        runtime_index = self._index_runtime(processing_steps, runtime)
+        self._validate_runtime(runtime, processing_steps)
 
         processed_imgs, is_numpy = self.to_tensor_list(images)
 
         history = []
-        for idx, step in enumerate(processing_steps):
+        for step in processing_steps:
             op_name = step["type"]
             if op_name not in self._ops:
                 raise ValueError(f"Operation '{op_name}' is not registered.")
             op = self._ops[op_name]
 
-            patch_payload = runtime_index.get(idx, {})
-            resolved = op.bind(step, patch_payload)
+            step_id = step.get("id")
+            runtime_value = runtime.get(step_id, {}) if runtime and step_id is not None else {}
+            resolved = op.bind(step, runtime_value)
             resolved_name = resolved.get("type")
             if resolved_name not in self._ops:
                 raise ValueError(f"Op '{op_name}'.bind produced unknown type '{resolved_name}'.")
@@ -115,65 +116,31 @@ class Preprocessor(BaseProcessor):
             self.validate_handler_metadata(metadata, resolved_name)
 
             history_entry: Dict[str, Any] = {"type": resolved_name, "metadata": metadata}
-            if resolved.get("instance") is not None:
-                history_entry["instance"] = resolved["instance"]
+            if resolved.get("id") is not None:
+                history_entry["id"] = resolved["id"]
             history.append(history_entry)
             processed_imgs = new_images
 
         return self.from_tensor_list(processed_imgs, is_numpy), history
 
     @staticmethod
-    def _validate_runtime(runtime: Optional[List[Dict[str, Any]]]) -> None:
+    def _validate_runtime(
+        runtime: Optional[Dict[str, Dict[str, Any]]],
+        processing_steps: List[Dict[str, Any]],
+    ) -> None:
         if runtime is None:
             return
-        if not isinstance(runtime, list):
-            raise TypeError(f"runtime must be a list of patches, got {type(runtime)}")
-        for i, patch in enumerate(runtime):
-            if not isinstance(patch, dict):
-                raise TypeError(f"runtime[{i}] must be a dict, got {type(patch)}")
-            if "type" not in patch:
-                raise ValueError(f"runtime[{i}] missing required key 'type'")
-            if "runtime" in patch and not isinstance(patch["runtime"], dict):
-                raise TypeError(f"runtime[{i}]['runtime'] must be a dict, got {type(patch['runtime'])}")
+        if not isinstance(runtime, dict):
+            raise TypeError(f"runtime must be a dict keyed by step id, got {type(runtime)}")
 
-    @staticmethod
-    def _index_runtime(
-        processing_steps: List[Dict[str, Any]],
-        runtime: Optional[List[Dict[str, Any]]],
-    ) -> Dict[int, Dict[str, Any]]:
-        """Match each runtime patch to its step index. Returns {step_idx: payload_dict}."""
-        if not runtime:
-            return {}
+        step_ids = {step["id"] for step in processing_steps if step.get("id") is not None}
+        if len(step_ids) != sum(1 for step in processing_steps if step.get("id") is not None):
+            raise ValueError("processing_steps contains duplicate 'id' values; each step's id must be unique.")
 
-        # Bucket step indices by (type, instance) and by type alone.
-        by_key: Dict[Tuple[str, Optional[str]], List[int]] = {}
-        by_type: Dict[str, List[int]] = {}
-        for idx, step in enumerate(processing_steps):
-            key = (step["type"], step.get("instance"))
-            by_key.setdefault(key, []).append(idx)
-            by_type.setdefault(step["type"], []).append(idx)
-
-        result: Dict[int, Dict[str, Any]] = {}
-        consumed: set = set()
-        for i, patch in enumerate(runtime):
-            ptype = patch["type"]
-            pinstance = patch.get("instance")
-            payload = patch.get("runtime", {})
-
-            if pinstance is not None:
-                candidates = [idx for idx in by_key.get((ptype, pinstance), []) if idx not in consumed]
-            else:
-                candidates = [idx for idx in by_type.get(ptype, []) if idx not in consumed]
-
-            if not candidates:
-                raise ValueError(f"runtime[{i}] (type='{ptype}', instance={pinstance!r}) does not match any preprocessing step.")
-            if pinstance is None and len(candidates) > 1:
-                raise ValueError(
-                    f"runtime[{i}] (type='{ptype}') is ambiguous: matches {len(candidates)} steps. Add 'instance' to disambiguate."
-                )
-
-            target = candidates[0]
-            consumed.add(target)
-            result[target] = payload
-
-        return result
+        for key, value in runtime.items():
+            if not isinstance(key, str):
+                raise TypeError(f"runtime keys must be strings (step ids), got {type(key)}")
+            if not isinstance(value, dict):
+                raise TypeError(f"runtime[{key!r}] must be a dict, got {type(value)}")
+            if key not in step_ids:
+                raise ValueError(f"runtime key {key!r} does not match any preprocessing step's 'id'.")

@@ -31,9 +31,10 @@ class Operation(ABC):
         Resolve a caller-supplied runtime patch into a concrete step before forward.
 
         Args:
-            step: The manifest step `{type, configuration, instance?}`.
-            runtime: The matched runtime patch's payload (the `runtime` field).
-                     Empty dict when no patch matched this step.
+            step: The manifest step `{type, configuration, id?}`.
+            runtime: The value for this step keyed from the caller's
+                     `runtime={id: value}` dict. Empty dict when no value
+                     targeted this step.
 
         Returns:
             A resolved step. May rewrite `type` (macro ops like crop-to-label →

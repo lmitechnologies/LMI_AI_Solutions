@@ -89,3 +89,10 @@ def test_none_entries_skipped(schema3):
     schema3["disabled_model"] = None
     mc = ModelCollectionV3.from_dict(schema3)
     assert "disabled_model" not in mc.models
+
+
+def test_preprocessing_step_missing_id_fails(schema3):
+    # Strip the `id` from a preprocessing step — schema_3 requires it.
+    schema3["top_od_defect"]["details"]["preprocessing"][0].pop("id")
+    with pytest.raises(ValidationError):
+        ModelCollectionV3.from_dict(schema3)

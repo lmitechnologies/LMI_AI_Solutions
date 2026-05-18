@@ -13,7 +13,7 @@ class CropToLabelOperation(Operation):
                (e.g. "BOTTLE-BBOX"). Used as a contract for tooling; the runtime
                channel supplies the actual per-image boxes.
 
-    Runtime payload (caller -> Preprocessor.preprocess):
+    Runtime value (caller -> Preprocessor.preprocess):
         boxes: list of [x1, y1, x2, y2] in original-image space, one per image.
 
     `forward` / `revert_*` are never called — `bind` always rewrites this step
@@ -30,8 +30,8 @@ class CropToLabelOperation(Operation):
 
         if not runtime:
             raise ValueError(
-                f"crop-to-label (label='{label}'): no runtime payload provided. "
-                f"Pass runtime=[{{'type': 'crop-to-label', 'runtime': {{'boxes': [...]}}}}] to preprocess()."
+                f"crop-to-label (label='{label}'): no runtime value provided. "
+                f"Set an 'id' on this step and pass runtime={{<id>: {{'boxes': [...]}}}} to preprocess()."
             )
 
         boxes = runtime.get("boxes")
@@ -42,8 +42,8 @@ class CropToLabelOperation(Operation):
             "type": "crop",
             "configuration": {"boxes": boxes},
         }
-        if step.get("instance") is not None:
-            resolved["instance"] = step["instance"]
+        if step.get("id") is not None:
+            resolved["id"] = step["id"]
         return resolved
 
     def forward(self, images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], List[Any]]:

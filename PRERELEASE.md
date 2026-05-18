@@ -224,7 +224,7 @@ OD model role from gofactory:
         "confidence_threshold": 0.5,
         "image_size": [640, 640],
         "preprocessing": [
-            {"type": "resize", "configuration": {"height": 640, "width": 640, "preserve_aspect": true}}
+            {"type": "resize", "id": "a1f2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d", "configuration": {"height": 640, "width": 640, "preserve_aspect": true}}
         ],
         "training_package": "Ultralytics",
         "training_algorithm": "Yolo"
@@ -276,8 +276,8 @@ AD model role from gofactory:
         "min_threshold": 0.0,
         "max_threshold": 1.0,
         "preprocessing": [
-            {"type": "resize", "configuration": {"height": 224, "width": 448, "preserve_aspect": true}},
-            {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}}
+            {"type": "resize", "id": "7b2d4e6f-8a9c-4b1d-9e3f-5a6b7c8d9e0f", "configuration": {"height": 224, "width": 448, "preserve_aspect": true}},
+            {"type": "tile", "id": "c3e5f7a9-1b2d-4c6e-8f0a-2b4d6f8a0c1e", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}}
         ],
         "training_package": "Anomalib1",
         "training_algorithm": "Patchcore"
@@ -317,19 +317,19 @@ class MyADPipeline(PipelineBase):
 
 ### 8. `crop-to-label` preprocessing step with runtime channel
 
-`preprocess()` now accepts an optional `runtime` argument: a list of step patches keyed by `(type, instance)` that supply caller-side data which isn't known until inference time. The first consumer is the new `crop-to-label` step, which declares "this model expects a crop around region `<label>`" in the manifest and gets the actual per-image box at runtime from an upstream detector. `revert_preprocess()` automatically maps coordinates back through the crop offset.
+`preprocess()` now accepts an optional `runtime` argument: a `{id: value}` dict that supplies caller-side data which isn't known until inference time. Each key must match the `id` of a manifest step. The first consumer is the new `crop-to-label` step, which declares "this model expects a crop around region `<label>`" in the manifest and gets the actual per-image box at runtime from an upstream detector. `revert_preprocess()` automatically maps coordinates back through the crop offset.
 
 Supported step types are now: `resize`, `tile`, `crop-to-label`.
 
 **Two-stage pipeline: foreground detector → defect detector on the bottle crop**
 
-Manifest declares the crop intent on the defect model:
+Manifest declares the crop intent on the defect model. The `id` field on the crop step is what the runtime dict will key against:
 ```json
 "bottom-defect": {
     "details": {
         "preprocessing": [
-            {"type": "crop-to-label", "configuration": {"label": "BOTTLE-BBOX"}},
-            {"type": "resize", "configuration": {"height": 640, "width": 640, "preserve_aspect": true}}
+            {"type": "crop-to-label", "id": "b50c1466-377d-436c-a594-a06c00397f7b", "configuration": {"label": "BOTTLE-BBOX"}},
+            {"type": "resize", "id": "e9d8c7b6-a5f4-4e3d-2c1b-0a9f8e7d6c5b", "configuration": {"height": 640, "width": 640, "preserve_aspect": true}}
         ],
         ...
     },
@@ -344,13 +344,14 @@ fg_in, fg_hist = self.preprocess("bottom-foreground", image)
 fg_out, _ = self.models["bottom-foreground"].predict(fg_in, 0.5)
 fg_out = self.revert_preprocess(fg_out, fg_hist)   # boxes now in original image space
 
-# 2. Defect detector — pass the bottle box through the runtime channel
+# 2. Defect detector — pass the bottle box through the runtime channel,
+#    keyed by the crop step's manifest `id`.
 bottle_box = fg_out["boxes"][0][0].tolist()        # [x1, y1, x2, y2]
-runtime = [{"type": "crop-to-label", "runtime": {"boxes": [bottle_box]}}]
+runtime = {"b50c1466-377d-436c-a594-a06c00397f7b": {"boxes": [bottle_box]}}
 
 def_in, def_hist = self.preprocess("bottom-defect", image, runtime=runtime)
 def_out, _ = self.models["bottom-defect"].predict(def_in, 0.5)
 def_out = self.revert_preprocess(def_out, def_hist)  # offsets added back automatically
 ```
 
-Use the optional `instance` field on both the manifest step and the runtime patch when a single model has multiple crop-to-label steps.
+When a model has multiple `crop-to-label` steps, the runtime dict keys route per step by `id` (e.g. `{"f1a2b3c4-d5e6-4f78-9a0b-1c2d3e4f5a6b": {...}, "0a9b8c7d-6e5f-4a3b-2c1d-0e9f8a7b6c5d": {...}}`).

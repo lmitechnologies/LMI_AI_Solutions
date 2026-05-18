@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
@@ -16,8 +16,7 @@ class PreprocessStep(BaseModel):
 
     type: str
     configuration: Dict[str, Any]
-    id: Optional[str] = None
-    instance: Optional[str] = None
+    id: str
 
 
 class Details(BaseModel):
@@ -107,7 +106,6 @@ class ModelCollectionV3(BaseModel):
         out: Dict[str, List[Dict[str, Any]]] = {}
         for role, model in self.models.items():
             ops: List[Dict[str, Any]] = []
-            ctl_keys: List[Tuple[str, Optional[str]]] = []
             for step in model.details.preprocessing:
                 if step.type not in supported:
                     raise ValueError(f"Unsupported type '{step.type}'.")
@@ -122,9 +120,6 @@ class ModelCollectionV3(BaseModel):
                             "stride": [cfg["y_stride"], cfg["x_stride"]],
                         },
                     }
-                    if step.instance is not None:
-                        entry["instance"] = step.instance
-                    ops.append(entry)
                 elif step.type == "crop-to-label":
                     if "label" not in step.configuration:
                         raise ValueError("crop-to-label configuration must contain key 'label'.")
@@ -132,16 +127,14 @@ class ModelCollectionV3(BaseModel):
                         "type": "crop-to-label",
                         "configuration": {"label": step.configuration["label"]},
                     }
-                    if step.instance is not None:
-                        entry["instance"] = step.instance
-                    ctl_keys.append((step.type, step.instance))
-                    ops.append(entry)
                 else:
-                    ops.append(step.model_dump(exclude={"id"}, exclude_none=True))
+                    entry = step.model_dump(exclude={"id"}, exclude_none=True)
 
-            if len(ctl_keys) != len(set(ctl_keys)):
-                raise ValueError(
-                    f"Model '{role}' has multiple crop-to-label steps with the same (type, instance). Add a unique 'instance' to each."
-                )
+                entry["id"] = step.id
+                ops.append(entry)
+
+            ids = [op["id"] for op in ops]
+            if len(ids) != len(set(ids)):
+                raise ValueError(f"Model '{role}' has duplicate preprocessing step ids: {ids}. Each step's 'id' must be unique.")
             out[role] = ops
         return out

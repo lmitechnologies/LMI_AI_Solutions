@@ -205,7 +205,7 @@ class PipelineBase(metaclass=ABCMeta):
         self,
         model_role: str,
         images: ImageBatch,
-        runtime: Optional[List[Dict[str, Any]]] = None,
+        runtime: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
         """preprocess the image(s) based on the preprocessing steps in model_role.
 
@@ -214,17 +214,19 @@ class PipelineBase(metaclass=ABCMeta):
         Args:
             model_role: the model role to be used for preprocessing.
             images: the image(s) to be preprocessed.
-            runtime: optional list of runtime patches for ops that need
-                caller-supplied data (e.g. crop-to-label needs boxes from an
-                upstream detector). Each patch is `{"type", "instance"?,
-                "runtime": {...}}` and is matched to a step by `(type, instance)`.
+            runtime: optional `{id: value}` dict for ops that need
+                caller-supplied data. Keys must match the `id` of a manifest
+                step. Supported values by op type:
+                  - "crop-to-label": {"boxes": [[x1, y1, x2, y2], ...]} —
+                    per-image boxes in original-image coordinates supplied by
+                    an upstream detector.
 
         Returns:
             list[ImageLike]: the preprocessed image(s).
             list[dict]: the preprocessing steps, each with keys:
                 - "type" (str): the type of the preprocessing operation.
                 - "metadata" (list): the metadata returned by the preprocessing operation, used for reconstruction.
-                - "instance" (str, optional): preserved from the manifest step.
+                - "id" (str, optional): preserved from the manifest step.
         """
         if model_role not in self._preprocessing:
             raise ValueError(f"Not found global preprocessing steps for model role: {model_role}")

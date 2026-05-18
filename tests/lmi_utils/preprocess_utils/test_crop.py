@@ -94,20 +94,21 @@ def test_crop_revert_coords_masks_paste_into_full_canvas():
 def test_crop_to_label_resolves_via_runtime():
     pre = Preprocessor()
     img = _hwc_image(100, 80, 3)
-    steps = [{"type": "crop-to-label", "configuration": {"label": "BOTTLE-BBOX"}}]
-    runtime = [{"type": "crop-to-label", "runtime": {"boxes": [[10, 20, 60, 90]]}}]
+    steps = [{"type": "crop-to-label", "id": "label_crop", "configuration": {"label": "BOTTLE-BBOX"}}]
+    runtime = {"label_crop": {"boxes": [[10, 20, 60, 90]]}}
 
     out, history = pre.preprocess([img], steps, runtime=runtime)
     assert out[0].shape == (70, 50, 3)
     # History records the resolved op name, not the macro name.
     assert history[0]["type"] == "crop"
+    assert history[0]["id"] == "label_crop"
 
 
 def test_crop_to_label_missing_runtime_raises():
     pre = Preprocessor()
     img = _hwc_image(100, 80, 3)
-    steps = [{"type": "crop-to-label", "configuration": {"label": "BOTTLE-BBOX"}}]
-    with pytest.raises(ValueError, match="no runtime payload"):
+    steps = [{"type": "crop-to-label", "id": "label_crop", "configuration": {"label": "BOTTLE-BBOX"}}]
+    with pytest.raises(ValueError, match="no runtime value"):
         pre.preprocess([img], steps, runtime=None)
 
 
@@ -115,10 +116,10 @@ def test_crop_to_label_then_resize_chain():
     pre, rec = Preprocessor(), Reconstructor()
     img = _hwc_image(100, 80, 3)
     steps = [
-        {"type": "crop-to-label", "configuration": {"label": "BOTTLE-BBOX"}},
+        {"type": "crop-to-label", "id": "label_crop", "configuration": {"label": "BOTTLE-BBOX"}},
         {"type": "resize", "configuration": {"width": 32, "height": 32, "preserve_aspect": False}},
     ]
-    runtime = [{"type": "crop-to-label", "runtime": {"boxes": [[10, 20, 60, 90]]}}]
+    runtime = {"label_crop": {"boxes": [[10, 20, 60, 90]]}}
     out, history = pre.preprocess([img], steps, runtime=runtime)
     assert out[0].shape == (32, 32, 3)
 
@@ -137,41 +138,41 @@ def test_crop_to_label_then_resize_chain():
     assert box == pytest.approx([10.0, 20.0, 60.0, 90.0], abs=1e-4)
 
 
-def test_runtime_ambiguous_raises():
+def test_runtime_duplicate_ids_raises():
     pre = Preprocessor()
     img = _hwc_image(100, 80, 3)
     steps = [
-        {"type": "crop-to-label", "configuration": {"label": "A"}},
-        {"type": "crop-to-label", "configuration": {"label": "B"}},
+        {"type": "crop-to-label", "id": "dup", "configuration": {"label": "A"}},
+        {"type": "crop-to-label", "id": "dup", "configuration": {"label": "B"}},
     ]
-    runtime = [{"type": "crop-to-label", "runtime": {"boxes": [[0, 0, 10, 10]]}}]
-    with pytest.raises(ValueError, match="ambiguous"):
+    runtime = {"dup": {"boxes": [[0, 0, 10, 10]]}}
+    with pytest.raises(ValueError, match="duplicate"):
         pre.preprocess([img], steps, runtime=runtime)
 
 
-def test_runtime_instance_disambiguates():
+def test_runtime_id_routes_per_step():
     pre = Preprocessor()
     img = _hwc_image(100, 80, 3)
     steps = [
-        {"type": "crop-to-label", "instance": "a", "configuration": {"label": "A"}},
-        {"type": "crop-to-label", "instance": "b", "configuration": {"label": "B"}},
+        {"type": "crop-to-label", "id": "a", "configuration": {"label": "A"}},
+        {"type": "crop-to-label", "id": "b", "configuration": {"label": "B"}},
     ]
-    runtime = [
-        {"type": "crop-to-label", "instance": "a", "runtime": {"boxes": [[0, 0, 10, 10]]}},
-        {"type": "crop-to-label", "instance": "b", "runtime": {"boxes": [[5, 5, 25, 25]]}},
-    ]
+    runtime = {
+        "a": {"boxes": [[0, 0, 10, 10]]},
+        "b": {"boxes": [[5, 5, 25, 25]]},
+    }
     out, history = pre.preprocess([img], steps, runtime=runtime)
     # Second crop runs on the output of the first; the first cropped to 10x10.
     # The second clamps [5, 5, 25, 25] against the 10x10 crop, yielding 5x5.
     assert out[0].shape == (5, 5, 3)
-    assert history[0]["instance"] == "a"
-    assert history[1]["instance"] == "b"
+    assert history[0]["id"] == "a"
+    assert history[1]["id"] == "b"
 
 
-def test_runtime_unmatched_patch_raises():
+def test_runtime_unmatched_key_raises():
     pre = Preprocessor()
     img = _hwc_image(100, 80, 3)
     steps = [{"type": "resize", "configuration": {"width": 50, "height": 50}}]
-    runtime = [{"type": "crop-to-label", "runtime": {"boxes": [[0, 0, 10, 10]]}}]
+    runtime = {"missing": {"boxes": [[0, 0, 10, 10]]}}
     with pytest.raises(ValueError, match="does not match"):
         pre.preprocess([img], steps, runtime=runtime)
