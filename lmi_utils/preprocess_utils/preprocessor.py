@@ -69,11 +69,9 @@ class Preprocessor(BaseProcessor):
                 - "configuration" (dict): Op-specific config passed as-is.
                 - "id" (str, optional): Unique step identifier. Required for steps targeted by `runtime`.
             runtime: Optional `{id: value}` dict. Each key must match a step's `id`;
-                the value is consumed by that op's `bind`. Supported values
-                by op type:
+                Supported values by op type:
                   - "crop-to-label": {"boxes": [[x1, y1, x2, y2], ...]} —
-                    per-image boxes in original-image coordinates supplied by
-                    an upstream detector.
+                    per-image boxes in original-image coordinates supplied by an upstream detector.
 
         Returns:
             processed_imgs: List of (H, W, C) images, same type as input.

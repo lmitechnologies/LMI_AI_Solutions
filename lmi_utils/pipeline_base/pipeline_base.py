@@ -214,12 +214,10 @@ class PipelineBase(metaclass=ABCMeta):
         Args:
             model_role: the model role to be used for preprocessing.
             images: the image(s) to be preprocessed.
-            runtime: optional `{id: value}` dict for ops that need
-                caller-supplied data. Keys must match the `id` of a manifest
-                step. Supported values by op type:
+            runtime: optional `{id: value}` dict for ops that need caller-supplied data. Keys must match the `id` of a step in manifest.
+                Supported values by op type:
                   - "crop-to-label": {"boxes": [[x1, y1, x2, y2], ...]} —
-                    per-image boxes in original-image coordinates supplied by
-                    an upstream detector.
+                    per-image boxes in original-image coordinates supplied by an upstream detector.
 
         Returns:
             list[ImageLike]: the preprocessed image(s).
