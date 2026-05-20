@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
@@ -21,6 +21,10 @@ class CropToLabelOperation(Operation):
     """
 
     name = "crop-to-label"
+
+    @classmethod
+    def build_step(cls, *, label: str, id: Optional[str] = None) -> Dict[str, Any]:
+        return cls._finalize_step({"label": label}, id=id)
 
     def bind(self, step: Dict[str, Any], runtime: Dict[str, Any]) -> Dict[str, Any]:
         configuration = step.get("configuration") or {}

@@ -75,7 +75,12 @@ def test_trt_warmup(trt_model):
 
 def test_operators_batch(imgs_coco, trt_model):
     original_sizes = [(img.shape[1], img.shape[0]) for img in imgs_coco]  # (w, h)
-    operators = [[{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}] for w, h in original_sizes]
+    operators = [
+        {
+            "type": "resize",
+            "metadata": [{"src_size": [w, h], "dst_size": [IMAGE_SIZE, IMAGE_SIZE]} for w, h in original_sizes],
+        }
+    ]
     imgs_resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
 
     batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators)
@@ -108,7 +113,12 @@ def test_empty(trt_model):
 
 def test_operators_batch_cuda(imgs_coco, trt_model):
     original_sizes = [(img.shape[1], img.shape[0]) for img in imgs_coco]  # (w, h)
-    operators = [[{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}] for w, h in original_sizes]
+    operators = [
+        {
+            "type": "resize",
+            "metadata": [{"src_size": [w, h], "dst_size": [IMAGE_SIZE, IMAGE_SIZE]} for w, h in original_sizes],
+        }
+    ]
     imgs_resized = [torch.from_numpy(cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))).cuda() for img in imgs_coco]
 
     batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators)

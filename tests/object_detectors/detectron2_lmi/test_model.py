@@ -157,7 +157,7 @@ def test_operators(model, imgs_coco):
     image = imgs_coco[0]
     h, w = image.shape[:2]
     image_resized = cv2.resize(image, (512, 512))
-    operators = [{"resize": [512, 512, w, h]}]
+    operators = [{"type": "resize", "metadata": [{"src_size": [w, h], "dst_size": [512, 512]}]}]
     outputs, _ = model.predict(image_resized, configs=0.9, return_segments=False, operators=operators)
     outputs = {k: v[0] for k, v in outputs.items()}
 
@@ -183,7 +183,7 @@ def test_operators_no_masks(model, imgs_coco):
     image = imgs_coco[0]
     h, w = image.shape[:2]
     image_resized = cv2.resize(image, (512, 512))
-    operators = [{"resize": [512, 512, w, h]}]
+    operators = [{"type": "resize", "metadata": [{"src_size": [w, h], "dst_size": [512, 512]}]}]
     outputs, _ = model.predict(image_resized, configs=1, operators=operators)
     outputs = {k: v[0] for k, v in outputs.items()}
 
@@ -195,7 +195,13 @@ def test_batch_operators(model, imgs_coco):
     th, tw = 640, 640
     original_sizes = [img.shape[:2] for img in images]
     images_resized = [cv2.resize(img, (tw, th)) for img in images]
-    operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
+    # Per-image metadata: one resize entry, metadata length == batch size.
+    operators = [
+        {
+            "type": "resize",
+            "metadata": [{"src_size": [w, h], "dst_size": [tw, th]} for h, w in original_sizes],
+        }
+    ]
     outputs, _ = model.predict(images_resized, configs=0.8, operators=operators)
     _assert_batch_counts(outputs, KEYS, len(images))
     os.makedirs(OUT_DIR, exist_ok=True)

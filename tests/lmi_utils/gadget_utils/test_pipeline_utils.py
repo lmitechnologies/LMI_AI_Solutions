@@ -121,42 +121,70 @@ class Test_fit_im_to_size:
             assert l1 == l2 and r1 == r2 and t1 == t2 and b1 == b2
 
 
-class Test_revert_to_origin:
-    def np_func(self, pts: np.ndarray, operations: list, verbose=False):
-        def revert(x, y, operations):
-            nx, ny = x, y
-            for operator in reversed(operations):
-                if "resize" in operator:
-                    tw, th, orig_w, orig_h = operator["resize"]
-                    r = [tw / orig_w, th / orig_h]
-                    nx, ny = nx / r[0], ny / r[1]
-                if "pad" in operator:
-                    pad_L, pad_R, pad_T, pad_B = operator["pad"]
-                    nx, ny = nx - pad_L, ny - pad_T
-                if "stretch" in operator:
-                    s = operator["stretch"]
-                    nx, ny = nx / s[0], ny / s[1]
-                if verbose:
-                    logger.info(f"after {operator}, pt: {x:.2f},{y:.2f} -> {nx:.2f},{ny:.2f}")
-            nx = round(nx)
-            ny = round(ny)
-            return [max(nx, 0), max(ny, 0)]
+def _resize_entry(dst_w, dst_h, src_w, src_h, pad=None):
+    """Build a unified `resize` history entry (B=1)."""
+    md = {"src_size": [src_w, src_h], "dst_size": [dst_w, dst_h]}
+    if pad is not None:
+        md["pad"] = list(pad)
+    return {"type": "resize", "metadata": [md]}
 
-        pts2 = []
+
+def _pad_entry(L, R, T, B):
+    return {"type": "pad", "metadata": [{"pad": [L, R, T, B]}]}
+
+
+def _flip_entry(lr, ud, w, h):
+    return {"type": "flip", "metadata": [{"lr": lr, "ud": ud, "size": [w, h]}]}
+
+
+class Test_revert_to_origin:
+    """Sanity-check the new unified-schema revert_to_origin against a hand-rolled reference.
+
+    The reference applies each atomic op's inverse (resize unscale, pad subtract, flip
+    mirror) in REVERSE history order, matching how the wrapper dispatches through the
+    Operation registry.
+    """
+
+    def np_func(self, pts, history, verbose=False):
         if isinstance(pts, list):
-            pts = np.array(pts)
-        for pt in pts:
-            if len(pt) == 0:
-                continue
-            if len(pt) == 2:
-                x, y = pt
-                pts2.append(revert(x, y, operations))
-            elif len(pt) == 4:
-                x1, y1, x2, y2 = pt
-                pts2.append(revert(x1, y1, operations) + revert(x2, y2, operations))
-            else:
-                raise Exception(f"does not support pts neither Nx2 nor Nx4. Got shape: {pt.shape} with val: {pt}")
-        return pts2
+            pts = np.array(pts, dtype=np.float64)
+        pts = pts.astype(np.float64).copy()
+        r, c = pts.shape
+        for entry in reversed(history):
+            t = entry["type"]
+            m = entry["metadata"][0]
+            if t == "resize":
+                src_w, src_h = m["src_size"]
+                dst_w, dst_h = m["dst_size"]
+                pL, _, pT, _ = m.get("pad", [0, 0, 0, 0])
+                # revert: subtract pad offset, then unscale
+                pts[:, 0] = (pts[:, 0] - pL) * (src_w / dst_w)
+                pts[:, 1] = (pts[:, 1] - pT) * (src_h / dst_h)
+                if c == 4:
+                    pts[:, 2] = (pts[:, 2] - pL) * (src_w / dst_w)
+                    pts[:, 3] = (pts[:, 3] - pT) * (src_h / dst_h)
+            elif t == "pad":
+                pL, _, pT, _ = m["pad"]
+                pts[:, 0] -= pL
+                pts[:, 1] -= pT
+                if c == 4:
+                    pts[:, 2] -= pL
+                    pts[:, 3] -= pT
+            elif t == "flip":
+                lr, ud, w, h = m["lr"], m["ud"], m["size"][0], m["size"][1]
+                if lr:
+                    pts[:, 0] = w - pts[:, 0]
+                    if c == 4:
+                        pts[:, 2] = w - pts[:, 2]
+                        pts[:, [0, 2]] = pts[:, [2, 0]]
+                if ud:
+                    pts[:, 1] = h - pts[:, 1]
+                    if c == 4:
+                        pts[:, 3] = h - pts[:, 3]
+                        pts[:, [1, 3]] = pts[:, [3, 1]]
+            if verbose:
+                logger.info(f"after {t}, pts: {pts}")
+        return np.maximum(np.round(pts), 0).astype(np.float32)
 
     @pytest.mark.parametrize(
         "pts, operations",
@@ -164,25 +192,22 @@ class Test_revert_to_origin:
             (
                 [[10.1, 20.0], [30.2, 40.4], [50.5, 60.4], [70.2, 80.1]],
                 [
-                    {"resize": [100, 100, 200, 300]},
-                    {"pad": [8, 9, 10, 11]},
-                    {"stretch": [1.5, 2]},
+                    _resize_entry(100, 100, 200, 300),
+                    _pad_entry(8, 9, 10, 11),
                 ],
             ),
             (
                 np.array([[15.3, 25.8], [35.7, 45], [55.6, 65], [75, 85.3]]),
                 [
-                    {"resize": [200, 300, 100, 100]},
-                    {"pad": [-8, -9, 10, 11]},
-                    {"stretch": [1.3, 1.5]},
+                    _resize_entry(200, 300, 100, 100),
+                    _pad_entry(-8, -9, 10, 11),
                 ],
             ),
             (
                 [[15, 25, 35, 45], [55, 65, 75, 85]],
                 [
-                    {"resize": [200, 300, 100, 100]},
-                    {"pad": [8, 9, 10, 11]},
-                    {"stretch": [1.5, 2]},
+                    _resize_entry(200, 300, 100, 100),
+                    _pad_entry(8, 9, 10, 11),
                 ],
             ),
         ],
@@ -191,16 +216,15 @@ class Test_revert_to_origin:
         pts1 = self.np_func(pts, operations)
 
         pts2 = pipeline_utils.revert_to_origin(pts, operations)
-        assert np.array_equal(pts1, pts2)
+        assert np.array_equal(pts1, np.asarray(pts2, dtype=np.float32))
 
-        if not isinstance(pts, np.ndarray):
-            pts = np.array(pts)
-        pts2 = pipeline_utils.revert_to_origin(torch.from_numpy(pts), operations)
+        pts_np = pts if isinstance(pts, np.ndarray) else np.array(pts)
+        pts2 = pipeline_utils.revert_to_origin(torch.from_numpy(pts_np.astype(np.float32)), operations)
         assert np.array_equal(pts1, pts2.numpy())
 
         if torch.cuda.is_available():
-            pts = torch.tensor(pts).cuda()
-            pts2 = pipeline_utils.revert_to_origin(pts, operations)
+            cuda_pts = torch.tensor(pts_np, dtype=torch.float32).cuda()
+            pts2 = pipeline_utils.revert_to_origin(cuda_pts, operations)
             assert pts2.is_cuda
             assert np.array_equal(pts1, pts2.cpu().numpy())
 
@@ -361,42 +385,46 @@ class Test_pts_to_3d:
 
 
 class Test_apply_operations:
-    def np_func(self, pts: np.ndarray, operations: list):
-        pts = np.array(pts).astype(np.float32)
+    """Forward complement of revert_to_origin. Applies each op's coord transform in order."""
+
+    def np_func(self, pts, history):
+        pts = np.array(pts, dtype=np.float64).copy()
         r, c = pts.shape
-        if c not in [2, 4]:
+        if c not in (2, 4):
             raise Exception(f"pts should be Nx2 or Nx4, got shape: {pts.shape}")
-        for op in operations:
-            if "resize" in op:
-                tw, th, orig_w, orig_h = op["resize"]
-                r = np.array([tw / orig_w, th / orig_h])
-                pts[:, :2] = pts[:, :2] * r
+        for entry in history:
+            t = entry["type"]
+            m = entry["metadata"][0]
+            if t == "resize":
+                src_w, src_h = m["src_size"]
+                dst_w, dst_h = m["dst_size"]
+                pL, _, pT, _ = m.get("pad", [0, 0, 0, 0])
+                sx, sy = dst_w / src_w, dst_h / src_h
+                pts[:, 0] = pts[:, 0] * sx + pL
+                pts[:, 1] = pts[:, 1] * sy + pT
                 if c == 4:
-                    pts[:, 2:] = pts[:, 2:] * r
-            elif "pad" in op:
-                pad_L, pad_R, pad_T, pad_B = op["pad"]
-                t = np.array([pad_L, pad_T])
-                pts[:, :2] = pts[:, :2] + t
+                    pts[:, 2] = pts[:, 2] * sx + pL
+                    pts[:, 3] = pts[:, 3] * sy + pT
+            elif t == "pad":
+                pL, _, pT, _ = m["pad"]
+                pts[:, 0] += pL
+                pts[:, 1] += pT
                 if c == 4:
-                    pts[:, 2:] = pts[:, 2:] + t
-            elif "stretch" in op:
-                s = np.array(op["stretch"])
-                pts[:, :2] = pts[:, :2] * s
-                if c == 4:
-                    pts[:, 2:] = pts[:, 2:] * s
-            elif "flip" in op:
-                lr, ud, im_w, im_h = op["flip"]
-                idx = [0, 2] if c == 4 else [0]
-                idy = [1, 3] if c == 4 else [1]
+                    pts[:, 2] += pL
+                    pts[:, 3] += pT
+            elif t == "flip":
+                lr, ud, w, h = m["lr"], m["ud"], m["size"][0], m["size"][1]
                 if lr:
-                    pts[:, idx] = im_w - pts[:, idx]
+                    pts[:, 0] = w - pts[:, 0]
                     if c == 4:
+                        pts[:, 2] = w - pts[:, 2]
                         pts[:, [0, 2]] = pts[:, [2, 0]]
                 if ud:
-                    pts[:, idy] = im_h - pts[:, idy]
+                    pts[:, 1] = h - pts[:, 1]
                     if c == 4:
+                        pts[:, 3] = h - pts[:, 3]
                         pts[:, [1, 3]] = pts[:, [3, 1]]
-        return pts.round().clip(min=0)
+        return np.maximum(np.round(pts), 0).astype(np.float32)
 
     @pytest.mark.parametrize(
         "pts, operations",
@@ -404,26 +432,24 @@ class Test_apply_operations:
             (
                 [[10, 20], [30, 40], [50, 60], [70, 80]],
                 [
-                    {"resize": [100, 100, 200, 300]},
-                    {"pad": [8, 9, 10, 11]},
-                    {"stretch": [1.5, 2]},
-                    {"flip": [True, False, 100, 100]},
+                    _resize_entry(100, 100, 200, 300),
+                    _pad_entry(8, 9, 10, 11),
+                    _flip_entry(True, False, 100, 100),
                 ],
             ),
             (
                 np.array([[15.0, 25.2], [35.1, 45.0], [55.0, 65], [75.5, 85]]),
                 [
-                    {"resize": [200, 300, 100, 100]},
-                    {"pad": [6, 7, 9, 10]},
-                    {"stretch": [1.0, 2]},
+                    _resize_entry(200, 300, 100, 100),
+                    _pad_entry(6, 7, 9, 10),
                 ],
             ),
             (
                 [[15, 25, 35, 45], [55, 65, 75, 85]],
                 [
-                    {"resize": [200, 300, 100, 100]},
-                    {"pad": [11, 9, -2, -3]},
-                    {"flip": [False, True, 200, 300]},
+                    _resize_entry(200, 300, 100, 100),
+                    _pad_entry(11, 9, -2, -3),
+                    _flip_entry(False, True, 200, 300),
                 ],
             ),
         ],
@@ -431,16 +457,15 @@ class Test_apply_operations:
     def test_cases(self, pts, operations):
         pts1 = self.np_func(pts, operations)
         pts2 = pipeline_utils.apply_operations(pts, operations)
-        assert np.array_equal(pts1, pts2)
+        assert np.array_equal(pts1, np.asarray(pts2, dtype=np.float32))
 
-        if not isinstance(pts, np.ndarray):
-            pts = np.array(pts)
-        pts2 = pipeline_utils.apply_operations(torch.from_numpy(pts), operations)
+        pts_np = pts if isinstance(pts, np.ndarray) else np.array(pts)
+        pts2 = pipeline_utils.apply_operations(torch.from_numpy(pts_np.astype(np.float32)), operations)
         assert np.array_equal(pts1, pts2.numpy())
 
         if torch.cuda.is_available():
-            pts = torch.tensor(pts).cuda()
-            pts2 = pipeline_utils.apply_operations(pts, operations)
+            cuda_pts = torch.tensor(pts_np, dtype=torch.float32).cuda()
+            pts2 = pipeline_utils.apply_operations(cuda_pts, operations)
             assert pts2.is_cuda
             assert np.array_equal(pts1, pts2.cpu().numpy())
 
@@ -450,13 +475,13 @@ class Test_revert_mask_to_origin:
         "mask, operations, expected_shape",
         [
             (
-                np.random.randint(0, 255, (100, 100, 3)),
-                [{"pad": [8, 9, 10, 11]}, {"flip": [True, False, 100, 100]}],
+                np.random.randint(0, 255, (100, 100, 3), dtype=np.uint8),
+                [_pad_entry(8, 9, 10, 11), _flip_entry(True, False, 100, 100)],
                 (79, 83, 3),
             ),
             (
-                np.random.randint(0, 255, (90, 100)),
-                [{"flip": [True, False, 100, 90]}],
+                np.random.randint(0, 255, (90, 100), dtype=np.uint8),
+                [_flip_entry(True, False, 100, 90)],
                 (90, 100),
             ),
         ],
@@ -465,11 +490,12 @@ class Test_revert_mask_to_origin:
         mask2 = pipeline_utils.revert_mask_to_origin(mask, operations)
         assert mask2.shape == expected_shape
 
-        if "flip" in operations[0]:
-            lr, up, im_w, im_h = operations[0]["flip"]
+        first = operations[0]
+        if first["type"] == "flip":
+            m = first["metadata"][0]
             mask3 = mask.copy()
-            if lr:
+            if m["lr"]:
                 mask3 = np.flip(mask3, axis=1)
-            if up:
+            if m["ud"]:
                 mask3 = np.flip(mask3, axis=0)
             assert np.array_equal(mask2, mask3)

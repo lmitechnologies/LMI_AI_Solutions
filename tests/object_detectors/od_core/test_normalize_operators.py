@@ -7,35 +7,46 @@ def test_none_operators_returns_empty_per_image():
     assert ODBase._normalize_operators(None, 3) == [[], [], []]
 
 
-def test_single_chain_broadcasts_to_batch():
-    chain = [{"resize": [640, 640, 1280, 720]}, {"pad": [0, 0, 80, 80]}]
-    result = ODBase._normalize_operators(chain, 2)
-    assert result == [chain, chain]
+def test_broadcast_metadata_length_one():
+    """metadata length 1 broadcasts to every image in the batch."""
+    history = [{"type": "resize", "metadata": [{"src_size": [1280, 720], "dst_size": [640, 640]}]}]
+    result = ODBase._normalize_operators(history, 2)
+    assert len(result) == 2
+    for chain in result:
+        assert chain[0]["type"] == "resize"
+        assert chain[0]["metadata"] == [{"src_size": [1280, 720], "dst_size": [640, 640]}]
 
 
-def test_per_image_chains_passthrough():
-    chains = [[{"resize": [640, 640, 1280, 720]}], [{"pad": [0, 0, 80, 80]}]]
-    assert ODBase._normalize_operators(chains, 2) == chains
-
-
-def test_length_mismatch_raises():
-    chains = [[{"resize": [640, 640, 1280, 720]}]]
-    with pytest.raises(ValueError, match="must match batch size"):
-        ODBase._normalize_operators(chains, 2)
-
-
-def test_preprocessor_history_flat_chain_rejected():
+def test_per_image_metadata_sliced():
+    """metadata length B yields each image's own slice."""
     history = [
-        {"type": "resize", "metadata": [{"orig_size": [1280, 720], "new_size": [640, 640]}]},
+        {
+            "type": "resize",
+            "metadata": [
+                {"src_size": [1280, 720], "dst_size": [640, 640]},
+                {"src_size": [1024, 768], "dst_size": [640, 640]},
+            ],
+        }
     ]
-    with pytest.raises(ValueError, match="Preprocessor history"):
+    result = ODBase._normalize_operators(history, 2)
+    assert result[0][0]["metadata"] == [{"src_size": [1280, 720], "dst_size": [640, 640]}]
+    assert result[1][0]["metadata"] == [{"src_size": [1024, 768], "dst_size": [640, 640]}]
+
+
+def test_id_preserved_through_slice():
+    history = [{"type": "crop", "id": "UUID_1", "metadata": [{"box": [0, 0, 10, 10], "orig_size": [100, 100]}]}]
+    result = ODBase._normalize_operators(history, 1)
+    assert result[0][0]["id"] == "UUID_1"
+
+
+def test_metadata_length_mismatch_raises():
+    history = [{"type": "resize", "metadata": [{"src_size": [1280, 720], "dst_size": [640, 640]}] * 3}]
+    with pytest.raises(ValueError, match="not 1 .* or 2 "):
         ODBase._normalize_operators(history, 2)
 
 
-def test_preprocessor_history_per_image_rejected():
-    history_per_image = [
-        [{"type": "resize", "metadata": [{"orig_size": [1280, 720], "new_size": [640, 640]}]}],
-        [{"type": "tile", "metadata": [{"grid": [2, 2]}]}],
-    ]
-    with pytest.raises(ValueError, match="Preprocessor history"):
-        ODBase._normalize_operators(history_per_image, 2)
+def test_legacy_shape_rejected():
+    """Legacy single-key dicts no longer match the unified shape."""
+    legacy = [{"resize": [640, 640, 1280, 720]}]
+    with pytest.raises(ValueError, match="unified preprocessing history"):
+        ODBase._normalize_operators(legacy, 2)

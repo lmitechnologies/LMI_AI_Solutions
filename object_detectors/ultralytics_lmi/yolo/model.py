@@ -84,7 +84,9 @@ class Yolo(YoloCore, ODBase):
             img (torch.Tensor): the preprocessed image
             orig_img (np.ndarray | torch.Tensor): Original image. If this is a tensor, this function will return tensor results.
             confs (dict): per-class confidence thresholds, pre-parsed by postprocess.
-            operators (list): operator chain for coordinate reversion.
+            operators (list[dict]): preprocessing history slice for this single image
+                (each entry's ``metadata`` is a 1-element list). See the unified schema
+                in PRERELEASE §9.
         """
         pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
         xyxy, scores, clss = pred[:, :4], pred[:, 4], pred[:, 5]
@@ -102,7 +104,9 @@ class Yolo(YoloCore, ODBase):
             img (torch.Tensor): the preprocessed image(s)
             orig_imgs (list): list of original images. If this is a list of tensors, this function will return tensor results.
             conf (float | dict): float or dictionary of <class: confidence level>.
-            operators (list[list]): per-image operator chains.
+            operators (list[dict]): per-image preprocessing history slice for this image
+                (each entry's ``metadata`` is a single-image list). Built by od_base's
+                ``_normalize_operators`` from the unified history passed to ``predict()``.
         """
         ops_list = operators or [[] for _ in range(len(orig_imgs))]
         return [
@@ -126,7 +130,8 @@ class Yolo(YoloCore, ODBase):
                 preprocessed (torch.Tensor): the preprocessed image(s) (BCHW tensor).
                 images (list): list of original images.
                 configs (float | dict): confidence threshold(s).
-                operators (list[list]): per-image operator chains for coordinate reversion.
+                operators (list): per-image-sliced preprocessing history (one slice per
+                    image in the batch). Produced by ODBase._normalize_operators.
                 iou (float): IoU threshold for NMS. Default 0.45.
                 agnostic (bool): class-agnostic NMS. Default False.
                 max_det (int): max detections. Default 300.
@@ -185,7 +190,9 @@ class YoloSeg(Yolo):
             img (torch.Tensor): the preprocessed image
             orig_img (np.ndarray | torch.Tensor): Original image.
             conf (float | dict): Confidence threshold for filtering predictions.
-            operators (list): operator chain for coordinate reversion.
+            operators (list[dict]): preprocessing history slice for this single image
+                (each entry's ``metadata`` is a 1-element list). See the unified schema
+                in PRERELEASE §9.
             proto (torch.Tensor): The prototype tensor for the masks.
             return_segments (bool): If True, return the segments of the masks.
         """
@@ -216,7 +223,9 @@ class YoloSeg(Yolo):
             img (torch.Tensor): the preprocessed image(s)
             orig_imgs (list): A list of original images. If this is a list of tensors, this function will return tensor results.
             conf (float | dict): float or dictionary of <class: confidence level>.
-            operators (list[list]): per-image operator chains.
+            operators (list[dict]): per-image preprocessing history slice for this image
+                (each entry's ``metadata`` is a single-image list). Built by od_base's
+                ``_normalize_operators`` from the unified history passed to ``predict()``.
             protos (torch.Tensor): The prototype tensors for the masks.
             return_segments (bool): If True, return the segments of the masks.
         """
@@ -270,7 +279,9 @@ class YoloObb(Yolo):
             img (torch.Tensor): the preprocessed image
             orig_img (torch.Tensor): the original image
             confs (dict): per-class confidence thresholds, pre-parsed by postprocess.
-            operators (list): operator chain for coordinate reversion.
+            operators (list[dict]): preprocessing history slice for this single image
+                (each entry's ``metadata`` is a 1-element list). See the unified schema
+                in PRERELEASE §9.
 
         Returns:
             dict: the constructed result dictionary
@@ -312,7 +323,9 @@ class YoloPose(Yolo):
             img (torch.Tensor): the preprocessed image
             orig_img (np.ndarray | torch.Tensor): Original image.
             conf (float | dict): Confidence threshold for filtering predictions.
-            operators (list): operator chain for coordinate reversion.
+            operators (list[dict]): preprocessing history slice for this single image
+                (each entry's ``metadata`` is a 1-element list). See the unified schema
+                in PRERELEASE §9.
         """
         results, M = super().construct_result(pred, img, orig_img, conf)
         pred_kpts = pred[:, 6:].view(pred.shape[0], *self.model.kpt_shape)

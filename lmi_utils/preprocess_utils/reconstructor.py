@@ -4,7 +4,13 @@ from lmi_utils.image_utils.types import ImageLike
 
 from .base import BaseProcessor
 from .operation import Operation
-from .ops import CropOperation, ResizeOperation, TileOperation
+from .ops import (
+    CropOperation,
+    FlipOperation,
+    PadOperation,
+    ResizeOperation,
+    TileOperation,
+)
 
 
 class Reconstructor(BaseProcessor):
@@ -26,6 +32,8 @@ class Reconstructor(BaseProcessor):
 
     def _register_defaults(self) -> None:
         self.register(ResizeOperation())
+        self.register(PadOperation())
+        self.register(FlipOperation())
         self.register(TileOperation())
         self.register(CropOperation())
 
@@ -75,6 +83,41 @@ class Reconstructor(BaseProcessor):
         keys = per_image[0].keys()
         return {k: [d[k] for d in per_image] for k in keys}
 
+    def apply_coordinates(self, results: Dict[str, Any], steps: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Forward-applies a history of geometric ops to original-space coordinates.
+
+        Inverse of :meth:`reconstruct_coordinates`: takes coords in original image space
+        and returns coords in the post-preprocessing space.
+
+        Args:
+            results: Batch results dict where each value is a per-image list.
+            steps: Preprocessing history (same shape as for reconstruct_coordinates).
+
+        Returns:
+            Results dict with coordinates mapped into the preprocessed space.
+        """
+        self.validate_history_steps(steps)
+        if not results or not steps:
+            return results
+
+        first_val = next(iter(results.values()))
+        n = len(first_val)
+        per_image = [{k: v[i] for k, v in results.items()} for i in range(n)]
+        per_image, is_numpy = self.to_tensor_results(per_image)
+
+        for step in steps:
+            op_name = step["type"]
+            if op_name not in self._ops:
+                raise ValueError(f"Apply coordinate handler for '{op_name}' is not registered.")
+            input_populated = self._populated_coord_fields(per_image)
+            per_image = self._ops[op_name].apply_coords(per_image, step["metadata"])
+            self.validate_coord_handler_output(per_image, op_name, input_populated=input_populated)
+
+        per_image = self.from_tensor_results(per_image, is_numpy)
+        keys = per_image[0].keys()
+        return {k: [d[k] for d in per_image] for k in keys}
+
     def reconstruct_images(self, images: List[ImageLike], steps: List[Dict[str, Any]]) -> List[ImageLike]:
         """
         Reconstructs the original image from images and history.
@@ -88,6 +131,9 @@ class Reconstructor(BaseProcessor):
         """
         self.validate_image_list(images, stage="reconstruction")
         self.validate_history_steps(steps)
+
+        if not steps:
+            return list(images)
 
         restored_images, is_numpy = self.to_tensor_list(images)
 

@@ -4,7 +4,14 @@ from lmi_utils.image_utils.types import ImageBatch, ImageLike
 
 from .base import BaseProcessor
 from .operation import Operation
-from .ops import CropOperation, CropToLabelOperation, ResizeOperation, TileOperation
+from .ops import (
+    CropOperation,
+    CropToLabelOperation,
+    FlipOperation,
+    PadOperation,
+    ResizeOperation,
+    TileOperation,
+)
 
 
 class Preprocessor(BaseProcessor):
@@ -36,6 +43,8 @@ class Preprocessor(BaseProcessor):
 
     def _register_defaults(self) -> None:
         self.register(ResizeOperation())
+        self.register(PadOperation())
+        self.register(FlipOperation())
         self.register(TileOperation())
         self.register(CropOperation())
         self.register(CropToLabelOperation())
@@ -89,6 +98,9 @@ class Preprocessor(BaseProcessor):
         self.validate_image_list(images, stage="preprocessing")
         self.validate_steps(processing_steps)
         self._validate_runtime(runtime, processing_steps)
+
+        if not processing_steps:
+            return list(images), []
 
         processed_imgs, is_numpy = self.to_tensor_list(images)
 

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
@@ -11,9 +11,17 @@ class CropOperation(Operation):
 
     Configuration:
         boxes: list of [x1, y1, x2, y2], one per input image.
+
+    Metadata (per image):
+        box: clamped [x1, y1, x2, y2] actually used for the crop.
+        orig_size: [W, H] of the input image, used to restore the canvas on revert.
     """
 
     name = "crop"
+
+    @classmethod
+    def build_step(cls, *, boxes: List[List[int]], id: Optional[str] = None) -> Dict[str, Any]:
+        return cls._finalize_step({"boxes": boxes}, id=id)
 
     @torch.inference_mode()
     def forward(self, images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], List[Any]]:
@@ -32,7 +40,7 @@ class CropOperation(Operation):
             x2 = max(x1, min(W, int(round(float(box[2])))))
             y2 = max(y1, min(H, int(round(float(box[3])))))
             out_images.append(img[y1:y2, x1:x2])
-            meta.append({"box": [x1, y1, x2, y2], "orig_shape": (H, W)})
+            meta.append({"box": [x1, y1, x2, y2], "orig_size": [W, H]})
 
         return out_images, meta
 
@@ -43,7 +51,7 @@ class CropOperation(Operation):
         restored = []
         for img, m in zip(images, metadata):
             x1, y1, _x2, _y2 = m["box"]
-            H, W = m["orig_shape"]
+            W, H = m["orig_size"]
             ch, cw = img.shape[0], img.shape[1]
             if img.dim() == 2:
                 canvas = torch.zeros((H, W), dtype=img.dtype, device=img.device)
@@ -59,18 +67,28 @@ class CropOperation(Operation):
     def revert_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if len(results) != len(metadata):
             raise ValueError(f"Result count ({len(results)}) doesn't match crop metadata count ({len(metadata)})")
-        return [self._revert_single(r, m) for r, m in zip(results, metadata)]
+        return [self._apply_single(r, m, forward=False) for r, m in zip(results, metadata)]
+
+    @torch.inference_mode()
+    def apply_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if len(results) != len(metadata):
+            raise ValueError(f"Result count ({len(results)}) doesn't match crop metadata count ({len(metadata)})")
+        return [self._apply_single(r, m, forward=True) for r, m in zip(results, metadata)]
 
     @staticmethod
-    def _revert_single(result: Dict[str, Any], m: Dict[str, Any]) -> Dict[str, Any]:
-        x1, y1, _x2, _y2 = m["box"]
-        H, W = m["orig_shape"]
+    def _apply_single(result: Dict[str, Any], m: Dict[str, Any], *, forward: bool) -> Dict[str, Any]:
+        x1, y1, x2, y2 = m["box"]
+        W, H = m["orig_size"]
 
         def xy_fn(xy: torch.Tensor) -> torch.Tensor:
             off = torch.tensor([x1, y1], dtype=torch.float32, device=xy.device)
-            return xy.float() + off
+            xy = xy.float()
+            return xy - off if forward else xy + off
 
         def mask_fn(masks: torch.Tensor) -> torch.Tensor:
+            if forward:
+                # crop full-image masks down to the box region
+                return masks[:, y1:y2, x1:x2]
             n, mh, mw = masks.shape[0], masks.shape[1], masks.shape[2]
             canvas = torch.zeros((n, H, W), dtype=masks.dtype, device=masks.device)
             canvas[:, y1 : y1 + mh, x1 : x1 + mw] = masks

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -10,9 +10,48 @@ from ..operation import Operation
 
 
 class TileOperation(Operation):
-    """Tile each image into fixed-size patches; remember per-image grid for stitching."""
+    """Tile each image into fixed-size patches; remember per-image grid for stitching.
+
+    Each input image expands to ``n_tiles_h * n_tiles_w`` output tiles in row-major order;
+    ``revert_images`` / ``revert_coords`` consume the same flat tile list and re-group by
+    metadata entry.
+
+    Configuration:
+        tile_size (int | [h, w], required): patch size.
+        stride (int | [h, w], required): step between tile origins.
+        scale_mode (str, optional): how the image is fit to the tile grid before slicing
+            (``"padding"`` or ``"interpolation"``). Default ``"padding"``.
+        overlap_mode (str, optional): how overlapping regions are merged on untile
+            (e.g. ``"average"``). Default ``"average"``.
+
+    Metadata schema (per input image)::
+
+        {
+            "tile_size": [h, w], "stride": [h, w],
+            "im_size": [H, W],           # original image size
+            "scale_size": [H', W'],      # size after scale_mode fit, before tiling
+            "n_tiles": [n_h, n_w],       # grid shape
+            "batch_size": int, "num_channel": int,
+            "scale_mode": str, "overlap_mode": str,
+        }
+    """
 
     name = "tile"
+
+    @classmethod
+    def build_step(
+        cls,
+        *,
+        tile_size: Union[int, List[int]],
+        stride: Union[int, List[int]],
+        scale_mode: str = "padding",
+        overlap_mode: str = "average",
+        id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return cls._finalize_step(
+            {"tile_size": tile_size, "stride": stride, "scale_mode": scale_mode, "overlap_mode": overlap_mode},
+            id=id,
+        )
 
     @torch.inference_mode()
     def forward(self, images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], List[Any]]:

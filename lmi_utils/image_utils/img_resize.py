@@ -23,12 +23,32 @@ def is_cuda_cv():  # 1 == using cuda, 0 = not using cuda
 
 
 def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwargs):
+    """Resize a single image (and optionally letterbox-pad it) to a target size.
+
+    Args:
+        image: HW or HWC image (numpy array or torch tensor).
+        width (int, optional): target width. Defaults to current width.
+        height (int, optional): target height. Defaults to current height.
+        preserve_aspect (bool): if True, scale to fit preserving aspect ratio and pad to (width, height).
+
+    kwargs:
+        mode (str): interpolation mode. Default "bilinear".
+        return_operators (bool): if True, also return a history list (new schema).
+        operators (list): seed history list. ``return_operators=True`` returns
+            ``seed + new_entries``. Each entry is::
+
+                {"type": "resize", "metadata": [{"src_size": [w, h], "dst_size": [w, h], "pad"?: [L, R, T, B]}]}
+                {"type": "pad",    "metadata": [{"pad": [L, R, T, B]}]}
+
+    Returns:
+        Image (always), and history list when ``return_operators=True``.
+    """
     h0, w0 = image.shape[:2]
-    # Default target dimensions to current if not provided
     tw = width if width is not None else w0
     th = height if height is not None else h0
-    operators = kwargs.get("operators", [])[:]
-    # Check if resize is needed
+    operators = list(kwargs.get("operators", []))
+    mode = kwargs.get("mode", "bilinear")
+
     if tw == w0 and th == h0:
         im_out = image
     else:
@@ -36,16 +56,16 @@ def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwar
             scale = min(th / h0, tw / w0)
             w1 = int(scale * w0)
             h1 = int(scale * h0)
-            im_out = resize_image(image, W=w1, H=h1, mode=kwargs.get("mode", "bilinear"))
-            operators.append({"resize": [w1, h1, w0, h0]})
-
+            im_out = resize_image(image, W=w1, H=h1, mode=mode)
+            entry = {"type": "resize", "metadata": [{"src_size": [w0, h0], "dst_size": [w1, h1]}]}
             if w1 != tw or h1 != th:
                 im_out, pad_l, pad_r, pad_t, pad_b = fit_im_to_size(im_out, tw, th)
-                operators.append({"pad": [pad_l, pad_r, pad_t, pad_b]})
+                entry["metadata"][0]["pad"] = [pad_l, pad_r, pad_t, pad_b]
+            operators.append(entry)
         else:
-            # Direct Resize (Stretch)
-            im_out = resize_image(image, W=tw, H=th, mode=kwargs.get("mode", "bilinear"))
-            operators.append({"resize": [tw, th, w0, h0]})
+            im_out = resize_image(image, W=tw, H=th, mode=mode)
+            operators.append({"type": "resize", "metadata": [{"src_size": [w0, h0], "dst_size": [tw, th]}]})
+
     if kwargs.get("return_operators", False) is True:
         return im_out, operators
     return im_out

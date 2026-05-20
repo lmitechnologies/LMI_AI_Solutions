@@ -146,11 +146,16 @@ if __name__ == "__main__":
                     W=args.resize[1] if args.resize[1] != 0 else None,
                 )
                 logger.warning(f"{im1.shape}, resizing")
-                operators.append({"resize": [im1.shape[1], im1.shape[0], im0.shape[1], im0.shape[0]]})
+                operators.append(
+                    {
+                        "type": "resize",
+                        "metadata": [{"src_size": [im0.shape[1], im0.shape[0]], "dst_size": [im1.shape[1], im1.shape[0]]}],
+                    }
+                )
 
             if args.pad:
                 im1, pad_L, pad_R, pad_T, pad_B = fit_im_to_size(im=im1, H=args.pad[0], W=args.pad[1])
-                operators.append({"pad": [pad_L, pad_R, pad_T, pad_B]})
+                operators.append({"type": "pad", "metadata": [{"pad": [pad_L, pad_R, pad_T, pad_B]}]})
                 logger.warning(f"{im1.shape}, padding")
 
             if args.sz[0] != im1.shape[0] or args.sz[1] != im1.shape[1]:

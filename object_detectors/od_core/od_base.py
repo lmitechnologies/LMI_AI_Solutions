@@ -50,10 +50,12 @@ class ODBase(abc.ABC):
                 Accepts both numpy arrays and torch tensors. 2D (HW) images are
                 expanded to 3-channel RGB. All images in a batch must have the same dimensions.
             configs: Confidence threshold (float) or per-class thresholds (dict).
-            operators: Operators for coordinate reversion. Accepts:
+            operators: Unified preprocessing history for coordinate reversion. Accepts:
                 - None: no coordinate reversion.
-                - list[dict]: a single operator chain, applied to all images.
-                - list[list[dict]]: per-image operator chains (length must match batch size).
+                - List of history entries of shape
+                  ``{"type": str, "metadata": [<per_image_dict>, ...], "id"?: str}``,
+                  matching what ``Preprocessor.preprocess()`` returns. ``metadata`` length
+                  must be 1 (broadcast to all images) or equal to batch size (per-image).
         kwargs:
             batch_size (int): chunk size for dynamic mini-batch inference (default: None = all at once).
                 Ignored when self.fixed_batch_size is set.
@@ -257,38 +259,45 @@ class ODBase(abc.ABC):
 
     @staticmethod
     def _normalize_operators(operators, batch_size: int) -> list:
-        """Normalize operators to a per-image list of operator chains.
+        """Slice a unified preprocessing history into per-image chains.
+
+        The unified history shape is::
+
+            [{"type": str, "metadata": [<per_image_dict>, ...], "id"?: str}, ...]
+
+        Returns one history list per image, each entry's ``metadata`` reduced to a
+        single-element list containing only that image's metadata. Per-image chains
+        are what every downstream revert site (``_revert_coordinates``, the legacy
+        wrappers in ``pipeline_utils``) consumes.
 
         Args:
-            operators: None, a single chain (list[dict]), or per-image chains (list[list[dict]]).
+            operators: None or a unified preprocessing history list.
             batch_size: Number of images in the batch.
 
         Returns:
-            List of operator chains, one per image.
+            List of length ``batch_size``, each element a per-image history list.
         """
         if not operators:
             return [[] for _ in range(batch_size)]
-        if isinstance(operators[0], dict):
-            ODBase._reject_preprocessor_history(operators)
-            return [list(operators) for _ in range(batch_size)]
-        if len(operators) != batch_size:
-            raise ValueError(f"operators length ({len(operators)}) must match batch size ({batch_size})")
-        for chain in operators:
-            if chain and isinstance(chain[0], dict):
-                ODBase._reject_preprocessor_history(chain)
-        return operators
-
-    @staticmethod
-    def _reject_preprocessor_history(chain: list) -> None:
-        # Preprocessor.preprocess() returns history dicts with keys {"type","metadata"};
-        # od_base expects legacy revert_to_origin dicts keyed by op name (resize/pad/stretch/flip).
-        # Passing the former silently corrupts coordinates, so fail fast with a redirect.
-        if any(isinstance(op, dict) and "type" in op and "metadata" in op for op in chain):
+        if not isinstance(operators, list) or not all(isinstance(e, dict) and "type" in e and "metadata" in e for e in operators):
             raise ValueError(
-                "Operators appears to be a Preprocessor history (dicts with 'type'/'metadata'). "
-                "Use self.revert_preprocess(results, ops_list) to invert a Preprocessor pipeline. "
-                "Or, pass legacy revert_to_origin list of dicts with 'resize'/'pad'/'stretch'/'flip' keys."
+                "operators must be a unified preprocessing history (list of {'type', 'metadata': [<per_image_dict>, ...], 'id'?})."
             )
+
+        per_image: list = [[] for _ in range(batch_size)]
+        for entry in operators:
+            meta = entry["metadata"]
+            if not isinstance(meta, list) or len(meta) not in (1, batch_size):
+                raise ValueError(
+                    f"history entry '{entry['type']}' metadata length {len(meta) if isinstance(meta, list) else type(meta).__name__} "
+                    f"is not 1 (broadcast) or {batch_size} (per-image)."
+                )
+            for i in range(batch_size):
+                sliced = {"type": entry["type"], "metadata": [meta[0] if len(meta) == 1 else meta[i]]}
+                if "id" in entry:
+                    sliced["id"] = entry["id"]
+                per_image[i].append(sliced)
+        return per_image
 
     def _revert_coordinates(self, results: dict, operators: list, **kwargs) -> dict:
         """Revert prediction coordinates to the original pre-transform space.

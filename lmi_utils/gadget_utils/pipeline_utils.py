@@ -422,151 +422,172 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bb
         )
 
 
+_RECONSTRUCTOR_SINGLETON = None
+
+
+def _get_op(op_name: str):
+    """Resolve an op name to a registered ``Operation`` instance. Lazy import to avoid cycles."""
+    global _RECONSTRUCTOR_SINGLETON
+    if _RECONSTRUCTOR_SINGLETON is None:
+        from lmi_utils.preprocess_utils.reconstructor import Reconstructor
+
+        _RECONSTRUCTOR_SINGLETON = Reconstructor()
+    if op_name not in _RECONSTRUCTOR_SINGLETON._ops:
+        raise ValueError(f"unsupported operation: {op_name!r}. Registered: {sorted(_RECONSTRUCTOR_SINGLETON._ops)}")
+    return _RECONSTRUCTOR_SINGLETON._ops[op_name]
+
+
+def _validate_history(history: list) -> None:
+    if not isinstance(history, list):
+        raise TypeError(f"operations must be a list, got {type(history).__name__}")
+    for i, entry in enumerate(history):
+        if not isinstance(entry, dict) or "type" not in entry or "metadata" not in entry:
+            raise ValueError(
+                f"operations[{i}] must be a history entry of shape "
+                f"{{'type': str, 'metadata': [<per_image_dict>, ...], 'id'?: str}}; got {entry!r}"
+            )
+        if not isinstance(entry["metadata"], list) or not entry["metadata"]:
+            raise ValueError(f"operations[{i}]['metadata'] must be a non-empty per-image list, got {entry['metadata']!r}")
+
+
 @torch.inference_mode()
 def revert_mask_to_origin(mask, operations: list):
     """
-    This func reverts a single mask image according to the operations list IN ORDER.
-    The operations list contains items as dictionary. The items are listed as follows:
-        1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]>
-        2. <resize: [resized_w, resized_h, orig_w, orig_h]>
-        3. <flip: [flip left right, flip up down, im width, im height]>
-    args:
-        mask: np.array or torch.Tensor, shape (H,W) or (H,W,C)
-        operations : list of dict
+    Revert a single mask image to original-image space using a preprocessing history.
+
+    Args:
+        mask: np.array or torch.Tensor, shape (H, W) or (H, W, C).
+        operations: history list ``[{"type": str, "metadata": [<per_image_dict>], "id"?: str}, ...]``
+            with B=1 (one entry per image, but only one image here).
+
+    Returns:
+        Mask reverted to original-image space, same type as input.
     """
+    _validate_history(operations)
     is_numpy = isinstance(mask, np.ndarray)
-    for operator in reversed(operations):
-        if "resize" in operator:
-            _, _, nw, nh = operator["resize"]
-            mask = resize_image(mask, nw, nh)
-        if "pad" in operator:
-            mask = fit_im(mask, -np.array(operator["pad"]))
-        if "flip" in operator:
-            lr, ud, im_w, im_h = operator["flip"]
-            if is_numpy:
-                mask = torch.from_numpy(mask)
-            if lr:
-                mask = torch.flip(mask, [1])
-            if ud:
-                mask = torch.flip(mask, [0])
-            if is_numpy:
-                mask = mask.numpy()
-    return mask
+    if is_numpy:
+        mask = torch.from_numpy(mask)
+
+    one_channel = mask.ndim == 2
+    if one_channel:
+        mask = mask.unsqueeze(-1)
+
+    for entry in reversed(operations):
+        op = _get_op(entry["type"])
+        # revert_images operates on a list of images; pull metadata[0] (single-image).
+        meta = entry["metadata"][0]
+        mask = op.revert_images([mask], [meta])[0]
+
+    if one_channel:
+        mask = mask.squeeze(-1)
+    return mask.numpy() if is_numpy else mask
 
 
 @torch.inference_mode()
 def revert_masks_to_origin(masks, operations: list):
-    results = []
+    """
+    Revert a stack of instance masks (N, H, W) to original-image space.
+
+    Treats the stack as instance masks bound to a single source image — applies
+    each op's coord-space mask transform, not the image-space ``revert_images``
+    used by :func:`revert_mask_to_origin`. Routes through the Operation registry
+    so resize/pad/crop all do the right thing for instance masks.
+    """
+    _validate_history(operations)
     if len(masks) == 0:
-        return results
+        return []
     is_tensor = isinstance(masks[0], torch.Tensor)
     is_numpy = isinstance(masks, np.ndarray)
-    for m in masks:
-        results.append(revert_mask_to_origin(m, operations))
+
+    masks_t = masks if isinstance(masks, torch.Tensor) else torch.as_tensor(np.array(masks) if is_numpy else masks)
+    per_image = [{"masks": masks_t}]
+    for entry in reversed(operations):
+        op = _get_op(entry["type"])
+        per_image = op.revert_coords(per_image, [entry["metadata"][0]])
+    out = per_image[0]["masks"]
+
     if is_tensor:
-        return torch.stack(results)
-    return np.stack(results) if is_numpy else results
+        return out
+    return out.cpu().numpy() if is_numpy else list(out)
 
 
 @torch.inference_mode()
 def revert_to_origin(pts, operations: list, **kwargs):
     """
-    revert the points to original image space.
-    This func executes operations in the REVERSED order.
-    The operations list contains items as dictionary. The supported items are listed following:
-        1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
-        2. <pad: [pad_left, pad_right, pad_top, pad_bottom]>
-        3. <resize: [resized_w, resized_h, orig_w, orig_h]>
-        4. <flip: [flip left-right (True/False), flip up-down (True/False), image width, image height]>
-    args:
-        pts: Nx2 or Nx4, where each row =(X_i,Y_i)
-        operations : list of dict
+    Revert Nx2 points or Nx4 xyxy boxes to original-image space.
+
+    Args:
+        pts: torch.Tensor / np.ndarray / list of shape (N, 2) or (N, 4).
+        operations: history list ``[{"type": str, "metadata": [<per_image_dict>], "id"?: str}, ...]``.
+
+    kwargs:
+        round (bool): round and clamp output to non-negative integers. Default True.
+        verbose (bool): log intermediate values after each op. Default False.
+
+    Returns:
+        Same shape and type as input.
     """
+    _validate_history(operations)
     if not len(pts):
         return pts
+
     is_tensor = isinstance(pts, torch.Tensor)
     is_numpy = isinstance(pts, np.ndarray)
     if not is_tensor:
         pts = torch.from_numpy(pts) if is_numpy else torch.as_tensor(pts)
 
-    if pts.ndim != 2 or (pts.shape[1] != 2 and pts.shape[1] != 4):
+    if pts.ndim != 2 or pts.shape[1] not in (2, 4):
         raise Exception(f"pts should be Nx2 or Nx4, got shape: {pts.shape}")
 
     verbose = kwargs.get("verbose", False)
-    r, c = pts.shape
-    for op in reversed(operations):
-        if "resize" in op:
-            tw, th, orig_w, orig_h = op["resize"]
-            r = torch.tensor([tw / orig_w, th / orig_h], device=pts.device)
-            if c == 4:
-                r = r.repeat(2).unsqueeze(0)
-            pts = pts / r
-        elif "pad" in op:
-            pad_L, pad_R, pad_T, pad_B = op["pad"]
-            p = torch.tensor([pad_L, pad_T], device=pts.device)
-            if c == 4:
-                p = p.repeat(2).unsqueeze(0)
-            pts = pts - p
-        elif "stretch" in op:
-            s = torch.tensor(op["stretch"], device=pts.device)
-            if c == 4:
-                s = s.repeat(2).unsqueeze(0)
-            pts = pts / s
-        elif "flip" in op:
-            lr, ud, im_w, im_h = op["flip"]
-            idx = [0, 2] if c == 4 else [0]
-            idy = [1, 3] if c == 4 else [1]
-            if lr:
-                pts[:, idx] = im_w - pts[:, idx]
-                if c == 4:
-                    pts[:, [0, 2]] = pts[:, [2, 0]]
-            if ud:
-                pts[:, idy] = im_h - pts[:, idy]
-                if c == 4:
-                    pts[:, [1, 3]] = pts[:, [3, 1]]
-        else:
-            raise Exception(f"unsupported operation: {op}")
-
+    field = "boxes" if pts.shape[1] == 4 else "segments"
+    wrapped = pts if field == "boxes" else [pts]
+    per_image = [{field: wrapped}]
+    for entry in reversed(operations):
+        op = _get_op(entry["type"])
+        per_image = op.revert_coords(per_image, [entry["metadata"][0]])
         if verbose:
-            logger.info(f"after {op}, pts: {pts}")
+            logger.info(f"after {entry['type']}, result: {per_image}")
+
+    out = per_image[0]["boxes"] if field == "boxes" else per_image[0]["segments"][0]
 
     if kwargs.get("round", True):
-        pts = pts.round().clamp(min=0)
+        out = out.round().clamp(min=0)
     if is_tensor:
+        return out
+    return out.cpu().numpy() if is_numpy else out.tolist()
+
+
+def apply_operations(pts, operations: list):
+    """
+    Forward-apply preprocessing ops to original-space Nx2 points or Nx4 boxes.
+
+    Inverse of :func:`revert_to_origin`. Dispatches to each op's ``apply_coords``.
+    """
+    _validate_history(operations)
+    if not len(pts):
         return pts
-    return pts.numpy() if is_numpy else pts.tolist()
 
+    is_tensor = isinstance(pts, torch.Tensor)
+    is_numpy = isinstance(pts, np.ndarray)
+    if not is_tensor:
+        pts = torch.from_numpy(pts) if is_numpy else torch.as_tensor(pts)
 
-def apply_operations(pts: np.ndarray, operations: list):
-    """
-    apply operations to pts.
-    The operations list contains each item as a dictionary. The items are listed as follows:
-        1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
-        2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]>
-        3. <resize: [resized_w, resized_h, orig_w, orig_h]>
-        4. <flip: [flip left-right (True/False), flip up-down (True/False), image width, image height]>
-    args:
-        pts: Nx2 or Nx4, where each row =(X_i,Y_i)
-        operations : list of dict
-    """
-    new_ops = []
-    for op in operations:
-        if "resize" in op:
-            tw, th, orig_w, orig_h = op["resize"]
-            tmp = {"resize": [orig_w, orig_h, tw, th]}
-        elif "pad" in op:
-            pad_L, pad_R, pad_T, pad_B = op["pad"]
-            tmp = {"pad": [-pad_L, -pad_R, -pad_T, -pad_B]}
-        elif "stretch" in op:
-            sx, sy = op["stretch"]
-            tmp = {"stretch": [1 / sx, 1 / sy]}
-        elif "flip" in op:
-            lr, ud, im_w, im_h = op["flip"]
-            tmp = {"flip": [lr, ud, im_w, im_h]}
-        else:
-            raise Exception(f"unsupported operation: {op}")
-        new_ops.append(tmp)
-    return revert_to_origin(pts, new_ops[::-1])
+    if pts.ndim != 2 or pts.shape[1] not in (2, 4):
+        raise Exception(f"pts should be Nx2 or Nx4, got shape: {pts.shape}")
+
+    field = "boxes" if pts.shape[1] == 4 else "segments"
+    wrapped = pts if field == "boxes" else [pts]
+    per_image = [{field: wrapped}]
+    for entry in operations:
+        op = _get_op(entry["type"])
+        per_image = op.apply_coords(per_image, [entry["metadata"][0]])
+
+    out = per_image[0]["boxes"] if field == "boxes" else per_image[0]["segments"][0]
+    out = out.round().clamp(min=0)
+    if is_tensor:
+        return out
+    return out.cpu().numpy() if is_numpy else out.tolist()
 
 
 def convert_key_to_int(dt):

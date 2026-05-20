@@ -128,9 +128,14 @@ def imgs_dota8():
 
 
 def _load_images(directory, im_dim):
-    """Load and resize images from a directory, returning (images, resized, ops)."""
+    """Load and resize images from a directory.
+
+    Returns:
+        (images, resized, ops) where ``ops`` is a unified preprocessing history with
+        per-image metadata (one ``resize`` entry whose metadata has length == batch).
+    """
     paths = [os.path.join(directory, img) for img in os.listdir(directory)]
-    images, resized_images, ops = [], [], []
+    images, resized_images, per_image_meta = [], [], []
     for p in paths:
         if "png" not in p and "jpg" not in p:
             continue
@@ -138,8 +143,18 @@ def _load_images(directory, im_dim):
         h, w = rgb.shape[:2]
         resized_images.append(cv2.resize(rgb, (im_dim, im_dim)))
         images.append(rgb)
-        ops.append([{"resize": (im_dim, im_dim, w, h)}])
+        per_image_meta.append({"src_size": [w, h], "dst_size": [im_dim, im_dim]})
+    ops = [{"type": "resize", "metadata": per_image_meta}]
     return images, resized_images, ops
+
+
+def _shared_ops(per_image_history):
+    """Take a per-image history and produce a single-image (broadcast) variant.
+
+    Used to exercise the "single chain applied to all images" code path: each
+    history entry's per-image metadata list is collapsed to its first element.
+    """
+    return [{**entry, "metadata": [entry["metadata"][0]]} for entry in per_image_history]
 
 
 def _assert_empty_output(out, keys, batch_size=1):
@@ -235,7 +250,7 @@ class Test_Yolo_Det:
             _assert_batch_output(out, self.KEYS, num_imgs)
 
             # shared operators (list[dict] applied to all images)
-            out2, _ = model.predict(resized_images, configs=0.5, operators=ops_list[0])
+            out2, _ = model.predict(resized_images, configs=0.5, operators=_shared_ops(ops_list))
             _assert_batch_output(out2, self.KEYS, num_imgs)
 
             # no operators
@@ -251,13 +266,14 @@ class Test_Yolo_Det:
                 _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
 
     def test_predict_batch_invalid_operators(self, yolo_models, imgs_coco):
-        _, resized_images, ops_list = imgs_coco
+        _, resized_images, _ops_list = imgs_coco
         if len(resized_images) < 2:
             pytest.skip("Not enough images for batch test")
         model = yolo_models["det"][0]
-        # operators length (1) doesn't match batch size (N > 1)
-        with pytest.raises(ValueError):
-            model.predict(resized_images, configs=0.5, operators=[ops_list[0]])
+        # Per-image metadata length doesn't match batch size (and != 1, so no broadcast).
+        bad = [{"type": "resize", "metadata": [{"src_size": [10, 10], "dst_size": [640, 640]}] * 7}]
+        with pytest.raises(ValueError, match="not 1"):
+            model.predict(resized_images, configs=0.5, operators=bad)
 
 
 class Test_Yolo_Seg:
@@ -308,7 +324,7 @@ class Test_Yolo_Seg:
                 assert len(out["segments"][img_idx]) == 0
 
             # shared operators
-            out2, _ = model.predict(resized_images, configs=0.5, operators=batch_ops[0])
+            out2, _ = model.predict(resized_images, configs=0.5, operators=_shared_ops(batch_ops))
             _assert_batch_output(out2, self.KEYS, num_images)
 
             # no operators
@@ -364,7 +380,7 @@ class Test_Yolo_Obb:
             _assert_batch_output(out, self.KEYS, num_imgs)
 
             # shared operators
-            out2, _ = model.predict(resized_images, configs=0.5, operators=ops_list[0])
+            out2, _ = model.predict(resized_images, configs=0.5, operators=_shared_ops(ops_list))
             _assert_batch_output(out2, self.KEYS, num_imgs)
 
             # no operators
@@ -421,7 +437,7 @@ class Test_Yolo_Pose:
             _assert_batch_output(out, self.KEYS, num_imgs)
 
             # shared operators
-            out2, _ = model.predict(resized_images, configs=0.5, operators=ops_list[0])
+            out2, _ = model.predict(resized_images, configs=0.5, operators=_shared_ops(ops_list))
             _assert_batch_output(out2, self.KEYS, num_imgs)
 
             # no operators
