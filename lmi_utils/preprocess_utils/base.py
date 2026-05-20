@@ -15,18 +15,19 @@ class BaseProcessor:
 
     def to_tensor_list(self, images: List[ImageLike]) -> Tuple[List[torch.Tensor], bool]:
         """
-        Convert image list to tensors if needed.
+        Convert image list to tensors if needed and convert to contiguous.
 
         Returns:
             (tensor_list, is_numpy): List of tensors and flag indicating if input was numpy
         """
         is_numpy = isinstance(images[0], np.ndarray)
         if is_numpy:
-            return [torch.from_numpy(img) for img in images], True
-        return images, False
+            return [torch.from_numpy(np.ascontiguousarray(img)) for img in images], True
+        return [img.contiguous() for img in images], False
 
     def from_tensor_list(self, images: List[torch.Tensor], to_numpy: bool) -> List[ImageLike]:
-        """Convert tensor list back to numpy if needed."""
+        """Convert tensor list back to numpy if needed. Outputs are made contiguous."""
+        images = [img.contiguous() for img in images]
         if to_numpy:
             return [img.cpu().numpy() for img in images]
         return images
