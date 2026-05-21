@@ -120,13 +120,6 @@ class ModelCollectionV3(BaseModel):
                             "stride": [cfg["y_stride"], cfg["x_stride"]],
                         },
                     }
-                elif step.type == "crop-to-label":
-                    if "label" not in step.configuration:
-                        raise ValueError("crop-to-label configuration must contain key 'label'.")
-                    entry = {
-                        "type": "crop-to-label",
-                        "configuration": {"label": step.configuration["label"]},
-                    }
                 else:
                     entry = step.model_dump(exclude={"id"}, exclude_none=True)
 
