@@ -10,6 +10,7 @@ from .ops import (
     FlipOperation,
     PadOperation,
     ResizeOperation,
+    RotateOperation,
     TileOperation,
 )
 
@@ -48,6 +49,7 @@ class Preprocessor(BaseProcessor):
         self.register(TileOperation())
         self.register(CropOperation())
         self.register(CropToLabelOperation())
+        self.register(RotateOperation())
 
     def register(self, op: Operation) -> None:
         """

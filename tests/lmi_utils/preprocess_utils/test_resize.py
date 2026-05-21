@@ -80,6 +80,28 @@ def test_resize_apply_coordinates_forward_scales_and_pads():
     assert torch.allclose(forwarded["boxes"][0], torch.tensor([[30.0, 10.0, 70.0, 90.0]]), atol=1e-4)
 
 
+def test_resize_apply_coordinates_masks_preserve_aspect():
+    """Forward apply_coordinates on a mask: resize then pad into the full target canvas.
+
+    200(H)x100(W) -> preserve_aspect 100x100: scale=0.5 -> 100x50, pad L/R=25 (T/B=0).
+    A solid filled mask (1, 200, 100) of all ones should land as a (1, 100, 100) canvas
+    that is ones inside columns [25, 75) and zeros in the L/R pad strips.
+    """
+    pre, rec = Preprocessor(), Reconstructor()
+    img = _hwc(200, 100, 3)
+    steps = [{"type": "resize", "configuration": {"width": 100, "height": 100, "preserve_aspect": True}}]
+    _out, history = pre.preprocess([img], steps)
+
+    masks = torch.ones((1, 200, 100))
+    forwarded = rec.apply_coordinates(_empty_results(masks=[masks]), history)
+
+    out = forwarded["masks"][0]
+    assert out.shape == (1, 100, 100)
+    assert torch.all(out[:, :, :25] == 0), "left pad strip should be zero"
+    assert torch.all(out[:, :, 75:] == 0), "right pad strip should be zero"
+    assert torch.all(out[:, :, 25:75] == 1), "scaled mask region should be one"
+
+
 def test_resize_apply_then_revert_is_identity_on_boxes():
     """Round trip original → preprocessed → original recovers the input box."""
     pre, rec = Preprocessor(), Reconstructor()

@@ -17,6 +17,7 @@ from .ops import (
     FlipOperation,
     PadOperation,
     ResizeOperation,
+    RotateOperation,
     TileOperation,
 )
 
@@ -25,6 +26,7 @@ crop = CropOperation.build_step
 crop_to_label = CropToLabelOperation.build_step
 flip = FlipOperation.build_step
 pad = PadOperation.build_step
+rotate = RotateOperation.build_step
 tile = TileOperation.build_step
 
-__all__ = ["resize", "crop", "crop_to_label", "flip", "pad", "tile"]
+__all__ = ["resize", "crop", "crop_to_label", "flip", "pad", "rotate", "tile"]

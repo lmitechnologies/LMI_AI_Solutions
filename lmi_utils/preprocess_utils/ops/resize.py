@@ -128,7 +128,7 @@ def _apply_resize(result: Dict[str, Any], m: Dict[str, Any], *, forward: bool) -
     src_w, src_h = m["src_size"]
     dst_w, dst_h = m["dst_size"]
     pad = m.get("pad", [0, 0, 0, 0])
-    pad_L, _pad_R, pad_T, _pad_B = pad
+    pad_L, pad_R, pad_T, pad_B = pad
 
     sx = dst_w / src_w
     sy = dst_h / src_h
@@ -146,14 +146,12 @@ def _apply_resize(result: Dict[str, Any], m: Dict[str, Any], *, forward: bool) -
         # masks live in preprocessed space. Forward and revert are symmetric image-resamples.
         # We don't implement mask resampling here because callers go through revert_images
         # for whole-image masks; instance masks reverted alongside boxes use this path.
-        return _resample_masks(masks, [src_w, src_h], [dst_w, dst_h], pad_L, pad_T, pad_after=forward)
+        return _resample_masks(masks, [src_w, src_h], [dst_w, dst_h], [pad_L, pad_R, pad_T, pad_B], pad_after=forward)
 
     return apply_coord_transform(result, xy_fn=xy_fn, mask_fn=mask_fn)
 
 
-def _resample_masks(
-    masks: torch.Tensor, src_size: List[int], dst_size: List[int], pad_L: int, pad_T: int, *, pad_after: bool
-) -> torch.Tensor:
+def _resample_masks(masks: torch.Tensor, src_size: List[int], dst_size: List[int], pad: List[int], *, pad_after: bool) -> torch.Tensor:
     """Resample instance masks between original space (src) and preprocessed space (dst+pad).
 
     pad_after=True: src -> dst -> pad (forward).
@@ -163,15 +161,20 @@ def _resample_masks(
 
     src_w, src_h = src_size
     dst_w, dst_h = dst_size
+    pad_L, pad_R, pad_T, pad_B = pad
     if pad_after:
         # forward: resize to (dst_h, dst_w), then pad to (dst_h + pT+pB, dst_w + pL+pR)
         resized = F.interpolate(masks.float().unsqueeze(1), size=(dst_h, dst_w), mode="nearest").squeeze(1)
-        return resized  # Note: padding masks isn't strictly needed for coord-only forward;
-        # callers don't typically forward-apply masks. Kept minimal here.
+        if pad_L or pad_R or pad_T or pad_B:
+            n = resized.shape[0]
+            canvas_h = dst_h + pad_T + pad_B
+            canvas_w = dst_w + pad_L + pad_R
+            canvas = torch.zeros((n, canvas_h, canvas_w), dtype=resized.dtype, device=resized.device)
+            canvas[:, pad_T : pad_T + dst_h, pad_L : pad_L + dst_w] = resized
+            return canvas
+        return resized
     # revert: strip pad first (if any), then resize back to (src_h, src_w)
     if pad_L or pad_T:
         # mask shape: (N, H, W). Strip pad from a (dst_h+pT+pB, dst_w+pL+pR) canvas.
-        n, h, w = masks.shape
-        # h == dst_h + pT + pB; w == dst_w + pL + pR
         masks = masks[:, pad_T : pad_T + dst_h, pad_L : pad_L + dst_w]
     return F.interpolate(masks.float().unsqueeze(1), size=(src_h, src_w), mode="nearest").squeeze(1)

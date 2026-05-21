@@ -9,6 +9,7 @@ from .ops import (
     FlipOperation,
     PadOperation,
     ResizeOperation,
+    RotateOperation,
     TileOperation,
 )
 
@@ -36,6 +37,7 @@ class Reconstructor(BaseProcessor):
         self.register(FlipOperation())
         self.register(TileOperation())
         self.register(CropOperation())
+        self.register(RotateOperation())
 
     def register(self, op: Operation) -> None:
         """

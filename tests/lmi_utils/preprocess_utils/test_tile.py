@@ -33,6 +33,168 @@ def _empty_results(n=1, **overrides):
     return results
 
 
+def _tile_pipeline(im_size=200, tile=100, stride=100, scale_mode="padding"):
+    """Helper: build a Preprocessor+Reconstructor and run forward tile, returning (history, hwc image)."""
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(im_size, im_size, 3)
+    cfg = {"tile_size": tile, "stride": stride, "scale_mode": scale_mode}
+    _, history = pre.preprocess([img], [{"type": "tile", "configuration": cfg}])
+    return pre, rec, history
+
+
+def test_tile_apply_coords_xyxy_clips_and_drops_per_tile():
+    """200x200 image, 4x 100x100 tiles. Box straddles vertical seam, stays in top row."""
+    pre, rec, history = _tile_pipeline()
+    results = {
+        "boxes": [torch.tensor([[80.0, 50.0, 140.0, 90.0]])],
+        "scores": [torch.tensor([0.9])],
+        "classes": [np.array([5], dtype=np.int32)],
+        "segments": [[]],
+        "points": [torch.zeros((0, 1, 3))],
+    }
+    out = rec.apply_coordinates(results, history)
+    # Top-left tile: clipped to x in [80, 100]
+    assert torch.allclose(out["boxes"][0], torch.tensor([[80.0, 50.0, 100.0, 90.0]]))
+    assert out["scores"][0].tolist() == [pytest.approx(0.9)]
+    assert out["classes"][0].tolist() == [5]
+    # Top-right tile: clipped to x in [0, 40]
+    assert torch.allclose(out["boxes"][1], torch.tensor([[0.0, 50.0, 40.0, 90.0]]))
+    assert out["classes"][1].tolist() == [5]
+    # Bottom-row tiles: dropped (no overlap)
+    assert out["boxes"][2].shape == (0, 4)
+    assert out["boxes"][3].shape == (0, 4)
+    assert len(out["scores"][2]) == 0 and len(out["classes"][3]) == 0
+
+
+def test_tile_apply_coords_obb_clipped_and_refit_to_min_area_rect():
+    """OBB straddling x=100 seam is clipped per-tile then refit as a min-area rect (still 4 corners)."""
+    _, rec, history = _tile_pipeline()
+    # Axis-aligned quad centered at (100, 60), 60w x 40h.
+    obb = torch.tensor([[[70.0, 40.0], [130.0, 40.0], [130.0, 80.0], [70.0, 80.0]]])
+    results = {
+        "boxes": [obb],
+        "scores": [torch.tensor([0.5])],
+        "classes": [np.array([0], dtype=np.int32)],
+        "segments": [[]],
+        "points": [torch.zeros((0, 1, 3))],
+    }
+    out = rec.apply_coordinates(results, history)
+
+    # Top-left tile: clipped to x in [70, 100], y in [40, 80] — refit is the same rect.
+    assert out["boxes"][0].shape == (1, 4, 2)
+    tl = out["boxes"][0][0]
+    assert tl[:, 0].min().item() >= 70.0 - 1e-4 and tl[:, 0].max().item() <= 100.0 + 1e-4
+    assert tl[:, 1].min().item() >= 40.0 - 1e-4 and tl[:, 1].max().item() <= 80.0 + 1e-4
+
+    # Top-right tile: clipped to tile-local x in [0, 30], y in [40, 80].
+    assert out["boxes"][1].shape == (1, 4, 2)
+    tr = out["boxes"][1][0]
+    assert tr[:, 0].min().item() >= 0.0 - 1e-4 and tr[:, 0].max().item() <= 30.0 + 1e-4
+    assert tr[:, 1].min().item() >= 40.0 - 1e-4 and tr[:, 1].max().item() <= 80.0 + 1e-4
+
+    # Bottom tiles dropped (no overlap).
+    assert out["boxes"][2].shape == (0, 4, 2)
+    assert out["boxes"][3].shape == (0, 4, 2)
+
+
+def test_tile_apply_coords_points_visibility_zeroed_outside_tile():
+    """Keypoints outside a tile get visibility=0; instance dropped only if all keypoints invisible."""
+    _, rec, history = _tile_pipeline()
+    # 1 instance, 3 keypoints: one inside top-left, one inside top-right, one inside bottom-left.
+    pts = torch.tensor([[[30.0, 30.0, 2.0], [150.0, 30.0, 2.0], [30.0, 150.0, 2.0]]])
+    results = {
+        "boxes": [torch.zeros((0, 4))],
+        "scores": [torch.zeros((0,))],
+        "classes": [np.zeros((0,), dtype=np.int32)],
+        "segments": [[]],
+        "points": [pts],
+    }
+    out = rec.apply_coordinates(results, history)
+    # Top-left tile: kp0 visible (30,30), others outside → vis=0
+    assert out["points"][0].shape == (1, 3, 3)
+    assert out["points"][0][0, 0].tolist() == [pytest.approx(30.0), pytest.approx(30.0), pytest.approx(2.0)]
+    assert out["points"][0][0, 1, 2].item() == 0.0  # right kp zeroed
+    assert out["points"][0][0, 2, 2].item() == 0.0  # bottom kp zeroed
+    # Bottom-right tile: no keypoint inside → instance dropped
+    assert out["points"][3].shape == (0, 3, 3)
+
+
+def test_tile_apply_coords_segments_clipped_to_tile_rect():
+    """A square segment straddling x=100 is clipped to a clean rect in each tile."""
+    _, rec, history = _tile_pipeline()
+    poly = torch.tensor([[80.0, 40.0], [140.0, 40.0], [140.0, 80.0], [80.0, 80.0]])
+    results = {
+        "boxes": [torch.zeros((0, 4))],
+        "scores": [torch.zeros((0,))],
+        "classes": [np.zeros((0,), dtype=np.int32)],
+        "segments": [[poly]],
+        "points": [torch.zeros((0, 1, 3))],
+    }
+    out = rec.apply_coordinates(results, history)
+    # Top-left: clipped to x in [80, 100], y in [40, 80] — 4 vertices.
+    seg00 = out["segments"][0][0]
+    assert seg00.shape[0] == 4
+    xs, ys = seg00[:, 0], seg00[:, 1]
+    assert xs.min().item() >= 80.0 - 1e-4 and xs.max().item() <= 100.0 + 1e-4
+    assert ys.min().item() >= 40.0 - 1e-4 and ys.max().item() <= 80.0 + 1e-4
+    # Top-right: clipped to x in [0, 40] in tile-local coords.
+    seg01 = out["segments"][1][0]
+    assert seg01[:, 0].max().item() <= 40.0 + 1e-4
+    assert seg01[:, 0].min().item() >= 0.0 - 1e-4
+    # Bottom tiles dropped (empty list).
+    assert out["segments"][2] == []
+    assert out["segments"][3] == []
+
+
+def test_tile_apply_coords_masks_sliced_per_tile_and_drop_when_empty():
+    """Single instance mask covering top-left quadrant: kept in (0,0), dropped elsewhere."""
+    _, rec, history = _tile_pipeline()
+    mask = torch.zeros((1, 200, 200), dtype=torch.uint8)
+    mask[0, 30:80, 30:80] = 1  # entirely inside top-left tile
+    results = {
+        "boxes": [torch.zeros((0, 4))],
+        "scores": [torch.zeros((0,))],
+        "classes": [np.zeros((0,), dtype=np.int32)],
+        "segments": [[]],
+        "points": [torch.zeros((0, 1, 3))],
+        "masks": [mask],
+    }
+    out = rec.apply_coordinates(results, history)
+    # (0,0): kept; mask shape is tile size with ones in [30:80, 30:80]
+    assert out["masks"][0].shape == (1, 100, 100)
+    assert out["masks"][0][0, 30:80, 30:80].all() and out["masks"][0].sum() == 50 * 50
+    # Other tiles: dropped (mask was zero there)
+    for i in (1, 2, 3):
+        assert out["masks"][i].shape == (0, 100, 100)
+
+
+def test_tile_apply_coords_interpolation_mode_scales_coords():
+    """In interpolation mode, coords are scaled into scale_size before per-tile shifting."""
+    # im=150x150, scaled to scale=200x200 (so sx=sy=200/150=4/3), 2x2 tiles of 100x100.
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(150, 150, 3)
+    cfg = {"tile_size": 100, "stride": 100, "scale_mode": "interpolation"}
+    _, history = pre.preprocess([img], [{"type": "tile", "configuration": cfg}])
+    # Box at original (75, 75) → scale-space (100, 100) → on the seam.
+    results = {
+        "boxes": [torch.tensor([[60.0, 60.0, 90.0, 90.0]])],
+        "scores": [torch.tensor([1.0])],
+        "classes": [np.array([0], dtype=np.int32)],
+        "segments": [[]],
+        "points": [torch.zeros((0, 1, 3))],
+    }
+    out = rec.apply_coordinates(results, history)
+    # In scale-space, box is [80, 80, 120, 120]. Every tile should get a clipped slice.
+    expected = {
+        0: [[80.0, 80.0, 100.0, 100.0]],  # top-left clip
+        1: [[0.0, 80.0, 20.0, 100.0]],  # top-right clip (x: 80-100 → tile-local 0-20)
+        2: [[80.0, 0.0, 100.0, 20.0]],  # bottom-left clip
+        3: [[0.0, 0.0, 20.0, 20.0]],  # bottom-right clip
+    }
+    for i, exp in expected.items():
+        assert torch.allclose(out["boxes"][i], torch.tensor(exp), atol=1e-4), f"tile {i} got {out['boxes'][i]}"
+
+
 def test_tile_2d_grayscale_round_trip_preserves_shape_and_values():
     """Forward+revert on a (H, W) image (no channel axis) returns the original (H, W)."""
     pre, rec = Preprocessor(), Reconstructor()

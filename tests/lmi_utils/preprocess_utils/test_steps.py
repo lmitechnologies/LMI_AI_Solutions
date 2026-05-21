@@ -80,6 +80,22 @@ def test_pad_with_explicit_pad():
     }
 
 
+def test_rotate():
+    assert steps.rotate(angle=30) == {
+        "type": "rotate",
+        "configuration": {"angle": 30.0},
+    }
+
+
+def test_rotate_with_id():
+    out = steps.rotate(angle=-45, id="r")
+    assert out == {
+        "type": "rotate",
+        "configuration": {"angle": -45.0},
+        "id": "r",
+    }
+
+
 def test_tile():
     assert steps.tile(tile_size=[256, 256], stride=[128, 128]) == {
         "type": "tile",
