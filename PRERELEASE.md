@@ -218,12 +218,9 @@ OD model role from gofactory:
 ```json
 "od-model": {
     "format": "pt",
-    "configs": {
-        "to-fail": {"defect_a": true},
-        "confidence": {"defect_a": 0.5}
-    },
     "details": {
         "classes": ["defect_a"],
+        "confidence_threshold": 0.5,
         "image_size": [640, 640],
         "preprocessing": [
             {"type": "resize", "configuration": {"height": 640, "width": 640, "preserve_aspect": true}}
@@ -273,9 +270,10 @@ AD model role from gofactory:
 ```json
 "ad-model": {
     "format": "pt",
-    "configs": {"min_threshold": 0.0, "max_threshold": 1.0},
     "details": {
         "image_size": [224, 224],
+        "min_threshold": 0.0,
+        "max_threshold": 1.0,
         "preprocessing": [
             {"type": "resize", "configuration": {"height": 224, "width": 448, "preserve_aspect": true}},
             {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}}
