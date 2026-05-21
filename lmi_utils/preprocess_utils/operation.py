@@ -32,6 +32,7 @@ class Operation(ABC):
     """
 
     name: str = ""
+    is_runtime: bool = False  # required to specify ID for static models
 
     @classmethod
     def _finalize_step(cls, configuration: Dict[str, Any], id: Optional[str] = None) -> Dict[str, Any]:

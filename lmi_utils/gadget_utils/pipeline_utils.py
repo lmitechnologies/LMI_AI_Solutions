@@ -5,6 +5,7 @@ import os
 import random
 import tarfile
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -705,6 +706,44 @@ def _resolve_artifact_paths(model: Dict[str, Any], manifest_dir: Path) -> None:
                 artifact_data["model_path"] = str((manifest_dir / path_obj).resolve())
 
 
+def _autofill_preprocessing_ids(models: List[Dict[str, Any]]) -> None:
+    """Fill missing ``id`` on non-runtime preprocessing steps with a random 8-hex id.
+
+    Runtime ops (``Operation.is_runtime == True``, e.g. crop-to-label) must carry an
+    explicit id in static manifests so the runtime caller can target them; missing
+    ids on those raise.
+    """
+    from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+
+    ops_registry = Preprocessor()._ops
+
+    for model in models:
+        role = model.get("model_role", "<unknown>")
+        details = model.get("details") or {}
+        steps = details.get("preprocessing") or []
+        if not steps:
+            continue
+
+        existing_ids = {s.get("id") for s in steps if s.get("id")}
+        for i, step in enumerate(steps):
+            if step.get("id"):
+                continue
+            op_type = step.get("type", "")
+            op = ops_registry.get(op_type)
+            if op is None:
+                raise ValueError(f"Model role '{role}': preprocessing step at index {i} has unknown type '{op_type}'.")
+            if op.is_runtime:
+                raise ValueError(
+                    f"Model role '{role}': '{op_type}' step at index {i} has no 'id'. Runtime ops require explicit ids in static manifests."
+                )
+            while True:
+                new_id = uuid.uuid4().hex[:8]
+                if new_id not in existing_ids:
+                    break
+            existing_ids.add(new_id)
+            step["id"] = new_id
+
+
 def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     """
     Create models manifest from a static manifest json file.
@@ -713,9 +752,7 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
         manifest_json_path (str): path to the manifest JSON file.
         **kwargs: optional keyword arguments. Recognized:
             version (str): schema version of the manifest. Defaults to "3".
-                "2" expects flat fields under `details` and synthesizes a `configs` block;
-                "3" expects a manifest already shaped per schema_3 and only resolves
-                artifact paths.
+                v3 additionally autofills missing ids on non-runtime preprocessing steps.
     """
     version = kwargs.get("version", "3")
     logger.info(f"Loading static manifest from {manifest_json_path} with schema version {version}")
@@ -732,6 +769,9 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
         raise ValueError(f"Unsupported static manifest version: {version}")
 
     manifest_v3 = version == "3"
+    if manifest_v3:
+        _autofill_preprocessing_ids(models)
+
     keys_to_copy = (
         ["anomaly_size", "min_threshold", "max_threshold", "iou"]
         if manifest_v3

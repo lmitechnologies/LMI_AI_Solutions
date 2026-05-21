@@ -21,6 +21,7 @@ class CropToLabelOperation(Operation):
     """
 
     name = "crop-to-label"
+    is_runtime = True
 
     @classmethod
     def build_step(cls, *, label: str, id: Optional[str] = None) -> Dict[str, Any]:
