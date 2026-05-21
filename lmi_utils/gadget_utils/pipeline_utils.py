@@ -707,19 +707,16 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
 
     manifest: Dict[str, Any] = {}
 
-    if version == "3":
-        for model in models:
-            role = model.get("model_role")
-            if role is None:
-                continue
-            _resolve_artifact_paths(model, manifest_path.parent)
-            manifest[role] = model
-        return manifest
-
-    if version != "2":
+    if version not in ["2", "3"]:
         raise ValueError(f"Unsupported static manifest version: {version}")
 
-    keys_to_copy = ["anomaly_size", "threshold_max", "threshold_min", "iou"]
+    manifest_v3 = version == "3"
+    keys_to_copy = (
+        ["anomaly_size", "min_threshold", "max_threshold", "iou"]
+        if manifest_v3 else
+        ["anomaly_size", "threshold_max", "threshold_min", "iou"]
+    )
+    classes_key = "classes" if manifest_v3 else "object_class"
 
     for model in models:
         role = model.get("model_role")
@@ -731,15 +728,16 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
         # Create object configs
         model["configs"] = {}
         details = model.get("details", {})
-        object_classes = details.get("object_class", [])
+        object_classes = details.get(classes_key, [])
 
         if object_classes:
             # Map config keys to their default values from details
             config_defaults = {
                 "confidence": details.get("confidence_threshold", 0.5),
-                "size": details.get("object_size", 1),
                 "to-fail": details.get("to_fail", True),
             }
+            if not manifest_v3:
+                config_defaults["size"] = details.get("object_size", 1)
 
             # Generate the dictionary for each config key
             for config_key, default_val in config_defaults.items():
