@@ -713,8 +713,8 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     manifest_v3 = version == "3"
     keys_to_copy = (
         ["anomaly_size", "min_threshold", "max_threshold", "iou"]
-        if manifest_v3 else
-        ["anomaly_size", "threshold_max", "threshold_min", "iou"]
+        if manifest_v3
+        else ["anomaly_size", "threshold_max", "threshold_min", "iou"]
     )
     classes_key = "classes" if manifest_v3 else "object_class"
 
