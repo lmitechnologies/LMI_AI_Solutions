@@ -92,7 +92,7 @@ def fit_im_to_size(im, W=None, H=None, value=0):
     h, w = im.shape[:2]
     if W is None:
         W = w
-    elif H is None:
+    if H is None:
         H = h
 
     is_numpy = isinstance(im, np.ndarray)
@@ -234,6 +234,7 @@ def uint16_to_int16(profile):
 def profile_to_3d(profile, resolution, offset):
     """
     convert profile image to 3d sensor space
+
     args:
         profile(np array | tensor): the profile image
         resolution(tuple): (x_resolution, y_resolution, z_resolution)
@@ -277,6 +278,7 @@ def profile_to_3d(profile, resolution, offset):
 def pts_to_3d(pts, profile, resolution, offset):
     """
     convert list of 2d pixel locations to 3d sensor space
+
     args:
         pts(numpy | tensor): array of (x,y) points, with shape of Nx2
         profile(same type as pts): the profile image
@@ -323,8 +325,9 @@ def plot_one_box(
     hide_bbox=False,
 ):
     """
-    description: Plots one bounding box and mask (optinal) on image img,
-                 this function comes from YoLov5 project.
+    description:
+        Plots one bounding box and mask (optinal) on image img,
+        this function comes from YoLov5 project.
     param:
         box:    a box likes [x1,y1,x2,y2]
         img:    a opencv image object in BGR format
@@ -372,7 +375,8 @@ def plot_one_box(
 
 def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bbox=False):
     """
-    description: Plots one bounding rotated bbox on image img
+    description:
+        Plots one bounding rotated bbox on image img
     param:
         box:    a box likes [[x,y],[x,y],[x,y],[x,y]]
         img:    a opencv image object in BGR format
@@ -715,7 +719,7 @@ def _autofill_preprocessing_ids(models: List[Dict[str, Any]]) -> None:
     """
     from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 
-    ops_registry = Preprocessor()._ops
+    ops_registry = Preprocessor.default_ops()
 
     for model in models:
         role = model.get("model_role", "<unknown>")

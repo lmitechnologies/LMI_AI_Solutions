@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from lmi_utils.image_utils.types import ImageBatch, ImageLike
 
@@ -38,18 +38,24 @@ class Preprocessor(BaseProcessor):
         through CPU tensors (numpy is CPU-only by definition).
     """
 
+    _DEFAULT_OPS: Tuple[Type[Operation], ...] = (
+        ResizeOperation,
+        PadOperation,
+        FlipOperation,
+        TileOperation,
+        CropOperation,
+        CropToLabelOperation,
+        RotateOperation,
+    )
+
+    @classmethod
+    def default_ops(cls) -> Dict[str, Type[Operation]]:
+        return {op.name: op for op in cls._DEFAULT_OPS}
+
     def __init__(self):
         self._ops: Dict[str, Operation] = {}
-        self._register_defaults()
-
-    def _register_defaults(self) -> None:
-        self.register(ResizeOperation())
-        self.register(PadOperation())
-        self.register(FlipOperation())
-        self.register(TileOperation())
-        self.register(CropOperation())
-        self.register(CropToLabelOperation())
-        self.register(RotateOperation())
+        for op_cls in self._DEFAULT_OPS:
+            self.register(op_cls())
 
     def register(self, op: Operation) -> None:
         """

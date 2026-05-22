@@ -21,8 +21,7 @@ class TileOperation(Operation):
         stride (int | [h, w], required): step between tile origins.
         scale_mode (str, optional): how the image is fit to the tile grid before slicing
             (``"padding"`` or ``"interpolation"``). Default ``"padding"``.
-        overlap_mode (str, optional): how overlapping regions are merged on untile
-            (e.g. ``"average"``). Default ``"average"``.
+        overlap_mode (str, optional): how overlapping regions are merged on untile. Default ``"average"``.
 
     Metadata schema (per input image)::
 

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple, Type
 
 from lmi_utils.image_utils.types import ImageLike
 
@@ -27,17 +27,24 @@ class Reconstructor(BaseProcessor):
         and avoid implicit `.cpu()` / `.cuda()` moves.
     """
 
+    _DEFAULT_OPS: Tuple[Type[Operation], ...] = (
+        ResizeOperation,
+        PadOperation,
+        FlipOperation,
+        TileOperation,
+        CropOperation,
+        RotateOperation,
+    )
+
+    @classmethod
+    def default_ops(cls) -> Dict[str, Type[Operation]]:
+        """Return the built-in ``{name: Operation class}`` map without constructing a Reconstructor."""
+        return {op.name: op for op in cls._DEFAULT_OPS}
+
     def __init__(self):
         self._ops: Dict[str, Operation] = {}
-        self._register_defaults()
-
-    def _register_defaults(self) -> None:
-        self.register(ResizeOperation())
-        self.register(PadOperation())
-        self.register(FlipOperation())
-        self.register(TileOperation())
-        self.register(CropOperation())
-        self.register(RotateOperation())
+        for op_cls in self._DEFAULT_OPS:
+            self.register(op_cls())
 
     def register(self, op: Operation) -> None:
         """
