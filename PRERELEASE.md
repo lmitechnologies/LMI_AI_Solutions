@@ -361,6 +361,8 @@ When a model has multiple `crop-to-label` steps, the runtime dict keys route per
 
 The metadata returned by `Preprocessor.preprocess()`, accepted by OD `predict(operators=…)`, and consumed by `revert_to_origin` / `revert_mask_to_origin` / `revert_masks_to_origin` / `apply_operations` now uses **one** shape. The legacy single-key dicts (`{"resize": [tw, th, ow, oh]}`, `{"pad": [L, R, T, B]}`, etc.) have been replaced by named per-image metadata.
 
+Users are **not** expected to construct these dicts by hand — `self.preprocessor.preprocess()` returns the history in this shape, and you pass it straight back to `revert_preprocess()` or `predict(operators=…)`. The schema below is documented for reference and for the rare manual-construction case.
+
 **Canonical schema:**
 
 ```python
@@ -380,7 +382,8 @@ The metadata returned by `Preprocessor.preprocess()`, accepted by OD `predict(op
 | `pad` | `{"pad": [L, R, T, B]}` |
 | `crop` | `{"box": [x1, y1, x2, y2], "orig_size": [w, h]}` |
 | `flip` | `{"lr": bool, "ud": bool, "size": [w, h]}` |
-| `tile` | existing `Tiler.to_dict()` payload |
+| `rotate` | `{"angle": float, "src_size": [w, h], "dst_size": [w, h]}` |
+| `tile` | `{"tile_size": [h, w], "stride": [h, w], "im_size": [H, W], "scale_size": [H', W'], "n_tiles": [n_h, n_w], "batch_size": int, "num_channel": int, "scale_mode": str, "overlap_mode": str}` |
 
 **Before (legacy):**
 
@@ -444,9 +447,7 @@ results = model.predict(foreground_im, 0.5, operators=[crop_op])
 
 ### 10. Typed step builders — `lmi_utils.preprocess_utils.steps`
 
-`lmi_utils.preprocess_utils.steps` exposes typed, keyword-only builders for every supported preprocessing step. Each builder returns a dict that matches the v3 manifest shape (`{"type": str, "configuration": dict, "id"?: str}`) byte-for-byte, so the output drops straight into `Preprocessor.preprocess()` and is interchangeable with hand-written manifest entries.
-
-**Why:** Manifest dicts are easy to typo (`"preserve-aspect"` vs `"preserve_aspect"`, swapped width/height, missing default fields). The builders make the supported keys discoverable through IDE autocomplete, enforce keyword-only arguments, strip `None` values, and omit the `id` key when no id is supplied — producing the exact same dict the manifest loader would parse.
+For **extra or manual preprocessing** beyond what the model manifest declares, `lmi_utils.preprocess_utils.steps` provides typed builders for each step. Each builder returns a dict in the same shape as a manifest entry (`{"type": str, "configuration": dict, "id"?: str}`), so it plugs directly into `Preprocessor.preprocess()`.
 
 **Available builders:**
 
@@ -457,9 +458,10 @@ results = model.predict(foreground_im, 0.5, operators=[crop_op])
 | `steps.crop_to_label(*, label, id=None)` | `crop-to-label` | `label` | Pair with `runtime={id: {"boxes": [...]}}` at inference (see section 8) |
 | `steps.flip(*, lr=False, ud=False, id=None)` | `flip` | — | Defaults to a no-op (both `False`) |
 | `steps.pad(*, width=None, height=None, pad=None, value=0, id=None)` | `pad` | one of `width/height` or `pad` | `pad=[L, R, T, B]` for explicit padding |
+| `steps.rotate(*, angle, id=None)` | `rotate` | `angle` | Degrees, positive = clockwise; canvas is expanded to fit the rotated extent |
 | `steps.tile(*, tile_size, stride, scale_mode="padding", overlap_mode="average", id=None)` | `tile` | `tile_size`, `stride` | Scalars are accepted and broadcast to `[h, w]` |
 
-Use the builders to initialize the metadata passed to `preprocess()` — either as the `details.preprocessing` block of a gofactory model role, or as an ad-hoc ops list for `self.preprocessor.preprocess(images, ops)` inside a `PipelineBase` subclass.
+Build an ad-hoc ops list and pass it to `self.preprocessor.preprocess(images, ops)` inside a `PipelineBase` subclass:
 
 ```python
 from lmi_utils.preprocess_utils import steps
