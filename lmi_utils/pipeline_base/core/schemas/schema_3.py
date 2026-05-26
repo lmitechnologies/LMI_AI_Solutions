@@ -48,6 +48,12 @@ class ADConfigs(BaseModel):
     max_threshold: float
 
 
+class ClassificationConfigs(BaseModel):
+    """Configs for Classification."""
+
+    model_config = ConfigDict(extra="ignore")
+
+
 class _ModelBase(BaseModel):
     model_config = ConfigDict(extra="ignore", protected_namespaces=())
 
@@ -79,8 +85,14 @@ class ADModel(_ModelBase):
     configs: ADConfigs
 
 
+class ClassificationModel(_ModelBase):
+    # only used for static models
+    model_type: Literal["Classification"]
+    configs: ClassificationConfigs
+
+
 Model = Annotated[
-    Union[ODModel, ADModel],
+    Union[ODModel, ADModel, ClassificationModel],
     Field(discriminator="model_type"),
 ]
 
