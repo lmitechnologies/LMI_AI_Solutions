@@ -211,7 +211,7 @@ class PipelineBase(metaclass=ABCMeta):
 
         Pairs with revert_preprocess() as its inverse.
 
-        For ad-hoc preprocessing, call``self.preprocessor.preprocess(images, ops)`` directly and concatenate the returned history lists,
+        For manual preprocessing, call``self.preprocessor.preprocess(images, ops)`` directly and concatenate the returned history lists,
         where the "ops" can be generated as the follows:
 
             from lmi_utils.preprocess_utils import steps
