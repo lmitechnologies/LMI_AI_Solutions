@@ -18,8 +18,8 @@ This document covers all **breaking changes and new features** introduced after 
 
 7. [Preprocessor & Reconstructor — batch processing with history-based reconstruction](#7-preprocessor--reconstructor--batch-processing-with-history-based-reconstruction)
 8. [`crop-to-label` preprocessing step with runtime channel](#8-crop-to-label-preprocessing-step-with-runtime-channel)
-9. [Unified preprocessing-history schema — shared by `Preprocessor`, OD `predict(operators=…)`, and the legacy `revert_to_origin` helpers](#9-unified-preprocessing-history-schema)
-10. [Typed step builders — `lmi_utils.preprocess_utils.steps`](#10-typed-step-builders--lmi_utilspreprocess_utilssteps)
+9. [Forward preprocessing — typed step builders (`lmi_utils.preprocess_utils.steps`)](#9-forward-preprocessing--typed-step-builders)
+10. [Revert path — typed history for manual reconstruction](#10-revert-path--typed-history-for-manual-reconstruction)
 
 
 ---
@@ -357,111 +357,23 @@ When a model has multiple `crop-to-label` steps, the runtime dict keys route per
 
 ---
 
-### 9. Unified preprocessing-history schema
+### 9. Forward preprocessing — typed step builders
 
-The metadata returned by `Preprocessor.preprocess()`, accepted by OD `predict(operators=…)`, and consumed by `revert_to_origin` / `revert_mask_to_origin` / `revert_masks_to_origin` / `apply_operations` now uses **one** shape. The legacy single-key dicts (`{"resize": [tw, th, ow, oh]}`, `{"pad": [L, R, T, B]}`, etc.) have been replaced by named per-image metadata.
+When you need to apply preprocessing **beyond what the model manifest declares** — e.g. an ad-hoc flip, an extra resize, or a runtime crop driven by an upstream detection — build the step list with `lmi_utils.preprocess_utils.steps`. Each alias is the typed `*Config` dataclass; calling it returns a `Config` instance that `Preprocessor.preprocess()` consumes directly.
 
-Users are **not** expected to construct these dicts by hand — `self.preprocessor.preprocess()` returns the history in this shape, and you pass it straight back to `revert_preprocess()` or `predict(operators=…)`. The schema below is documented for reference and for the rare manual-construction case.
+**Forward aliases:**
 
-**Canonical schema:**
+| Alias | Required kwargs | Notes |
+|---|---|---|
+| `steps.resize(width=..., height=..., preserve_aspect=False, mode="bilinear", id=None)` | — | Each dim defaults to the source image's matching dim |
+| `steps.crop(boxes=..., id=None)` | `boxes` | One `[x1, y1, x2, y2]` per image |
+| `steps.crop_to_label(label=..., id=None)` | `label` | Resolved at runtime via `runtime={id: {"boxes": [...]}}` (see section 8); macro `bind` produces a concrete `CropConfig` before dispatch |
+| `steps.flip(lr=False, ud=False, id=None)` | — | Defaults to a no-op |
+| `steps.pad(width=None, height=None, pad=None, value=0, id=None)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` for explicit padding |
+| `steps.rotate(angle=..., id=None)` | `angle` | Degrees, positive = clockwise |
+| `steps.tile(tile_size=..., stride=..., scale_mode="padding", overlap_mode="average", id=None)` | `tile_size`, `stride` | Scalars are broadcast to `[h, w]` |
 
-```python
-# Each history entry:
-{
-    "type": "<op_name>",                  # e.g. "resize", "pad", "crop", "flip", "tile"
-    "metadata": [<per_image_dict>, ...],  # length 1 (broadcast to batch) or B (per-image)
-    "id": "<optional>",                    # propagated from the manifest step when present
-}
-```
-
-**Per-op metadata fields (per-image):**
-
-| `type` | `metadata` dict |
-|---|---|
-| `resize` | `{"src_size": [w, h], "dst_size": [w, h], "pad"?: [L, R, T, B]}` — `pad` present only when `preserve_aspect=True` produced letterbox padding |
-| `pad` | `{"pad": [L, R, T, B]}` |
-| `crop` | `{"box": [x1, y1, x2, y2], "orig_size": [w, h]}` |
-| `flip` | `{"lr": bool, "ud": bool, "size": [w, h]}` |
-| `rotate` | `{"angle": float, "src_size": [w, h], "dst_size": [w, h]}` |
-| `tile` | `{"tile_size": [h, w], "stride": [h, w], "im_size": [H, W], "scale_size": [H', W'], "n_tiles": [n_h, n_w], "batch_size": int, "num_channel": int, "scale_mode": str, "overlap_mode": str}` |
-
-**Before (legacy):**
-
-```python
-# Single chain (legacy revert_to_origin / od_base operators)
-operators = [
-    {"resize": [640, 480, 1280, 960]},   # [tw, th, ow, oh]
-    {"pad":    [0, 0, 80, 80]},          # [L, R, T, B]
-]
-
-# Per-image chains
-operators = [
-    [{"resize": [640, 640, 1280, 720]}],
-    [{"resize": [640, 640, 1024, 768]}],
-]
-
-```
-
-**After (one unified shape everywhere):**
-
-```python
-# Same shape for: history, operators, and manual-construction.
-operators = [
-    {
-        "type": "resize",
-        "metadata": [{"src_size": [1280, 960], "dst_size": [640, 480]}],
-    },
-    {
-        "type": "pad",
-        "metadata": [{"pad": [0, 0, 80, 80]}],
-    },
-]
-
-# Per-image batch — just lengthen `metadata`:
-operators = [
-    {
-        "type": "resize",
-        "metadata": [
-            {"src_size": [1280, 720], "dst_size": [640, 640]},
-            {"src_size": [1024, 768], "dst_size": [640, 640]},
-        ],
-    },
-]
-
-```
-
-**Manual construction (no `Preprocessor` needed):**
-
-```python
-# Cropped foreground manually, want to revert detections back into original image space:
-x1, y1, x2, y2 = bottle_bbox
-crop_op = {"type": "crop", "metadata": [{"box": [x1, y1, x2, y2], "orig_size": [W, H]}]}
-
-# Pass directly to predict() or to revert_to_origin / revert_masks_to_origin:
-results = model.predict(foreground_im, 0.5, operators=[crop_op])
-```
-
-> **Impact:** Any code that builds legacy-shape `{op_name: [positional_list]}` operator dicts must migrate to the new schema. The legacy helpers (`revert_to_origin`, `revert_mask_to_origin`, `revert_masks_to_origin`, `apply_operations`) keep their names but only accept the new shape — feeding legacy dicts raises errors`. 
-
----
-
-### 10. Typed step builders — `lmi_utils.preprocess_utils.steps`
-
-For **extra or manual preprocessing** beyond what the model manifest declares, `lmi_utils.preprocess_utils.steps` provides typed builders for each step. Each builder returns a dict in the same shape as a manifest entry (`{"type": str, "configuration": dict, "id"?: str}`), so it plugs directly into `Preprocessor.preprocess()`.
-
-**Available builders:**
-
-| Builder | Step `type` | Required kwargs | Notes |
-|---|---|---|---|
-| `steps.resize(*, width=None, height=None, preserve_aspect=False, mode="bilinear", id=None)` | `resize` | `width` | `height` optional; `None` values are stripped from `configuration` |
-| `steps.crop(*, boxes, id=None)` | `crop` | `boxes` | `boxes` is a list of `[x1, y1, x2, y2]` |
-| `steps.crop_to_label(*, label, id=None)` | `crop-to-label` | `label` | Pair with `runtime={id: {"boxes": [...]}}` at inference (see section 8) |
-| `steps.flip(*, lr=False, ud=False, id=None)` | `flip` | — | Defaults to a no-op (both `False`) |
-| `steps.pad(*, width=None, height=None, pad=None, value=0, id=None)` | `pad` | one of `width/height` or `pad` | `pad=[L, R, T, B]` for explicit padding |
-| `steps.rotate(*, angle, id=None)` | `rotate` | `angle` | Degrees, positive = clockwise; canvas is expanded to fit the rotated extent |
-| `steps.tile(*, tile_size, stride, scale_mode="padding", overlap_mode="average", id=None)` | `tile` | `tile_size`, `stride` | Scalars are accepted and broadcast to `[h, w]` |
-
-Build an ad-hoc ops list and pass it to `self.preprocessor.preprocess(images, ops)` inside a `PipelineBase` subclass:
+**Usage — inside a `PipelineBase` subclass:**
 
 ```python
 from lmi_utils.preprocess_utils import steps
@@ -478,6 +390,44 @@ class MyPipeline(PipelineBase):
         runtime = {"bottle_crop": {"boxes": [[100, 50, 900, 700]]}}
 
         preprocessed, history = self.preprocessor.preprocess(image, ops, runtime=runtime)
-        # preprocessed: list of transformed images
-        # history: unified preprocessing-history list, ready for predict(operators=history) or self.revert_preprocess(results, history).
+        # preprocessed: list of transformed images, ready for model.predict(...)
+        # history:      list of typed Meta objects — feed into the revert path (see section 10)
 ```
+
+`Preprocessor.preprocess()` returns `(processed_images, history)` where `history: List[Meta]` is the typed record of what was done. That history is the only input the revert path needs.
+
+---
+
+### 10. Revert path — typed history for manual reconstruction
+
+The `history` returned by `Preprocessor.preprocess()` (or `PipelineBase.preprocess()`) is the canonical input for reverting: pass it to `self.revert_preprocess(results, history)`, `Reconstructor.reconstruct_coordinates(...)` / `.reconstruct_images(...)`, or OD `model.predict(..., operators=history)`. Each `Meta` carries everything needed to invert its step — no re-derivation, no dict plumbing.
+
+**When you have a captured history**, you don't construct anything by hand — the typical flow is in section 7. This section covers the case where **no history was captured** (the image was preprocessed outside the `Preprocessor`, e.g. cropped by an earlier stage or saved to disk) but you still want to revert coordinates into the original space.
+
+**Inverse aliases — build a `Meta` directly:**
+
+| Alias | Key fields (per-image lists, length B) |
+|---|---|
+| `steps.revert_crop(boxes=..., orig_sizes=...)` | `boxes` = `[x1, y1, x2, y2]` used; `orig_sizes` = `[W, H]` of the pre-crop canvas |
+| `steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...)` | `src_sizes` / `dst_sizes` = `[W, H]`; `pads` = `[L, R, T, B]` letterbox padding |
+| `steps.revert_pad(pads=...)` | `pads` = `[L, R, T, B]` applied |
+| `steps.revert_flip(lr=..., ud=..., sizes=...)` | `lr`, `ud` flags; `sizes` = `[W, H]` of the flipped image |
+| `steps.revert_rotate(angles=..., src_sizes=..., dst_sizes=...)` | `angles` in degrees; `src_sizes` / `dst_sizes` = `[W, H]` |
+| `steps.revert_tile(tile_sizes=..., strides=..., im_sizes=..., scale_sizes=..., n_tiles=..., batch_sizes=..., num_channels=..., scale_modes=..., overlap_modes=...)` | One entry per *source* image |
+
+> `crop_to_label` is a forward-only macro — it resolves to `CropMeta` at runtime, so revert uses `steps.revert_crop`.
+
+**Example — image was cropped upstream; revert OD detections into the original frame:**
+
+```python
+from lmi_utils.preprocess_utils import steps
+
+# foreground_im was already cropped from the full-resolution image at [x1, y1, x2, y2];
+# original canvas was W x H. Build the matching history and let predict() revert for us.
+history = [steps.revert_crop(boxes=[[x1, y1, x2, y2]], orig_sizes=[[W, H]])]
+
+results, _ = model.predict(foreground_im, 0.5, operators=history)
+# results["boxes"][0] is now in the original (W, H) coordinate space.
+```
+
+> **Impact:** The revert path is now **typed-only**. Code that built legacy operator dicts must migrate to `Meta` instances — `revert_to_origin`, `revert_mask_to_origin`, `revert_masks_to_origin`, and `apply_operations` keep their names but raise `TypeError` on dict input.

@@ -143,16 +143,13 @@ def evaluate(
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
+    from lmi_utils.preprocess_utils import steps as pre_steps
+
     steps = []
     if tile is not None:
         if stride is None:
             raise ValueError("Must provide stride when using tiling")
-        steps = [
-            {
-                "type": "tile",
-                "configuration": {"tile_size": tile, "stride": stride, "overlap_mode": overlap_mode, "scale_mode": scale_mode},
-            }
-        ]
+        steps = [pre_steps.tile(tile_size=tile, stride=stride, overlap_mode=overlap_mode, scale_mode=scale_mode)]
     preprocessor = Preprocessor()
     reconstructor = Reconstructor()
 

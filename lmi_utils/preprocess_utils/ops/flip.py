@@ -1,71 +1,84 @@
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Tuple
 
 import torch
 
 from .._coords import apply_coord_transform
-from ..operation import Operation
+from ..operation import Config, Meta, Operation
 
 
-class FlipOperation(Operation):
-    """Flip each image horizontally and/or vertically.
+@dataclass
+class FlipConfig(Config):
+    """Flip each image horizontally and/or vertically."""
 
-    Configuration:
-        lr (bool, optional): flip left-right. Default False.
-        ud (bool, optional): flip up-down. Default False.
+    lr: bool = False
+    ud: bool = False
 
-    Metadata schema (per image)::
 
-        {"lr": bool, "ud": bool, "size": [w, h]}
+@dataclass
+class FlipMeta(Meta):
+    """Batched flip metadata.
+
+    lr/ud: per-image flags (same for all entries in a single forward call,
+    repeated to preserve the per-image-list invariant).
+    sizes: per-image [W, H] of the flipped image.
     """
 
-    name = "flip"
+    lr: List[bool] = field(default_factory=list)
+    ud: List[bool] = field(default_factory=list)
+    sizes: List[List[int]] = field(default_factory=list)
 
-    @classmethod
-    def build_step(cls, *, lr: bool = False, ud: bool = False, id: Optional[str] = None) -> Dict[str, Any]:
-        return cls._finalize_step({"lr": lr, "ud": ud}, id=id)
+    def __post_init__(self):
+        n = len(self.sizes)
+        if not (len(self.lr) == n and len(self.ud) == n):
+            raise ValueError("FlipMeta: field lengths must match")
+
+
+class FlipOperation(Operation[FlipConfig, FlipMeta]):
+    config_cls = FlipConfig
+    meta_cls = FlipMeta
 
     @torch.inference_mode()
-    def forward(self, images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], List[Dict[str, Any]]]:
-        lr = bool(config.get("lr", False))
-        ud = bool(config.get("ud", False))
+    def forward(self, images: List[torch.Tensor], config: FlipConfig) -> Tuple[List[torch.Tensor], FlipMeta]:
+        lr = bool(config.lr)
+        ud = bool(config.ud)
 
         out_images: List[torch.Tensor] = []
-        meta_list: List[Dict[str, Any]] = []
+        lrs: List[bool] = []
+        uds: List[bool] = []
+        sizes: List[List[int]] = []
         for img in images:
             h, w = img.shape[:2]
-            meta = {"lr": lr, "ud": ud, "size": [w, h]}
-            out_images.append(self._flip(img, meta))
-            meta_list.append(meta)
-        return out_images, meta_list
+            out_images.append(_flip(img, lr, ud))
+            lrs.append(lr)
+            uds.append(ud)
+            sizes.append([w, h])
+        return out_images, FlipMeta(lr=lrs, ud=uds, sizes=sizes)
 
     @torch.inference_mode()
-    def revert_images(self, images: List[torch.Tensor], metadata: List[Dict[str, Any]]) -> List[torch.Tensor]:
-        # flip is its own inverse
-        return [self._flip(img, m) for img, m in zip(images, metadata)]
-
-    @staticmethod
-    def _flip(img: torch.Tensor, m: Dict[str, Any]) -> torch.Tensor:
-        out = img
-        if m.get("lr"):
-            out = torch.flip(out, dims=[1])
-        if m.get("ud"):
-            out = torch.flip(out, dims=[0])
-        return out
+    def revert_images(self, images: List[torch.Tensor], meta: FlipMeta) -> List[torch.Tensor]:
+        return [_flip(img, lr, ud) for img, lr, ud in zip(images, meta.lr, meta.ud)]
 
     @torch.inference_mode()
-    def revert_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return [_apply_flip(r, m) for r, m in zip(results, metadata)]
+    def revert_coords(self, results: List[Dict[str, Any]], meta: FlipMeta) -> List[Dict[str, Any]]:
+        return [_apply_flip(r, lr, ud, s) for r, lr, ud, s in zip(results, meta.lr, meta.ud, meta.sizes)]
 
     @torch.inference_mode()
-    def apply_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        # flip is involutive; same code path
-        return [_apply_flip(r, m) for r, m in zip(results, metadata)]
+    def apply_coords(self, results: List[Dict[str, Any]], meta: FlipMeta) -> List[Dict[str, Any]]:
+        return [_apply_flip(r, lr, ud, s) for r, lr, ud, s in zip(results, meta.lr, meta.ud, meta.sizes)]
 
 
-def _apply_flip(result: Dict[str, Any], m: Dict[str, Any]) -> Dict[str, Any]:
-    lr = m.get("lr", False)
-    ud = m.get("ud", False)
-    w, h = m["size"]
+def _flip(img: torch.Tensor, lr: bool, ud: bool) -> torch.Tensor:
+    out = img
+    if lr:
+        out = torch.flip(out, dims=[1])
+    if ud:
+        out = torch.flip(out, dims=[0])
+    return out
+
+
+def _apply_flip(result: Dict[str, Any], lr: bool, ud: bool, size: List[int]) -> Dict[str, Any]:
+    w, h = size
 
     def xy_fn(xy: torch.Tensor) -> torch.Tensor:
         xy = xy.float().clone()

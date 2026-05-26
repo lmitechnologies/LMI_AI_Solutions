@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 import torch
 
+from lmi_utils.preprocess_utils import steps
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
@@ -33,32 +34,28 @@ def pipeline():
 
 
 def test_pad_then_crop_image_round_trip(pipeline):
-    """Pad then crop the padded region back out → reconstruct_images restores original."""
     pre, rec = pipeline
     img = torch.ones((10, 8, 3), dtype=torch.float32)
-    steps = [
-        {"type": "pad", "configuration": {"pad": [2, 3, 4, 5]}},
-        # crop back to just the original-content region of the padded image
-        {"type": "crop", "configuration": {"boxes": [[2, 4, 10, 14]]}},
+    configs = [
+        steps.pad(pad=[2, 3, 4, 5]),
+        steps.crop(boxes=[[2, 4, 10, 14]]),
     ]
-    out, history = pre.preprocess([img], steps)
+    out, history = pre.preprocess([img], configs)
     assert out[0].shape == (10, 8, 3)
     assert torch.equal(out[0], img)
 
     restored = rec.reconstruct_images(out, history)
-    # Reconstruction lands in padded space → original size (10, 8).
     assert restored[0].shape == img.shape
 
 
 def test_flip_then_resize_coord_round_trip(pipeline):
-    """flip then resize: original-space box → forward → revert lands on the original."""
     pre, rec = pipeline
     img = _hwc_image(100, 80, 3)
-    steps = [
-        {"type": "flip", "configuration": {"lr": True}},
-        {"type": "resize", "configuration": {"width": 40, "height": 50, "preserve_aspect": False}},
+    configs = [
+        steps.flip(lr=True),
+        steps.resize(width=40, height=50, preserve_aspect=False),
     ]
-    _out, history = pre.preprocess([img], steps)
+    _out, history = pre.preprocess([img], configs)
 
     boxes = torch.tensor([[10.0, 20.0, 30.0, 40.0]])
     original = _make_results(boxes)
@@ -69,16 +66,15 @@ def test_flip_then_resize_coord_round_trip(pipeline):
 
 
 def test_full_pipeline_coord_round_trip(pipeline):
-    """pad → crop → resize → flip — full forward/reverse round-trip on coords."""
     pre, rec = pipeline
     img = _hwc_image(100, 80, 3)
-    steps = [
-        {"type": "pad", "configuration": {"pad": [4, 4, 6, 6]}},
-        {"type": "crop", "configuration": {"boxes": [[8, 10, 80, 100]]}},
-        {"type": "resize", "configuration": {"width": 64, "height": 64, "preserve_aspect": False}},
-        {"type": "flip", "configuration": {"lr": True, "ud": True}},
+    configs = [
+        steps.pad(pad=[4, 4, 6, 6]),
+        steps.crop(boxes=[[8, 10, 80, 100]]),
+        steps.resize(width=64, height=64, preserve_aspect=False),
+        steps.flip(lr=True, ud=True),
     ]
-    _out, history = pre.preprocess([img], steps)
+    _out, history = pre.preprocess([img], configs)
 
     boxes = torch.tensor([[5.0, 5.0, 25.0, 35.0], [40.0, 10.0, 60.0, 60.0]])
     original = _make_results(boxes)
@@ -92,29 +88,27 @@ def test_full_pipeline_coord_round_trip(pipeline):
 
 
 def test_full_pipeline_image_reconstructs_to_padded_then_original_shape(pipeline):
-    """Image reconstruction unwinds geometric ops back to the pre-pad input shape."""
     pre, rec = pipeline
     img = _hwc_image(100, 80, 3)
-    steps = [
-        {"type": "pad", "configuration": {"pad": [4, 4, 6, 6]}},
-        {"type": "crop", "configuration": {"boxes": [[8, 10, 80, 100]]}},
-        {"type": "resize", "configuration": {"width": 64, "height": 64, "preserve_aspect": False}},
-        {"type": "flip", "configuration": {"lr": True, "ud": True}},
+    configs = [
+        steps.pad(pad=[4, 4, 6, 6]),
+        steps.crop(boxes=[[8, 10, 80, 100]]),
+        steps.resize(width=64, height=64, preserve_aspect=False),
+        steps.flip(lr=True, ud=True),
     ]
-    out, history = pre.preprocess([img], steps)
+    out, history = pre.preprocess([img], configs)
     restored = rec.reconstruct_images(out, history)
     assert restored[0].shape == img.shape
 
 
 def test_tile_with_flip_lossless(pipeline):
-    """tile after flip: lossless round-trip on image data (both ops are exact)."""
     pre, rec = pipeline
     img = torch.randint(0, 256, (100, 100, 3), dtype=torch.uint8)
-    steps = [
-        {"type": "flip", "configuration": {"lr": True}},
-        {"type": "tile", "configuration": {"tile_size": 50, "stride": 50}},
+    configs = [
+        steps.flip(lr=True),
+        steps.tile(tile_size=50, stride=50),
     ]
-    out, history = pre.preprocess([img], steps)
+    out, history = pre.preprocess([img], configs)
     assert len(out) == 4
     restored = rec.reconstruct_images(out, history)
     assert torch.equal(restored[0], img)

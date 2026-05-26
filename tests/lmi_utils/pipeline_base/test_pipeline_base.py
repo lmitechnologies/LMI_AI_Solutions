@@ -121,7 +121,7 @@ def test_pipeline_OD(version, preprocessing_steps, expected_types):
     ops_list = results["ops_list"]
 
     # Verify operators
-    actual_types = [op.get("type") for op in ops_list]
+    actual_types = [type(op).__name__.removesuffix("Meta").lower() for op in ops_list]
     assert actual_types == expected_types, f"Operator mismatch: {actual_types} != {expected_types}"
 
     # write outputs for manual inspection
@@ -248,7 +248,7 @@ def test_pipeline_AD(version, preprocessing_steps, expected_types):
     ops_list = results["ops_list"]
 
     # Verify operators
-    actual_types = [op.get("type") for op in ops_list]
+    actual_types = [type(op).__name__.removesuffix("Meta").lower() for op in ops_list]
     assert actual_types == expected_types, f"Operator mismatch: {actual_types} != {expected_types}"
 
     # Verify shapes

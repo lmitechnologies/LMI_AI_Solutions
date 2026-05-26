@@ -1,8 +1,8 @@
-"""Unit tests for typed step builders in lmi_utils.preprocess_utils.steps.
+"""Tests for the typed steps namespace.
 
-Lock in the exact dict shape each builder produces so the Python builder path
-and the v3 manifest path can never drift, and so an end-to-end run through
-Preprocessor accepts the builder output unchanged.
+Verifies that each forward alias constructs the matching Config dataclass with
+the expected field values, and that the resulting Configs pass through
+Preprocessor.preprocess.
 """
 
 import numpy as np
@@ -10,129 +10,108 @@ import pytest
 import torch
 
 from lmi_utils.preprocess_utils import steps
+from lmi_utils.preprocess_utils.ops import (
+    CropConfig,
+    CropToLabelConfig,
+    FlipConfig,
+    PadConfig,
+    ResizeConfig,
+    RotateConfig,
+    TileConfig,
+)
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 
 
 def test_resize_full_kwargs():
-    assert steps.resize(width=640, height=480, preserve_aspect=True, mode="bilinear") == {
-        "type": "resize",
-        "configuration": {"preserve_aspect": True, "mode": "bilinear", "width": 640, "height": 480},
-    }
+    cfg = steps.resize(width=640, height=480, preserve_aspect=True, mode="bilinear")
+    assert isinstance(cfg, ResizeConfig)
+    assert cfg.width == 640 and cfg.height == 480
+    assert cfg.preserve_aspect is True and cfg.mode == "bilinear"
 
 
-def test_resize_partial_kwargs_strips_none():
-    assert steps.resize(width=640) == {
-        "type": "resize",
-        "configuration": {"preserve_aspect": False, "mode": "bilinear", "width": 640},
-    }
+def test_resize_partial_kwargs_defaults():
+    cfg = steps.resize(width=640)
+    assert cfg.width == 640
+    assert cfg.height is None
+    assert cfg.preserve_aspect is False
+    assert cfg.mode == "bilinear"
 
 
 def test_resize_with_id():
-    out = steps.resize(width=128, height=128, id="r1")
-    assert out["id"] == "r1"
-    assert out["type"] == "resize"
+    assert steps.resize(width=128, height=128, id="r1").id == "r1"
 
 
 def test_crop():
-    assert steps.crop(boxes=[[1, 2, 3, 4]]) == {
-        "type": "crop",
-        "configuration": {"boxes": [[1, 2, 3, 4]]},
-    }
+    cfg = steps.crop(boxes=[[1, 2, 3, 4]])
+    assert isinstance(cfg, CropConfig)
+    assert cfg.boxes == [[1, 2, 3, 4]]
 
 
 def test_crop_with_id():
-    assert steps.crop(boxes=[[0, 0, 10, 10]], id="c1")["id"] == "c1"
+    assert steps.crop(boxes=[[0, 0, 10, 10]], id="c1").id == "c1"
 
 
 def test_crop_to_label():
-    assert steps.crop_to_label(label="BOTTLE", id="ctl") == {
-        "type": "crop-to-label",
-        "configuration": {"label": "BOTTLE"},
-        "id": "ctl",
-    }
+    cfg = steps.crop_to_label(label="BOTTLE", id="ctl")
+    assert isinstance(cfg, CropToLabelConfig)
+    assert cfg.label == "BOTTLE" and cfg.id == "ctl"
 
 
 def test_flip_defaults():
-    assert steps.flip() == {
-        "type": "flip",
-        "configuration": {"lr": False, "ud": False},
-    }
+    cfg = steps.flip()
+    assert isinstance(cfg, FlipConfig)
+    assert cfg.lr is False and cfg.ud is False
 
 
 def test_flip_lr_ud():
-    assert steps.flip(lr=True, ud=True) == {
-        "type": "flip",
-        "configuration": {"lr": True, "ud": True},
-    }
+    cfg = steps.flip(lr=True, ud=True)
+    assert cfg.lr is True and cfg.ud is True
 
 
 def test_pad_with_wh():
-    assert steps.pad(width=512, height=512) == {
-        "type": "pad",
-        "configuration": {"value": 0, "width": 512, "height": 512},
-    }
+    cfg = steps.pad(width=512, height=512)
+    assert isinstance(cfg, PadConfig)
+    assert cfg.width == 512 and cfg.height == 512 and cfg.pad is None and cfg.value == 0
 
 
 def test_pad_with_explicit_pad():
-    assert steps.pad(pad=[5, 5, 3, 3], value=128) == {
-        "type": "pad",
-        "configuration": {"value": 128, "pad": [5, 5, 3, 3]},
-    }
+    cfg = steps.pad(pad=[5, 5, 3, 3], value=128)
+    assert cfg.pad == [5, 5, 3, 3]
+    assert cfg.value == 128
 
 
 def test_rotate():
-    assert steps.rotate(angle=30) == {
-        "type": "rotate",
-        "configuration": {"angle": 30.0},
-    }
+    cfg = steps.rotate(angle=30)
+    assert isinstance(cfg, RotateConfig)
+    assert cfg.angle == 30
 
 
 def test_rotate_with_id():
-    out = steps.rotate(angle=-45, id="r")
-    assert out == {
-        "type": "rotate",
-        "configuration": {"angle": -45.0},
-        "id": "r",
-    }
+    cfg = steps.rotate(angle=-45, id="r")
+    assert cfg.angle == -45 and cfg.id == "r"
 
 
 def test_tile():
-    assert steps.tile(tile_size=[256, 256], stride=[128, 128]) == {
-        "type": "tile",
-        "configuration": {
-            "tile_size": [256, 256],
-            "stride": [128, 128],
-            "scale_mode": "padding",
-            "overlap_mode": "average",
-        },
-    }
+    cfg = steps.tile(tile_size=[256, 256], stride=[128, 128])
+    assert isinstance(cfg, TileConfig)
+    assert cfg.tile_size == [256, 256]
+    assert cfg.stride == [128, 128]
+    assert cfg.scale_mode == "padding"
+    assert cfg.overlap_mode == "average"
 
 
 def test_tile_with_modes():
-    out = steps.tile(tile_size=64, stride=32, scale_mode="interpolation", overlap_mode="average", id="t")
-    assert out["configuration"]["scale_mode"] == "interpolation"
-    assert out["id"] == "t"
+    cfg = steps.tile(tile_size=64, stride=32, scale_mode="interpolation", overlap_mode="average", id="t")
+    assert cfg.scale_mode == "interpolation" and cfg.id == "t"
 
 
-def test_all_builders_keyword_only():
-    # Positional args must fail — every builder uses `*,` to force keyword usage.
-    with pytest.raises(TypeError):
-        steps.resize(640, 480)  # type: ignore[misc]
-    with pytest.raises(TypeError):
-        steps.crop([[0, 0, 10, 10]])  # type: ignore[misc]
-    with pytest.raises(TypeError):
-        steps.flip(True)  # type: ignore[misc]
+def test_id_defaults_to_none():
+    assert steps.resize(width=64, height=64).id is None
+    assert steps.crop(boxes=[[0, 0, 1, 1]]).id is None
+    assert steps.flip().id is None
 
 
-def test_id_omitted_when_none():
-    # No `id` key when caller did not pass one — matches manifest dicts byte-for-byte.
-    assert "id" not in steps.resize(width=64, height=64)
-    assert "id" not in steps.crop(boxes=[[0, 0, 1, 1]])
-    assert "id" not in steps.flip()
-
-
-def test_builder_output_runs_through_preprocessor():
-    """End-to-end: builders feed into Preprocessor.preprocess unmodified."""
+def test_config_runs_through_preprocessor():
     img = torch.rand(100, 80, 3)
     pipeline = [
         steps.resize(width=64, height=64, preserve_aspect=True),
@@ -141,18 +120,36 @@ def test_builder_output_runs_through_preprocessor():
     imgs, history = Preprocessor().preprocess(img, pipeline)
     assert len(imgs) == 1
     assert imgs[0].shape[:2] == (64, 64)
-    assert [h["type"] for h in history] == ["resize", "flip"]
+    assert len(history) == 2
 
 
-def test_builder_matches_manifest_dict():
-    """A builder's output must equal a hand-written manifest dict for the same config."""
-    builder_dict = steps.resize(width=224, height=224, preserve_aspect=True)
-    manifest_dict = {
-        "type": "resize",
-        "configuration": {"width": 224, "height": 224, "preserve_aspect": True, "mode": "bilinear"},
-    }
+def test_invalid_crop_config_raises():
+    with pytest.raises(ValueError, match="non-empty list"):
+        steps.crop(boxes=[])
+
+
+def test_invalid_pad_length_raises():
+    with pytest.raises(ValueError, match=r"\[L, R, T, B\]"):
+        steps.pad(pad=[1, 2, 3])
+
+
+def test_crop_to_label_requires_label():
+    with pytest.raises(ValueError, match="'label' is required"):
+        steps.crop_to_label(label="")
+
+
+def test_parse_steps_dict_to_config():
+    """JSON manifests are bridged through parse_steps."""
+    from lmi_utils.preprocess_utils import parse_steps
+
+    manifest = [
+        {"type": "resize", "configuration": {"width": 224, "height": 224, "preserve_aspect": True}},
+    ]
+    configs = parse_steps(manifest)
+    assert isinstance(configs[0], ResizeConfig)
+    assert configs[0].width == 224
+
     img = np.random.rand(80, 60, 3).astype(np.float32)
-    a_imgs, a_hist = Preprocessor().preprocess(img, [builder_dict])
-    b_imgs, b_hist = Preprocessor().preprocess(img, [manifest_dict])
-    assert a_hist == b_hist
+    a_imgs, _ = Preprocessor().preprocess(img, configs)
+    b_imgs, _ = Preprocessor().preprocess(img, [steps.resize(width=224, height=224, preserve_aspect=True)])
     assert np.allclose(a_imgs[0], b_imgs[0])

@@ -21,6 +21,8 @@ from lmi_utils.dataset_utils.representations import (
 
 # LMI AIS repo's modules
 from lmi_utils.image_utils.types import ImageBatch, ImageLike
+from lmi_utils.preprocess_utils import parse_steps
+from lmi_utils.preprocess_utils.operation import Meta
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 from object_detectors.od_core.object_detector import ObjectDetector
@@ -206,16 +208,16 @@ class PipelineBase(metaclass=ABCMeta):
         model_role: str,
         images: ImageBatch,
         runtime: Optional[Dict[str, Dict[str, Any]]] = None,
-    ) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
+    ) -> Tuple[List[ImageLike], List[Meta]]:
         """preprocess the image(s) based on the preprocessing steps in model_role.
 
         Pairs with revert_preprocess() as its inverse.
 
-        For manual preprocessing, call``self.preprocessor.preprocess(images, ops)`` directly and concatenate the returned history lists,
-        where the "ops" can be generated as the follows:
+        For manual preprocessing, call``self.preprocessor.preprocess(images, configs)`` directly,
+        where ``configs`` are typed Config objects, e.g.:
 
             from lmi_utils.preprocess_utils import steps
-            ops = [
+            configs = [
                 steps.resize(width=224, height=224, preserve_aspect=True),
                 steps.flip(lr=True),
             ]
@@ -230,17 +232,15 @@ class PipelineBase(metaclass=ABCMeta):
 
         Returns:
             list[ImageLike]: the preprocessed image(s).
-            list[dict]: the preprocessing steps, each with keys:
-                - "type" (str): the type of the preprocessing operation.
-                - "metadata" (list): the metadata returned by the preprocessing operation, used for reconstruction.
-                - "id" (str, optional): preserved from the manifest step.
+            list[Meta]: typed per-step metadata for reconstruction.
         """
         if model_role not in self._preprocessing:
             raise ValueError(f"Not found global preprocessing steps for model role: {model_role}")
 
-        return self.preprocessor.preprocess(images, self._preprocessing[model_role], runtime=runtime)
+        configs = parse_steps(self._preprocessing[model_role])
+        return self.preprocessor.preprocess(images, configs, runtime=runtime)
 
-    def revert_preprocess(self, data, ops: List[Dict[str, Any]]):
+    def revert_preprocess(self, data, ops: List[Meta]):
         """Invert preprocessing transforms on either image data (AD) or detection coordinates (OD).
 
         Dispatches based on the type of ``data``:
@@ -252,7 +252,7 @@ class PipelineBase(metaclass=ABCMeta):
         Args:
             data: Either a list of images (AD) or a batch results dict with keys
                   boxes, scores, classes, masks, segments, points (OD).
-            ops (list[dict]): Preprocessing history returned by preprocess().
+            ops (list[Meta]): Preprocessing history returned by preprocess().
 
         Returns:
             list[ImageLike] for the AD path (reconstructed images), or

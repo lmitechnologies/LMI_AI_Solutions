@@ -430,29 +430,47 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bb
 _RECONSTRUCTOR_SINGLETON = None
 
 
-def _get_op(op_name: str):
-    """Resolve an op name to a registered ``Operation`` instance. Lazy import to avoid cycles."""
+def _get_op_for_meta(meta):
+    """Resolve a Meta instance to the matching registered ``Operation``. Lazy import to avoid cycles."""
     global _RECONSTRUCTOR_SINGLETON
     if _RECONSTRUCTOR_SINGLETON is None:
         from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
         _RECONSTRUCTOR_SINGLETON = Reconstructor()
-    if op_name not in _RECONSTRUCTOR_SINGLETON._ops:
-        raise ValueError(f"unsupported operation: {op_name!r}. Registered: {sorted(_RECONSTRUCTOR_SINGLETON._ops)}")
-    return _RECONSTRUCTOR_SINGLETON._ops[op_name]
+    op = _RECONSTRUCTOR_SINGLETON._ops.get(type(meta))
+    if op is None:
+        raise ValueError(
+            f"unsupported meta type: {type(meta).__name__}. Registered: {sorted(t.__name__ for t in _RECONSTRUCTOR_SINGLETON._ops)}"
+        )
+    return op
+
+
+def _single_image_meta(meta):
+    """Slice a batched Meta down to its first source-image record.
+
+    Most pipeline_utils helpers operate on a single image; they pass per-step
+    Meta objects with batch size 1 (or take the first record from a larger batch).
+    """
+    from dataclasses import fields
+
+    fresh = type(meta).__new__(type(meta))
+    for f in fields(meta):
+        v = getattr(meta, f.name)
+        if isinstance(v, list):
+            object.__setattr__(fresh, f.name, v[:1])
+        else:
+            object.__setattr__(fresh, f.name, v)
+    return fresh
 
 
 def _validate_history(history: list) -> None:
+    from lmi_utils.preprocess_utils.operation import Meta
+
     if not isinstance(history, list):
         raise TypeError(f"operations must be a list, got {type(history).__name__}")
     for i, entry in enumerate(history):
-        if not isinstance(entry, dict) or "type" not in entry or "metadata" not in entry:
-            raise ValueError(
-                f"operations[{i}] must be a history entry of shape "
-                f"{{'type': str, 'metadata': [<per_image_dict>, ...], 'id'?: str}}; got {entry!r}"
-            )
-        if not isinstance(entry["metadata"], list) or not entry["metadata"]:
-            raise ValueError(f"operations[{i}]['metadata'] must be a non-empty per-image list, got {entry['metadata']!r}")
+        if not isinstance(entry, Meta):
+            raise TypeError(f"operations[{i}] must be a Meta instance, got {type(entry).__name__}")
 
 
 @torch.inference_mode()
@@ -462,8 +480,7 @@ def revert_mask_to_origin(mask, operations: list):
 
     Args:
         mask: np.array or torch.Tensor, shape (H, W) or (H, W, C).
-        operations: history list ``[{"type": str, "metadata": [<per_image_dict>], "id"?: str}, ...]``
-            with B=1 (one entry per image, but only one image here).
+        operations: list of typed ``Meta`` records (one per preprocessing step), batch size 1.
 
     Returns:
         Mask reverted to original-image space, same type as input.
@@ -478,10 +495,8 @@ def revert_mask_to_origin(mask, operations: list):
         mask = mask.unsqueeze(-1)
 
     for entry in reversed(operations):
-        op = _get_op(entry["type"])
-        # revert_images operates on a list of images; pull metadata[0] (single-image).
-        meta = entry["metadata"][0]
-        mask = op.revert_images([mask], [meta])[0]
+        op = _get_op_for_meta(entry)
+        mask = op.revert_images([mask], _single_image_meta(entry))[0]
 
     if one_channel:
         mask = mask.squeeze(-1)
@@ -507,8 +522,8 @@ def revert_masks_to_origin(masks, operations: list):
     masks_t = masks if isinstance(masks, torch.Tensor) else torch.as_tensor(np.array(masks) if is_numpy else masks)
     per_image = [{"masks": masks_t}]
     for entry in reversed(operations):
-        op = _get_op(entry["type"])
-        per_image = op.revert_coords(per_image, [entry["metadata"][0]])
+        op = _get_op_for_meta(entry)
+        per_image = op.revert_coords(per_image, _single_image_meta(entry))
     out = per_image[0]["masks"]
 
     if is_tensor:
@@ -523,7 +538,7 @@ def revert_to_origin(pts, operations: list, **kwargs):
 
     Args:
         pts: torch.Tensor / np.ndarray / list of shape (N, 2) or (N, 4).
-        operations: history list ``[{"type": str, "metadata": [<per_image_dict>], "id"?: str}, ...]``.
+        operations: list of typed ``Meta`` records (one per preprocessing step).
 
     kwargs:
         round (bool): round and clamp output to non-negative integers. Default True.
@@ -549,10 +564,10 @@ def revert_to_origin(pts, operations: list, **kwargs):
     wrapped = pts if field == "boxes" else [pts]
     per_image = [{field: wrapped}]
     for entry in reversed(operations):
-        op = _get_op(entry["type"])
-        per_image = op.revert_coords(per_image, [entry["metadata"][0]])
+        op = _get_op_for_meta(entry)
+        per_image = op.revert_coords(per_image, _single_image_meta(entry))
         if verbose:
-            logger.info(f"after {entry['type']}, result: {per_image}")
+            logger.info(f"after {type(entry).__name__}, result: {per_image}")
 
     out = per_image[0]["boxes"] if field == "boxes" else per_image[0]["segments"][0]
 
@@ -585,8 +600,8 @@ def apply_operations(pts, operations: list):
     wrapped = pts if field == "boxes" else [pts]
     per_image = [{field: wrapped}]
     for entry in operations:
-        op = _get_op(entry["type"])
-        per_image = op.apply_coords(per_image, [entry["metadata"][0]])
+        op = _get_op_for_meta(entry)
+        per_image = op.apply_coords(per_image, _single_image_meta(entry))
 
     out = per_image[0]["boxes"] if field == "boxes" else per_image[0]["segments"][0]
     out = out.round().clamp(min=0)
@@ -713,13 +728,11 @@ def _resolve_artifact_paths(model: Dict[str, Any], manifest_dir: Path) -> None:
 def _autofill_preprocessing_ids(models: List[Dict[str, Any]]) -> None:
     """Fill missing ``id`` on non-runtime preprocessing steps with a random 8-hex id.
 
-    Runtime ops (``Operation.is_runtime == True``, e.g. crop-to-label) must carry an
+    Runtime Configs (``Config.is_runtime == True``, e.g. CropToLabelConfig) must carry an
     explicit id in static manifests so the runtime caller can target them; missing
     ids on those raise.
     """
-    from lmi_utils.preprocess_utils.preprocessor import Preprocessor
-
-    ops_registry = Preprocessor.default_ops()
+    from lmi_utils.preprocess_utils._parser import STEP_TYPES
 
     for model in models:
         role = model.get("model_role", "<unknown>")
@@ -733,10 +746,10 @@ def _autofill_preprocessing_ids(models: List[Dict[str, Any]]) -> None:
             if step.get("id"):
                 continue
             op_type = step.get("type", "")
-            op = ops_registry.get(op_type)
-            if op is None:
+            cfg_cls = STEP_TYPES.get(op_type)
+            if cfg_cls is None:
                 raise ValueError(f"Model role '{role}': preprocessing step at index {i} has unknown type '{op_type}'.")
-            if op.is_runtime:
+            if cfg_cls.is_runtime:
                 raise ValueError(
                     f"Model role '{role}': '{op_type}' step at index {i} has no 'id'. Runtime ops require explicit ids in static manifests."
                 )

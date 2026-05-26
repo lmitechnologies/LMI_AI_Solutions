@@ -86,11 +86,14 @@ def test_batch_operators(trt_model, imgs_coco):
     images = imgs_coco
     original_sizes = [img.shape[:2] for img in images]
     resized = [cv2.resize(img, (tw, th)) for img in images]
+    from lmi_utils.preprocess_utils.ops import ResizeMeta
+
     operators = [
-        {
-            "type": "resize",
-            "metadata": [{"src_size": [w, h], "dst_size": [tw, th]} for h, w in original_sizes],
-        }
+        ResizeMeta(
+            src_sizes=[[w, h] for h, w in original_sizes],
+            dst_sizes=[[tw, th] for _ in original_sizes],
+            pads=[[0, 0, 0, 0] for _ in original_sizes],
+        )
     ]
 
     outputs, _ = model.predict(resized, configs=confs, operators=operators)
@@ -114,11 +117,14 @@ def test_batch_operators_cuda(trt_model, imgs_coco):
     images = imgs_coco
     original_sizes = [img.shape[:2] for img in images]
     resized = [torch.from_numpy(cv2.resize(img, (tw, th))).cuda() for img in images]
+    from lmi_utils.preprocess_utils.ops import ResizeMeta
+
     operators = [
-        {
-            "type": "resize",
-            "metadata": [{"src_size": [w, h], "dst_size": [tw, th]} for h, w in original_sizes],
-        }
+        ResizeMeta(
+            src_sizes=[[w, h] for h, w in original_sizes],
+            dst_sizes=[[tw, th] for _ in original_sizes],
+            pads=[[0, 0, 0, 0] for _ in original_sizes],
+        )
     ]
 
     outputs, _ = model.predict(resized, configs=confs, operators=operators)

@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
@@ -5,129 +6,133 @@ import torch
 from lmi_utils.gadget_utils.pipeline_utils import fit_im_to_size, resize_image
 
 from .._coords import apply_coord_transform
-from ..operation import Operation
+from ..operation import Config, Meta, Operation
 
 
-class ResizeOperation(Operation):
-    """Resize each image to a target size; emit one ``resize`` history entry per image.
+@dataclass
+class ResizeConfig(Config):
+    """Resize each image to a target size.
 
-    Configuration:
-        width (int, optional): target width. Defaults to current width.
-        height (int, optional): target height. Defaults to current height.
-        preserve_aspect (bool, optional): if True, scale-to-fit preserving aspect ratio
-            then pad to target size (letterbox). Default False (free stretch to target).
-        mode (str, optional): interpolation mode passed to ``resize_image``. Default 'bilinear'.
-
-    Metadata schema (per image)::
-
-        {"src_size": [w0, h0], "dst_size": [w, h], "pad"?: [L, R, T, B]}
-
-    ``dst_size`` is the size after scaling but before padding. ``pad`` is omitted when
-    no padding was applied (preserve_aspect=False, or aspect already matched).
+    width: target width. Defaults to current width.
+    height: target height. Defaults to current height.
+    preserve_aspect: scale-to-fit preserving aspect ratio then pad (letterbox).
+    mode: interpolation mode passed to ``resize_image``.
     """
 
-    name = "resize"
+    width: Optional[int] = None
+    height: Optional[int] = None
+    preserve_aspect: bool = False
+    mode: str = "bilinear"
 
-    @classmethod
-    def build_step(
-        cls,
-        *,
-        width: Optional[int] = None,
-        height: Optional[int] = None,
-        preserve_aspect: bool = False,
-        mode: str = "bilinear",
-        id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        cfg: Dict[str, Any] = {"preserve_aspect": preserve_aspect, "mode": mode}
-        if width is not None:
-            cfg["width"] = width
-        if height is not None:
-            cfg["height"] = height
-        return cls._finalize_step(cfg, id=id)
+
+@dataclass
+class ResizeMeta(Meta):
+    """Batched resize metadata.
+
+    src_sizes / dst_sizes: [W, H] per image; dst_size is the post-scale, pre-pad size.
+    pads: per-image [L, R, T, B] (zeros when no padding was applied).
+    """
+
+    src_sizes: List[List[int]] = field(default_factory=list)
+    dst_sizes: List[List[int]] = field(default_factory=list)
+    pads: List[List[int]] = field(default_factory=list)
+
+    def __post_init__(self):
+        n = len(self.src_sizes)
+        if not (len(self.dst_sizes) == n and len(self.pads) == n):
+            raise ValueError(
+                f"ResizeMeta: field lengths must match — "
+                f"src_sizes={len(self.src_sizes)} dst_sizes={len(self.dst_sizes)} pads={len(self.pads)}"
+            )
+
+
+class ResizeOperation(Operation[ResizeConfig, ResizeMeta]):
+    config_cls = ResizeConfig
+    meta_cls = ResizeMeta
 
     @torch.inference_mode()
-    def forward(self, images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], List[Dict[str, Any]]]:
-        width = config.get("width")
-        height = config.get("height")
-        preserve_aspect = config.get("preserve_aspect", False)
-        mode = config.get("mode", "bilinear")
-
+    def forward(self, images: List[torch.Tensor], config: ResizeConfig) -> Tuple[List[torch.Tensor], ResizeMeta]:
         out_images: List[torch.Tensor] = []
-        meta_list: List[Dict[str, Any]] = []
+        src_sizes: List[List[int]] = []
+        dst_sizes: List[List[int]] = []
+        pads: List[List[int]] = []
+
         for img in images:
             h0, w0 = img.shape[:2]
-            tw = width if width is not None else w0
-            th = height if height is not None else h0
+            tw = config.width if config.width is not None else w0
+            th = config.height if config.height is not None else h0
 
             if tw == w0 and th == h0:
                 out_images.append(img)
-                meta_list.append({"src_size": [w0, h0], "dst_size": [w0, h0]})
+                src_sizes.append([w0, h0])
+                dst_sizes.append([w0, h0])
+                pads.append([0, 0, 0, 0])
                 continue
 
-            if preserve_aspect:
+            if config.preserve_aspect:
                 scale = min(th / h0, tw / w0)
                 w1 = int(scale * w0)
                 h1 = int(scale * h0)
-                scaled = resize_image(img, W=w1, H=h1, mode=mode)
-                entry: Dict[str, Any] = {"src_size": [w0, h0], "dst_size": [w1, h1]}
+                scaled = resize_image(img, W=w1, H=h1, mode=config.mode)
+                src_sizes.append([w0, h0])
+                dst_sizes.append([w1, h1])
                 if w1 != tw or h1 != th:
-                    padded, pad_L, pad_R, pad_T, pad_B = fit_im_to_size(scaled, W=tw, H=th)
-                    entry["pad"] = [pad_L, pad_R, pad_T, pad_B]
+                    padded, pL, pR, pT, pB = fit_im_to_size(scaled, W=tw, H=th)
+                    pads.append([pL, pR, pT, pB])
                     out_images.append(padded)
                 else:
+                    pads.append([0, 0, 0, 0])
                     out_images.append(scaled)
-                meta_list.append(entry)
             else:
-                scaled = resize_image(img, W=tw, H=th, mode=mode)
+                scaled = resize_image(img, W=tw, H=th, mode=config.mode)
                 out_images.append(scaled)
-                meta_list.append({"src_size": [w0, h0], "dst_size": [tw, th]})
+                src_sizes.append([w0, h0])
+                dst_sizes.append([tw, th])
+                pads.append([0, 0, 0, 0])
 
-        return out_images, meta_list
-
-    @torch.inference_mode()
-    def revert_images(self, images: List[torch.Tensor], metadata: List[Dict[str, Any]]) -> List[torch.Tensor]:
-        _check_len(images, metadata, "resize")
-        return [self._revert_image_single(img, m) for img, m in zip(images, metadata)]
-
-    @staticmethod
-    def _revert_image_single(img: torch.Tensor, m: Dict[str, Any]) -> torch.Tensor:
-        pad = m.get("pad")
-        if pad is not None:
-            pL, pR, pT, pB = pad
-            from lmi_utils.gadget_utils.pipeline_utils import fit_im
-
-            img = fit_im(img, [-pL, -pR, -pT, -pB])
-        src_w, src_h = m["src_size"]
-        dst_w, dst_h = m["dst_size"]
-        if (src_w, src_h) == (dst_w, dst_h):
-            return img
-        return resize_image(img, W=src_w, H=src_h)
+        return out_images, ResizeMeta(src_sizes=src_sizes, dst_sizes=dst_sizes, pads=pads)
 
     @torch.inference_mode()
-    def revert_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        _check_len(results, metadata, "resize")
-        return [_apply_resize(r, m, forward=False) for r, m in zip(results, metadata)]
+    def revert_images(self, images: List[torch.Tensor], meta: ResizeMeta) -> List[torch.Tensor]:
+        _check_len(images, meta.src_sizes, "resize")
+        return [_revert_image_single(img, src, dst, pad) for img, src, dst, pad in zip(images, meta.src_sizes, meta.dst_sizes, meta.pads)]
 
     @torch.inference_mode()
-    def apply_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        _check_len(results, metadata, "resize")
-        return [_apply_resize(r, m, forward=True) for r, m in zip(results, metadata)]
+    def revert_coords(self, results: List[Dict[str, Any]], meta: ResizeMeta) -> List[Dict[str, Any]]:
+        _check_len(results, meta.src_sizes, "resize")
+        return [
+            _apply_resize(r, src, dst, pad, forward=False) for r, src, dst, pad in zip(results, meta.src_sizes, meta.dst_sizes, meta.pads)
+        ]
+
+    @torch.inference_mode()
+    def apply_coords(self, results: List[Dict[str, Any]], meta: ResizeMeta) -> List[Dict[str, Any]]:
+        _check_len(results, meta.src_sizes, "resize")
+        return [
+            _apply_resize(r, src, dst, pad, forward=True) for r, src, dst, pad in zip(results, meta.src_sizes, meta.dst_sizes, meta.pads)
+        ]
 
 
-def _check_len(items, metadata, name: str) -> None:
-    if len(items) != len(metadata):
-        raise ValueError(f"{name}: input length ({len(items)}) != metadata length ({len(metadata)})")
+def _check_len(items, sizes, name: str) -> None:
+    if len(items) != len(sizes):
+        raise ValueError(f"{name}: input length ({len(items)}) != metadata length ({len(sizes)})")
 
 
-def _apply_resize(result: Dict[str, Any], m: Dict[str, Any], *, forward: bool) -> Dict[str, Any]:
-    """Apply or revert a resize+optional-pad metadata to one image's coords.
+def _revert_image_single(img: torch.Tensor, src: List[int], dst: List[int], pad: List[int]) -> torch.Tensor:
+    pL, pR, pT, pB = pad
+    if pL or pR or pT or pB:
+        from lmi_utils.gadget_utils.pipeline_utils import fit_im
 
-    forward=True: original-space -> preprocessed-space (scale, then add pad offset).
-    forward=False: preprocessed-space -> original-space (subtract pad offset, then unscale).
-    """
-    src_w, src_h = m["src_size"]
-    dst_w, dst_h = m["dst_size"]
-    pad = m.get("pad", [0, 0, 0, 0])
+        img = fit_im(img, [-pL, -pR, -pT, -pB])
+    src_w, src_h = src
+    dst_w, dst_h = dst
+    if (src_w, src_h) == (dst_w, dst_h):
+        return img
+    return resize_image(img, W=src_w, H=src_h)
+
+
+def _apply_resize(result: Dict[str, Any], src: List[int], dst: List[int], pad: List[int], *, forward: bool) -> Dict[str, Any]:
+    src_w, src_h = src
+    dst_w, dst_h = dst
     pad_L, pad_R, pad_T, pad_B = pad
 
     sx = dst_w / src_w
@@ -143,9 +148,6 @@ def _apply_resize(result: Dict[str, Any], m: Dict[str, Any], *, forward: bool) -
         return (xy - offset) / scale
 
     def mask_fn(masks: torch.Tensor) -> torch.Tensor:
-        # masks live in preprocessed space. Forward and revert are symmetric image-resamples.
-        # We don't implement mask resampling here because callers go through revert_images
-        # for whole-image masks; instance masks reverted alongside boxes use this path.
         return _resample_masks(masks, [src_w, src_h], [dst_w, dst_h], [pad_L, pad_R, pad_T, pad_B], pad_after=forward)
 
     return apply_coord_transform(result, xy_fn=xy_fn, mask_fn=mask_fn)

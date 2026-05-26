@@ -1,32 +1,63 @@
-"""Typed builders for preprocessing step dicts.
+"""Public namespace for building preprocessing pipelines.
 
-Each function returns a step dict matching the v3 manifest shape
-(``{"type": str, "configuration": dict, "id"?: str}``) so the result drops
-directly into ``Preprocessor.preprocess(images, steps, ...)``.
+Forward (used with Preprocessor.preprocess):
+    steps.crop(boxes=...)
+    steps.resize(width=..., height=..., preserve_aspect=...)
+    steps.crop_to_label(label=..., id=...)
+    ...
 
-Builders live as ``build_step`` classmethods on each Operation; this module
-just re-exports them under their op names for a single import surface:
-
-    from lmi_utils.preprocess_utils import steps
-    steps.resize(width=640, height=640, preserve_aspect=True)
+Inverse (used with Reconstructor.reconstruct_coordinates / .reconstruct_images
+when reconstructing manually without a history):
+    steps.revert_crop(boxes=..., orig_sizes=...)
+    steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...)
+    ...
 """
 
 from .ops import (
-    CropOperation,
-    CropToLabelOperation,
-    FlipOperation,
-    PadOperation,
-    ResizeOperation,
-    RotateOperation,
-    TileOperation,
+    CropConfig,
+    CropMeta,
+    CropToLabelConfig,
+    FlipConfig,
+    FlipMeta,
+    PadConfig,
+    PadMeta,
+    ResizeConfig,
+    ResizeMeta,
+    RotateConfig,
+    RotateMeta,
+    TileConfig,
+    TileMeta,
 )
 
-resize = ResizeOperation.build_step
-crop = CropOperation.build_step
-crop_to_label = CropToLabelOperation.build_step
-flip = FlipOperation.build_step
-pad = PadOperation.build_step
-rotate = RotateOperation.build_step
-tile = TileOperation.build_step
+# forward
+crop = CropConfig
+crop_to_label = CropToLabelConfig
+resize = ResizeConfig
+pad = PadConfig
+flip = FlipConfig
+rotate = RotateConfig
+tile = TileConfig
 
-__all__ = ["resize", "crop", "crop_to_label", "flip", "pad", "rotate", "tile"]
+# inverse (no revert_crop_to_label — crop-to-label is a forward-only macro)
+revert_crop = CropMeta
+revert_resize = ResizeMeta
+revert_pad = PadMeta
+revert_flip = FlipMeta
+revert_rotate = RotateMeta
+revert_tile = TileMeta
+
+__all__ = [
+    "crop",
+    "crop_to_label",
+    "resize",
+    "pad",
+    "flip",
+    "rotate",
+    "tile",
+    "revert_crop",
+    "revert_resize",
+    "revert_pad",
+    "revert_flip",
+    "revert_rotate",
+    "revert_tile",
+]

@@ -1,17 +1,29 @@
-from .crop import CropOperation
-from .crop_to_label import CropToLabelOperation
-from .flip import FlipOperation
-from .pad import PadOperation
-from .resize import ResizeOperation
-from .rotate import RotateOperation
-from .tile import TileOperation
+from .crop import CropConfig, CropMeta, CropOperation
+from .crop_to_label import CropToLabelConfig
+from .flip import FlipConfig, FlipMeta, FlipOperation
+from .pad import PadConfig, PadMeta, PadOperation
+from .resize import ResizeConfig, ResizeMeta, ResizeOperation
+from .rotate import RotateConfig, RotateMeta, RotateOperation
+from .tile import TileConfig, TileMeta, TileOperation
 
 __all__ = [
+    "CropConfig",
+    "CropMeta",
     "CropOperation",
-    "CropToLabelOperation",
+    "CropToLabelConfig",
+    "FlipConfig",
+    "FlipMeta",
     "FlipOperation",
+    "PadConfig",
+    "PadMeta",
     "PadOperation",
+    "ResizeConfig",
+    "ResizeMeta",
     "ResizeOperation",
+    "RotateConfig",
+    "RotateMeta",
     "RotateOperation",
+    "TileConfig",
+    "TileMeta",
     "TileOperation",
 ]

@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -6,63 +7,92 @@ import torch
 from lmi_utils.image_utils.tiler import Tiler
 
 from .._coords import apply_coord_transform
-from ..operation import Operation
+from ..operation import Config, Meta, Operation
 
 
-class TileOperation(Operation):
+@dataclass
+class TileConfig(Config):
     """Tile each image into fixed-size patches; remember per-image grid for stitching.
 
-    Each input image expands to ``n_tiles_h * n_tiles_w`` output tiles in row-major order;
-    ``revert_images`` / ``revert_coords`` consume the same flat tile list and re-group by
-    metadata entry.
-
-    Configuration:
-        tile_size (int | [h, w], required): patch size.
-        stride (int | [h, w], required): step between tile origins.
-        scale_mode (str, optional): how the image is fit to the tile grid before slicing
-            (``"padding"`` or ``"interpolation"``). Default ``"padding"``.
-        overlap_mode (str, optional): how overlapping regions are merged on untile. Default ``"average"``.
-
-    Metadata schema (per input image)::
-
-        {
-            "tile_size": [h, w], "stride": [h, w],
-            "im_size": [H, W],           # original image size
-            "scale_size": [H', W'],      # size after scale_mode fit, before tiling
-            "n_tiles": [n_h, n_w],       # grid shape
-            "batch_size": int, "num_channel": int,
-            "scale_mode": str, "overlap_mode": str,
-        }
+    tile_size: int or [h, w] — patch size.
+    stride: int or [h, w] — step between tile origins.
+    scale_mode: how the image is fit to the tile grid before slicing ("padding" or "interpolation").
+    overlap_mode: how overlapping regions are merged on untile ("average", "max", ...).
     """
 
-    name = "tile"
+    tile_size: Union[int, List[int], None] = None
+    stride: Union[int, List[int], None] = None
+    scale_mode: str = "padding"
+    overlap_mode: str = "average"
 
-    @classmethod
-    def build_step(
-        cls,
-        *,
-        tile_size: Union[int, List[int]],
-        stride: Union[int, List[int]],
-        scale_mode: str = "padding",
-        overlap_mode: str = "average",
-        id: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        return cls._finalize_step(
-            {"tile_size": tile_size, "stride": stride, "scale_mode": scale_mode, "overlap_mode": overlap_mode},
-            id=id,
-        )
+    def __post_init__(self):
+        if self.tile_size is None or self.stride is None:
+            raise ValueError("TileConfig: 'tile_size' and 'stride' are required")
+
+
+@dataclass
+class TileMeta(Meta):
+    """Batched tile metadata (one entry per *source* image; each source produces n_h*n_w tiles)."""
+
+    tile_sizes: List[List[int]] = field(default_factory=list)
+    strides: List[List[int]] = field(default_factory=list)
+    im_sizes: List[List[int]] = field(default_factory=list)
+    scale_sizes: List[List[int]] = field(default_factory=list)
+    n_tiles: List[List[int]] = field(default_factory=list)
+    batch_sizes: List[int] = field(default_factory=list)
+    num_channels: List[int] = field(default_factory=list)
+    scale_modes: List[str] = field(default_factory=list)
+    overlap_modes: List[str] = field(default_factory=list)
+
+    def __post_init__(self):
+        n = len(self.n_tiles)
+        for name in (
+            "tile_sizes",
+            "strides",
+            "im_sizes",
+            "scale_sizes",
+            "batch_sizes",
+            "num_channels",
+            "scale_modes",
+            "overlap_modes",
+        ):
+            if len(getattr(self, name)) != n:
+                raise ValueError(f"TileMeta: field '{name}' length mismatch")
+
+    def per_image_dict(self, i: int) -> Dict[str, Any]:
+        """Reconstruct a single source image's dict suitable for Tiler.from_dict()."""
+        return {
+            "tile_size": list(self.tile_sizes[i]),
+            "stride": list(self.strides[i]),
+            "im_size": list(self.im_sizes[i]),
+            "scale_size": list(self.scale_sizes[i]),
+            "n_tiles": list(self.n_tiles[i]),
+            "batch_size": self.batch_sizes[i],
+            "num_channel": self.num_channels[i],
+            "scale_mode": self.scale_modes[i],
+            "overlap_mode": self.overlap_modes[i],
+        }
+
+
+class TileOperation(Operation[TileConfig, TileMeta]):
+    config_cls = TileConfig
+    meta_cls = TileMeta
 
     @torch.inference_mode()
-    def forward(self, images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], List[Any]]:
-        required_keys = {"tile_size", "stride"}
-        if not required_keys.issubset(config.keys()):
-            raise ValueError(f"Tiler configuration must contain keys: {required_keys}")
+    def forward(self, images: List[torch.Tensor], config: TileConfig) -> Tuple[List[torch.Tensor], TileMeta]:
+        scale_mode = config.scale_mode
+        overlap_mode = config.overlap_mode
 
-        scale_mode = config.get("scale_mode", "padding")
-        overlap_mode = config.get("overlap_mode", "average")
-
-        output_images = []
-        tiler_metadata = []
+        out_images: List[torch.Tensor] = []
+        tile_sizes: List[List[int]] = []
+        strides: List[List[int]] = []
+        im_sizes: List[List[int]] = []
+        scale_sizes: List[List[int]] = []
+        n_tiles_list: List[List[int]] = []
+        batch_sizes: List[int] = []
+        num_channels: List[int] = []
+        scale_modes: List[str] = []
+        overlap_modes: List[str] = []
 
         for img in images:
             ndim = img.dim()
@@ -71,7 +101,7 @@ class TileOperation(Operation):
                 add_channel = True
                 img = img.unsqueeze(-1)
 
-            tiler = Tiler(tile_size=config["tile_size"], stride=config["stride"])
+            tiler = Tiler(tile_size=config.tile_size, stride=config.stride)
             img_batch = img.permute(2, 0, 1).unsqueeze(0)  # [1, C, H, W]
             tiles_batch = tiler.tile(img_batch, mode=scale_mode)  # [N, C, H, W]
 
@@ -79,28 +109,43 @@ class TileOperation(Operation):
             tiles_list_hwc = [t.permute(1, 2, 0) for t in tiles_list_chw]
             if add_channel:
                 tiles_list_hwc = [t.squeeze(-1) for t in tiles_list_hwc]
+            out_images.extend(tiles_list_hwc)
 
-            output_images.extend(tiles_list_hwc)
+            d = tiler.to_dict()
+            tile_sizes.append(list(d["tile_size"]))
+            strides.append(list(d["stride"]))
+            im_sizes.append(list(d["im_size"]))
+            scale_sizes.append(list(d["scale_size"]))
+            n_tiles_list.append(list(d["n_tiles"]))
+            batch_sizes.append(int(d["batch_size"]))
+            num_channels.append(int(d["num_channel"]))
+            scale_modes.append(scale_mode)
+            overlap_modes.append(overlap_mode)
 
-            meta = tiler.to_dict()
-            meta["overlap_mode"] = overlap_mode
-            meta["scale_mode"] = scale_mode
-            tiler_metadata.append(meta)
-
-        return output_images, tiler_metadata
+        return out_images, TileMeta(
+            tile_sizes=tile_sizes,
+            strides=strides,
+            im_sizes=im_sizes,
+            scale_sizes=scale_sizes,
+            n_tiles=n_tiles_list,
+            batch_sizes=batch_sizes,
+            num_channels=num_channels,
+            scale_modes=scale_modes,
+            overlap_modes=overlap_modes,
+        )
 
     @torch.inference_mode()
-    def revert_images(self, images: List[torch.Tensor], metadata: List[Dict[str, Any]]) -> List[torch.Tensor]:
+    def revert_images(self, images: List[torch.Tensor], meta: TileMeta) -> List[torch.Tensor]:
         restored_images = []
         cursor = 0
 
-        for tiler_meta in metadata:
-            tiler = Tiler.from_dict(tiler_meta)
-            count = tiler_meta["n_tiles"][0] * tiler_meta["n_tiles"][1]
+        for i in range(len(meta.n_tiles)):
+            n_h, n_w = meta.n_tiles[i]
+            count = n_h * n_w
+            tiler = Tiler.from_dict(meta.per_image_dict(i))
 
             batch_slice_hwc = images[cursor : cursor + count]
             cursor += count
-
             if len(batch_slice_hwc) != count:
                 raise RuntimeError(f"Expected {count} tiles, found {len(batch_slice_hwc)}")
 
@@ -115,23 +160,18 @@ class TileOperation(Operation):
                 batch_hwc = batch_hwc.unsqueeze(-1)
             batch_chw = batch_hwc.permute(0, 3, 1, 2)  # [N, C, H, W]
 
-            scale_mode = tiler_meta.get("scale_mode", "padding")
-            overlap_mode = tiler_meta.get("overlap_mode", "average")
-            restored_batch = tiler.untile(batch_chw, scale_mode=scale_mode, overlap_mode=overlap_mode)
-
+            restored_batch = tiler.untile(batch_chw, scale_mode=meta.scale_modes[i], overlap_mode=meta.overlap_modes[i])
             restored_img = restored_batch.squeeze(0).permute(1, 2, 0)
             if add_channel:
                 restored_img = restored_img.squeeze(-1)
-
             restored_images.append(restored_img)
 
         if cursor != len(images):
             raise RuntimeError(f"Tile reconstruction mismatch: processed {cursor} images, but received {len(images)}")
-
         return restored_images
 
     @torch.inference_mode()
-    def apply_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def apply_coords(self, results: List[Dict[str, Any]], meta: TileMeta) -> List[Dict[str, Any]]:
         """Project original-space coords into per-tile space.
 
         Expands the per-image results list into a per-tile list (one dict per emitted tile,
@@ -150,247 +190,244 @@ class TileOperation(Operation):
             - interpolation: masks are in ``im_size``; resampled to ``scale_size`` before tiling.
             - padding: masks are in ``scale_size``; zero-padded to ``scale_size`` if smaller.
         """
-        if len(results) != len(metadata):
-            raise ValueError(f"tile: results count ({len(results)}) != metadata count ({len(metadata)})")
+        if len(results) != len(meta.n_tiles):
+            raise ValueError(f"tile: results count ({len(results)}) != meta count ({len(meta.n_tiles)})")
         output = []
-        for r, m in zip(results, metadata):
-            n_h, n_w = m["n_tiles"]
+        for i, r in enumerate(results):
+            d = meta.per_image_dict(i)
+            n_h, n_w = d["n_tiles"]
             for row in range(n_h):
                 for col in range(n_w):
-                    output.append(self._project_to_tile(r, m, row, col))
+                    output.append(_project_to_tile(r, d, row, col))
         return output
 
     @torch.inference_mode()
-    def revert_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def revert_coords(self, results: List[Dict[str, Any]], meta: TileMeta) -> List[Dict[str, Any]]:
         # NOTE: per-tile instances are concatenated as-is; objects spanning tile seams remain
         # as separate labels (no NMS / IoU merge / mask union). Callers needing one label per
         # object must dedupe downstream.
         output = []
         cursor = 0
-
-        for tiler_meta in metadata:
-            n_tiles_h, n_tiles_w = tiler_meta["n_tiles"]
-            count = n_tiles_h * n_tiles_w
+        for i in range(len(meta.n_tiles)):
+            n_h, n_w = meta.n_tiles[i]
+            count = n_h * n_w
             tile_results = results[cursor : cursor + count]
             cursor += count
-
             if len(tile_results) != count:
                 raise RuntimeError(f"Expected {count} tile results, found {len(tile_results)}")
-
-            output.append(self._merge_tile_coords(tile_results, tiler_meta))
+            output.append(_merge_tile_coords(tile_results, meta.per_image_dict(i)))
 
         if cursor != len(results):
             raise RuntimeError(f"Tile coord reconstruction mismatch: processed {cursor}, received {len(results)}")
-
         return output
 
-    @classmethod
-    def _merge_tile_coords(cls, tile_results: List[Dict[str, Any]], tiler_meta: Dict[str, Any]) -> Dict[str, Any]:
-        _, n_tiles_w = tiler_meta["n_tiles"]
-        stride_h, stride_w = tiler_meta["stride"]
-        im_h, im_w = tiler_meta["im_size"]
-        scale_h, scale_w = tiler_meta["scale_size"]
-        is_interp = tiler_meta.get("scale_mode", "padding") == "interpolation" and (scale_h != im_h or scale_w != im_w)
-        sx = im_w / scale_w if is_interp else 1.0
-        sy = im_h / scale_h if is_interp else 1.0
 
-        target_size = (im_h, im_w) if is_interp else (scale_h, scale_w)
+def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str, Any]) -> Dict[str, Any]:
+    _, n_tiles_w = tiler_meta["n_tiles"]
+    stride_h, stride_w = tiler_meta["stride"]
+    im_h, im_w = tiler_meta["im_size"]
+    scale_h, scale_w = tiler_meta["scale_size"]
+    is_interp = tiler_meta.get("scale_mode", "padding") == "interpolation" and (scale_h != im_h or scale_w != im_w)
+    sx = im_w / scale_w if is_interp else 1.0
+    sy = im_h / scale_h if is_interp else 1.0
 
-        shifted = []
-        for idx, r in enumerate(tile_results):
-            row = idx // n_tiles_w
-            col = idx % n_tiles_w
-            shifted.append(cls._shift_tile_coords(r, col * stride_w, row * stride_h, sx, sy, target_size))
+    target_size = (im_h, im_w) if is_interp else (scale_h, scale_w)
 
-        return cls._concat_tile_results(shifted)
+    shifted = []
+    for idx, r in enumerate(tile_results):
+        row = idx // n_tiles_w
+        col = idx % n_tiles_w
+        shifted.append(_shift_tile_coords(r, col * stride_w, row * stride_h, sx, sy, target_size))
 
-    @staticmethod
-    def _shift_tile_coords(
-        result: Dict[str, Any], offset_x: int, offset_y: int, sx: float, sy: float, target_size: Tuple[int, int]
-    ) -> Dict[str, Any]:
-        scaled = sx != 1.0 or sy != 1.0
+    return _concat_tile_results(shifted)
 
-        def xy_fn(xy: torch.Tensor) -> torch.Tensor:
-            off = torch.tensor([offset_x, offset_y], dtype=torch.float32, device=xy.device)
-            shifted = xy.float() + off
-            if scaled:
-                scale = torch.tensor([sx, sy], dtype=torch.float32, device=xy.device)
-                shifted = shifted * scale
-            return shifted
 
-        def mask_fn(masks: torch.Tensor) -> torch.Tensor:
-            canvas_h, canvas_w = target_size
-            if scaled:
-                new_h = max(1, round(masks.shape[1] * sy))
-                new_w = max(1, round(masks.shape[2] * sx))
-                masks = torch.nn.functional.interpolate(masks.float().unsqueeze(1), size=(new_h, new_w), mode="nearest").squeeze(1)
-                paste_y = round(offset_y * sy)
-                paste_x = round(offset_x * sx)
-            else:
-                masks = masks.float()
-                paste_y, paste_x = offset_y, offset_x
-            canvas = torch.zeros(len(masks), canvas_h, canvas_w, dtype=masks.dtype, device=masks.device)
-            h_end = min(paste_y + masks.shape[1], canvas_h)
-            w_end = min(paste_x + masks.shape[2], canvas_w)
-            canvas[:, paste_y:h_end, paste_x:w_end] = masks[:, : h_end - paste_y, : w_end - paste_x]
-            return canvas
+def _shift_tile_coords(
+    result: Dict[str, Any], offset_x: int, offset_y: int, sx: float, sy: float, target_size: Tuple[int, int]
+) -> Dict[str, Any]:
+    scaled = sx != 1.0 or sy != 1.0
 
-        return apply_coord_transform(result, xy_fn=xy_fn, mask_fn=mask_fn)
+    def xy_fn(xy: torch.Tensor) -> torch.Tensor:
+        off = torch.tensor([offset_x, offset_y], dtype=torch.float32, device=xy.device)
+        shifted = xy.float() + off
+        if scaled:
+            scale = torch.tensor([sx, sy], dtype=torch.float32, device=xy.device)
+            shifted = shifted * scale
+        return shifted
 
-    @staticmethod
-    def _concat_tile_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
-        if not results:
-            return {}
+    def mask_fn(masks: torch.Tensor) -> torch.Tensor:
+        canvas_h, canvas_w = target_size
+        if scaled:
+            new_h = max(1, round(masks.shape[1] * sy))
+            new_w = max(1, round(masks.shape[2] * sx))
+            masks = torch.nn.functional.interpolate(masks.float().unsqueeze(1), size=(new_h, new_w), mode="nearest").squeeze(1)
+            paste_y = round(offset_y * sy)
+            paste_x = round(offset_x * sx)
+        else:
+            masks = masks.float()
+            paste_y, paste_x = offset_y, offset_x
+        canvas = torch.zeros(len(masks), canvas_h, canvas_w, dtype=masks.dtype, device=masks.device)
+        h_end = min(paste_y + masks.shape[1], canvas_h)
+        w_end = min(paste_x + masks.shape[2], canvas_w)
+        canvas[:, paste_y:h_end, paste_x:w_end] = masks[:, : h_end - paste_y, : w_end - paste_x]
+        return canvas
 
-        merged = {}
-        all_keys = {k for r in results for k in r}
+    return apply_coord_transform(result, xy_fn=xy_fn, mask_fn=mask_fn)
 
-        for key in all_keys:
-            vals = [r[key] for r in results if key in r and r[key] is not None]
-            if not vals:
-                continue
-            if key == "segments":
-                merged[key] = [seg for segs in vals for seg in segs]
-            elif key == "classes":
-                non_empty = [v for v in vals if len(v) > 0]
-                merged[key] = np.concatenate(non_empty) if non_empty else vals[0]
-            else:  # boxes, scores, points, masks
-                non_empty = [v for v in vals if len(v) > 0]
-                merged[key] = torch.cat(non_empty) if non_empty else vals[0]
 
-        return merged
+def _concat_tile_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not results:
+        return {}
 
-    @classmethod
-    def _project_to_tile(cls, result: Dict[str, Any], m: Dict[str, Any], row: int, col: int) -> Dict[str, Any]:
-        import torch.nn.functional as F
+    merged = {}
+    all_keys = {k for r in results for k in r}
 
-        tile_h, tile_w = m["tile_size"]
-        stride_h, stride_w = m["stride"]
-        im_h, im_w = m["im_size"]
-        scale_h, scale_w = m["scale_size"]
-        is_interp = m.get("scale_mode", "padding") == "interpolation" and (scale_h != im_h or scale_w != im_w)
-        sx = scale_w / im_w if is_interp else 1.0
-        sy = scale_h / im_h if is_interp else 1.0
-        off_x = col * stride_w
-        off_y = row * stride_h
+    for key in all_keys:
+        vals = [r[key] for r in results if key in r and r[key] is not None]
+        if not vals:
+            continue
+        if key == "segments":
+            merged[key] = [seg for segs in vals for seg in segs]
+        elif key == "classes":
+            non_empty = [v for v in vals if len(v) > 0]
+            merged[key] = np.concatenate(non_empty) if non_empty else vals[0]
+        else:  # boxes, scores, points, masks
+            non_empty = [v for v in vals if len(v) > 0]
+            merged[key] = torch.cat(non_empty) if non_empty else vals[0]
 
-        def to_tile_xy(xy: torch.Tensor) -> torch.Tensor:
-            xy = xy.float()
-            if is_interp:
-                xy = xy * torch.tensor([sx, sy], dtype=torch.float32, device=xy.device)
-            return xy - torch.tensor([off_x, off_y], dtype=torch.float32, device=xy.device)
+    return merged
 
-        n = _instance_count(result)
-        out: Dict[str, Any] = dict(result)
-        if n == 0:
-            return out
 
-        kept = torch.zeros(n, dtype=torch.bool)
-        boxes_out = points_out = masks_out = None
-        segments_out: Optional[List[torch.Tensor]] = None
+def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: int) -> Dict[str, Any]:
+    import torch.nn.functional as F
 
-        boxes = result.get("boxes")
-        if boxes is not None and len(boxes):
-            if boxes.ndim == 3:  # OBB (N, 4, 2)
-                obb_t = to_tile_xy(boxes.reshape(-1, 2)).reshape(n, 4, 2)
-                obb_kept = torch.zeros(n, dtype=torch.bool)
-                refit = obb_t.clone()
-                for i in range(n):
-                    clipped = _polygon_clip(obb_t[i], tile_w, tile_h)
-                    if clipped.shape[0] < 3:
-                        continue
-                    fitted = _refit_obb_keep_orientation(clipped, obb_t[i])
-                    if fitted is None:
-                        continue
-                    refit[i] = fitted.to(refit.dtype).to(refit.device)
-                    obb_kept[i] = True
-                boxes_out = refit
-                kept |= obb_kept
-            else:  # xyxy (N, 4) — rotate-style: take aabb of forward-projected corners, then clip
-                corners = torch.stack(
-                    [
-                        torch.stack([boxes[:, 0], boxes[:, 1]], dim=-1),
-                        torch.stack([boxes[:, 2], boxes[:, 1]], dim=-1),
-                        torch.stack([boxes[:, 2], boxes[:, 3]], dim=-1),
-                        torch.stack([boxes[:, 0], boxes[:, 3]], dim=-1),
-                    ],
-                    dim=1,
-                )  # (N, 4, 2)
-                corners_t = to_tile_xy(corners.reshape(-1, 2)).reshape(n, 4, 2)
-                x1 = corners_t[..., 0].amin(dim=1).clamp(0, tile_w)
-                x2 = corners_t[..., 0].amax(dim=1).clamp(0, tile_w)
-                y1 = corners_t[..., 1].amin(dim=1).clamp(0, tile_h)
-                y2 = corners_t[..., 1].amax(dim=1).clamp(0, tile_h)
-                boxes_out = torch.stack([x1, y1, x2, y2], dim=-1)
-                kept |= (x2 > x1) & (y2 > y1)
+    tile_h, tile_w = m["tile_size"]
+    stride_h, stride_w = m["stride"]
+    im_h, im_w = m["im_size"]
+    scale_h, scale_w = m["scale_size"]
+    is_interp = m.get("scale_mode", "padding") == "interpolation" and (scale_h != im_h or scale_w != im_w)
+    sx = scale_w / im_w if is_interp else 1.0
+    sy = scale_h / im_h if is_interp else 1.0
+    off_x = col * stride_w
+    off_y = row * stride_h
 
-        points = result.get("points")
-        if points is not None and len(points):
-            xy = points[..., :2]
-            xy_t = to_tile_xy(xy.reshape(-1, 2)).reshape(xy.shape)
-            in_tile = (xy_t[..., 0] >= 0) & (xy_t[..., 0] <= tile_w) & (xy_t[..., 1] >= 0) & (xy_t[..., 1] <= tile_h)
-            if points.shape[-1] == 3:
-                vis = points[..., 2]
-                new_vis = torch.where(in_tile, vis, torch.zeros_like(vis))
-                points_out = torch.cat([xy_t, new_vis.unsqueeze(-1)], dim=-1)
-                kept |= (new_vis > 0).any(dim=-1)
-            else:
-                points_out = xy_t
-                kept |= in_tile.any(dim=-1)
+    def to_tile_xy(xy: torch.Tensor) -> torch.Tensor:
+        xy = xy.float()
+        if is_interp:
+            xy = xy * torch.tensor([sx, sy], dtype=torch.float32, device=xy.device)
+        return xy - torch.tensor([off_x, off_y], dtype=torch.float32, device=xy.device)
 
-        segments = result.get("segments")
-        if segments is not None and len(segments):
-            segments_out = []
-            for i, s in enumerate(segments):
-                if len(s) == 0:
-                    segments_out.append(s)
-                    continue
-                clipped = _polygon_clip(to_tile_xy(s), tile_w, tile_h)
-                segments_out.append(clipped)
-                if clipped.shape[0] >= 3:
-                    kept[i] = True
-
-        masks = result.get("masks")
-        if masks is not None and len(masks):
-            if is_interp:
-                full = F.interpolate(masks.float().unsqueeze(1), size=(scale_h, scale_w), mode="nearest").squeeze(1)
-            else:
-                mh, mw = masks.shape[1], masks.shape[2]
-                if (mh, mw) != (scale_h, scale_w):
-                    full = F.pad(masks, [0, max(0, scale_w - mw), 0, max(0, scale_h - mh)])
-                else:
-                    full = masks
-            y0, x0 = off_y, off_x
-            y1, x1 = min(y0 + tile_h, scale_h), min(x0 + tile_w, scale_w)
-            sliced = full[:, max(0, y0) : y1, max(0, x0) : x1]
-            pad_b = tile_h - sliced.shape[1]
-            pad_r = tile_w - sliced.shape[2]
-            if pad_b or pad_r:
-                sliced = F.pad(sliced, [0, max(0, pad_r), 0, max(0, pad_b)])
-            masks_out = sliced.to(masks.dtype)
-            kept |= (masks_out.reshape(n, -1) != 0).any(dim=-1)
-
-        kept_idx = kept.nonzero(as_tuple=True)[0]
-        if boxes_out is not None:
-            out["boxes"] = boxes_out[kept_idx]
-        if points_out is not None:
-            out["points"] = points_out[kept_idx]
-        if segments_out is not None:
-            out["segments"] = [segments_out[i] for i in kept_idx.tolist()]
-        if masks_out is not None:
-            out["masks"] = masks_out[kept_idx]
-
-        scores = result.get("scores")
-        if scores is not None and len(scores) == n:
-            out["scores"] = scores[kept_idx]
-        classes = result.get("classes")
-        if classes is not None and len(classes) == n:
-            if isinstance(classes, np.ndarray):
-                out["classes"] = classes[kept_idx.cpu().numpy()]
-            else:
-                out["classes"] = classes[kept_idx]
-
+    n = _instance_count(result)
+    out: Dict[str, Any] = dict(result)
+    if n == 0:
         return out
+
+    kept = torch.zeros(n, dtype=torch.bool)
+    boxes_out = points_out = masks_out = None
+    segments_out: Optional[List[torch.Tensor]] = None
+
+    boxes = result.get("boxes")
+    if boxes is not None and len(boxes):
+        if boxes.ndim == 3:  # OBB (N, 4, 2)
+            obb_t = to_tile_xy(boxes.reshape(-1, 2)).reshape(n, 4, 2)
+            obb_kept = torch.zeros(n, dtype=torch.bool)
+            refit = obb_t.clone()
+            for i in range(n):
+                clipped = _polygon_clip(obb_t[i], tile_w, tile_h)
+                if clipped.shape[0] < 3:
+                    continue
+                fitted = _refit_obb_keep_orientation(clipped, obb_t[i])
+                if fitted is None:
+                    continue
+                refit[i] = fitted.to(refit.dtype).to(refit.device)
+                obb_kept[i] = True
+            boxes_out = refit
+            kept |= obb_kept
+        else:  # xyxy (N, 4) — rotate-style: take aabb of forward-projected corners, then clip
+            corners = torch.stack(
+                [
+                    torch.stack([boxes[:, 0], boxes[:, 1]], dim=-1),
+                    torch.stack([boxes[:, 2], boxes[:, 1]], dim=-1),
+                    torch.stack([boxes[:, 2], boxes[:, 3]], dim=-1),
+                    torch.stack([boxes[:, 0], boxes[:, 3]], dim=-1),
+                ],
+                dim=1,
+            )  # (N, 4, 2)
+            corners_t = to_tile_xy(corners.reshape(-1, 2)).reshape(n, 4, 2)
+            x1 = corners_t[..., 0].amin(dim=1).clamp(0, tile_w)
+            x2 = corners_t[..., 0].amax(dim=1).clamp(0, tile_w)
+            y1 = corners_t[..., 1].amin(dim=1).clamp(0, tile_h)
+            y2 = corners_t[..., 1].amax(dim=1).clamp(0, tile_h)
+            boxes_out = torch.stack([x1, y1, x2, y2], dim=-1)
+            kept |= (x2 > x1) & (y2 > y1)
+
+    points = result.get("points")
+    if points is not None and len(points):
+        xy = points[..., :2]
+        xy_t = to_tile_xy(xy.reshape(-1, 2)).reshape(xy.shape)
+        in_tile = (xy_t[..., 0] >= 0) & (xy_t[..., 0] <= tile_w) & (xy_t[..., 1] >= 0) & (xy_t[..., 1] <= tile_h)
+        if points.shape[-1] == 3:
+            vis = points[..., 2]
+            new_vis = torch.where(in_tile, vis, torch.zeros_like(vis))
+            points_out = torch.cat([xy_t, new_vis.unsqueeze(-1)], dim=-1)
+            kept |= (new_vis > 0).any(dim=-1)
+        else:
+            points_out = xy_t
+            kept |= in_tile.any(dim=-1)
+
+    segments = result.get("segments")
+    if segments is not None and len(segments):
+        segments_out = []
+        for i, s in enumerate(segments):
+            if len(s) == 0:
+                segments_out.append(s)
+                continue
+            clipped = _polygon_clip(to_tile_xy(s), tile_w, tile_h)
+            segments_out.append(clipped)
+            if clipped.shape[0] >= 3:
+                kept[i] = True
+
+    masks = result.get("masks")
+    if masks is not None and len(masks):
+        if is_interp:
+            full = F.interpolate(masks.float().unsqueeze(1), size=(scale_h, scale_w), mode="nearest").squeeze(1)
+        else:
+            mh, mw = masks.shape[1], masks.shape[2]
+            if (mh, mw) != (scale_h, scale_w):
+                full = F.pad(masks, [0, max(0, scale_w - mw), 0, max(0, scale_h - mh)])
+            else:
+                full = masks
+        y0, x0 = off_y, off_x
+        y1, x1 = min(y0 + tile_h, scale_h), min(x0 + tile_w, scale_w)
+        sliced = full[:, max(0, y0) : y1, max(0, x0) : x1]
+        pad_b = tile_h - sliced.shape[1]
+        pad_r = tile_w - sliced.shape[2]
+        if pad_b or pad_r:
+            sliced = F.pad(sliced, [0, max(0, pad_r), 0, max(0, pad_b)])
+        masks_out = sliced.to(masks.dtype)
+        kept |= (masks_out.reshape(n, -1) != 0).any(dim=-1)
+
+    kept_idx = kept.nonzero(as_tuple=True)[0]
+    if boxes_out is not None:
+        out["boxes"] = boxes_out[kept_idx]
+    if points_out is not None:
+        out["points"] = points_out[kept_idx]
+    if segments_out is not None:
+        out["segments"] = [segments_out[i] for i in kept_idx.tolist()]
+    if masks_out is not None:
+        out["masks"] = masks_out[kept_idx]
+
+    scores = result.get("scores")
+    if scores is not None and len(scores) == n:
+        out["scores"] = scores[kept_idx]
+    classes = result.get("classes")
+    if classes is not None and len(classes) == n:
+        if isinstance(classes, np.ndarray):
+            out["classes"] = classes[kept_idx.cpu().numpy()]
+        else:
+            out["classes"] = classes[kept_idx]
+
+    return out
 
 
 def _instance_count(result: Dict[str, Any]) -> int:

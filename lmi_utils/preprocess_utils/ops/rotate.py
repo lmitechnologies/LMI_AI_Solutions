@@ -1,80 +1,88 @@
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Tuple
 
 import torch
 import torch.nn.functional as F
 
 from .._coords import apply_coord_transform
-from ..operation import Operation
+from ..operation import Config, Meta, Operation
 
-# 2x3 affine in row-major order (a, b, tx, c, d, ty) — maps [x, y, 1] -> [a*x + b*y + tx, c*x + d*y + ty].
 Affine = Tuple[float, float, float, float, float, float]
 
 
-class RotateOperation(Operation):
-    """Rotate each image by ``angle`` degrees, expanding the canvas to fit the rotated extent.
+@dataclass
+class RotateConfig(Config):
+    """Rotate each image by ``angle`` degrees (positive = clockwise, image y-down)."""
 
-    Configuration:
-        angle (float): rotation in degrees. Positive = clockwise (image y-down).
+    angle: float = 0.0
 
-    Metadata schema (per image)::
 
-        {"angle": float, "src_size": [W, H], "dst_size": [new_W, new_H]}
+@dataclass
+class RotateMeta(Meta):
+    """Batched rotate metadata.
 
-    Coordinate revert is lossless up to float precision. Image revert is **lossy**
-    for non-90° angles: bilinear resampling softens edges on each pass and the
-    expanded canvas's zero-fill borders bleed back into the rotated rectangle on revert.
-
-    To reproduce the same rotation with OpenCV::
-
-        import cv2
-        W, H = m["src_size"]; nW, nH = m["dst_size"]
-        M = cv2.getRotationMatrix2D((W // 2, H // 2), -m["angle"], 1.0)
-        M[0, 2] += nW / 2 - W // 2
-        M[1, 2] += nH / 2 - H // 2
-        out = cv2.warpAffine(img, M, (nW, nH))
+    angles: per-image rotation in degrees.
+    src_sizes: [W, H] before rotation.
+    dst_sizes: [new_W, new_H] after rotation (canvas expanded to fit).
     """
 
-    name = "rotate"
+    angles: List[float] = field(default_factory=list)
+    src_sizes: List[List[int]] = field(default_factory=list)
+    dst_sizes: List[List[int]] = field(default_factory=list)
 
-    @classmethod
-    def build_step(cls, *, angle: float, id: Optional[str] = None) -> Dict[str, Any]:
-        return cls._finalize_step({"angle": float(angle)}, id=id)
+    def __post_init__(self):
+        n = len(self.angles)
+        if not (len(self.src_sizes) == n and len(self.dst_sizes) == n):
+            raise ValueError("RotateMeta: field lengths must match")
+
+
+class RotateOperation(Operation[RotateConfig, RotateMeta]):
+    config_cls = RotateConfig
+    meta_cls = RotateMeta
 
     @torch.inference_mode()
-    def forward(self, images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], List[Dict[str, Any]]]:
-        angle_deg = float(config["angle"])
+    def forward(self, images: List[torch.Tensor], config: RotateConfig) -> Tuple[List[torch.Tensor], RotateMeta]:
+        angle_deg = float(config.angle)
         out_images: List[torch.Tensor] = []
-        meta_list: List[Dict[str, Any]] = []
+        angles: List[float] = []
+        src_sizes: List[List[int]] = []
+        dst_sizes: List[List[int]] = []
         for img in images:
             H, W = img.shape[:2]
             new_W, new_H = _expand_size(W, H, angle_deg)
             M = _forward_affine(W, H, new_W, new_H, angle_deg)
-            # Sample original at M_inv(dst) for each rotated pixel.
             out_images.append(_warp(img, in_W=W, in_H=H, out_W=new_W, out_H=new_H, sample_M=_invert(M), mode="bilinear"))
-            meta_list.append({"angle": angle_deg, "src_size": [W, H], "dst_size": [new_W, new_H]})
-        return out_images, meta_list
+            angles.append(angle_deg)
+            src_sizes.append([W, H])
+            dst_sizes.append([new_W, new_H])
+        return out_images, RotateMeta(angles=angles, src_sizes=src_sizes, dst_sizes=dst_sizes)
 
     @torch.inference_mode()
-    def revert_images(self, images: List[torch.Tensor], metadata: List[Dict[str, Any]]) -> List[torch.Tensor]:
-        if len(images) != len(metadata):
-            raise ValueError(f"rotate: image count ({len(images)}) != metadata count ({len(metadata)})")
+    def revert_images(self, images: List[torch.Tensor], meta: RotateMeta) -> List[torch.Tensor]:
+        if len(images) != len(meta.angles):
+            raise ValueError(f"rotate: image count ({len(images)}) != meta count ({len(meta.angles)})")
         out: List[torch.Tensor] = []
-        for img, m in zip(images, metadata):
-            W, H = m["src_size"]
-            nW, nH = m["dst_size"]
-            M = _forward_affine(W, H, nW, nH, m["angle"])
-            # Sample rotated at M(dst) for each original pixel.
+        for img, angle, src, dst in zip(images, meta.angles, meta.src_sizes, meta.dst_sizes):
+            W, H = src
+            nW, nH = dst
+            M = _forward_affine(W, H, nW, nH, angle)
             out.append(_warp(img, in_W=nW, in_H=nH, out_W=W, out_H=H, sample_M=M, mode="bilinear"))
         return out
 
     @torch.inference_mode()
-    def revert_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return [_apply_rotate(r, m, forward=False) for r, m in zip(results, metadata)]
+    def revert_coords(self, results: List[Dict[str, Any]], meta: RotateMeta) -> List[Dict[str, Any]]:
+        return [
+            _apply_rotate(r, angle, src, dst, forward=False)
+            for r, angle, src, dst in zip(results, meta.angles, meta.src_sizes, meta.dst_sizes)
+        ]
 
     @torch.inference_mode()
-    def apply_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return [_apply_rotate(r, m, forward=True) for r, m in zip(results, metadata)]
+    def apply_coords(self, results: List[Dict[str, Any]], meta: RotateMeta) -> List[Dict[str, Any]]:
+        return [
+            _apply_rotate(r, angle, src, dst, forward=True)
+            for r, angle, src, dst in zip(results, meta.angles, meta.src_sizes, meta.dst_sizes)
+        ]
 
 
 def _expand_size(W: int, H: int, angle_deg: float) -> Tuple[int, int]:
@@ -144,10 +152,10 @@ def _apply_affine_xy(M: Affine, xy: torch.Tensor) -> torch.Tensor:
     return torch.stack([a * x + b * y + tx, c * x + d * y + ty], dim=-1)
 
 
-def _apply_rotate(result: Dict[str, Any], m: Dict[str, Any], *, forward: bool) -> Dict[str, Any]:
-    W, H = m["src_size"]
-    nW, nH = m["dst_size"]
-    M_fwd = _forward_affine(W, H, nW, nH, m["angle"])
+def _apply_rotate(result: Dict[str, Any], angle: float, src: List[int], dst: List[int], *, forward: bool) -> Dict[str, Any]:
+    W, H = src
+    nW, nH = dst
+    M_fwd = _forward_affine(W, H, nW, nH, angle)
     M_apply = M_fwd if forward else _invert(M_fwd)
 
     def xy_fn(xy: torch.Tensor) -> torch.Tensor:

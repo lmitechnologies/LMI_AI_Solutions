@@ -1,57 +1,77 @@
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Tuple
 
 import torch
 
 from .._coords import apply_coord_transform
-from ..operation import Operation
+from ..operation import Config, Meta, Operation
 
 
-class CropOperation(Operation):
-    """Crop each image to a per-image box; paste back into the original canvas on revert.
+@dataclass
+class CropConfig(Config):
+    """Crop each image to a per-image box.
 
-    Configuration:
-        boxes: list of [x1, y1, x2, y2], one per input image.
-
-    Metadata (per image):
-        box: clamped [x1, y1, x2, y2] actually used for the crop.
-        orig_size: [W, H] of the input image, used to restore the canvas on revert.
+    boxes: list of [x1, y1, x2, y2], one per input image.
     """
 
-    name = "crop"
+    boxes: List[List[int]] = field(default_factory=list)
 
-    @classmethod
-    def build_step(cls, *, boxes: List[List[int]], id: Optional[str] = None) -> Dict[str, Any]:
-        return cls._finalize_step({"boxes": boxes}, id=id)
+    def __post_init__(self):
+        if not isinstance(self.boxes, list) or not self.boxes:
+            raise ValueError(f"CropConfig: 'boxes' must be a non-empty list, got {self.boxes!r}")
+        for i, box in enumerate(self.boxes):
+            if len(box) != 4:
+                raise ValueError(f"CropConfig: boxes[{i}] must have 4 elements [x1,y1,x2,y2], got {box!r}")
+
+
+@dataclass
+class CropMeta(Meta):
+    """Batched crop metadata.
+
+    boxes: clamped [x1, y1, x2, y2] actually used per image.
+    orig_sizes: [W, H] per image, used to restore the canvas on revert.
+    """
+
+    boxes: List[List[int]] = field(default_factory=list)
+    orig_sizes: List[List[int]] = field(default_factory=list)
+
+    def __post_init__(self):
+        if len(self.boxes) != len(self.orig_sizes):
+            raise ValueError(f"CropMeta: boxes ({len(self.boxes)}) and orig_sizes ({len(self.orig_sizes)}) lengths must match")
+
+
+class CropOperation(Operation[CropConfig, CropMeta]):
+    config_cls = CropConfig
+    meta_cls = CropMeta
 
     @torch.inference_mode()
-    def forward(self, images: List[torch.Tensor], config: Dict[str, Any]) -> Tuple[List[torch.Tensor], List[Any]]:
-        boxes = config.get("boxes")
-        if not isinstance(boxes, list) or len(boxes) != len(images):
-            raise ValueError(f"crop: 'boxes' must be a list of length {len(images)}, got {boxes!r}")
+    def forward(self, images: List[torch.Tensor], config: CropConfig) -> Tuple[List[torch.Tensor], CropMeta]:
+        if len(config.boxes) != len(images):
+            raise ValueError(f"crop: boxes length ({len(config.boxes)}) != image count ({len(images)})")
 
         out_images: List[torch.Tensor] = []
-        meta: List[Any] = []
-        for img, box in zip(images, boxes):
-            if len(box) != 4:
-                raise ValueError(f"crop: each box must have 4 elements [x1,y1,x2,y2], got {box!r}")
+        out_boxes: List[List[int]] = []
+        out_sizes: List[List[int]] = []
+        for img, box in zip(images, config.boxes):
             H, W = img.shape[0], img.shape[1]
             x1 = max(0, min(W, int(round(float(box[0])))))
             y1 = max(0, min(H, int(round(float(box[1])))))
             x2 = max(x1, min(W, int(round(float(box[2])))))
             y2 = max(y1, min(H, int(round(float(box[3])))))
             out_images.append(img[y1:y2, x1:x2])
-            meta.append({"box": [x1, y1, x2, y2], "orig_size": [W, H]})
+            out_boxes.append([x1, y1, x2, y2])
+            out_sizes.append([W, H])
 
-        return out_images, meta
+        return out_images, CropMeta(boxes=out_boxes, orig_sizes=out_sizes)
 
     @torch.inference_mode()
-    def revert_images(self, images: List[torch.Tensor], metadata: List[Dict[str, Any]]) -> List[torch.Tensor]:
-        if len(images) != len(metadata):
-            raise ValueError(f"Image count ({len(images)}) doesn't match crop metadata count ({len(metadata)})")
+    def revert_images(self, images: List[torch.Tensor], meta: CropMeta) -> List[torch.Tensor]:
+        if len(images) != len(meta.boxes):
+            raise ValueError(f"crop: image count ({len(images)}) != meta count ({len(meta.boxes)})")
         restored = []
-        for img, m in zip(images, metadata):
-            x1, y1, _x2, _y2 = m["box"]
-            W, H = m["orig_size"]
+        for img, box, size in zip(images, meta.boxes, meta.orig_sizes):
+            x1, y1, _, _ = box
+            W, H = size
             ch, cw = img.shape[0], img.shape[1]
             if img.dim() == 2:
                 canvas = torch.zeros((H, W), dtype=img.dtype, device=img.device)
@@ -64,21 +84,21 @@ class CropOperation(Operation):
         return restored
 
     @torch.inference_mode()
-    def revert_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if len(results) != len(metadata):
-            raise ValueError(f"Result count ({len(results)}) doesn't match crop metadata count ({len(metadata)})")
-        return [self._apply_single(r, m, forward=False) for r, m in zip(results, metadata)]
+    def revert_coords(self, results: List[Dict[str, Any]], meta: CropMeta) -> List[Dict[str, Any]]:
+        if len(results) != len(meta.boxes):
+            raise ValueError(f"crop: results count ({len(results)}) != meta count ({len(meta.boxes)})")
+        return [self._apply_single(r, b, s, forward=False) for r, b, s in zip(results, meta.boxes, meta.orig_sizes)]
 
     @torch.inference_mode()
-    def apply_coords(self, results: List[Dict[str, Any]], metadata: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if len(results) != len(metadata):
-            raise ValueError(f"Result count ({len(results)}) doesn't match crop metadata count ({len(metadata)})")
-        return [self._apply_single(r, m, forward=True) for r, m in zip(results, metadata)]
+    def apply_coords(self, results: List[Dict[str, Any]], meta: CropMeta) -> List[Dict[str, Any]]:
+        if len(results) != len(meta.boxes):
+            raise ValueError(f"crop: results count ({len(results)}) != meta count ({len(meta.boxes)})")
+        return [self._apply_single(r, b, s, forward=True) for r, b, s in zip(results, meta.boxes, meta.orig_sizes)]
 
     @staticmethod
-    def _apply_single(result: Dict[str, Any], m: Dict[str, Any], *, forward: bool) -> Dict[str, Any]:
-        x1, y1, x2, y2 = m["box"]
-        W, H = m["orig_size"]
+    def _apply_single(result: Dict[str, Any], box: List[int], size: List[int], *, forward: bool) -> Dict[str, Any]:
+        x1, y1, x2, y2 = box
+        W, H = size
 
         def xy_fn(xy: torch.Tensor) -> torch.Tensor:
             off = torch.tensor([x1, y1], dtype=torch.float32, device=xy.device)

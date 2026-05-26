@@ -8,6 +8,7 @@ import pytest
 import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from lmi_utils.preprocess_utils.ops import FlipMeta, PadMeta, ResizeMeta
 
 logger = logging.getLogger(__name__)
 
@@ -124,19 +125,20 @@ class Test_fit_im_to_size:
 
 
 def _resize_entry(dst_w, dst_h, src_w, src_h, pad=None):
-    """Build a unified `resize` history entry (B=1)."""
-    md = {"src_size": [src_w, src_h], "dst_size": [dst_w, dst_h]}
-    if pad is not None:
-        md["pad"] = list(pad)
-    return {"type": "resize", "metadata": [md]}
+    """Build a typed `ResizeMeta` history entry (B=1)."""
+    return ResizeMeta(
+        src_sizes=[[src_w, src_h]],
+        dst_sizes=[[dst_w, dst_h]],
+        pads=[list(pad) if pad is not None else [0, 0, 0, 0]],
+    )
 
 
 def _pad_entry(L, R, T, B):
-    return {"type": "pad", "metadata": [{"pad": [L, R, T, B]}]}
+    return PadMeta(pads=[[L, R, T, B]])
 
 
 def _flip_entry(lr, ud, w, h):
-    return {"type": "flip", "metadata": [{"lr": lr, "ud": ud, "size": [w, h]}]}
+    return FlipMeta(lr=[lr], ud=[ud], sizes=[[w, h]])
 
 
 class Test_revert_to_origin:
@@ -153,27 +155,24 @@ class Test_revert_to_origin:
         pts = pts.astype(np.float64).copy()
         r, c = pts.shape
         for entry in reversed(history):
-            t = entry["type"]
-            m = entry["metadata"][0]
-            if t == "resize":
-                src_w, src_h = m["src_size"]
-                dst_w, dst_h = m["dst_size"]
-                pL, _, pT, _ = m.get("pad", [0, 0, 0, 0])
-                # revert: subtract pad offset, then unscale
+            if isinstance(entry, ResizeMeta):
+                src_w, src_h = entry.src_sizes[0]
+                dst_w, dst_h = entry.dst_sizes[0]
+                pL, _, pT, _ = entry.pads[0]
                 pts[:, 0] = (pts[:, 0] - pL) * (src_w / dst_w)
                 pts[:, 1] = (pts[:, 1] - pT) * (src_h / dst_h)
                 if c == 4:
                     pts[:, 2] = (pts[:, 2] - pL) * (src_w / dst_w)
                     pts[:, 3] = (pts[:, 3] - pT) * (src_h / dst_h)
-            elif t == "pad":
-                pL, _, pT, _ = m["pad"]
+            elif isinstance(entry, PadMeta):
+                pL, _, pT, _ = entry.pads[0]
                 pts[:, 0] -= pL
                 pts[:, 1] -= pT
                 if c == 4:
                     pts[:, 2] -= pL
                     pts[:, 3] -= pT
-            elif t == "flip":
-                lr, ud, w, h = m["lr"], m["ud"], m["size"][0], m["size"][1]
+            elif isinstance(entry, FlipMeta):
+                lr, ud, (w, h) = entry.lr[0], entry.ud[0], entry.sizes[0]
                 if lr:
                     pts[:, 0] = w - pts[:, 0]
                     if c == 4:
@@ -185,7 +184,7 @@ class Test_revert_to_origin:
                         pts[:, 3] = h - pts[:, 3]
                         pts[:, [1, 3]] = pts[:, [3, 1]]
             if verbose:
-                logger.info(f"after {t}, pts: {pts}")
+                logger.info(f"after {type(entry).__name__}, pts: {pts}")
         return np.maximum(np.round(pts), 0).astype(np.float32)
 
     @pytest.mark.parametrize(
@@ -395,27 +394,25 @@ class Test_apply_operations:
         if c not in (2, 4):
             raise Exception(f"pts should be Nx2 or Nx4, got shape: {pts.shape}")
         for entry in history:
-            t = entry["type"]
-            m = entry["metadata"][0]
-            if t == "resize":
-                src_w, src_h = m["src_size"]
-                dst_w, dst_h = m["dst_size"]
-                pL, _, pT, _ = m.get("pad", [0, 0, 0, 0])
+            if isinstance(entry, ResizeMeta):
+                src_w, src_h = entry.src_sizes[0]
+                dst_w, dst_h = entry.dst_sizes[0]
+                pL, _, pT, _ = entry.pads[0]
                 sx, sy = dst_w / src_w, dst_h / src_h
                 pts[:, 0] = pts[:, 0] * sx + pL
                 pts[:, 1] = pts[:, 1] * sy + pT
                 if c == 4:
                     pts[:, 2] = pts[:, 2] * sx + pL
                     pts[:, 3] = pts[:, 3] * sy + pT
-            elif t == "pad":
-                pL, _, pT, _ = m["pad"]
+            elif isinstance(entry, PadMeta):
+                pL, _, pT, _ = entry.pads[0]
                 pts[:, 0] += pL
                 pts[:, 1] += pT
                 if c == 4:
                     pts[:, 2] += pL
                     pts[:, 3] += pT
-            elif t == "flip":
-                lr, ud, w, h = m["lr"], m["ud"], m["size"][0], m["size"][1]
+            elif isinstance(entry, FlipMeta):
+                lr, ud, (w, h) = entry.lr[0], entry.ud[0], entry.sizes[0]
                 if lr:
                     pts[:, 0] = w - pts[:, 0]
                     if c == 4:
@@ -493,12 +490,11 @@ class Test_revert_mask_to_origin:
         assert mask2.shape == expected_shape
 
         first = operations[0]
-        if first["type"] == "flip":
-            m = first["metadata"][0]
+        if isinstance(first, FlipMeta):
             mask3 = mask.copy()
-            if m["lr"]:
+            if first.lr[0]:
                 mask3 = np.flip(mask3, axis=1)
-            if m["ud"]:
+            if first.ud[0]:
                 mask3 = np.flip(mask3, axis=0)
             assert np.array_equal(mask2, mask3)
 

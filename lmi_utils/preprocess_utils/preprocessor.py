@@ -3,10 +3,9 @@ from typing import Any, Dict, List, Optional, Tuple, Type
 from lmi_utils.image_utils.types import ImageBatch, ImageLike
 
 from .base import BaseProcessor
-from .operation import Operation
+from .operation import Config, Meta, Operation
 from .ops import (
     CropOperation,
-    CropToLabelOperation,
     FlipOperation,
     PadOperation,
     ResizeOperation,
@@ -16,26 +15,21 @@ from .ops import (
 
 
 class Preprocessor(BaseProcessor):
-    """
-    Runs a dynamic pipeline of preprocessing Operations on an image.
+    """Runs a typed pipeline of preprocessing Operations on an image.
 
-    Operations are registered as `Operation` instances and selected per-step
-    by name. Each step's metadata is recorded so a `Reconstructor` can later
-    invert the pipeline.
+    Operations are dispatched by Config type. Configs are constructed via
+    ``lmi_utils.preprocess_utils.steps`` (recommended) or directly as dataclasses.
+    JSON manifests should be converted via
+    ``lmi_utils.preprocess_utils._parser.parse_steps`` before being passed in.
 
     Runtime channel:
-        Ops that need caller-supplied data (e.g. crop-to-label needs the box
-        from an upstream detector) receive it through the optional `runtime`
-        argument to `preprocess`. `runtime` is a `{id: value}` dict whose
-        keys must match the `id` of the target manifest step; the matched op's
-        `bind` method resolves the value into a concrete step before forward
-        dispatch.
+        Ops that need caller-supplied data (e.g. crop-to-label) receive it through
+        the optional ``runtime`` argument keyed by the Config's ``id``. Each Config's
+        ``bind`` resolves the value into a concrete (executable) Config before
+        forward dispatch.
 
     Device contract:
-        Output tensors live on the same device as the input tensors. Every
-        Operation must allocate any internal tensors with `device=<input>.device`
-        and avoid implicit `.cpu()` / `.cuda()` moves. Numpy inputs are bridged
-        through CPU tensors (numpy is CPU-only by definition).
+        Output tensors live on the same device as the input tensors.
     """
 
     _DEFAULT_OPS: Tuple[Type[Operation], ...] = (
@@ -44,59 +38,46 @@ class Preprocessor(BaseProcessor):
         FlipOperation,
         TileOperation,
         CropOperation,
-        CropToLabelOperation,
         RotateOperation,
     )
 
     @classmethod
-    def default_ops(cls) -> Dict[str, Type[Operation]]:
-        return {op.name: op for op in cls._DEFAULT_OPS}
+    def default_ops(cls) -> Dict[Type[Config], Type[Operation]]:
+        return {op_cls.config_cls: op_cls for op_cls in cls._DEFAULT_OPS}
 
     def __init__(self):
-        self._ops: Dict[str, Operation] = {}
+        self._ops: Dict[Type[Config], Operation] = {}
         for op_cls in self._DEFAULT_OPS:
             self.register(op_cls())
 
     def register(self, op: Operation) -> None:
-        """
-        Register an Operation. Pairs with `Reconstructor.register(op)`.
-
-        Args:
-            op: An `Operation` instance with a non-empty `name`.
-        """
+        """Register an Operation under its ``config_cls``."""
         if not isinstance(op, Operation):
             raise TypeError(f"Expected Operation, got {type(op)}")
-        if not op.name:
-            raise ValueError("Operation must define a non-empty `name`")
-        self._ops[op.name] = op
+        if not getattr(op, "config_cls", None):
+            raise ValueError("Operation must define `config_cls`")
+        self._ops[op.config_cls] = op
 
     def preprocess(
         self,
         images: ImageBatch,
-        processing_steps: List[Dict[str, Any]],
+        configs: List[Config],
         runtime: Optional[Dict[str, Dict[str, Any]]] = None,
-    ) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
-        """
-        Runs the preprocessing pipeline.
+    ) -> Tuple[List[ImageLike], List[Meta]]:
+        """Run the preprocessing pipeline.
 
         Args:
-            images: A single HW/HWC image, list of HW/HWC images, or a BHWC batch (numpy array or torch tensor). Any dtype is accepted.
-            processing_steps: List of step dicts, each with keys:
-                - "type" (str): Registered Operation name (e.g. "resize", "tile", "crop-to-label").
-                - "configuration" (dict): Op-specific config passed as-is.
-                - "id" (str, optional): Unique step identifier. Required for steps targeted by `runtime`.
-            runtime: Optional `{id: value}` dict. Each key must match a step's `id`;
-                Supported values by op type:
-                  - "crop-to-label": {"boxes": [[x1, y1, x2, y2], ...]} —
-                    per-image boxes in original-image coordinates supplied by an upstream detector.
+            images: HW/HWC image, list of HW/HWC images, or BHWC batch (numpy or torch).
+            configs: List of typed Config objects (one per step).
+            runtime: Optional ``{id: value}`` dict for ops that consume runtime data.
 
         Returns:
-            processed_imgs: List of (H, W, C) images, same type as input.
-            history: List of step records for reconstruction, each with keys:
-                - "type" (str): Resolved Operation name (after bind).
-                - "metadata" (list): Per-image metadata returned by the op.
-                - "id" (str, optional): Preserved from the manifest step.
+            (processed_images, history): the processed image list and a per-step
+            list of typed Meta objects suitable for Reconstructor.
         """
+        self._validate_configs(configs)
+        self._validate_runtime(runtime, configs)
+
         if isinstance(images, list):
             pass
         elif hasattr(images, "ndim") and images.ndim == 4:
@@ -104,61 +85,53 @@ class Preprocessor(BaseProcessor):
         else:
             images = [images]
         self.validate_image_list(images, stage="preprocessing")
-        self.validate_steps(processing_steps)
-        self._validate_runtime(runtime, processing_steps)
 
-        if not processing_steps:
+        if not configs:
             return list(images), []
 
         processed_imgs, is_numpy = self.to_tensor_list(images)
 
-        history = []
-        for step in processing_steps:
-            op_name = step["type"]
-            if op_name not in self._ops:
-                raise ValueError(f"Operation '{op_name}' is not registered.")
-            op = self._ops[op_name]
+        history: List[Meta] = []
+        for cfg in configs:
+            rt = runtime.get(cfg.id, {}) if (runtime and cfg.id) else {}
+            resolved = cfg.bind(rt)
+            op = self._ops.get(type(resolved))
+            if op is None:
+                raise ValueError(f"No Operation registered for {type(resolved).__name__}")
 
-            step_id = step.get("id")
-            runtime_value = runtime.get(step_id, {}) if runtime and step_id is not None else {}
-            resolved = op.bind(step, runtime_value)
-            resolved_name = resolved.get("type")
-            if resolved_name not in self._ops:
-                raise ValueError(f"Op '{op_name}'.bind produced unknown type '{resolved_name}'.")
-            resolved_op = self._ops[resolved_name]
-            config = resolved.get("configuration", {})
-
-            new_images, metadata = resolved_op.forward(processed_imgs, config)
-
-            self.validate_image_handler_output(new_images, resolved_name, expected_type="preprocess handler")
-            self.validate_handler_metadata(metadata, resolved_name)
-
-            history_entry: Dict[str, Any] = {"type": resolved_name, "metadata": metadata}
-            if resolved.get("id") is not None:
-                history_entry["id"] = resolved["id"]
-            history.append(history_entry)
+            new_images, meta = op.forward(processed_imgs, resolved)
+            self.validate_image_handler_output(new_images, type(resolved).__name__, expected_type="preprocess handler")
+            if not isinstance(meta, Meta):
+                raise TypeError(f"{type(op).__name__}.forward returned {type(meta)}, expected Meta")
+            history.append(meta)
             processed_imgs = new_images
 
         return self.from_tensor_list(processed_imgs, is_numpy), history
 
     @staticmethod
-    def _validate_runtime(
-        runtime: Optional[Dict[str, Dict[str, Any]]],
-        processing_steps: List[Dict[str, Any]],
-    ) -> None:
+    def _validate_configs(configs: List[Config]) -> None:
+        if not isinstance(configs, list):
+            raise TypeError(f"configs must be a list, got {type(configs)}")
+        for i, c in enumerate(configs):
+            if not isinstance(c, Config):
+                raise TypeError(f"configs[{i}] must be a Config, got {type(c)}")
+
+    @staticmethod
+    def _validate_runtime(runtime: Optional[Dict[str, Dict[str, Any]]], configs: List[Config]) -> None:
         if runtime is None:
             return
         if not isinstance(runtime, dict):
             raise TypeError(f"runtime must be a dict keyed by step id, got {type(runtime)}")
 
-        step_ids = {step["id"] for step in processing_steps if step.get("id") is not None}
-        if len(step_ids) != sum(1 for step in processing_steps if step.get("id") is not None):
-            raise ValueError("processing_steps contains duplicate 'id' values; each step's id must be unique.")
+        ids = [c.id for c in configs if c.id is not None]
+        if len(set(ids)) != len(ids):
+            raise ValueError("configs contains duplicate 'id' values; each config's id must be unique.")
+        id_set = set(ids)
 
         for key, value in runtime.items():
             if not isinstance(key, str):
                 raise TypeError(f"runtime keys must be strings (step ids), got {type(key)}")
             if not isinstance(value, dict):
                 raise TypeError(f"runtime[{key!r}] must be a dict, got {type(value)}")
-            if key not in step_ids:
-                raise ValueError(f"runtime key {key!r} does not match any preprocessing step's 'id'.")
+            if key not in id_set:
+                raise ValueError(f"runtime key {key!r} does not match any config's 'id'.")

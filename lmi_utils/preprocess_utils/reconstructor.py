@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Tuple, Type
 from lmi_utils.image_utils.types import ImageLike
 
 from .base import BaseProcessor
-from .operation import Operation
+from .operation import Meta, Operation
 from .ops import (
     CropOperation,
     FlipOperation,
@@ -15,16 +15,13 @@ from .ops import (
 
 
 class Reconstructor(BaseProcessor):
-    """
-    Reconstructs original images and coordinates from preprocessed data.
+    """Reconstructs original images and coordinates from preprocessed data.
 
-    Mirrors the `Preprocessor`: register the same `Operation` instance on
-    both, and image / coordinate reverts come from a single object.
+    Operations are dispatched by Meta type. The Reconstructor mirrors the
+    Preprocessor: register the same Operation classes on both.
 
     Device contract:
-        Output tensors live on the same device as the input tensors. Every
-        Operation must allocate any internal tensors with `device=<input>.device`
-        and avoid implicit `.cpu()` / `.cuda()` moves.
+        Output tensors live on the same device as the input tensors.
     """
 
     _DEFAULT_OPS: Tuple[Type[Operation], ...] = (
@@ -37,42 +34,25 @@ class Reconstructor(BaseProcessor):
     )
 
     @classmethod
-    def default_ops(cls) -> Dict[str, Type[Operation]]:
-        """Return the built-in ``{name: Operation class}`` map without constructing a Reconstructor."""
-        return {op.name: op for op in cls._DEFAULT_OPS}
+    def default_ops(cls) -> Dict[Type[Meta], Type[Operation]]:
+        return {op_cls.meta_cls: op_cls for op_cls in cls._DEFAULT_OPS}
 
     def __init__(self):
-        self._ops: Dict[str, Operation] = {}
+        self._ops: Dict[Type[Meta], Operation] = {}
         for op_cls in self._DEFAULT_OPS:
             self.register(op_cls())
 
     def register(self, op: Operation) -> None:
-        """
-        Register an Operation. Pairs with `Preprocessor.register(op)`.
-
-        Image-space-only ops can rely on the default identity revert_coords;
-        config-only ops can rely on the default identity revert_images.
-        """
         if not isinstance(op, Operation):
             raise TypeError(f"Expected Operation, got {type(op)}")
-        if not op.name:
-            raise ValueError("Operation must define a non-empty `name`")
-        self._ops[op.name] = op
+        if not getattr(op, "meta_cls", None):
+            raise ValueError("Operation must define `meta_cls`")
+        self._ops[op.meta_cls] = op
 
-    def reconstruct_coordinates(self, results: Dict[str, Any], steps: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Reverts predicted coordinates to the original pre-preprocessing space.
-
-        Args:
-            results: Batch results dict where each value is a per-image list.
-                     Keys: boxes, scores, classes, masks, segments, points.
-            steps: Preprocessing history returned by Preprocessor.preprocess.
-
-        Returns:
-            Results dict with coordinates reverted to original image space.
-        """
-        self.validate_history_steps(steps)
-        if not results or not steps:
+    def reconstruct_coordinates(self, results: Dict[str, Any], history: List[Meta]) -> Dict[str, Any]:
+        """Revert predicted coordinates to original pre-preprocessing space."""
+        self._validate_history(history)
+        if not results or not history:
             return results
 
         first_val = next(iter(results.values()))
@@ -80,34 +60,22 @@ class Reconstructor(BaseProcessor):
         per_image = [{k: v[i] for k, v in results.items()} for i in range(n)]
         per_image, is_numpy = self.to_tensor_results(per_image)
 
-        for step in reversed(steps):
-            op_name = step["type"]
-            if op_name not in self._ops:
-                raise ValueError(f"Revert coordinate handler for '{op_name}' is not registered.")
+        for meta in reversed(history):
+            op = self._ops.get(type(meta))
+            if op is None:
+                raise ValueError(f"No Operation registered for meta {type(meta).__name__}")
             input_populated = self._populated_coord_fields(per_image)
-            per_image = self._ops[op_name].revert_coords(per_image, step["metadata"])
-            self.validate_coord_handler_output(per_image, op_name, input_populated=input_populated)
+            per_image = op.revert_coords(per_image, meta)
+            self.validate_coord_handler_output(per_image, type(meta).__name__, input_populated=input_populated)
 
         per_image = self.from_tensor_results(per_image, is_numpy)
         keys = per_image[0].keys()
         return {k: [d[k] for d in per_image] for k in keys}
 
-    def apply_coordinates(self, results: Dict[str, Any], steps: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Forward-applies a history of geometric ops to original-space coordinates.
-
-        Inverse of :meth:`reconstruct_coordinates`: takes coords in original image space
-        and returns coords in the post-preprocessing space.
-
-        Args:
-            results: Batch results dict where each value is a per-image list.
-            steps: Preprocessing history (same shape as for reconstruct_coordinates).
-
-        Returns:
-            Results dict with coordinates mapped into the preprocessed space.
-        """
-        self.validate_history_steps(steps)
-        if not results or not steps:
+    def apply_coordinates(self, results: Dict[str, Any], history: List[Meta]) -> Dict[str, Any]:
+        """Forward-apply geometric ops to original-space coordinates."""
+        self._validate_history(history)
+        if not results or not history:
             return results
 
         first_val = next(iter(results.values()))
@@ -115,43 +83,41 @@ class Reconstructor(BaseProcessor):
         per_image = [{k: v[i] for k, v in results.items()} for i in range(n)]
         per_image, is_numpy = self.to_tensor_results(per_image)
 
-        for step in steps:
-            op_name = step["type"]
-            if op_name not in self._ops:
-                raise ValueError(f"Apply coordinate handler for '{op_name}' is not registered.")
+        for meta in history:
+            op = self._ops.get(type(meta))
+            if op is None:
+                raise ValueError(f"No Operation registered for meta {type(meta).__name__}")
             input_populated = self._populated_coord_fields(per_image)
-            per_image = self._ops[op_name].apply_coords(per_image, step["metadata"])
-            self.validate_coord_handler_output(per_image, op_name, input_populated=input_populated)
+            per_image = op.apply_coords(per_image, meta)
+            self.validate_coord_handler_output(per_image, type(meta).__name__, input_populated=input_populated)
 
         per_image = self.from_tensor_results(per_image, is_numpy)
         keys = per_image[0].keys()
         return {k: [d[k] for d in per_image] for k in keys}
 
-    def reconstruct_images(self, images: List[ImageLike], steps: List[Dict[str, Any]]) -> List[ImageLike]:
-        """
-        Reconstructs the original image from images and history.
-
-        Args:
-            images: List of (H, W, C) tensors or numpy arrays.
-            steps: List of configuration dicts.
-
-        Returns:
-            List: The reconstructed image(s) (H, W, C).
-        """
+    def reconstruct_images(self, images: List[ImageLike], history: List[Meta]) -> List[ImageLike]:
+        """Reconstruct original images from preprocessed images and history."""
         self.validate_image_list(images, stage="reconstruction")
-        self.validate_history_steps(steps)
+        self._validate_history(history)
 
-        if not steps:
+        if not history:
             return list(images)
 
-        restored_images, is_numpy = self.to_tensor_list(images)
+        restored, is_numpy = self.to_tensor_list(images)
 
-        for step in reversed(steps):
-            op_name = step["type"]
-            if op_name not in self._ops:
-                raise ValueError(f"Revert image handler for '{op_name}' is not registered.")
+        for meta in reversed(history):
+            op = self._ops.get(type(meta))
+            if op is None:
+                raise ValueError(f"No Operation registered for meta {type(meta).__name__}")
+            restored = op.revert_images(restored, meta)
+            self.validate_image_handler_output(restored, type(meta).__name__, expected_type="revert image handler")
 
-            restored_images = self._ops[op_name].revert_images(restored_images, step["metadata"])
-            self.validate_image_handler_output(restored_images, op_name, expected_type="revert image handler")
+        return self.from_tensor_list(restored, is_numpy)
 
-        return self.from_tensor_list(restored_images, is_numpy)
+    @staticmethod
+    def _validate_history(history: List[Meta]) -> None:
+        if not isinstance(history, list):
+            raise TypeError(f"history must be a list, got {type(history)}")
+        for i, m in enumerate(history):
+            if not isinstance(m, Meta):
+                raise TypeError(f"history[{i}] must be a Meta instance, got {type(m)}")

@@ -259,43 +259,40 @@ class ODBase(abc.ABC):
 
     @staticmethod
     def _normalize_operators(operators, batch_size: int) -> list:
-        """Slice a unified preprocessing history into per-image chains.
+        """Slice a typed preprocessing history into per-image chains.
 
-        The unified history shape is::
-
-            [{"type": str, "metadata": [<per_image_dict>, ...], "id"?: str}, ...]
-
-        Returns one history list per image, each entry's ``metadata`` reduced to a
-        single-element list containing only that image's metadata. Per-image chains
-        are what every downstream revert site (``_revert_coordinates``, the legacy
-        wrappers in ``pipeline_utils``) consumes.
-
-        Args:
-            operators: None or a unified preprocessing history list.
-            batch_size: Number of images in the batch.
+        The history is a list of typed ``Meta`` records (struct-of-arrays). Each
+        Meta's batched fields must have length 1 (broadcast) or ``batch_size``
+        (per-image).
 
         Returns:
-            List of length ``batch_size``, each element a per-image history list.
+            List of length ``batch_size``, each element a per-image history list
+            of single-record Meta instances.
         """
+        from dataclasses import fields
+
+        from lmi_utils.preprocess_utils.operation import Meta
+
         if not operators:
             return [[] for _ in range(batch_size)]
-        if not isinstance(operators, list) or not all(isinstance(e, dict) and "type" in e and "metadata" in e for e in operators):
-            raise ValueError(
-                "operators must be a unified preprocessing history (list of {'type', 'metadata': [<per_image_dict>, ...], 'id'?})."
-            )
+        if not isinstance(operators, list) or not all(isinstance(e, Meta) for e in operators):
+            raise ValueError("operators must be a list of typed Meta records.")
 
         per_image: list = [[] for _ in range(batch_size)]
         for entry in operators:
-            meta = entry["metadata"]
-            if not isinstance(meta, list) or len(meta) not in (1, batch_size):
-                raise ValueError(
-                    f"history entry '{entry['type']}' metadata length {len(meta) if isinstance(meta, list) else type(meta).__name__} "
-                    f"is not 1 (broadcast) or {batch_size} (per-image)."
-                )
+            entry_fields = fields(entry)
+            list_field = next((f for f in entry_fields if isinstance(getattr(entry, f.name), list)), None)
+            n = len(getattr(entry, list_field.name)) if list_field else 1
+            if n not in (1, batch_size):
+                raise ValueError(f"history entry '{type(entry).__name__}' batch size {n} is not 1 (broadcast) or {batch_size} (per-image).")
             for i in range(batch_size):
-                sliced = {"type": entry["type"], "metadata": [meta[0] if len(meta) == 1 else meta[i]]}
-                if "id" in entry:
-                    sliced["id"] = entry["id"]
+                sliced = type(entry).__new__(type(entry))
+                for f in entry_fields:
+                    v = getattr(entry, f.name)
+                    if isinstance(v, list):
+                        object.__setattr__(sliced, f.name, [v[0] if n == 1 else v[i]])
+                    else:
+                        object.__setattr__(sliced, f.name, v)
                 per_image[i].append(sliced)
         return per_image
 
