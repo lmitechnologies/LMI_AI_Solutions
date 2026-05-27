@@ -1,13 +1,12 @@
 """Public namespace for building preprocessing pipelines.
 
-Forward (used with Preprocessor.preprocess):
+Forward (used with self.preprocessor.preprocess in pipeline):
     steps.crop(boxes=...)
     steps.resize(width=..., height=..., preserve_aspect=...)
     steps.crop_to_label(label=..., id=...)
     ...
 
-Inverse (used with Reconstructor.reconstruct_coordinates / .reconstruct_images
-when reconstructing manually without a history):
+Inverse (used with self.revert_preprocess in pipeline):
     steps.revert_crop(boxes=..., orig_sizes=...)
     steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...)
     ...

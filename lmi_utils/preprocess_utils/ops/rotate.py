@@ -52,6 +52,7 @@ class RotateOperation(Operation[RotateConfig, RotateMeta]):
             H, W = img.shape[:2]
             new_W, new_H = _expand_size(W, H, angle_deg)
             M = _forward_affine(W, H, new_W, new_H, angle_deg)
+            # M maps src->dst; grid_sample needs the dst->src map, hence _invert(M).
             out_images.append(_warp(img, in_W=W, in_H=H, out_W=new_W, out_H=new_H, sample_M=_invert(M), mode="bilinear"))
             angles.append(angle_deg)
             src_sizes.append([W, H])
@@ -67,6 +68,7 @@ class RotateOperation(Operation[RotateConfig, RotateMeta]):
             W, H = src
             nW, nH = dst
             M = _forward_affine(W, H, nW, nH, angle)
+            # Output is src space sampled from the rotated (dst) image; the src->dst map is M itself.
             out.append(_warp(img, in_W=nW, in_H=nH, out_W=W, out_H=H, sample_M=M, mode="bilinear"))
         return out
 
@@ -86,6 +88,7 @@ class RotateOperation(Operation[RotateConfig, RotateMeta]):
 
 
 def _expand_size(W: int, H: int, angle_deg: float) -> Tuple[int, int]:
+    """Bounding-box size of the rotated rectangle, so no content is clipped."""
     theta = math.radians(angle_deg)
     abs_cos = abs(math.cos(theta))
     abs_sin = abs(math.sin(theta))
@@ -103,12 +106,14 @@ def _forward_affine(W: int, H: int, new_W: int, new_H: int, angle_deg: float) ->
     cy = H // 2
     a, b = cos_t, -sin_t
     c, d = sin_t, cos_t
+    # Rotate about the src center, then shift that center to the expanded canvas center.
     tx = -a * cx - b * cy + new_W / 2.0
     ty = -c * cx - d * cy + new_H / 2.0
     return (a, b, tx, c, d, ty)
 
 
 def _invert(M: Affine) -> Affine:
+    """Inverse of the 2x3 affine (a,b,tx,c,d,ty)."""
     a, b, tx, c, d, ty = M
     det = a * d - b * c
     ia = d / det
@@ -135,13 +140,14 @@ def _warp(img: torch.Tensor, *, in_W: int, in_H: int, out_W: int, out_H: int, sa
     grid = torch.stack([norm_x, norm_y], dim=-1).unsqueeze(0)  # (1, out_H, out_W, 2)
 
     orig_dtype = img.dtype
+    round_int = not orig_dtype.is_floating_point  # cv2 rounds; truncating the float result biases integer pixels down
     if img.dim() == 2:
         inp = img.unsqueeze(0).unsqueeze(0).float()
-        out = F.grid_sample(inp, grid, mode=mode, padding_mode="zeros", align_corners=False)
-        return out[0, 0].to(orig_dtype)
+        out = F.grid_sample(inp, grid, mode=mode, padding_mode="zeros", align_corners=False)[0, 0]
+        return (out.round() if round_int else out).to(orig_dtype)
     inp = img.permute(2, 0, 1).unsqueeze(0).float()
-    out = F.grid_sample(inp, grid, mode=mode, padding_mode="zeros", align_corners=False)
-    return out[0].permute(1, 2, 0).to(orig_dtype)
+    out = F.grid_sample(inp, grid, mode=mode, padding_mode="zeros", align_corners=False)[0].permute(1, 2, 0)
+    return (out.round() if round_int else out).to(orig_dtype)
 
 
 def _apply_affine_xy(M: Affine, xy: torch.Tensor) -> torch.Tensor:
@@ -184,6 +190,7 @@ def _apply_rotate(result: Dict[str, Any], angle: float, src: List[int], dst: Lis
         return torch.stack([nx1, ny1, nx2, ny2], dim=-1)
 
     def mask_fn(masks: torch.Tensor) -> torch.Tensor:
+        # Same dst->src sampling rule as _warp: invert when going src->dst, use M_fwd for dst->src.
         if forward:
             in_W, in_H, out_W, out_H = W, H, nW, nH
             sample_M = _invert(M_fwd)
