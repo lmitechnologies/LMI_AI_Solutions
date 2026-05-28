@@ -5,7 +5,6 @@ import os
 import random
 import tarfile
 import tempfile
-import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -725,40 +724,21 @@ def _resolve_artifact_paths(model: Dict[str, Any], manifest_dir: Path) -> None:
                 artifact_data["model_path"] = str((manifest_dir / path_obj).resolve())
 
 
-def _autofill_preprocessing_ids(models: List[Dict[str, Any]]) -> None:
-    """Fill missing ``id`` on non-runtime preprocessing steps with a random 8-hex id.
-
-    Runtime Configs (``Config.is_runtime == True``, e.g. CropToLabelConfig) must carry an
-    explicit id in static manifests so the runtime caller can target them; missing
-    ids on those raise.
-    """
+def _validate_preprocessing_steps(models: List[Dict[str, Any]]) -> None:
+    """Fail fast on bad preprocessing steps in a hand-authored static manifest."""
     from lmi_utils.preprocess_utils._parser import STEP_TYPES
 
     for model in models:
         role = model.get("model_role", "<unknown>")
         details = model.get("details") or {}
         steps = details.get("preprocessing") or []
-        if not steps:
-            continue
-
-        existing_ids = {s.get("id") for s in steps if s.get("id")}
         for i, step in enumerate(steps):
-            if step.get("id"):
-                continue
             op_type = step.get("type", "")
             cfg_cls = STEP_TYPES.get(op_type)
             if cfg_cls is None:
                 raise ValueError(f"Model role '{role}': preprocessing step at index {i} has unknown type '{op_type}'.")
-            if cfg_cls.is_runtime:
-                raise ValueError(
-                    f"Model role '{role}': '{op_type}' step at index {i} has no 'id'. Runtime ops require explicit ids in static manifests."
-                )
-            while True:
-                new_id = uuid.uuid4().hex[:8]
-                if new_id not in existing_ids:
-                    break
-            existing_ids.add(new_id)
-            step["id"] = new_id
+            if cfg_cls.is_runtime and not (step.get("configuration") or {}).get("label"):
+                raise ValueError(f"Model role '{role}': '{op_type}' step at index {i} has no 'label'. Runtime ops are targeted by 'label'.")
 
 
 def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
@@ -769,7 +749,8 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
         manifest_json_path (str): path to the manifest JSON file.
         **kwargs: optional keyword arguments. Recognized:
             version (str): schema version of the manifest. Defaults to "3".
-                v3 additionally autofills missing ids on non-runtime preprocessing steps.
+                v3 additionally validates preprocessing steps (unknown types and
+                runtime ops missing a 'label') before building configs.
     """
     version = kwargs.get("version", "3")
     logger.info(f"Loading static manifest from {manifest_json_path} with schema version {version}")
@@ -787,7 +768,7 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
 
     manifest_v3 = version == "3"
     if manifest_v3:
-        _autofill_preprocessing_ids(models)
+        _validate_preprocessing_steps(models)
 
     keys_to_copy = (
         ["anomaly_size", "min_threshold", "max_threshold", "iou"]

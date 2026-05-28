@@ -24,9 +24,9 @@ class Preprocessor(BaseProcessor):
 
     Runtime channel:
         Ops that need caller-supplied data (e.g. crop-to-label) receive it through
-        the optional ``runtime`` argument keyed by the Config's ``id``. Each Config's
-        ``bind`` resolves the value into a concrete (executable) Config before
-        forward dispatch.
+        the optional ``runtime`` argument keyed by the Config's ``runtime_key`` —
+        for crop-to-label that is its ``label``. Each Config's ``bind`` resolves the
+        value into a concrete (executable) Config before forward dispatch.
 
     Device contract:
         Output tensors live on the same device as the input tensors.
@@ -69,7 +69,8 @@ class Preprocessor(BaseProcessor):
         Args:
             images: HW/HWC image, list of HW/HWC images, or BHWC batch (numpy or torch).
             configs: List of typed Config objects (one per step).
-            runtime: Optional ``{id: value}`` dict for ops that consume runtime data.
+            runtime: Optional ``{label: value}`` dict for ops that consume runtime data
+                (crop-to-label is keyed by its ``label``).
 
         Returns:
             (processed_images, history): the processed image list and a per-step
@@ -93,7 +94,8 @@ class Preprocessor(BaseProcessor):
 
         history: List[Meta] = []
         for cfg in configs:
-            rt = runtime.get(cfg.id, {}) if (runtime and cfg.id) else {}
+            key = cfg.runtime_key
+            rt = runtime.get(key, {}) if (runtime and key) else {}
             resolved = cfg.bind(rt)
             op = self._ops.get(type(resolved))
             if op is None:
@@ -116,22 +118,24 @@ class Preprocessor(BaseProcessor):
             if not isinstance(c, Config):
                 raise TypeError(f"configs[{i}] must be a Config, got {type(c)}")
 
+        keys = [c.runtime_key for c in configs if c.is_runtime]
+        if len(set(keys)) != len(keys):
+            raise ValueError(
+                f"Duplicate crop-to-label label(s) in one chain: {keys}. Each crop-to-label 'label' must be unique within a model role."
+            )
+
     @staticmethod
     def _validate_runtime(runtime: Optional[Dict[str, Dict[str, Any]]], configs: List[Config]) -> None:
         if runtime is None:
             return
         if not isinstance(runtime, dict):
-            raise TypeError(f"runtime must be a dict keyed by step id, got {type(runtime)}")
+            raise TypeError(f"runtime must be a dict keyed by step label, got {type(runtime)}")
 
-        ids = [c.id for c in configs if c.id is not None]
-        if len(set(ids)) != len(ids):
-            raise ValueError("configs contains duplicate 'id' values; each config's id must be unique.")
-        id_set = set(ids)
-
+        key_set = {c.runtime_key for c in configs if c.is_runtime}
         for key, value in runtime.items():
             if not isinstance(key, str):
-                raise TypeError(f"runtime keys must be strings (step ids), got {type(key)}")
+                raise TypeError(f"runtime keys must be strings (step labels), got {type(key)}")
             if not isinstance(value, dict):
                 raise TypeError(f"runtime[{key!r}] must be a dict, got {type(value)}")
-            if key not in id_set:
-                raise ValueError(f"runtime key {key!r} does not match any config's 'id'.")
+            if key not in key_set:
+                raise ValueError(f"runtime key {key!r} does not match any runtime step's label.")

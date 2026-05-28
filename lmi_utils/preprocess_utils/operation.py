@@ -13,6 +13,16 @@ class Config:
 
     is_runtime: ClassVar[bool] = False
 
+    @property
+    def runtime_key(self) -> Optional[str]:
+        """Key the caller uses to supply this step's runtime value.
+
+        Defaults to ``id``; runtime ops override with a stable semantic key
+        (e.g. crop-to-label uses its ``label``) so callers bind by meaning
+        rather than an opaque, regenerated id.
+        """
+        return self.id
+
     def bind(self, runtime: Dict[str, Any]) -> "Config":
         """Resolve runtime data into a concrete Config. Default: identity."""
         return self

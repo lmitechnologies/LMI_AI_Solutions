@@ -316,13 +316,11 @@ class MyADPipeline(PipelineBase):
 
 ### 8. `crop-to-label` preprocessing step with runtime channel
 
-`preprocess()` now accepts an optional `runtime` argument: a `{id: value}` dict that supplies caller-side data which isn't known until inference time. Each key must match the `id` of a manifest step. The first consumer is the new `crop-to-label` step, which declares "this model expects a crop around region `<label>`" in the manifest and gets the actual per-image box at runtime from an upstream detector. `revert_preprocess()` automatically maps coordinates back through the crop offset.
-
-Supported step types are now: `resize`, `tile`, `crop-to-label`.
+`preprocess()` now accepts an optional `runtime` argument: a `{label: value}` dict that supplies caller-side data which isn't known until inference time. Each key must match the `label` of a runtime step. The first consumer is the new `crop-to-label`.
 
 **Two-stage pipeline: foreground detector → defect detector on the bottle crop**
 
-Manifest declares the crop intent on the defect model. The `id` field on the crop step is what the runtime dict will key against:
+Manifest declares the crop intent on the defect model. The `label` in `configuration` is what the runtime dict keys against:
 ```json
 "bottom-defect": {
     "details": {
@@ -343,17 +341,16 @@ fg_in, fg_hist = self.preprocess("bottom-foreground", image)
 fg_out, _ = self.models["bottom-foreground"].predict(fg_in, 0.5)
 fg_out = self.revert_preprocess(fg_out, fg_hist)   # boxes now in original image space
 
-# 2. Defect detector — pass the bottle box through the runtime channel,
-#    keyed by the crop step's manifest `id`.
+# 2. Defect detector — pass the bottle box through the runtime channel, keyed by the crop step's `label`.
 bottle_box = fg_out["boxes"][0][0].tolist()        # [x1, y1, x2, y2]
-runtime = {"b50c1466-377d-436c-a594-a06c00397f7b": {"boxes": [bottle_box]}}
+runtime = {"BOTTLE-BBOX": {"boxes": [bottle_box]}}
 
-def_in, def_hist = self.preprocess("bottom-defect", image, runtime=runtime)
+def_in, def_hist = self.preprocess("bottom-defect", image, runtime=runtime) # feed original image, not foreground.
 def_out, _ = self.models["bottom-defect"].predict(def_in, 0.5)
 def_out = self.revert_preprocess(def_out, def_hist)  # offsets added back automatically
 ```
 
-When a model has multiple `crop-to-label` steps, the runtime dict keys route per step by `id` (e.g. `{"f1a2b3c4-d5e6-4f78-9a0b-1c2d3e4f5a6b": {...}, "0a9b8c7d-6e5f-4a3b-2c1d-0e9f8a7b6c5d": {...}}`).
+When a model has multiple `crop-to-label` steps, the runtime dict keys route per step by `label` (e.g. `{"BOTTLE-BBOX": {...}, "CAP-BBOX": {...}}`). Labels must be unique within a model role's preprocessing chain.
 
 ---
 
@@ -367,7 +364,7 @@ When you need to apply preprocessing **beyond what the model manifest declares**
 |---|---|---|
 | `steps.resize(width=..., height=..., preserve_aspect=False, mode="bilinear", id=None)` | — | Each dim defaults to the source image's matching dim |
 | `steps.crop(boxes=..., id=None)` | `boxes` | One `[x1, y1, x2, y2]` per image |
-| `steps.crop_to_label(label=..., id=None)` | `label` | Resolved at runtime via `runtime={id: {"boxes": [...]}}` (see section 8); macro `bind` produces a concrete `CropConfig` before dispatch |
+| `steps.crop_to_label(label=..., id=None)` | `label` | Resolved at runtime via `runtime={label: {"boxes": [...]}}` (see section 8); macro `bind` produces a concrete `CropConfig` before dispatch |
 | `steps.flip(lr=False, ud=False, id=None)` | — | Defaults to a no-op |
 | `steps.pad(width=None, height=None, pad=None, value=0, id=None)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` for explicit padding |
 | `steps.rotate(angle=..., id=None)` | `angle` | Degrees, positive = clockwise |
@@ -387,7 +384,7 @@ class MyPipeline(PipelineBase):
             steps.resize(width=640, height=640, preserve_aspect=True),
             steps.flip(lr=True),
         ]
-        runtime = {"bottle_crop": {"boxes": [[100, 50, 900, 700]]}}
+        runtime = {"BOTTLE-BBOX": {"boxes": [[100, 50, 900, 700]]}}
 
         preprocessed, history = self.preprocessor.preprocess(image, ops, runtime=runtime)
         # preprocessed: list of transformed images, ready for model.predict(...)

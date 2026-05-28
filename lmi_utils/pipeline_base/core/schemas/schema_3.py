@@ -1,6 +1,7 @@
+import uuid
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Annotated
 
 
@@ -16,7 +17,8 @@ class PreprocessStep(BaseModel):
 
     type: str
     configuration: Dict[str, Any]
-    id: str
+    # GoFactory always supplies it; static manifests auto-fills a unique random id.
+    id: Optional[str] = None
 
 
 class Details(BaseModel):
@@ -28,6 +30,20 @@ class Details(BaseModel):
     training_algorithm: str = ""
     confidence_threshold: Optional[float] = None
     classes: Optional[List[str]] = None
+
+    @model_validator(mode="after")
+    def _fill_preprocessing_ids(self) -> "Details":
+        existing = {step.id for step in self.preprocessing if step.id}
+        for step in self.preprocessing:
+            if step.id:
+                continue
+            while True:
+                new_id = uuid.uuid4().hex[:8]
+                if new_id not in existing:
+                    break
+            existing.add(new_id)
+            step.id = new_id
+        return self
 
 
 class ODConfigs(BaseModel):
@@ -138,8 +154,11 @@ class ModelCollectionV3(BaseModel):
                 entry["id"] = step.id
                 ops.append(entry)
 
-            ids = [op["id"] for op in ops]
-            if len(ids) != len(set(ids)):
-                raise ValueError(f"Model '{role}' has duplicate preprocessing step ids: {ids}. Each step's 'id' must be unique.")
+            labels = [op["configuration"].get("label") for op in ops if op["type"] == "crop-to-label"]
+            if len(labels) != len(set(labels)):
+                raise ValueError(
+                    f"Model '{role}' has duplicate crop-to-label labels: {labels}. "
+                    f"Each crop-to-label 'label' must be unique within a model role."
+                )
             out[role] = ops
         return out

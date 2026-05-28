@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 
 import cv2
 import numpy as np
@@ -499,7 +498,7 @@ class Test_revert_mask_to_origin:
             assert np.array_equal(mask2, mask3)
 
 
-class Test_static_manifest_autofill_ids:
+class Test_static_manifest_validation:
     def _write_manifest(self, tmp_path, models):
         path = tmp_path / "manifest.json"
         path.write_text(json.dumps(models))
@@ -522,13 +521,12 @@ class Test_static_manifest_autofill_ids:
             },
         }
 
-    def test_autofills_missing_id_on_non_runtime_op(self, tmp_path):
+    def test_missing_id_passes_through(self, tmp_path):
+        # The loader validates but does not fill ids; schema_3 fills them at from_dict time.
         models = [self._model("det", [{"type": "resize", "configuration": {"width": 640, "height": 640}}])]
         manifest_path = self._write_manifest(tmp_path, models)
         result = pipeline_utils.get_models_from_static_manifest(manifest_path)
-        step = result["det"]["details"]["preprocessing"][0]
-        assert "id" in step
-        assert re.fullmatch(r"[0-9a-f]{8}", step["id"])
+        assert "id" not in result["det"]["details"]["preprocessing"][0]
 
     def test_preserves_explicit_id(self, tmp_path):
         models = [
@@ -541,7 +539,18 @@ class Test_static_manifest_autofill_ids:
         result = pipeline_utils.get_models_from_static_manifest(manifest_path)
         assert result["det"]["details"]["preprocessing"][0]["id"] == "my-resize"
 
-    def test_runtime_op_without_id_raises(self, tmp_path):
+    def test_runtime_op_without_label_raises(self, tmp_path):
+        models = [
+            self._model(
+                "det",
+                [{"type": "crop-to-label", "configuration": {}}],
+            )
+        ]
+        manifest_path = self._write_manifest(tmp_path, models)
+        with pytest.raises(ValueError, match="Runtime ops are targeted by 'label'"):
+            pipeline_utils.get_models_from_static_manifest(manifest_path)
+
+    def test_runtime_op_with_label_passes(self, tmp_path):
         models = [
             self._model(
                 "det",
@@ -549,24 +558,8 @@ class Test_static_manifest_autofill_ids:
             )
         ]
         manifest_path = self._write_manifest(tmp_path, models)
-        with pytest.raises(ValueError, match="Runtime ops require explicit ids"):
-            pipeline_utils.get_models_from_static_manifest(manifest_path)
-
-    def test_runtime_op_with_id_passes(self, tmp_path):
-        models = [
-            self._model(
-                "det",
-                [
-                    {"type": "resize", "configuration": {"width": 640, "height": 640}},
-                    {"type": "crop-to-label", "configuration": {"label": "BOTTLE"}, "id": "crop1"},
-                ],
-            )
-        ]
-        manifest_path = self._write_manifest(tmp_path, models)
         result = pipeline_utils.get_models_from_static_manifest(manifest_path)
-        steps = result["det"]["details"]["preprocessing"]
-        assert steps[1]["id"] == "crop1"
-        assert re.fullmatch(r"[0-9a-f]{8}", steps[0]["id"])
+        assert result["det"]["details"]["preprocessing"][0]["configuration"]["label"] == "BOTTLE"
 
     def test_unknown_op_type_raises(self, tmp_path):
         models = [self._model("det", [{"type": "nonsense", "configuration": {}}])]

@@ -91,8 +91,14 @@ def test_none_entries_skipped(schema3):
     assert "disabled_model" not in mc.models
 
 
-def test_preprocessing_step_missing_id_fails(schema3):
-    # Strip the `id` from a preprocessing step — schema_3 requires it.
-    schema3["top_od_defect"]["details"]["preprocessing"][0].pop("id")
-    with pytest.raises(ValidationError):
-        ModelCollectionV3.from_dict(schema3)
+def test_preprocessing_step_missing_id_autofilled(schema3):
+    # Local manifests may omit `id` on preprocessing steps; schema_3 fills a unique one.
+    steps = schema3["top_od_defect"]["details"]["preprocessing"]
+    for step in steps:
+        step.pop("id", None)
+
+    mc = ModelCollectionV3.from_dict(schema3)
+    filled = mc.models["top_od_defect"].details.preprocessing
+    ids = [step.id for step in filled]
+    assert all(ids), "every step must get an id"
+    assert len(ids) == len(set(ids)), "autofilled ids must be unique within a model role"

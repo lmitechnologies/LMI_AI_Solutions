@@ -28,7 +28,7 @@ def test_crop_to_label_resolves_via_runtime():
     pre = Preprocessor()
     img = _hwc_image(100, 80, 3)
     configs = [steps.crop_to_label(label="BOTTLE-BBOX", id="label_crop")]
-    runtime = {"label_crop": {"boxes": [[10, 20, 60, 90]]}}
+    runtime = {"BOTTLE-BBOX": {"boxes": [[10, 20, 60, 90]]}}
 
     out, history = pre.preprocess([img], configs, runtime=runtime)
     assert out[0].shape == (70, 50, 3)
@@ -51,7 +51,7 @@ def test_crop_to_label_then_resize_chain():
         steps.crop_to_label(label="BOTTLE-BBOX", id="label_crop"),
         steps.resize(width=32, height=32, preserve_aspect=False),
     ]
-    runtime = {"label_crop": {"boxes": [[10, 20, 60, 90]]}}
+    runtime = {"BOTTLE-BBOX": {"boxes": [[10, 20, 60, 90]]}}
     out, history = pre.preprocess([img], configs, runtime=runtime)
     assert out[0].shape == (32, 32, 3)
 
@@ -61,19 +61,19 @@ def test_crop_to_label_then_resize_chain():
     assert box == pytest.approx([10.0, 20.0, 60.0, 90.0], abs=1e-4)
 
 
-def test_runtime_duplicate_ids_raises():
+def test_runtime_duplicate_labels_raises():
     pre = Preprocessor()
     img = _hwc_image(100, 80, 3)
     configs = [
-        steps.crop_to_label(label="A", id="dup"),
-        steps.crop_to_label(label="B", id="dup"),
+        steps.crop_to_label(label="dup", id="a"),
+        steps.crop_to_label(label="dup", id="b"),
     ]
     runtime = {"dup": {"boxes": [[0, 0, 10, 10]]}}
-    with pytest.raises(ValueError, match="duplicate"):
+    with pytest.raises(ValueError, match="Duplicate crop-to-label label"):
         pre.preprocess([img], configs, runtime=runtime)
 
 
-def test_runtime_id_routes_per_step():
+def test_runtime_routes_per_label():
     pre = Preprocessor()
     img = _hwc_image(100, 80, 3)
     configs = [
@@ -81,8 +81,8 @@ def test_runtime_id_routes_per_step():
         steps.crop_to_label(label="B", id="b"),
     ]
     runtime = {
-        "a": {"boxes": [[0, 0, 10, 10]]},
-        "b": {"boxes": [[5, 5, 25, 25]]},
+        "A": {"boxes": [[0, 0, 10, 10]]},
+        "B": {"boxes": [[5, 5, 25, 25]]},
     }
     out, history = pre.preprocess([img], configs, runtime=runtime)
     assert out[0].shape == (5, 5, 3)
@@ -90,11 +90,11 @@ def test_runtime_id_routes_per_step():
     assert isinstance(history[1], CropMeta)
 
 
-def test_runtime_missing_id_raises():
+def test_runtime_unmatched_label_raises():
     pre = Preprocessor()
     img = _hwc_image(100, 80, 3)
-    configs = [steps.crop_to_label(label="a", id="a")]
-    runtime = {"": {"boxes": [[0, 0, 10, 10]]}}
+    configs = [steps.crop_to_label(label="BOTTLE-BBOX", id="a")]
+    runtime = {"WRONG-LABEL": {"boxes": [[0, 0, 10, 10]]}}
     with pytest.raises(ValueError, match="does not match"):
         pre.preprocess([img], configs, runtime=runtime)
 
@@ -113,7 +113,7 @@ def test_crop_to_label_batch_per_image_runtime_boxes():
     img_a = _hwc_image(100, 80, 3)
     img_b = _hwc_image(120, 90, 3)
     configs = [steps.crop_to_label(label="L", id="lc")]
-    runtime = {"lc": {"boxes": [[10, 20, 60, 90], [5, 5, 45, 65]]}}
+    runtime = {"L": {"boxes": [[10, 20, 60, 90], [5, 5, 45, 65]]}}
     out, history = pre.preprocess([img_a, img_b], configs, runtime=runtime)
     assert out[0].shape == (70, 50, 3)
     assert out[1].shape == (60, 40, 3)

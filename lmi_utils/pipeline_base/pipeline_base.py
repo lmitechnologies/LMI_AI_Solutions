@@ -225,10 +225,11 @@ class PipelineBase(metaclass=ABCMeta):
         Args:
             model_role: the model role to be used for preprocessing.
             images: the image(s) to be preprocessed.
-            runtime: optional `{id: value}` dict for ops that need caller-supplied data. Keys must match the `id` of a step in manifest.
-                Supported values by op type:
-                  - "crop-to-label": {"boxes": [[x1, y1, x2, y2], ...]} —
-                    per-image boxes in original-image coordinates supplied by an upstream detector.
+            runtime: optional `{label: value}` dict for ops that need caller-supplied data. Keys must match a runtime step's `label`.
+                Supported by op type:
+                  - "crop-to-label": {"<label>": {"boxes": [[x1, y1, x2, y2], ...]}} —
+                    per-image boxes in original-image coordinates supplied by an upstream detector,
+                    keyed by the upstream's `label` (e.g. "BOTTLE-BBOX").
 
         Returns:
             list[ImageLike]: the preprocessed image(s).
@@ -248,6 +249,16 @@ class PipelineBase(metaclass=ABCMeta):
         - ``dict`` → revert coordinates to original image space (OD path).
 
         Pairs with ``preprocess()`` as its inverse.
+
+        For manual reverting, build ``ops`` as typed Meta objects, e.g.:
+
+            from lmi_utils.preprocess_utils import steps
+            ops = [
+                steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...),
+                steps.revert_crop(boxes=..., orig_sizes=...),
+            ]
+
+        in the same order they were applied during preprocessing.
 
         Args:
             data: Either a list of images (AD) or a batch results dict with keys

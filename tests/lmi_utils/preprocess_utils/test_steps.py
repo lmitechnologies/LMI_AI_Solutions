@@ -55,6 +55,8 @@ def test_crop_to_label():
     cfg = steps.crop_to_label(label="BOTTLE", id="ctl")
     assert isinstance(cfg, CropToLabelConfig)
     assert cfg.label == "BOTTLE" and cfg.id == "ctl"
+    # Runtime is bound by label, not id.
+    assert cfg.runtime_key == "BOTTLE"
 
 
 def test_flip_defaults():
