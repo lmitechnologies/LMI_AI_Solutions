@@ -397,9 +397,9 @@ class MyPipeline(PipelineBase):
 
 ### 10. Revert path — typed history for manual reconstruction
 
-The `history` returned by `Preprocessor.preprocess()` (or `PipelineBase.preprocess()`) is the canonical input for reverting: pass it to `self.revert_preprocess(results, history)`, `Reconstructor.reconstruct_coordinates(...)` / `.reconstruct_images(...)`, or OD `model.predict(..., operators=history)`. Each `Meta` carries everything needed to invert its step — no re-derivation, no dict plumbing.
+To map coordinates back to the original image, the revert path needs to know what each preprocessing step did. That record is the **history**: a list of typed `Meta` objects, one per step. **If the `Preprocessor` did the preprocessing**, you already have this history — just feed it back (the typical flow is in section 7). 
 
-**When you have a captured history**, you don't construct anything by hand — the typical flow is in section 7. This section covers the case where **no history was captured** (the image was preprocessed outside the `Preprocessor`, e.g. cropped by an earlier stage or saved to disk) but you still want to revert coordinates into the original space.
+This section covers the other case: the image was preprocessed **outside** the `Preprocessor` (cropped by an earlier stage), so no history exists yet. You still want coordinates back in the original space, so you build the history yourself — one `Meta` per step — using the inverse aliases below.
 
 **Inverse aliases — build a `Meta` directly:**
 
@@ -425,6 +425,11 @@ history = [steps.revert_crop(boxes=[[x1, y1, x2, y2]], orig_sizes=[[W, H]])]
 
 results, _ = model.predict(foreground_im, 0.5, operators=history)
 # results["boxes"][0] is now in the original (W, H) coordinate space.
+
+# Or run inference first and revert afterward — the same history works with revert_preprocess():
+results1, _ = model.predict(foreground_im, 0.5)      # coords still in crop space
+results2 = self.revert_preprocess(results1, history)
+# results2["boxes"][0] is now in the original (W, H) coordinate space.
 ```
 
 > **Impact:** The revert path is now **typed-only**. Code that built legacy operator dicts must migrate to `Meta` instances — `revert_to_origin`, `revert_mask_to_origin`, `revert_masks_to_origin`, and `apply_operations` keep their names but raise `TypeError` on dict input.
