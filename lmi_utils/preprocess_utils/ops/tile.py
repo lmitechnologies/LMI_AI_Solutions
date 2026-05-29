@@ -186,9 +186,12 @@ class TileOperation(Operation[TileConfig, TileMeta]):
         Keypoint visibility flags are set to 0 for any keypoint falling outside the tile,
         and instances with all keypoints invisible are dropped.
 
-        Mask input shape convention mirrors ``revert_coords``:
+        Results carrying no geometry (only image-level scores/classes) are passed through to
+        every tile unchanged, since there is nothing to clip.
+
+        Mask input convention (original space, matching the box/segment coords):
             - interpolation: masks are in ``im_size``; resampled to ``scale_size`` before tiling.
-            - padding: masks are in ``scale_size``; zero-padded to ``scale_size`` if smaller.
+            - padding: masks are in ``im_size``; zero-padded to ``scale_size`` before tiling.
         """
         if len(results) != len(meta.n_tiles):
             raise ValueError(f"tile: results count ({len(results)}) != meta count ({len(meta.n_tiles)})")
@@ -203,9 +206,10 @@ class TileOperation(Operation[TileConfig, TileMeta]):
 
     @torch.inference_mode()
     def revert_coords(self, results: List[Dict[str, Any]], meta: TileMeta) -> List[Dict[str, Any]]:
-        # NOTE: per-tile instances are concatenated as-is; objects spanning tile seams remain
-        # as separate labels (no NMS / IoU merge / mask union). Callers needing one label per
-        # object must dedupe downstream.
+        # NOTE: per-tile instances are concatenated as-is. Each instance's mask is placed on its
+        # own full-image canvas (masks are never composited onto a shared canvas), so an object
+        # spanning a tile seam stays as separate labels — one per tile — with no NMS, IoU merge,
+        # or mask union. Callers needing one label per object must dedupe downstream.
         output = []
         cursor = 0
         for i in range(len(meta.n_tiles)):
@@ -239,7 +243,11 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
         col = idx % n_tiles_w
         shifted.append(_shift_tile_coords(r, col * stride_w, row * stride_h, sx, sy, target_size))
 
-    return _concat_tile_results(shifted)
+    merged = _concat_tile_results(shifted)
+    masks = merged.get("masks")
+    if masks is not None and (masks.shape[-2] != im_h or masks.shape[-1] != im_w):
+        merged["masks"] = masks[..., :im_h, :im_w]
+    return merged
 
 
 def _shift_tile_coords(
@@ -322,15 +330,18 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
     if n == 0:
         return out
 
-    kept = torch.zeros(n, dtype=torch.bool)
+    device = _result_device(result)
+    kept = torch.zeros(n, dtype=torch.bool, device=device)
     boxes_out = points_out = masks_out = None
     segments_out: Optional[List[torch.Tensor]] = None
+    has_spatial = False  # whether any geometry field exists to clip against
 
     boxes = result.get("boxes")
     if boxes is not None and len(boxes):
+        has_spatial = True
         if boxes.ndim == 3:  # OBB (N, 4, 2)
             obb_t = to_tile_xy(boxes.reshape(-1, 2)).reshape(n, 4, 2)
-            obb_kept = torch.zeros(n, dtype=torch.bool)
+            obb_kept = torch.zeros(n, dtype=torch.bool, device=device)
             refit = obb_t.clone()
             for i in range(n):
                 clipped = _polygon_clip(obb_t[i], tile_w, tile_h)
@@ -363,6 +374,7 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
 
     points = result.get("points")
     if points is not None and len(points):
+        has_spatial = True
         xy = points[..., :2]
         xy_t = to_tile_xy(xy.reshape(-1, 2)).reshape(xy.shape)
         in_tile = (xy_t[..., 0] >= 0) & (xy_t[..., 0] <= tile_w) & (xy_t[..., 1] >= 0) & (xy_t[..., 1] <= tile_h)
@@ -377,6 +389,7 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
 
     segments = result.get("segments")
     if segments is not None and len(segments):
+        has_spatial = True
         segments_out = []
         for i, s in enumerate(segments):
             if len(s) == 0:
@@ -389,6 +402,7 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
 
     masks = result.get("masks")
     if masks is not None and len(masks):
+        has_spatial = True
         if is_interp:
             full = F.interpolate(masks.float().unsqueeze(1), size=(scale_h, scale_w), mode="nearest").squeeze(1)
         else:
@@ -406,6 +420,11 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
             sliced = F.pad(sliced, [0, max(0, pad_r), 0, max(0, pad_b)])
         masks_out = sliced.to(masks.dtype)
         kept |= (masks_out.reshape(n, -1) != 0).any(dim=-1)
+
+    if not has_spatial:
+        # Image-level label (only scores/classes, no geometry): nothing to clip, so
+        # propagate every instance to this tile rather than dropping them all.
+        kept[:] = True
 
     kept_idx = kept.nonzero(as_tuple=True)[0]
     if boxes_out is not None:
@@ -428,6 +447,20 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
             out["classes"] = classes[kept_idx]
 
     return out
+
+
+def _result_device(result: Dict[str, Any]) -> torch.device:
+    """Device of the result's coord tensors (defaults to CPU when none are present)."""
+    for key in ("boxes", "points", "masks", "scores"):
+        v = result.get(key)
+        if isinstance(v, torch.Tensor) and len(v):
+            return v.device
+    segments = result.get("segments")
+    if segments is not None:
+        for s in segments:
+            if isinstance(s, torch.Tensor) and len(s):
+                return s.device
+    return torch.device("cpu")
 
 
 def _instance_count(result: Dict[str, Any]) -> int:

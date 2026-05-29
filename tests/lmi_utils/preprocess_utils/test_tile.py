@@ -216,6 +216,40 @@ def test_tile_masks_under_interpolation_mode():
     assert out[0, :, :45].eq(0).all()
 
 
+def test_tile_masks_under_padding_mode_cropped_to_im_size():
+    # im_size 90 pads to scale_size 120 (tile 60, stride 60). Reverted masks must come
+    # back at im_size to match the reverted image, not the padded scale_size.
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros((90, 90, 3))
+    _tiles, history = pre.preprocess([img], [steps.tile(tile_size=60, stride=60, scale_mode="padding")])
+    assert history[0].scale_sizes[0] == [120, 120]
+
+    tile0_mask = torch.ones((1, 60, 60), dtype=torch.float32)
+    empty_mask = torch.zeros((0, 60, 60), dtype=torch.float32)
+    results = _empty_results(n=4, masks=[tile0_mask, empty_mask, empty_mask, empty_mask])
+    reverted = rec.reconstruct_coordinates(results, history)
+
+    out = reverted["masks"][0]
+    assert out.shape == (1, 90, 90)
+    assert out[0, :60, :60].eq(1).all()
+    assert out[0, 60:, :].eq(0).all()
+    assert out[0, :, 60:].eq(0).all()
+
+
+def test_tile_apply_coords_image_level_label_propagates_to_all_tiles():
+    # Classification-style result: only scores/classes, no geometry. With nothing to clip
+    # against, the label should propagate to every tile rather than being dropped.
+    _, rec, history = _tile_pipeline()
+    results = {
+        "scores": [torch.tensor([0.7])],
+        "classes": [np.array([3], dtype=np.int32)],
+    }
+    out = rec.apply_coordinates(results, history)
+    for i in range(4):
+        assert out["scores"][i].tolist() == [pytest.approx(0.7)]
+        assert out["classes"][i].tolist() == [3]
+
+
 def test_tile_revert_coords_cursor_mismatch_raises():
     pre, rec = Preprocessor(), Reconstructor()
     img = torch.zeros((100, 100, 3))
