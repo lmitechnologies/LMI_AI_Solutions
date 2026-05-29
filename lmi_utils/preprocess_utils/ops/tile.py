@@ -5,6 +5,7 @@ import numpy as np
 import torch
 
 from lmi_utils.image_utils.tiler import Tiler
+from lmi_utils.postprocess_utils.nms import class_aware_nms
 
 from .._coords import apply_coord_transform
 from ..operation import Config, Meta, Operation
@@ -18,12 +19,18 @@ class TileConfig(Config):
     stride: int or [h, w] — step between tile origins.
     scale_mode: how the image is fit to the tile grid before slicing ("padding" or "interpolation").
     overlap_mode: how overlapping regions are merged on untile ("average", "max", ...).
+    dedupe_iou: on revert_coords, class-aware NMS IoU threshold for suppressing the duplicate
+        detections that overlapping tiles produce for one object (keeps the highest-scoring
+        instance). Requires per-instance scores; results without scores pass through untouched.
+        Suppression only — it does not geometrically union objects split across a tile seam.
+        Set to None to disable. Default 0.5.
     """
 
     tile_size: Union[int, List[int], None] = None
     stride: Union[int, List[int], None] = None
     scale_mode: str = "padding"
     overlap_mode: str = "average"
+    dedupe_iou: Optional[float] = 0.5
 
     def __post_init__(self):
         if self.tile_size is None or self.stride is None:
@@ -43,9 +50,12 @@ class TileMeta(Meta):
     num_channels: List[int] = field(default_factory=list)
     scale_modes: List[str] = field(default_factory=list)
     overlap_modes: List[str] = field(default_factory=list)
+    dedupe_ious: List[Optional[float]] = field(default_factory=list)
 
     def __post_init__(self):
         n = len(self.n_tiles)
+        if not self.dedupe_ious:  # optional; absent means dedupe disabled for every image
+            self.dedupe_ious = [None] * n
         for name in (
             "tile_sizes",
             "strides",
@@ -55,6 +65,7 @@ class TileMeta(Meta):
             "num_channels",
             "scale_modes",
             "overlap_modes",
+            "dedupe_ious",
         ):
             if len(getattr(self, name)) != n:
                 raise ValueError(f"TileMeta: field '{name}' length mismatch")
@@ -71,6 +82,7 @@ class TileMeta(Meta):
             "num_channel": self.num_channels[i],
             "scale_mode": self.scale_modes[i],
             "overlap_mode": self.overlap_modes[i],
+            "dedupe_iou": self.dedupe_ious[i],
         }
 
 
@@ -93,6 +105,7 @@ class TileOperation(Operation[TileConfig, TileMeta]):
         num_channels: List[int] = []
         scale_modes: List[str] = []
         overlap_modes: List[str] = []
+        dedupe_ious: List[Optional[float]] = []
 
         for img in images:
             ndim = img.dim()
@@ -121,6 +134,7 @@ class TileOperation(Operation[TileConfig, TileMeta]):
             num_channels.append(int(d["num_channel"]))
             scale_modes.append(scale_mode)
             overlap_modes.append(overlap_mode)
+            dedupe_ious.append(config.dedupe_iou)
 
         return out_images, TileMeta(
             tile_sizes=tile_sizes,
@@ -132,6 +146,7 @@ class TileOperation(Operation[TileConfig, TileMeta]):
             num_channels=num_channels,
             scale_modes=scale_modes,
             overlap_modes=overlap_modes,
+            dedupe_ious=dedupe_ious,
         )
 
     @torch.inference_mode()
@@ -206,10 +221,12 @@ class TileOperation(Operation[TileConfig, TileMeta]):
 
     @torch.inference_mode()
     def revert_coords(self, results: List[Dict[str, Any]], meta: TileMeta) -> List[Dict[str, Any]]:
-        # NOTE: per-tile instances are concatenated as-is. Each instance's mask is placed on its
-        # own full-image canvas (masks are never composited onto a shared canvas), so an object
-        # spanning a tile seam stays as separate labels — one per tile — with no NMS, IoU merge,
-        # or mask union. Callers needing one label per object must dedupe downstream.
+        # NOTE: per-tile instances are concatenated, then (when ``dedupe_iou`` is set and scores
+        # are present) class-aware NMS suppresses the duplicate detections that overlapping tiles
+        # produce for one object — keeping the highest-scoring instance. This is suppression only:
+        # masks live on their own per-instance canvases and are never composited, and an object
+        # split across a seam (low mutual IoU) is NOT geometrically unioned. Callers needing
+        # seam-split fragments stitched into one label must still handle that downstream.
         output = []
         cursor = 0
         for i in range(len(meta.n_tiles)):
@@ -247,6 +264,10 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     masks = merged.get("masks")
     if masks is not None and (masks.shape[-2] != im_h or masks.shape[-1] != im_w):
         merged["masks"] = masks[..., :im_h, :im_w]
+
+    iou_thr = tiler_meta.get("dedupe_iou")
+    if iou_thr is not None:
+        merged = class_aware_nms(merged, float(iou_thr))
     return merged
 
 

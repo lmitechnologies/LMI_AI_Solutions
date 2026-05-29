@@ -305,3 +305,97 @@ def test_tile_revert_images_cursor_mismatch_raises():
     extra = tiles + [tiles[0].clone()]
     with pytest.raises(RuntimeError, match="Tile reconstruction mismatch"):
         rec.reconstruct_images(extra, history)
+
+
+def _overlap_history(dedupe_iou=0.5):
+    # 150x150 with tile 100 / stride 50 -> 2x2 overlapping tiles; box [55,55,95,95] lands in all 4.
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(150, 150, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=50, dedupe_iou=dedupe_iou)])
+    return rec, history
+
+
+# Per-tile boxes that all map back to the same [55,55,95,95] object after un-shifting.
+_DUP_TILE_BOXES = [
+    torch.tensor([[55.0, 55.0, 95.0, 95.0]]),
+    torch.tensor([[5.0, 55.0, 45.0, 95.0]]),
+    torch.tensor([[55.0, 5.0, 95.0, 45.0]]),
+    torch.tensor([[5.0, 5.0, 45.0, 45.0]]),
+]
+
+
+def test_tile_revert_coords_dedupe_suppresses_duplicate_boxes():
+    rec, history = _overlap_history()
+    results = _empty_results(
+        n=4,
+        boxes=_DUP_TILE_BOXES,
+        scores=[torch.tensor([s]) for s in (0.9, 0.6, 0.7, 0.8)],
+        classes=[np.array([0], np.int32) for _ in range(4)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[55.0, 55.0, 95.0, 95.0]]))
+    assert out["scores"][0].item() == pytest.approx(0.9)  # highest-scoring duplicate kept
+    assert out["classes"][0].tolist() == [0]
+
+
+def test_tile_revert_coords_dedupe_disabled_keeps_all_duplicates():
+    rec, history = _overlap_history(dedupe_iou=None)
+    results = _empty_results(
+        n=4,
+        boxes=_DUP_TILE_BOXES,
+        scores=[torch.tensor([s]) for s in (0.9, 0.6, 0.7, 0.8)],
+        classes=[np.array([0], np.int32) for _ in range(4)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (4, 4)
+
+
+def test_tile_revert_coords_dedupe_is_class_aware():
+    rec, history = _overlap_history()
+    results = _empty_results(
+        n=4,
+        boxes=_DUP_TILE_BOXES,
+        scores=[torch.tensor([s]) for s in (0.9, 0.8, 0.7, 0.6)],
+        classes=[np.array([c], np.int32) for c in (0, 1, 0, 1)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    # one survivor per class: class 0 -> 0.9, class 1 -> 0.8
+    assert out["boxes"][0].shape == (2, 4)
+    assert sorted(out["scores"][0].tolist()) == [pytest.approx(0.8), pytest.approx(0.9)]
+    assert sorted(out["classes"][0].tolist()) == [0, 1]
+
+
+def test_tile_revert_coords_dedupe_masks_by_iou():
+    rec, history = _overlap_history()
+    # Same global region [55:95, 55:95] expressed in two overlapping top tiles' local coords.
+    m0 = torch.zeros((1, 100, 100), dtype=torch.uint8)
+    m0[0, 55:95, 55:95] = 1
+    m1 = torch.zeros((1, 100, 100), dtype=torch.uint8)
+    m1[0, 55:95, 5:45] = 1  # col offset 50 -> same global cols 55:95
+    empty = torch.zeros((0, 100, 100), dtype=torch.uint8)
+    results = _empty_results(
+        n=4,
+        scores=[torch.tensor([0.9]), torch.tensor([0.7]), torch.zeros((0,)), torch.zeros((0,))],
+        masks=[m0, m1, empty, empty],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["masks"][0].shape == (1, 150, 150)
+    assert out["masks"][0][0, 55:95, 55:95].all() and int(out["masks"][0].sum()) == 40 * 40
+    assert out["scores"][0].item() == pytest.approx(0.9)
+
+
+def test_tile_revert_coords_dedupe_segments_via_polygon_iou():
+    rec, history = _overlap_history()
+    # identical global square polygon seen in two overlapping top tiles
+    seg0 = torch.tensor([[55.0, 55.0], [95.0, 55.0], [95.0, 95.0], [55.0, 95.0]])
+    seg1 = torch.tensor([[5.0, 55.0], [45.0, 55.0], [45.0, 95.0], [5.0, 95.0]])  # +50 in x -> same square
+    results = _empty_results(
+        n=4,
+        scores=[torch.tensor([0.9]), torch.tensor([0.7]), torch.zeros((0,)), torch.zeros((0,))],
+        segments=[[seg0], [seg1], [], []],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert len(out["segments"][0]) == 1
+    assert torch.allclose(out["segments"][0][0], torch.tensor([[55.0, 55.0], [95.0, 55.0], [95.0, 95.0], [55.0, 95.0]]))
+    assert out["scores"][0].item() == pytest.approx(0.9)
