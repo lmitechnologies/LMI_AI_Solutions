@@ -759,7 +759,7 @@ def masked_ad_predict(pipe, ad_inp, ad_model_role: str | np.ndarray, od_model_ro
 def masked_ad_annotate(pipe, img, ad_model_role, od_model_role, err_map, od_predictions, configs, color=(152, 251, 152)):
     fp_classes = pipe.models[od_model_role].model.names
     ad_configs = configs["models"][ad_model_role]["configs"]
-    err_threshold = ad_configs["min thereshold"]
+    err_threshold = ad_configs["min_threshold"]
     err_max = ad_configs["max_threshold"]
     annotated_img = pipe.models[ad_model_role].annotate(img, err_map, err_threshold, err_max)
     if not color:
