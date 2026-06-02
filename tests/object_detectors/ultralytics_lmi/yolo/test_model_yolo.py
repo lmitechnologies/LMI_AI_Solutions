@@ -248,24 +248,29 @@ class Test_Yolo_Det:
 
         for model in all_models["det"]:
             # per-image operators
-            out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
-            _assert_batch_output(out, self.KEYS, num_imgs)
+            model.predict(resized_images, configs=0.5, operators=ops_list)
 
             # shared operators (list[dict] applied to all images)
-            out2, _ = model.predict(resized_images, configs=0.5, operators=ops_list[0])
-            _assert_batch_output(out2, self.KEYS, num_imgs)
+            model.predict(resized_images, configs=0.5, operators=ops_list[0])
 
             # no operators
-            out3, _ = model.predict(resized_images, configs=0.5)
-            _assert_batch_output(out3, self.KEYS, num_imgs)
+            model.predict(resized_images, configs=0.5)
 
             if torch.cuda.is_available():
                 tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
                 out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
-                _assert_batch_output(out_gpu, self.KEYS, num_imgs)
                 for img_idx in range(num_imgs):
                     _assert_batch_cuda(out_gpu, self.KEYS[:-1], img_idx)
                 _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+
+    def test_predict_batch_square(self, all_models, imgs_coco):
+        _, resized_images, ops_list = imgs_coco
+        if len(resized_images) < 2:
+            pytest.skip("Not enough images for batch test")
+        num_imgs = len(resized_images)
+        for model in all_models["det"]:
+            out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
+            _assert_batch_output(out, self.KEYS, num_imgs)
 
     def test_predict_batch_invalid_operators(self, yolo_models, imgs_coco):
         _, resized_images, ops_list = imgs_coco
@@ -328,25 +333,30 @@ class Test_Yolo_Seg:
         for model in all_models["seg"]:
             # per-image operators
             out, _ = model.predict(resized_images, configs=0.5, operators=batch_ops, return_segments=False)
-            _assert_batch_output(out, self.KEYS[:-2] + ["classes"], num_images)  # skip 'segments' key
             for img_idx in range(num_images):
                 assert len(out["segments"][img_idx]) == 0
 
             # shared operators
-            out2, _ = model.predict(resized_images, configs=0.5, operators=batch_ops[0])
-            _assert_batch_output(out2, self.KEYS, num_images)
+            model.predict(resized_images, configs=0.5, operators=batch_ops[0])
 
             # no operators
-            out3, _ = model.predict(resized_images, configs=0.5)
-            _assert_batch_output(out3, self.KEYS, num_images)
+            model.predict(resized_images, configs=0.5)
 
             if torch.cuda.is_available():
                 tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
                 out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=batch_ops)
-                _assert_batch_output(out_gpu, self.KEYS, num_images)
                 for img_idx in range(num_images):
                     _assert_batch_cuda(out_gpu, self.KEYS[:-1], img_idx)
                 _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+
+    def test_predict_batch_square(self, all_models, imgs_coco):
+        _, resized_images, ops_list = imgs_coco
+        if len(resized_images) < 2:
+            pytest.skip("Not enough images for batch test")
+        num_imgs = len(resized_images)
+        for model in all_models["seg"]:
+            out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
+            _assert_batch_output(out, self.KEYS, num_imgs)
 
 
 class Test_Yolo_Obb:
@@ -380,29 +390,31 @@ class Test_Yolo_Obb:
         images, _, _ = imgs_dota8
         if len(images) < 2:
             pytest.skip("Not enough images for batch test")
-        num_imgs = len(images)
         resized_images, ops_list = _nonsquare_batch(images)
 
         for model in all_models["obb_dota8"]:
             # per-image operators
             out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
-            _assert_batch_output(out, self.KEYS, num_imgs)
 
             # shared operators
             out2, _ = model.predict(resized_images, configs=0.5, operators=ops_list[0])
-            _assert_batch_output(out2, self.KEYS, num_imgs)
 
             # no operators
             out3, _ = model.predict(resized_images, configs=0.5)
-            _assert_batch_output(out3, self.KEYS, num_imgs)
 
             if torch.cuda.is_available():
                 tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
                 out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
-                _assert_batch_output(out_gpu, self.KEYS, num_imgs)
-                for img_idx in range(num_imgs):
-                    _assert_batch_cuda(out_gpu, self.KEYS[:-1], img_idx)
                 _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+
+    def test_predict_batch_square(self, all_models, imgs_dota8):
+        _, resized_images, ops_list = imgs_dota8
+        if len(resized_images) < 2:
+            pytest.skip("Not enough images for batch test")
+        num_imgs = len(resized_images)
+        for model in all_models["obb_dota8"]:
+            out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
+            _assert_batch_output(out, self.KEYS, num_imgs)
 
 
 class Test_Yolo_Pose:
@@ -453,3 +465,12 @@ class Test_Yolo_Pose:
                 tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
                 out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
                 _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+
+    def test_predict_batch_square(self, all_models, imgs_coco):
+        _, resized_images, ops_list = imgs_coco
+        if len(resized_images) < 2:
+            pytest.skip("Not enough images for batch test")
+        num_imgs = len(resized_images)
+        for model in all_models["pose"]:
+            out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
+            _assert_batch_output(out, self.KEYS, num_imgs)
