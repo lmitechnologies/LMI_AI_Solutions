@@ -145,31 +145,26 @@ class ODBase(abc.ABC):
 
         return all_results, {"preproc": t_preproc, "proc": t_proc, "postproc": t_postproc}
 
-    def _fit_to_input_size(self, images: List[ImageLike], preserve_aspect: bool = True) -> List[ImageLike]:
-        """Resize off-size images to the model's expected input size (``self.image_size``).
+    def _fit_to_input_size(self, images: List[ImageLike], preserve_aspect: bool = True, resize_fn=None) -> List[ImageLike]:
+        """Resize off-size images to the model input (``self.image_size``)
 
-        Backends assume each incoming image already equals the network input; a mismatch
-        (e.g. an upstream preprocessing pipeline resizing to the wrong size) crashes
-        fixed-shape engines and silently degrades dynamic models. This guard resizes any
-        off-size image to ``self.image_size`` and warns once per model instance.
+        args:
+            ``images``: list of HWC images (numpy or tensor) to check and resize if needed.
+            ``preserve_aspect`` must match the backend's convention:
+                ``True`` (letterbox) for backends reconstructing letterbox geometry,
+                ``False`` (stretch) for those mapping normalized boxes to the full frame.
 
-        The resize is deliberately NOT recorded in the operator history: ``postprocess``
-        already maps network-input coordinates back to the original image passed to
-        ``predict()``, so the resize is reverted automatically. Coordinate correctness
-        therefore requires ``preserve_aspect`` to match the backend's postprocess
-        convention:
+            ``resize_fn``: optional ``(image, (th, tw)) -> image`` used in place of ``resize_and_pad``
+            (e.g. YOLO's letterbox); ``preserve_aspect`` then only affects the warning wording.
 
-        - ``True`` (letterbox: aspect-preserving + centered pad) for backends whose
-          postprocess reconstructs letterbox geometry, e.g. YOLO's ``scale_boxes``.
-        - ``False`` (stretch to fill) for backends that map normalized ``[0, 1]`` boxes
-          onto the full frame with no pad compensation, e.g. rf_detr and detectron2-TRT.
-
-        Returns the image list with off-size entries replaced by resized copies; in-size
-        entries pass through unchanged. No-op when ``self.image_size`` is unset.
+        Raises ``ValueError`` when ``self.image_size`` is unset.
         """
         target = getattr(self, "image_size", None)
         if not target:
-            return images
+            raise ValueError(
+                f"{type(self).__name__}.image_size is not set; cannot fit inputs to model size. "
+                "Set self.image_size = [h, w] in the backend's __init__."
+            )
 
         th, tw = int(target[0]), int(target[1])
         out, mismatched = [], None
@@ -177,17 +172,24 @@ class ODBase(abc.ABC):
             h, w = im.shape[:2]
             if (h, w) != (th, tw):
                 mismatched = mismatched or (h, w)
-                im = resize_and_pad(im, width=tw, height=th, preserve_aspect=preserve_aspect)
+                if resize_fn is not None:
+                    im = resize_fn(im, (th, tw))
+                else:
+                    im = resize_and_pad(im, width=tw, height=th, preserve_aspect=preserve_aspect)
             out.append(im)
 
-        if mismatched is not None and not getattr(self, "_input_size_warned", False):
+        if mismatched is not None:
+            self._warn_resize_once(mismatched[0], mismatched[1], th, tw, "letterbox" if preserve_aspect else "stretch")
+        return out
+
+    def _warn_resize_once(self, h: int, w: int, th: int, tw: int, mode: str) -> None:
+        """Warn once per instance that an off-size input is being auto-resized to the model input."""
+        if not getattr(self, "_input_size_warned", False):
             self._input_size_warned = True
-            mode = "letterbox" if preserve_aspect else "stretch"
             self.logger.warning(
-                f"Input size {mismatched[0]}x{mismatched[1]} != model input {th}x{tw}; auto-resizing ({mode}) to fit. "
+                f"Input size {h}x{w} != model input {th}x{tw}; auto-resizing ({mode}) to fit. "
                 "Add a matching resize to your preprocessing pipeline to silence this and avoid the extra resize."
             )
-        return out
 
     @staticmethod
     def _to_numpy(data):

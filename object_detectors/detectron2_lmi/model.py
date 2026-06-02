@@ -189,8 +189,6 @@ class Detectron2TRT(Detectron2Base):
         Returns:
             torch.Tensor: A batch of CHW BGR preprocessed images with shape (batch_size, 3, image_h, image_w) on the model device.
         """
-        # Engine has a fixed input shape and scores normalized boxes onto the full frame
-        # (no pad compensation in postprocess), so the size guard must stretch — not letterbox.
         images = self._fit_to_input_size(images, preserve_aspect=False)
         tensors = []
         for img in images:
@@ -246,6 +244,9 @@ class Detectron2TRT(Detectron2Base):
 
         scale_factors = torch.tensor([image_w, image_h, image_w, image_h], dtype=torch.float32, device=self.device)
         boxes = boxes.to(dtype=torch.float32) * scale_factors
+        # The TRT engine drops detectron2's final Boxes.clip step.
+        # boxes[..., 0::2] = boxes[..., 0::2].clamp(0, image_w)
+        # boxes[..., 1::2] = boxes[..., 1::2].clamp(0, image_h)
         scores = scores.to(dtype=torch.float32)
         if masks is not None:
             masks = masks.to(dtype=torch.float32)

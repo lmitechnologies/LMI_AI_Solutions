@@ -3,14 +3,40 @@ from typing import List
 
 import numpy as np
 import torch
+from ultralytics.data.augment import LetterBox
 from ultralytics.utils import nms, ops
 from ultralytics.utils.torch_utils import smart_inference_mode
 
 from lmi_common.yolo_core import YoloCore
+from lmi_utils.gadget_utils.pipeline_utils import resize_image
 from lmi_utils.image_utils.types import ImageLike, to_rgb
 from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
+
+LETTERBOX_PAD = 114  # ultralytics' gray letterbox fill value
+
+
+def letterbox(image: ImageLike, new_shape, pad_value: int = LETTERBOX_PAD) -> ImageLike:
+    """Letterbox an HWC image to ``new_shape`` (h, w) using ultralytics' letterbox geometry.
+
+    numpy inputs are delegated to ultralytics' ``LetterBox``.
+    torch tensors only the resize interpolation backend (torch vs cv2) differs.
+    """
+    th, tw = int(new_shape[0]), int(new_shape[1])
+    if isinstance(image, np.ndarray):
+        return LetterBox(new_shape=(th, tw), auto=False, scaleup=True, center=True, padding_value=pad_value)(image=image)
+
+    h0, w0 = image.shape[:2]
+    r = min(th / h0, tw / w0)
+    new_w, new_h = round(w0 * r), round(h0 * r)
+    if (w0, h0) != (new_w, new_h):
+        image = resize_image(image, W=new_w, H=new_h)
+    dw, dh = (tw - new_w) / 2, (th - new_h) / 2
+    top, bottom = round(dh - 0.1), round(dh + 0.1)
+    left, right = round(dw - 0.1), round(dw + 0.1)
+    chw = torch.nn.functional.pad(image.permute(2, 0, 1), (left, right, top, bottom), value=pad_value)
+    return chw.permute(1, 2, 0)
 
 
 @ObjectDetectorRegistry.register(
@@ -73,10 +99,10 @@ class Yolo(YoloCore, ODBase):
         """
         if not isinstance(images, list):
             images = [images]
-        images = self._fit_to_input_size(images, preserve_aspect=True)
+        images = self._fit_to_input_size(images, resize_fn=letterbox)
         return torch.stack([self._preprocess_single(im) for im in images])
 
-    def construct_result(self, pred, img, orig_img, confs: dict, operators=None, **kwargs):
+    def construct_result(self, pred, img, orig_img, confs: dict, operators=None, do_scale_boxes=True, **kwargs):
         """Constructs the result from the model prediction.
 
         Args:
@@ -85,8 +111,11 @@ class Yolo(YoloCore, ODBase):
             orig_img (np.ndarray | torch.Tensor): Original image. If this is a tensor, this function will return tensor results.
             confs (dict): per-class confidence thresholds, pre-parsed by postprocess.
             operators (list): operator chain for coordinate reversion.
+            do_scale_boxes (bool): Scale boxes from network input to orig_img space. Set False when the
+                caller has already scaled pred[:, :4] (e.g. YoloSeg needs scaled boxes for mask cropping).
         """
-        pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
+        if do_scale_boxes:
+            pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
         xyxy, scores, clss = pred[:, :4], pred[:, 4], pred[:, 5]
         classes = np.array([self.model.names[c.item()] for c in clss])
         xyxy, scores, classes, _, keep = self._apply_confidence_filter(scores, xyxy, classes, confs)
@@ -198,7 +227,8 @@ class YoloSeg(Yolo):
             if not all(keep):
                 pred, masks = pred[keep], masks[keep]
 
-        results, M = super().construct_result(pred, img, orig_img, conf)
+        # Boxes were already scaled above (needed for process_mask_native); don't re-scale.
+        results, M = super().construct_result(pred, img, orig_img, conf, do_scale_boxes=False)
         results.is_seg = True
         if masks is not None:
             results.masks = masks[M]

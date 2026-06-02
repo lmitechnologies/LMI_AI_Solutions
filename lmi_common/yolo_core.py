@@ -22,10 +22,6 @@ class YoloCore:
             FileNotFoundError: the model_path file does not exist
         """
         image_size = kwargs.get("image_size", None)
-        if image_size is None:
-            image_size = [640, 640]
-            self.logger.warning("image_size not specified, using default value of [640, 640]")
-        self.image_size = image_size
 
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f"File not found: {model_path}")
@@ -38,8 +34,34 @@ class YoloCore:
             self.model.model.fuse()
         self.model.eval()
 
+        # set image size
+        trained = self._infer_image_size()
+        if image_size is not None:
+            self.image_size = [int(image_size[0]), int(image_size[1])]
+            if trained is not None and self.image_size != trained:
+                self.logger.warning(
+                    f"Provided image_size {self.image_size} != model's trained imgsz {trained}; "
+                    "inference may be less accurate and differ from how the model was trained."
+                )
+        elif trained is not None:
+            self.image_size = trained
+            self.logger.info(f"image_size not specified; using model's trained imgsz {trained}")
+        else:
+            self.image_size = [640, 640]
+            self.logger.warning("image_size not specified and trained imgsz unavailable; using [640, 640]")
+
         # class map < id: class name >
         self.names = self.model.names
+
+    def _infer_image_size(self):
+        """Return the model's trained imgsz as [h, w], or None if it can't be read (e.g. engine/onnx)."""
+        args = getattr(getattr(self.model, "model", None), "args", None)
+        imgsz = args.get("imgsz") if isinstance(args, dict) else getattr(args, "imgsz", None)
+        if isinstance(imgsz, (list, tuple)):
+            return [int(imgsz[0]), int(imgsz[1])] if len(imgsz) >= 2 else [int(imgsz[0]), int(imgsz[0])]
+        if isinstance(imgsz, int):
+            return [imgsz, imgsz]
+        return None
 
     @smart_inference_mode()
     def from_numpy(self, x: np.ndarray) -> torch.Tensor:

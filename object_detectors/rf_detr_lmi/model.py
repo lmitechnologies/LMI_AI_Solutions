@@ -66,22 +66,31 @@ class RfdetrBase(ODBase):
         dummy_input = torch.zeros((1, 3, self.image_size[0], self.image_size[1]), dtype=torch.float32).to(self.device)
         self.forward(dummy_input)
 
-    def _preprocess_single(self, image: ImageLike) -> torch.Tensor:
-        """Preprocess a single HWC uint8 image: convert to CHW float [0, 1], normalize, move to device."""
+    def _to_float_chw(self, image: ImageLike) -> torch.Tensor:
+        """Convert an HWC uint8 image (ndarray or tensor) to a CHW float [0, 1] tensor on the model device."""
         if isinstance(image, np.ndarray):
-            img_tensor = F.to_tensor(image).to(self.device)
-        else:
-            img_tensor = image.permute(2, 0, 1).to(self.device).float() / 255.0
-        return F.normalize(img_tensor, self.means, self.stds)
+            return F.to_tensor(image).to(self.device)
+        return image.permute(2, 0, 1).to(self.device).float() / 255.0
+
+    def _fit_to_input_size(self, img_tensor: torch.Tensor) -> torch.Tensor:
+        """Stretch a CHW float tensor to self.image_size, warning once per instance."""
+        th, tw = int(self.image_size[0]), int(self.image_size[1])
+        h, w = img_tensor.shape[1], img_tensor.shape[2]
+        if (h, w) == (th, tw):
+            return img_tensor
+        self._warn_resize_once(h, w, th, tw, "stretch")
+        return F.resize(img_tensor, [th, tw], antialias=True)
 
     def preprocess(self, images: List[ImageLike]) -> torch.Tensor:
-        """Preprocess input image(s) to BCHW normalized tensor."""
+        """Preprocess input image(s) to a BCHW normalized tensor.
+
+        RF-DETR is trained with a square (stretch) resize — not letterbox — applied with
+        antialiasing on the float tensor, so off-size inputs are fit to self.image_size that way.
+        """
         if not isinstance(images, list):
             images = [images]
-        # RF-DETR is trained with a square (stretch) resize and scores normalized boxes
-        # onto the full frame, so the size guard must stretch — not letterbox.
-        images = self._fit_to_input_size(images, preserve_aspect=False)
-        return torch.stack([self._preprocess_single(img) for img in images])
+        tensors = [self._fit_to_input_size(self._to_float_chw(img)) for img in images]
+        return torch.stack([F.normalize(t, self.means, self.stds) for t in tensors])
 
     @staticmethod
     def _masks_to_segments(masks) -> List[np.ndarray]:
