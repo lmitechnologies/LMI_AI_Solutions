@@ -76,9 +76,12 @@ class RfdetrBase(ODBase):
 
     def preprocess(self, images: List[ImageLike]) -> torch.Tensor:
         """Preprocess input image(s) to BCHW normalized tensor."""
-        if isinstance(images, list):
-            return torch.stack([self._preprocess_single(img) for img in images])
-        return torch.unsqueeze(self._preprocess_single(images), dim=0)
+        if not isinstance(images, list):
+            images = [images]
+        # RF-DETR is trained with a square (stretch) resize and scores normalized boxes
+        # onto the full frame, so the size guard must stretch — not letterbox.
+        images = self._fit_to_input_size(images, preserve_aspect=False)
+        return torch.stack([self._preprocess_single(img) for img in images])
 
     @staticmethod
     def _masks_to_segments(masks) -> List[np.ndarray]:
@@ -203,6 +206,7 @@ class RfdetrTRT(RfdetrBase):
         if len(self.trt._input_names) != 1:
             raise ValueError(f"Expected a single-input TRT engine, got inputs: {self.trt._input_names}")
         self.input_shape = self.trt.input_shape  # (C, H, W)
+        self.image_size = list(self.input_shape[-2:])  # (H, W) — used by the input-size guard
         self.input_dtype = self.trt.input_dtype
         if not self.trt.is_dynamic:
             self.fixed_batch_size = self.trt.max_batch

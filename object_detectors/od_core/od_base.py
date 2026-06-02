@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from lmi_utils.image_utils.img_resize import resize_and_pad
 from lmi_utils.image_utils.types import ImageBatch, ImageLike, normalize_image_batch, to_rgb
 
 from .results import Results
@@ -143,6 +144,50 @@ class ODBase(abc.ABC):
             all_results.extend(list_results[:chunk_n])
 
         return all_results, {"preproc": t_preproc, "proc": t_proc, "postproc": t_postproc}
+
+    def _fit_to_input_size(self, images: List[ImageLike], preserve_aspect: bool = True) -> List[ImageLike]:
+        """Resize off-size images to the model's expected input size (``self.image_size``).
+
+        Backends assume each incoming image already equals the network input; a mismatch
+        (e.g. an upstream preprocessing pipeline resizing to the wrong size) crashes
+        fixed-shape engines and silently degrades dynamic models. This guard resizes any
+        off-size image to ``self.image_size`` and warns once per model instance.
+
+        The resize is deliberately NOT recorded in the operator history: ``postprocess``
+        already maps network-input coordinates back to the original image passed to
+        ``predict()``, so the resize is reverted automatically. Coordinate correctness
+        therefore requires ``preserve_aspect`` to match the backend's postprocess
+        convention:
+
+        - ``True`` (letterbox: aspect-preserving + centered pad) for backends whose
+          postprocess reconstructs letterbox geometry, e.g. YOLO's ``scale_boxes``.
+        - ``False`` (stretch to fill) for backends that map normalized ``[0, 1]`` boxes
+          onto the full frame with no pad compensation, e.g. rf_detr and detectron2-TRT.
+
+        Returns the image list with off-size entries replaced by resized copies; in-size
+        entries pass through unchanged. No-op when ``self.image_size`` is unset.
+        """
+        target = getattr(self, "image_size", None)
+        if not target:
+            return images
+
+        th, tw = int(target[0]), int(target[1])
+        out, mismatched = [], None
+        for im in images:
+            h, w = im.shape[:2]
+            if (h, w) != (th, tw):
+                mismatched = mismatched or (h, w)
+                im = resize_and_pad(im, width=tw, height=th, preserve_aspect=preserve_aspect)
+            out.append(im)
+
+        if mismatched is not None and not getattr(self, "_input_size_warned", False):
+            self._input_size_warned = True
+            mode = "letterbox" if preserve_aspect else "stretch"
+            self.logger.warning(
+                f"Input size {mismatched[0]}x{mismatched[1]} != model input {th}x{tw}; auto-resizing ({mode}) to fit. "
+                "Add a matching resize to your preprocessing pipeline to silence this and avoid the extra resize."
+            )
+        return out
 
     @staticmethod
     def _to_numpy(data):

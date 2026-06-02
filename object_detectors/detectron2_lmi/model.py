@@ -189,6 +189,9 @@ class Detectron2TRT(Detectron2Base):
         Returns:
             torch.Tensor: A batch of CHW BGR preprocessed images with shape (batch_size, 3, image_h, image_w) on the model device.
         """
+        # Engine has a fixed input shape and scores normalized boxes onto the full frame
+        # (no pad compensation in postprocess), so the size guard must stretch — not letterbox.
+        images = self._fit_to_input_size(images, preserve_aspect=False)
         tensors = []
         for img in images:
             if isinstance(img, torch.Tensor):

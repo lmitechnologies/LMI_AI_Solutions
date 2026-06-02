@@ -255,3 +255,25 @@ class Test_Rfdetr_Model:
 
         out, _ = obj_detector.predict(tensor_batch, configs=0.5)
         assert len(out["boxes"]) == len(imgs_coco)
+
+    def test_offsize_input_autoresizes(self, imgs_coco, caplog):
+        """An off-size input (!= image_size) is auto-stretched to fit: no crash, one-time warning,
+        and boxes land in the input image's coordinate space (in-bounds)."""
+        img = imgs_coco[0]
+        h, w = img.shape[:2]
+        assert (h, w) != (IMAGE_SIZE, IMAGE_SIZE), "test image is unexpectedly already at model input size"
+
+        # Fresh instance so the once-per-model warn flag isn't pre-tripped by other tests.
+        model = RfdetrModel(OD_MODEL.replace("cuda", "cpu"), device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
+        with caplog.at_level(logging.WARNING):
+            batch_outputs, _ = model.predict(img, configs=0.5, return_segments=False)
+        out = {k: v[0] for k, v in batch_outputs.items()}
+
+        warnings = [r for r in caplog.records if "model input" in r.message]
+        assert len(warnings) == 1, "expected exactly one mismatch warning per model instance"
+        assert "stretch" in warnings[0].message, "rf_detr guard must stretch, not letterbox"
+
+        boxes = out["boxes"]
+        assert len(boxes) > 0, "off-size input produced no detections"
+        assert np.all(boxes >= 0)
+        assert np.all(boxes[:, [0, 2]] <= w) and np.all(boxes[:, [1, 3]] <= h)

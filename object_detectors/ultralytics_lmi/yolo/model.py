@@ -71,10 +71,10 @@ class Yolo(YoloCore, ODBase):
         Returns:
             (torch.Tensor): BCHW tensor.
         """
-        if isinstance(images, list):
-            imgs = [self._preprocess_single(im) for im in images]
-            return torch.stack(imgs)
-        return self._preprocess_single(images).unsqueeze(0)
+        if not isinstance(images, list):
+            images = [images]
+        images = self._fit_to_input_size(images, preserve_aspect=True)
+        return torch.stack([self._preprocess_single(im) for im in images])
 
     def construct_result(self, pred, img, orig_img, confs: dict, operators=None, **kwargs):
         """Constructs the result from the model prediction.

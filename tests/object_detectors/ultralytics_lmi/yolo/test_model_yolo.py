@@ -259,6 +259,34 @@ class Test_Yolo_Det:
         with pytest.raises(ValueError):
             model.predict(resized_images, configs=0.5, operators=[ops_list[0]])
 
+    def test_offsize_input_autoresizes(self, imgs_coco, caplog):
+        """An off-size input (!= image_size) is auto-letterboxed: no crash, one-time warning,
+        and boxes land in the input image's coordinate space (in-bounds)."""
+        images, _, _ = imgs_coco
+        rgb = images[0]
+        off = cv2.resize(rgb, (720, 720))  # != model input 640x640
+
+        # Fresh instance so the once-per-model warn flag isn't pre-tripped by other tests.
+        model = Yolo(OD_DET_MODELS[0], device="cpu", image_size=IMGSZ)
+        with caplog.at_level(logging.WARNING):
+            out, _ = model.predict([off, off], configs=0.5)
+
+        warnings = [r for r in caplog.records if "model input" in r.message]
+        assert len(warnings) == 1, "expected exactly one mismatch warning per model instance"
+
+        boxes = np.array(out["boxes"][0])
+        assert len(boxes) > 0, "off-size input produced no detections"
+        assert boxes.min() >= 0
+        assert boxes[:, [0, 2]].max() <= 720 and boxes[:, [1, 3]].max() <= 720
+
+    def test_insize_input_no_warning(self, imgs_coco, caplog):
+        """An in-size input (== image_size) is passed through with no resize warning."""
+        _, resized_images, _ = imgs_coco
+        model = Yolo(OD_DET_MODELS[0], device="cpu", image_size=IMGSZ)
+        with caplog.at_level(logging.WARNING):
+            model.predict([resized_images[0]], configs=0.5)
+        assert not [r for r in caplog.records if "model input" in r.message]
+
 
 class Test_Yolo_Seg:
     KEYS = ["boxes", "masks", "scores", "segments", "classes"]

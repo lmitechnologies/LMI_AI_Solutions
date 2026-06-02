@@ -39,7 +39,7 @@ def imgs_coco():
 def _trt_available():
     try:
         import tensorrt  # noqa: F401
-        from cuda import cudart  # noqa: F401
+        # from cuda import cudart  # noqa: F401
 
         return USE_CUDA
     except ImportError:
