@@ -195,7 +195,7 @@ if __name__ == "__main__":
                     if masks is not None:
                         mask = masks[j]
                         if use_revert_to_origin:
-                            mask = revert_masks_to_origin(masks, operators)
+                            mask = revert_masks_to_origin(masks, operators, interpolation="nearest")
                         else:
                             mask = cv2.resize(mask, (im_out.shape[1], im_out.shape[0]))
                     box = boxes[j]

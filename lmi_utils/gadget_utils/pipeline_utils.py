@@ -426,127 +426,65 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bb
         )
 
 
-_RECONSTRUCTOR_SINGLETON = None
+_RECONSTRUCTORS = {}  # interpolation mode -> Reconstructor (image-revert resampling)
 
 
-def _get_op_for_meta(meta):
-    """Resolve a Meta instance to the matching registered ``Operation``. Lazy import to avoid cycles."""
-    global _RECONSTRUCTOR_SINGLETON
-    if _RECONSTRUCTOR_SINGLETON is None:
+def _reconstructor(interpolation: str = "bilinear"):
+    """Return a shared ``Reconstructor`` whose resize op reverts images with ``interpolation``.
+
+    ``"nearest"`` preserves binary/label masks; ``"bilinear"`` suits continuous-tone images.
+    Lazy import to avoid cycles.
+    """
+    recon = _RECONSTRUCTORS.get(interpolation)
+    if recon is None:
+        from lmi_utils.preprocess_utils.ops import ResizeOperation
         from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
-        _RECONSTRUCTOR_SINGLETON = Reconstructor()
-    op = _RECONSTRUCTOR_SINGLETON._ops.get(type(meta))
-    if op is None:
-        raise ValueError(
-            f"unsupported meta type: {type(meta).__name__}. Registered: {sorted(t.__name__ for t in _RECONSTRUCTOR_SINGLETON._ops)}"
-        )
-    return op
-
-
-def _single_image_meta(meta):
-    """Slice a batched Meta down to its first source-image record.
-
-    Most pipeline_utils helpers operate on a single image; they pass per-step
-    Meta objects with batch size 1 (or take the first record from a larger batch).
-    """
-    from dataclasses import fields
-
-    fresh = type(meta).__new__(type(meta))
-    for f in fields(meta):
-        v = getattr(meta, f.name)
-        if isinstance(v, list):
-            object.__setattr__(fresh, f.name, v[:1])
-        else:
-            object.__setattr__(fresh, f.name, v)
-    return fresh
-
-
-def _validate_history(history: list) -> None:
-    from lmi_utils.preprocess_utils.operation import Meta
-
-    if not isinstance(history, list):
-        raise TypeError(f"operations must be a list, got {type(history).__name__}")
-    for i, entry in enumerate(history):
-        if not isinstance(entry, Meta):
-            raise TypeError(f"operations[{i}] must be a Meta instance, got {type(entry).__name__}")
+        recon = Reconstructor()
+        if interpolation != "bilinear":
+            recon.register(ResizeOperation(image_mode=interpolation))
+        _RECONSTRUCTORS[interpolation] = recon
+    return recon
 
 
 @torch.inference_mode()
-def revert_mask_to_origin(mask, operations: list):
+def revert_mask_to_origin(mask, operations: list, interpolation: str = "bilinear"):
     """
     Revert a single mask image to original-image space using a preprocessing history.
 
     Args:
         mask: np.array or torch.Tensor, shape (H, W) or (H, W, C).
         operations: list of typed ``Meta`` records (one per preprocessing step), batch size 1.
+        interpolation: resize-revert mode. Use ``"nearest"`` for binary/label masks
+            (bilinear erodes them on upscale); ``"bilinear"`` for continuous-tone images.
 
     Returns:
         Mask reverted to original-image space, same type as input.
     """
-    _validate_history(operations)
-    is_numpy = isinstance(mask, np.ndarray)
-    if is_numpy:
-        mask = torch.from_numpy(mask)
-
-    one_channel = mask.ndim == 2
-    if one_channel:
-        mask = mask.unsqueeze(-1)
-
-    for entry in reversed(operations):
-        op = _get_op_for_meta(entry)
-        mask = op.revert_images([mask], _single_image_meta(entry))[0]
-
-    if one_channel:
-        mask = mask.squeeze(-1)
-    return mask.numpy() if is_numpy else mask
+    return _reconstructor(interpolation).reconstruct_images([mask], operations)[0]
 
 
 @torch.inference_mode()
-def revert_masks_to_origin(masks, operations: list):
+def revert_masks_to_origin(masks, operations: list, interpolation: str = "bilinear"):
     """
-    Revert a stack of instance masks (N, H, W) to original-image space.
+    Revert a stack of mask images (N, H, W) to original-image space.
 
-    Treats the stack as instance masks bound to a single source image — applies
-    each op's coord-space mask transform, not the image-space ``revert_images``
-    used by :func:`revert_mask_to_origin`. Routes through the Operation registry
-    so resize/pad/crop all do the right thing for instance masks.
+    Batched form of :func:`revert_mask_to_origin`. Pass ``interpolation="nearest"`` for
+    binary/label instance masks.
     """
-    _validate_history(operations)
     if len(masks) == 0:
         return []
     is_tensor = isinstance(masks[0], torch.Tensor)
     is_numpy = isinstance(masks, np.ndarray)
 
-    masks_t = masks if isinstance(masks, torch.Tensor) else torch.as_tensor(np.array(masks) if is_numpy else masks)
-    per_image = [{"masks": masks_t}]
-    for entry in reversed(operations):
-        op = _get_op_for_meta(entry)
-        per_image = op.revert_coords(per_image, _single_image_meta(entry))
-    out = per_image[0]["masks"]
-
+    results = [revert_mask_to_origin(m, operations, interpolation=interpolation) for m in masks]
     if is_tensor:
-        return out
-    return out.cpu().numpy() if is_numpy else list(out)
+        return torch.stack(results)
+    return np.stack(results) if is_numpy else results
 
 
-@torch.inference_mode()
-def revert_to_origin(pts, operations: list, **kwargs):
-    """
-    Revert Nx2 points or Nx4 xyxy boxes to original-image space.
-
-    Args:
-        pts: torch.Tensor / np.ndarray / list of shape (N, 2) or (N, 4).
-        operations: list of typed ``Meta`` records (one per preprocessing step).
-
-    kwargs:
-        round (bool): round and clamp output to non-negative integers. Default True.
-        verbose (bool): log intermediate values after each op. Default False.
-
-    Returns:
-        Same shape and type as input.
-    """
-    _validate_history(operations)
+def _transform_pts(pts, operations: list, *, reverse: bool, to_round: bool):
+    """Route Nx2 points / Nx4 xyxy boxes through the Reconstructor's coord transform."""
     if not len(pts):
         return pts
 
@@ -558,55 +496,46 @@ def revert_to_origin(pts, operations: list, **kwargs):
     if pts.ndim != 2 or pts.shape[1] not in (2, 4):
         raise Exception(f"pts should be Nx2 or Nx4, got shape: {pts.shape}")
 
-    verbose = kwargs.get("verbose", False)
-    field = "boxes" if pts.shape[1] == 4 else "segments"
-    wrapped = pts if field == "boxes" else [pts]
-    per_image = [{field: wrapped}]
-    for entry in reversed(operations):
-        op = _get_op_for_meta(entry)
-        per_image = op.revert_coords(per_image, _single_image_meta(entry))
-        if verbose:
-            logger.info(f"after {type(entry).__name__}, result: {per_image}")
+    recon = _reconstructor()
+    transform = recon.reconstruct_coordinates if reverse else recon.apply_coordinates
+    if pts.shape[1] == 4:
+        out = transform({"boxes": [pts]}, operations)["boxes"][0]
+    else:
+        out = transform({"segments": [[pts]]}, operations)["segments"][0][0]
 
-    out = per_image[0]["boxes"] if field == "boxes" else per_image[0]["segments"][0]
-
-    if kwargs.get("round", True):
+    if to_round:
         out = out.round().clamp(min=0)
     if is_tensor:
         return out
     return out.cpu().numpy() if is_numpy else out.tolist()
 
 
-def apply_operations(pts, operations: list):
+@torch.inference_mode()
+def revert_to_origin(pts, operations: list, round: bool = True, **kwargs):
+    """
+    Revert Nx2 points or Nx4 xyxy boxes to original-image space.
+
+    Args:
+        pts: torch.Tensor / np.ndarray / list of shape (N, 2) or (N, 4).
+        operations: list of typed ``Meta`` records (one per preprocessing step), batch size 1.
+
+    kwargs:
+        round (bool): round and clamp output to non-negative integers. Default True.
+
+    Returns:
+        Same shape and type as input.
+    """
+    return _transform_pts(pts, operations, reverse=True, to_round=round)
+
+
+@torch.inference_mode()
+def apply_operations(pts, operations: list, round: bool = True):
     """
     Forward-apply preprocessing ops to original-space Nx2 points or Nx4 boxes.
 
     Inverse of :func:`revert_to_origin`. Dispatches to each op's ``apply_coords``.
     """
-    _validate_history(operations)
-    if not len(pts):
-        return pts
-
-    is_tensor = isinstance(pts, torch.Tensor)
-    is_numpy = isinstance(pts, np.ndarray)
-    if not is_tensor:
-        pts = torch.from_numpy(pts) if is_numpy else torch.as_tensor(pts)
-
-    if pts.ndim != 2 or pts.shape[1] not in (2, 4):
-        raise Exception(f"pts should be Nx2 or Nx4, got shape: {pts.shape}")
-
-    field = "boxes" if pts.shape[1] == 4 else "segments"
-    wrapped = pts if field == "boxes" else [pts]
-    per_image = [{field: wrapped}]
-    for entry in operations:
-        op = _get_op_for_meta(entry)
-        per_image = op.apply_coords(per_image, _single_image_meta(entry))
-
-    out = per_image[0]["boxes"] if field == "boxes" else per_image[0]["segments"][0]
-    out = out.round().clamp(min=0)
-    if is_tensor:
-        return out
-    return out.cpu().numpy() if is_numpy else out.tolist()
+    return _transform_pts(pts, operations, reverse=False, to_round=round)
 
 
 def convert_key_to_int(dt):

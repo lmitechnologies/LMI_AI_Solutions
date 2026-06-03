@@ -384,7 +384,8 @@ class ODBase(abc.ABC):
         # masks
         masks = results.get("masks")
         if masks is not None and len(masks):
-            results["masks"] = pipeline_utils.revert_masks_to_origin(masks, operators, **kwargs)
+            # binary instance masks: nearest preserves them (bilinear erodes on upscale)
+            results["masks"] = pipeline_utils.revert_masks_to_origin(masks, operators, interpolation="nearest")
 
         # segments
         segments = results.get("segments")

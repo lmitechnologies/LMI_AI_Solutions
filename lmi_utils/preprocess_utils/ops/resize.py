@@ -50,6 +50,10 @@ class ResizeOperation(Operation[ResizeConfig, ResizeMeta]):
     config_cls = ResizeConfig
     meta_cls = ResizeMeta
 
+    def __init__(self, image_mode: str = "bilinear"):
+        """image_mode: ``revert_images`` interpolation. ``"nearest"`` for binary/label masks."""
+        self.image_mode = image_mode
+
     @torch.inference_mode()
     def forward(self, images: List[torch.Tensor], config: ResizeConfig) -> Tuple[List[torch.Tensor], ResizeMeta]:
         out_images: List[torch.Tensor] = []
@@ -95,7 +99,10 @@ class ResizeOperation(Operation[ResizeConfig, ResizeMeta]):
     @torch.inference_mode()
     def revert_images(self, images: List[torch.Tensor], meta: ResizeMeta) -> List[torch.Tensor]:
         _check_len(images, meta.src_sizes, "resize")
-        return [_revert_image_single(img, src, dst, pad) for img, src, dst, pad in zip(images, meta.src_sizes, meta.dst_sizes, meta.pads)]
+        return [
+            _revert_image_single(img, src, dst, pad, mode=self.image_mode)
+            for img, src, dst, pad in zip(images, meta.src_sizes, meta.dst_sizes, meta.pads)
+        ]
 
     @torch.inference_mode()
     def revert_coords(self, results: List[Dict[str, Any]], meta: ResizeMeta) -> List[Dict[str, Any]]:
@@ -117,7 +124,7 @@ def _check_len(items, sizes, name: str) -> None:
         raise ValueError(f"{name}: input length ({len(items)}) != metadata length ({len(sizes)})")
 
 
-def _revert_image_single(img: torch.Tensor, src: List[int], dst: List[int], pad: List[int]) -> torch.Tensor:
+def _revert_image_single(img: torch.Tensor, src: List[int], dst: List[int], pad: List[int], mode: str = "bilinear") -> torch.Tensor:
     pL, pR, pT, pB = pad
     if pL or pR or pT or pB:
         from lmi_utils.gadget_utils.pipeline_utils import fit_im
@@ -127,7 +134,7 @@ def _revert_image_single(img: torch.Tensor, src: List[int], dst: List[int], pad:
     dst_w, dst_h = dst
     if (src_w, src_h) == (dst_w, dst_h):
         return img
-    return resize_image(img, W=src_w, H=src_h)
+    return resize_image(img, W=src_w, H=src_h, mode=mode)
 
 
 def _apply_resize(result: Dict[str, Any], src: List[int], dst: List[int], pad: List[int], *, forward: bool) -> Dict[str, Any]:

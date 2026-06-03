@@ -285,7 +285,7 @@ class Yolov5(ODBase):
             segs = results["segments"][0]
             # convert mask to sensor space
             result_contours = [pipeline_utils.revert_to_origin(seg, operators) for seg in segs]
-            masks = pipeline_utils.revert_masks_to_origin(masks, operators)
+            masks = pipeline_utils.revert_masks_to_origin(masks, operators, interpolation="nearest")
             results_dict["segments"] = result_contours
             results_dict["masks"] = masks
 

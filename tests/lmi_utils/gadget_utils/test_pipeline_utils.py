@@ -498,6 +498,49 @@ class Test_revert_mask_to_origin:
             assert np.array_equal(mask2, mask3)
 
 
+class Test_revert_mask_interpolation:
+    @staticmethod
+    def _block_mask():
+        # 4x4 with a centered 2x2 foreground block (binary uint8)
+        m = np.zeros((4, 4), dtype=np.uint8)
+        m[1:3, 1:3] = 1
+        return m
+
+    def test_nearest_preserves_binary_area(self):
+        mask = self._block_mask()
+        ops = [_resize_entry(4, 4, 8, 8)]  # revert upscales 4x4 -> 8x8
+
+        nearest = pipeline_utils.revert_mask_to_origin(mask, ops, interpolation="nearest")
+        bilinear = pipeline_utils.revert_mask_to_origin(mask, ops)  # default bilinear
+
+        assert nearest.shape == (8, 8)
+        # nearest doubles the 2x2 block -> 4x4 = 16 fg px and stays binary
+        assert set(np.unique(nearest)).issubset({0, 1})
+        assert int((nearest > 0).sum()) == 16
+        # bilinear + uint8 truncation erodes the block
+        assert int((bilinear > 0).sum()) < int((nearest > 0).sum())
+
+    def test_stack_equals_loop_over_singular(self):
+        masks = np.stack([self._block_mask(), self._block_mask()])  # (2,4,4)
+        ops = [_resize_entry(4, 4, 8, 8)]
+
+        stacked = pipeline_utils.revert_masks_to_origin(masks, ops, interpolation="nearest")
+        loop = np.stack([pipeline_utils.revert_mask_to_origin(m, ops, interpolation="nearest") for m in masks])
+        assert np.array_equal(stacked, loop)
+
+    def test_stack_preserves_tensor_type(self):
+        m = torch.from_numpy(self._block_mask())
+        masks = torch.stack([m, m])
+        ops = [_resize_entry(4, 4, 8, 8)]
+
+        out = pipeline_utils.revert_masks_to_origin(masks, ops, interpolation="nearest")
+        assert isinstance(out, torch.Tensor)
+        assert out.shape == (2, 8, 8)
+
+    def test_empty_stack(self):
+        assert pipeline_utils.revert_masks_to_origin([], [_resize_entry(4, 4, 8, 8)]) == []
+
+
 class Test_static_manifest_validation:
     def _write_manifest(self, tmp_path, models):
         path = tmp_path / "manifest.json"
