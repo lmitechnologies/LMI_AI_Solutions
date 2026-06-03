@@ -315,17 +315,17 @@ class MyADPipeline(PipelineBase):
 
 ### 8. Forward preprocessing — typed step builders
 
-When you need to apply preprocessing **beyond what the model manifest declares** — e.g. an ad-hoc flip, an extra resize, or an explicit crop driven by an upstream detection — build the step list with `lmi_utils.preprocess_utils.steps`. Each alias is the typed `*Config` dataclass; calling it returns a `Config` instance that `Preprocessor.preprocess()` consumes directly.
+When you need to apply preprocessing **beyond what the model manifest declares** — e.g. extra flip, resize or crop — build the step list with `lmi_utils.preprocess_utils.steps`.
 
-**Forward aliases:**
+**Forward step builders:**
 
-| Alias | Required kwargs | Notes |
+| Step builder | Required kwargs | Notes |
 |---|---|---|
-| `steps.resize(width=..., height=..., preserve_aspect=False, mode="bilinear", id=None)` | — | Each dim defaults to the source image's matching dim |
-| `steps.crop(boxes=..., id=None)` | `boxes` | One `[x1, y1, x2, y2]` per image |
-| `steps.flip(lr=False, ud=False, id=None)` | — | Defaults to a no-op |
-| `steps.pad(width=None, height=None, pad=None, value=0, id=None)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` for explicit padding |
-| `steps.tile(tile_size=..., stride=..., scale_mode="padding", overlap_mode="average", id=None)` | `tile_size`, `stride` | Scalars are broadcast to `[h, w]` |
+| `steps.resize(width=..., height=..., preserve_aspect=False, mode="bilinear")` | — | Each dim defaults to the source image's matching dim |
+| `steps.crop(boxes=...)` | `boxes` | One `[x1, y1, x2, y2]` per image |
+| `steps.flip(lr=False, ud=False)` | — | Defaults to a no-op |
+| `steps.pad(width=None, height=None, pad=None, value=0)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` for explicit padding |
+| `steps.tile(tile_size=..., stride=..., scale_mode="padding", overlap_mode="average")` | `tile_size`, `stride` | Scalars are broadcast to `[h, w]` |
 
 **Usage — inside a `PipelineBase` subclass:**
 
@@ -344,22 +344,20 @@ class MyPipeline(PipelineBase):
 
         preprocessed, history = self.preprocessor.preprocess(image, ops)
         # preprocessed: list of transformed images, ready for model.predict(...)
-        # history:      list of typed Meta objects — feed into the revert path (see section 9)
+        # history:      record of what each step did — feed into the revert path (see section 9)
 ```
-
-`Preprocessor.preprocess()` returns `(processed_images, history)` where `history: List[Meta]` is the typed record of what was done. That history is the only input the revert path needs.
 
 ---
 
 ### 9. Revert path — typed history for manual reconstruction
 
-To map coordinates back to the original image, the revert path needs to know what each preprocessing step did. That record is the **history**: a list of typed `Meta` objects, one per step. **If the `Preprocessor` did the preprocessing**, you already have this history — just feed it back (the typical flow is in section 7). 
+To map coordinates back to the original image, the revert path needs to know what each preprocessing step did. That record is the **history** — one entry per step. **If the `Preprocessor` did the preprocessing**, you already have the history — just feed it back (the typical flow is in section 7).
 
-This section covers the other case: the image was preprocessed **outside** the `Preprocessor` (cropped by an earlier stage), so no history exists yet. You still want coordinates back in the original space, so you build the history yourself — one `Meta` per step — using the inverse aliases below.
+This section covers the other case: the image was preprocessed **outside** the `Preprocessor` (e.g. cropped by an earlier stage), so no history exists yet. You still want coordinates back in the original space, so you build the history yourself — one entry per step — using the revert step builders below.
 
-**Inverse aliases — build a `Meta` directly:**
+**Revert step builders:**
 
-| Alias | Key fields (per-image lists, length B) |
+| Step builder | Key fields (per-image lists, length B) |
 |---|---|
 | `steps.revert_crop(boxes=..., orig_sizes=...)` | `boxes` = `[x1, y1, x2, y2]` used; `orig_sizes` = `[W, H]` of the pre-crop canvas |
 | `steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...)` | `src_sizes` / `dst_sizes` = `[W, H]`; `pads` = `[L, R, T, B]` letterbox padding |
@@ -385,4 +383,4 @@ results2 = self.revert_preprocess(results1, history)
 # results2["boxes"][0] is now in the original (W, H) coordinate space.
 ```
 
-> **Impact:** The revert path is now **typed-only**. Code that built legacy operator dicts must migrate to `Meta` instances — `revert_to_origin`, `revert_mask_to_origin`, `revert_masks_to_origin`, and `apply_operations` keep their names but raise `TypeError` on dict input.
+> **Impact:** The revert path is now **typed-only**. Code that built legacy operator dicts must migrate to the revert step builders above — `revert_to_origin`, `revert_mask_to_origin`, `revert_masks_to_origin`, and `apply_operations` keep their names but raise `TypeError` on dict input.
