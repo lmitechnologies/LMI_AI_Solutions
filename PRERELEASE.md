@@ -17,6 +17,8 @@ This document covers all **breaking changes and new features** introduced after 
 **New Features**
 
 7. [Preprocessor & Reconstructor — batch processing with history-based reconstruction](#7-preprocessor--reconstructor--batch-processing-with-history-based-reconstruction)
+8. [Forward preprocessing — typed step builders (`lmi_utils.preprocess_utils.steps`)](#8-forward-preprocessing--typed-step-builders)
+9. [Revert path — typed history for manual reconstruction](#9-revert-path--typed-history-for-manual-reconstruction)
 
 
 ---
@@ -105,10 +107,7 @@ for boxes, scores, classes in zip(results["boxes"], results["scores"], results["
     ...  # process per image
 ```
 
-The `operators` parameter is also now formally typed:
-- `None` — no coordinate reversion (unchanged).
-- `list[dict]` — one operator chain applied to all images.
-- `list[list[dict]]` — per-image operator chains (must match batch size).
+The `operators` parameter is also now formally typed and uses the **unified preprocessing-history schema** — the same shape returned by `Preprocessor.preprocess()` and consumed by `Reconstructor`. See section 9 below.
 
 ---
 
@@ -223,7 +222,7 @@ OD model role from gofactory:
         "confidence_threshold": 0.5,
         "image_size": [640, 640],
         "preprocessing": [
-            {"type": "resize", "configuration": {"height": 640, "width": 640, "preserve_aspect": true}}
+            {"type": "resize", "id": "a1f2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d", "configuration": {"height": 640, "width": 640, "preserve_aspect": true}}
         ],
         "training_package": "Ultralytics",
         "training_algorithm": "Yolo"
@@ -275,8 +274,8 @@ AD model role from gofactory:
         "min_threshold": 0.0,
         "max_threshold": 1.0,
         "preprocessing": [
-            {"type": "resize", "configuration": {"height": 224, "width": 448, "preserve_aspect": true}},
-            {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}}
+            {"type": "resize", "id": "7b2d4e6f-8a9c-4b1d-9e3f-5a6b7c8d9e0f", "configuration": {"height": 224, "width": 448, "preserve_aspect": true}},
+            {"type": "tile", "id": "c3e5f7a9-1b2d-4c6e-8f0a-2b4d6f8a0c1e", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}}
         ],
         "training_package": "Anomalib1",
         "training_algorithm": "Patchcore"
@@ -311,3 +310,79 @@ class MyADPipeline(PipelineBase):
         final_score = final_scores[0]
 
 ```
+
+---
+
+### 8. Forward preprocessing — typed step builders
+
+When you need to apply preprocessing **beyond what the model manifest declares** — e.g. an ad-hoc flip, an extra resize, or an explicit crop driven by an upstream detection — build the step list with `lmi_utils.preprocess_utils.steps`. Each alias is the typed `*Config` dataclass; calling it returns a `Config` instance that `Preprocessor.preprocess()` consumes directly.
+
+**Forward aliases:**
+
+| Alias | Required kwargs | Notes |
+|---|---|---|
+| `steps.resize(width=..., height=..., preserve_aspect=False, mode="bilinear", id=None)` | — | Each dim defaults to the source image's matching dim |
+| `steps.crop(boxes=..., id=None)` | `boxes` | One `[x1, y1, x2, y2]` per image |
+| `steps.flip(lr=False, ud=False, id=None)` | — | Defaults to a no-op |
+| `steps.pad(width=None, height=None, pad=None, value=0, id=None)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` for explicit padding |
+| `steps.tile(tile_size=..., stride=..., scale_mode="padding", overlap_mode="average", id=None)` | `tile_size`, `stride` | Scalars are broadcast to `[h, w]` |
+
+**Usage — inside a `PipelineBase` subclass:**
+
+```python
+from lmi_utils.preprocess_utils import steps
+
+class MyPipeline(PipelineBase):
+    def predict(self, configs, inputs):
+        image = inputs["image"]
+
+        ops = [
+            steps.crop(boxes=[[100, 50, 900, 700]]),
+            steps.resize(width=640, height=640, preserve_aspect=True),
+            steps.flip(lr=True),
+        ]
+
+        preprocessed, history = self.preprocessor.preprocess(image, ops)
+        # preprocessed: list of transformed images, ready for model.predict(...)
+        # history:      list of typed Meta objects — feed into the revert path (see section 9)
+```
+
+`Preprocessor.preprocess()` returns `(processed_images, history)` where `history: List[Meta]` is the typed record of what was done. That history is the only input the revert path needs.
+
+---
+
+### 9. Revert path — typed history for manual reconstruction
+
+To map coordinates back to the original image, the revert path needs to know what each preprocessing step did. That record is the **history**: a list of typed `Meta` objects, one per step. **If the `Preprocessor` did the preprocessing**, you already have this history — just feed it back (the typical flow is in section 7). 
+
+This section covers the other case: the image was preprocessed **outside** the `Preprocessor` (cropped by an earlier stage), so no history exists yet. You still want coordinates back in the original space, so you build the history yourself — one `Meta` per step — using the inverse aliases below.
+
+**Inverse aliases — build a `Meta` directly:**
+
+| Alias | Key fields (per-image lists, length B) |
+|---|---|
+| `steps.revert_crop(boxes=..., orig_sizes=...)` | `boxes` = `[x1, y1, x2, y2]` used; `orig_sizes` = `[W, H]` of the pre-crop canvas |
+| `steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...)` | `src_sizes` / `dst_sizes` = `[W, H]`; `pads` = `[L, R, T, B]` letterbox padding |
+| `steps.revert_pad(pads=...)` | `pads` = `[L, R, T, B]` applied |
+| `steps.revert_flip(lr=..., ud=..., sizes=...)` | `lr`, `ud` flags; `sizes` = `[W, H]` of the flipped image |
+| `steps.revert_tile(tile_sizes=..., strides=..., im_sizes=..., scale_sizes=..., n_tiles=..., batch_sizes=..., num_channels=..., scale_modes=..., overlap_modes=...)` | One entry per *source* image |
+
+**Example — image was cropped upstream; revert OD detections into the original frame:**
+
+```python
+from lmi_utils.preprocess_utils import steps
+
+# foreground_im was already cropped from the full-resolution image at [x1, y1, x2, y2];
+# original canvas was W x H. Build the matching history and let predict() revert for us.
+history = [steps.revert_crop(boxes=[[x1, y1, x2, y2]], orig_sizes=[[W, H]])]
+
+results, _ = model.predict(foreground_im, 0.5, operators=history)
+# results["boxes"][0] is now in the original (W, H) coordinate space.
+
+# Or run inference first and revert afterward — the same history works with revert_preprocess():
+results1, _ = model.predict(foreground_im, 0.5)      # coords still in crop space
+results2 = self.revert_preprocess(results1, history)
+# results2["boxes"][0] is now in the original (W, H) coordinate space.
+```
+
+> **Impact:** The revert path is now **typed-only**. Code that built legacy operator dicts must migrate to `Meta` instances — `revert_to_origin`, `revert_mask_to_origin`, `revert_masks_to_origin`, and `apply_operations` keep their names but raise `TypeError` on dict input.

@@ -96,7 +96,7 @@ def _build_od_model_roles(version, model_path, preprocessing_steps):
     "version, preprocessing_steps, expected_types",
     [
         ("2", [{"type": "resize", "configuration": {"height": 640, "width": 640}}], ["resize"]),
-        ("3", [{"type": "resize", "configuration": {"height": 640, "width": 640, "preserve_aspect": True}}], ["resize"]),
+        ("3", [{"type": "resize", "id": "r1", "configuration": {"height": 640, "width": 640, "preserve_aspect": True}}], ["resize"]),
     ],
 )
 def test_pipeline_OD(version, preprocessing_steps, expected_types):
@@ -121,7 +121,7 @@ def test_pipeline_OD(version, preprocessing_steps, expected_types):
     ops_list = results["ops_list"]
 
     # Verify operators
-    actual_types = [op.get("type") for op in ops_list]
+    actual_types = [type(op).__name__.removesuffix("Meta").lower() for op in ops_list]
     assert actual_types == expected_types, f"Operator mismatch: {actual_types} != {expected_types}"
 
     # write outputs for manual inspection
@@ -215,12 +215,12 @@ def _build_ad_model_roles(version, model_path, preprocessing_steps):
             ],
             ["resize", "tile"],
         ),
-        ("3", [{"type": "resize", "configuration": {"height": 224, "width": 224}}], ["resize"]),
+        ("3", [{"type": "resize", "id": "r1", "configuration": {"height": 224, "width": 224}}], ["resize"]),
         (
             "3",
             [
-                {"type": "resize", "configuration": {"height": 224, "width": 448}},
-                {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}},
+                {"type": "resize", "id": "r1", "configuration": {"height": 224, "width": 448}},
+                {"type": "tile", "id": "t1", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}},
             ],
             ["resize", "tile"],
         ),
@@ -248,7 +248,7 @@ def test_pipeline_AD(version, preprocessing_steps, expected_types):
     ops_list = results["ops_list"]
 
     # Verify operators
-    actual_types = [op.get("type") for op in ops_list]
+    actual_types = [type(op).__name__.removesuffix("Meta").lower() for op in ops_list]
     assert actual_types == expected_types, f"Operator mismatch: {actual_types} != {expected_types}"
 
     # Verify shapes

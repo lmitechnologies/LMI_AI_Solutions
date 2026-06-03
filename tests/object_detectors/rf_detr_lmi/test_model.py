@@ -188,7 +188,9 @@ class Test_Rfdetr_Model:
         for idx, img in enumerate(imgs_coco):
             h, w = img.shape[:2]
             img_resized = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
-            operators = [{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}]
+            from lmi_utils.preprocess_utils.ops import ResizeMeta
+
+            operators = [ResizeMeta(src_sizes=[[w, h]], dst_sizes=[[IMAGE_SIZE, IMAGE_SIZE]], pads=[[0, 0, 0, 0]])]
 
             batch_outputs, _ = obj_detector.predict(img_resized, configs=0.5, operators=operators, return_segments=False)
             out = {k: v[0] for k, v in batch_outputs.items()}
@@ -209,7 +211,15 @@ class Test_Rfdetr_Model:
 
     def test_operators_batch(self, imgs_coco, obj_detector):
         original_sizes = [(img.shape[1], img.shape[0]) for img in imgs_coco]  # (w, h)
-        operators = [[{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}] for w, h in original_sizes]
+        from lmi_utils.preprocess_utils.ops import ResizeMeta
+
+        operators = [
+            ResizeMeta(
+                src_sizes=[[w, h] for w, h in original_sizes],
+                dst_sizes=[[IMAGE_SIZE, IMAGE_SIZE] for _ in original_sizes],
+                pads=[[0, 0, 0, 0] for _ in original_sizes],
+            )
+        ]
         imgs_resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
 
         batch_outputs, _ = obj_detector.predict(imgs_resized, configs=0.5, operators=operators)

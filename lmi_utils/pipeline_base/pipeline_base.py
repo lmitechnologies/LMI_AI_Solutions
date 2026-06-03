@@ -21,6 +21,8 @@ from lmi_utils.dataset_utils.representations import (
 
 # LMI AIS repo's modules
 from lmi_utils.image_utils.types import ImageBatch, ImageLike
+from lmi_utils.preprocess_utils import parse_steps
+from lmi_utils.preprocess_utils.operation import Meta
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 from object_detectors.od_core.object_detector import ObjectDetector
@@ -201,27 +203,40 @@ class PipelineBase(metaclass=ABCMeta):
             self.logger.info(f"Successfully loaded {model_source} model: {model_key}\n")
         self.logger.info(f"Final loaded models: {list(self.models.keys())}\n")
 
-    def preprocess(self, model_role: str, images: ImageBatch) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
+    def preprocess(
+        self,
+        model_role: str,
+        images: ImageBatch,
+    ) -> Tuple[List[ImageLike], List[Meta]]:
         """preprocess the image(s) based on the preprocessing steps in model_role.
+        Note: the ``crop-to-label`` preprocess is intentionally ignored.
 
         Pairs with revert_preprocess() as its inverse.
 
+        For manual preprocessing, call``self.preprocessor.preprocess(images, configs)`` directly,
+        where ``configs`` are typed Config objects, e.g.:
+
+            from lmi_utils.preprocess_utils import steps
+            configs = [
+                steps.resize(width=224, height=224, preserve_aspect=True),
+                steps.flip(lr=True),
+            ]
+
         Args:
-            model_role (str): the model role to be used for preprocessing.
-            images (ImageBatch): the image(s) to be preprocessed.
+            model_role: the model role to be used for preprocessing.
+            images: the image(s) to be preprocessed.
 
         Returns:
             list[ImageLike]: the preprocessed image(s).
-            list[dict]: the preprocessing steps, each with keys:
-                - "type" (str): the type of the preprocessing operation.
-                - "metadata" (list): the metadata returned by the preprocessing operation, used for reconstruction.
+            list[Meta]: typed per-step metadata for reconstruction.
         """
         if model_role not in self._preprocessing:
             raise ValueError(f"Not found global preprocessing steps for model role: {model_role}")
 
-        return self.preprocessor.preprocess(images, self._preprocessing[model_role])
+        configs = parse_steps(self._preprocessing[model_role])
+        return self.preprocessor.preprocess(images, configs)
 
-    def revert_preprocess(self, data, ops: List[Dict[str, Any]]):
+    def revert_preprocess(self, data, ops: List[Meta]):
         """Invert preprocessing transforms on either image data (AD) or detection coordinates (OD).
 
         Dispatches based on the type of ``data``:
@@ -230,10 +245,20 @@ class PipelineBase(metaclass=ABCMeta):
 
         Pairs with ``preprocess()`` as its inverse.
 
+        For manual reverting, build ``ops`` as typed Meta objects, e.g.:
+
+            from lmi_utils.preprocess_utils import steps
+            ops = [
+                steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...),
+                steps.revert_crop(boxes=..., orig_sizes=...),
+            ]
+
+        in the same order they were applied during preprocessing.
+
         Args:
             data: Either a list of images (AD) or a batch results dict with keys
                   boxes, scores, classes, masks, segments, points (OD).
-            ops (list[dict]): Preprocessing history returned by preprocess().
+            ops (list[Meta]): Preprocessing history returned by preprocess().
 
         Returns:
             list[ImageLike] for the AD path (reconstructed images), or

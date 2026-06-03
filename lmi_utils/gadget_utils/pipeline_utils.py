@@ -91,7 +91,7 @@ def fit_im_to_size(im, W=None, H=None, value=0):
     h, w = im.shape[:2]
     if W is None:
         W = w
-    elif H is None:
+    if H is None:
         H = h
 
     is_numpy = isinstance(im, np.ndarray)
@@ -233,6 +233,7 @@ def uint16_to_int16(profile):
 def profile_to_3d(profile, resolution, offset):
     """
     convert profile image to 3d sensor space
+
     args:
         profile(np array | tensor): the profile image
         resolution(tuple): (x_resolution, y_resolution, z_resolution)
@@ -276,6 +277,7 @@ def profile_to_3d(profile, resolution, offset):
 def pts_to_3d(pts, profile, resolution, offset):
     """
     convert list of 2d pixel locations to 3d sensor space
+
     args:
         pts(numpy | tensor): array of (x,y) points, with shape of Nx2
         profile(same type as pts): the profile image
@@ -322,8 +324,9 @@ def plot_one_box(
     hide_bbox=False,
 ):
     """
-    description: Plots one bounding box and mask (optinal) on image img,
-                 this function comes from YoLov5 project.
+    description:
+        Plots one bounding box and mask (optinal) on image img,
+        this function comes from YoLov5 project.
     param:
         box:    a box likes [x1,y1,x2,y2]
         img:    a opencv image object in BGR format
@@ -371,7 +374,8 @@ def plot_one_box(
 
 def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bbox=False):
     """
-    description: Plots one bounding rotated bbox on image img
+    description:
+        Plots one bounding rotated bbox on image img
     param:
         box:    a box likes [[x,y],[x,y],[x,y],[x,y]]
         img:    a opencv image object in BGR format
@@ -422,151 +426,187 @@ def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bb
         )
 
 
+_RECONSTRUCTOR_SINGLETON = None
+
+
+def _get_op_for_meta(meta):
+    """Resolve a Meta instance to the matching registered ``Operation``. Lazy import to avoid cycles."""
+    global _RECONSTRUCTOR_SINGLETON
+    if _RECONSTRUCTOR_SINGLETON is None:
+        from lmi_utils.preprocess_utils.reconstructor import Reconstructor
+
+        _RECONSTRUCTOR_SINGLETON = Reconstructor()
+    op = _RECONSTRUCTOR_SINGLETON._ops.get(type(meta))
+    if op is None:
+        raise ValueError(
+            f"unsupported meta type: {type(meta).__name__}. Registered: {sorted(t.__name__ for t in _RECONSTRUCTOR_SINGLETON._ops)}"
+        )
+    return op
+
+
+def _single_image_meta(meta):
+    """Slice a batched Meta down to its first source-image record.
+
+    Most pipeline_utils helpers operate on a single image; they pass per-step
+    Meta objects with batch size 1 (or take the first record from a larger batch).
+    """
+    from dataclasses import fields
+
+    fresh = type(meta).__new__(type(meta))
+    for f in fields(meta):
+        v = getattr(meta, f.name)
+        if isinstance(v, list):
+            object.__setattr__(fresh, f.name, v[:1])
+        else:
+            object.__setattr__(fresh, f.name, v)
+    return fresh
+
+
+def _validate_history(history: list) -> None:
+    from lmi_utils.preprocess_utils.operation import Meta
+
+    if not isinstance(history, list):
+        raise TypeError(f"operations must be a list, got {type(history).__name__}")
+    for i, entry in enumerate(history):
+        if not isinstance(entry, Meta):
+            raise TypeError(f"operations[{i}] must be a Meta instance, got {type(entry).__name__}")
+
+
 @torch.inference_mode()
 def revert_mask_to_origin(mask, operations: list):
     """
-    This func reverts a single mask image according to the operations list IN ORDER.
-    The operations list contains items as dictionary. The items are listed as follows:
-        1. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]>
-        2. <resize: [resized_w, resized_h, orig_w, orig_h]>
-        3. <flip: [flip left right, flip up down, im width, im height]>
-    args:
-        mask: np.array or torch.Tensor, shape (H,W) or (H,W,C)
-        operations : list of dict
+    Revert a single mask image to original-image space using a preprocessing history.
+
+    Args:
+        mask: np.array or torch.Tensor, shape (H, W) or (H, W, C).
+        operations: list of typed ``Meta`` records (one per preprocessing step), batch size 1.
+
+    Returns:
+        Mask reverted to original-image space, same type as input.
     """
+    _validate_history(operations)
     is_numpy = isinstance(mask, np.ndarray)
-    for operator in reversed(operations):
-        if "resize" in operator:
-            _, _, nw, nh = operator["resize"]
-            mask = resize_image(mask, nw, nh)
-        if "pad" in operator:
-            mask = fit_im(mask, -np.array(operator["pad"]))
-        if "flip" in operator:
-            lr, ud, im_w, im_h = operator["flip"]
-            if is_numpy:
-                mask = torch.from_numpy(mask)
-            if lr:
-                mask = torch.flip(mask, [1])
-            if ud:
-                mask = torch.flip(mask, [0])
-            if is_numpy:
-                mask = mask.numpy()
-    return mask
+    if is_numpy:
+        mask = torch.from_numpy(mask)
+
+    one_channel = mask.ndim == 2
+    if one_channel:
+        mask = mask.unsqueeze(-1)
+
+    for entry in reversed(operations):
+        op = _get_op_for_meta(entry)
+        mask = op.revert_images([mask], _single_image_meta(entry))[0]
+
+    if one_channel:
+        mask = mask.squeeze(-1)
+    return mask.numpy() if is_numpy else mask
 
 
 @torch.inference_mode()
 def revert_masks_to_origin(masks, operations: list):
-    results = []
+    """
+    Revert a stack of instance masks (N, H, W) to original-image space.
+
+    Treats the stack as instance masks bound to a single source image — applies
+    each op's coord-space mask transform, not the image-space ``revert_images``
+    used by :func:`revert_mask_to_origin`. Routes through the Operation registry
+    so resize/pad/crop all do the right thing for instance masks.
+    """
+    _validate_history(operations)
     if len(masks) == 0:
-        return results
+        return []
     is_tensor = isinstance(masks[0], torch.Tensor)
     is_numpy = isinstance(masks, np.ndarray)
-    for m in masks:
-        results.append(revert_mask_to_origin(m, operations))
+
+    masks_t = masks if isinstance(masks, torch.Tensor) else torch.as_tensor(np.array(masks) if is_numpy else masks)
+    per_image = [{"masks": masks_t}]
+    for entry in reversed(operations):
+        op = _get_op_for_meta(entry)
+        per_image = op.revert_coords(per_image, _single_image_meta(entry))
+    out = per_image[0]["masks"]
+
     if is_tensor:
-        return torch.stack(results)
-    return np.stack(results) if is_numpy else results
+        return out
+    return out.cpu().numpy() if is_numpy else list(out)
 
 
 @torch.inference_mode()
 def revert_to_origin(pts, operations: list, **kwargs):
     """
-    revert the points to original image space.
-    This func executes operations in the REVERSED order.
-    The operations list contains items as dictionary. The supported items are listed following:
-        1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
-        2. <pad: [pad_left, pad_right, pad_top, pad_bottom]>
-        3. <resize: [resized_w, resized_h, orig_w, orig_h]>
-        4. <flip: [flip left-right (True/False), flip up-down (True/False), image width, image height]>
-    args:
-        pts: Nx2 or Nx4, where each row =(X_i,Y_i)
-        operations : list of dict
+    Revert Nx2 points or Nx4 xyxy boxes to original-image space.
+
+    Args:
+        pts: torch.Tensor / np.ndarray / list of shape (N, 2) or (N, 4).
+        operations: list of typed ``Meta`` records (one per preprocessing step).
+
+    kwargs:
+        round (bool): round and clamp output to non-negative integers. Default True.
+        verbose (bool): log intermediate values after each op. Default False.
+
+    Returns:
+        Same shape and type as input.
     """
+    _validate_history(operations)
     if not len(pts):
         return pts
+
     is_tensor = isinstance(pts, torch.Tensor)
     is_numpy = isinstance(pts, np.ndarray)
     if not is_tensor:
         pts = torch.from_numpy(pts) if is_numpy else torch.as_tensor(pts)
 
-    if pts.ndim != 2 or (pts.shape[1] != 2 and pts.shape[1] != 4):
+    if pts.ndim != 2 or pts.shape[1] not in (2, 4):
         raise Exception(f"pts should be Nx2 or Nx4, got shape: {pts.shape}")
 
     verbose = kwargs.get("verbose", False)
-    r, c = pts.shape
-    for op in reversed(operations):
-        if "resize" in op:
-            tw, th, orig_w, orig_h = op["resize"]
-            r = torch.tensor([tw / orig_w, th / orig_h], device=pts.device)
-            if c == 4:
-                r = r.repeat(2).unsqueeze(0)
-            pts = pts / r
-        elif "pad" in op:
-            pad_L, pad_R, pad_T, pad_B = op["pad"]
-            p = torch.tensor([pad_L, pad_T], device=pts.device)
-            if c == 4:
-                p = p.repeat(2).unsqueeze(0)
-            pts = pts - p
-        elif "stretch" in op:
-            s = torch.tensor(op["stretch"], device=pts.device)
-            if c == 4:
-                s = s.repeat(2).unsqueeze(0)
-            pts = pts / s
-        elif "flip" in op:
-            lr, ud, im_w, im_h = op["flip"]
-            idx = [0, 2] if c == 4 else [0]
-            idy = [1, 3] if c == 4 else [1]
-            if lr:
-                pts[:, idx] = im_w - pts[:, idx]
-                if c == 4:
-                    pts[:, [0, 2]] = pts[:, [2, 0]]
-            if ud:
-                pts[:, idy] = im_h - pts[:, idy]
-                if c == 4:
-                    pts[:, [1, 3]] = pts[:, [3, 1]]
-        else:
-            raise Exception(f"unsupported operation: {op}")
-
+    field = "boxes" if pts.shape[1] == 4 else "segments"
+    wrapped = pts if field == "boxes" else [pts]
+    per_image = [{field: wrapped}]
+    for entry in reversed(operations):
+        op = _get_op_for_meta(entry)
+        per_image = op.revert_coords(per_image, _single_image_meta(entry))
         if verbose:
-            logger.info(f"after {op}, pts: {pts}")
+            logger.info(f"after {type(entry).__name__}, result: {per_image}")
+
+    out = per_image[0]["boxes"] if field == "boxes" else per_image[0]["segments"][0]
 
     if kwargs.get("round", True):
-        pts = pts.round().clamp(min=0)
+        out = out.round().clamp(min=0)
     if is_tensor:
+        return out
+    return out.cpu().numpy() if is_numpy else out.tolist()
+
+
+def apply_operations(pts, operations: list):
+    """
+    Forward-apply preprocessing ops to original-space Nx2 points or Nx4 boxes.
+
+    Inverse of :func:`revert_to_origin`. Dispatches to each op's ``apply_coords``.
+    """
+    _validate_history(operations)
+    if not len(pts):
         return pts
-    return pts.numpy() if is_numpy else pts.tolist()
 
+    is_tensor = isinstance(pts, torch.Tensor)
+    is_numpy = isinstance(pts, np.ndarray)
+    if not is_tensor:
+        pts = torch.from_numpy(pts) if is_numpy else torch.as_tensor(pts)
 
-def apply_operations(pts: np.ndarray, operations: list):
-    """
-    apply operations to pts.
-    The operations list contains each item as a dictionary. The items are listed as follows:
-        1. <stretch: [stretch_ratio_x, stretch_ratio_y]>
-        2. <pad: [pad_left_pixels, pad_right_pixels, pad_top_pixels, pad_bottom_pixels]>
-        3. <resize: [resized_w, resized_h, orig_w, orig_h]>
-        4. <flip: [flip left-right (True/False), flip up-down (True/False), image width, image height]>
-    args:
-        pts: Nx2 or Nx4, where each row =(X_i,Y_i)
-        operations : list of dict
-    """
-    new_ops = []
-    for op in operations:
-        if "resize" in op:
-            tw, th, orig_w, orig_h = op["resize"]
-            tmp = {"resize": [orig_w, orig_h, tw, th]}
-        elif "pad" in op:
-            pad_L, pad_R, pad_T, pad_B = op["pad"]
-            tmp = {"pad": [-pad_L, -pad_R, -pad_T, -pad_B]}
-        elif "stretch" in op:
-            sx, sy = op["stretch"]
-            tmp = {"stretch": [1 / sx, 1 / sy]}
-        elif "flip" in op:
-            lr, ud, im_w, im_h = op["flip"]
-            tmp = {"flip": [lr, ud, im_w, im_h]}
-        else:
-            raise Exception(f"unsupported operation: {op}")
-        new_ops.append(tmp)
-    return revert_to_origin(pts, new_ops[::-1])
+    if pts.ndim != 2 or pts.shape[1] not in (2, 4):
+        raise Exception(f"pts should be Nx2 or Nx4, got shape: {pts.shape}")
+
+    field = "boxes" if pts.shape[1] == 4 else "segments"
+    wrapped = pts if field == "boxes" else [pts]
+    per_image = [{field: wrapped}]
+    for entry in operations:
+        op = _get_op_for_meta(entry)
+        per_image = op.apply_coords(per_image, _single_image_meta(entry))
+
+    out = per_image[0]["boxes"] if field == "boxes" else per_image[0]["segments"][0]
+    out = out.round().clamp(min=0)
+    if is_tensor:
+        return out
+    return out.cpu().numpy() if is_numpy else out.tolist()
 
 
 def convert_key_to_int(dt):
@@ -684,6 +724,25 @@ def _resolve_artifact_paths(model: Dict[str, Any], manifest_dir: Path) -> None:
                 artifact_data["model_path"] = str((manifest_dir / path_obj).resolve())
 
 
+def _validate_preprocessing_steps(models: List[Dict[str, Any]]) -> None:
+    """Fail fast on bad preprocessing steps in a hand-authored static manifest."""
+    from lmi_utils.preprocess_utils._parser import STEP_TYPES
+
+    ignored = {"crop-to-label"}
+
+    for model in models:
+        role = model.get("model_role", "<unknown>")
+        details = model.get("details") or {}
+        steps = details.get("preprocessing") or []
+        for i, step in enumerate(steps):
+            op_type = step.get("type", "")
+            if op_type in ignored:
+                continue
+            cfg_cls = STEP_TYPES.get(op_type)
+            if cfg_cls is None:
+                raise ValueError(f"Model role '{role}': preprocessing step at index {i} has unknown type '{op_type}'.")
+
+
 def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     """
     Create models manifest from a static manifest json file.
@@ -692,9 +751,8 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
         manifest_json_path (str): path to the manifest JSON file.
         **kwargs: optional keyword arguments. Recognized:
             version (str): schema version of the manifest. Defaults to "3".
-                "2" expects flat fields under `details` and synthesizes a `configs` block;
-                "3" expects a manifest already shaped per schema_3 and only resolves
-                artifact paths.
+                v3 additionally validates preprocessing steps (rejecting unknown
+                types) before building configs.
     """
     version = kwargs.get("version", "3")
     logger.info(f"Loading static manifest from {manifest_json_path} with schema version {version}")
@@ -711,6 +769,9 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
         raise ValueError(f"Unsupported static manifest version: {version}")
 
     manifest_v3 = version == "3"
+    if manifest_v3:
+        _validate_preprocessing_steps(models)
+
     keys_to_copy = (
         ["anomaly_size", "min_threshold", "max_threshold", "iou"]
         if manifest_v3

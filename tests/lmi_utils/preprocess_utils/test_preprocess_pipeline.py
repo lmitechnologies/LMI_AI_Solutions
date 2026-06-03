@@ -2,20 +2,14 @@ import numpy as np
 import pytest
 import torch
 
+from lmi_utils.preprocess_utils import steps
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
 
 @pytest.fixture
 def pipeline():
-    """
-    Initializes the real Preprocessor and Reconstructor.
-    """
-    # Initialize classes
-    prep = Preprocessor()
-    recon = Reconstructor()
-
-    return prep, recon
+    return Preprocessor(), Reconstructor()
 
 
 @pytest.mark.parametrize("input_type", ["numpy", "torch"])
@@ -27,9 +21,7 @@ def test_tiling_lossless_reconstruction(pipeline, input_type):
     else:
         input_image = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
 
-    steps = [{"type": "tile", "configuration": {"tile_size": 50, "stride": 50}}]
-
-    final_images, ops = prep.preprocess(input_image, steps)
+    final_images, ops = prep.preprocess(input_image, [steps.tile(tile_size=50, stride=50)])
 
     assert len(final_images) == 4
     assert final_images[0].shape == (50, 50, 3)
@@ -56,13 +48,13 @@ def test_nested_pipeline_flow(pipeline, input_type):
     else:
         input_image = np.random.randint(0, 256, (128, 128, 3), dtype=np.uint8)
 
-    steps = [
-        {"type": "resize", "configuration": {"width": 64, "height": 64}},
-        {"type": "tile", "configuration": {"tile_size": 32, "stride": 32}},
-        {"type": "tile", "configuration": {"tile_size": 16, "stride": 16}},
+    configs = [
+        steps.resize(width=64, height=64),
+        steps.tile(tile_size=32, stride=32),
+        steps.tile(tile_size=16, stride=16),
     ]
 
-    final_images, ops = prep.preprocess(input_image, steps)
+    final_images, ops = prep.preprocess(input_image, configs)
 
     assert len(final_images) == 16
     assert final_images[0].shape == (16, 16, 3)
@@ -88,15 +80,12 @@ def test_nested_pipeline_flow(pipeline, input_type):
 )
 def test_nested_tiling_lossless(pipeline, input_shape, tile_configs, expected_count, final_shape):
     prep, recon = pipeline
-    steps = [{"type": "tile", "configuration": {"tile_size": ts, "stride": st}} for ts, st in tile_configs]
+    configs = [steps.tile(tile_size=ts, stride=st) for ts, st in tile_configs]
 
     input_image = np.random.randint(0, 256, input_shape, dtype=np.uint8)
-    final_images, ops = prep.preprocess(input_image, steps)
+    final_images, ops = prep.preprocess(input_image, configs)
 
-    # Ensure the number of tiles is right
     assert len(final_images) == expected_count
-
-    # Ensure the shapes of final images are right
     for img in final_images:
         assert img.shape == final_shape
 
@@ -111,8 +100,6 @@ def test_nested_tiling_lossless(pipeline, input_shape, tile_configs, expected_co
 
 @pytest.mark.parametrize("input_type", ["numpy", "torch"])
 def test_incremental_reconstruction(pipeline, input_type):
-    """Test that reconstruction works correctly at each stage of a multi-step pipeline."""
-
     def check_integrity(original, restored):
         is_list = isinstance(original, list)
         if not is_list:
@@ -142,20 +129,19 @@ def test_incremental_reconstruction(pipeline, input_type):
             np.random.randint(0, 256, (150, 140, 3), dtype=np.uint8),
         ]
 
-    steps = [
-        {"type": "resize", "configuration": {"width": 64, "height": 64}},
-        {"type": "tile", "configuration": {"tile_size": 32, "stride": 32}},
-        {"type": "tile", "configuration": {"tile_size": 16, "stride": 8}},
-        {"type": "tile", "configuration": {"tile_size": 8, "stride": 4}},
+    pipeline_steps = [
+        steps.resize(width=64, height=64),
+        steps.tile(tile_size=32, stride=32),
+        steps.tile(tile_size=16, stride=8),
+        steps.tile(tile_size=8, stride=4),
     ]
 
     intermediate_states = []
-    for i in range(len(steps)):
-        images, ops = prep.preprocess(input_images, steps[: i + 1])
+    for i in range(len(pipeline_steps)):
+        images, ops = prep.preprocess(input_images, pipeline_steps[: i + 1])
         intermediate_states.append((images, ops))
 
-    # verify reconstruction at each stage
-    for i in range(len(intermediate_states) - 1, 0, -1):  # skip resize because lossy
+    for i in range(len(intermediate_states) - 1, 0, -1):
         inputs = intermediate_states[i - 1][0]
         images, ops = intermediate_states[i]
         restored = recon.reconstruct_images(images, ops[-1:])
@@ -166,14 +152,12 @@ def test_tiling_images_with_varying_channels(pipeline):
     prep, recon = pipeline
 
     input_images = [
-        torch.randint(0, 256, (100, 100), dtype=torch.uint8),  # Single channel image
-        torch.randint(0, 256, (120, 130, 1), dtype=torch.uint8),  # Single channel with channel dim
-        torch.randint(0, 256, (80, 90, 3), dtype=torch.uint8),  # Regular 3-channel image
+        torch.randint(0, 256, (100, 100), dtype=torch.uint8),
+        torch.randint(0, 256, (120, 130, 1), dtype=torch.uint8),
+        torch.randint(0, 256, (80, 90, 3), dtype=torch.uint8),
     ]
 
-    steps = [{"type": "tile", "configuration": {"tile_size": 50, "stride": 50}}]
-
-    final_images, ops = prep.preprocess(input_images, steps)
+    final_images, ops = prep.preprocess(input_images, [steps.tile(tile_size=50, stride=50)])
 
     expected_tile_counts = [4, 9, 4]
     assert len(final_images) == sum(expected_tile_counts)

@@ -89,3 +89,29 @@ def test_none_entries_skipped(schema3):
     schema3["disabled_model"] = None
     mc = ModelCollectionV3.from_dict(schema3)
     assert "disabled_model" not in mc.models
+
+
+def test_crop_to_label_step_ignored(schema3):
+    # Legacy manifests may still carry a removed `crop-to-label` step; it is dropped
+    # from the resolved chain rather than raising, for backward compatibility.
+    steps = schema3["top_od_defect"]["details"]["preprocessing"]
+    steps.insert(0, {"type": "crop-to-label", "configuration": {"label": "BOTTLE-BBOX"}})
+
+    pre = ModelCollectionV3.from_dict(schema3).get_global_preprocessing()
+    types = [op["type"] for op in pre["top_od_defect"]]
+    assert "crop-to-label" not in types
+
+
+def test_preprocessing_step_missing_id_stays_none(schema3):
+    # Local manifests may omit `id`; it is not autofilled, and the resolved chain
+    # omits the key entirely rather than emitting a null id.
+    steps = schema3["top_od_defect"]["details"]["preprocessing"]
+    for step in steps:
+        step.pop("id", None)
+
+    mc = ModelCollectionV3.from_dict(schema3)
+    parsed = mc.models["top_od_defect"].details.preprocessing
+    assert all(step.id is None for step in parsed)
+
+    ops = mc.get_global_preprocessing()["top_od_defect"]
+    assert all("id" not in op for op in ops)
