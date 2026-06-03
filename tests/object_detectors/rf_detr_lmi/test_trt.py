@@ -75,12 +75,20 @@ def test_trt_warmup(trt_model):
 
 
 def test_operators_batch(imgs_coco, trt_model):
+    from lmi_utils.preprocess_utils.ops import ResizeMeta
+
     # Non-square inputs (!= engine input) exercise the antialiased stretch guard together with
     # per-image operators that revert boxes/masks back to each original frame.
     original_sizes = [img.shape[:2] for img in imgs_coco]  # (h, w)
     resized_dims = [OFF_SIZES[i % len(OFF_SIZES)] for i in range(len(imgs_coco))]
     imgs_resized = [cv2.resize(img, (rw, rh)) for img, (rh, rw) in zip(imgs_coco, resized_dims)]
-    operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
+    operators = [
+        ResizeMeta(
+            src_sizes=[[w, h] for (h, w) in original_sizes],
+            dst_sizes=[[rw, rh] for (rh, rw) in resized_dims],
+            pads=[[0, 0, 0, 0] for _ in original_sizes],
+        )
+    ]
 
     batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators)
     assert len(batch_outputs["boxes"]) == len(imgs_coco)
@@ -109,12 +117,20 @@ def test_empty(trt_model):
 
 
 def test_operators_batch_cuda(imgs_coco, trt_model):
+    from lmi_utils.preprocess_utils.ops import ResizeMeta
+
     # Non-square CUDA-tensor inputs (!= engine input) exercise the on-device antialiased stretch
     # guard together with per-image operators that revert boxes/masks back to each original frame.
     original_sizes = [img.shape[:2] for img in imgs_coco]  # (h, w)
     resized_dims = [OFF_SIZES[i % len(OFF_SIZES)] for i in range(len(imgs_coco))]
     imgs_resized = [torch.from_numpy(cv2.resize(img, (rw, rh))).cuda() for img, (rh, rw) in zip(imgs_coco, resized_dims)]
-    operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
+    operators = [
+        ResizeMeta(
+            src_sizes=[[w, h] for (h, w) in original_sizes],
+            dst_sizes=[[rw, rh] for (rh, rw) in resized_dims],
+            pads=[[0, 0, 0, 0] for _ in original_sizes],
+        )
+    ]
 
     batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators)
     assert len(batch_outputs["boxes"]) == len(imgs_coco)

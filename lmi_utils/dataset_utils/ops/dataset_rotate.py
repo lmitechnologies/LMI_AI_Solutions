@@ -13,62 +13,20 @@ from lmi_utils.label_utils.bbox_utils import get_rotated_bbox, rotate
 logger = logging.getLogger(__name__)
 
 
-def order_points(pts):
-    """
-    Orders 4 points in the order:
-      top-left, top-right, bottom-right, bottom-left.
-
-    Args:
-        pts (np.array): A (4, 2) array of points.
-
-    Returns:
-        np.array: A (4, 2) array of ordered points.
-    """
-    # Initialize a list of coordinates that will be ordered.
-    rect = np.zeros((4, 2), dtype="float32")
-
-    # The top-left point will have the smallest sum, whereas
-    # the bottom-right will have the largest sum.
-    s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]
-    rect[2] = pts[np.argmax(s)]
-
-    # The top-right point will have the smallest difference
-    # (y - x), whereas the bottom-left will have the largest difference.
-    diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)]
-    rect[3] = pts[np.argmax(diff)]
-
-    return rect
-
-
 def rotate_bbox_corners(corners, M):
-    """
-    Rotates the corners of a bounding box using the affine transformation
-    matrix M and sorts the resulting corners in the order:
-    top-left, top-right, bottom-right, bottom-left.
+    """Apply 2x3 affine ``M`` to (4, 2) corners. Input winding order is preserved.
 
     Args:
-        corners (array-like): A (4,2) array (or list) of bounding box corners.
+        corners (array-like): A (4, 2) array (or list) of bounding box corners.
         M (np.array): A 2x3 affine transformation matrix (e.g., from cv2.getRotationMatrix2D).
 
     Returns:
-        np.array: A (4,2) array of the rotated and ordered bounding box corners.
+        np.array: A (4, 2) array of transformed corners in the same winding as the input.
     """
-    # Convert corners to a numpy array of type float32.
     corners = np.array(corners, dtype="float32")
-
-    # Convert corners to homogeneous coordinates by appending a column of ones.
     ones = np.ones((corners.shape[0], 1), dtype="float32")
-    corners_hom = np.hstack([corners, ones])  # shape (4, 3)
-
-    # Apply the affine transformation to each corner.
-    rotated_corners = np.dot(M, corners_hom.T).T  # shape (4, 2)
-
-    # Order the rotated corners.
-    ordered_corners = order_points(rotated_corners)
-
-    return ordered_corners.astype(np.float32)
+    corners_hom = np.hstack([corners, ones])
+    return np.dot(M, corners_hom.T).T.astype(np.float32)
 
 
 def rotate_dataset(dataset, images, angle, counter_clockwise=False):

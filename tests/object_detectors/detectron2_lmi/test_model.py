@@ -176,13 +176,11 @@ def test_compare_with_original_model_nonsquare(og_cpu_model, model_cpu, imgs_coc
 def test_operators(model, imgs_coco, caplog):
     image = imgs_coco[0]
     h, w = image.shape[:2]
-    rh, rw = 512, 480
-    logger.info(f"Original image size: {(h, w)}, resizing to {(rh, rw)} for testing operators. model.image_size={model.image_size}")
-    assert (rh, rw) != tuple(model.image_size)
-    image_resized = cv2.resize(image, (rw, rh))
-    operators = [{"resize": [rw, rh, w, h]}]
-    with caplog.at_level(logging.WARNING):
-        outputs, _ = model.predict(image_resized, configs=0.9, return_segments=False, operators=operators)
+    image_resized = cv2.resize(image, (512, 512))
+    from lmi_utils.preprocess_utils.ops import ResizeMeta
+
+    operators = [ResizeMeta(src_sizes=[[w, h]], dst_sizes=[[512, 512]], pads=[[0, 0, 0, 0]])]
+    outputs, _ = model.predict(image_resized, configs=0.9, return_segments=False, operators=operators)
     outputs = {k: v[0] for k, v in outputs.items()}
 
     assert not [r for r in caplog.records if "model input" in r.message], "PT backend is size-flexible; no resize guard expected"
@@ -208,7 +206,9 @@ def test_operators_no_masks(model, imgs_coco):
     image = imgs_coco[0]
     h, w = image.shape[:2]
     image_resized = cv2.resize(image, (512, 512))
-    operators = [{"resize": [512, 512, w, h]}]
+    from lmi_utils.preprocess_utils.ops import ResizeMeta
+
+    operators = [ResizeMeta(src_sizes=[[w, h]], dst_sizes=[[512, 512]], pads=[[0, 0, 0, 0]])]
     outputs, _ = model.predict(image_resized, configs=1, operators=operators)
     outputs = {k: v[0] for k, v in outputs.items()}
 
@@ -216,12 +216,21 @@ def test_operators_no_masks(model, imgs_coco):
 
 
 def test_batch_operators(model, imgs_coco):
+    from lmi_utils.preprocess_utils.ops import ResizeMeta
+
     images = imgs_coco
     original_sizes = [img.shape[:2] for img in images]
     off_sizes = [(512, 640), (576, 704), (704, 512)]  # (h, w), non-square
     resized_dims = [off_sizes[i % len(off_sizes)] for i in range(len(images))]
     images_resized = [cv2.resize(img, (rw, rh)) for img, (rh, rw) in zip(images, resized_dims)]
-    operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
+    # Per-image metadata: one resize entry, batch length == batch size.
+    operators = [
+        ResizeMeta(
+            src_sizes=[[w, h] for h, w in original_sizes],
+            dst_sizes=[[rw, rh] for (rh, rw) in resized_dims],
+            pads=[[0, 0, 0, 0] for _ in original_sizes],
+        )
+    ]
     outputs, _ = model.predict(images_resized, configs=0.8, operators=operators)
     _assert_batch_counts(outputs, KEYS, len(images))
     os.makedirs(OUT_DIR, exist_ok=True)

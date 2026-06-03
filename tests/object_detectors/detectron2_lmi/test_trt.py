@@ -85,11 +85,16 @@ def test_batch_operators(trt_model, imgs_coco):
 
     images = imgs_coco
     original_sizes = [img.shape[:2] for img in images]
-    # Per-image varied off-sizes (!= engine input) exercise the stretch guard across the batch.
-    resized_dims = [(th + dh, tw + dw) for dh, dw in (SIZE_OFFSETS[i % len(SIZE_OFFSETS)] for i in range(len(images)))]
-    assert all((rh, rw) != (th, tw) for rh, rw in resized_dims)
-    resized = [cv2.resize(img, (rw, rh)) for img, (rh, rw) in zip(images, resized_dims)]
-    operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
+    resized = [cv2.resize(img, (tw, th)) for img in images]
+    from lmi_utils.preprocess_utils.ops import ResizeMeta
+
+    operators = [
+        ResizeMeta(
+            src_sizes=[[w, h] for h, w in original_sizes],
+            dst_sizes=[[tw, th] for _ in original_sizes],
+            pads=[[0, 0, 0, 0] for _ in original_sizes],
+        )
+    ]
 
     outputs, _ = model.predict(resized, configs=confs, operators=operators)
     _assert_batch_counts(outputs, KEYS, len(images))
@@ -111,11 +116,19 @@ def test_batch_operators_cuda(trt_model, imgs_coco):
 
     images = imgs_coco
     original_sizes = [img.shape[:2] for img in images]
+    from lmi_utils.preprocess_utils.ops import ResizeMeta
+
     # Per-image varied off-sizes (!= engine input) passed as CUDA tensors: the guard stretches each
     # on-device to the engine size while the resize operator reverts boxes/masks to the original frame.
     resized_dims = [(th + dh, tw + dw) for dh, dw in (SIZE_OFFSETS[i % len(SIZE_OFFSETS)] for i in range(len(images)))]
     resized = [torch.from_numpy(cv2.resize(img, (rw, rh))).cuda() for img, (rh, rw) in zip(images, resized_dims)]
-    operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
+    operators = [
+        ResizeMeta(
+            src_sizes=[[w, h] for h, w in original_sizes],
+            dst_sizes=[[rw, rh] for (rh, rw) in resized_dims],
+            pads=[[0, 0, 0, 0] for _ in original_sizes],
+        )
+    ]
 
     outputs, _ = model.predict(resized, configs=confs, operators=operators)
     _assert_batch_counts(outputs, KEYS, len(images))

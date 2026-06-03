@@ -234,8 +234,9 @@ class Yolov5(ODBase):
         Args:
             image (np.ndarry): the input image
             configs (dict): a dictionary of the confidence thresholds for each class, e.g., {'classA':0.5, 'classB':0.6}
-            operators (list): a list of dictionaries of the image preprocess operators,
-                such as {'resize':[resized_w, resized_h, orig_w, orig_h]}, {'pad':[pad_left, pad_right, pad_top, pad_bot]}
+            operators (list): unified preprocessing history (single-image; the yolov5 wrapper
+                runs one image at a time). Entries are ``{"type", "metadata": [<per_image_dict>], "id"?}``.
+                See PRERELEASE §9 for the schema.
             iou (float): the iou threshold for non-maximum suppression. defaults to 0.4
             agnostic (bool): If True, the model is agnostic to the number of classes, and all classes will be considered as one.
             max_det (int): The maximum number of detections to return. defaults to 300.

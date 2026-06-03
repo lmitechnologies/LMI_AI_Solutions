@@ -15,7 +15,7 @@ from lmi_utils.image_utils.img_resize import resize_and_pad
         ((10, 10, 3), 1000, 1000),
     ],
 )
-def test_resize_and_pad_stretch(input_shape, target_w, target_h):
+def test_resize_and_pad(input_shape, target_w, target_h):
     input_image = np.zeros(input_shape, dtype=np.uint8)
     h, w = input_shape[:2]
 
@@ -23,7 +23,11 @@ def test_resize_and_pad_stretch(input_shape, target_w, target_h):
 
     assert output.shape == (target_h, target_w, 3)
     assert len(ops) == 1
-    assert ops[0]["resize"] == [target_w, target_h, w, h]
+    assert ops[0]["type"] == "resize"
+    md = ops[0]["metadata"][0]
+    assert md["src_size"] == [w, h]
+    assert md["dst_size"] == [target_w, target_h]
+    assert "pad" not in md
 
 
 @pytest.mark.parametrize(
@@ -42,21 +46,21 @@ def test_resize_and_pad_preserve_aspect(input_shape, target_w, target_h, expecte
     output, ops = resize_and_pad(input_image, width=target_w, height=target_h, preserve_aspect=True, return_operators=True)
 
     assert output.shape == (target_h, target_w, 3)
+    assert len(ops) == 1
+    assert ops[0]["type"] == "resize"
 
-    # Verify Resize Logic
-    # Operator format: [new_w, new_h, old_w, old_h]
-    assert ops[0]["resize"] == [expected_resize[0], expected_resize[1], w, h]
+    md = ops[0]["metadata"][0]
+    assert md["src_size"] == [w, h]
+    assert md["dst_size"] == [expected_resize[0], expected_resize[1]]
 
-    # Verify Padding Logic
     exp_pad_w, exp_pad_h = expected_pad
-
     if exp_pad_w or exp_pad_h:
-        assert len(ops) == 2
-        pad_l, pad_r, pad_t, pad_b = ops[1]["pad"]
+        assert "pad" in md
+        pad_l, pad_r, pad_t, pad_b = md["pad"]
         assert pad_l + pad_r == exp_pad_w
         assert pad_t + pad_b == exp_pad_h
     else:
-        assert len(ops) == 1
+        assert "pad" not in md
 
 
 @pytest.mark.parametrize("input_type", ["numpy", "torch"])
@@ -70,7 +74,6 @@ def test_resize_and_pad_polymorphism(input_type):
 
     output, ops = resize_and_pad(input_image, width=target_w, height=target_h, preserve_aspect=True, return_operators=True)
 
-    # Verification
     if input_type == "numpy":
         assert isinstance(output, np.ndarray), "Input was Numpy, expected Numpy output"
     else:
@@ -78,10 +81,8 @@ def test_resize_and_pad_polymorphism(input_type):
 
     assert output.shape == (100, 100)
 
-    # Check operator integrity
-    resize_op = ops[0]["resize"]
-    assert isinstance(resize_op[0], (int, np.integer))
-    assert isinstance(resize_op[2], (int, np.integer))
-
-    # Verify the values
-    assert resize_op == [100, 100, 50, 50]
+    md = ops[0]["metadata"][0]
+    assert md["src_size"] == [50, 50]
+    assert md["dst_size"] == [100, 100]
+    # 50x50 → 100x100 preserve aspect: no padding (already square).
+    assert "pad" not in md

@@ -2,9 +2,6 @@
 
 ## Summary
 
-<!-- One sentence describing what this PR does and why. -->
-
-**Type:** <!-- feat | fix | chore | refactor | test | docs | ci -->
 
 ## Breaking changes
 
