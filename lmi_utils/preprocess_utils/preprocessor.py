@@ -9,6 +9,7 @@ from .ops import (
     FlipOperation,
     PadOperation,
     ResizeOperation,
+    RotateOperation,
     TileOperation,
 )
 
@@ -31,6 +32,7 @@ class Preprocessor(BaseProcessor):
         FlipOperation,
         TileOperation,
         CropOperation,
+        RotateOperation,
     )
 
     @classmethod

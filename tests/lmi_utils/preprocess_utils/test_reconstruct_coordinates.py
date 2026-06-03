@@ -212,6 +212,25 @@ class TestTile:
             assert len(reverted["segments"][i]) == 4
             assert reverted["masks"][i].shape == (4, 100, 100)
 
+    def test_padding_mode_masks_cropped_to_im_size(self, pipeline):
+        # 90x90 pads to scale_size 100 (tile 50, stride 50). Reverted masks are cropped back to
+        # im_size so they match the reverted image, not the padded scale_size canvas.
+        prep, recon = pipeline
+        image = np.random.randint(0, 256, (90, 90, 3), dtype=np.uint8)
+        _, history = prep.preprocess(image, [steps.tile(tile_size=50, stride=50)])
+
+        empty = torch.zeros((0, 4))
+        det = torch.tensor([[3.0, 4.0, 12.0, 14.0]])
+        results = _make_full_results([empty, empty, empty, det], tile_hw=(50, 50))
+        reverted = recon.reconstruct_coordinates(results, history)
+
+        _assert_coords(reverted, 0, torch.tensor([[53.0, 54.0, 62.0, 64.0]]), atol=1e-3)
+
+        out = reverted["masks"][0]
+        assert out.shape == (1, 90, 90)
+        assert torch.all(out[0, 50:90, 50:90] == 1.0)
+        assert torch.all(out[0, :50, :] == 0.0) and torch.all(out[0, 50:, :50] == 0.0)
+
     def test_overlapping_stride_shifts_all_fields(self, pipeline):
         prep, recon = pipeline
         image = np.random.randint(0, 256, (90, 90, 3), dtype=np.uint8)

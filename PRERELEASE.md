@@ -325,7 +325,8 @@ When you need to apply preprocessing **beyond what the model manifest declares**
 | `steps.crop(boxes=..., id=None)` | `boxes` | One `[x1, y1, x2, y2]` per image |
 | `steps.flip(lr=False, ud=False, id=None)` | — | Defaults to a no-op |
 | `steps.pad(width=None, height=None, pad=None, value=0, id=None)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` for explicit padding |
-| `steps.tile(tile_size=..., stride=..., scale_mode="padding", overlap_mode="average", id=None)` | `tile_size`, `stride` | Scalars are broadcast to `[h, w]` |
+| `steps.rotate(angle=..., id=None)` | `angle` | Degrees, positive = clockwise |
+| `steps.tile(tile_size=..., stride=..., scale_mode="padding", overlap_mode="average", dedupe_iou=0.5, id=None)` | `tile_size`, `stride` | Scalars are broadcast to `[h, w]`. `dedupe_iou` is the class-aware NMS IoU threshold applied on revert to suppress duplicate detections that overlapping tiles produce for one object (keeps the highest-scoring instance); set `None` to disable |
 
 **Usage — inside a `PipelineBase` subclass:**
 
@@ -365,7 +366,8 @@ This section covers the other case: the image was preprocessed **outside** the `
 | `steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...)` | `src_sizes` / `dst_sizes` = `[W, H]`; `pads` = `[L, R, T, B]` letterbox padding |
 | `steps.revert_pad(pads=...)` | `pads` = `[L, R, T, B]` applied |
 | `steps.revert_flip(lr=..., ud=..., sizes=...)` | `lr`, `ud` flags; `sizes` = `[W, H]` of the flipped image |
-| `steps.revert_tile(tile_sizes=..., strides=..., im_sizes=..., scale_sizes=..., n_tiles=..., batch_sizes=..., num_channels=..., scale_modes=..., overlap_modes=...)` | One entry per *source* image |
+| `steps.revert_rotate(angles=..., src_sizes=..., dst_sizes=...)` | `angles` in degrees; `src_sizes` / `dst_sizes` = `[W, H]` |
+| `steps.revert_tile(tile_sizes=..., strides=..., im_sizes=..., scale_sizes=..., n_tiles=..., batch_sizes=..., num_channels=..., scale_modes=..., overlap_modes=..., dedupe_ious=...)` | One entry per *source* image. `dedupe_ious` is optional — omit it (or pass per-image `None`) to disable duplicate suppression on revert |
 
 **Example — image was cropped upstream; revert OD detections into the original frame:**
 

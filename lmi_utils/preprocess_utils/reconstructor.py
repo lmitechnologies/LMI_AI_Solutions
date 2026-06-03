@@ -9,6 +9,7 @@ from .ops import (
     FlipOperation,
     PadOperation,
     ResizeOperation,
+    RotateOperation,
     TileOperation,
 )
 
@@ -29,6 +30,7 @@ class Reconstructor(BaseProcessor):
         FlipOperation,
         TileOperation,
         CropOperation,
+        RotateOperation,
     )
 
     @classmethod

@@ -1,10 +1,11 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
 from lmi_utils.image_utils.tiler import Tiler
+from lmi_utils.postprocess_utils.nms import class_aware_nms
 
 from .._coords import apply_coord_transform
 from ..operation import Config, Meta, Operation
@@ -18,12 +19,18 @@ class TileConfig(Config):
     stride: int or [h, w] — step between tile origins.
     scale_mode: how the image is fit to the tile grid before slicing ("padding" or "interpolation").
     overlap_mode: how overlapping regions are merged on untile ("average", "max", ...).
+    dedupe_iou: on revert_coords, class-aware NMS IoU threshold for suppressing the duplicate
+        detections that overlapping tiles produce for one object (keeps the highest-scoring
+        instance). Requires per-instance scores; results without scores pass through untouched.
+        Suppression only — it does not geometrically union objects split across a tile seam.
+        Set to None to disable. Default 0.5.
     """
 
     tile_size: Union[int, List[int], None] = None
     stride: Union[int, List[int], None] = None
     scale_mode: str = "padding"
     overlap_mode: str = "average"
+    dedupe_iou: Optional[float] = 0.5
 
     def __post_init__(self):
         if self.tile_size is None or self.stride is None:
@@ -43,9 +50,12 @@ class TileMeta(Meta):
     num_channels: List[int] = field(default_factory=list)
     scale_modes: List[str] = field(default_factory=list)
     overlap_modes: List[str] = field(default_factory=list)
+    dedupe_ious: List[Optional[float]] = field(default_factory=list)
 
     def __post_init__(self):
         n = len(self.n_tiles)
+        if not self.dedupe_ious:  # optional; absent means dedupe disabled for every image
+            self.dedupe_ious = [None] * n
         for name in (
             "tile_sizes",
             "strides",
@@ -55,6 +65,7 @@ class TileMeta(Meta):
             "num_channels",
             "scale_modes",
             "overlap_modes",
+            "dedupe_ious",
         ):
             if len(getattr(self, name)) != n:
                 raise ValueError(f"TileMeta: field '{name}' length mismatch")
@@ -71,6 +82,7 @@ class TileMeta(Meta):
             "num_channel": self.num_channels[i],
             "scale_mode": self.scale_modes[i],
             "overlap_mode": self.overlap_modes[i],
+            "dedupe_iou": self.dedupe_ious[i],
         }
 
 
@@ -93,6 +105,7 @@ class TileOperation(Operation[TileConfig, TileMeta]):
         num_channels: List[int] = []
         scale_modes: List[str] = []
         overlap_modes: List[str] = []
+        dedupe_ious: List[Optional[float]] = []
 
         for img in images:
             ndim = img.dim()
@@ -121,6 +134,7 @@ class TileOperation(Operation[TileConfig, TileMeta]):
             num_channels.append(int(d["num_channel"]))
             scale_modes.append(scale_mode)
             overlap_modes.append(overlap_mode)
+            dedupe_ious.append(config.dedupe_iou)
 
         return out_images, TileMeta(
             tile_sizes=tile_sizes,
@@ -132,6 +146,7 @@ class TileOperation(Operation[TileConfig, TileMeta]):
             num_channels=num_channels,
             scale_modes=scale_modes,
             overlap_modes=overlap_modes,
+            dedupe_ious=dedupe_ious,
         )
 
     @torch.inference_mode()
@@ -171,7 +186,47 @@ class TileOperation(Operation[TileConfig, TileMeta]):
         return restored_images
 
     @torch.inference_mode()
+    def apply_coords(self, results: List[Dict[str, Any]], meta: TileMeta) -> List[Dict[str, Any]]:
+        """Project original-space coords into per-tile space.
+
+        Expands the per-image results list into a per-tile list (one dict per emitted tile,
+        row-major order matching ``forward``). Instances that don't overlap a given tile
+        are dropped from that tile; partially overlapping ones are clipped:
+            - xyxy boxes: axis-aligned clip to tile rect.
+            - OBB boxes: Sutherland-Hodgman clip then refit a rect aligned with the original
+              OBB's orientation (AABB in the OBB's local frame, rotated back). Preserves the
+              source object's rotation rather than the clipped fragment's tightest fit.
+            - segments: Sutherland-Hodgman clip; instances with empty clipped polygon are dropped.
+            - masks: per-tile spatial slice.
+        Keypoint visibility flags are set to 0 for any keypoint falling outside the tile,
+        and instances with all keypoints invisible are dropped.
+
+        Results carrying no geometry (only image-level scores/classes) are passed through to
+        every tile unchanged, since there is nothing to clip.
+
+        Mask input convention (original space, matching the box/segment coords):
+            - interpolation: masks are in ``im_size``; resampled to ``scale_size`` before tiling.
+            - padding: masks are in ``im_size``; zero-padded to ``scale_size`` before tiling.
+        """
+        if len(results) != len(meta.n_tiles):
+            raise ValueError(f"tile: results count ({len(results)}) != meta count ({len(meta.n_tiles)})")
+        output = []
+        for i, r in enumerate(results):
+            d = meta.per_image_dict(i)
+            n_h, n_w = d["n_tiles"]
+            for row in range(n_h):
+                for col in range(n_w):
+                    output.append(_project_to_tile(r, d, row, col))
+        return output
+
+    @torch.inference_mode()
     def revert_coords(self, results: List[Dict[str, Any]], meta: TileMeta) -> List[Dict[str, Any]]:
+        # NOTE: per-tile instances are concatenated, then (when ``dedupe_iou`` is set and scores
+        # are present) class-aware NMS suppresses the duplicate detections that overlapping tiles
+        # produce for one object — keeping the highest-scoring instance. This is suppression only:
+        # masks live on their own per-instance canvases and are never composited, and an object
+        # split across a seam (low mutual IoU) is NOT geometrically unioned. Callers needing
+        # seam-split fragments stitched into one label must still handle that downstream.
         output = []
         cursor = 0
         for i in range(len(meta.n_tiles)):
@@ -205,7 +260,15 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
         col = idx % n_tiles_w
         shifted.append(_shift_tile_coords(r, col * stride_w, row * stride_h, sx, sy, target_size))
 
-    return _concat_tile_results(shifted)
+    merged = _concat_tile_results(shifted)
+    masks = merged.get("masks")
+    if masks is not None and (masks.shape[-2] != im_h or masks.shape[-1] != im_w):
+        merged["masks"] = masks[..., :im_h, :im_w]
+
+    iou_thr = tiler_meta.get("dedupe_iou")
+    if iou_thr is not None:
+        merged = class_aware_nms(merged, float(iou_thr))
+    return merged
 
 
 def _shift_tile_coords(
@@ -262,3 +325,243 @@ def _concat_tile_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             merged[key] = torch.cat(non_empty) if non_empty else vals[0]
 
     return merged
+
+
+def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: int) -> Dict[str, Any]:
+    import torch.nn.functional as F
+
+    tile_h, tile_w = m["tile_size"]
+    stride_h, stride_w = m["stride"]
+    im_h, im_w = m["im_size"]
+    scale_h, scale_w = m["scale_size"]
+    is_interp = m.get("scale_mode", "padding") == "interpolation" and (scale_h != im_h or scale_w != im_w)
+    sx = scale_w / im_w if is_interp else 1.0
+    sy = scale_h / im_h if is_interp else 1.0
+    off_x = col * stride_w
+    off_y = row * stride_h
+
+    def to_tile_xy(xy: torch.Tensor) -> torch.Tensor:
+        xy = xy.float()
+        if is_interp:
+            xy = xy * torch.tensor([sx, sy], dtype=torch.float32, device=xy.device)
+        return xy - torch.tensor([off_x, off_y], dtype=torch.float32, device=xy.device)
+
+    n = _instance_count(result)
+    out: Dict[str, Any] = dict(result)
+    if n == 0:
+        return out
+
+    device = _result_device(result)
+    kept = torch.zeros(n, dtype=torch.bool, device=device)
+    boxes_out = points_out = masks_out = None
+    segments_out: Optional[List[torch.Tensor]] = None
+    has_spatial = False  # whether any geometry field exists to clip against
+
+    boxes = result.get("boxes")
+    if boxes is not None and len(boxes):
+        has_spatial = True
+        if boxes.ndim == 3:  # OBB (N, 4, 2)
+            obb_t = to_tile_xy(boxes.reshape(-1, 2)).reshape(n, 4, 2)
+            obb_kept = torch.zeros(n, dtype=torch.bool, device=device)
+            refit = obb_t.clone()
+            for i in range(n):
+                clipped = _polygon_clip(obb_t[i], tile_w, tile_h)
+                if clipped.shape[0] < 3:
+                    continue
+                fitted = _refit_obb_keep_orientation(clipped, obb_t[i])
+                if fitted is None:
+                    continue
+                refit[i] = fitted.to(refit.dtype).to(refit.device)
+                obb_kept[i] = True
+            boxes_out = refit
+            kept |= obb_kept
+        else:  # xyxy (N, 4) — rotate-style: take aabb of forward-projected corners, then clip
+            corners = torch.stack(
+                [
+                    torch.stack([boxes[:, 0], boxes[:, 1]], dim=-1),
+                    torch.stack([boxes[:, 2], boxes[:, 1]], dim=-1),
+                    torch.stack([boxes[:, 2], boxes[:, 3]], dim=-1),
+                    torch.stack([boxes[:, 0], boxes[:, 3]], dim=-1),
+                ],
+                dim=1,
+            )  # (N, 4, 2)
+            corners_t = to_tile_xy(corners.reshape(-1, 2)).reshape(n, 4, 2)
+            x1 = corners_t[..., 0].amin(dim=1).clamp(0, tile_w)
+            x2 = corners_t[..., 0].amax(dim=1).clamp(0, tile_w)
+            y1 = corners_t[..., 1].amin(dim=1).clamp(0, tile_h)
+            y2 = corners_t[..., 1].amax(dim=1).clamp(0, tile_h)
+            boxes_out = torch.stack([x1, y1, x2, y2], dim=-1)
+            kept |= (x2 > x1) & (y2 > y1)
+
+    points = result.get("points")
+    if points is not None and len(points):
+        has_spatial = True
+        xy = points[..., :2]
+        xy_t = to_tile_xy(xy.reshape(-1, 2)).reshape(xy.shape)
+        in_tile = (xy_t[..., 0] >= 0) & (xy_t[..., 0] <= tile_w) & (xy_t[..., 1] >= 0) & (xy_t[..., 1] <= tile_h)
+        if points.shape[-1] == 3:
+            vis = points[..., 2]
+            new_vis = torch.where(in_tile, vis, torch.zeros_like(vis))
+            points_out = torch.cat([xy_t, new_vis.unsqueeze(-1)], dim=-1)
+            kept |= (new_vis > 0).any(dim=-1)
+        else:
+            points_out = xy_t
+            kept |= in_tile.any(dim=-1)
+
+    segments = result.get("segments")
+    if segments is not None and len(segments):
+        has_spatial = True
+        segments_out = []
+        for i, s in enumerate(segments):
+            if len(s) == 0:
+                segments_out.append(s)
+                continue
+            clipped = _polygon_clip(to_tile_xy(s), tile_w, tile_h)
+            segments_out.append(clipped)
+            if clipped.shape[0] >= 3:
+                kept[i] = True
+
+    masks = result.get("masks")
+    if masks is not None and len(masks):
+        has_spatial = True
+        if is_interp:
+            full = F.interpolate(masks.float().unsqueeze(1), size=(scale_h, scale_w), mode="nearest").squeeze(1)
+        else:
+            mh, mw = masks.shape[1], masks.shape[2]
+            if (mh, mw) != (scale_h, scale_w):
+                full = F.pad(masks, [0, max(0, scale_w - mw), 0, max(0, scale_h - mh)])
+            else:
+                full = masks
+        y0, x0 = off_y, off_x
+        y1, x1 = min(y0 + tile_h, scale_h), min(x0 + tile_w, scale_w)
+        sliced = full[:, max(0, y0) : y1, max(0, x0) : x1]
+        pad_b = tile_h - sliced.shape[1]
+        pad_r = tile_w - sliced.shape[2]
+        if pad_b or pad_r:
+            sliced = F.pad(sliced, [0, max(0, pad_r), 0, max(0, pad_b)])
+        masks_out = sliced.to(masks.dtype)
+        kept |= (masks_out.reshape(n, -1) != 0).any(dim=-1)
+
+    if not has_spatial:
+        # Image-level label (only scores/classes, no geometry): nothing to clip, so
+        # propagate every instance to this tile rather than dropping them all.
+        kept[:] = True
+
+    kept_idx = kept.nonzero(as_tuple=True)[0]
+    if boxes_out is not None:
+        out["boxes"] = boxes_out[kept_idx]
+    if points_out is not None:
+        out["points"] = points_out[kept_idx]
+    if segments_out is not None:
+        out["segments"] = [segments_out[i] for i in kept_idx.tolist()]
+    if masks_out is not None:
+        out["masks"] = masks_out[kept_idx]
+
+    scores = result.get("scores")
+    if scores is not None and len(scores) == n:
+        out["scores"] = scores[kept_idx]
+    classes = result.get("classes")
+    if classes is not None and len(classes) == n:
+        if isinstance(classes, np.ndarray):
+            out["classes"] = classes[kept_idx.cpu().numpy()]
+        else:
+            out["classes"] = classes[kept_idx]
+
+    return out
+
+
+def _result_device(result: Dict[str, Any]) -> torch.device:
+    """Device of the result's coord tensors (defaults to CPU when none are present)."""
+    for key in ("boxes", "points", "masks", "scores"):
+        v = result.get(key)
+        if isinstance(v, torch.Tensor) and len(v):
+            return v.device
+    segments = result.get("segments")
+    if segments is not None:
+        for s in segments:
+            if isinstance(s, torch.Tensor) and len(s):
+                return s.device
+    return torch.device("cpu")
+
+
+def _instance_count(result: Dict[str, Any]) -> int:
+    """Per-instance N = max len across populated coord fields (empty placeholders ignored)."""
+    n = 0
+    for key in ("boxes", "points", "masks", "scores", "classes", "segments"):
+        v = result.get(key)
+        if v is not None and len(v) > n:
+            n = len(v)
+    return n
+
+
+def _polygon_clip(poly: torch.Tensor, w: float, h: float) -> torch.Tensor:
+    """Sutherland-Hodgman clip of a polygon (M, 2) against rect [0, w] x [0, h].
+
+    Returns (M', 2) clipped vertices; M' may be 0 if polygon is fully outside.
+    """
+    pts = poly.detach().cpu().numpy().tolist()
+    # Each edge: keep points where a*x + b*y >= c.
+    edges = [
+        (1.0, 0.0, 0.0),  # x >= 0
+        (-1.0, 0.0, -float(w)),  # x <= w
+        (0.0, 1.0, 0.0),  # y >= 0
+        (0.0, -1.0, -float(h)),  # y <= h
+    ]
+    for a, b, c in edges:
+        if not pts:
+            break
+        out: List[List[float]] = []
+        for i in range(len(pts)):
+            curr = pts[i]
+            prev = pts[i - 1]
+            curr_in = a * curr[0] + b * curr[1] >= c
+            prev_in = a * prev[0] + b * prev[1] >= c
+            if curr_in:
+                if not prev_in:
+                    denom = a * (curr[0] - prev[0]) + b * (curr[1] - prev[1])
+                    t = (c - (a * prev[0] + b * prev[1])) / denom if denom != 0 else 0.0
+                    out.append([prev[0] + t * (curr[0] - prev[0]), prev[1] + t * (curr[1] - prev[1])])
+                out.append(curr)
+            elif prev_in:
+                denom = a * (curr[0] - prev[0]) + b * (curr[1] - prev[1])
+                t = (c - (a * prev[0] + b * prev[1])) / denom if denom != 0 else 0.0
+                out.append([prev[0] + t * (curr[0] - prev[0]), prev[1] + t * (curr[1] - prev[1])])
+        pts = out
+    if not pts:
+        return torch.zeros((0, 2), dtype=poly.dtype, device=poly.device)
+    return torch.tensor(pts, dtype=poly.dtype, device=poly.device)
+
+
+def _refit_obb_keep_orientation(clipped: torch.Tensor, original: torch.Tensor) -> Optional[torch.Tensor]:
+    """Refit a clipped polygon as a 4-corner rect aligned with the original OBB's orientation.
+
+    Project clipped points into the original OBB's local frame, take the AABB there,
+    then rotate back. Result keeps the original rotation (so a near-vertical OBB stays
+    near-vertical even after clipping a sliver). Output corners are in TL→TR→BR→BL
+    order in the original OBB's local frame.
+
+    Returns None for degenerate inputs (< 3 vertices, zero-length edge, or zero-area AABB).
+    """
+    if clipped.shape[0] < 3:
+        return None
+    pts = clipped.detach().cpu().numpy().astype(np.float32)
+    orig = original.detach().cpu().numpy().astype(np.float32)
+
+    dx = orig[1, 0] - orig[0, 0]
+    dy = orig[1, 1] - orig[0, 1]
+    if abs(dx) < 1e-9 and abs(dy) < 1e-9:
+        return None
+    theta = float(np.arctan2(dy, dx))
+    c, s = float(np.cos(theta)), float(np.sin(theta))
+
+    R_to_local = np.array([[c, -s], [s, c]], dtype=np.float32)
+    local = pts @ R_to_local
+    x_min, y_min = float(local[:, 0].min()), float(local[:, 1].min())
+    x_max, y_max = float(local[:, 0].max()), float(local[:, 1].max())
+    if (x_max - x_min) <= 1e-6 or (y_max - y_min) <= 1e-6:
+        return None
+
+    local_corners = np.array([[x_min, y_min], [x_max, y_min], [x_max, y_max], [x_min, y_max]], dtype=np.float32)
+    R_to_world = np.array([[c, s], [-s, c]], dtype=np.float32)
+    world = local_corners @ R_to_world
+    return torch.from_numpy(world)

@@ -20,6 +20,8 @@ from .ops import (
     PadMeta,
     ResizeConfig,
     ResizeMeta,
+    RotateConfig,
+    RotateMeta,
     TileConfig,
     TileMeta,
 )
@@ -29,6 +31,7 @@ crop = CropConfig
 resize = ResizeConfig
 pad = PadConfig
 flip = FlipConfig
+rotate = RotateConfig
 tile = TileConfig
 
 # inverse
@@ -36,6 +39,7 @@ revert_crop = CropMeta
 revert_resize = ResizeMeta
 revert_pad = PadMeta
 revert_flip = FlipMeta
+revert_rotate = RotateMeta
 revert_tile = TileMeta
 
 __all__ = [
@@ -43,10 +47,12 @@ __all__ = [
     "resize",
     "pad",
     "flip",
+    "rotate",
     "tile",
     "revert_crop",
     "revert_resize",
     "revert_pad",
     "revert_flip",
+    "revert_rotate",
     "revert_tile",
 ]
