@@ -248,7 +248,7 @@ class PipelineBase(metaclass=ABCMeta):
         """Append a resize so an OD model's preprocessed input matches its training size.
 
         No-op for non-OD models and when the size already matches.
-        Letterbox backends pad with 0, not their native fill — configure an explicit resize for exact fidelity.
+        Letterbox padding uses the model's RESIZE_PAD_VALUE.
         """
         model = self.models.get(model_role)
         if not isinstance(model, ODBase):
@@ -278,7 +278,7 @@ class PipelineBase(metaclass=ABCMeta):
             f"[{model_role}] preprocessed size {(h, w)} != model input {(th, tw)}; injecting a resize. "
             "Configure a matching resize step in global preprocessing to remove this."
         )
-        resize_step = [steps.resize(width=tw, height=th, preserve_aspect=preserve)]
+        resize_step = [steps.resize(width=tw, height=th, preserve_aspect=preserve, pad_value=model.RESIZE_PAD_VALUE)]
         processed, extra = self.preprocessor.preprocess(processed, resize_step)
         return processed, history + extra
 

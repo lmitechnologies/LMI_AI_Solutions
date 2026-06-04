@@ -27,6 +27,9 @@ class ODBase(abc.ABC):
     # True = letterbox, False = stretch. Required on concrete subclasses (see __init_subclass__).
     RESIZE_PRESERVE_ASPECT: bool = None
 
+    # Letterbox pad fill for auto-injected resize; match training (e.g. 114 for YOLO). Ignored when stretching.
+    RESIZE_PAD_VALUE: int = 0
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         # Skip abstract intermediates; their concrete leaves inherit the value.

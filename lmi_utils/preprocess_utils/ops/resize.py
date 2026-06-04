@@ -16,12 +16,14 @@ class ResizeConfig(Config):
     width: target width. Defaults to current width.
     height: target height. Defaults to current height.
     preserve_aspect: scale-to-fit preserving aspect ratio then pad (letterbox).
+    pad_value: fill value for letterbox padding (only used when preserve_aspect). 0 is black; use 114 to match YOLO.
     mode: interpolation mode passed to ``resize_image``.
     """
 
     width: Optional[int] = None
     height: Optional[int] = None
     preserve_aspect: bool = False
+    pad_value: int = 0
     mode: str = "bilinear"
 
 
@@ -81,7 +83,7 @@ class ResizeOperation(Operation[ResizeConfig, ResizeMeta]):
                 src_sizes.append([w0, h0])
                 dst_sizes.append([w1, h1])
                 if w1 != tw or h1 != th:
-                    padded, pL, pR, pT, pB = fit_im_to_size(scaled, W=tw, H=th)
+                    padded, pL, pR, pT, pB = fit_im_to_size(scaled, W=tw, H=th, value=config.pad_value)
                     pads.append([pL, pR, pT, pB])
                     out_images.append(padded)
                 else:

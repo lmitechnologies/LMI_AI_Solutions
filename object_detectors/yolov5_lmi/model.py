@@ -38,6 +38,7 @@ class Yolov5(ODBase):
     logger = logging.getLogger(__name__)
 
     RESIZE_PRESERVE_ASPECT = True  # caller letterboxes; unused internally
+    RESIZE_PAD_VALUE = 114  # yolov5 gray letterbox fill
 
     def __init__(self, weights: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         """
