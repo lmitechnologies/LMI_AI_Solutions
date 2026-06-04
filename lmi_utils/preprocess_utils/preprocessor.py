@@ -67,12 +67,7 @@ class Preprocessor(BaseProcessor):
         """
         self._validate_configs(configs)
 
-        if isinstance(images, list):
-            pass
-        elif hasattr(images, "ndim") and images.ndim == 4:
-            images = list(images)
-        else:
-            images = [images]
+        images = self.as_image_list(images)
         self.validate_image_list(images, stage="preprocessing")
 
         if not configs:

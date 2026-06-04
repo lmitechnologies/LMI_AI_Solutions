@@ -11,6 +11,18 @@ class BaseProcessor:
     # Subset of _COORD_FIELDS whose value is a list-of-tensors instead of a single tensor.
     _COORD_LIST_FIELDS = frozenset({"segments"})
 
+    @staticmethod
+    def as_image_list(images: Any) -> List[ImageLike]:
+        """Normalize input into a flat list of HW(C) images.
+
+        Accepts a single HW/HWC image, a BHWC batch (4D), or an existing list and always returns a list.
+        """
+        if isinstance(images, list):
+            return images
+        if hasattr(images, "ndim") and images.ndim == 4:
+            return list(images)
+        return [images]
+
     def to_tensor_list(self, images: List[ImageLike]) -> Tuple[List[torch.Tensor], bool]:
         """Convert image list to tensors if needed; make contiguous."""
         is_numpy = isinstance(images[0], np.ndarray)

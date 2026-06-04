@@ -145,12 +145,12 @@ def test_pipeline_OD_injects_resize_on_size_mismatch(caplog):
 
     image_files = [os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
     assert len(image_files) > 0, "No images found in assets"
-    images = [cv2.cvtColor(cv2.imread(f), cv2.COLOR_BGR2RGB) for f in image_files]
+    image = cv2.cvtColor(cv2.imread(image_files[0]), cv2.COLOR_BGR2RGB)
 
     with caplog.at_level(logging.WARNING):
-        results = pipeline.predict({}, {"images": images})
+        processed, ops_list = pipeline.preprocess("mock-model", image)
 
-    ops_list = results["ops_list"]
+    assert len(processed) == 1, f"Expected a single processed image, got {len(processed)}"
     # Configured resize + injected corrective resize, both recorded for reversion.
     actual_types = [type(op).__name__.removesuffix("Meta").lower() for op in ops_list]
     assert actual_types == ["resize", "resize"], f"Unexpected history: {actual_types}"

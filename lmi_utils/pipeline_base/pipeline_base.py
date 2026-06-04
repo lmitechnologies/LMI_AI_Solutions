@@ -234,6 +234,7 @@ class PipelineBase(metaclass=ABCMeta):
         if model_role not in self._preprocessing:
             raise ValueError(f"Not found global preprocessing steps for model role: {model_role}")
 
+        images = self.preprocessor.as_image_list(images)
         processed, history = self.preprocessor.preprocess(images, self._preprocessing[model_role])
         return self._ensure_od_input_size(model_role, images, processed, history)
 
