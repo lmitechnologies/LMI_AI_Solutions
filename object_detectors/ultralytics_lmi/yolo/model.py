@@ -50,6 +50,8 @@ def letterbox(image: ImageLike, new_shape, pad_value: int = LETTERBOX_PAD) -> Im
 class Yolo(YoloCore, ODBase):
     logger = logging.getLogger("yolo")
 
+    RESIZE_PRESERVE_ASPECT = True  # letterbox (see preprocess())
+
     def __init__(self, model_path: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         """init the model
         Args:

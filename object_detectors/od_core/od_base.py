@@ -1,4 +1,5 @@
 import abc
+import inspect
 import logging
 import time
 from typing import List
@@ -17,8 +18,20 @@ from .results import Results
 class ODBase(abc.ABC):
     logger = logging.getLogger(__name__)
 
+    # Model input size as [height, width]; subclasses must set it.
+    image_size: list = None
+
     # Set to a positive integer in subclasses that use a fixed-batch-size model.
     fixed_batch_size: int = None
+
+    # True = letterbox, False = stretch. Required on concrete subclasses (see __init_subclass__).
+    RESIZE_PRESERVE_ASPECT: bool = None
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # Skip abstract intermediates; their concrete leaves inherit the value.
+        if not inspect.isabstract(cls) and cls.RESIZE_PRESERVE_ASPECT is None:
+            raise TypeError(f"{cls.__name__} must set RESIZE_PRESERVE_ASPECT (True=letterbox, False=stretch)")
 
     @abc.abstractmethod
     def warmup(self, *args, **kwargs):
