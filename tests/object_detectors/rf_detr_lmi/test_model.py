@@ -251,7 +251,7 @@ class Test_Rfdetr_Model:
 
         os.makedirs(OUT_DIR, exist_ok=True)
         for idx, img in enumerate(imgs_coco):
-            h, w = original_sizes[idx]
+            w, h = original_sizes[idx]
             out = {k: v[idx] for k, v in batch_outputs.items()}
             _assert_nonempty_out(out)
             _assert_scores_geq(out, 0.5)
