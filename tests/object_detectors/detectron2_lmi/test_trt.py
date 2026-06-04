@@ -17,6 +17,7 @@ ENGINE_PATH = "tests/assets/models/od/detectron2/model.engine"
 OUT_DIR = "tests/outputs/od/detectron2"
 USE_CUDA = torch.cuda.is_available()
 KEYS = ["boxes", "classes", "scores", "masks", "segments"]
+SIZE_OFFSETS = [(128, 64), (64, 128), (192, 96)]
 
 with open(COCO_CLASSMAP, "r") as f:
     class_map = json.load(f)
@@ -39,7 +40,6 @@ def imgs_coco():
 def _trt_available():
     try:
         import tensorrt  # noqa: F401
-        from cuda import cudart  # noqa: F401
 
         return USE_CUDA
     except ImportError:
@@ -49,7 +49,7 @@ def _trt_available():
 @pytest.fixture(scope="module")
 def trt_model():
     if not _trt_available():
-        pytest.skip("TensorRT / cuda-python not available")
+        pytest.skip("TensorRT not available")
     if not os.path.exists(ENGINE_PATH):
         pytest.skip(f"Engine file not found: {ENGINE_PATH}")
     try:
@@ -85,8 +85,11 @@ def test_batch_operators(trt_model, imgs_coco):
 
     images = imgs_coco
     original_sizes = [img.shape[:2] for img in images]
-    resized = [cv2.resize(img, (tw, th)) for img in images]
-    operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
+    # Per-image varied off-sizes (!= engine input) exercise the stretch guard across the batch.
+    resized_dims = [(th + dh, tw + dw) for dh, dw in (SIZE_OFFSETS[i % len(SIZE_OFFSETS)] for i in range(len(images)))]
+    assert all((rh, rw) != (th, tw) for rh, rw in resized_dims)
+    resized = [cv2.resize(img, (rw, rh)) for img, (rh, rw) in zip(images, resized_dims)]
+    operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
 
     outputs, _ = model.predict(resized, configs=confs, operators=operators)
     _assert_batch_counts(outputs, KEYS, len(images))
@@ -108,8 +111,11 @@ def test_batch_operators_cuda(trt_model, imgs_coco):
 
     images = imgs_coco
     original_sizes = [img.shape[:2] for img in images]
-    resized = [torch.from_numpy(cv2.resize(img, (tw, th))).cuda() for img in images]
-    operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
+    # Per-image varied off-sizes (!= engine input) passed as CUDA tensors: the guard stretches each
+    # on-device to the engine size while the resize operator reverts boxes/masks to the original frame.
+    resized_dims = [(th + dh, tw + dw) for dh, dw in (SIZE_OFFSETS[i % len(SIZE_OFFSETS)] for i in range(len(images)))]
+    resized = [torch.from_numpy(cv2.resize(img, (rw, rh))).cuda() for img, (rh, rw) in zip(images, resized_dims)]
+    operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
 
     outputs, _ = model.predict(resized, configs=confs, operators=operators)
     _assert_batch_counts(outputs, KEYS, len(images))

@@ -19,6 +19,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TRT_MODEL = "tests/assets/models/od/rf_detr/inference_model.engine"
 OUT_DIR = "tests/outputs/od/rf_detr"
 IMAGE_SIZE = 384
+OFF_SIZES = [(512, 640), (576, 704), (704, 512)]  # (h, w), non-square — exercise the off-size resize guard
 
 
 def load_image(path):
@@ -74,25 +75,26 @@ def test_trt_warmup(trt_model):
 
 
 def test_operators_batch(imgs_coco, trt_model):
-    original_sizes = [(img.shape[1], img.shape[0]) for img in imgs_coco]  # (w, h)
-    operators = [[{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}] for w, h in original_sizes]
-    imgs_resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
+    # Non-square inputs (!= engine input) exercise the antialiased stretch guard together with
+    # per-image operators that revert boxes/masks back to each original frame.
+    original_sizes = [img.shape[:2] for img in imgs_coco]  # (h, w)
+    resized_dims = [OFF_SIZES[i % len(OFF_SIZES)] for i in range(len(imgs_coco))]
+    imgs_resized = [cv2.resize(img, (rw, rh)) for img, (rh, rw) in zip(imgs_coco, resized_dims)]
+    operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
 
     batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators)
     assert len(batch_outputs["boxes"]) == len(imgs_coco)
 
     os.makedirs(OUT_DIR, exist_ok=True)
     for idx, img in enumerate(imgs_coco):
-        w, h = original_sizes[idx]
+        h, w = original_sizes[idx]
         out = {k: v[idx] for k, v in batch_outputs.items()}
         _assert_nonempty_out(out)
         _assert_scores_geq(out, 0.5)
 
-        # boxes with operators should be scaled to the original image size
-        assert np.all(out["boxes"][:, 0] <= w)
-        assert np.all(out["boxes"][:, 1] <= h)
-        assert np.all(out["boxes"][:, 2] <= w)
-        assert np.all(out["boxes"][:, 3] <= h)
+        # boxes with operators should be scaled back to the original image size
+        assert np.all(out["boxes"][:, [0, 2]] <= w)
+        assert np.all(out["boxes"][:, [1, 3]] <= h)
 
         annotated_image = trt_model.annotate_image(out, img)
         out_name = f"out_trt_operators_batch_{idx}.jpg"
@@ -107,25 +109,26 @@ def test_empty(trt_model):
 
 
 def test_operators_batch_cuda(imgs_coco, trt_model):
-    original_sizes = [(img.shape[1], img.shape[0]) for img in imgs_coco]  # (w, h)
-    operators = [[{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}] for w, h in original_sizes]
-    imgs_resized = [torch.from_numpy(cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))).cuda() for img in imgs_coco]
+    # Non-square CUDA-tensor inputs (!= engine input) exercise the on-device antialiased stretch
+    # guard together with per-image operators that revert boxes/masks back to each original frame.
+    original_sizes = [img.shape[:2] for img in imgs_coco]  # (h, w)
+    resized_dims = [OFF_SIZES[i % len(OFF_SIZES)] for i in range(len(imgs_coco))]
+    imgs_resized = [torch.from_numpy(cv2.resize(img, (rw, rh))).cuda() for img, (rh, rw) in zip(imgs_coco, resized_dims)]
+    operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
 
     batch_outputs, _ = trt_model.predict(imgs_resized, configs=0.5, operators=operators)
     assert len(batch_outputs["boxes"]) == len(imgs_coco)
 
     os.makedirs(OUT_DIR, exist_ok=True)
     for idx, img in enumerate(imgs_coco):
-        w, h = original_sizes[idx]
+        h, w = original_sizes[idx]
         out = {k: v[idx] for k, v in batch_outputs.items()}
         _assert_nonempty_out(out)
         _assert_scores_geq(out, 0.5)
 
-        # boxes with operators should be scaled to the original image size
-        assert (out["boxes"][:, 0] <= w).all()
-        assert (out["boxes"][:, 1] <= h).all()
-        assert (out["boxes"][:, 2] <= w).all()
-        assert (out["boxes"][:, 3] <= h).all()
+        # boxes with operators should be scaled back to the original image size
+        assert (out["boxes"][:, [0, 2]] <= w).all()
+        assert (out["boxes"][:, [1, 3]] <= h).all()
 
         _assert_all_cuda(out)
         annotated_image = trt_model.annotate_image(out, img)

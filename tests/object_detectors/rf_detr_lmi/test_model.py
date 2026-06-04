@@ -21,6 +21,7 @@ TRT_MODEL = "tests/assets/models/od/rf_detr/inference_model.engine"
 OUT_DIR = "tests/outputs/od/rf_detr"
 IMAGE_SIZE = 384
 MODEL_TYPE = "seg-small"
+OFF_SIZES = [(512, 640), (576, 704), (704, 512)]  # (h, w), non-square
 
 
 def load_image(path):
@@ -169,6 +170,28 @@ class Test_Rfdetr_Model:
             assert_outputs_match_rf(rf_preds, outputs_pt, "pt_model")
             assert_outputs_match_rf(rf_preds, outputs_pth, "pth_model")
 
+    def test_compare_with_rfdetr_nonsquare(self, imgs_coco, cpu_models):
+        """Non-square inputs exercise the off-size resize guard.
+
+        Our guard fits inputs to the square model input with an antialiased stretch on the float
+        tensor, matching rfdetr's own predict() preprocessing, so detections must match exactly.
+        """
+
+        rf_model, pt_model, pth_model = cpu_models
+
+        for i, img in enumerate(imgs_coco):
+            rh, rw = OFF_SIZES[i % len(OFF_SIZES)]
+            resized = cv2.resize(img, (rw, rh))
+            rf_preds = rf_model.predict(resized, threshold=0.5)
+
+            batch_pt, _ = pt_model.predict(resized, configs=0.5)
+            batch_pth, _ = pth_model.predict(resized, configs=0.5)
+            outputs_pt = {k: batch_pt[k][0] for k in ("boxes", "scores", "classes", "masks")}
+            outputs_pth = {k: batch_pth[k][0] for k in ("boxes", "scores", "classes", "masks")}
+
+            assert_outputs_match_rf(rf_preds, outputs_pt, "pt_model")
+            assert_outputs_match_rf(rf_preds, outputs_pth, "pth_model")
+
     def test_warmup(self, obj_detector):
         obj_detector.warmup()
 
@@ -208,9 +231,12 @@ class Test_Rfdetr_Model:
             cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
 
     def test_operators_batch(self, imgs_coco, obj_detector):
-        original_sizes = [(img.shape[1], img.shape[0]) for img in imgs_coco]  # (w, h)
-        operators = [[{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}] for w, h in original_sizes]
-        imgs_resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
+        # Per-image non-square input sizes exercise the auto-resize (stretch) guard together
+        # with per-image operators that revert boxes/masks back to each original frame.
+        original_sizes = [img.shape[:2] for img in imgs_coco]  # (h, w)
+        resized_dims = [OFF_SIZES[i % len(OFF_SIZES)] for i in range(len(imgs_coco))]
+        imgs_resized = [cv2.resize(img, (rw, rh)) for img, (rh, rw) in zip(imgs_coco, resized_dims)]
+        operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
 
         batch_outputs, _ = obj_detector.predict(imgs_resized, configs=0.5, operators=operators)
 
@@ -218,16 +244,16 @@ class Test_Rfdetr_Model:
 
         os.makedirs(OUT_DIR, exist_ok=True)
         for idx, img in enumerate(imgs_coco):
-            w, h = original_sizes[idx]
+            h, w = original_sizes[idx]
             out = {k: v[idx] for k, v in batch_outputs.items()}
             _assert_nonempty_out(out)
             _assert_scores_geq(out, 0.5)
 
-            # boxes with operators should be scaled to the original image size
-            assert np.all(out["boxes"][:, 0] <= w)
-            assert np.all(out["boxes"][:, 1] <= h)
-            assert np.all(out["boxes"][:, 2] <= w)
-            assert np.all(out["boxes"][:, 3] <= h)
+            # boxes/masks with operators should be scaled back to the original image size
+            assert np.all(out["boxes"][:, [0, 2]] <= w)
+            assert np.all(out["boxes"][:, [1, 3]] <= h)
+            assert out["masks"].shape[1] == h
+            assert out["masks"].shape[2] == w
 
             annotated_image = obj_detector.annotate_image(out, img)
             out_name = f"out_operators_batch_{idx}.jpg"

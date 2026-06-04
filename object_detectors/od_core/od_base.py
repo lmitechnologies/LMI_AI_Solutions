@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
+from lmi_utils.image_utils.img_resize import resize_and_pad
 from lmi_utils.image_utils.types import ImageBatch, ImageLike, normalize_image_batch, to_rgb
 
 from .results import Results
@@ -143,6 +144,52 @@ class ODBase(abc.ABC):
             all_results.extend(list_results[:chunk_n])
 
         return all_results, {"preproc": t_preproc, "proc": t_proc, "postproc": t_postproc}
+
+    def _fit_to_input_size(self, images: List[ImageLike], preserve_aspect: bool = True, resize_fn=None) -> List[ImageLike]:
+        """Resize off-size images to the model input (``self.image_size``)
+
+        args:
+            ``images``: list of HWC images (numpy or tensor) to check and resize if needed.
+            ``preserve_aspect`` must match the backend's convention:
+                ``True`` (letterbox) for backends reconstructing letterbox geometry,
+                ``False`` (stretch) for those mapping normalized boxes to the full frame.
+
+            ``resize_fn``: optional ``(image, (th, tw)) -> image`` used in place of ``resize_and_pad``
+            (e.g. YOLO's letterbox); ``preserve_aspect`` then only affects the warning wording.
+
+        Raises ``ValueError`` when ``self.image_size`` is unset.
+        """
+        target = getattr(self, "image_size", None)
+        if not target:
+            raise ValueError(
+                f"{type(self).__name__}.image_size is not set; cannot fit inputs to model size. "
+                "Set self.image_size = [h, w] in the backend's __init__."
+            )
+
+        th, tw = int(target[0]), int(target[1])
+        out, mismatched = [], None
+        for im in images:
+            h, w = im.shape[:2]
+            if (h, w) != (th, tw):
+                mismatched = mismatched or (h, w)
+                if resize_fn is not None:
+                    im = resize_fn(im, (th, tw))
+                else:
+                    im = resize_and_pad(im, width=tw, height=th, preserve_aspect=preserve_aspect)
+            out.append(im)
+
+        if mismatched is not None:
+            self._warn_resize_once(mismatched[0], mismatched[1], th, tw, "letterbox" if preserve_aspect else "stretch")
+        return out
+
+    def _warn_resize_once(self, h: int, w: int, th: int, tw: int, mode: str) -> None:
+        """Warn once per instance that an off-size input is being auto-resized to the model input."""
+        if not getattr(self, "_input_size_warned", False):
+            self._input_size_warned = True
+            self.logger.warning(
+                f"Input size {h}x{w} != model input {th}x{tw}; auto-resizing ({mode}) to fit. "
+                "Add a matching resize to your preprocessing pipeline to silence this and avoid the extra resize."
+            )
 
     @staticmethod
     def _to_numpy(data):

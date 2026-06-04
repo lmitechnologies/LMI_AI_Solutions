@@ -66,19 +66,31 @@ class RfdetrBase(ODBase):
         dummy_input = torch.zeros((1, 3, self.image_size[0], self.image_size[1]), dtype=torch.float32).to(self.device)
         self.forward(dummy_input)
 
-    def _preprocess_single(self, image: ImageLike) -> torch.Tensor:
-        """Preprocess a single HWC uint8 image: convert to CHW float [0, 1], normalize, move to device."""
+    def _to_float_chw(self, image: ImageLike) -> torch.Tensor:
+        """Convert an HWC uint8 image (ndarray or tensor) to a CHW float [0, 1] tensor on the model device."""
         if isinstance(image, np.ndarray):
-            img_tensor = F.to_tensor(image).to(self.device)
-        else:
-            img_tensor = image.permute(2, 0, 1).to(self.device).float() / 255.0
-        return F.normalize(img_tensor, self.means, self.stds)
+            return F.to_tensor(image).to(self.device)
+        return image.permute(2, 0, 1).to(self.device).float() / 255.0
+
+    def _fit_to_input_size(self, img_tensor: torch.Tensor) -> torch.Tensor:
+        """Stretch a CHW float tensor to self.image_size, warning once per instance."""
+        th, tw = int(self.image_size[0]), int(self.image_size[1])
+        h, w = img_tensor.shape[1], img_tensor.shape[2]
+        if (h, w) == (th, tw):
+            return img_tensor
+        self._warn_resize_once(h, w, th, tw, "stretch")
+        return F.resize(img_tensor, [th, tw], antialias=True)
 
     def preprocess(self, images: List[ImageLike]) -> torch.Tensor:
-        """Preprocess input image(s) to BCHW normalized tensor."""
-        if isinstance(images, list):
-            return torch.stack([self._preprocess_single(img) for img in images])
-        return torch.unsqueeze(self._preprocess_single(images), dim=0)
+        """Preprocess input image(s) to a BCHW normalized tensor.
+
+        RF-DETR is trained with a square (stretch) resize — not letterbox — applied with
+        antialiasing on the float tensor, so off-size inputs are fit to self.image_size that way.
+        """
+        if not isinstance(images, list):
+            images = [images]
+        tensors = [self._fit_to_input_size(self._to_float_chw(img)) for img in images]
+        return torch.stack([F.normalize(t, self.means, self.stds) for t in tensors])
 
     @staticmethod
     def _masks_to_segments(masks) -> List[np.ndarray]:
@@ -203,6 +215,7 @@ class RfdetrTRT(RfdetrBase):
         if len(self.trt._input_names) != 1:
             raise ValueError(f"Expected a single-input TRT engine, got inputs: {self.trt._input_names}")
         self.input_shape = self.trt.input_shape  # (C, H, W)
+        self.image_size = list(self.input_shape[-2:])  # (H, W) — used by the input-size guard
         self.input_dtype = self.trt.input_dtype
         if not self.trt.is_dynamic:
             self.fixed_batch_size = self.trt.max_batch

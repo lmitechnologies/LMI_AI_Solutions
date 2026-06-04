@@ -153,14 +153,39 @@ def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
         assert np.array_equal(instances.pred_masks.cpu().numpy(), preds.get("masks")[0])
 
 
-def test_operators(model, imgs_coco):
+def test_compare_with_original_model_nonsquare(og_cpu_model, model_cpu, imgs_coco):
+    off_sizes = [(512, 640), (576, 704), (704, 512)]  # (h, w), non-square
+    for i, image in enumerate(imgs_coco):
+        rh, rw = off_sizes[i % len(off_sizes)]
+        image = cv2.resize(image, (rw, rh))
+        img = torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))
+        inputs = [{"image": img}]
+        with torch.no_grad():
+            orginal_preds = og_cpu_model.inference(inputs, do_postprocess=True)[0]
+        # to rgb
+        image2 = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        preds, _ = model_cpu.predict(image2, configs=0)
+
+        # check if the outputs are all close
+        instances = orginal_preds["instances"]
+        assert np.array_equal(instances.scores.cpu().numpy(), preds.get("scores")[0])
+        assert np.array_equal(instances.pred_boxes.tensor.cpu().numpy(), preds.get("boxes")[0])
+        assert np.array_equal(instances.pred_masks.cpu().numpy(), preds.get("masks")[0])
+
+
+def test_operators(model, imgs_coco, caplog):
     image = imgs_coco[0]
     h, w = image.shape[:2]
-    image_resized = cv2.resize(image, (512, 512))
-    operators = [{"resize": [512, 512, w, h]}]
-    outputs, _ = model.predict(image_resized, configs=0.9, return_segments=False, operators=operators)
+    rh, rw = 512, 480
+    logger.info(f"Original image size: {(h, w)}, resizing to {(rh, rw)} for testing operators. model.image_size={model.image_size}")
+    assert (rh, rw) != tuple(model.image_size)
+    image_resized = cv2.resize(image, (rw, rh))
+    operators = [{"resize": [rw, rh, w, h]}]
+    with caplog.at_level(logging.WARNING):
+        outputs, _ = model.predict(image_resized, configs=0.9, return_segments=False, operators=operators)
     outputs = {k: v[0] for k, v in outputs.items()}
 
+    assert not [r for r in caplog.records if "model input" in r.message], "PT backend is size-flexible; no resize guard expected"
     _assert_nonempty_out(outputs, ["boxes", "classes", "scores", "masks"])
     _assert_empty_out(outputs, ["segments"])
     _assert_scores_geq(outputs, 0.95)
@@ -192,10 +217,11 @@ def test_operators_no_masks(model, imgs_coco):
 
 def test_batch_operators(model, imgs_coco):
     images = imgs_coco
-    th, tw = 640, 640
     original_sizes = [img.shape[:2] for img in images]
-    images_resized = [cv2.resize(img, (tw, th)) for img in images]
-    operators = [[{"resize": [tw, th, w, h]}] for h, w in original_sizes]
+    off_sizes = [(512, 640), (576, 704), (704, 512)]  # (h, w), non-square
+    resized_dims = [off_sizes[i % len(off_sizes)] for i in range(len(images))]
+    images_resized = [cv2.resize(img, (rw, rh)) for img, (rh, rw) in zip(images, resized_dims)]
+    operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
     outputs, _ = model.predict(images_resized, configs=0.8, operators=operators)
     _assert_batch_counts(outputs, KEYS, len(images))
     os.makedirs(OUT_DIR, exist_ok=True)
