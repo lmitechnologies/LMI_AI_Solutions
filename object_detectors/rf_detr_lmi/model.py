@@ -26,6 +26,8 @@ class RfdetrBase(ODBase):
 
     logger = logging.getLogger("RFDETR")
 
+    RESIZE_PRESERVE_ASPECT = False  # stretch (see preprocess())
+
     MEANS = [0.485, 0.456, 0.406]
     STDS = [0.229, 0.224, 0.225]
 

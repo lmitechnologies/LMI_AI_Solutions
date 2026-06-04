@@ -130,6 +130,32 @@ def test_pipeline_OD(version, preprocessing_steps, expected_types):
         cv2.imwrite(os.path.join(OUT_DIR, f"annot_od_{idx}.png"), cv2.cvtColor(annot, cv2.COLOR_RGB2BGR))
 
 
+def test_pipeline_OD_injects_resize_on_size_mismatch(caplog):
+    """When the preprocessed image does not match the OD model's input size, a corrective resize is
+    injected and recorded in history so revert_preprocess still round-trips to the original space."""
+    model_path = os.path.abspath("tests/assets/models/od/ultralytics/yolo11n-seg.pt")
+    image_dir = os.path.abspath("tests/assets/images/coco")
+
+    # Configure a resize to the wrong size (320) for a 640 model: injection must correct it to 640.
+    preprocessing_steps = [{"type": "resize", "configuration": {"height": 320, "width": 320, "preserve_aspect": True}}]
+    model_roles = _build_od_model_roles("3", model_path, preprocessing_steps)
+
+    pipeline = PipelineOD(version="3")
+    pipeline.load(model_roles, {})
+
+    image_files = [os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+    assert len(image_files) > 0, "No images found in assets"
+    images = [cv2.cvtColor(cv2.imread(f), cv2.COLOR_BGR2RGB) for f in image_files]
+
+    with caplog.at_level(logging.WARNING):
+        results = pipeline.predict({}, {"images": images})
+
+    ops_list = results["ops_list"]
+    # Configured resize + injected corrective resize, both recorded for reversion.
+    assert [op.get("type") for op in ops_list] == ["resize", "resize"], f"Unexpected history: {ops_list}"
+    assert any("injecting a resize" in r.message for r in caplog.records), "Expected an injection warning"
+
+
 class PipelineAD(PipelineBase):
     def load(self, model_roles: dict, configs: dict):
         self.load_models(model_roles, configs, device=DEVICE)

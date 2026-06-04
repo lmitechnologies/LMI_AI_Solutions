@@ -39,6 +39,8 @@ class Detectron2Base(ODBase):
     Provides common utilities: the predict pipeline, mask postprocessing, and image annotation.
     """
 
+    RESIZE_PRESERVE_ASPECT = False  # stretch (see preprocess())
+
     def _postprocess_masks(self, raw_masks, boxes, image_size, mask_threshold, **kwargs):
         """Rescale masks and optionally compute polygon segments.
 

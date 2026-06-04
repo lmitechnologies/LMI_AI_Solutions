@@ -24,6 +24,7 @@ from lmi_utils.image_utils.types import ImageBatch, ImageLike
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 from object_detectors.od_core.object_detector import ObjectDetector
+from object_detectors.od_core.od_base import ODBase
 
 from .core.schemas.schema_2 import ModelCollectionV2
 from .core.schemas.schema_3 import ModelCollectionV3
@@ -219,7 +220,52 @@ class PipelineBase(metaclass=ABCMeta):
         if model_role not in self._preprocessing:
             raise ValueError(f"Not found global preprocessing steps for model role: {model_role}")
 
-        return self.preprocessor.preprocess(images, self._preprocessing[model_role])
+        processed, history = self.preprocessor.preprocess(images, self._preprocessing[model_role])
+        return self._ensure_od_input_size(model_role, images, processed, history)
+
+    def _ensure_od_input_size(
+        self,
+        model_role: str,
+        images: List[ImageLike],
+        processed: List[ImageLike],
+        history: List[Dict[str, Any]],
+    ) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
+        """Append a resize so an OD model's preprocessed input matches its training size.
+
+        No-op for non-OD models and when the size already matches.
+        Letterbox backends pad with 0, not their native fill — configure an explicit resize for exact fidelity.
+        """
+        model = self.models.get(model_role)
+        if not isinstance(model, ODBase):
+            return processed, history
+
+        th, tw = int(model.image_size[0]), int(model.image_size[1])
+        h, w = processed[0].shape[:2]
+        if (h, w) == (th, tw):
+            return processed, history
+
+        if len(processed) != len(images):
+            # Only reachable once OD tiling exists (a tile op changes the image count).
+            raise NotImplementedError(
+                f"Resize injection assumes a 1:1 image mapping, but preprocessing changed the image "
+                f"count ({len(images)} -> {len(processed)}) for OD model '{model_role}'. Add tile-aware "
+                "resize/revert handling and a round-trip test before enabling this."
+            )
+
+        preserve = model.RESIZE_PRESERVE_ASPECT
+        if preserve is None:
+            raise ValueError(
+                f"{type(model).__name__} does not declare RESIZE_PRESERVE_ASPECT; set it to True "
+                "(letterbox) or False (stretch) to match training-time preprocessing."
+            )
+
+        self.logger.warning(
+            f"[{model_role}] preprocessed size {(h, w)} != model input {(th, tw)}; injecting a resize. "
+            "Configure a matching resize step in global preprocessing to remove this."
+        )
+        resize_step = [{"type": "resize", "configuration": {"width": tw, "height": th, "preserve_aspect": preserve}}]
+        processed, extra = self.preprocessor.preprocess(processed, resize_step)
+        return processed, history + extra
 
     def revert_preprocess(self, data, ops: List[Dict[str, Any]]):
         """Invert preprocessing transforms on either image data (AD) or detection coordinates (OD).
