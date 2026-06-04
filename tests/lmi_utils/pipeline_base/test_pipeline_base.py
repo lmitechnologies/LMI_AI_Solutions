@@ -152,7 +152,8 @@ def test_pipeline_OD_injects_resize_on_size_mismatch(caplog):
 
     ops_list = results["ops_list"]
     # Configured resize + injected corrective resize, both recorded for reversion.
-    assert [op.get("type") for op in ops_list] == ["resize", "resize"], f"Unexpected history: {ops_list}"
+    actual_types = [type(op).__name__.removesuffix("Meta").lower() for op in ops_list]
+    assert actual_types == ["resize", "resize"], f"Unexpected history: {actual_types}"
     assert any("injecting a resize" in r.message for r in caplog.records), "Expected an injection warning"
 
 

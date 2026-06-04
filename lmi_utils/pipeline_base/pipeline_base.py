@@ -193,7 +193,7 @@ class PipelineBase(metaclass=ABCMeta):
             self._load_model(model_key, config_to_use, **kwargs)
 
             if model_key in global_preprocessing:
-                self._preprocessing[model_key] = global_preprocessing[model_key]
+                self._preprocessing[model_key] = parse_steps(global_preprocessing[model_key])
                 self.logger.info(f"Loaded global preprocessing for '{model_key}'")
             else:
                 raise ValueError(
