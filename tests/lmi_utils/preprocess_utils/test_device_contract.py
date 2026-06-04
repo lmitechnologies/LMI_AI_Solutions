@@ -3,19 +3,19 @@
 import pytest
 import torch
 
+from lmi_utils.preprocess_utils import steps
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
 cuda = pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 
-STEPS = [
-    {"type": "resize", "configuration": {"width": 32, "height": 32, "preserve_aspect": True}},
-    {"type": "tile", "configuration": {"tile_size": [16, 16], "stride": [16, 16]}},
+CONFIGS = [
+    steps.resize(width=32, height=32, preserve_aspect=True),
+    steps.tile(tile_size=[16, 16], stride=[16, 16]),
 ]
 
 
 def _device_type(t):
-    """Compare device by type only ('cuda', 'cpu') — index is implementation detail."""
     return t.device.type if isinstance(t, torch.Tensor) else None
 
 
@@ -34,7 +34,7 @@ def test_preprocess_preserves_device(prep, device_str):
     device = torch.device(device_str)
     image = torch.zeros((40, 40, 3), dtype=torch.float32, device=device)
 
-    processed, _ = prep.preprocess(image, STEPS)
+    processed, _ = prep.preprocess(image, CONFIGS)
 
     assert all(_device_type(t) == device.type for t in processed), [_device_type(t) for t in processed]
 
@@ -44,7 +44,7 @@ def test_reconstruct_images_preserves_device(prep, recon, device_str):
     device = torch.device(device_str)
     image = torch.zeros((40, 40, 3), dtype=torch.float32, device=device)
 
-    processed, history = prep.preprocess(image, STEPS)
+    processed, history = prep.preprocess(image, CONFIGS)
     restored = recon.reconstruct_images(processed, history)
 
     assert all(_device_type(t) == device.type for t in restored), [_device_type(t) for t in restored]
@@ -55,11 +55,9 @@ def test_reconstruct_coordinates_preserves_device(prep, recon, device_str):
     device = torch.device(device_str)
     image = torch.zeros((40, 40, 3), dtype=torch.float32, device=device)
 
-    _, history = prep.preprocess(image, STEPS)
+    _, history = prep.preprocess(image, CONFIGS)
 
-    # Build a per-tile result batch on `device`. After tile->resize revert,
-    # coordinates should still be on `device`.
-    n_tiles = 2 * 2  # 32 / 16 = 2 along each axis
+    n_tiles = 2 * 2
     boxes_per_tile = torch.tensor([[1.0, 2.0, 5.0, 6.0]], device=device)
     masks_per_tile = torch.ones((1, 16, 16), device=device)
     segs_per_tile = [torch.tensor([[1.0, 2.0], [3.0, 4.0]], device=device)]

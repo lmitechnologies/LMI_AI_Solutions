@@ -165,7 +165,8 @@ class RfdetrBase(ODBase):
             **kwargs:
                 images (list[np.ndarray]): Original images, used to determine target sizes.
                 configs: Confidence threshold (float) or per-class dict.
-                operators (list[list]): Per-image coordinate transform operators.
+                operators (list): per-image-sliced preprocessing history (one slice per image).
+                    Produced by ODBase._normalize_operators from the unified history.
                 return_segments (bool): Whether to convert masks to segments.
 
         Returns:

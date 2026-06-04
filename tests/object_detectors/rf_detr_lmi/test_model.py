@@ -211,7 +211,9 @@ class Test_Rfdetr_Model:
         for idx, img in enumerate(imgs_coco):
             h, w = img.shape[:2]
             img_resized = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
-            operators = [{"resize": [IMAGE_SIZE, IMAGE_SIZE, w, h]}]
+            from lmi_utils.preprocess_utils.ops import ResizeMeta
+
+            operators = [ResizeMeta(src_sizes=[[w, h]], dst_sizes=[[IMAGE_SIZE, IMAGE_SIZE]], pads=[[0, 0, 0, 0]])]
 
             batch_outputs, _ = obj_detector.predict(img_resized, configs=0.5, operators=operators, return_segments=False)
             out = {k: v[0] for k, v in batch_outputs.items()}
@@ -231,12 +233,17 @@ class Test_Rfdetr_Model:
             cv2.imwrite(os.path.join(OUT_DIR, out_name), cv2.cvtColor(annotated_image, cv2.COLOR_RGB2BGR))
 
     def test_operators_batch(self, imgs_coco, obj_detector):
-        # Per-image non-square input sizes exercise the auto-resize (stretch) guard together
-        # with per-image operators that revert boxes/masks back to each original frame.
-        original_sizes = [img.shape[:2] for img in imgs_coco]  # (h, w)
-        resized_dims = [OFF_SIZES[i % len(OFF_SIZES)] for i in range(len(imgs_coco))]
-        imgs_resized = [cv2.resize(img, (rw, rh)) for img, (rh, rw) in zip(imgs_coco, resized_dims)]
-        operators = [[{"resize": [rw, rh, w, h]}] for (rh, rw), (h, w) in zip(resized_dims, original_sizes)]
+        original_sizes = [(img.shape[1], img.shape[0]) for img in imgs_coco]  # (w, h)
+        from lmi_utils.preprocess_utils.ops import ResizeMeta
+
+        operators = [
+            ResizeMeta(
+                src_sizes=[[w, h] for w, h in original_sizes],
+                dst_sizes=[[IMAGE_SIZE, IMAGE_SIZE] for _ in original_sizes],
+                pads=[[0, 0, 0, 0] for _ in original_sizes],
+            )
+        ]
+        imgs_resized = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
 
         batch_outputs, _ = obj_detector.predict(imgs_resized, configs=0.5, operators=operators)
 
@@ -244,7 +251,7 @@ class Test_Rfdetr_Model:
 
         os.makedirs(OUT_DIR, exist_ok=True)
         for idx, img in enumerate(imgs_coco):
-            h, w = original_sizes[idx]
+            w, h = original_sizes[idx]
             out = {k: v[idx] for k, v in batch_outputs.items()}
             _assert_nonempty_out(out)
             _assert_scores_geq(out, 0.5)

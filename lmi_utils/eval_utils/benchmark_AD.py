@@ -12,6 +12,7 @@ import numpy as np
 from sklearn.metrics import auc, f1_score, precision_score, recall_score, roc_curve
 
 from anomaly_detectors.anomalib_lmi.v1.model import AnomalyModel as AnomalyModelV1
+from lmi_utils.preprocess_utils import parse_steps
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
@@ -458,9 +459,9 @@ def main() -> None:
     # Load and validate data
     good_list, bad_list = load_and_validate_data(args.data)
 
-    # Load preprocessing configurations
-    ops1 = load_preprocess(args.preprocess1)
-    ops2 = load_preprocess(args.preprocess2)
+    # Load preprocessing configurations and convert to typed Configs.
+    ops1 = parse_steps(load_preprocess(args.preprocess1))
+    ops2 = parse_steps(load_preprocess(args.preprocess2))
 
     # Create output directory
     output_dir = args.output_dir / datetime.now().strftime(r"%Y-%m-%d_%H-%M-%S")

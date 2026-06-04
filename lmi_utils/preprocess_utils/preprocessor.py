@@ -1,89 +1,99 @@
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple, Type
 
 from lmi_utils.image_utils.types import ImageBatch, ImageLike
 
 from .base import BaseProcessor
-from .operation import Operation
-from .ops import ResizeOperation, TileOperation
+from .operation import Config, Meta, Operation
+from .ops import (
+    CropOperation,
+    FlipOperation,
+    PadOperation,
+    ResizeOperation,
+    TileOperation,
+)
 
 
 class Preprocessor(BaseProcessor):
-    """
-    Runs a dynamic pipeline of preprocessing Operations on an image.
+    """Runs a typed pipeline of preprocessing Operations on an image.
 
-    Operations are registered as `Operation` instances and selected per-step
-    by name. Each step's metadata is recorded so a `Reconstructor` can later
-    invert the pipeline.
+    Operations are dispatched by Config type. Configs are constructed via
+    ``lmi_utils.preprocess_utils.steps`` (recommended) or directly as dataclasses.
+    JSON manifests should be converted via
+    ``lmi_utils.preprocess_utils._parser.parse_steps`` before being passed in.
 
     Device contract:
-        Output tensors live on the same device as the input tensors. Every
-        Operation must allocate any internal tensors with `device=<input>.device`
-        and avoid implicit `.cpu()` / `.cuda()` moves. Numpy inputs are bridged
-        through CPU tensors (numpy is CPU-only by definition).
+        Output tensors live on the same device as the input tensors.
     """
 
-    def __init__(self):
-        self._ops: Dict[str, Operation] = {}
-        self._register_defaults()
+    _DEFAULT_OPS: Tuple[Type[Operation], ...] = (
+        ResizeOperation,
+        PadOperation,
+        FlipOperation,
+        TileOperation,
+        CropOperation,
+    )
 
-    def _register_defaults(self) -> None:
-        self.register(ResizeOperation())
-        self.register(TileOperation())
+    @classmethod
+    def default_ops(cls) -> Dict[Type[Config], Type[Operation]]:
+        return {op_cls.config_cls: op_cls for op_cls in cls._DEFAULT_OPS}
+
+    def __init__(self):
+        self._ops: Dict[Type[Config], Operation] = {}
+        for op_cls in self._DEFAULT_OPS:
+            self.register(op_cls())
 
     def register(self, op: Operation) -> None:
-        """
-        Register an Operation. Pairs with `Reconstructor.register(op)`.
-
-        Args:
-            op: An `Operation` instance with a non-empty `name`.
-        """
+        """Register an Operation under its ``config_cls``."""
         if not isinstance(op, Operation):
             raise TypeError(f"Expected Operation, got {type(op)}")
-        if not op.name:
-            raise ValueError("Operation must define a non-empty `name`")
-        self._ops[op.name] = op
+        if not getattr(op, "config_cls", None):
+            raise ValueError("Operation must define `config_cls`")
+        self._ops[op.config_cls] = op
 
-    def preprocess(self, images: ImageBatch, processing_steps: List[Dict[str, Any]]) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
-        """
-        Runs the preprocessing pipeline.
+    def preprocess(
+        self,
+        images: ImageBatch,
+        configs: List[Config],
+    ) -> Tuple[List[ImageLike], List[Meta]]:
+        """Run the preprocessing pipeline.
 
         Args:
-            images: A single HW/HWC image, list of HW/HWC images, or a BHWC batch (numpy array or torch tensor). Any dtype is accepted.
-            processing_steps: List of step dicts, each with keys:
-                - "type" (str): Registered Operation name (e.g. "resize", "tile").
-                - "configuration" (dict): Op-specific config passed as-is.
+            images: HW/HWC image, list of HW/HWC images, or BHWC batch (numpy or torch).
+            configs: List of typed Config objects (one per step).
 
         Returns:
-            processed_imgs: List of (H, W, C) images, same type as input.
-            history: List of step records for reconstruction, each with keys:
-                - "type" (str): Operation name.
-                - "metadata" (list): Per-image metadata returned by the op.
+            (processed_images, history): the processed image list and a per-step
+            list of typed Meta objects suitable for Reconstructor.
         """
-        if isinstance(images, list):
-            pass
-        elif hasattr(images, "ndim") and images.ndim == 4:
-            images = list(images)
-        else:
-            images = [images]
+        self._validate_configs(configs)
+
+        images = self.as_image_list(images)
         self.validate_image_list(images, stage="preprocessing")
-        self.validate_steps(processing_steps)
+
+        if not configs:
+            return list(images), []
 
         processed_imgs, is_numpy = self.to_tensor_list(images)
 
-        history = []
-        for step in processing_steps:
-            op_name = step["type"]
-            config = step["configuration"]
-            if op_name not in self._ops:
-                raise ValueError(f"Operation '{op_name}' is not registered.")
+        history: List[Meta] = []
+        for cfg in configs:
+            op = self._ops.get(type(cfg))
+            if op is None:
+                raise ValueError(f"No Operation registered for {type(cfg).__name__}")
 
-            op = self._ops[op_name]
-            new_images, metadata = op.forward(processed_imgs, config)
-
-            self.validate_image_handler_output(new_images, op_name, expected_type="preprocess handler")
-            self.validate_handler_metadata(metadata, op_name)
-
-            history.append({"type": op_name, "metadata": metadata})
+            new_images, meta = op.forward(processed_imgs, cfg)
+            self.validate_image_handler_output(new_images, type(cfg).__name__, expected_type="preprocess handler")
+            if not isinstance(meta, Meta):
+                raise TypeError(f"{type(op).__name__}.forward returned {type(meta)}, expected Meta")
+            history.append(meta)
             processed_imgs = new_images
 
         return self.from_tensor_list(processed_imgs, is_numpy), history
+
+    @staticmethod
+    def _validate_configs(configs: List[Config]) -> None:
+        if not isinstance(configs, list):
+            raise TypeError(f"configs must be a list, got {type(configs)}")
+        for i, c in enumerate(configs):
+            if not isinstance(c, Config):
+                raise TypeError(f"configs[{i}] must be a Config, got {type(c)}")
