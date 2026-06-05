@@ -211,6 +211,8 @@ model = ObjectDetector(
 
 Supported step types: `resize`, `tile`. Steps can be chained and nested (e.g. resize → tile → tile).
 
+When an OD model's preprocessed input still doesn't match its training size, the pipeline auto-injects a final resize. A letterbox injection pads with the model's `RESIZE_PAD_VALUE` (`114` for YOLO, `0` otherwise) to match training-time padding. A manifest-declared `resize` step pads with `0` unless its configuration sets `pad_value`.
+
 **Resize with Object Detection**
 
 OD model role from gofactory:
@@ -321,7 +323,7 @@ When you need to apply preprocessing **beyond what the model manifest declares**
 
 | Step builder | Required kwargs | Notes |
 |---|---|---|
-| `steps.resize(width=..., height=..., preserve_aspect=False, mode="bilinear")` | — | Each dim defaults to the source image's matching dim |
+| `steps.resize(width=..., height=..., preserve_aspect=False, pad_value=0, mode="bilinear")` | — | Each dim defaults to the source image's matching dim. `pad_value` is the letterbox fill, only used when `preserve_aspect=True` (e.g. `114` to match YOLO) |
 | `steps.crop(boxes=...)` | `boxes` | One `[x1, y1, x2, y2]` per image |
 | `steps.flip(lr=False, ud=False)` | — | Defaults to a no-op |
 | `steps.pad(width=None, height=None, pad=None, value=0)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` for explicit padding |

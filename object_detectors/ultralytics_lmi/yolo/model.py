@@ -51,6 +51,7 @@ class Yolo(YoloCore, ODBase):
     logger = logging.getLogger("yolo")
 
     RESIZE_PRESERVE_ASPECT = True  # letterbox (see preprocess())
+    RESIZE_PAD_VALUE = LETTERBOX_PAD
 
     def __init__(self, model_path: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         """init the model
