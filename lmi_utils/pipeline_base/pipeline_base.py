@@ -2,6 +2,7 @@ import collections
 import functools
 import json
 import logging
+import re
 import traceback
 from abc import ABCMeta, abstractmethod
 from logging import Logger
@@ -30,6 +31,16 @@ from object_detectors.od_core.od_base import ODBase
 
 from .core.schemas.schema_2 import ModelCollectionV2
 from .core.schemas.schema_3 import ModelCollectionV3
+
+
+def compact_json(obj: Any, indent: int = 2) -> str:
+    """Pretty-print JSON like ``json.dumps`` but collapse scalar lists onto a single line."""
+    text = json.dumps(obj, indent=indent)
+    return re.sub(
+        r"\[\s+([^\[\]{}]*?)\s+\]",
+        lambda m: "[" + " ".join(part.strip() for part in m.group(1).split("\n")) + "]",
+        text,
+    )
 
 
 class PipelineBase(metaclass=ABCMeta):
@@ -170,37 +181,36 @@ class PipelineBase(metaclass=ABCMeta):
             configs (dict): the configs from pipeline_def.json or the runtime.
             filter (str, optional): filter models by name. Defaults to "-model".
         kwargs:
-            verbose (bool, optional): whether to log the original and parsed model roles. Defaults to False.
+            verbose (bool, optional): log the original model roles. Defaults to False.
         """
+        if kwargs.get("verbose", False):
+            self.logger.info(f"Original Model Roles: {compact_json(model_roles)}\n")
+
         parsed_model_roles, global_preprocessing = self._parse_model_roles(model_roles, **kwargs)
         if not global_preprocessing:
             raise ValueError("Global preprocessing is not defined in model roles.")
 
-        if kwargs.get("verbose", False):
-            self.logger.info(f"Original Model Roles: {json.dumps(model_roles, indent=2)}\n")
-            self.logger.info(f"Parsed Model Roles: {json.dumps(parsed_model_roles, indent=2)}\n")
-            self.logger.info(f"Global Preprocessing: {json.dumps(global_preprocessing, indent=2)}\n")
+        self.logger.info(f"Parsed Model Roles: {compact_json(parsed_model_roles)}\n")
+        self.logger.info(f"Global Preprocessing: {compact_json(global_preprocessing)}\n")
 
-        # filter configs to get target model keys
         target_model_keys = [k for k in model_roles.keys() if filter in k]
         for model_key in target_model_keys:
-            config_to_use = parsed_model_roles.get(model_key)
-            if config_to_use is None:
-                self.logger.warning(f"Not found '{model_key}' configs in parsed model roles. Skipping.")
+            model_meta = parsed_model_roles.get(model_key)
+            if model_meta is None:
+                self.logger.warning(f"Not found '{model_key}' in parsed model roles. Skipping.")
                 continue
 
-            model_source = "Static" if "static" in Path(config_to_use["model_path"]).parts else "GoFactory"
-            self._load_model(model_key, config_to_use, **kwargs)
+            self._load_model(model_key, model_meta, **kwargs)
 
             if model_key in global_preprocessing:
                 self._preprocessing[model_key] = parse_steps(global_preprocessing[model_key])
-                self.logger.info(f"Loaded global preprocessing for '{model_key}'")
             else:
                 raise ValueError(
                     f"Global preprocessing is enabled but no preprocessing config found for '{model_key}'. "
                     f"Add preprocessing config in Gadget or static manifest."
                 )
 
+            model_source = "Static" if "static" in Path(model_meta["model_path"]).parts else "GoFactory"
             self.logger.info(f"Successfully loaded {model_source} model: {model_key}\n")
         self.logger.info(f"Final loaded models: {list(self.models.keys())}\n")
 
@@ -246,9 +256,7 @@ class PipelineBase(metaclass=ABCMeta):
         history: List[Dict[str, Any]],
     ) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
         """Append a resize so an OD model's preprocessed input matches its training size.
-
         No-op for non-OD models and when the size already matches.
-        Letterbox padding uses the model's RESIZE_PAD_VALUE.
         """
         model = self.models.get(model_role)
         if not isinstance(model, ODBase):
@@ -267,18 +275,11 @@ class PipelineBase(metaclass=ABCMeta):
                 "resize/revert handling and a round-trip test before enabling this."
             )
 
-        preserve = model.RESIZE_PRESERVE_ASPECT
-        if preserve is None:
-            raise ValueError(
-                f"{type(model).__name__} does not declare RESIZE_PRESERVE_ASPECT; set it to True "
-                "(letterbox) or False (stretch) to match training-time preprocessing."
-            )
-
         self.logger.warning(
             f"[{model_role}] preprocessed size {(h, w)} != model input {(th, tw)}; injecting a resize. "
             "Configure a matching resize step in global preprocessing to remove this."
         )
-        resize_step = [steps.resize(width=tw, height=th, preserve_aspect=preserve, pad_value=model.RESIZE_PAD_VALUE)]
+        resize_step = [steps.resize(width=tw, height=th, preserve_aspect=model.RESIZE_PRESERVE_ASPECT, pad_value=model.RESIZE_PAD_VALUE)]
         processed, extra = self.preprocessor.preprocess(processed, resize_step)
         return processed, history + extra
 
