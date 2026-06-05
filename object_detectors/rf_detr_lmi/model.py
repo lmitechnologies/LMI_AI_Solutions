@@ -74,24 +74,19 @@ class RfdetrBase(ODBase):
             return F.to_tensor(image).to(self.device)
         return image.permute(2, 0, 1).to(self.device).float() / 255.0
 
-    def _fit_to_input_size(self, img_tensor: torch.Tensor) -> torch.Tensor:
-        """Stretch a CHW float tensor to self.image_size, warning once per instance."""
-        th, tw = int(self.image_size[0]), int(self.image_size[1])
-        h, w = img_tensor.shape[1], img_tensor.shape[2]
-        if (h, w) == (th, tw):
-            return img_tensor
-        self._warn_resize_once(h, w, th, tw, "stretch")
-        return F.resize(img_tensor, [th, tw], antialias=True)
-
     def preprocess(self, images: List[ImageLike]) -> torch.Tensor:
         """Preprocess input image(s) to a BCHW normalized tensor.
 
-        RF-DETR is trained with a square (stretch) resize — not letterbox — applied with
-        antialiasing on the float tensor, so off-size inputs are fit to self.image_size that way.
+        RF-DETR is trained with a square (stretch) resize, applied with antialiasing on the float tensor.
         """
         if not isinstance(images, list):
             images = [images]
-        tensors = [self._fit_to_input_size(self._to_float_chw(img)) for img in images]
+
+        def resize_stretch(img_tensor, size):
+            return F.resize(img_tensor, [size[0], size[1]], antialias=True)
+
+        tensors = [self._to_float_chw(img) for img in images]
+        tensors = self._fit_to_input_size(tensors, preserve_aspect=False, resize_fn=resize_stretch, channels_first=True)
         return torch.stack([F.normalize(t, self.means, self.stds) for t in tensors])
 
     @staticmethod

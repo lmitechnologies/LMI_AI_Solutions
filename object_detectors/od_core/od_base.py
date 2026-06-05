@@ -163,19 +163,22 @@ class ODBase(abc.ABC):
 
         return all_results, {"preproc": t_preproc, "proc": t_proc, "postproc": t_postproc}
 
-    def _fit_to_input_size(self, images: List[ImageLike], preserve_aspect: bool = True, resize_fn=None) -> List[ImageLike]:
-        """Resize off-size images to the model input (``self.image_size``)
+    def _fit_to_input_size(
+        self,
+        images: List[ImageLike],
+        preserve_aspect: bool = True,
+        resize_fn=None,
+        channels_first: bool = False,
+    ) -> List[ImageLike]:
+        """Resize off-size images to the model input (``self.image_size``). Perform resize_and_pad by default.
 
-        args:
-            ``images``: list of HWC images (numpy or tensor) to check and resize if needed.
-            ``preserve_aspect`` must match the backend's convention:
-                ``True`` (letterbox) for backends reconstructing letterbox geometry,
-                ``False`` (stretch) for those mapping normalized boxes to the full frame.
+        Args:
+            ``images``: images (numpy or tensor) to resize if they don't match the model input.
+            ``preserve_aspect``: ``True`` for letterbox, ``False`` for stretch. Only affects the
+                default resize_and_pad and the warning wording (ignored when ``resize_fn`` is given).
+            ``resize_fn``: optional resize function ``(image, (th, tw)) -> image`` to use. Overrides the default resize_and_pad when given.
+            ``channels_first``: ``True`` if images are CHW, else HWC.
 
-            ``resize_fn``: optional ``(image, (th, tw)) -> image`` used in place of ``resize_and_pad``
-            (e.g. YOLO's letterbox); ``preserve_aspect`` then only affects the warning wording.
-
-        Raises ``ValueError`` when ``self.image_size`` is unset.
         """
         target = getattr(self, "image_size", None)
         if not target:
@@ -187,7 +190,7 @@ class ODBase(abc.ABC):
         th, tw = int(target[0]), int(target[1])
         out, mismatched = [], None
         for im in images:
-            h, w = im.shape[:2]
+            h, w = (im.shape[1], im.shape[2]) if channels_first else im.shape[:2]
             if (h, w) != (th, tw):
                 mismatched = mismatched or (h, w)
                 if resize_fn is not None:
@@ -197,17 +200,13 @@ class ODBase(abc.ABC):
             out.append(im)
 
         if mismatched is not None:
-            self._warn_resize_once(mismatched[0], mismatched[1], th, tw, "letterbox" if preserve_aspect else "stretch")
-        return out
-
-    def _warn_resize_once(self, h: int, w: int, th: int, tw: int, mode: str) -> None:
-        """Warn once per instance that an off-size input is being auto-resized to the model input."""
-        if not getattr(self, "_input_size_warned", False):
-            self._input_size_warned = True
+            mh, mw = mismatched
+            mode = "letterbox" if preserve_aspect else "stretch"
             self.logger.warning(
-                f"Input size {h}x{w} != model input {th}x{tw}; auto-resizing ({mode}) to fit. "
+                f"Input size {mh}x{mw} != model input {th}x{tw}; auto-resizing ({mode}) to fit. "
                 "Add a matching resize to your preprocessing pipeline to silence this and avoid the extra resize."
             )
+        return out
 
     @staticmethod
     def _to_numpy(data):
