@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 @torch.inference_mode()
 def resize_image(im, W=None, H=None, mode="bilinear"):
     """
-    args:
+    Args:
         im(np array | torch.tensor): the image of the shape (H,W) or (H,W,C)
         W(int): width
         H:(int): Height
@@ -68,91 +68,30 @@ def resize_image(im, W=None, H=None, mode="bilinear"):
     return im2.numpy() if is_numpy else im2
 
 
-@torch.inference_mode()
-def fit_im_to_size(im, W=None, H=None, value=0):
+def _center_pad_amounts(target, cur):
     """
-    description:
-        pad/crop the image to the size [W,H] with BLACK pixels
-    arguments:
-        im(np.array or torch.Tensor): the image of the shape (H,W) or (H,W,C)
-        W(int): the target width. If None, the width will not be changed
-        H(int): the target height. If None, the height will not be changed
-        value(int): the value to pad
-    return:
-        im(torch.Tensor): the padded/cropped image
-        pad_l(int): number of pixels padded to left
-        pad_r(int): number of pixels padded to right
-        pad_t(int): number of pixels padded to top
-        pad_b(int): number of pixels padded to bottom
+    Split the signed size delta ``target - cur`` into centered (low, high) pad amounts.
+    Positive amounts pad, negative amounts crop. Matches F.pad's (begin, end) convention.
     """
-
-    if W is None and H is None:
-        return im, 0, 0, 0, 0
-    h, w = im.shape[:2]
-    if W is None:
-        W = w
-    if H is None:
-        H = h
-
-    is_numpy = isinstance(im, np.ndarray)
-    if is_numpy:
-        im = torch.from_numpy(im)
-
-    # deal with 1 channel image
-    one_channel = im.ndim == 2
-    if one_channel:
-        im = im.unsqueeze(-1)
-
-    # convert to CHW format
-    im = im.permute(2, 0, 1)
-
-    # pad/crop width
-    if W >= w:
-        pad_L = (W - w) // 2
-        pad_R = W - w - pad_L
-        im = F.pad(im, (pad_L, pad_R, 0, 0), value=value)
-    else:
-        pad_L = (w - W) // 2
-        pad_R = w - W - pad_L
-        im = im[:, :, pad_L:-pad_R]
-        pad_L *= -1
-        pad_R *= -1
-
-    # pad/crop height
-    if H >= h:
-        pad_T = (H - h) // 2
-        pad_B = H - h - pad_T
-        im = F.pad(im, (0, 0, pad_T, pad_B), value=value)
-    else:
-        pad_T = (h - H) // 2
-        pad_B = h - H - pad_T
-        im = im[:, pad_T:-pad_B, :]
-        pad_T *= -1
-        pad_B *= -1
-
-    # convert back to HWC format
-    im = im.permute(1, 2, 0)
-
-    # back to 1 channel
-    if one_channel:
-        im = im.squeeze(-1)
-
-    if is_numpy:
-        im = im.numpy()
-    return im, pad_L, pad_R, pad_T, pad_B
+    n = abs(target - cur)
+    lo = n // 2
+    hi = n - lo
+    if target < cur:
+        lo, hi = -lo, -hi
+    return lo, hi
 
 
 @torch.inference_mode()
 def fit_im(im, pad_ops, value=0):
     """
-    description:
-        pad/crop the image using the pad_ops
-    arguments:
+    pad/crop the image using the pad_ops. This is the shared padding primitive;
+    a positive op pads that edge, a negative op crops it (F.pad semantics).
+    Args:
         im(np.array or torch.Tensor): the image of the shape (H,W) or (H,W,C)
         pad_ops(list): [pad_left, pad_right, pad_top, pad_bottom]
         value(int): the value to pad
-    return:
-        im(torch.Tensor): the padded/cropped image
+    Returns:
+        im(np.array or torch.Tensor): the padded/cropped image, same type as input
     """
     is_numpy = isinstance(im, np.ndarray)
     if is_numpy:
@@ -166,7 +105,7 @@ def fit_im(im, pad_ops, value=0):
     # convert to CHW format
     im = im.permute(2, 0, 1)
 
-    # pad/crop
+    # pad/crop (negative ops crop)
     pad_L, pad_R, pad_T, pad_B = pad_ops
     im = F.pad(im, (pad_L, pad_R, pad_T, pad_B), value=value)
 
@@ -182,35 +121,31 @@ def fit_im(im, pad_ops, value=0):
     return im
 
 
-def fit_array_to_size(im, W=None, H=None, value=0):
-    h_im, w_im = im.shape[:2]
-    if W is None:
-        W = w_im
-    if H is None:
-        H = h_im
-    # pad or crop width
-    if W >= w_im:
-        pad_L = (W - w_im) // 2
-        pad_R = W - w_im - pad_L
-        im = cv2.copyMakeBorder(im, 0, 0, pad_L, pad_R, cv2.BORDER_CONSTANT, value)
-    else:
-        pad_L = (w_im - W) // 2
-        pad_R = w_im - W - pad_L
-        im = im[:, pad_L:-pad_R]
-        pad_L *= -1
-        pad_R *= -1
-    # pad or crop height
-    if H >= h_im:
-        pad_T = (H - h_im) // 2
-        pad_B = H - h_im - pad_T
-        im = cv2.copyMakeBorder(im, pad_T, pad_B, 0, 0, cv2.BORDER_CONSTANT, value)
-    else:
-        pad_T = (h_im - H) // 2
-        pad_B = h_im - H - pad_T
-        im = im[pad_T:-pad_B, :]
-        pad_T *= -1
-        pad_B *= -1
+def fit_im_to_size(im, W=None, H=None, value=0):
+    """
+    pad/crop the image to the size [W,H], centering the original content.
+    Args:
+        im(np.array or torch.Tensor): the image of the shape (H,W) or (H,W,C)
+        W(int): the target width. If None, the width will not be changed
+        H(int): the target height. If None, the height will not be changed
+        value(int): the value to pad
+    Returns:
+        im(np.array or torch.Tensor): the padded/cropped image, same type as input
+        pad_l(int): pixels padded to left (negative if cropped)
+        pad_r(int): pixels padded to right (negative if cropped)
+        pad_t(int): pixels padded to top (negative if cropped)
+        pad_b(int): pixels padded to bottom (negative if cropped)
+    """
+    h, w = im.shape[:2]
+    pad_L, pad_R = _center_pad_amounts(w if W is None else W, w)
+    pad_T, pad_B = _center_pad_amounts(h if H is None else H, h)
+    im = fit_im(im, (pad_L, pad_R, pad_T, pad_B), value=value)
     return im, pad_L, pad_R, pad_T, pad_B
+
+
+def fit_array_to_size(im, W=None, H=None, value=0):
+    """Backward-compatible numpy alias of fit_im_to_size; see that function."""
+    return fit_im_to_size(im, W=W, H=H, value=value)
 
 
 def uint16_to_int16(profile):
@@ -234,11 +169,11 @@ def profile_to_3d(profile, resolution, offset):
     """
     convert profile image to 3d sensor space
 
-    args:
+    Args:
         profile(np array | tensor): the profile image
         resolution(tuple): (x_resolution, y_resolution, z_resolution)
         offset(tuple): (x_offset, y_offset, z_offset)
-    return:
+    Returns:
         X: the x coordinates in 3d space, same shape as profile
         Y: the y coordinates in 3d space, same shape as profile
         Z: the z coordinates in 3d space, same shape as profile
@@ -278,7 +213,7 @@ def pts_to_3d(pts, profile, resolution, offset):
     """
     convert list of 2d pixel locations to 3d sensor space
 
-    args:
+    Args:
         pts(numpy | tensor): array of (x,y) points, with shape of Nx2
         profile(same type as pts): the profile image
         resolution(tuple): (x_resolution, y_resolution, z_resolution)
@@ -324,17 +259,15 @@ def plot_one_box(
     hide_bbox=False,
 ):
     """
-    description:
-        Plots one bounding box and mask (optinal) on image img,
-        this function comes from YoLov5 project.
-    param:
+    Plots one bounding box and mask (optinal) on image img, this function comes from YoLov5 project.
+    Args:
         box:    a box likes [x1,y1,x2,y2]
         img:    a opencv image object in BGR format
         mask:   a binary mask for the box
         color:  color to draw rectangle, such as (0,255,0)
         label:  str
         line_thickness: int
-    return:
+    Returns:
         no return
     """
     tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
@@ -374,16 +307,15 @@ def plot_one_box(
 
 def plot_one_rbox(box, img, color=None, label=None, line_thickness=None, hide_bbox=False):
     """
-    description:
-        Plots one bounding rotated bbox on image img
-    param:
+    Plots one bounding rotated bbox on image img
+    Args:
         box:    a box likes [[x,y],[x,y],[x,y],[x,y]]
         img:    a opencv image object in BGR format
         mask:   a binary mask for the box
         color:  color to draw polygon, such as (0,255,0)
         label:  str
         line_thickness: int
-    return:
+    Returns:
         no return
     """
     tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1  # line/font thickness
