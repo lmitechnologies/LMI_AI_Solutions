@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from lmi_utils.gadget_utils.pipeline_utils import fit_im_to_size, resize_image
+from lmi_utils.preprocess_utils import steps
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
 logger = logging.getLogger(__name__)
@@ -33,12 +34,8 @@ def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwar
 
     kwargs:
         mode (str): interpolation mode. Default "bilinear".
-        return_operators (bool): if True, also return a history list (new schema).
-        operators (list): seed history list. ``return_operators=True`` returns
-            ``seed + new_entries``. Each entry is::
-
-                {"type": "resize", "metadata": [{"src_size": [w, h], "dst_size": [w, h], "pad"?: [L, R, T, B]}]}
-                {"type": "pad",    "metadata": [{"pad": [L, R, T, B]}]}
+        return_operators (bool): if True, also return a history list of typed ``Meta`` records.
+        operators (list): history list.
 
     Returns:
         Image (always), and history list when ``return_operators=True``.
@@ -57,14 +54,14 @@ def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwar
             w1 = int(scale * w0)
             h1 = int(scale * h0)
             im_out = resize_image(image, W=w1, H=h1, mode=mode)
-            entry = {"type": "resize", "metadata": [{"src_size": [w0, h0], "dst_size": [w1, h1]}]}
+            pad = [0, 0, 0, 0]
             if w1 != tw or h1 != th:
                 im_out, pad_l, pad_r, pad_t, pad_b = fit_im_to_size(im_out, tw, th)
-                entry["metadata"][0]["pad"] = [pad_l, pad_r, pad_t, pad_b]
-            operators.append(entry)
+                pad = [pad_l, pad_r, pad_t, pad_b]
+            operators.append(steps.revert_resize(src_sizes=[[w0, h0]], dst_sizes=[[w1, h1]], pads=[pad]))
         else:
             im_out = resize_image(image, W=tw, H=th, mode=mode)
-            operators.append({"type": "resize", "metadata": [{"src_size": [w0, h0], "dst_size": [tw, th]}]})
+            operators.append(steps.revert_resize(src_sizes=[[w0, h0]], dst_sizes=[[tw, th]], pads=[[0, 0, 0, 0]]))
 
     if kwargs.get("return_operators", False) is True:
         return im_out, operators

@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Type
 
 from .operation import Config
 from .ops import (
-    CropConfig,
+    CropBoxConfig,
     FlipConfig,
     PadConfig,
     ResizeConfig,
@@ -19,7 +19,7 @@ from .ops import (
 
 # Manifest "type" string -> Config dataclass.
 STEP_TYPES: Dict[str, Type[Config]] = {
-    "crop": CropConfig,
+    "cropbox": CropBoxConfig,
     "flip": FlipConfig,
     "pad": PadConfig,
     "resize": ResizeConfig,

@@ -1,4 +1,4 @@
-"""Cross-op chain tests covering flip/pad mixed with crop/resize/tile, plus forward
+"""Cross-op chain tests covering flip/pad mixed with cropbox/resize/tile, plus forward
 apply_coords round-trips through full pipelines."""
 
 import numpy as np
@@ -33,12 +33,12 @@ def pipeline():
     return Preprocessor(), Reconstructor()
 
 
-def test_pad_then_crop_image_round_trip(pipeline):
+def test_pad_then_cropbox_image_round_trip(pipeline):
     pre, rec = pipeline
     img = torch.ones((10, 8, 3), dtype=torch.float32)
     configs = [
         steps.pad(pad=[2, 3, 4, 5]),
-        steps.crop(boxes=[[2, 4, 10, 14]]),
+        steps.cropbox(boxes=[[2, 4, 10, 14]]),
     ]
     out, history = pre.preprocess([img], configs)
     assert out[0].shape == (10, 8, 3)
@@ -70,7 +70,7 @@ def test_full_pipeline_coord_round_trip(pipeline):
     img = _hwc_image(100, 80, 3)
     configs = [
         steps.pad(pad=[4, 4, 6, 6]),
-        steps.crop(boxes=[[8, 10, 80, 100]]),
+        steps.cropbox(boxes=[[8, 10, 80, 100]]),
         steps.resize(width=64, height=64, preserve_aspect=False),
         steps.flip(lr=True, ud=True),
     ]
@@ -92,7 +92,7 @@ def test_full_pipeline_image_reconstructs_to_padded_then_original_shape(pipeline
     img = _hwc_image(100, 80, 3)
     configs = [
         steps.pad(pad=[4, 4, 6, 6]),
-        steps.crop(boxes=[[8, 10, 80, 100]]),
+        steps.cropbox(boxes=[[8, 10, 80, 100]]),
         steps.resize(width=64, height=64, preserve_aspect=False),
         steps.flip(lr=True, ud=True),
     ]

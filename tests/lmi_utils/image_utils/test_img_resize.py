@@ -3,6 +3,7 @@ import pytest
 import torch
 
 from lmi_utils.image_utils.img_resize import resize_and_pad
+from lmi_utils.preprocess_utils.ops import ResizeMeta
 
 
 @pytest.mark.parametrize(
@@ -23,11 +24,11 @@ def test_resize_and_pad(input_shape, target_w, target_h):
 
     assert output.shape == (target_h, target_w, 3)
     assert len(ops) == 1
-    assert ops[0]["type"] == "resize"
-    md = ops[0]["metadata"][0]
-    assert md["src_size"] == [w, h]
-    assert md["dst_size"] == [target_w, target_h]
-    assert "pad" not in md
+    meta = ops[0]
+    assert isinstance(meta, ResizeMeta)
+    assert meta.src_sizes[0] == [w, h]
+    assert meta.dst_sizes[0] == [target_w, target_h]
+    assert meta.pads[0] == [0, 0, 0, 0]
 
 
 @pytest.mark.parametrize(
@@ -47,20 +48,15 @@ def test_resize_and_pad_preserve_aspect(input_shape, target_w, target_h, expecte
 
     assert output.shape == (target_h, target_w, 3)
     assert len(ops) == 1
-    assert ops[0]["type"] == "resize"
-
-    md = ops[0]["metadata"][0]
-    assert md["src_size"] == [w, h]
-    assert md["dst_size"] == [expected_resize[0], expected_resize[1]]
+    meta = ops[0]
+    assert isinstance(meta, ResizeMeta)
+    assert meta.src_sizes[0] == [w, h]
+    assert meta.dst_sizes[0] == [expected_resize[0], expected_resize[1]]
 
     exp_pad_w, exp_pad_h = expected_pad
-    if exp_pad_w or exp_pad_h:
-        assert "pad" in md
-        pad_l, pad_r, pad_t, pad_b = md["pad"]
-        assert pad_l + pad_r == exp_pad_w
-        assert pad_t + pad_b == exp_pad_h
-    else:
-        assert "pad" not in md
+    pad_l, pad_r, pad_t, pad_b = meta.pads[0]
+    assert pad_l + pad_r == exp_pad_w
+    assert pad_t + pad_b == exp_pad_h
 
 
 @pytest.mark.parametrize("input_type", ["numpy", "torch"])
@@ -81,8 +77,9 @@ def test_resize_and_pad_polymorphism(input_type):
 
     assert output.shape == (100, 100)
 
-    md = ops[0]["metadata"][0]
-    assert md["src_size"] == [50, 50]
-    assert md["dst_size"] == [100, 100]
+    meta = ops[0]
+    assert isinstance(meta, ResizeMeta)
+    assert meta.src_sizes[0] == [50, 50]
+    assert meta.dst_sizes[0] == [100, 100]
     # 50x50 → 100x100 preserve aspect: no padding (already square).
-    assert "pad" not in md
+    assert meta.pads[0] == [0, 0, 0, 0]

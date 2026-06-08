@@ -5,7 +5,7 @@ from lmi_utils.image_utils.types import ImageLike
 from .base import BaseProcessor
 from .operation import Meta, Operation
 from .ops import (
-    CropOperation,
+    CropBoxOperation,
     FlipOperation,
     PadOperation,
     ResizeOperation,
@@ -28,7 +28,7 @@ class Reconstructor(BaseProcessor):
         PadOperation,
         FlipOperation,
         TileOperation,
-        CropOperation,
+        CropBoxOperation,
     )
 
     @classmethod

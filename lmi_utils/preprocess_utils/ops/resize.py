@@ -53,7 +53,7 @@ class ResizeOperation(Operation[ResizeConfig, ResizeMeta]):
     meta_cls = ResizeMeta
 
     def __init__(self, image_mode: str = "bilinear"):
-        """image_mode: ``revert_images`` interpolation. ``"nearest"`` for binary/label masks."""
+        """image_mode: ``revert_images`` interpolation."""
         self.image_mode = image_mode
 
     @torch.inference_mode()
@@ -163,19 +163,26 @@ def _apply_resize(result: Dict[str, Any], src: List[int], dst: List[int], pad: L
 
 
 def _resample_masks(masks: torch.Tensor, src_size: List[int], dst_size: List[int], pad: List[int], *, pad_after: bool) -> torch.Tensor:
-    """Resample instance masks between original space (src) and preprocessed space (dst+pad).
+    """Resample binary instance masks between original space (src) and preprocessed space (dst+pad).
 
     pad_after=True: src -> dst -> pad (forward).
     pad_after=False: strip pad -> dst -> src (revert).
+
+    Masks are resampled with bilinear (for antialiased edges) and re-thresholded to strict 0/1, so the
+    result stays binary and downstream consumers testing ``mask > 0`` remain correct. Returns float32.
     """
     import torch.nn.functional as F
+
+    def _resize_binary(m: torch.Tensor, size) -> torch.Tensor:
+        resized = F.interpolate(m.float().unsqueeze(1), size=size, mode="bilinear", align_corners=False).squeeze(1)
+        return (resized > 0.5).float()
 
     src_w, src_h = src_size
     dst_w, dst_h = dst_size
     pad_L, pad_R, pad_T, pad_B = pad
     if pad_after:
         # forward: resize to (dst_h, dst_w), then pad to (dst_h + pT+pB, dst_w + pL+pR)
-        resized = F.interpolate(masks.float().unsqueeze(1), size=(dst_h, dst_w), mode="nearest").squeeze(1)
+        resized = _resize_binary(masks, (dst_h, dst_w))
         if pad_L or pad_R or pad_T or pad_B:
             n = resized.shape[0]
             canvas_h = dst_h + pad_T + pad_B
@@ -188,4 +195,4 @@ def _resample_masks(masks: torch.Tensor, src_size: List[int], dst_size: List[int
     if pad_L or pad_T:
         # mask shape: (N, H, W). Strip pad from a (dst_h+pT+pB, dst_w+pL+pR) canvas.
         masks = masks[:, pad_T : pad_T + dst_h, pad_L : pad_L + dst_w]
-    return F.interpolate(masks.float().unsqueeze(1), size=(src_h, src_w), mode="nearest").squeeze(1)
+    return _resize_binary(masks, (src_h, src_w))

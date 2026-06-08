@@ -137,6 +137,43 @@ class TestResize:
         _assert_coords(reverted, 0, torch.tensor([[20.0, 20.0, 100.0, 180.0]]))
 
 
+class TestBinaryMaskResample:
+    """Masks resample via bilinear in _resample_masks, re-thresholded to strict 0/1 (float32)."""
+
+    def test_revert_stays_binary(self, pipeline):
+        prep, recon = pipeline
+        image = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
+        _, history = prep.preprocess(image, [steps.resize(width=64, height=64, preserve_aspect=False)])
+
+        # non-uniform mask: bilinear yields fractional edge values unless re-thresholded
+        mask = torch.zeros(1, 64, 64)
+        mask[:, 10:40, 12:50] = 1.0
+        out = recon.reconstruct_coordinates({"masks": [mask]}, history)["masks"][0]
+
+        assert out.shape == (1, 200, 200)
+        assert out.dtype == torch.float32
+        assert set(torch.unique(out).tolist()) <= {0.0, 1.0}
+
+    def test_apply_forward_stays_binary(self, pipeline):
+        prep, recon = pipeline
+        image = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
+        _, history = prep.preprocess(image, [steps.resize(width=64, height=64, preserve_aspect=True)])
+
+        mask = torch.zeros(1, 200, 200)
+        mask[:, 30:160, 40:175] = 1.0
+        out = recon.apply_coordinates({"masks": [mask]}, history)["masks"][0]
+
+        assert set(torch.unique(out).tolist()) <= {0.0, 1.0}
+
+    def test_full_mask_not_eroded(self, pipeline):
+        prep, recon = pipeline
+        image = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
+        _, history = prep.preprocess(image, [steps.resize(width=64, height=64, preserve_aspect=False)])
+
+        out = recon.reconstruct_coordinates({"masks": [torch.ones(1, 64, 64)]}, history)["masks"][0]
+        assert torch.all(out == 1.0)  # a fully-on mask stays fully on (no edge erosion)
+
+
 class TestTile:
     def test_shifts_all_fields_by_tile_offset(self, pipeline):
         prep, recon = pipeline
