@@ -326,7 +326,7 @@ When you need to apply preprocessing **beyond what the model manifest declares**
 | `steps.resize(width=..., height=..., preserve_aspect=False, pad_value=0, mode="bilinear")` | — | Each dim defaults to the source image's matching dim. `pad_value` is the letterbox fill, only used when `preserve_aspect=True` (e.g. `114` to match YOLO) |
 | `steps.cropbox(boxes=...)` | `boxes` | One `[x1, y1, x2, y2]` per image |
 | `steps.flip(lr=False, ud=False)` | — | Defaults to a no-op |
-| `steps.pad(width=None, height=None, pad=None, value=0)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` for explicit padding |
+| `steps.pad(width=None, height=None, pad=None, value=0)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` is positive to pad / negative to crop; a `width`/`height` smaller than the input center-crops, otherwise pad |
 | `steps.tile(tile_size=..., stride=..., scale_mode="padding", overlap_mode="average")` | `tile_size`, `stride` | Scalars are broadcast to `[h, w]` |
 
 **Usage — inside a `PipelineBase` subclass:**

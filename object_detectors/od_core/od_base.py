@@ -356,15 +356,19 @@ class ODBase(abc.ABC):
                 per_image[i].append(sliced)
         return per_image
 
-    def _revert_coordinates(self, results: dict, operators: list, **kwargs) -> dict:
+    def _revert_coordinates(self, results: dict, operators: list, round: bool = True, **kwargs) -> dict:
         """Revert prediction coordinates to the original pre-transform space.
 
-        Handles all result types: boxes (regular and OBB), masks, segments, and points
-        (with optional visibility column). No-op when operators is empty.
+        Reverts boxes (regular and OBB), masks, segments, and points (with optional
+        visibility column) in a single Reconstructor pass over ``operators``. No-op
+        when operators is empty.
 
         Args:
             results: Dict with keys like 'boxes', 'masks', 'segments', 'points'.
             operators: Operator chain for coordinate reversion.
+            round: Round and clamp the reverted point-like coords (boxes, segments,
+                and the xy of points) to non-negative integers, matching
+                ``revert_to_origin``. Masks are always left as resampled floats.
 
         Returns:
             The same results dict with coordinates reverted in-place.
@@ -372,43 +376,42 @@ class ODBase(abc.ABC):
         if not operators:
             return results
 
-        # boxes: (N,4) regular or (N,4,2) OBB
-        boxes = results.get("boxes")
-        if boxes is not None and len(boxes):
-            if hasattr(boxes, "ndim") and boxes.ndim == 3:
-                reverted = [pipeline_utils.revert_to_origin(box, operators, **kwargs) for box in boxes]
-                results["boxes"] = torch.stack(reverted) if isinstance(boxes, torch.Tensor) else np.array(reverted)
-            else:
-                results["boxes"] = pipeline_utils.revert_to_origin(boxes, operators, **kwargs)
+        fields = ("boxes", "segments", "points", "masks")
+        payload = {k: [results[k]] for k in fields if results.get(k) is not None and len(results[k])}
+        if not payload:
+            return results
 
-        # masks
-        masks = results.get("masks")
-        if masks is not None and len(masks):
-            reverted = pipeline_utils._reconstructor().reconstruct_coordinates({"masks": [masks]}, operators)["masks"][0]
-            results["masks"] = reverted.to(masks.dtype) if torch.is_tensor(masks) else reverted.astype(masks.dtype)
+        reverted = pipeline_utils._reconstructor().reconstruct_coordinates(payload, operators)
 
-        # segments
-        segments = results.get("segments")
-        if segments is not None and len(segments):
-            results["segments"] = [pipeline_utils.revert_to_origin(seg, operators, **kwargs) if len(seg) else seg for seg in segments]
+        if "boxes" in reverted:  # (N,4) xyxy or (N,4,2) OBB
+            box = reverted["boxes"][0]
+            results["boxes"] = self._round_clamp_coords(box) if round else box
 
-        # points (with optional visibility column)
-        points = results.get("points")
-        if points is not None and len(points):
-            visibility = None
-            if points.shape[-1] == 3:
-                visibility = points[:, :, -1]
-                points = points[:, :, :2]
-            reverted = [pipeline_utils.revert_to_origin(p, operators, **kwargs) for p in points]
-            is_tensor = isinstance(results["points"], torch.Tensor)
-            if visibility is not None:
-                reverted = [
-                    torch.cat((p, v.unsqueeze(-1)), dim=-1) if is_tensor else np.hstack((p, np.expand_dims(v, -1)))
-                    for p, v in zip(reverted, visibility)
-                ]
-            results["points"] = torch.stack(reverted) if is_tensor else np.array(reverted)
+        if "segments" in reverted:
+            results["segments"] = [self._round_clamp_coords(s) if round and len(s) else s for s in reverted["segments"][0]]
+
+        if "points" in reverted:  # (N,K,2) or (N,K,3) with a trailing visibility column
+            pts = reverted["points"][0]
+            if round:
+                if pts.shape[-1] == 3:  # round only xy, leave visibility untouched
+                    xy, vis = self._round_clamp_coords(pts[..., :2]), pts[..., 2:]
+                    pts = torch.cat((xy, vis), dim=-1) if torch.is_tensor(pts) else np.concatenate((xy, vis), axis=-1)
+                else:
+                    pts = self._round_clamp_coords(pts)
+            results["points"] = pts
+
+        if "masks" in reverted:  # resampled, not rounded; restore the original dtype
+            mask, orig = reverted["masks"][0], results["masks"]
+            results["masks"] = mask.to(orig.dtype) if torch.is_tensor(orig) else mask.astype(orig.dtype)
 
         return results
+
+    @staticmethod
+    def _round_clamp_coords(value):
+        """Round coords to nearest int and clamp to non-negative; mirrors ``revert_to_origin(round=True)``."""
+        if torch.is_tensor(value):
+            return value.round().clamp(min=0)
+        return np.clip(np.round(value), 0, None)
 
     def _apply_revert_to_result(self, result: Results, operators, **kwargs) -> "Results":
         """Apply coordinate reversion to a Results object and return a new Results.
