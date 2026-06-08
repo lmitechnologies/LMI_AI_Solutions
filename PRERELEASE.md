@@ -324,7 +324,7 @@ When you need to apply preprocessing **beyond what the model manifest declares**
 | Step builder | Required kwargs | Notes |
 |---|---|---|
 | `steps.resize(width=..., height=..., preserve_aspect=False, pad_value=0, mode="bilinear")` | — | Each dim defaults to the source image's matching dim. `pad_value` is the letterbox fill, only used when `preserve_aspect=True` (e.g. `114` to match YOLO) |
-| `steps.crop(boxes=...)` | `boxes` | One `[x1, y1, x2, y2]` per image |
+| `steps.cropbox(boxes=...)` | `boxes` | One `[x1, y1, x2, y2]` per image |
 | `steps.flip(lr=False, ud=False)` | — | Defaults to a no-op |
 | `steps.pad(width=None, height=None, pad=None, value=0)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` for explicit padding |
 | `steps.tile(tile_size=..., stride=..., scale_mode="padding", overlap_mode="average")` | `tile_size`, `stride` | Scalars are broadcast to `[h, w]` |
@@ -339,7 +339,7 @@ class MyPipeline(PipelineBase):
         image = inputs["image"]
 
         ops = [
-            steps.crop(boxes=[[100, 50, 900, 700]]),
+            steps.cropbox(boxes=[[100, 50, 900, 700]]),
             steps.resize(width=640, height=640, preserve_aspect=True),
             steps.flip(lr=True),
         ]
@@ -361,7 +361,7 @@ This section covers the other case: the image was preprocessed **outside** the `
 
 | Step builder | Key fields (per-image lists, length B) |
 |---|---|
-| `steps.revert_crop(boxes=..., orig_sizes=...)` | `boxes` = `[x1, y1, x2, y2]` used; `orig_sizes` = `[W, H]` of the pre-crop canvas |
+| `steps.revert_cropbox(boxes=..., orig_sizes=...)` | `boxes` = `[x1, y1, x2, y2]` used; `orig_sizes` = `[W, H]` of the pre-crop canvas |
 | `steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...)` | `src_sizes` / `dst_sizes` = `[W, H]`; `pads` = `[L, R, T, B]` letterbox padding |
 | `steps.revert_pad(pads=...)` | `pads` = `[L, R, T, B]` applied |
 | `steps.revert_flip(lr=..., ud=..., sizes=...)` | `lr`, `ud` flags; `sizes` = `[W, H]` of the flipped image |
@@ -374,7 +374,7 @@ from lmi_utils.preprocess_utils import steps
 
 # foreground_im was already cropped from the full-resolution image at [x1, y1, x2, y2];
 # original canvas was W x H. Build the matching history and let predict() revert for us.
-history = [steps.revert_crop(boxes=[[x1, y1, x2, y2]], orig_sizes=[[W, H]])]
+history = [steps.revert_cropbox(boxes=[[x1, y1, x2, y2]], orig_sizes=[[W, H]])]
 
 results, _ = model.predict(foreground_im, 0.5, operators=history)
 # results["boxes"][0] is now in the original (W, H) coordinate space.

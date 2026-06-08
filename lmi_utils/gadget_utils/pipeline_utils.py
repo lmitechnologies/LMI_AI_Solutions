@@ -362,11 +362,7 @@ _RECONSTRUCTORS = {}  # interpolation mode -> Reconstructor (image-revert resamp
 
 
 def _reconstructor(interpolation: str = "bilinear"):
-    """Return a shared ``Reconstructor`` whose resize op reverts images with ``interpolation``.
-
-    ``"nearest"`` preserves binary/label masks; ``"bilinear"`` suits continuous-tone images.
-    Lazy import to avoid cycles.
-    """
+    """Return a shared ``Reconstructor`` whose resize op reverts images with ``interpolation``."""
     recon = _RECONSTRUCTORS.get(interpolation)
     if recon is None:
         from lmi_utils.preprocess_utils.ops import ResizeOperation
@@ -387,8 +383,7 @@ def revert_mask_to_origin(mask, operations: list, interpolation: str = "bilinear
     Args:
         mask: np.array or torch.Tensor, shape (H, W) or (H, W, C).
         operations: list of typed ``Meta`` records (one per preprocessing step), batch size 1.
-        interpolation: resize-revert mode. Use ``"nearest"`` for binary/label masks
-            (bilinear erodes them on upscale); ``"bilinear"`` for continuous-tone images.
+        interpolation: resize-revert mode. Default is ``"bilinear"``.
 
     Returns:
         Mask reverted to original-image space, same type as input.
@@ -399,10 +394,7 @@ def revert_mask_to_origin(mask, operations: list, interpolation: str = "bilinear
 @torch.inference_mode()
 def revert_masks_to_origin(masks, operations: list, interpolation: str = "bilinear"):
     """
-    Revert a stack of mask images (N, H, W) to original-image space.
-
-    Batched form of :func:`revert_mask_to_origin`. Pass ``interpolation="nearest"`` for
-    binary/label instance masks.
+    Revert a stack of mask images (N, H, W) to original-image space. Batched form of :func:`revert_mask_to_origin`.
     """
     if len(masks) == 0:
         return []

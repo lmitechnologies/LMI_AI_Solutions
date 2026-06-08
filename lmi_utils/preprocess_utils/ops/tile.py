@@ -226,7 +226,12 @@ def _shift_tile_coords(
         if scaled:
             new_h = max(1, round(masks.shape[1] * sy))
             new_w = max(1, round(masks.shape[2] * sx))
-            masks = torch.nn.functional.interpolate(masks.float().unsqueeze(1), size=(new_h, new_w), mode="nearest").squeeze(1)
+            masks = (
+                torch.nn.functional.interpolate(
+                    masks.float().unsqueeze(1), size=(new_h, new_w), mode="bilinear", align_corners=False
+                ).squeeze(1)
+                > 0.5
+            ).float()
             paste_y = round(offset_y * sy)
             paste_x = round(offset_x * sx)
         else:

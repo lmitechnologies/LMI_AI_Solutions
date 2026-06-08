@@ -297,7 +297,7 @@ class PipelineBase(metaclass=ABCMeta):
             from lmi_utils.preprocess_utils import steps
             ops = [
                 steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...),
-                steps.revert_crop(boxes=..., orig_sizes=...),
+                steps.revert_cropbox(boxes=..., orig_sizes=...),
             ]
 
         in the same order they were applied during preprocessing.

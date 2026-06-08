@@ -1,19 +1,19 @@
 """Public namespace for building preprocessing pipelines.
 
 Forward (used with self.preprocessor.preprocess in pipeline):
-    steps.crop(boxes=...)
+    steps.cropbox(boxes=...)
     steps.resize(width=..., height=..., preserve_aspect=...)
     ...
 
 Inverse (used with self.revert_preprocess in pipeline):
-    steps.revert_crop(boxes=..., orig_sizes=...)
+    steps.revert_cropbox(boxes=..., orig_sizes=...)
     steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...)
     ...
 """
 
 from .ops import (
-    CropConfig,
-    CropMeta,
+    CropBoxConfig,
+    CropBoxMeta,
     FlipConfig,
     FlipMeta,
     PadConfig,
@@ -25,26 +25,26 @@ from .ops import (
 )
 
 # forward
-crop = CropConfig
+cropbox = CropBoxConfig
 resize = ResizeConfig
 pad = PadConfig
 flip = FlipConfig
 tile = TileConfig
 
 # inverse
-revert_crop = CropMeta
+revert_cropbox = CropBoxMeta
 revert_resize = ResizeMeta
 revert_pad = PadMeta
 revert_flip = FlipMeta
 revert_tile = TileMeta
 
 __all__ = [
-    "crop",
+    "cropbox",
     "resize",
     "pad",
     "flip",
     "tile",
-    "revert_crop",
+    "revert_cropbox",
     "revert_resize",
     "revert_pad",
     "revert_flip",

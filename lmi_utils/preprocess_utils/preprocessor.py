@@ -5,7 +5,7 @@ from lmi_utils.image_utils.types import ImageBatch, ImageLike
 from .base import BaseProcessor
 from .operation import Config, Meta, Operation
 from .ops import (
-    CropOperation,
+    CropBoxOperation,
     FlipOperation,
     PadOperation,
     ResizeOperation,
@@ -30,7 +30,7 @@ class Preprocessor(BaseProcessor):
         PadOperation,
         FlipOperation,
         TileOperation,
-        CropOperation,
+        CropBoxOperation,
     )
 
     @classmethod

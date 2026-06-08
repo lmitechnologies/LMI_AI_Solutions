@@ -8,17 +8,18 @@ import numpy as np
 from tqdm import tqdm
 
 from lmi_utils.gadget_utils.pipeline_utils import (
+    _reconstructor,
     fit_im_to_size,
     get_img_path_batches,
     plot_one_box,
     plot_one_rbox,
     resize_image,
-    revert_masks_to_origin,
     revert_to_origin,
 )
 from lmi_utils.label_utils.bbox_utils import get_rotated_bbox
 from lmi_utils.label_utils.csv_utils import write_to_csv
 from lmi_utils.label_utils.shapes import Mask, Rect
+from lmi_utils.preprocess_utils import steps
 from object_detectors.ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
 
 BATCH_SIZE = 1
@@ -147,15 +148,16 @@ if __name__ == "__main__":
                 )
                 logger.warning(f"{im1.shape}, resizing")
                 operators.append(
-                    {
-                        "type": "resize",
-                        "metadata": [{"src_size": [im0.shape[1], im0.shape[0]], "dst_size": [im1.shape[1], im1.shape[0]]}],
-                    }
+                    steps.revert_resize(
+                        src_sizes=[[im0.shape[1], im0.shape[0]]],
+                        dst_sizes=[[im1.shape[1], im1.shape[0]]],
+                        pads=[[0, 0, 0, 0]],
+                    )
                 )
 
             if args.pad:
                 im1, pad_L, pad_R, pad_T, pad_B = fit_im_to_size(im=im1, H=args.pad[0], W=args.pad[1])
-                operators.append({"type": "pad", "metadata": [{"pad": [pad_L, pad_R, pad_T, pad_B]}]})
+                operators.append(steps.revert_pad(pads=[[pad_L, pad_R, pad_T, pad_B]]))
                 logger.warning(f"{im1.shape}, padding")
 
             if args.sz[0] != im1.shape[0] or args.sz[1] != im1.shape[1]:
@@ -187,6 +189,9 @@ if __name__ == "__main__":
                 points = results["points"][0] if "points" in results else []
                 if use_revert_to_origin:
                     boxes = revert_to_origin(boxes, operators)
+                    if masks is not None and len(masks):
+                        # revert the whole mask stack once via the coordinate path (bilinear + re-threshold)
+                        masks = _reconstructor().reconstruct_coordinates({"masks": [masks]}, operators)["masks"][0]
 
                 # loop through each box
                 for j in range(len(boxes) - 1, -1, -1):
@@ -194,9 +199,7 @@ if __name__ == "__main__":
                     mask = None
                     if masks is not None:
                         mask = masks[j]
-                        if use_revert_to_origin:
-                            mask = revert_masks_to_origin(masks, operators, interpolation="nearest")
-                        else:
+                        if not use_revert_to_origin:
                             mask = cv2.resize(mask, (im_out.shape[1], im_out.shape[0]))
                     box = boxes[j]
                     if not use_revert_to_origin:

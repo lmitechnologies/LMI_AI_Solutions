@@ -11,7 +11,7 @@ import torch
 
 from lmi_utils.preprocess_utils import steps
 from lmi_utils.preprocess_utils.ops import (
-    CropConfig,
+    CropBoxConfig,
     FlipConfig,
     PadConfig,
     ResizeConfig,
@@ -39,14 +39,14 @@ def test_resize_with_id():
     assert steps.resize(width=128, height=128, id="r1").id == "r1"
 
 
-def test_crop():
-    cfg = steps.crop(boxes=[[1, 2, 3, 4]])
-    assert isinstance(cfg, CropConfig)
+def test_cropbox():
+    cfg = steps.cropbox(boxes=[[1, 2, 3, 4]])
+    assert isinstance(cfg, CropBoxConfig)
     assert cfg.boxes == [[1, 2, 3, 4]]
 
 
-def test_crop_with_id():
-    assert steps.crop(boxes=[[0, 0, 10, 10]], id="c1").id == "c1"
+def test_cropbox_with_id():
+    assert steps.cropbox(boxes=[[0, 0, 10, 10]], id="c1").id == "c1"
 
 
 def test_flip_defaults():
@@ -88,7 +88,7 @@ def test_tile_with_modes():
 
 def test_id_defaults_to_none():
     assert steps.resize(width=64, height=64).id is None
-    assert steps.crop(boxes=[[0, 0, 1, 1]]).id is None
+    assert steps.cropbox(boxes=[[0, 0, 1, 1]]).id is None
     assert steps.flip().id is None
 
 
@@ -104,9 +104,9 @@ def test_config_runs_through_preprocessor():
     assert len(history) == 2
 
 
-def test_invalid_crop_config_raises():
+def test_invalid_cropbox_config_raises():
     with pytest.raises(ValueError, match="non-empty list"):
-        steps.crop(boxes=[])
+        steps.cropbox(boxes=[])
 
 
 def test_invalid_pad_length_raises():

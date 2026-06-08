@@ -1,13 +1,13 @@
-from .crop import CropConfig, CropMeta, CropOperation
+from .cropbox import CropBoxConfig, CropBoxMeta, CropBoxOperation
 from .flip import FlipConfig, FlipMeta, FlipOperation
 from .pad import PadConfig, PadMeta, PadOperation
 from .resize import ResizeConfig, ResizeMeta, ResizeOperation
 from .tile import TileConfig, TileMeta, TileOperation
 
 __all__ = [
-    "CropConfig",
-    "CropMeta",
-    "CropOperation",
+    "CropBoxConfig",
+    "CropBoxMeta",
+    "CropBoxOperation",
     "FlipConfig",
     "FlipMeta",
     "FlipOperation",

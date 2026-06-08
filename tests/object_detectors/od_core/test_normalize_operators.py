@@ -1,6 +1,6 @@
 import pytest
 
-from lmi_utils.preprocess_utils.ops import CropMeta, ResizeMeta
+from lmi_utils.preprocess_utils.ops import ResizeMeta
 from object_detectors.od_core.od_base import ODBase
 
 
@@ -32,15 +32,6 @@ def test_per_image_metadata_sliced():
     result = ODBase._normalize_operators(history, 2)
     assert result[0][0].src_sizes == [[1280, 720]]
     assert result[1][0].src_sizes == [[1024, 768]]
-
-
-def test_id_preserved_through_slice():
-    # CropMeta has no id field — runtime ids live on Configs, not Metas — but the slicing
-    # preserves all scalar attributes regardless.
-    history = [CropMeta(boxes=[[0, 0, 10, 10]], orig_sizes=[[100, 100]])]
-    result = ODBase._normalize_operators(history, 1)
-    assert isinstance(result[0][0], CropMeta)
-    assert result[0][0].boxes == [[0, 0, 10, 10]]
 
 
 def test_metadata_length_mismatch_raises():

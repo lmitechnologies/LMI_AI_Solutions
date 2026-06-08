@@ -69,10 +69,8 @@ class ODBase(abc.ABC):
             configs: Confidence threshold (float) or per-class thresholds (dict).
             operators: Unified preprocessing history for coordinate reversion. Accepts:
                 - None: no coordinate reversion.
-                - List of history entries of shape
-                  ``{"type": str, "metadata": [<per_image_dict>, ...], "id"?: str}``,
-                  matching what ``Preprocessor.preprocess()`` returns. ``metadata`` length
-                  must be 1 (broadcast to all images) or equal to batch size (per-image).
+                - List of history entries matching what ``Preprocessor.preprocess()`` returns.
+                  ``metadata`` length must be 1 (broadcast to all images) or equal to batch size (per-image).
         kwargs:
             batch_size (int): chunk size for dynamic mini-batch inference (default: None = all at once).
                 Ignored when self.fixed_batch_size is set.
@@ -386,8 +384,8 @@ class ODBase(abc.ABC):
         # masks
         masks = results.get("masks")
         if masks is not None and len(masks):
-            # binary instance masks: nearest preserves them (bilinear erodes on upscale)
-            results["masks"] = pipeline_utils.revert_masks_to_origin(masks, operators, interpolation="nearest")
+            reverted = pipeline_utils._reconstructor().reconstruct_coordinates({"masks": [masks]}, operators)["masks"][0]
+            results["masks"] = reverted.to(masks.dtype) if torch.is_tensor(masks) else reverted.astype(masks.dtype)
 
         # segments
         segments = results.get("segments")
