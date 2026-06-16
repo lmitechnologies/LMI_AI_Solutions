@@ -726,8 +726,10 @@ def apply_ad_mask(err_map: np.ndarray, od_predictions: dict, mask_config: dict, 
         base_mask = resize_image(mask, W=W, H=H)
         if erode_kernel:
             mask_bin = (base_mask > 0.5).astype(np.uint8)
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (erode_kernel, erode_kernel))
-            base_mask = cv2.erode(mask_bin, kernel).astype(np.float32)
+            kernel_size = abs(erode_kernel)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+            size_transform = cv2.erode if erode_kernel > 0 else cv2.dilate
+            base_mask = size_transform(mask_bin, kernel).astype(np.float32)
 
         fp_mask = weight * blur_mask(base_mask, kernel_size=blur_kernel, distance_based=not simple_blur)
         total_mask += fp_mask
