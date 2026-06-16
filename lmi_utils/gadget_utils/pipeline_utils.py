@@ -749,7 +749,7 @@ def masked_ad_predict(pipe, ad_inp, ad_model_role: str | np.ndarray, od_model_ro
     od_predictions = {k: v[0] for k, v in pipe.revert_preprocess(od_predictions, ops).items()}
     ## Parse err_map
     err_map = (
-        pipe.models[ad_model_role].predict(ad_inp) if isinstance(ad_model_role, str) else ad_model_role  # ad_role is err_map
+        pipe.models[ad_model_role].predict(ad_inp)[0] if isinstance(ad_model_role, str) else ad_model_role  # ad_role is err_map
     )
     if not od_predictions or not od_predictions["masks"].any():
         return (err_map, od_predictions, np.zeros_like(ad_inp, dtype=np.uint8))
@@ -759,11 +759,11 @@ def masked_ad_predict(pipe, ad_inp, ad_model_role: str | np.ndarray, od_model_ro
 
 
 def masked_ad_annotate(pipe, img, ad_model_role, od_model_role, err_map, od_predictions, configs, color=(152, 251, 152)):
-    fp_classes = pipe.models[od_model_role].model.names
+    fp_classes = configs["models"][od_model_role]["configs"]["confidence"].keys()
     ad_configs = configs["models"][ad_model_role]["configs"]
     err_threshold = ad_configs["min_threshold"]
     err_max = ad_configs["max_threshold"]
     annotated_img = pipe.models[ad_model_role].annotate(img, err_map, err_threshold, err_max)
     if not color:
         return annotated_img
-    return pipe.models[od_model_role].annotate_image(od_predictions, annotated_img, {c: color for c in fp_classes.values()})
+    return pipe.models[od_model_role].annotate_image(od_predictions, annotated_img, {c: color for c in fp_classes})
