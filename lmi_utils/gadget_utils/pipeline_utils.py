@@ -704,8 +704,10 @@ def apply_ad_mask(err_map: np.ndarray, od_predictions: dict, mask_config: dict, 
     global_mult = mask_config["global_weight"]
     mask_config = mask_config["masking_params"]
     total_mask = np.zeros(err_map.shape)
+    if class_names is not None:
+        class_names = [c.lower() for c in class_names]
     for i, mask in enumerate(od_predictions["masks"]):
-        fp_class = od_predictions["classes"][i]
+        fp_class = od_predictions["classes"][i].lower()
         # If class_names is defined, fp_class should be in class_names
         # (for using only specific classes from a model)
         if class_names is not None and fp_class not in class_names:
@@ -731,10 +733,13 @@ def apply_ad_mask(err_map: np.ndarray, od_predictions: dict, mask_config: dict, 
             size_transform = cv2.erode if erode_kernel > 0 else cv2.dilate
             base_mask = size_transform(mask_bin, kernel).astype(np.float32)
 
-        fp_mask = weight * blur_mask(base_mask, kernel_size=blur_kernel, distance_based=not simple_blur)
-        total_mask += fp_mask
-        scale = err_map if mask_mult else 1  # err_map * (1 - mask) if mult
-        err_map -= scale * fp_mask
+        fp_mask = np.clip(weight * blur_mask(base_mask, kernel_size=blur_kernel, distance_based=not simple_blur), 0, 1)
+        if mask_mult:
+            err_map *= 1 - fp_mask
+            total_mask = 1 - (1 - total_mask) * (1 - fp_mask)
+        else:
+            err_map -= fp_mask
+            total_mask += fp_mask
 
     total_mask = np.clip(total_mask, 0, 1)
     return err_map, total_mask
