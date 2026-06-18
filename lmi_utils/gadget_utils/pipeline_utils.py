@@ -666,3 +666,155 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
         manifest[role] = model
 
     return manifest
+
+
+def blur_mask(mask: np.ndarray, kernel_size: int, distance_based: bool = False):
+    if not kernel_size:
+        return mask
+
+    if distance_based:
+        blur_kernel_options = np.array([0, 3, 5])
+        if kernel_size not in blur_kernel_options:
+            kernel_size = blur_kernel_options[abs(blur_kernel_options - kernel_size).argmin()]
+            logger.warning(
+                f"Blur kernel size must be in {list(blur_kernel_options)} when not using "
+                f"simple blur (Distance Transform); using {kernel_size} instead"
+            )
+        mask_bin = (mask > 0.5).astype(np.uint8)
+        dist = cv2.distanceTransform(1 - mask_bin, cv2.DIST_L2, kernel_size)
+        # convert distance to soft weights
+        sigma = 5.0
+        return np.exp(-(dist**2) / (2 * sigma**2))
+
+    # Gaussian blur
+    if not kernel_size % 2:
+        logger.warning(f"Blur kernel size must be odd when using simple (Gaussian) blur; using {kernel_size + 1} instead")
+        kernel_size += 1
+    return cv2.GaussianBlur(mask, (kernel_size, kernel_size), 0)
+
+
+def apply_ad_mask(err_map: np.ndarray, od_predictions: dict, mask_config: dict, class_names=None, defect_mask=None):
+    DEFAULT_WEIGHT = 1
+    DEFAULT_CONF_WEIGHT = True
+    DEFAULT_ERODE_KERNEL = 0
+    DEFAULT_BLUR_KERNEL = 11
+    DEFAULT_REDUCE = True
+    DEFAULT_SIMPLE_BLUR = True
+
+    global_mult = mask_config["global_weight"]
+    mask_config = mask_config["masking_params"]
+    total_mask = np.zeros(err_map.shape)
+    if class_names is not None:
+        class_names = [c.lower() for c in class_names]
+
+    # Resize defect_mask to err_map size
+    H, W = err_map.shape[:2]
+    if isinstance(defect_mask, np.ndarray):
+        defect_mask = resize_image(defect_mask, W=W, H=H)
+
+    for i, mask in enumerate(od_predictions["masks"]):
+        fp_class = od_predictions["classes"][i].lower()
+        # If class_names is defined, fp_class should be in class_names
+        # (for using only specific classes from a model)
+        if class_names is not None and fp_class not in class_names:
+            continue
+        cls_mask_config = mask_config.get(fp_class, {})
+        use_conf_damp = cls_mask_config.get("weight_by_confidence", DEFAULT_CONF_WEIGHT)
+        conf_damp = od_predictions["scores"][i] if use_conf_damp else 1
+        weight = conf_damp * global_mult * cls_mask_config.get("weight", DEFAULT_WEIGHT)
+        if not weight:
+            continue
+
+        erode_kernel = cls_mask_config.get("erode_kernel_size", DEFAULT_ERODE_KERNEL)
+        blur_kernel = cls_mask_config.get("blur_kernel_size", DEFAULT_BLUR_KERNEL)
+        mask_mult = cls_mask_config.get("multiply_by_mask", DEFAULT_REDUCE)
+        simple_blur = cls_mask_config.get("simple_blur", DEFAULT_SIMPLE_BLUR)
+
+        base_mask = resize_image(mask, W=W, H=H)
+        if erode_kernel:
+            mask_bin = (base_mask > 0.5).astype(np.uint8)
+            kernel_size = abs(erode_kernel)
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+            size_transform = cv2.erode if erode_kernel > 0 else cv2.dilate
+            base_mask = size_transform(mask_bin, kernel).astype(np.float32)
+
+        fp_mask = np.clip(weight * blur_mask(base_mask, kernel_size=blur_kernel, distance_based=not simple_blur), 0, 1)
+        if isinstance(defect_mask, np.ndarray):
+            fp_mask = np.clip(fp_mask - defect_mask, 0, 1)
+        if mask_mult:
+            err_map *= 1 - fp_mask
+            total_mask = 1 - (1 - total_mask) * (1 - fp_mask)
+        else:
+            err_map -= fp_mask
+            total_mask += fp_mask
+
+    total_mask = np.clip(total_mask, 0, 1)
+    return err_map, total_mask
+
+
+def masked_ad_predict(
+    pipe, ad_inp, ad_model_role: str | np.ndarray, od_model_role: str, configs: dict, class_names=None, known_defects=None
+):
+
+    def get_od_predictions(model_role, inp):
+        od_inp, ops = pipe.preprocess(model_role, [inp])
+        conf = configs["models"][model_role]["configs"]["confidence"]
+        od_predictions, time_info = pipe.models[model_role].predict(od_inp[0], conf)
+        # Take first item from batch
+        return {k: v[0] for k, v in pipe.revert_preprocess(od_predictions, ops).items()}
+
+    ## Get OD predictions
+    od_predictions = get_od_predictions(od_model_role, ad_inp)
+
+    ## Parse err_map
+    err_map = (
+        pipe.models[ad_model_role].predict(ad_inp)[0] if isinstance(ad_model_role, str) else ad_model_role  # ad_role is err_map
+    )
+    if not od_predictions or not od_predictions["masks"].any():
+        return (err_map, od_predictions, np.zeros_like(ad_inp, dtype=np.uint8))
+
+    ## Parse known_defects (supported defect model_role, defect_names, defect_masks)
+    class_names = set(class_names or configs["models"][od_model_role]["configs"]["confidence"])
+    defect_mask = None
+    if isinstance(known_defects, list):
+        # Allow passing list of np.ndarray masks or list of defect names (str) to take from OD masks
+        first_item = known_defects[0] if known_defects else None
+        if isinstance(first_item, np.ndarray):  # Provide masks directly
+            defect_mask = np.max(known_defects, axis=0)
+        elif isinstance(first_item, str):  # Use masks from od_model_role
+            known_defect_names = {x.lower() for x in known_defects}
+            selected_masks = [
+                mask for i, mask in enumerate(od_predictions["masks"]) if od_predictions["classes"][i].lower() in known_defect_names
+            ]
+            defect_mask = np.max(selected_masks, axis=0) if selected_masks else None
+            class_names -= known_defect_names
+    elif known_defects is not None:
+        if isinstance(known_defects, np.ndarray):
+            defect_mask = known_defects
+        else:  # Interpret known_defects as a model_role
+            assert known_defects in pipe.models, f"{known_defects} is not a valid model_role"
+            assert known_defects != od_model_role, "Providing model known_defects as same role as od_model_role is not supported"
+            defect_mask = get_od_predictions(known_defects, ad_inp)["masks"]
+
+        defect_mask = np.asarray(defect_mask, dtype=np.float32)
+        if not len(defect_mask):
+            defect_mask = None
+        elif len(defect_mask.shape) == 3:
+            defect_mask = np.max(defect_mask, axis=0)
+
+    masked_err_map, mask = apply_ad_mask(
+        err_map, od_predictions, mask_config=configs[od_model_role], class_names=class_names, defect_mask=defect_mask
+    )
+    mask_img = cv2.cvtColor((mask * 255).astype("uint8"), cv2.COLOR_GRAY2RGB)
+    return masked_err_map, od_predictions, mask_img
+
+
+def masked_ad_annotate(pipe, img, ad_model_role, od_model_role, err_map, od_predictions, configs, color=(152, 251, 152)):
+    fp_classes = configs["models"][od_model_role]["configs"]["confidence"].keys()
+    ad_configs = configs["models"][ad_model_role]["configs"]
+    err_threshold = ad_configs["min_threshold"]
+    err_max = ad_configs["max_threshold"]
+    annotated_img = pipe.models[ad_model_role].annotate(img, err_map, err_threshold, err_max)
+    if not color:
+        return annotated_img
+    return pipe.models[od_model_role].annotate_image(od_predictions, annotated_img, {c: color for c in fp_classes})
