@@ -103,6 +103,25 @@ def pad_dataset(dataset, images, output_imsize, crop_warning_level=logging.DEBUG
     return padded_images, dataset
 
 
+def _clip_corner_coords(X, Y, W, H):
+    """Clip polygon-corner coords to the box [0,W]x[0,H].
+
+    Returns (new_X, new_Y, status); status is "delete" (fully outside), "clip" (partly outside), or "keep".
+    """
+    X, Y = np.asarray(X), np.asarray(Y)
+    new_X = np.clip(X, a_min=0, a_max=W)
+    new_Y = np.clip(Y, a_min=0, a_max=H)
+    if np.all(new_X == W) or np.all(new_Y == H) or np.all(new_X == 0) or np.all(new_Y == 0):
+        return new_X, new_Y, "delete"
+    clipped = (
+        (np.any(new_X == W) and np.all(X != W))
+        or (np.any(new_Y == H) and np.all(Y != H))
+        or (np.any(new_X == 0) and np.all(X != 0))
+        or (np.any(new_Y == 0) and np.all(Y != 0))
+    )
+    return new_X, new_Y, "clip" if clipped else "keep"
+
+
 def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
     """
     description:
@@ -113,7 +132,20 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
     delete_ids = []
     for _i, shape in enumerate(shapes):
         is_del = 0
-        if shape.type == AnnotationType.BOX:
+        if shape.type == AnnotationType.BOX and shape.value.angle != 0:
+            # rotated box: clip on its true rotated footprint, preserving the angle (the unrotated bounds aren't its real extent)
+            X, Y = shape.value.to_polygon().coords()
+            new_X, new_Y, status = _clip_corner_coords(X, Y, W, H)
+            if status == "delete":
+                is_del = 1
+                delete_ids.append(shape.id)
+                logger.log(crop_warning_level, f"Rotated box {shape.id} was excluded by image dimensions [{W},{H}]")
+            elif status == "clip":
+                logger.log(crop_warning_level, f"Rotated box {shape.id} was clipped to image dimensions [{W}, {H}]")
+                is_warning = True
+                shape.value = Polygon(points=np.array(list(zip(new_X, new_Y))).astype(int).tolist()).to_rbox()
+
+        elif shape.type == AnnotationType.BOX:
             box = shape.value.to_numpy()[:-1]
             new_box = np.clip(box, a_min=0, a_max=[W, H, W, H])
 
@@ -139,33 +171,20 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
 
         elif shape.type == AnnotationType.MASK or shape.type == AnnotationType.POLYGON:
             X, Y = shape.value.coords(w=W, h=H)
-            new_X = np.clip(X, a_min=0, a_max=W)
-            new_Y = np.clip(Y, a_min=0, a_max=H)
-            if np.all(new_X == W) or np.all(new_Y == H) or np.all(new_X == 0) or np.all(new_Y == 0):
+            new_X, new_Y, status = _clip_corner_coords(X, Y, W, H)
+            if status == "delete":
                 is_del = 1
                 delete_ids.append(shape.id)
-                # logger.warning(f'polygon {[(x,y) for x,y in zip(new_X,new_Y)]} is outside of the size [{W},{H}]')
-                logger.log(
-                    crop_warning_level,
-                    f"Polygon {shape.id} was excluded by image dimensions [{W},{H}]",
-                )
-
-            elif (
-                (np.any(new_X == W) and np.all(X != W))
-                or (np.any(new_Y == H) and np.all(Y != H))
-                or (np.any(new_X == 0) and np.all(X != 0))
-                or (np.any(new_Y == 0) and np.all(Y != 0))
-            ):
-                logger.log(
-                    crop_warning_level,
-                    f"Polygon {shape.id} was clipped to image dimensions [{W}, {H}]",
-                )
+                logger.log(crop_warning_level, f"Polygon {shape.id} was excluded by image dimensions [{W},{H}]")
+            elif status == "clip":
+                logger.log(crop_warning_level, f"Polygon {shape.id} was clipped to image dimensions [{W}, {H}]")
                 is_warning = True
+                pts = np.array(list(zip(new_X, new_Y))).astype(int)
                 if shape.type == AnnotationType.POLYGON:
-                    shape.value = Polygon(points=np.array(list(zip(new_X, new_Y))).astype(int).tolist())
+                    shape.value = Polygon(points=pts.tolist())
                 else:
                     img = np.zeros((H, W), dtype=np.uint8)
-                    cv2.fillPoly(img, [np.array(list(zip(new_X, new_Y))).astype(int)], 1)
+                    cv2.fillPoly(img, [pts], 1)
                     shape.value = Mask(mask=img)
 
         elif shape.type == AnnotationType.KEYPOINT:
