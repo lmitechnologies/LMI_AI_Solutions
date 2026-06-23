@@ -257,7 +257,7 @@ def _save_dataset(path, img_name, h, w, annotations, labels):
     Dataset(labels=labels, files=[fa]).save(str(path))
 
 
-def _run_and_check_outputs(tmp_path, weights, model_type, img_dir, img_name, annotations, labels, expect_kpt=False, nkpt=0):
+def _run_and_check_outputs(tmp_path, weights, model_type, img_dir, img_name, annotations, labels, image_size, expect_kpt=False, nkpt=0):
     label_path = tmp_path / "labels.json"
     _save_dataset(label_path, img_name, *cv2.imread(os.path.join(img_dir, img_name)).shape[:2], annotations, labels)
     out_pred = tmp_path / "out" / "preds.json"
@@ -273,14 +273,14 @@ def _run_and_check_outputs(tmp_path, weights, model_type, img_dir, img_name, ann
         str(out_pred),
         str(out_img_dir),
         str(out_iou_dir),
-        image_size=(640, 640),
+        image_size=image_size,
         confidence=0.25,
     )
 
     ds = Dataset.load(str(out_pred))
     assert len(ds.files) == 1
     f = ds.files[0]
-    assert max(f.width, f.height) == 640  # resized to fit 640x640 keeping aspect ratio
+    assert max(f.width, f.height) == max(image_size)  # resized to fit image_size keeping aspect ratio
     assert os.path.exists(os.path.join(out_img_dir, img_name))
 
     iou_json = json.load(open(os.path.join(out_iou_dir, f.id + ".json")))
@@ -300,7 +300,9 @@ def test_write_json_oriented_end_to_end(tmp_path):
     img_name = "P1470__1024__3296___1648.jpg"
     annotations = [_ann("soccer ball field", AnnotationType.BOX, Box(300, 300, 700, 700, 0))]  # central box, survives unpad
     labels = [Label(id="soccer ball field")]
-    _run_and_check_outputs(tmp_path, OBB_WEIGHTS, "OrientedObjectDetection", DOTA8_IMG_DIR, img_name, annotations, labels)
+    _run_and_check_outputs(
+        tmp_path, OBB_WEIGHTS, "OrientedObjectDetection", DOTA8_IMG_DIR, img_name, annotations, labels, image_size=(1024, 1024)
+    )
 
 
 @pytest.mark.skipif(not os.path.exists(POSE_WEIGHTS), reason=f"pose weights not found: {POSE_WEIGHTS}")
@@ -317,5 +319,14 @@ def test_write_json_keypoint_end_to_end(tmp_path):
         kpts.append(_ann("kp", AnnotationType.KEYPOINT, Point2d(x, y), ann_id=str(i + 1), confidence=None))
     labels = [Label(id="person"), Label(id="kp")]
     _run_and_check_outputs(
-        tmp_path, POSE_WEIGHTS, "KeypointDetection", COCO_IMG_DIR, img_name, [box] + kpts, labels, expect_kpt=True, nkpt=nkpt
+        tmp_path,
+        POSE_WEIGHTS,
+        "KeypointDetection",
+        COCO_IMG_DIR,
+        img_name,
+        [box] + kpts,
+        labels,
+        image_size=(640, 640),
+        expect_kpt=True,
+        nkpt=nkpt,
     )
