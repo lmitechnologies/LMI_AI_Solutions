@@ -178,7 +178,7 @@ def write_json(
                 if model_type == "KeypointDetection":
                     pts = preds["points"][i]
                     for j in range(len(pts)):
-                        pt = np.squeeze(pts[j])
+                        pt = np.squeeze(pts[j])[:2]  # keep (x, y); drop visibility when kpt_shape is [N, 3]
                         dt = dict(
                             id=str(current_id),
                             label_id=label_name,
@@ -233,18 +233,19 @@ def write_json(
                 n_gt_kpt = len(labels["points"])
                 n_pred_kpt = len(preds["points"])
                 if n_gt_kpt and n_pred_kpt:
-                    kpt_shape = model.model.kpt_shape
-                    labels["points"] = labels["points"].reshape(-1, *kpt_shape)  # (N, n_kp, 2)
-                    preds["points"] = preds["points"].reshape(-1, *kpt_shape)  # (M, n_kp, 2)
+                    nkpt = model.model.kpt_shape[0]
+                    # parsed points are always (x, y); reshape with 2, independent of kpt_shape's visibility dim
+                    labels["points"] = labels["points"].reshape(-1, nkpt, 2)  # (N, n_kp, 2)
+                    preds["points"] = preds["points"].reshape(-1, nkpt, 2)  # (M, n_kp, 2)
                     # add ones to the last dimension for visibility
+                    # TODO: update point2d in data schema to include visibility
                     gt_points = torch.from_numpy(labels["points"]).to(model.device)
                     gt_points = torch.cat((gt_points, torch.ones_like(gt_points[..., :-1])), dim=-1)  # (N, n_kp, 3)
 
                     pred_points = torch.from_numpy(preds["points"]).to(model.device)
                     pred_points = torch.cat((pred_points, torch.ones_like(pred_points[..., :-1])), dim=-1)  # (M, n_kp, 3)
-                    # `0.53` is from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/models/yolo/pose/val.py#L251
+                    # `0.53` is from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/models/yolo/pose/val.py#L181
                     area = ops.xyxy2xywh(gt_boxes)[:, 2:].prod(1) * 0.53
-                    nkpt = kpt_shape[0]
                     sigma = np.ones(nkpt) / nkpt
                     ious_kpt = kpt_iou(gt_points, pred_points, sigma=sigma, area=area)
         elif model_type == "OrientedObjectDetection":
