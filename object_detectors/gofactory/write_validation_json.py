@@ -24,6 +24,13 @@ from object_detectors.ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose,
 
 logger = logging.getLogger(__name__)
 
+MODEL_CLASSES = {
+    "ObjectDetection": Yolo,
+    "InstanceSegmentation": YoloSeg,
+    "OrientedObjectDetection": YoloObb,
+    "KeypointDetection": YoloPose,
+}
+
 
 def parse_annotations(annotations: list[Annotation], h: int, w: int, model_type: str) -> dict:
     """parse label annotations from a list.
@@ -44,7 +51,10 @@ def parse_annotations(annotations: list[Annotation], h: int, w: int, model_type:
     for annot in annotations:
         label_names.append(annot.label_id)
         if annot.type == AnnotationType.BOX:
-            boxes.append(annot.value.to_numpy())
+            if model_type == "OrientedObjectDetection":
+                boxes.append(annot.value.to_polygon().to_numpy())  # 4 corners (xyxyxyxy) for rotated iou
+            else:
+                boxes.append(annot.value.to_numpy())
         elif annot.type == AnnotationType.MASK:
             mask = annot.value.to_numpy(h=h, w=w)
             masks.append(mask)
@@ -68,6 +78,151 @@ def parse_annotations(annotations: list[Annotation], h: int, w: int, model_type:
         "points": np.array(points),
         "classes": np.array(label_names),
     }
+
+
+def update_annotation_ids(annotations: list[Annotation], start_id=0):
+    """reassign sequential ids to annotations in place, starting from start_id."""
+    for i, annot in enumerate(annotations):
+        annot.id = str(start_id + i)
+
+
+def build_prediction_annotations(preds: dict, model_type: str, start_id: int) -> list[Annotation]:
+    """build prediction Annotation objects from a model's per-image outputs.
+
+    Args:
+        preds (dict): per-image predictions with 'classes','boxes','scores' and optional 'masks','points'
+        model_type (str): the model type
+        start_id (int): first annotation id; ids are sequential and tentative (reassigned after unpadding)
+
+    Returns:
+        list[Annotation]: prediction annotations in padded coordinates
+    """
+    preds_padded = []
+    current_id = start_id
+    for i in range(len(preds["classes"])):
+        box = preds["boxes"][i]
+        mask = preds["masks"][i] if "masks" in preds else None
+        label_name = preds["classes"][i]
+        score = preds["scores"][i].item()
+
+        if model_type == "InstanceSegmentation":
+            dt = dict(
+                id=str(current_id),
+                label_id=label_name,
+                type=AnnotationType.MASK,
+                value=Mask(mask),
+                confidence=score,
+            )
+            preds_padded.append(Annotation(**dt))
+            current_id += 1
+        elif model_type in ["ObjectDetection", "KeypointDetection"]:
+            dt = dict(
+                id=str(current_id),
+                label_id=label_name,
+                type=AnnotationType.BOX,
+                value=Box(*box, angle=0),
+                confidence=score,
+            )
+            preds_padded.append(Annotation(**dt))
+            current_id += 1
+
+            if model_type == "KeypointDetection":
+                pts = preds["points"][i]
+                for j in range(len(pts)):
+                    pt = np.squeeze(pts[j])[:2]  # keep (x, y); drop visibility when kpt_shape is [N, 3]
+                    dt = dict(
+                        id=str(current_id),
+                        label_id=label_name,
+                        type=AnnotationType.KEYPOINT,
+                        value=Point2d(*pt),
+                    )
+                    preds_padded.append(Annotation(**dt))
+                    current_id += 1
+        elif model_type == "OrientedObjectDetection":
+            dt = dict(
+                id=str(current_id),
+                label_id=label_name,
+                type=AnnotationType.BOX,
+                value=Polygon(points=box).to_rbox(),  # model outputs corners (xyxyxyxy)
+                confidence=score,
+            )
+            preds_padded.append(Annotation(**dt))
+            current_id += 1
+    return preds_padded
+
+
+def compute_ious(labels: dict, preds: dict, model_type: str, model) -> dict:
+    """compute the iou matrix between parsed labels and predictions.
+
+    Args:
+        labels (dict): parsed label annotations (see parse_annotations)
+        preds (dict): parsed prediction annotations (see parse_annotations)
+        model_type (str): the model type
+        model: the loaded model (used for device and kpt_shape)
+
+    Returns:
+        dict: {'n_gt','n_pred','ious'}; for KeypointDetection also
+            {'n_gt_kpt','n_pred_kpt','ious_kpt'}. 'ious'/'ious_kpt' are tensors or None.
+    """
+    ious = None
+    if model_type == "InstanceSegmentation":
+        n_gt = len(labels["masks"])
+        n_pred = len(preds["masks"])
+        if n_gt and n_pred:
+            gt_masks = torch.from_numpy(labels["masks"]).float().to(model.device)
+            pred_masks = torch.from_numpy(preds["masks"]).float().to(model.device)
+            ious = mask_iou(
+                gt_masks.view(gt_masks.shape[0], -1),
+                pred_masks.view(pred_masks.shape[0], -1),
+            )
+        return {"n_gt": n_gt, "n_pred": n_pred, "ious": ious}
+
+    if model_type in ["ObjectDetection", "KeypointDetection"]:
+        n_gt = len(labels["boxes"])
+        n_pred = len(preds["boxes"])
+        gt_boxes = None
+        if n_gt and n_pred:
+            gt_boxes = torch.from_numpy(labels["boxes"][:, :-1]).to(model.device)
+            pred_boxes = torch.from_numpy(preds["boxes"][:, :-1]).to(model.device)
+            ious = box_iou(gt_boxes, pred_boxes)
+        result = {"n_gt": n_gt, "n_pred": n_pred, "ious": ious}
+        if model_type == "KeypointDetection":
+            ious_kpt = None
+            n_gt_kpt = len(labels["points"])
+            n_pred_kpt = len(preds["points"])
+            if n_gt_kpt and n_pred_kpt:
+                nkpt = model.model.kpt_shape[0]
+                # parsed points are always (x, y); reshape with 2, independent of kpt_shape's visibility dim
+                labels["points"] = labels["points"].reshape(-1, nkpt, 2)  # (N, n_kp, 2)
+                preds["points"] = preds["points"].reshape(-1, nkpt, 2)  # (M, n_kp, 2)
+                # add ones to the last dimension for visibility
+                # TODO: update point2d in data schema to include visibility
+                gt_points = torch.from_numpy(labels["points"]).to(model.device)
+                gt_points = torch.cat((gt_points, torch.ones_like(gt_points[..., :-1])), dim=-1)  # (N, n_kp, 3)
+
+                pred_points = torch.from_numpy(preds["points"]).to(model.device)
+                pred_points = torch.cat((pred_points, torch.ones_like(pred_points[..., :-1])), dim=-1)  # (M, n_kp, 3)
+                # `0.53` is from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/models/yolo/pose/val.py#L181
+                area = ops.xyxy2xywh(gt_boxes)[:, 2:].prod(1) * 0.53
+                sigma = np.ones(nkpt) / nkpt
+                ious_kpt = kpt_iou(gt_points, pred_points, sigma=sigma, area=area)
+            result.update(n_gt_kpt=n_gt_kpt, n_pred_kpt=n_pred_kpt, ious_kpt=ious_kpt)
+        return result
+
+    if model_type == "OrientedObjectDetection":
+        n_gt = len(labels["boxes"])
+        n_pred = len(preds["boxes"])
+        if n_gt and n_pred:
+            gt = labels["boxes"].astype(np.int32)
+            gt = torch.from_numpy(gt).to(model.device)
+            gt2 = ops.xyxyxyxy2xywhr(gt)
+            pred = preds["boxes"].astype(np.int32)
+            pred = torch.from_numpy(pred).to(model.device)
+            pred2 = ops.xyxyxyxy2xywhr(pred)
+            ious = nms.batch_probiou(gt2, pred2)
+        return {"n_gt": n_gt, "n_pred": n_pred, "ious": ious}
+
+    raise Exception(f"Not supported model type: {model_type}")
 
 
 def write_json(
@@ -103,16 +258,9 @@ def write_json(
 
     """
     # load the model by model type
-    if model_type == "ObjectDetection":
-        model = Yolo(model_path)
-    elif model_type == "InstanceSegmentation":
-        model = YoloSeg(model_path)
-    elif model_type == "OrientedObjectDetection":
-        model = YoloObb(model_path)
-    elif model_type == "KeypointDetection":
-        model = YoloPose(model_path)
-    else:
+    if model_type not in MODEL_CLASSES:
         raise Exception(f"Not supported model type: {model_type}")
+    model = MODEL_CLASSES[model_type](model_path)
 
     dataset = Dataset.load(label_path)
     pred_annot_id = 0
@@ -122,86 +270,60 @@ def write_json(
         im = cv2.imread(p)
         if im is None:
             raise Exception(f"Could not read image {p}")
-
-        # get labels
         im = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
         h, w = im.shape[:2]
         h_train, w_train = image_size if image_size is not None else (h, w)
 
-        # convert rotated bbox to polygon
-        # To prevent from clipping: rotated boxes are stored in the UNROTATED (xyxyr) format and might be outside of the image
-        converted_annots = file_annot.annotations.copy()
-        if model_type == "OrientedObjectDetection":
-            for i, annot in enumerate(file_annot.annotations):
-                if annot.type == AnnotationType.BOX:
-                    poly = annot.value.to_polygon()
-                    converted_annots[i] = Annotation(
-                        id=annot.id,
-                        label_id=annot.label_id,
-                        type=AnnotationType.POLYGON,
-                        value=poly,
-                        link=annot.link,
-                        confidence=annot.confidence,
-                        iou=annot.iou,
-                    )
-
-        im_resized, annotations_resized = resize_annotated_image(im, converted_annots, w_train, h_train, maintain_aspect_ratio=True)
+        # get labels
+        im_resized, annotations_resized = resize_annotated_image(im, file_annot.annotations, w_train, h_train, maintain_aspect_ratio=True)
         im_padded, annotations_padded, _ = pad_annotated_image(im_resized, annotations_resized, w_train, h_train)
-        labels = parse_annotations(annotations_padded, h_train, w_train, model_type)
 
+        # run inference
         preds_batch, _ = model.predict(im_padded, confidence, iou=iou, max_det=max_det)
         preds = {k: v[0] for k, v in preds_batch.items()}
 
-        # get ious
-        ious = None
-        if model_type == "InstanceSegmentation":
-            n_gt = len(labels["masks"])
-            n_pred = len(preds["masks"])
-            if n_gt and n_pred:
-                gt_masks = torch.from_numpy(labels["masks"]).float().to(model.device)
-                pred_masks = torch.from_numpy(preds["masks"]).to(model.device)
-                ious = mask_iou(
-                    gt_masks.view(gt_masks.shape[0], -1),
-                    pred_masks.view(pred_masks.shape[0], -1),
-                )
-        elif model_type in ["ObjectDetection", "KeypointDetection"]:
-            n_gt = len(labels["boxes"])
-            n_pred = len(preds["boxes"])
-            if n_gt and n_pred:
-                gt_boxes = torch.from_numpy(labels["boxes"][:, :-1]).to(model.device)
-                pred_boxes = torch.from_numpy(preds["boxes"]).to(model.device)
-                ious = box_iou(gt_boxes, pred_boxes)
-            ious_kpt = None
-            if model_type == "KeypointDetection":
-                n_gt_kpt = len(labels["points"])
-                n_pred_kpt = len(preds["points"])
-                if n_gt_kpt and n_pred_kpt:
-                    kpt_shape = model.model.kpt_shape
-                    labels["points"] = labels["points"].reshape(-1, *kpt_shape)  # (N, n_kp, 2)
-                    # add ones to the last dimension for visibility
-                    gt_points = torch.from_numpy(labels["points"]).to(model.device)
-                    gt_points = torch.cat((gt_points, torch.ones_like(gt_points[..., :-1])), dim=-1)  # (N, n_kp, 3)
+        # build prediction annotations (padded coords); ids are tentative and reassigned after unpadding
+        logger.info(f"Found {len(preds['classes'])} predictions for {fname}")
+        preds_padded = build_prediction_annotations(preds, model_type, pred_annot_id)
 
-                    pred_points = torch.from_numpy(preds["points"]).to(model.device)
-                    pred_points = torch.cat((pred_points, torch.ones_like(pred_points[..., :-1])), dim=-1)  # (M, n_kp, 3)
-                    # `0.53` is from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/models/yolo/pose/val.py#L251
-                    area = ops.xyxy2xywh(gt_boxes)[:, 2:].prod(1) * 0.53
-                    nkpt = kpt_shape[0]
-                    sigma = np.ones(nkpt) / nkpt
-                    ious_kpt = kpt_iou(gt_points, pred_points, sigma=sigma, area=area)
-        elif model_type == "OrientedObjectDetection":
-            n_gt = len(labels["boxes"])
-            n_pred = len(preds["boxes"])
-            if n_gt and n_pred:
-                gt = labels["boxes"].astype(np.int32)
-                gt = torch.from_numpy(gt).to(model.device)
-                gt2 = ops.xyxyxyxy2xywhr(gt)
-                pred = preds["boxes"].astype(np.int32)
-                pred = torch.from_numpy(pred).to(model.device)
-                pred2 = ops.xyxyxyxy2xywhr(pred)
-                ious = nms.batch_probiou(gt2, pred2)
+        # remove padding (keep resized); predictions in the padded region are dropped here
+        h_unpad, w_unpad = im_resized.shape[:2]
+        im_unpadded, preds_unpadded, is_deleted = pad_annotated_image(im_padded, preds_padded, w_unpad, h_unpad)
+        _, annotations_unpadded, _ = pad_annotated_image(im_padded, annotations_padded, w_unpad, h_unpad)
+        if is_deleted:
+            update_annotation_ids(preds_unpadded, start_id=pred_annot_id)  # keep ids contiguous after deletion
+        pred_annot_id += len(preds_unpadded)
 
-        # get iou matrixs
+        # compute ious on the unpadded annotations so the matrix matches the saved output
+        labels = parse_annotations(annotations_unpadded, h_unpad, w_unpad, model_type)
+        preds = parse_annotations(preds_unpadded, h_unpad, w_unpad, model_type)
+        iou_result = compute_ious(labels, preds, model_type, model)
+        n_gt = iou_result["n_gt"]
+        n_pred = iou_result["n_pred"]
+
+        # the iou matrix must align with the saved annotations; for keypoints, n_gt/n_pred count boxes (each box also has keypoints)
+        if model_type == "KeypointDetection":
+            n_gt_unpad = sum(a.type == AnnotationType.BOX for a in annotations_unpadded)
+            n_pred_unpad = sum(a.type == AnnotationType.BOX for a in preds_unpadded)
+        else:
+            n_gt_unpad = len(annotations_unpadded)
+            n_pred_unpad = len(preds_unpadded)
+        if n_gt_unpad != n_gt:
+            raise Exception(f"Invalid number of labels after unpadding: {n_gt_unpad} vs n_gt: {n_gt}")
+        if n_pred_unpad != n_pred:
+            raise Exception(f"Invalid number of predictions after unpadding: {n_pred_unpad} vs n_pred: {n_pred}")
+        if model_type == "KeypointDetection":
+            # every box must keep its full set of keypoints (none dropped independently during unpadding)
+            nkpt = model.model.kpt_shape[0]
+            n_gt_kpt = iou_result["n_gt_kpt"]
+            n_pred_kpt = iou_result["n_pred_kpt"]
+            if n_gt_kpt != n_gt * nkpt:
+                raise Exception(f"Invalid number of label keypoints after unpadding: {n_gt_kpt} vs expected {n_gt * nkpt}")
+            if n_pred_kpt != n_pred * nkpt:
+                raise Exception(f"Invalid number of prediction keypoints after unpadding: {n_pred_kpt} vs expected {n_pred * nkpt}")
+
+        # create iou json
+        ious = iou_result["ious"]
         ious_out = [] if ious is None else ious.cpu().numpy().tolist()
         iou_json = dict(
             n_gt=n_gt,
@@ -209,100 +331,16 @@ def write_json(
             iou=ious_out,  # a shape of n_gt x n_pred
         )
         if model_type == "KeypointDetection":
+            ious_kpt = iou_result["ious_kpt"]
             iou_json["kpt_iou"] = [] if ious_kpt is None else ious_kpt.cpu().numpy().tolist()
-            iou_json["n_gt_kpt"] = n_gt_kpt
-            iou_json["n_pred_kpt"] = n_pred_kpt
+            iou_json["n_gt_kpt"] = iou_result["n_gt_kpt"]
+            iou_json["n_pred_kpt"] = iou_result["n_pred_kpt"]
 
         # write ious to a json file
         os.makedirs(out_iou_dir, exist_ok=True)
         out_iou_path = os.path.join(out_iou_dir, file_annot.id + ".json")
         with open(out_iou_path, "w") as f:
             json.dump(iou_json, f)
-
-        # add predictions to dataset
-        logger.info(f"Found {len(preds['classes'])} predictions for {fname}")
-        preds_padded = []
-        for i in range(len(preds["classes"])):
-            box = preds["boxes"][i]
-            mask = preds["masks"][i] if "masks" in preds else None
-            label_name = preds["classes"][i]
-            score = preds["scores"][i].item()
-
-            if model_type == "InstanceSegmentation":
-                dt = dict(
-                    id=str(pred_annot_id),
-                    label_id=label_name,
-                    type=AnnotationType.MASK,
-                    value=Mask(mask),
-                    confidence=score,
-                )
-                preds_padded.append(Annotation(**dt))
-                pred_annot_id += 1
-            elif model_type in ["ObjectDetection", "KeypointDetection"]:
-                dt = dict(
-                    id=str(pred_annot_id),
-                    label_id=label_name,
-                    type=AnnotationType.BOX,
-                    value=Box(*box, angle=0),
-                    confidence=score,
-                )
-                preds_padded.append(Annotation(**dt))
-                pred_annot_id += 1
-
-                if model_type == "KeypointDetection":
-                    pts = preds["points"][i]
-                    for j in range(len(pts)):
-                        pt = np.squeeze(pts[j])
-                        dt = dict(
-                            id=str(pred_annot_id),
-                            label_id=label_name,
-                            type=AnnotationType.KEYPOINT,
-                            value=Point2d(*pt),
-                        )
-                        preds_padded.append(Annotation(**dt))
-                        pred_annot_id += 1
-            elif model_type == "OrientedObjectDetection":
-                # save as polygons
-                dt = dict(
-                    id=str(pred_annot_id),
-                    label_id=label_name,
-                    type=AnnotationType.POLYGON,
-                    value=Polygon(points=box),
-                    confidence=score,
-                )
-                preds_padded.append(Annotation(**dt))
-                pred_annot_id += 1
-
-        # remove padding and save image
-        im_unpadded, preds_unpadded, _ = pad_annotated_image(im_padded, preds_padded, im_resized.shape[1], im_resized.shape[0])
-        _, annotations_unpadded, _ = pad_annotated_image(im_padded, annotations_padded, im_resized.shape[1], im_resized.shape[0])
-
-        # convert back to xyxyr format
-        if model_type == "OrientedObjectDetection":
-            for i, annot in enumerate(preds_unpadded):
-                if annot.type == AnnotationType.POLYGON:
-                    rbox = annot.value.to_rbox()
-                    preds_unpadded[i] = Annotation(
-                        id=annot.id,
-                        label_id=annot.label_id,
-                        type=AnnotationType.BOX,
-                        value=rbox,
-                        link=annot.link,
-                        confidence=annot.confidence,
-                        iou=annot.iou,
-                    )
-            for i, annot in enumerate(annotations_unpadded):
-                if annot.type == AnnotationType.POLYGON:
-                    rbox = annot.value.to_rbox()
-                    annotations_unpadded[i] = Annotation(
-                        id=annot.id,
-                        label_id=annot.label_id,
-                        type=AnnotationType.BOX,
-                        value=rbox,
-                        link=annot.link,
-                        confidence=annot.confidence,
-                        iou=annot.iou,
-                    )
 
         im_out = cv2.cvtColor(im_unpadded, cv2.COLOR_RGB2BGR)
         out_image_path = os.path.join(out_image_dir, file_annot.path)
