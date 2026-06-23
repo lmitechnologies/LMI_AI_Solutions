@@ -18,6 +18,10 @@ class ADBase(ABC):
     # Set to a positive integer in subclasses that use a fixed-batch-size model.
     fixed_batch_size: int = None
 
+    # AD models stretch off-size inputs to image_size (no aspect preservation). The pipeline reads
+    # this to record the matching inverse when preprocessing does not already resize to image_size.
+    RESIZE_PRESERVE_ASPECT: bool = False
+
     @property
     def colormap_tensor(self):
         """Lazily initialize and return a [256, 3] turbo colormap tensor on self.device."""

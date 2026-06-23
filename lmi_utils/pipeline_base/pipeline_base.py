@@ -9,6 +9,7 @@ from logging import Logger
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
+from anomaly_detectors.ad_core.ad_base import ADBase
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
 from classifiers.cls_core.classifier import Classifier
 from lmi_utils.dataset_utils.representations import (
@@ -246,7 +247,13 @@ class PipelineBase(metaclass=ABCMeta):
 
         images = self.preprocessor.as_image_list(images)
         processed, history = self.preprocessor.preprocess(images, self._preprocessing[model_role])
-        return self._ensure_od_input_size(model_role, images, processed, history)
+
+        model = self.models.get(model_role)
+        if isinstance(model, ODBase):
+            return self._ensure_od_input_size(model_role, images, processed, history)
+        if isinstance(model, ADBase):
+            return self._record_ad_internal_resize(model_role, processed, history)
+        return processed, history
 
     def _ensure_od_input_size(
         self,
@@ -256,19 +263,16 @@ class PipelineBase(metaclass=ABCMeta):
         history: List[Dict[str, Any]],
     ) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
         """Append a resize so an OD model's preprocessed input matches its training size.
-        No-op for non-OD models and when the size already matches.
+        No-op when the size already matches.
         """
-        model = self.models.get(model_role)
-        if not isinstance(model, ODBase):
-            return processed, history
-
+        model = self.models[model_role]
         th, tw = int(model.image_size[0]), int(model.image_size[1])
         h, w = processed[0].shape[:2]
         if (h, w) == (th, tw):
             return processed, history
 
         if len(processed) != len(images):
-            # Only reachable once OD tiling exists (a tile op changes the image count).
+            # Reachable only once OD tiling exists (a tile op changes the image count).
             raise NotImplementedError(
                 f"Resize injection assumes a 1:1 image mapping, but preprocessing changed the image "
                 f"count ({len(images)} -> {len(processed)}) for OD model '{model_role}'. Add tile-aware "
@@ -282,6 +286,44 @@ class PipelineBase(metaclass=ABCMeta):
         resize_step = [steps.resize(width=tw, height=th, preserve_aspect=model.RESIZE_PRESERVE_ASPECT, pad_value=model.RESIZE_PAD_VALUE)]
         processed, extra = self.preprocessor.preprocess(processed, resize_step)
         return processed, history + extra
+
+    def _record_ad_internal_resize(
+        self,
+        model_role: str,
+        processed: List[ImageLike],
+        history: List[Dict[str, Any]],
+    ) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
+        """Record an AD model's internal fit-to-size as an inverse-only resize step.
+
+        The forward image is left off-size for the model to resize internally, so ``predict()`` scores are
+        unchanged. This only appends the inverse so ``revert_preprocess`` upsamples the score map back to
+        input space (overlay/output, not re-thresholding). No-op when the size already matches.
+        """
+        model = self.models[model_role]
+        th, tw = int(model.image_size[0]), int(model.image_size[1])
+
+        if all(tuple(p.shape[:2]) == (th, tw) for p in processed):
+            return processed, history
+
+        if len(processed) != 1:
+            # A tile op split the image; per-tile score reverting is not handled.
+            raise NotImplementedError(
+                f"AD inverse-resize assumes a single off-size image for '{model_role}', but preprocessing "
+                f"produced {len(processed)}. Configure a resize to {(th, tw)} in global preprocessing."
+            )
+
+        if model.RESIZE_PRESERVE_ASPECT:
+            # Letterbox would need the model's internal pad metadata to invert; only stretch is supported.
+            raise NotImplementedError(f"AD inverse-resize for '{model_role}' only supports a stretch (RESIZE_PRESERVE_ASPECT=False).")
+
+        h, w = processed[0].shape[:2]
+        # Model maps (h, w) -> (th, tw) internally; record the inverse so revert resizes the score map back.
+        meta = steps.revert_resize(src_sizes=[[w, h]], dst_sizes=[[tw, th]], pads=[[0, 0, 0, 0]])
+        self.logger.warning(
+            f"[{model_role}] preprocessed size {(h, w)} != model input {(th, tw)}; recording an inverse-resize "
+            "so the score map reverts to input space. Add a matching resize step in global preprocessing to silence this."
+        )
+        return processed, history + [meta]
 
     def revert_preprocess(self, data, ops: List[Meta]):
         """Invert preprocessing transforms on either image data (AD) or detection coordinates (OD).

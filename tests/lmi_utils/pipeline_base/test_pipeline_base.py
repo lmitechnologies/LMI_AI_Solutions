@@ -285,6 +285,38 @@ def test_pipeline_AD(version, preprocessing_steps, expected_types):
         assert orig_shape == h_shape, f"Shape mismatch: {orig_shape} vs {h_shape}"
 
 
+def test_pipeline_AD_records_inverse_resize_on_size_mismatch(caplog):
+    """When AD preprocessing does not reach the model's input size, the forward image is left untouched
+    (the model resizes internally) and an inverse-resize is recorded so the score map still reverts to
+    the original input shape."""
+    model_path = os.path.abspath("tests/assets/models/ad/model_v1/model.ts")
+    image_dir = os.path.abspath("tests/assets/images/nvtec-ad")
+
+    # Configure a resize to the wrong size (320) for a 224 model: no resize reaches image_size.
+    preprocessing_steps = [{"type": "resize", "id": "r1", "configuration": {"height": 320, "width": 320}}]
+    model_roles = _build_ad_model_roles("3", model_path, preprocessing_steps)
+
+    pipeline = PipelineAD(version="3")
+    pipeline.load(model_roles, {})
+
+    image_files = [os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
+    assert len(image_files) > 0, "No images found in assets"
+    image = cv2.cvtColor(cv2.imread(image_files[0]), cv2.COLOR_BGR2RGB)
+
+    with caplog.at_level(logging.WARNING):
+        results = pipeline.predict({}, {"images": [image]})
+
+    ops_list = results["ops_list"]
+    # Configured resize + recorded inverse-resize, the latter not physically applied to the forward image.
+    actual_types = [type(op).__name__.removesuffix("Meta").lower() for op in ops_list]
+    assert actual_types == ["resize", "resize"], f"Unexpected history: {actual_types}"
+    assert any("recording an inverse-resize" in r.message for r in caplog.records), "Expected an inverse-resize warning"
+
+    # The reverted heatmap must still match the original input shape.
+    heatmap = results["outputs"]["annotated"][0]
+    assert heatmap.shape[:2] == image.shape[:2], f"Shape mismatch: {heatmap.shape[:2]} vs {image.shape[:2]}"
+
+
 def test_version_1_error():
     pipeline = PipelineOD(version="1")
     model_roles = {"mock-model": {"model_role": "mock-model"}}
