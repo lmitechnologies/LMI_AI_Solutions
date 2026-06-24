@@ -70,6 +70,8 @@ def predict(
 
         # inference
         t0 = time.time()
+        # predict() returns a list of per-image anomaly maps; this loop runs one
+        # image at a time, so take the single result.
         anom_map = model.predict(
             img,
             **{
@@ -77,7 +79,7 @@ def predict(
                     "overlap_mode": overlap_mode,
                 }
             },
-        ).astype(np.float32)
+        )[0].astype(np.float32)
         logger.debug(f"anom_map shape {anom_map.shape}")
 
         proctime.append(time.time() - t0)

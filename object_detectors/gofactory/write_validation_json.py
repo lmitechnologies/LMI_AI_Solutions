@@ -53,6 +53,10 @@ def parse_annotations(annotations: list[Annotation], h: int, w: int, model_type:
         if annot.type == AnnotationType.BOX:
             if model_type == "OrientedObjectDetection":
                 boxes.append(annot.value.to_polygon().to_numpy())  # 4 corners (xyxyxyxy) for rotated iou
+            elif model_type == "InstanceSegmentation":
+                # treat box-class instances as rectangular masks, matching the
+                mask = annot.value.to_mask(h=h, w=w).to_numpy(h=h, w=w)
+                masks.append(mask)
             else:
                 boxes.append(annot.value.to_numpy())
         elif annot.type == AnnotationType.MASK:
