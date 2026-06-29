@@ -10,4 +10,4 @@ pytest==9.1.0
 rfdetr==1.8.2
 albumentations>=2.0.8,<3.0.0
 transformers<5.13
-onnxruntime==1.21.0
+onnxruntime==1.27.0
