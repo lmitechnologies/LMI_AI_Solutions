@@ -2,6 +2,11 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no tags, releases, or commits are published)"
+        type: boolean
+        default: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,12 +17,18 @@ jobs:
     name: Create Release
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: write      # To create tags and releases
-      issues: write      # To comment on issues
-      pull-requests: write # To comment on PRs
 
     steps:
+      - name: Show run mode
+        run: echo "Dry run is ${{ inputs.dry_run }}"
+
+      - name: Generate app token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.AIS_CI_APP_ID }}
+          private-key: ${{ secrets.AIS_CI_APP_KEY }}
+
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -26,7 +37,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Install dependencies
         run: |
@@ -34,7 +45,7 @@ jobs:
           pip install tomlkit
 
       - name: Run semantic-release
-        run: npx semantic-release
+        run: npx semantic-release ${{ inputs.dry_run && '--dry-run' || '' }}
         env:
-          GH_TOKEN: ${{ secrets.SEMANTIC_RELEASE_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GIT_CREDENTIALS: "x-access-token:${{ steps.app-token.outputs.token }}"

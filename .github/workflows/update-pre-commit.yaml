@@ -15,6 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Generate app token
+        uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.AIS_CI_APP_ID }}
+          private-key: ${{ secrets.AIS_CI_APP_KEY }}
+
       - uses: actions/checkout@v7
 
       - name: Set up Python
@@ -30,7 +37,7 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.PRE_COMMIT_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           commit-message: "chore: update pre-commit hooks"
           title: "Update Pre-commit Hooks"
           body: "This is an automated PR to update the pre-commit hooks to their latest versions."
