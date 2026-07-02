@@ -162,6 +162,36 @@ def test_empty_cuda(trt_model):
     _assert_empty_out(outputs)
 
 
+def test_clamp_boxes_to_image():
+    """TRT postprocess must clamp out-of-bounds boxes to the image (the engine drops Boxes.clip).
+
+    Built without an engine so it runs everywhere: feed synthetic normalized predictions
+    (one box spilling past every edge, one fully inside) straight through postprocess.
+    """
+    from object_detectors.detectron2_lmi.model import Detectron2TRT
+
+    model = object.__new__(Detectron2TRT)
+    model.device = torch.device("cpu")
+    model.batch_size = 1
+    model._setup_class_map({0: "person"})
+
+    image_h, image_w = 100, 200
+    images = [np.zeros((image_h, image_w, 3), dtype=np.uint8)]
+    # Normalized xyxy: first box out of bounds on all sides, second well inside.
+    boxes = torch.tensor([[[-0.1, -0.2, 1.2, 1.3], [0.5, 0.4, 0.9, 0.8]]])
+    num_preds = torch.tensor([2])
+    scores = torch.tensor([[0.9, 0.9]])
+    classes = torch.tensor([[0, 0]])
+
+    results = model.postprocess((num_preds, boxes, scores, classes), images=images, configs=0.0)
+    out = results[0].boxes
+
+    assert (out[:, 0::2] >= 0).all() and (out[:, 0::2] <= image_w).all()
+    assert (out[:, 1::2] >= 0).all() and (out[:, 1::2] <= image_h).all()
+    assert torch.allclose(out[0], torch.tensor([0.0, 0.0, float(image_w), float(image_h)]))
+    assert torch.allclose(out[1], torch.tensor([100.0, 40.0, 180.0, 80.0]))
+
+
 def test_no_cross_chunk_contamination(trt_model, imgs_coco):
     """
     The test creates a batch of interleaved rich/blank images large enough to force

@@ -516,3 +516,47 @@ class Test_Yolo_Pose:
         for model in all_models["pose"]:
             out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
             _assert_batch_output(out, self.KEYS, num_imgs)
+
+
+def test_clamp_boxes_to_image(yolo_models):
+    """Detection boxes must be clamped to the original image (ultralytics scale_boxes clips)."""
+    model = yolo_models["det"][0]
+    image_h, image_w = 100, 200
+    orig_img = np.zeros((image_h, image_w, 3), dtype=np.uint8)
+    net_h, net_w = model.image_size
+    img = torch.zeros((1, 3, net_h, net_w))
+    confs = {name: 0.0 for name in model.model.names.values()}
+    # A box spanning the whole network canvas maps well past the (smaller) original frame.
+    pred = torch.tensor([[0.0, 0.0, float(net_w), float(net_h), 0.9, 0.0]])
+
+    result, _ = model.construct_result(pred, img, orig_img, confs)
+    boxes = result.boxes
+
+    assert len(boxes) == 1
+    assert (boxes[:, 0::2] >= 0).all() and (boxes[:, 0::2] <= image_w).all()
+    assert (boxes[:, 1::2] >= 0).all() and (boxes[:, 1::2] <= image_h).all()
+
+
+def test_clamp_keypoints_to_image(yolo_models):
+    """Pose keypoint xy must be clamped to the image while the visibility column is preserved."""
+    model = yolo_models["pose"][0]
+    image_h, image_w = 100, 200
+    orig_img = np.zeros((image_h, image_w, 3), dtype=np.uint8)
+    net_h, net_w = model.image_size
+    img = torch.zeros((1, 3, net_h, net_w))
+    confs = {name: 0.0 for name in model.model.names.values()}
+    n_kpt = model.model.kpt_shape[0]
+
+    box = torch.tensor([[10.0, 10.0, 100.0, 100.0, 0.9, 0.0]])
+    kpts = torch.zeros((1, n_kpt, 3))
+    kpts[..., 0] = float(net_w)  # x at the far edge of the network canvas
+    kpts[..., 1] = float(net_h)  # y at the far edge
+    kpts[..., 2] = 0.7  # visibility must survive untouched
+    pred = torch.cat([box, kpts.reshape(1, -1)], dim=1)
+
+    result, _ = model.construct_result(pred, img, orig_img, confs)
+    pts = result.points
+
+    assert (pts[..., 0] >= 0).all() and (pts[..., 0] <= image_w).all()
+    assert (pts[..., 1] >= 0).all() and (pts[..., 1] <= image_h).all()
+    assert torch.allclose(pts[..., 2], torch.full_like(pts[..., 2], 0.7))
