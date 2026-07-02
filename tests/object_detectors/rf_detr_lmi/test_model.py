@@ -288,3 +288,35 @@ class Test_Rfdetr_Model:
 
         out, _ = obj_detector.predict(tensor_batch, configs=0.5)
         assert len(out["boxes"]) == len(imgs_coco)
+
+
+def test_clamp_boxes_to_image():
+    """The shared postprocess must return boxes clamped to the image (rfdetr's PostProcess clamps).
+
+    Backend-agnostic: built without an engine, feed synthetic raw head outputs (one query with an
+    oversized cxcywh box that decodes past every edge, one inside) through RfdetrBase.postprocess.
+    """
+    from object_detectors.rf_detr_lmi.model import RfdetrTRT
+
+    model = object.__new__(RfdetrTRT)
+    model.device = torch.device("cpu")
+    model._init_common()
+    model._setup_class_map({0: "person"})
+
+    image_h, image_w = 100, 200
+    images = [np.zeros((image_h, image_w, 3), dtype=np.uint8)]
+    # cxcywh normalized: query 0 is 2x the image (decodes to [-0.5,-0.5,1.5,1.5]); query 1 is inside.
+    pred_boxes = torch.zeros((1, 2, 4))
+    pred_boxes[0, 0] = torch.tensor([0.5, 0.5, 2.0, 2.0])
+    pred_boxes[0, 1] = torch.tensor([0.5, 0.5, 0.2, 0.2])
+    pred_logits = torch.full((1, 2, 1), 10.0)  # both queries confidently class 0
+    outputs = [pred_boxes, pred_logits]
+
+    results = model.postprocess(outputs, images=images, configs=0.0, return_segments=False)
+    out = results[0].boxes
+
+    assert (out[:, 0::2] >= 0).all() and (out[:, 0::2] <= image_w).all()
+    assert (out[:, 1::2] >= 0).all() and (out[:, 1::2] <= image_h).all()
+    # the oversized query is clamped to the full image frame
+    full = torch.tensor([0.0, 0.0, float(image_w), float(image_h)])
+    assert any(torch.allclose(b, full) for b in out)

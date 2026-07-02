@@ -24,6 +24,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # report generation — kept out of requirements so Dependabot doesn't track it
 RUN pip install pytest-html
 
+# onnx-graphsurgeon: used by tests/build_test_engines.py to rebuild the detectron2 TRT engine
+# (EfficientNMS graph surgery). Kept out of requirements so Dependabot doesn't track it.
+RUN pip install onnx-graphsurgeon
+
 # --- anomalib v1 suite (test_v1.py) ---
 FROM base AS v1
 RUN pip install jsonargparse==4.27.7

@@ -4,6 +4,8 @@
 *.pt
 *.pth
 *.ckpt
+# TensorRT engines are platform-specific; regenerate via tests/build_test_engines.py
+*.engine
 
 #ignore folders
 **.vscode
