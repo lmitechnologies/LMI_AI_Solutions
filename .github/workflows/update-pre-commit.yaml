@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Generate app token
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         id: app-token
         with:
           app-id: ${{ secrets.AIS_CI_APP_ID }}
