@@ -2,22 +2,24 @@ services:
   test_ais_v1_all:
     build:
       context: .
-      dockerfile: ./dockerfile.v1
+      dockerfile: ./dockerfile.tests
+      target: v1
     volumes:
       - ../:/repo
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     ipc: host
     working_dir: /repo
     command: >
-      bash -c "bash tests/run_tests.sh ad-v1"
-  
+      bash -c "bash tests/run_tests.sh all-v1"
+
   test_ais_ad_v2:
     depends_on:
       test_ais_v1_all:
         condition: service_completed_successfully
     build:
       context: .
-      dockerfile: ./dockerfile.v2
+      dockerfile: ./dockerfile.tests
+      target: v2
     volumes:
       - ../:/repo
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
@@ -25,4 +27,3 @@ services:
     working_dir: /repo
     command: >
       bash -c "bash tests/run_tests.sh ad-v2"
-  

@@ -1,0 +1,36 @@
+# Multi-stage GPU test image. The `base` stage holds everything shared by the
+# anomalib v1/v2 suites (torch, detectron2, common deps) so it builds once and
+# both targets reuse its cached layers. Select a target via docker-compose `target:`.
+FROM nvcr.io/nvidia/tensorrt:25.04-py3 AS base
+ARG DEBIAN_FRONTEND=noninteractive
+
+# Install dependencies
+RUN apt-get update && apt-get install libgl1 -y
+# weights_only issue will raise in pytorch>=2.6 when loading anomalib models
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu124
+
+WORKDIR /home/gadget
+
+# Install detectron2
+RUN git clone https://github.com/facebookresearch/detectron2 detectron2
+RUN pip install --no-build-isolation -e detectron2
+
+# Shared test dependencies (common + gpu-specific pins)
+COPY requirements-base.txt requirements-gpu.txt ./
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements-gpu.txt
+
+# report generation — kept out of requirements so Dependabot doesn't track it
+RUN pip install pytest-html
+
+# --- anomalib v1 suite (test_v1.py) ---
+FROM base AS v1
+RUN pip install jsonargparse==4.27.7
+RUN pip install anomalib==1.1.1 && anomalib install --option core
+# anomalib install may pull numpy>=2; re-pin
+RUN pip install 'numpy<2'
+
+# --- anomalib v2 suite (test_v2.py) ---
+FROM base AS v2
+RUN pip install anomalib==2.4.1

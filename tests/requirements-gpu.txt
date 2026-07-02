@@ -1,0 +1,4 @@
+# GPU test env — shared pins via -r, plus GPU-specific onnxruntime.
+# torch/torchvision are installed in the Dockerfile (needs the cu124 index).
+-r requirements-base.txt
+onnxruntime-gpu==1.21.0

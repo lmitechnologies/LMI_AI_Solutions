@@ -15,8 +15,8 @@ RUN apt-get update && \
     git lfs install && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy requirements file
-COPY ./tests/requirements-ci.txt .
+# Copy requirements files (requirements-ci.txt pulls in requirements-base.txt via -r)
+COPY ./tests/requirements-base.txt ./tests/requirements-ci.txt ./
 
 # Install Python requirements with architecture-specific PyTorch handling
 ARG TARGETARCH
