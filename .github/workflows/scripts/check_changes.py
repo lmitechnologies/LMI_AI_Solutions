@@ -32,6 +32,7 @@ DOCS_PATTERNS: list[re.Pattern] = [
 
 # Files whose change requires rebuilding the CI test Docker images
 REQ_PATTERNS: list[re.Pattern] = [
+    re.compile(r"^tests/requirements-base\.txt$"),
     re.compile(r"^tests/requirements-ci\.txt$"),
     re.compile(r"^tests/dockerfile\.ci$"),
 ]

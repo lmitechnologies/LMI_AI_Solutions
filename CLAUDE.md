@@ -23,4 +23,4 @@ Use Conventional Commits (`feat:`, `fix:`, `chore:`, etc.) — prefixes drive th
 
 ## Gotcha
 
-The two AD test suites need different, incompatible Anomalib versions — `test_v1.py` → `v1.1.1`, `test_v2.py` → `v2.2.0`. Don't install both in one env. See `tests/dockerfile.ci`.
+The two AD test suites need different, incompatible Anomalib versions — `test_v1.py` → `v1.1.1`, `test_v2.py` → `v2.*`. Don't install both in one env. See `tests/dockerfile.ci`.
