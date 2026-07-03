@@ -27,8 +27,10 @@ class FakeRegistry(ModelRegistry):
 def clear_registry():
     """Reset FakeRegistry between tests so registrations don't bleed over."""
     FakeRegistry._registry.clear()
+    FakeRegistry._failed_imports.clear()
     yield
     FakeRegistry._registry.clear()
+    FakeRegistry._failed_imports.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -168,11 +170,11 @@ def test_register_empty_list_field_raises():
 
 
 # ---------------------------------------------------------------------------
-# register() — duplicate key (should warn, not raise)
+# register() — duplicate key (should raise)
 # ---------------------------------------------------------------------------
 
 
-def test_register_duplicate_key_logs_warning(caplog):
+def test_register_duplicate_key_raises():
     @FakeRegistry.register(
         metadata=dict(
             frameworks=["fw_a"],
@@ -184,7 +186,7 @@ def test_register_duplicate_key_logs_warning(caplog):
     class FirstModel:
         pass
 
-    with caplog.at_level(logging.WARNING):
+    with pytest.raises(ValueError, match="already registered"):
 
         @FakeRegistry.register(
             metadata=dict(
@@ -197,10 +199,9 @@ def test_register_duplicate_key_logs_warning(caplog):
         class SecondModel:
             pass
 
-    # First registration should win
+    # First registration stays in place
     key = FakeRegistry._generate_key("fw_a", "model_x", "detect", "v1", {})
     assert FakeRegistry._registry[key] is FirstModel
-    assert any("already registered" in record.message.lower() for record in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -355,3 +356,43 @@ def test_auto_register_models_bad_package_logs_warning(caplog):
 
     assert any("this.package.does.not.exist" in record.message for record in caplog.records)
     assert len(RegistryWithBadPackage._registry) == 0
+
+
+# ---------------------------------------------------------------------------
+# Lazy discovery and failed-import reporting
+# ---------------------------------------------------------------------------
+
+
+def test_get_class_triggers_discovery_once(monkeypatch):
+    class LazyRegistry(ModelRegistry):
+        PACKAGES = []
+        TARGET_MODULE_SUFFIXES = [".model"]
+        _registry = {}
+
+    calls = []
+    original = LazyRegistry.auto_register_models
+
+    def spy():
+        calls.append(1)
+        original()
+
+    monkeypatch.setattr(LazyRegistry, "auto_register_models", spy)
+
+    @LazyRegistry.register(metadata=dict(frameworks=["fw"], model_names=["m"], tasks=["t"], versions=["v1"]))
+    class Dummy:
+        pass
+
+    LazyRegistry.get_class({"framework": "fw", "model_name": "m", "task": "t"})
+    LazyRegistry.get_class({"framework": "fw", "model_name": "m", "task": "t"})
+    assert len(calls) == 1, "Discovery should run once, on the first lookup"
+
+
+def test_failed_import_is_recorded_and_surfaced_in_lookup_error():
+    class RegistryWithBadPackage(ModelRegistry):
+        PACKAGES = ["this.package.does.not.exist"]
+        TARGET_MODULE_SUFFIXES = [".model"]
+        _registry = {}
+
+    with pytest.raises(ValueError, match="failed to import"):
+        RegistryWithBadPackage.get_class({"framework": "fw", "model_name": "m", "task": "t"})
+    assert "this.package.does.not.exist" in RegistryWithBadPackage._failed_imports

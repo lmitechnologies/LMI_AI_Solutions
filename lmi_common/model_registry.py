@@ -13,6 +13,11 @@ class ModelRegistry:
     Subclasses must define ``PACKAGES``, ``TARGET_MODULE_SUFFIXES``, and
     ``_registry`` as class attributes — enforced at class definition time.
 
+    Discovery is lazy: the first ``get_class`` call imports the backend modules
+    to trigger registration. Call ``auto_register_models()`` to discover eagerly.
+    Backend modules that fail to import are skipped; their errors are recorded
+    and included in the ``get_class`` error message on a failed lookup.
+
     Usage::
 
         class MyRegistry(ModelRegistry):
@@ -32,6 +37,8 @@ class ModelRegistry:
     PACKAGES: List[str] = []
     TARGET_MODULE_SUFFIXES: List[str] = []
     _registry: Dict[Tuple[str, str, str, str, str], Type] = {}
+    _discovered: bool = False
+    _failed_imports: Dict[str, str] = {}
 
     @classmethod
     def __init_subclass__(cls, **kwargs):
@@ -40,6 +47,8 @@ class ModelRegistry:
         missing = [attr for attr in required if attr not in cls.__dict__]
         if missing:
             raise TypeError(f"{cls.__name__} must define: {', '.join(missing)}")
+        cls._discovered = False
+        cls._failed_imports = {}
 
     @classmethod
     def _generate_key(
@@ -86,13 +95,13 @@ class ModelRegistry:
                             key = cls._generate_key(framework, model_name, task, version, info)
                             if key in cls._registry:
                                 existing_cls = cls._registry[key]
-                                logger.warning(
+                                raise ValueError(
                                     f"Combination already registered: "
                                     f"framework='{framework}', model_name='{model_name}', "
                                     f"task='{task}', version='{version}', info='{json.dumps(info, sort_keys=True)}' "
-                                    f"points to {existing_cls.__module__}. Cannot re-register with {wrapper_cls.__module__}."
+                                    f"points to {existing_cls.__module__}.{existing_cls.__name__}. "
+                                    f"Cannot re-register with {wrapper_cls.__module__}.{wrapper_cls.__name__}."
                                 )
-                                continue
                             cls._registry[key] = wrapper_cls
             return wrapper_cls
 
@@ -110,6 +119,9 @@ class ModelRegistry:
 
     @classmethod
     def get_class(cls, metadata: Dict[str, Any]) -> Type:
+        if not cls._discovered:
+            cls.auto_register_models()
+
         framework: Optional[str] = metadata.get("framework") or metadata.get("package")
         model_name: Optional[str] = metadata.get("model_name") or metadata.get("algorithm")
         task: Optional[str] = cls._get_task(metadata)
@@ -126,30 +138,43 @@ class ModelRegistry:
 
         if wrapper_cls is None:
             available_keys = "\n".join(map(str, cls._registry.keys()))
+            failed_note = ""
+            if cls._failed_imports:
+                failed_lines = "\n".join(f"  {module}: {error}" for module, error in cls._failed_imports.items())
+                failed_note = f"\nNote: these backend modules failed to import and could not register:\n{failed_lines}"
             raise ValueError(
                 f"No class found registered for combination: "
                 f"framework='{framework.lower()}', model_name='{model_name.lower()}', "
                 f"task='{task.lower()}', version='{version}', info='{json.dumps(info, sort_keys=True)}'.\n"
                 f"Lookup key: {key}\n"
                 f"Available keys:\n{available_keys}"
+                f"{failed_note}"
             )
 
         return wrapper_cls
 
     @classmethod
     def auto_register_models(cls):
-        """Dynamically discovers and imports modules to trigger registration."""
+        """Dynamically discovers and imports modules to trigger registration.
+
+        Import failures are logged and recorded in ``_failed_imports`` so a later
+        failed lookup can point at the root cause.
+        """
         logger.info(f"Starting auto-discovery of models in: {cls.PACKAGES}")
+        cls._discovered = True
         for package_name in cls.PACKAGES:
             try:
                 package = importlib.import_module(package_name)
-            except ImportError as e:
+            except Exception as e:
                 logger.warning(f"Failed to import package '{package_name}': {e}. Skipping.")
+                cls._failed_imports[package_name] = f"{type(e).__name__}: {e}"
                 continue
             for _, module_name, _ in pkgutil.walk_packages(package.__path__, package_name + "."):
                 if any(module_name.endswith(suffix) for suffix in cls.TARGET_MODULE_SUFFIXES):
                     try:
                         importlib.import_module(module_name)
                         logger.info(f"Successfully imported {module_name}")
-                    except ImportError as e:
+                        cls._failed_imports.pop(module_name, None)
+                    except Exception as e:
                         logger.warning(f"Failed to import {module_name}: {e}")
+                        cls._failed_imports[module_name] = f"{type(e).__name__}: {e}"

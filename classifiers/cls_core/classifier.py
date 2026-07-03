@@ -4,9 +4,6 @@ from typing import Any, Dict
 from .classifier_registry import ClassifierRegistry
 from .cls_base import ClassifierBase
 
-# register models automatically
-ClassifierRegistry.auto_register_models()
-
 
 class Classifier(ClassifierBase):
     def __new__(cls, metadata: Dict[str, Any], *args, **kwargs):
