@@ -35,7 +35,7 @@ class RfdetrBase(ODBase):
         """Initialize normalization constants and postprocessor shared by all backends."""
         self.means = self.MEANS
         self.stds = self.STDS
-        self.postprocessor = PostProcess(num_select=200)
+        self.postprocessor = PostProcess(num_select=300)
 
     @staticmethod
     def _load_class_map(model_path: str, provided: Optional[dict]) -> dict:
