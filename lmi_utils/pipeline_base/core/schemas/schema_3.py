@@ -1,7 +1,6 @@
-import re
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Annotated
 
 
@@ -85,17 +84,6 @@ class ODModel(_ModelBase):
 class ADModel(_ModelBase):
     model_type: Literal["AnomalyDetection"]
     configs: ADConfigs
-
-    @field_validator("details")
-    @classmethod
-    def _check_training_package(cls, details: Details) -> Details:
-        # AD version inference needs "<letters><optional trailing digits>", e.g. "anomalib2" -> v2
-        if not re.fullmatch(r"[A-Za-z]+\d*", details.training_package):
-            raise ValueError(
-                f"Invalid training_package '{details.training_package}' for AnomalyDetection: "
-                f"expected letters with optional trailing digits, e.g. 'Anomalib2'."
-            )
-        return details
 
 
 class ClassificationModel(_ModelBase):

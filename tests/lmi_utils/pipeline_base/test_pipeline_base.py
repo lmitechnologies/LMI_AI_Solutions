@@ -322,31 +322,3 @@ def test_version_1_error():
     model_roles = {"mock-model": {"model_role": "mock-model"}}
     with pytest.raises(ValueError, match="Gadget version 1 is no longer supported"):
         pipeline.load(model_roles, {})
-
-
-def test_schema3_rejects_malformed_ad_training_package():
-    model_roles = _build_ad_model_roles("3", "dummy.pt", [])
-    model_roles["mock-model"]["details"]["training_package"] = "anomalib2beta"
-
-    from lmi_utils.pipeline_base.core.schemas.schema_3 import ModelCollectionV3
-
-    with pytest.raises(ValueError, match="Invalid training_package"):
-        ModelCollectionV3.from_dict(model_roles)
-
-
-def test_schema3_allows_empty_od_training_package():
-    from lmi_utils.pipeline_base.core.schemas.schema_3 import ModelCollectionV3
-
-    model_roles = {
-        "mock-model": {
-            "format": "trt",
-            "configs": {},
-            "details": {"image_size": [640, 640], "preprocessing": [], "training_package": "", "training_algorithm": ""},
-            "artifacts": {},
-            "model_role": "mock-model",
-            "model_name": "mock-model",
-            "model_type": "ObjectDetection",
-            "model_version": "1",
-        }
-    }
-    ModelCollectionV3.from_dict(model_roles)  # must not raise
