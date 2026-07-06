@@ -204,6 +204,9 @@ class Detectron2TRT(Detectron2Base):
         """
         return self.trt.infer(inputs)
 
+    def release(self) -> None:
+        self.trt.release()
+
     def postprocess(self, predictions, **kwargs) -> List[Results]:
         """Post-process the predictions from the TRT object detection model.
 

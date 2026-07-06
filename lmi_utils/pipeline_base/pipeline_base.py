@@ -1,5 +1,6 @@
 import collections
 import functools
+import gc
 import json
 import logging
 import re
@@ -8,6 +9,8 @@ from abc import ABCMeta, abstractmethod
 from logging import Logger
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+
+import torch
 
 from anomaly_detectors.ad_core.ad_base import ADBase
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
@@ -524,10 +527,18 @@ class PipelineBase(metaclass=ABCMeta):
 
     def clean_up(self) -> None:
         """
-        clean up the pipeline in REVERSED order, i.e., the last models get destroyed first
+        clean up the pipeline in REVERSED order, i.e., the last models get destroyed first.
+        Calls each model's ``release()`` (if defined) for deterministic resource teardown,
+        then returns freed CUDA memory to the driver.
         """
         while self.models:
             model_name, model = self.models.popitem(last=True)
+            try:
+                release = getattr(model, "release", None)
+                if callable(release):
+                    release()
+            except Exception:
+                self.logger.exception(f"Failed to release '{model_name}'; continuing clean-up")
             del model
             self.logger.info(f"{model_name} has been cleaned up")
         self.logger.info("pipeline is cleaned up")
@@ -535,6 +546,10 @@ class PipelineBase(metaclass=ABCMeta):
         self.init_results()
         self._preprocessing.clear()
         self.logger.info("preprocessing is cleaned up")
+
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def update_results(self, key: str, value: Any, sub_key: Optional[str] = None, **kwargs: Any) -> None:
         """

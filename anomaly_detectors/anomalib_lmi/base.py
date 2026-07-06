@@ -218,6 +218,9 @@ class _AnomalibEngine(Anomalib_Base):
     def forward(self, input_batch: torch.Tensor) -> torch.Tensor:
         return self.engine.infer(input_batch)[self._anomaly_output_idx]
 
+    def release(self) -> None:
+        self.engine.release()
+
 
 class AnomalibTRT(_AnomalibEngine):
     """TensorRT engine backend."""

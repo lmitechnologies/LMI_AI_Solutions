@@ -60,6 +60,9 @@ class ADBase(ABC):
     def warmup(self, *args, **kwargs) -> None:
         pass
 
+    def release(self) -> None:  # noqa: B027 — intentional no-op default, not abstract
+        """Free resources that need deterministic teardown (e.g. TRT engine/context). Default no-op."""
+
     @abstractmethod
     def preprocess(self, images: List[ImageLike]) -> torch.Tensor:
         """Convert a list of HWC uint8 images to a batched [N,C,H,W] float tensor."""

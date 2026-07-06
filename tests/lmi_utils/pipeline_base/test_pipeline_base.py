@@ -322,3 +322,41 @@ def test_version_1_error():
     model_roles = {"mock-model": {"model_role": "mock-model"}}
     with pytest.raises(ValueError, match="Gadget version 1 is no longer supported"):
         pipeline.load(model_roles, {})
+
+
+def test_clean_up_calls_release():
+    pipeline = PipelineOD(version="3")
+    released = []
+
+    class DummyModel:
+        def release(self):
+            released.append("dummy")
+
+    pipeline.models["dummy"] = DummyModel()
+    pipeline.clean_up()
+
+    assert released == ["dummy"]
+    assert len(pipeline.models) == 0
+
+
+def test_clean_up_continues_when_release_fails(caplog):
+    pipeline = PipelineOD(version="3")
+    released = []
+
+    class BadModel:
+        def release(self):
+            raise RuntimeError("boom")
+
+    class GoodModel:
+        def release(self):
+            released.append("good")
+
+    pipeline.models["good"] = GoodModel()
+    pipeline.models["bad"] = BadModel()
+
+    with caplog.at_level(logging.ERROR):
+        pipeline.clean_up()
+
+    assert released == ["good"], "Remaining models must still be released after one release() fails"
+    assert len(pipeline.models) == 0
+    assert any("Failed to release 'bad'" in r.message for r in caplog.records)
