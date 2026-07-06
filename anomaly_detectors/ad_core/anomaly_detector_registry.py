@@ -8,8 +8,12 @@ logger = logging.getLogger(__name__)
 
 
 class AnomalyDetectorRegistry(ModelRegistry):
-    PACKAGES = ["anomaly_detectors.anomalib_lmi", "anomaly_detectors.ad_core"]
-    TARGET_MODULE_SUFFIXES = [".model"]
+    PACKAGES = {
+        "anomalib": ["anomaly_detectors.anomalib_lmi.v0.model"],
+        "anomalib0": ["anomaly_detectors.anomalib_lmi.v0.model"],
+        "anomalib1": ["anomaly_detectors.anomalib_lmi.v1.model"],
+        "anomalib2": ["anomaly_detectors.anomalib_lmi.v2.model"],
+    }
     _registry = {}
 
     @classmethod
