@@ -10,7 +10,6 @@ import numpy as np
 import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
-from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.ultralytics_lmi.yolo.model import Yolo
 
@@ -26,14 +25,6 @@ from utils.segment.general import masks2segments, process_mask_native  # noqa: E
 from utils.torch_utils import smart_inference_mode  # noqa: E402
 
 
-@ObjectDetectorRegistry.register(
-    metadata=dict(
-        versions=["v0"],
-        model_names=["yolov5"],
-        tasks=["od", "seg", "instancesegmentation", "objectdetection"],
-        frameworks=["ultralytics"],
-    )
-)
 class Yolov5(ODBase):
     logger = logging.getLogger(__name__)
 

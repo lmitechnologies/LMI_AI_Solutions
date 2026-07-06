@@ -7,21 +7,12 @@ import numpy as np
 import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
-from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 
 from ..base import Anomalib_Base
 
 Binding = namedtuple("Binding", ("name", "dtype", "shape", "data", "ptr"))
 
 
-@AnomalyDetectorRegistry.register(
-    metadata=dict(
-        frameworks=["anomalib", "anomalib0"],
-        model_names=["patchcore", "padim"],
-        tasks=["anomalydetection", "seg"],
-        versions=["v0", "v1"],
-    )
-)
 class AnomalyModel(Anomalib_Base):
     """
     Desc: Class used for AD model inference.

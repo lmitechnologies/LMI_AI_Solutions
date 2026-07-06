@@ -9,19 +9,10 @@ from lmi_common.model_factory import ModelFactory
 from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
 from lmi_utils.postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_masks
-from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 
 
-@ObjectDetectorRegistry.register(
-    metadata=dict(
-        versions=["v0"],
-        model_names=["mask_rcnn", "faster_rcnn"],
-        tasks=["od", "seg", "instancesegmentation", "objectdetection"],
-        frameworks=["detectron2"],
-    )
-)
 class Detectron2Model(ModelFactory, ODBase):
     """Factory that dispatches to the correct backend based on model file extension.
 

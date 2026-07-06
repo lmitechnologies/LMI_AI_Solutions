@@ -8,13 +8,29 @@ logger = logging.getLogger(__name__)
 
 
 class AnomalyDetectorRegistry(ModelRegistry):
-    PACKAGES = {
-        "anomalib": ["anomaly_detectors.anomalib_lmi.v0.model"],
-        "anomalib0": ["anomaly_detectors.anomalib_lmi.v0.model"],
-        "anomalib1": ["anomaly_detectors.anomalib_lmi.v1.model"],
-        "anomalib2": ["anomaly_detectors.anomalib_lmi.v2.model"],
-    }
-    _registry = {}
+    BACKENDS = [
+        {
+            "frameworks": ["anomalib", "anomalib0"],
+            "model_names": ["patchcore", "padim"],
+            "tasks": ["anomalydetection", "seg"],
+            "versions": ["v0", "v1"],
+            "class_path": "anomaly_detectors.anomalib_lmi.v0.model:AnomalyModel",
+        },
+        {
+            "frameworks": ["anomalib1"],
+            "model_names": ["patchcore", "padim", "efficientad"],
+            "tasks": ["anomalydetection", "seg"],
+            "versions": ["v1"],
+            "class_path": "anomaly_detectors.anomalib_lmi.v1.model:AnomalyModel",
+        },
+        {
+            "frameworks": ["anomalib2"],
+            "model_names": ["patchcore", "padim", "efficientad"],
+            "tasks": ["anomalydetection", "seg"],
+            "versions": ["v2"],
+            "class_path": "anomaly_detectors.anomalib_lmi.v2.model:AnomalyModel",
+        },
+    ]
 
     @classmethod
     def _get_version(cls, metadata: Dict[str, Any], framework: str) -> str:

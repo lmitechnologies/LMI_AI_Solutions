@@ -1,60 +1,53 @@
 import importlib
 import json
 import logging
-from typing import Any, Dict, List, Optional, Set, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 logger = logging.getLogger(__name__)
 
 
 class DuplicateRegistrationError(ValueError):
-    """Two classes registered the same lookup key — a code bug, so discovery re-raises it instead of skipping."""
+    """Two ``BACKENDS`` entries expand to the same lookup key — a code bug, raised when the registry class is defined."""
 
 
 class ModelRegistry:
     """Base class for metadata-driven model registries.
 
-    Subclasses must define ``PACKAGES`` and ``_registry`` as class attributes —
-    enforced at class definition time.
-
-    ``PACKAGES`` maps a lowercase framework name to the modules whose import
-    triggers registration of its backends. ``get_class`` imports only the
-    modules for the requested framework; on an unknown framework or a lookup
-    miss it falls back to importing everything (``auto_register_models``).
-    Modules that fail to import are skipped; their errors are recorded and
-    included in the ``get_class`` error message on a failed lookup. The one
-    exception is ``DuplicateRegistrationError``, which propagates immediately.
+    Subclasses declare every backend in a ``BACKENDS`` table. The table is
+    expanded and validated at class definition time, so duplicate lookup keys
+    raise ``DuplicateRegistrationError`` as soon as the registry module is
+    imported — without importing any backend.
 
     Usage::
 
         class MyRegistry(ModelRegistry):
-            PACKAGES = {"my_fw": ["my_package.backend_a.model"]}
-            _registry = {}
+            BACKENDS = [
+                {
+                    "frameworks": ["my_fw"],
+                    "model_names": ["my_model"],
+                    "tasks": ["detect"],
+                    "versions": ["v1"],
+                    "class_path": "my_package.backend_a.model:MyBackend",
+                },
+            ]
 
-        @MyRegistry.register({
-            "frameworks": ["my_fw"],
-            "model_names": ["my_model"],
-            "tasks": ["detect"],
-            "versions": ["v1"],
-        })
-        class MyBackend: ...
+    ``class_path`` is a ``"module:ClassName"`` import string; registry modules
+    must not import backends directly so the table stays checkable in any
+    environment. ``get_class`` imports only the single module that provides the
+    requested backend and caches the resolved class.
     """
 
-    PACKAGES: Dict[str, List[str]] = {}
-    _registry: Dict[Tuple[str, str, str, str, str], Type] = {}
-    _discovered: bool = False
-    _attempted_imports: Set[str] = set()
-    _failed_imports: Dict[str, str] = {}
+    BACKENDS: List[Dict[str, Any]] = []
+    _key_map: Dict[Tuple[str, str, str, str, str], str] = {}
+    _class_cache: Dict[Tuple[str, str, str, str, str], Type] = {}
 
     @classmethod
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        required = ("PACKAGES", "_registry")
-        missing = [attr for attr in required if attr not in cls.__dict__]
-        if missing:
-            raise TypeError(f"{cls.__name__} must define: {', '.join(missing)}")
-        cls._discovered = False
-        cls._attempted_imports = set()
-        cls._failed_imports = {}
+        if "BACKENDS" not in cls.__dict__:
+            raise TypeError(f"{cls.__name__} must define: BACKENDS")
+        cls._class_cache = {}
+        cls._key_map = cls._expand_backends()
 
     @classmethod
     def _generate_key(
@@ -74,44 +67,40 @@ class ModelRegistry:
         )
 
     @classmethod
-    def register(cls, metadata: Dict[str, Any]):
-        logger.debug(f"Registering class with metadata: {metadata}")
-        frameworks: Optional[List[str]] = metadata.get("frameworks")
-        model_names: Optional[List[str]] = metadata.get("model_names")
-        tasks: Optional[List[str]] = metadata.get("tasks")
-        versions: Optional[List[str]] = metadata.get("versions")
-        info: Dict[str, Any] = metadata.get("info", {})
+    def _expand_backends(cls) -> Dict[Tuple[str, str, str, str, str], str]:
+        """Expand ``BACKENDS`` into a lookup-key → class_path map, validating entries and rejecting duplicate keys."""
+        key_map: Dict[Tuple[str, str, str, str, str], str] = {}
+        for entry in cls.BACKENDS:
+            frameworks = entry.get("frameworks")
+            model_names = entry.get("model_names")
+            tasks = entry.get("tasks")
+            versions = entry.get("versions")
+            info: Dict[str, Any] = entry.get("info", {})
+            class_path = entry.get("class_path")
 
-        if (
-            not isinstance(frameworks, list)
-            or not isinstance(model_names, list)
-            or not isinstance(tasks, list)
-            or not isinstance(versions, list)
-        ):
-            raise TypeError("'frameworks', 'model_names', 'tasks', and 'versions' must be lists.")
+            if not all(isinstance(field, list) for field in (frameworks, model_names, tasks, versions)):
+                raise TypeError(f"{cls.__name__}: 'frameworks', 'model_names', 'tasks', and 'versions' must be lists in entry: {entry}")
+            if not all([frameworks, model_names, tasks, versions]):
+                raise ValueError(
+                    f"{cls.__name__}: 'frameworks', 'model_names', 'tasks', and 'versions' must be non-empty in entry: {entry}"
+                )
+            if not isinstance(class_path, str) or ":" not in class_path:
+                raise ValueError(f"{cls.__name__}: 'class_path' must be a 'module:ClassName' string in entry: {entry}")
 
-        if not all([frameworks, model_names, tasks, versions]):
-            raise ValueError("Metadata must include 'frameworks', 'model_names', 'tasks', and 'versions' (all non-empty lists).")
-
-        def decorator(wrapper_cls: Type) -> Type:
             for framework in frameworks:
                 for model_name in model_names:
                     for task in tasks:
                         for version in versions:
                             key = cls._generate_key(framework, model_name, task, version, info)
-                            if key in cls._registry:
-                                existing_cls = cls._registry[key]
+                            if key in key_map:
                                 raise DuplicateRegistrationError(
-                                    f"Combination already registered: "
+                                    f"{cls.__name__}: combination already registered: "
                                     f"framework='{framework}', model_name='{model_name}', "
                                     f"task='{task}', version='{version}', info='{json.dumps(info, sort_keys=True)}' "
-                                    f"points to {existing_cls.__module__}.{existing_cls.__name__}. "
-                                    f"Cannot re-register with {wrapper_cls.__module__}.{wrapper_cls.__name__}."
+                                    f"points to '{key_map[key]}'. Cannot re-register with '{class_path}'."
                                 )
-                            cls._registry[key] = wrapper_cls
-            return wrapper_cls
-
-        return decorator
+                            key_map[key] = class_path
+        return key_map
 
     @classmethod
     def _get_version(cls, metadata: Dict[str, Any], framework: str) -> str:
@@ -135,61 +124,40 @@ class ModelRegistry:
                 "Lookup metadata must include 'framework' (or 'package'), 'model_name' (or 'algorithm'), and 'task' (or 'model_type')."
             )
 
-        modules = cls.PACKAGES.get(framework.lower())
-        if modules is not None:
-            cls._import_modules(modules)
-        elif not cls._discovered:
-            cls.auto_register_models()
-
         version: str = cls._get_version(metadata, framework)
         key = cls._generate_key(framework, model_name, task, version, info)
-        wrapper_cls = cls._registry.get(key)
 
-        if wrapper_cls is None and not cls._discovered:
-            # Self-heal an incomplete PACKAGES entry, and list every known key in the error below.
-            cls.auto_register_models()
-            wrapper_cls = cls._registry.get(key)
+        wrapper_cls = cls._class_cache.get(key)
+        if wrapper_cls is not None:
+            return wrapper_cls
 
-        if wrapper_cls is None:
-            available_keys = "\n".join(map(str, cls._registry.keys()))
-            failed_note = ""
-            if cls._failed_imports:
-                failed_lines = "\n".join(f"  {module}: {error}" for module, error in cls._failed_imports.items())
-                failed_note = f"\nNote: these backend modules failed to import and could not register:\n{failed_lines}"
+        class_path = cls._key_map.get(key)
+        if class_path is None:
+            available_keys = "\n".join(map(str, sorted(cls._key_map)))
             raise ValueError(
-                f"No class found registered for combination: "
+                f"No backend registered for combination: "
                 f"framework='{framework.lower()}', model_name='{model_name.lower()}', "
                 f"task='{task.lower()}', version='{version}', info='{json.dumps(info, sort_keys=True)}'.\n"
                 f"Lookup key: {key}\n"
                 f"Available keys:\n{available_keys}"
-                f"{failed_note}"
             )
 
+        wrapper_cls = cls._resolve_class_path(class_path)
+        cls._class_cache[key] = wrapper_cls
         return wrapper_cls
 
     @classmethod
-    def _import_modules(cls, module_names: List[str]):
-        """Import each module once to trigger registration; record failures in ``_failed_imports``.
-
-        ``DuplicateRegistrationError`` propagates — it signals a code bug, not a missing dependency.
-        """
-        for module_name in module_names:
-            if module_name in cls._attempted_imports:
-                continue
-            cls._attempted_imports.add(module_name)
-            try:
-                importlib.import_module(module_name)
-                logger.info(f"Successfully imported {module_name}")
-            except DuplicateRegistrationError:
-                raise
-            except Exception as e:
-                logger.warning(f"Failed to import {module_name}: {e}")
-                cls._failed_imports[module_name] = f"{type(e).__name__}: {e}"
-
-    @classmethod
-    def auto_register_models(cls):
-        """Eagerly import every backend module listed in ``PACKAGES``."""
-        all_modules = sorted({module for modules in cls.PACKAGES.values() for module in modules})
-        logger.info(f"Starting auto-discovery of models in: {all_modules}")
-        cls._discovered = True
-        cls._import_modules(all_modules)
+    def _resolve_class_path(cls, class_path: str) -> Type:
+        """Import the backend module named by ``class_path`` and return its class."""
+        module_name, _, class_name = class_path.partition(":")
+        try:
+            module = importlib.import_module(module_name)
+            logger.info(f"Successfully imported {module_name}")
+        except Exception as e:
+            raise ImportError(f"Backend module '{module_name}' failed to import: {type(e).__name__}: {e}") from e
+        try:
+            return getattr(module, class_name)
+        except AttributeError as e:
+            raise ImportError(
+                f"Module '{module_name}' has no attribute '{class_name}'; check 'class_path' in {cls.__name__}.BACKENDS."
+            ) from e

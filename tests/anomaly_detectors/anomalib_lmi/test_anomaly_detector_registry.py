@@ -5,16 +5,10 @@ from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorR
 logger = logging.getLogger(__name__)
 
 
-def test_auto_register_models():
-    """
-    Test that all anomaly detectors are automatically registered.
-    """
-    AnomalyDetectorRegistry.auto_register_models()
+def test_backends_table_covers_known_detectors():
+    """The BACKENDS table expands to the known lookup keys — no backend imports needed."""
+    assert len(AnomalyDetectorRegistry._key_map) > 0, "AnomalyDetectorRegistry should have registered keys."
 
-    # Check if the registry is populated
-    assert len(AnomalyDetectorRegistry._registry) > 0, "AnomalyDetectorRegistry should have registered classes."
-
-    # Check if specific known detectors are registered
     known_keys = [
         ("anomalib2", "patchcore", "anomalydetection", "v2"),
         ("anomalib1", "patchcore", "anomalydetection", "v1"),
@@ -23,7 +17,7 @@ def test_auto_register_models():
     ]
     for key in known_keys:
         key2 = AnomalyDetectorRegistry._generate_key(*key, info={})
-        assert key2 in AnomalyDetectorRegistry._registry.keys(), f"Expected {key2} to be registered in AnomalyDetectorRegistry."
+        assert key2 in AnomalyDetectorRegistry._key_map, f"Expected {key2} to be registered in AnomalyDetectorRegistry."
 
 
 def test_get_version_inference():

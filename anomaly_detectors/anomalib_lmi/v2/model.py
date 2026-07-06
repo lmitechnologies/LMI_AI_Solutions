@@ -3,7 +3,6 @@ from typing import Any, Iterable
 
 import torch
 
-from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 from lmi_common.model_factory import ModelFactory
 
 from ..base import Anomalib_Base, AnomalibPT, register_backends
@@ -23,14 +22,6 @@ class AnomalibPTv2(AnomalibPT):
         return preds.anomaly_map
 
 
-@AnomalyDetectorRegistry.register(
-    metadata=dict(
-        frameworks=["anomalib2"],
-        model_names=["patchcore", "padim", "efficientad"],
-        tasks=["anomalydetection", "seg"],
-        versions=["v2"],
-    )
-)
 class AnomalyModel(ModelFactory, Anomalib_Base):
     """AD model factory for Anomalib v2. Dispatches on file extension.
 
