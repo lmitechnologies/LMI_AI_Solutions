@@ -2,7 +2,8 @@ import logging
 
 import pytest
 
-from lmi_common.model_registry import ModelRegistry
+import lmi_common.model_registry as model_registry_module
+from lmi_common.model_registry import DuplicateRegistrationError, ModelRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -13,8 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class FakeRegistry(ModelRegistry):
-    PACKAGES = []
-    TARGET_MODULE_SUFFIXES = [".model"]
+    PACKAGES = {}
     _registry = {}
 
 
@@ -26,9 +26,16 @@ class FakeRegistry(ModelRegistry):
 @pytest.fixture(autouse=True)
 def clear_registry():
     """Reset FakeRegistry between tests so registrations don't bleed over."""
-    FakeRegistry._registry.clear()
+
+    def reset():
+        FakeRegistry._registry.clear()
+        FakeRegistry._failed_imports.clear()
+        FakeRegistry._attempted_imports.clear()
+        FakeRegistry._discovered = False
+
+    reset()
     yield
-    FakeRegistry._registry.clear()
+    reset()
 
 
 # ---------------------------------------------------------------------------
@@ -40,22 +47,20 @@ def test_subclass_missing_all_required_attributes_raises():
     with pytest.raises(TypeError, match="must define"):
 
         class BadRegistry(ModelRegistry):
-            pass  # missing PACKAGES, TARGET_MODULE_SUFFIXES, _registry
+            pass  # missing PACKAGES, _registry
 
 
 def test_subclass_missing_one_required_attribute_raises():
     with pytest.raises(TypeError, match="must define"):
 
         class PartialRegistry(ModelRegistry):
-            PACKAGES = []
-            TARGET_MODULE_SUFFIXES = [".model"]
+            PACKAGES = {}
             # missing _registry
 
 
 def test_subclass_with_all_required_attributes_is_fine():
     class GoodRegistry(ModelRegistry):
-        PACKAGES = []
-        TARGET_MODULE_SUFFIXES = []
+        PACKAGES = {}
         _registry = {}
 
     assert hasattr(GoodRegistry, "_registry")
@@ -168,11 +173,11 @@ def test_register_empty_list_field_raises():
 
 
 # ---------------------------------------------------------------------------
-# register() — duplicate key (should warn, not raise)
+# register() — duplicate key (should raise)
 # ---------------------------------------------------------------------------
 
 
-def test_register_duplicate_key_logs_warning(caplog):
+def test_register_duplicate_key_raises():
     @FakeRegistry.register(
         metadata=dict(
             frameworks=["fw_a"],
@@ -184,7 +189,7 @@ def test_register_duplicate_key_logs_warning(caplog):
     class FirstModel:
         pass
 
-    with caplog.at_level(logging.WARNING):
+    with pytest.raises(DuplicateRegistrationError, match="already registered"):
 
         @FakeRegistry.register(
             metadata=dict(
@@ -197,10 +202,9 @@ def test_register_duplicate_key_logs_warning(caplog):
         class SecondModel:
             pass
 
-    # First registration should win
+    # First registration stays in place
     key = FakeRegistry._generate_key("fw_a", "model_x", "detect", "v1", {})
     assert FakeRegistry._registry[key] is FirstModel
-    assert any("already registered" in record.message.lower() for record in caplog.records)
 
 
 # ---------------------------------------------------------------------------
@@ -344,14 +348,120 @@ def test_auto_register_models_empty_packages_is_noop():
     assert len(FakeRegistry._registry) == 0
 
 
-def test_auto_register_models_bad_package_logs_warning(caplog):
-    class RegistryWithBadPackage(ModelRegistry):
-        PACKAGES = ["this.package.does.not.exist"]
-        TARGET_MODULE_SUFFIXES = [".model"]
+def test_auto_register_models_bad_module_logs_warning(caplog):
+    class RegistryWithBadModule(ModelRegistry):
+        PACKAGES = {"fw": ["this.module.does.not.exist"]}
         _registry = {}
 
     with caplog.at_level(logging.WARNING):
-        RegistryWithBadPackage.auto_register_models()
+        RegistryWithBadModule.auto_register_models()
 
-    assert any("this.package.does.not.exist" in record.message for record in caplog.records)
-    assert len(RegistryWithBadPackage._registry) == 0
+    assert any("this.module.does.not.exist" in record.message for record in caplog.records)
+    assert len(RegistryWithBadModule._registry) == 0
+
+
+# ---------------------------------------------------------------------------
+# Lazy discovery and failed-import reporting
+# ---------------------------------------------------------------------------
+
+
+def test_get_class_unknown_framework_triggers_full_discovery_once(monkeypatch):
+    class LazyRegistry(ModelRegistry):
+        PACKAGES = {}
+        _registry = {}
+
+    calls = []
+    original = LazyRegistry.auto_register_models
+
+    def spy():
+        calls.append(1)
+        original()
+
+    monkeypatch.setattr(LazyRegistry, "auto_register_models", spy)
+
+    @LazyRegistry.register(metadata=dict(frameworks=["fw"], model_names=["m"], tasks=["t"], versions=["v1"]))
+    class Dummy:
+        pass
+
+    LazyRegistry.get_class({"framework": "fw", "model_name": "m", "task": "t"})
+    LazyRegistry.get_class({"framework": "fw", "model_name": "m", "task": "t"})
+    assert len(calls) == 1, "Full discovery should run once, on the first lookup"
+
+
+def test_get_class_imports_only_requested_framework(monkeypatch):
+    class TargetedRegistry(ModelRegistry):
+        PACKAGES = {"fw_a": ["fake.module_a"], "fw_b": ["fake.module_b"]}
+        _registry = {}
+
+    imported = []
+
+    def fake_import(name):
+        imported.append(name)
+        if name == "fake.module_a":
+
+            @TargetedRegistry.register(metadata=dict(frameworks=["fw_a"], model_names=["m"], tasks=["t"], versions=["v1"]))
+            class BackendA:
+                pass
+
+    monkeypatch.setattr(model_registry_module.importlib, "import_module", fake_import)
+
+    cls = TargetedRegistry.get_class({"framework": "fw_a", "model_name": "m", "task": "t"})
+    assert cls.__name__ == "BackendA"
+    assert imported == ["fake.module_a"], "Only the requested framework's module should be imported"
+
+
+def test_get_class_miss_falls_back_to_full_discovery(monkeypatch):
+    """An incomplete PACKAGES entry self-heals: a miss after the targeted import triggers full discovery."""
+
+    class IncompleteRegistry(ModelRegistry):
+        PACKAGES = {"fw_a": ["fake.module_a"], "fw_b": ["fake.module_b"]}
+        _registry = {}
+
+    imported = []
+
+    def fake_import(name):
+        imported.append(name)
+        if name == "fake.module_b":
+            # fw_a's backend actually lives in fw_b's module — missing from the fw_a map entry
+            @IncompleteRegistry.register(metadata=dict(frameworks=["fw_a"], model_names=["m"], tasks=["t"], versions=["v1"]))
+            class BackendA:
+                pass
+
+    monkeypatch.setattr(model_registry_module.importlib, "import_module", fake_import)
+
+    cls = IncompleteRegistry.get_class({"framework": "fw_a", "model_name": "m", "task": "t"})
+    assert cls.__name__ == "BackendA"
+    assert imported == ["fake.module_a", "fake.module_b"]
+
+
+def test_duplicate_registration_during_import_propagates(monkeypatch):
+    """A duplicate key is a code bug: it must not be downgraded to a recorded import failure."""
+
+    class CollidingRegistry(ModelRegistry):
+        PACKAGES = {"fw": ["fake.colliding_module"]}
+        _registry = {}
+
+    def fake_import(name):
+        @CollidingRegistry.register(metadata=dict(frameworks=["fw"], model_names=["m"], tasks=["t"], versions=["v1"]))
+        class First:
+            pass
+
+        @CollidingRegistry.register(metadata=dict(frameworks=["fw"], model_names=["m"], tasks=["t"], versions=["v1"]))
+        class Second:
+            pass
+
+    monkeypatch.setattr(model_registry_module.importlib, "import_module", fake_import)
+
+    with pytest.raises(DuplicateRegistrationError, match="already registered"):
+        CollidingRegistry.get_class({"framework": "fw", "model_name": "m", "task": "t"})
+    assert "fake.colliding_module" not in CollidingRegistry._failed_imports
+
+
+def test_failed_import_is_recorded_and_surfaced_in_lookup_error():
+    class RegistryWithBadModule(ModelRegistry):
+        PACKAGES = {"fw": ["this.module.does.not.exist"]}
+        _registry = {}
+
+    with pytest.raises(ValueError, match="failed to import"):
+        RegistryWithBadModule.get_class({"framework": "fw", "model_name": "m", "task": "t"})
+    assert "this.module.does.not.exist" in RegistryWithBadModule._failed_imports

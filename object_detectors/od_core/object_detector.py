@@ -3,9 +3,6 @@ from typing import Any, Dict
 
 from .object_detector_registry import ObjectDetectorRegistry
 
-# register models automatically
-ObjectDetectorRegistry.auto_register_models()
-
 
 class ObjectDetector:
     """Factory that instantiates the correct object-detector backend from a metadata dict.

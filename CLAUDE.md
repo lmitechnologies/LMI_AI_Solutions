@@ -11,7 +11,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Adding a Backend
 
-A backend only registers if it's discoverable — see the `ModelRegistry` docstring in `lmi_common/model_registry.py` for the `PACKAGES` / `.model` / `@register` contract.
+A backend only registers if it's discoverable — see the `ModelRegistry` docstring in `lmi_common/model_registry.py` for the `PACKAGES` / `@register` contract. New backends need a framework → module entry in the registry's `PACKAGES` dict.
 
 ## Do Not Modify
 
@@ -19,13 +19,28 @@ A backend only registers if it's discoverable — see the `ModelRegistry` docstr
 
 ## Running Tests Locally
 
-Needs NVIDIA Container Toolkit + a GPU. From the repo root:
+Needs NVIDIA Container Toolkit + a GPU. Run tests yourself, directly in these containers. Prefer a targeted run over the full suite
+while iterating:
 
 ```bash
+# plain pytest on a file/dir (no TRT engine building)
+docker compose -f tests/docker-compose.yaml run --rm test_ais_v1_all pytest tests/lmi_common/ -q
+
+# a suite group, building any missing TRT engines first: all-v1 | od | utils | cls | ad-v1 | ad-v2
+docker compose -f tests/docker-compose.yaml run --rm test_ais_v1_all bash tests/run_tests.sh od
+
+# full suite (v1 then v2) — for final verification
 docker compose -f tests/docker-compose.yaml up --build
 ```
 
-See `tests/docker-compose.yaml` and `tests/dockerfile.tests` for the services and images. The `v1`/`v2` split isolates the incompatible Anomalib versions (`test_v1.py` → `1.1.1`, `test_v2.py` → `2.*`, which can't share an env). Each service runs `bash tests/run_tests.sh <arg>`; HTML reports land in `tests/outputs/`.
+The `v1`/`v2` split isolates the incompatible Anomalib versions (`test_v1.py` → `1.1.1`, `test_v2.py` → `2.*`, which can't share an
+env). Anything Anomalib v2 must use the v2 service with `--no-deps` (otherwise `run` triggers the full v1 suite it depends on):
+
+```bash
+docker compose -f tests/docker-compose.yaml run --rm --no-deps test_ais_ad_v2 bash tests/run_tests.sh ad-v2
+```
+
+See `tests/docker-compose.yaml` and `tests/dockerfile.tests` for the services and images. HTML reports land in `tests/outputs/`.
 
 ## Commits
 
