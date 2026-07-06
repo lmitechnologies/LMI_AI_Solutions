@@ -5,13 +5,9 @@ from object_detectors.od_core.object_detector_registry import ObjectDetectorRegi
 logger = logging.getLogger(__name__)
 
 
-def test_auto_registration():
-    """
-    Test that the auto-registration of object detector models works correctly.
-    This will check if the models are registered in the ObjectDetectorRegistry.
-    """
-    ObjectDetectorRegistry.auto_register_models()
-    assert len(ObjectDetectorRegistry._registry) > 0, "ObjectDetectorRegistry should have registered models."
+def test_backends_table_covers_known_models():
+    """The BACKENDS table expands to the known lookup keys — no backend imports needed."""
+    assert len(ObjectDetectorRegistry._key_map) > 0, "ObjectDetectorRegistry should have registered keys."
 
     to_be_tested_keys = [
         ("detectron2", "mask_rcnn", "objectdetection", "v0"),
@@ -25,5 +21,17 @@ def test_auto_registration():
     ]
 
     for key in to_be_tested_keys:
-        key2 = ObjectDetectorRegistry._generate_key(*key, info={})
-        assert key2 in ObjectDetectorRegistry._registry, f"Model {key} should be registered."
+        key2 = ObjectDetectorRegistry._generate_key(*key)
+        assert key2 in ObjectDetectorRegistry._key_map, f"Model {key} should be registered."
+
+
+def test_get_version_inference():
+    assert ObjectDetectorRegistry._get_version({"version": "v2"}, "detectron2") == "v2"  # explicit wins
+    # legacy backends resolve to v0 without version metadata
+    assert ObjectDetectorRegistry._get_version({}, "detectron2") == "v0"
+    assert ObjectDetectorRegistry._get_version({"model_name": "yolov5"}, "ultralytics") == "v0"
+    assert ObjectDetectorRegistry._get_version({"algorithm": "YOLOv5"}, "ultralytics") == "v0"
+    # everything else defaults to v1; trailing digits in OD framework names are not versions
+    assert ObjectDetectorRegistry._get_version({"model_name": "yolo"}, "ultralytics") == "v1"
+    assert ObjectDetectorRegistry._get_version({"model_name": "yolov8"}, "ultralytics8") == "v1"
+    assert ObjectDetectorRegistry._get_version({}, "rfdetr") == "v1"

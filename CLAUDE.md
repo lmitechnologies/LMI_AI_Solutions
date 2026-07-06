@@ -11,7 +11,9 @@ Guidance for Claude Code when working in this repository.
 
 ## Adding a Backend
 
-A backend only registers if it's discoverable — see the `ModelRegistry` docstring in `lmi_common/model_registry.py` for the `PACKAGES` / `@register` contract. New backends need a framework → module entry in the registry's `PACKAGES` dict.
+Backends are declared in each registry's `BACKENDS` table — see the `ModelRegistry` docstring in `lmi_common/model_registry.py`.
+Add one entry with the metadata lists and a `"module:ClassName"` `class_path`. Keep registry modules free of backend imports so
+duplicate-key validation (run at registry import) works in any environment.
 
 ## Do Not Modify
 

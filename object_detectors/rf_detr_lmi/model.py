@@ -12,7 +12,6 @@ from rfdetr.models.postprocess import PostProcess
 from lmi_common.model_factory import ModelFactory
 from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
-from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 
@@ -188,11 +187,6 @@ class RfdetrBase(ODBase):
         return [self._postprocess_single(r, configs, operators[i], return_segments) for i, r in enumerate(rs)]
 
 
-@ObjectDetectorRegistry.register(
-    metadata=dict(
-        versions=["v1"], model_names=["rfdetr"], tasks=["od", "seg", "instancesegmentation", "objectdetection"], frameworks=["rfdetr"]
-    )
-)
 class RfdetrModel(ModelFactory, ODBase):
     """Factory that dispatches to the correct backend based on model file extension.
 

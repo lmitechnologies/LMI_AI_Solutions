@@ -8,13 +8,29 @@ logger = logging.getLogger(__name__)
 
 
 class AnomalyDetectorRegistry(ModelRegistry):
-    PACKAGES = {
-        "anomalib": ["anomaly_detectors.anomalib_lmi.v0.model"],
-        "anomalib0": ["anomaly_detectors.anomalib_lmi.v0.model"],
-        "anomalib1": ["anomaly_detectors.anomalib_lmi.v1.model"],
-        "anomalib2": ["anomaly_detectors.anomalib_lmi.v2.model"],
-    }
-    _registry = {}
+    BACKENDS = [
+        {
+            "frameworks": ["anomalib0"],
+            "model_names": ["patchcore", "padim"],
+            "tasks": ["anomalydetection", "seg"],
+            "versions": ["v0"],
+            "class_path": "anomaly_detectors.anomalib_lmi.v0.model:AnomalyModel",
+        },
+        {
+            "frameworks": ["anomalib1"],
+            "model_names": ["patchcore", "padim", "efficientad"],
+            "tasks": ["anomalydetection", "seg"],
+            "versions": ["v1"],
+            "class_path": "anomaly_detectors.anomalib_lmi.v1.model:AnomalyModel",
+        },
+        {
+            "frameworks": ["anomalib2"],
+            "model_names": ["patchcore", "padim", "efficientad"],
+            "tasks": ["anomalydetection", "seg"],
+            "versions": ["v2"],
+            "class_path": "anomaly_detectors.anomalib_lmi.v2.model:AnomalyModel",
+        },
+    ]
 
     @classmethod
     def _get_version(cls, metadata: Dict[str, Any], framework: str) -> str:
@@ -25,8 +41,7 @@ class AnomalyDetectorRegistry(ModelRegistry):
         match = re.search(r"(\d+)$", framework)
         if match:
             return f"v{match.group(1)}"
-        if framework.lower() != "anomalib":  # bare "anomalib" is a known legacy name
-            logger.warning(f"No 'version' in metadata and no trailing digits in framework '{framework}'; defaulting to 'v1'.")
+        logger.warning(f"No 'version' in metadata and no trailing digits in framework '{framework}'; defaulting to 'v1'.")
         return "v1"
 
     @classmethod

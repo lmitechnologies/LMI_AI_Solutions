@@ -8,19 +8,10 @@ from PIL import Image
 from ultralytics.data.augment import classify_transforms
 from ultralytics.utils.torch_utils import smart_inference_mode
 
-from classifiers.cls_core.classifier_registry import ClassifierRegistry
 from classifiers.cls_core.cls_base import ClassifierBase
 from lmi_common.yolo_core import YoloCore
 
 
-@ClassifierRegistry.register(
-    metadata=dict(
-        versions=["v1"],
-        model_names=["yolo", "yolov8", "yolov11"],
-        tasks=["classification"],
-        frameworks=["ultralytics"],
-    )
-)
 class YoloCls(YoloCore, ClassifierBase):
     logger = logging.getLogger("yolo-cls")
 

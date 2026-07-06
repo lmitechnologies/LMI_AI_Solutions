@@ -4,7 +4,6 @@ from typing import Any, Iterable
 
 import torch
 
-from anomaly_detectors.ad_core.anomaly_detector_registry import AnomalyDetectorRegistry
 from lmi_common.model_factory import ModelFactory
 
 from ..base import Anomalib_Base, AnomalibPT, register_backends
@@ -28,14 +27,6 @@ class AnomalibPTv1(AnomalibPT):
         raise TypeError(f"Unknown prediction type: {type(preds)}")
 
 
-@AnomalyDetectorRegistry.register(
-    metadata=dict(
-        frameworks=["anomalib1"],
-        model_names=["patchcore", "padim", "efficientad"],
-        tasks=["anomalydetection", "seg"],
-        versions=["v1"],
-    )
-)
 class AnomalyModel(ModelFactory, Anomalib_Base):
     """AD model factory for Anomalib v1. Dispatches on file extension.
 

@@ -10,7 +10,6 @@ from ultralytics.utils.torch_utils import smart_inference_mode
 from lmi_common.yolo_core import YoloCore
 from lmi_utils.gadget_utils.pipeline_utils import resize_image
 from lmi_utils.image_utils.types import ImageLike, to_rgb
-from object_detectors.od_core.object_detector_registry import ObjectDetectorRegistry
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 
@@ -39,14 +38,6 @@ def letterbox(image: ImageLike, new_shape, pad_value: int = LETTERBOX_PAD) -> Im
     return chw.permute(1, 2, 0)
 
 
-@ObjectDetectorRegistry.register(
-    metadata=dict(
-        versions=["v1"],
-        model_names=["yolo", "yolov8", "yolov11"],
-        tasks=["od", "objectdetection"],
-        frameworks=["ultralytics", "ultralytics8"],
-    )
-)
 class Yolo(YoloCore, ODBase):
     logger = logging.getLogger("yolo")
 
@@ -184,14 +175,6 @@ class Yolo(YoloCore, ODBase):
         return self.construct_results(preds2, img, orig_imgs, confs, operators=operators, **kwargs)
 
 
-@ObjectDetectorRegistry.register(
-    metadata=dict(
-        versions=["v1"],
-        model_names=["yolo", "yolov8", "yolov11"],
-        tasks=["seg", "instancesegmentation"],
-        frameworks=["ultralytics", "ultralytics8"],
-    )
-)
 class YoloSeg(Yolo):
     logger = logging.getLogger("yolo-seg")
 
@@ -274,14 +257,6 @@ class YoloSeg(Yolo):
         return super().postprocess(preds[0], **kwargs)
 
 
-@ObjectDetectorRegistry.register(
-    metadata=dict(
-        versions=["v1"],
-        model_names=["yolo", "yolov8", "yolov11"],
-        tasks=["obb", "orientedobjectdetection"],
-        frameworks=["ultralytics", "ultralytics8"],
-    )
-)
 class YoloObb(Yolo):
     logger = logging.getLogger("yolo-obb")
 
@@ -331,14 +306,6 @@ class YoloObb(Yolo):
         return result, keep
 
 
-@ObjectDetectorRegistry.register(
-    metadata=dict(
-        versions=["v1"],
-        model_names=["yolo", "yolov8", "yolov11"],
-        tasks=["pose", "keypointdetection"],
-        frameworks=["ultralytics", "ultralytics8"],
-    )
-)
 class YoloPose(Yolo):
     logger = logging.getLogger("yolo-pose")
 
