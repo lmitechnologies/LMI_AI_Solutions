@@ -23,3 +23,15 @@ def test_backends_table_covers_known_models():
     for key in to_be_tested_keys:
         key2 = ObjectDetectorRegistry._generate_key(*key)
         assert key2 in ObjectDetectorRegistry._key_map, f"Model {key} should be registered."
+
+
+def test_get_version_inference():
+    assert ObjectDetectorRegistry._get_version({"version": "v2"}, "detectron2") == "v2"  # explicit wins
+    # legacy backends resolve to v0 without version metadata
+    assert ObjectDetectorRegistry._get_version({}, "detectron2") == "v0"
+    assert ObjectDetectorRegistry._get_version({"model_name": "yolov5"}, "ultralytics") == "v0"
+    assert ObjectDetectorRegistry._get_version({"algorithm": "YOLOv5"}, "ultralytics") == "v0"
+    # everything else defaults to v1; trailing digits in OD framework names are not versions
+    assert ObjectDetectorRegistry._get_version({"model_name": "yolo"}, "ultralytics") == "v1"
+    assert ObjectDetectorRegistry._get_version({"model_name": "yolov8"}, "ultralytics8") == "v1"
+    assert ObjectDetectorRegistry._get_version({}, "rfdetr") == "v1"

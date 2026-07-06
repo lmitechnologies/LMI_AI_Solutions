@@ -19,13 +19,17 @@ def test_backends_table_covers_known_detectors():
         key2 = AnomalyDetectorRegistry._generate_key(*key)
         assert key2 in AnomalyDetectorRegistry._key_map, f"Expected {key2} to be registered in AnomalyDetectorRegistry."
 
+    # the legacy backend is v0 only — no longer doubly registered under v1
+    legacy_v1 = AnomalyDetectorRegistry._generate_key("anomalib", "patchcore", "anomalydetection", "v1")
+    assert legacy_v1 not in AnomalyDetectorRegistry._key_map
+
 
 def test_get_version_inference():
     assert AnomalyDetectorRegistry._get_version({"version": "v2"}, "anomalib") == "v2"  # explicit wins
     assert AnomalyDetectorRegistry._get_version({}, "anomalib0") == "v0"
     assert AnomalyDetectorRegistry._get_version({}, "anomalib2") == "v2"
     assert AnomalyDetectorRegistry._get_version({}, "anomalib12") == "v12"
-    assert AnomalyDetectorRegistry._get_version({}, "anomalib") == "v1"
+    assert AnomalyDetectorRegistry._get_version({}, "anomalib") == "v0"  # bare legacy name maps to the v0 backend
 
 
 def test_get_version_warns_on_non_standard_framework(caplog):
