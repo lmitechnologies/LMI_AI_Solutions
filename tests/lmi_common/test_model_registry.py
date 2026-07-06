@@ -74,7 +74,7 @@ def test_subclass_with_backends_is_fine():
 
 def test_expand_single_combination():
     registry = make_registry(entry())
-    key = registry._generate_key("fw_a", "model_x", "detect", "v1", {})
+    key = registry._generate_key("fw_a", "model_x", "detect", "v1")
     assert registry._key_map == {key: f"{FAKE_MODULE}:DummyModel"}
 
 
@@ -82,13 +82,7 @@ def test_expand_multiple_frameworks_and_tasks():
     registry = make_registry(entry(frameworks=["fw_a", "fw_b"], tasks=["detect", "segment"]))
     for fw in ("fw_a", "fw_b"):
         for task in ("detect", "segment"):
-            assert registry._generate_key(fw, "model_x", task, "v1", {}) in registry._key_map
-
-
-def test_expand_with_info_field():
-    registry = make_registry(entry(info={"extra": "value"}))
-    key = registry._generate_key("fw_a", "model_x", "detect", "v1", {"extra": "value"})
-    assert key in registry._key_map
+            assert registry._generate_key(fw, "model_x", task, "v1") in registry._key_map
 
 
 # ---------------------------------------------------------------------------
@@ -154,20 +148,14 @@ def test_overlapping_entries_collide_on_shared_combination():
 
 
 def test_generate_key_is_case_insensitive():
-    key1 = ModelRegistry._generate_key("FW_A", "MODEL_X", "DETECT", "v1", {})
-    key2 = ModelRegistry._generate_key("fw_a", "model_x", "detect", "v1", {})
+    key1 = ModelRegistry._generate_key("FW_A", "MODEL_X", "DETECT", "v1")
+    key2 = ModelRegistry._generate_key("fw_a", "model_x", "detect", "v1")
     assert key1 == key2
 
 
 def test_generate_key_differs_by_version():
-    key1 = ModelRegistry._generate_key("fw_a", "model_x", "detect", "v1", {})
-    key2 = ModelRegistry._generate_key("fw_a", "model_x", "detect", "v2", {})
-    assert key1 != key2
-
-
-def test_generate_key_differs_by_info():
-    key1 = ModelRegistry._generate_key("fw_a", "model_x", "detect", "v1", {})
-    key2 = ModelRegistry._generate_key("fw_a", "model_x", "detect", "v1", {"extra": "value"})
+    key1 = ModelRegistry._generate_key("fw_a", "model_x", "detect", "v1")
+    key2 = ModelRegistry._generate_key("fw_a", "model_x", "detect", "v2")
     assert key1 != key2
 
 

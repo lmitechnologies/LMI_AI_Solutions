@@ -21,5 +21,5 @@ def test_backends_table_covers_known_models():
     ]
 
     for key in to_be_tested_keys:
-        key2 = ObjectDetectorRegistry._generate_key(*key, info={})
+        key2 = ObjectDetectorRegistry._generate_key(*key)
         assert key2 in ObjectDetectorRegistry._key_map, f"Model {key} should be registered."

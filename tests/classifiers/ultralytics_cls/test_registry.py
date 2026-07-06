@@ -14,5 +14,5 @@ def test_backends_table_covers_known_classifiers():
     ]
 
     for key in to_be_tested_keys:
-        key2 = ClassifierRegistry._generate_key(*key, info={})
+        key2 = ClassifierRegistry._generate_key(*key)
         assert key2 in ClassifierRegistry._key_map, f"Model {key} should be registered."

@@ -1,5 +1,4 @@
 import importlib
-import json
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Type
 
@@ -38,8 +37,8 @@ class ModelRegistry:
     """
 
     BACKENDS: List[Dict[str, Any]] = []
-    _key_map: Dict[Tuple[str, str, str, str, str], str] = {}
-    _class_cache: Dict[Tuple[str, str, str, str, str], Type] = {}
+    _key_map: Dict[Tuple[str, str, str, str], str] = {}
+    _class_cache: Dict[Tuple[str, str, str, str], Type] = {}
 
     @classmethod
     def __init_subclass__(cls, **kwargs):
@@ -56,26 +55,23 @@ class ModelRegistry:
         model_name: str,
         task: str,
         version: str,
-        info: Dict[str, Any],
-    ) -> Tuple[str, str, str, str, str]:
+    ) -> Tuple[str, str, str, str]:
         return (
             framework.lower(),
             model_name.lower(),
             task.lower(),
             version,
-            json.dumps(info, sort_keys=True),
         )
 
     @classmethod
-    def _expand_backends(cls) -> Dict[Tuple[str, str, str, str, str], str]:
+    def _expand_backends(cls) -> Dict[Tuple[str, str, str, str], str]:
         """Expand ``BACKENDS`` into a lookup-key → class_path map, validating entries and rejecting duplicate keys."""
-        key_map: Dict[Tuple[str, str, str, str, str], str] = {}
+        key_map: Dict[Tuple[str, str, str, str], str] = {}
         for entry in cls.BACKENDS:
             frameworks = entry.get("frameworks")
             model_names = entry.get("model_names")
             tasks = entry.get("tasks")
             versions = entry.get("versions")
-            info: Dict[str, Any] = entry.get("info", {})
             class_path = entry.get("class_path")
 
             if not all(isinstance(field, list) for field in (frameworks, model_names, tasks, versions)):
@@ -91,12 +87,12 @@ class ModelRegistry:
                 for model_name in model_names:
                     for task in tasks:
                         for version in versions:
-                            key = cls._generate_key(framework, model_name, task, version, info)
+                            key = cls._generate_key(framework, model_name, task, version)
                             if key in key_map:
                                 raise DuplicateRegistrationError(
                                     f"{cls.__name__}: combination already registered: "
                                     f"framework='{framework}', model_name='{model_name}', "
-                                    f"task='{task}', version='{version}', info='{json.dumps(info, sort_keys=True)}' "
+                                    f"task='{task}', version='{version}' "
                                     f"points to '{key_map[key]}'. Cannot re-register with '{class_path}'."
                                 )
                             key_map[key] = class_path
@@ -117,7 +113,6 @@ class ModelRegistry:
         framework: Optional[str] = metadata.get("framework") or metadata.get("package")
         model_name: Optional[str] = metadata.get("model_name") or metadata.get("algorithm")
         task: Optional[str] = cls._get_task(metadata)
-        info: Dict[str, Any] = metadata.get("info", {})
 
         if not all([framework, model_name, task]):
             raise ValueError(
@@ -125,7 +120,7 @@ class ModelRegistry:
             )
 
         version: str = cls._get_version(metadata, framework)
-        key = cls._generate_key(framework, model_name, task, version, info)
+        key = cls._generate_key(framework, model_name, task, version)
 
         wrapper_cls = cls._class_cache.get(key)
         if wrapper_cls is not None:
@@ -137,7 +132,7 @@ class ModelRegistry:
             raise ValueError(
                 f"No backend registered for combination: "
                 f"framework='{framework.lower()}', model_name='{model_name.lower()}', "
-                f"task='{task.lower()}', version='{version}', info='{json.dumps(info, sort_keys=True)}'.\n"
+                f"task='{task.lower()}', version='{version}'.\n"
                 f"Lookup key: {key}\n"
                 f"Available keys:\n{available_keys}"
             )

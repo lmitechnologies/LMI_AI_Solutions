@@ -16,7 +16,7 @@ def test_backends_table_covers_known_detectors():
         ("anomalib0", "padim", "anomalydetection", "v0"),
     ]
     for key in known_keys:
-        key2 = AnomalyDetectorRegistry._generate_key(*key, info={})
+        key2 = AnomalyDetectorRegistry._generate_key(*key)
         assert key2 in AnomalyDetectorRegistry._key_map, f"Expected {key2} to be registered in AnomalyDetectorRegistry."
 
 
