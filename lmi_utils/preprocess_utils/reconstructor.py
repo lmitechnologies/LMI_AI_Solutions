@@ -4,13 +4,7 @@ from lmi_utils.image_utils.types import ImageLike
 
 from .base import BaseProcessor
 from .operation import Meta, Operation
-from .ops import (
-    CropBoxOperation,
-    FlipOperation,
-    PadOperation,
-    ResizeOperation,
-    TileOperation,
-)
+from .ops import DEFAULT_OPERATIONS
 
 
 class Reconstructor(BaseProcessor):
@@ -23,13 +17,7 @@ class Reconstructor(BaseProcessor):
         Output tensors live on the same device as the input tensors.
     """
 
-    _DEFAULT_OPS: Tuple[Type[Operation], ...] = (
-        ResizeOperation,
-        PadOperation,
-        FlipOperation,
-        TileOperation,
-        CropBoxOperation,
-    )
+    _DEFAULT_OPS: Tuple[Type[Operation], ...] = DEFAULT_OPERATIONS
 
     @classmethod
     def default_ops(cls) -> Dict[Type[Meta], Type[Operation]]:
@@ -37,7 +25,7 @@ class Reconstructor(BaseProcessor):
 
     def __init__(self):
         self._ops: Dict[Type[Meta], Operation] = {}
-        for op_cls in self._DEFAULT_OPS:
+        for op_cls in self.default_ops().values():
             self.register(op_cls())
 
     def register(self, op: Operation) -> None:
@@ -63,6 +51,8 @@ class Reconstructor(BaseProcessor):
 
         first_val = next(iter(results.values()))
         n = len(first_val)
+        if n == 0:
+            return results
         per_image = [{k: v[i] for k, v in results.items()} for i in range(n)]
         per_image, is_numpy = self.to_tensor_results(per_image)
 

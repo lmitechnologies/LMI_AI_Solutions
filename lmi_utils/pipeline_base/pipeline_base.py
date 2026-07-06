@@ -88,7 +88,7 @@ class PipelineBase(metaclass=ABCMeta):
 
             models: a dictionary of model instances, e.g., {model_name: model_instance}
             results: a dictionary of the results, e.g.,
-                {'outputs':{}, 'automation_keys':[], 'factory_keys':[], 'tags':[], 'should_archive':True, 'decision':None}
+                {'outputs':{'annotated':None}, 'automation_keys':[], 'factory_keys':['tags'], 'tags':[], 'should_archive':True, 'errors':[]}
             _preprocessing: a dictionary of global preprocessing configs for each model role.
             version: the gadget version. It determines which model_roles handler to be used.
             preprocessor: an instance of Preprocessor class for preprocessing inputs.
@@ -134,13 +134,13 @@ class PipelineBase(metaclass=ABCMeta):
 
         self.models[model_name] = model_class(meta_copy, **kwargs)
 
-    def _parse_model_roles(self, model_roles: dict, **kwargs: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    def _parse_model_roles(self, model_roles: dict, version: Optional[str] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Parse model_roles by version and convert it to match the required format for initializing AIS repo models.
         Also, it loads the global preprocessing steps.
 
         Args:
             model_roles (dict): the model roles to parse.
-            **kwargs (Any): additional arguments to be passed to the model constructor.
+            version (str, optional): gadget schema version. Defaults to self.version.
 
         Raises:
             ValueError: If the version is not supported.
@@ -149,7 +149,7 @@ class PipelineBase(metaclass=ABCMeta):
             dict: The parsed model roles.
             dict: The global preprocessing steps.
         """
-        version = kwargs.get("version", self.version)
+        version = version if version is not None else self.version
 
         # Validate version
         if version not in self._MODEL_ROLES_HANDLERS:
@@ -178,11 +178,16 @@ class PipelineBase(metaclass=ABCMeta):
             filter (str, optional): filter models by name. Defaults to "-model".
         kwargs:
             verbose (bool, optional): log the original model roles. Defaults to False.
+            version (str, optional): gadget schema version. Defaults to self.version.
+            Remaining kwargs are forwarded to the model constructors.
         """
-        if kwargs.get("verbose", False):
+        # Consume pipeline-level kwargs so they don't leak into model constructors.
+        verbose = kwargs.pop("verbose", False)
+        version = kwargs.pop("version", self.version)
+        if verbose:
             self.logger.info(f"Original Model Roles: {compact_json(model_roles)}\n")
 
-        parsed_model_roles, global_preprocessing = self._parse_model_roles(model_roles, **kwargs)
+        parsed_model_roles, global_preprocessing = self._parse_model_roles(model_roles, version=version)
         if not global_preprocessing:
             raise ValueError("Global preprocessing is not defined in model roles.")
 
@@ -255,15 +260,15 @@ class PipelineBase(metaclass=ABCMeta):
         model_role: str,
         images: List[ImageLike],
         processed: List[ImageLike],
-        history: List[Dict[str, Any]],
-    ) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
+        history: List[Meta],
+    ) -> Tuple[List[ImageLike], List[Meta]]:
         """Append a resize so an OD model's preprocessed input matches its training size.
         No-op when the size already matches.
         """
         model = self.models[model_role]
         th, tw = int(model.image_size[0]), int(model.image_size[1])
-        h, w = processed[0].shape[:2]
-        if (h, w) == (th, tw):
+        mismatched = sorted({tuple(p.shape[:2]) for p in processed} - {(th, tw)})
+        if not mismatched:
             return processed, history
 
         if len(processed) != len(images):
@@ -275,7 +280,7 @@ class PipelineBase(metaclass=ABCMeta):
             )
 
         self.logger.warning(
-            f"[{model_role}] preprocessed size {(h, w)} != model input {(th, tw)}; injecting a resize. "
+            f"[{model_role}] preprocessed size(s) {mismatched} != model input {(th, tw)}; injecting a resize. "
             "Configure a matching resize step in global preprocessing to remove this."
         )
         resize_step = [steps.resize(width=tw, height=th, preserve_aspect=model.RESIZE_PRESERVE_ASPECT, pad_value=model.RESIZE_PAD_VALUE)]
@@ -286,8 +291,8 @@ class PipelineBase(metaclass=ABCMeta):
         self,
         model_role: str,
         processed: List[ImageLike],
-        history: List[Dict[str, Any]],
-    ) -> Tuple[List[ImageLike], List[Dict[str, Any]]]:
+        history: List[Meta],
+    ) -> Tuple[List[ImageLike], List[Meta]]:
         """Record an AD model's internal fit-to-size as an inverse-only resize step.
 
         The forward image is left off-size for the model to resize internally, so ``predict()`` scores are
@@ -545,6 +550,8 @@ class PipelineBase(metaclass=ABCMeta):
         """
         # Handle appending to an existing list.
         if key in self.results and isinstance(self.results[key], list) and not kwargs.get("overwrite", False):
+            if sub_key is not None:
+                self.logger.warning(f"update_results: sub_key '{sub_key}' ignored — results['{key}'] is a list, appending value to it")
             self.results[key].append(value)
         elif sub_key is not None:
             self.results.setdefault(key, {})[sub_key] = value

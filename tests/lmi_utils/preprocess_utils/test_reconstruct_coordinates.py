@@ -382,3 +382,11 @@ class TestEdgeCases:
         _, history = prep.preprocess(image, [steps.resize(width=50, height=50)])
         reverted = recon.reconstruct_coordinates({}, history)
         assert reverted == {}
+
+    def test_empty_batch_returns_results_unchanged(self, pipeline):
+        """A zero-image batch (keys present, zero-length values) must round-trip unchanged, not crash."""
+        _, recon = pipeline
+        results = {"boxes": [], "scores": [], "classes": []}
+        history = [steps.revert_resize(src_sizes=[], dst_sizes=[], pads=[])]
+        reverted = recon.reconstruct_coordinates(results, history)
+        assert reverted == {"boxes": [], "scores": [], "classes": []}

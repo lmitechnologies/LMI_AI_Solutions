@@ -4,7 +4,17 @@ from .pad import PadConfig, PadMeta, PadOperation
 from .resize import ResizeConfig, ResizeMeta, ResizeOperation
 from .tile import TileConfig, TileMeta, TileOperation
 
+# Operations registered by default on both Preprocessor and Reconstructor.
+DEFAULT_OPERATIONS = (
+    ResizeOperation,
+    PadOperation,
+    FlipOperation,
+    TileOperation,
+    CropBoxOperation,
+)
+
 __all__ = [
+    "DEFAULT_OPERATIONS",
     "CropBoxConfig",
     "CropBoxMeta",
     "CropBoxOperation",
