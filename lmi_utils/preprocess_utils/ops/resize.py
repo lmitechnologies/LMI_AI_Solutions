@@ -192,7 +192,7 @@ def _resample_masks(masks: torch.Tensor, src_size: List[int], dst_size: List[int
             return canvas
         return resized
     # revert: strip pad first (if any), then resize back to (src_h, src_w)
-    if pad_L or pad_T:
+    if pad_L or pad_R or pad_T or pad_B:
         # mask shape: (N, H, W). Strip pad from a (dst_h+pT+pB, dst_w+pL+pR) canvas.
         masks = masks[:, pad_T : pad_T + dst_h, pad_L : pad_L + dst_w]
     return _resize_binary(masks, (src_h, src_w))

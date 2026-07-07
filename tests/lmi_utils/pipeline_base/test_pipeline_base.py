@@ -286,9 +286,9 @@ def test_pipeline_AD(version, preprocessing_steps, expected_types):
 
 
 def test_pipeline_AD_records_inverse_resize_on_size_mismatch(caplog):
-    """When AD preprocessing does not reach the model's input size, the forward image is left untouched
-    (the model resizes internally) and an inverse-resize is recorded so the score map still reverts to
-    the original input shape."""
+    """When AD preprocessing does not reach the model's input size, the forward images are left untouched
+    (the model resizes internally) and an inverse-resize is recorded so the score maps still revert to
+    the original input shapes. Uses a two-image batch to cover the batched (1:1, non-tiled) path."""
     model_path = os.path.abspath("tests/assets/models/ad/model_v1/model.ts")
     image_dir = os.path.abspath("tests/assets/images/nvtec-ad")
 
@@ -302,19 +302,20 @@ def test_pipeline_AD_records_inverse_resize_on_size_mismatch(caplog):
     image_files = [os.path.join(image_dir, f) for f in os.listdir(image_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
     assert len(image_files) > 0, "No images found in assets"
     image = cv2.cvtColor(cv2.imread(image_files[0]), cv2.COLOR_BGR2RGB)
+    images = [image, image[:-8, :-4]]  # different original sizes
 
     with caplog.at_level(logging.WARNING):
-        results = pipeline.predict({}, {"images": [image]})
+        results = pipeline.predict({}, {"images": images})
 
     ops_list = results["ops_list"]
-    # Configured resize + recorded inverse-resize, the latter not physically applied to the forward image.
+    # Configured resize + recorded inverse-resize, the latter not physically applied to the forward images.
     actual_types = [type(op).__name__.removesuffix("Meta").lower() for op in ops_list]
     assert actual_types == ["resize", "resize"], f"Unexpected history: {actual_types}"
     assert any("recording an inverse-resize" in r.message for r in caplog.records), "Expected an inverse-resize warning"
 
-    # The reverted heatmap must still match the original input shape.
-    heatmap = results["outputs"]["annotated"][0]
-    assert heatmap.shape[:2] == image.shape[:2], f"Shape mismatch: {heatmap.shape[:2]} vs {image.shape[:2]}"
+    # Each reverted heatmap must still match its original input shape.
+    for im, heatmap in zip(images, results["outputs"]["annotated"]):
+        assert heatmap.shape[:2] == im.shape[:2], f"Shape mismatch: {heatmap.shape[:2]} vs {im.shape[:2]}"
 
 
 def test_version_1_error():
@@ -322,6 +323,48 @@ def test_version_1_error():
     model_roles = {"mock-model": {"model_role": "mock-model"}}
     with pytest.raises(ValueError, match="Gadget version 1 is no longer supported"):
         pipeline.load(model_roles, {})
+
+
+def test_update_results_behaviors():
+    pipeline = PipelineOD(version="3")
+
+    # append to an existing list key
+    pipeline.update_results("tags", "ERROR", to_factory=True)
+    assert pipeline.results["tags"] == ["ERROR"]
+    assert "tags" in pipeline.results["factory_keys"]
+
+    # overwrite replaces the list instead of appending
+    pipeline.update_results("tags", ["A", "B"], overwrite=True)
+    assert pipeline.results["tags"] == ["A", "B"]
+
+    # sub_key on a missing key creates the sub dictionary
+    pipeline.update_results("metrics", 0.93, sub_key="iou", to_automation=True)
+    assert pipeline.results["metrics"] == {"iou": 0.93}
+    assert "metrics" in pipeline.results["automation_keys"]
+
+    # sub_key on an existing dict key updates in place
+    pipeline.update_results("outputs", "img", sub_key="annotated")
+    assert pipeline.results["outputs"]["annotated"] == "img"
+
+    # plain set on a non-list key
+    pipeline.update_results("should_archive", False)
+    assert pipeline.results["should_archive"] is False
+
+
+def test_update_results_sub_key_on_list_raises():
+    pipeline = PipelineOD(version="3")
+    with pytest.raises(TypeError, match="cannot set sub_key 'station_1'"):
+        pipeline.update_results("tags", "NG", sub_key="station_1")
+    with pytest.raises(TypeError, match="cannot set sub_key 'camera_0'"):
+        pipeline.update_results("errors", "timeout", sub_key="camera_0", overwrite=True)
+    assert pipeline.results["tags"] == []  # failed calls leave results untouched
+    assert pipeline.results["errors"] == []
+
+
+def test_update_results_rejects_unknown_kwargs():
+    pipeline = PipelineOD(version="3")
+    with pytest.raises(TypeError):
+        pipeline.update_results("tags", "NG", to_gofactory=True)  # typo'd flag must not be silently ignored
 
 
 def test_clean_up_calls_release():

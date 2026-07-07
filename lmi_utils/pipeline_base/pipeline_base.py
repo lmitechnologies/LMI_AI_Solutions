@@ -255,7 +255,7 @@ class PipelineBase(metaclass=ABCMeta):
         if isinstance(model, ODBase):
             return self._ensure_od_input_size(model_role, images, processed, history)
         if isinstance(model, ADBase):
-            return self._record_ad_internal_resize(model_role, processed, history)
+            return self._record_ad_internal_resize(model_role, images, processed, history)
         return processed, history
 
     def _ensure_od_input_size(
@@ -293,38 +293,44 @@ class PipelineBase(metaclass=ABCMeta):
     def _record_ad_internal_resize(
         self,
         model_role: str,
+        images: List[ImageLike],
         processed: List[ImageLike],
         history: List[Meta],
     ) -> Tuple[List[ImageLike], List[Meta]]:
         """Record an AD model's internal fit-to-size as an inverse-only resize step.
 
-        The forward image is left off-size for the model to resize internally, so ``predict()`` scores are
-        unchanged. This only appends the inverse so ``revert_preprocess`` upsamples the score map back to
-        input space (overlay/output, not re-thresholding). No-op when the size already matches.
+        The forward images are left off-size for the model to resize internally, so ``predict()`` scores are
+        unchanged. This only appends the inverse so ``revert_preprocess`` upsamples the score maps back to
+        input space (overlay/output, not re-thresholding). No-op when the sizes already match.
         """
         model = self.models[model_role]
         th, tw = int(model.image_size[0]), int(model.image_size[1])
-
-        if all(tuple(p.shape[:2]) == (th, tw) for p in processed):
+        mismatched = sorted({tuple(p.shape[:2]) for p in processed} - {(th, tw)})
+        if not mismatched:
             return processed, history
 
-        if len(processed) != 1:
-            # A tile op split the image; per-tile score reverting is not handled.
+        if len(processed) != len(images):
+            # Reachable only once AD tiling exists (a tile op changes the image count); per-tile score reverting is not handled.
             raise NotImplementedError(
-                f"AD inverse-resize assumes a single off-size image for '{model_role}', but preprocessing "
-                f"produced {len(processed)}. Configure a resize to {(th, tw)} in global preprocessing."
+                f"AD inverse-resize assumes a 1:1 image mapping, but preprocessing changed the image "
+                f"count ({len(images)} -> {len(processed)}) for AD model '{model_role}'. Configure a "
+                f"resize to {(th, tw)} in global preprocessing."
             )
 
         if model.RESIZE_PRESERVE_ASPECT:
             # Letterbox would need the model's internal pad metadata to invert; only stretch is supported.
             raise NotImplementedError(f"AD inverse-resize for '{model_role}' only supports a stretch (RESIZE_PRESERVE_ASPECT=False).")
 
-        h, w = processed[0].shape[:2]
-        # Model maps (h, w) -> (th, tw) internally; record the inverse so revert resizes the score map back.
-        meta = steps.revert_resize(src_sizes=[[w, h]], dst_sizes=[[tw, th]], pads=[[0, 0, 0, 0]])
+        # Model maps each (h, w) -> (th, tw) internally; record the inverse so revert resizes the score maps back.
+        n = len(processed)
+        meta = steps.revert_resize(
+            src_sizes=[[p.shape[1], p.shape[0]] for p in processed],
+            dst_sizes=[[tw, th]] * n,
+            pads=[[0, 0, 0, 0]] * n,
+        )
         self.logger.warning(
-            f"[{model_role}] preprocessed size {(h, w)} != model input {(th, tw)}; recording an inverse-resize "
-            "so the score map reverts to input space. Add a matching resize step in global preprocessing to silence this."
+            f"[{model_role}] preprocessed size(s) {mismatched} != model input {(th, tw)}; recording an inverse-resize "
+            "so the score maps revert to input space. Add a matching resize step in global preprocessing to silence this."
         )
         return processed, history + [meta]
 
@@ -551,7 +557,16 @@ class PipelineBase(metaclass=ABCMeta):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    def update_results(self, key: str, value: Any, sub_key: Optional[str] = None, **kwargs: Any) -> None:
+    def update_results(
+        self,
+        key: str,
+        value: Any,
+        sub_key: Optional[str] = None,
+        *,
+        to_factory: bool = False,
+        to_automation: bool = False,
+        overwrite: bool = False,
+    ) -> None:
         """
         modifies self.results by applying rules for creation and updates.
 
@@ -562,21 +577,24 @@ class PipelineBase(metaclass=ABCMeta):
             to_factory (bool, optional): add the key to the gofactory. Defaults to False.
             to_automation (bool, optional): add the key to the automation. Defaults to False.
             overwrite (bool, optional): if self.results[key] is a list, overwrite it with value. Defaults to False.
+
+        Raises:
+            TypeError: if sub_key is given but self.results[key] is not a dictionary.
         """
-        # Handle appending to an existing list.
-        if key in self.results and isinstance(self.results[key], list) and not kwargs.get("overwrite", False):
-            if sub_key is not None:
-                self.logger.warning(f"update_results: sub_key '{sub_key}' ignored — results['{key}'] is a list, appending value to it")
+        if sub_key is not None:
+            container = self.results.setdefault(key, {})
+            if not isinstance(container, dict):
+                raise TypeError(f"results['{key}'] is a {type(container).__name__}; cannot set sub_key '{sub_key}'")
+            container[sub_key] = value
+        elif isinstance(self.results.get(key), list) and not overwrite:
             self.results[key].append(value)
-        elif sub_key is not None:
-            self.results.setdefault(key, {})[sub_key] = value
         else:
             self.results[key] = value
 
-        if kwargs.get("to_factory", False) and key not in self.results["factory_keys"]:
+        if to_factory and key not in self.results["factory_keys"]:
             self.results["factory_keys"].append(key)
 
-        if kwargs.get("to_automation", False) and key not in self.results["automation_keys"]:
+        if to_automation and key not in self.results["automation_keys"]:
             self.results["automation_keys"].append(key)
 
     def check_return_types(self, check_sub_keys: Optional[List[str]] = None) -> bool:

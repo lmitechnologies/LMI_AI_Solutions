@@ -173,6 +173,20 @@ class TestBinaryMaskResample:
         out = recon.reconstruct_coordinates({"masks": [torch.ones(1, 64, 64)]}, history)["masks"][0]
         assert torch.all(out == 1.0)  # a fully-on mask stays fully on (no edge erosion)
 
+    def test_revert_strips_right_bottom_only_pad(self, pipeline):
+        prep, recon = pipeline
+        # A 1px letterbox delta pads right/bottom only (centered split of an odd delta is (0, 1)).
+        image = np.random.randint(0, 256, (100, 99, 3), dtype=np.uint8)
+        _, history = prep.preprocess(image, [steps.resize(width=100, height=100, preserve_aspect=True)])
+        assert history[0].pads == [[0, 1, 0, 0]], f"expected a right-only pad, got {history[0].pads}"
+
+        mask = torch.zeros(1, 100, 100)
+        mask[:, :, :99] = 1.0  # fully-on content; only the pad column is 0
+        out = recon.reconstruct_coordinates({"masks": [mask]}, history)["masks"][0]
+
+        assert out.shape == (1, 100, 99)
+        assert torch.all(out == 1.0)  # pad column stripped, not resampled into the mask
+
 
 class TestTile:
     def test_shifts_all_fields_by_tile_offset(self, pipeline):
