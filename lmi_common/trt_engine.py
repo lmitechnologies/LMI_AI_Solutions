@@ -128,6 +128,18 @@ class TRTEngine:
         self.fp16: bool = first_input_buf.dtype == torch.float16
         self.is_dynamic: bool = is_dynamic
 
+    def release(self) -> None:
+        """Release TensorRT resources deterministically (context before engine) and drop CUDA I/O buffers.
+
+        Safe to call more than once. The engine must not be used afterwards.
+        """
+        # Drop in dependency order: TRT requires the execution context to be destroyed before the engine.
+        self.context = None
+        self._engine = None
+        self._input_buffers = {}
+        self._output_buffers = []
+        self._bindings = []
+
     def infer(self, *inputs: torch.Tensor, copy: bool = True) -> List[torch.Tensor]:
         """Run synchronous inference.
 

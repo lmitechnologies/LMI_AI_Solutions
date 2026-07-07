@@ -16,6 +16,9 @@ class ClassifierBase(abc.ABC):
     def warmup(self, *args, **kwargs):
         pass
 
+    def release(self) -> None:  # noqa: B027 — intentional no-op default, not abstract
+        """Free resources that need deterministic teardown (e.g. TRT engine/context). Default no-op."""
+
     @abc.abstractmethod
     def preprocess(self, images: List, *args, **kwargs):
         pass

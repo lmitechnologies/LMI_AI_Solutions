@@ -230,6 +230,9 @@ class RfdetrTRT(RfdetrBase):
         """
         return self.trt.infer(image)
 
+    def release(self) -> None:
+        self.trt.release()
+
 
 @RfdetrModel.register("ts")
 @RfdetrModel.register("pt")

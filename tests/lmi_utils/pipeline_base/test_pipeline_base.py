@@ -322,3 +322,124 @@ def test_version_1_error():
     model_roles = {"mock-model": {"model_role": "mock-model"}}
     with pytest.raises(ValueError, match="Gadget version 1 is no longer supported"):
         pipeline.load(model_roles, {})
+
+
+def test_clean_up_calls_release():
+    pipeline = PipelineOD(version="3")
+    released = []
+
+    class DummyModel:
+        def release(self):
+            released.append("dummy")
+
+    pipeline.models["dummy"] = DummyModel()
+    pipeline.clean_up()
+
+    assert released == ["dummy"]
+    assert len(pipeline.models) == 0
+
+
+def test_clean_up_releases_interleaved_models_in_reversed_order():
+    """clean_up pops last-in-first-out, so insertion order onnx2, trt2, onnx1, trt1
+    must release as trt1, onnx1, trt2, onnx2 — interleaving engine types."""
+    pipeline = PipelineOD(version="3")
+    order = []
+
+    class FakeEngine:
+        def __init__(self, name):
+            self.name = name
+
+        def release(self):
+            order.append(self.name)
+
+    for name in ["onnx2", "trt2", "onnx1", "trt1"]:
+        pipeline.models[name] = FakeEngine(name)
+
+    pipeline.clean_up()
+
+    assert order == ["trt1", "onnx1", "trt2", "onnx2"]
+    assert len(pipeline.models) == 0
+
+
+def test_clean_up_interleaved_trt_and_onnx_engines(tmp_path):
+    """Real engines: clean_up must tear down TRT, ONNX, TRT, ONNX interleaved without
+    CUDA errors, clearing each engine's resources and leaving the device usable."""
+    pytest.importorskip("tensorrt")
+    ort = pytest.importorskip("onnxruntime")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA not available")
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
+
+    from lmi_common.onnx_engine import ONNXEngine
+    from lmi_common.trt_engine import TRTEngine
+    from tests.lmi_common.test_trt_engine import _build_engine, _export_onnx
+
+    onnx_path = str(tmp_path / "tiny.onnx")
+    engine_path = str(tmp_path / "tiny.engine")
+    _export_onnx(onnx_path, dynamic=True)
+    _build_engine(onnx_path, engine_path, min_b=1, opt_b=2, max_b=4, static=False)
+
+    pipeline = PipelineOD(version="3")
+    order = []
+
+    def tracked(name, model):
+        orig = model.release
+
+        def wrapped():
+            order.append(name)
+            orig()
+
+        model.release = wrapped
+        return model
+
+    # Insert in reverse so LIFO clean_up releases trt1, onnx1, trt2, onnx2.
+    for name in ["onnx2", "trt2", "onnx1", "trt1"]:
+        if name.startswith("trt"):
+            model = TRTEngine(engine_path, device="cuda")
+        else:
+            model = ONNXEngine(onnx_path, device="cuda", dynamic_max_batch=4)
+        pipeline.models[name] = tracked(name, model)
+
+    # Exercise every engine so contexts and buffers are live before teardown.
+    engines = dict(pipeline.models)
+    x = torch.randn(2, 3, 32, 32, dtype=torch.float32, device="cuda")
+    for model in engines.values():
+        assert model.infer(x)[0].shape == (2, 4)
+
+    pipeline.clean_up()
+
+    assert order == ["trt1", "onnx1", "trt2", "onnx2"]
+    assert len(pipeline.models) == 0
+    for name, model in engines.items():
+        if name.startswith("trt"):
+            assert model.context is None and model._engine is None, f"{name} not released"
+        else:
+            assert model._session is None and model._io_binding is None, f"{name} not released"
+
+    # The device must remain usable after interleaved teardown.
+    torch.cuda.synchronize()
+    assert torch.ones(4, device="cuda").sum().item() == 4.0
+
+
+def test_clean_up_continues_when_release_fails(caplog):
+    pipeline = PipelineOD(version="3")
+    released = []
+
+    class BadModel:
+        def release(self):
+            raise RuntimeError("boom")
+
+    class GoodModel:
+        def release(self):
+            released.append("good")
+
+    pipeline.models["good"] = GoodModel()
+    pipeline.models["bad"] = BadModel()
+
+    with caplog.at_level(logging.ERROR):
+        pipeline.clean_up()
+
+    assert released == ["good"], "Remaining models must still be released after one release() fails"
+    assert len(pipeline.models) == 0
+    assert any("Failed to release 'bad'" in r.message for r in caplog.records)

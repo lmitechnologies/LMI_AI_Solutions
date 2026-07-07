@@ -199,6 +199,15 @@ class ONNXEngine:
         """List of output buffers in engine output order. Mirrors ``TRTEngine._output_buffers``."""
         return [self._outputs[n].buffer for n in self._output_names]
 
+    def release(self) -> None:
+        """Release the ORT session and drop I/O buffers. Mirrors ``TRTEngine.release()``.
+
+        Safe to call more than once. The engine must not be used afterwards.
+        """
+        self._io_binding = None
+        self._session = None
+        self._outputs = {}
+
     def infer(self, *inputs: torch.Tensor, copy: bool = True) -> List[torch.Tensor]:
         """Run synchronous inference.
 
