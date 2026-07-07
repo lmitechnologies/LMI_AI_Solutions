@@ -4,13 +4,7 @@ from lmi_utils.image_utils.types import ImageBatch, ImageLike
 
 from .base import BaseProcessor
 from .operation import Config, Meta, Operation
-from .ops import (
-    CropBoxOperation,
-    FlipOperation,
-    PadOperation,
-    ResizeOperation,
-    TileOperation,
-)
+from .ops import DEFAULT_OPERATIONS
 
 
 class Preprocessor(BaseProcessor):
@@ -25,13 +19,7 @@ class Preprocessor(BaseProcessor):
         Output tensors live on the same device as the input tensors.
     """
 
-    _DEFAULT_OPS: Tuple[Type[Operation], ...] = (
-        ResizeOperation,
-        PadOperation,
-        FlipOperation,
-        TileOperation,
-        CropBoxOperation,
-    )
+    _DEFAULT_OPS: Tuple[Type[Operation], ...] = DEFAULT_OPERATIONS
 
     @classmethod
     def default_ops(cls) -> Dict[Type[Config], Type[Operation]]:
@@ -39,7 +27,7 @@ class Preprocessor(BaseProcessor):
 
     def __init__(self):
         self._ops: Dict[Type[Config], Operation] = {}
-        for op_cls in self._DEFAULT_OPS:
+        for op_cls in self.default_ops().values():
             self.register(op_cls())
 
     def register(self, op: Operation) -> None:
