@@ -99,7 +99,7 @@ class PipelineBase(metaclass=ABCMeta):
         """
         self.models = collections.OrderedDict()
         self._preprocessing = collections.OrderedDict()
-        self.version = kwargs.get("version", "3")
+        self.version = str(kwargs.get("version", "3"))
         self.preprocessor = Preprocessor()
         self.reconstructor = Reconstructor()
         self.init_results()
@@ -152,7 +152,7 @@ class PipelineBase(metaclass=ABCMeta):
             dict: The parsed model roles.
             dict: The global preprocessing steps.
         """
-        version = version if version is not None else self.version
+        version = str(version) if version is not None else self.version
 
         # Validate version
         if version not in self._MODEL_ROLES_HANDLERS:
@@ -191,31 +191,31 @@ class PipelineBase(metaclass=ABCMeta):
             self.logger.info(f"Original Model Roles: {compact_json(model_roles)}\n")
 
         parsed_model_roles, global_preprocessing = self._parse_model_roles(model_roles, version=version)
-        if not global_preprocessing:
-            raise ValueError("Global preprocessing is not defined in model roles.")
+        if not parsed_model_roles:
+            raise ValueError("No models found in model_roles; nothing to load.")
 
         self.logger.info(f"Parsed Model Roles: {compact_json(parsed_model_roles)}\n")
         self.logger.info(f"Global Preprocessing: {compact_json(global_preprocessing)}\n")
 
         target_model_keys = [k for k in model_roles.keys() if filter in k]
-        for model_key in target_model_keys:
-            model_meta = parsed_model_roles.get(model_key)
-            if model_meta is None:
-                self.logger.warning(f"Not found '{model_key}' in parsed model roles. Skipping.")
-                continue
+        try:
+            for model_key in target_model_keys:
+                model_meta = parsed_model_roles.get(model_key)
+                if model_meta is None:
+                    self.logger.warning(f"Not found '{model_key}' in parsed model roles. Skipping.")
+                    continue
 
-            self._load_model(model_key, model_meta, **kwargs)
+                self._load_model(model_key, model_meta, **kwargs)
 
-            if model_key in global_preprocessing:
-                self._preprocessing[model_key] = parse_steps(global_preprocessing[model_key])
-            else:
-                raise ValueError(
-                    f"Global preprocessing is enabled but no preprocessing config found for '{model_key}'. "
-                    f"Add preprocessing config in Gadget or static manifest."
-                )
+                # Empty preprocessing is legal; the schemas emit an entry (possibly []) for every role.
+                self._preprocessing[model_key] = parse_steps(global_preprocessing.get(model_key, []))
 
-            model_source = "Static" if "static" in Path(model_meta["model_path"]).parts else "GoFactory"
-            self.logger.info(f"Successfully loaded {model_source} model: {model_key}\n")
+                model_source = "Static" if "static" in Path(model_meta["model_path"]).parts else "GoFactory"
+                self.logger.info(f"Successfully loaded {model_source} model: {model_key}\n")
+        except Exception:
+            self.logger.exception("Model loading failed; cleaning up partially loaded models")
+            self.clean_up()
+            raise
         self.logger.info(f"Final loaded models: {list(self.models.keys())}\n")
 
     def preprocess(
@@ -322,11 +322,10 @@ class PipelineBase(metaclass=ABCMeta):
             raise NotImplementedError(f"AD inverse-resize for '{model_role}' only supports a stretch (RESIZE_PRESERVE_ASPECT=False).")
 
         # Model maps each (h, w) -> (th, tw) internally; record the inverse so revert resizes the score maps back.
-        n = len(processed)
         meta = steps.revert_resize(
             src_sizes=[[p.shape[1], p.shape[0]] for p in processed],
-            dst_sizes=[[tw, th]] * n,
-            pads=[[0, 0, 0, 0]] * n,
+            dst_sizes=[[tw, th] for _ in processed],
+            pads=[[0, 0, 0, 0] for _ in processed],
         )
         self.logger.warning(
             f"[{model_role}] preprocessed size(s) {mismatched} != model input {(th, tw)}; recording an inverse-resize "
@@ -424,13 +423,20 @@ class PipelineBase(metaclass=ABCMeta):
                 "predictions": [],
             },
         }
-        target_dict = self.results.setdefault(key, {}).setdefault(sub_key, default_entry)
+        container = self.results.setdefault(key, {})
+        if not isinstance(container, dict):
+            raise TypeError(f"results['{key}'] is a {type(container).__name__}; cannot add predictions under it")
 
-        ch, cw = target_dict["content"]["height"], target_dict["content"]["width"]
+        target_dict = container.setdefault(sub_key, default_entry)
+        content = target_dict.get("content") if isinstance(target_dict, dict) else None
+        if not isinstance(content, dict) or not {"height", "width", "predictions"} <= content.keys():
+            raise TypeError(f"results['{key}']['{sub_key}'] exists but is not a label entry; refusing to overwrite it")
+
+        ch, cw = content["height"], content["width"]
         if ch != image_height or cw != image_width:
             raise ValueError(f"Image size mismatch: {ch}x{cw} != {image_height}x{image_width}")
 
-        prediction_list = target_dict["content"]["predictions"]
+        prediction_list = content["predictions"]
         for pred_type, handler in self._PREDICTION_HANDLERS.items():
             if pred_type in predictions:
                 data = predictions[pred_type]

@@ -137,6 +137,7 @@ class ModelCollectionV2:
         def parse(steps: List[Dict[str, Any]]):
             """Parses preprocessing steps and formats tiling configurations."""
             supported_types = {"resize", "tile"}
+            ignored_types = {"crop-to-label"}
             tiling_keys = {"height", "width", "x_stride", "y_stride"}
 
             ops = []
@@ -147,6 +148,8 @@ class ModelCollectionV2:
                 p_type = preprocess["type"]
                 config = preprocess["configuration"]
 
+                if p_type in ignored_types:
+                    continue
                 if p_type not in supported_types:
                     raise ValueError(f"Unsupported type '{p_type}'.")
 
