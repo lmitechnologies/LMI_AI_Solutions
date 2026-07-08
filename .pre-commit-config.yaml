@@ -11,3 +11,5 @@ repos:
     hooks:
       - id: check-added-large-files
         args: ['--maxkb=500']
+        # uv.lock is a generated lock file; expected to exceed the limit.
+        exclude: '^uv\.lock$'

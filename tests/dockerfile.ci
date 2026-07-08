@@ -15,17 +15,12 @@ RUN apt-get update && \
     git lfs install && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy requirements files (requirements-ci.txt pulls in requirements-base.txt via -r)
-COPY ./tests/requirements-base.txt ./tests/requirements-ci.txt ./
-
-# Install Python requirements with architecture-specific PyTorch handling
-ARG TARGETARCH
-RUN if [ "$TARGETARCH" = "amd64" ] || [ -z "$TARGETARCH" ]; then \
-        pip install --no-cache-dir -r requirements-ci.txt \
-            --extra-index-url https://download.pytorch.org/whl/cpu; \
-    else \
-        pip install --no-cache-dir -r requirements-ci.txt; \
-    fi
+# Install the CI (CPU) dependency group from the uv lock. torch==2.4.1+cpu comes from the CPU index.
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --no-hashes --no-emit-project --only-group ci -o requirements-ci.txt && \
+    pip install --no-cache-dir -r requirements-ci.txt \
+        --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Install detectron2 (shallow clone, remove source after install)
 RUN git clone --depth 1 https://github.com/facebookresearch/detectron2 detectron2 && \

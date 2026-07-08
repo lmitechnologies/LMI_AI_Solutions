@@ -9,6 +9,73 @@ description = "LMI AI Solutions mono-repo package"
 requires-python = ">=3.8"
 dependencies = []
 
+[dependency-groups]
+# Single source of truth for test deps (replaces tests/requirements-*.txt).
+# `test` holds the shared pins; `ci` and `gpu` layer on the CPU vs CUDA stacks.
+test = [
+    "scikit-learn==1.7.2",
+    "tensorboard==2.21.0",
+    "numba==0.66.0",
+    "numpy<2.0",
+    "ultralytics==8.4.89",
+    "onnx==1.22.0",
+    "pytest==9.1.1",
+    "rfdetr==1.8.3",
+    "albumentations>=2.0.8,<3.0.0",
+    "transformers==5.13.0",
+    "pycocotools==2.0.11",
+    "shapely==2.1.2",
+]
+# CPU / CI env (GitHub runners): CPU torch + CPU onnxruntime. torch is also a
+# transitive dep of rfdetr/ultralytics, hence the ci/gpu conflict below.
+ci = [
+    { include-group = "test" },
+    "onnxruntime==1.21.0",
+    "torch==2.4.1",
+    "torchvision==0.19.1",
+]
+# GPU / TensorRT env (local + compose): cu124 torch, onnxruntime-gpu, and the
+# TensorRT engine-build stack. tensorrt is pinned to the nvcr:25.04 image's
+# version (10.9.0.34) so local engines match CI. pytest-html backs run_tests.sh.
+gpu = [
+    { include-group = "test" },
+    "onnxruntime-gpu==1.21.0",
+    "torch==2.5.1",  # torch>=2.6 raises a weights_only error loading anomalib models
+    "torchvision==0.20.1",
+    "tensorrt==10.9.0.34",
+    "onnx-graphsurgeon>=0.5.0",
+    "pytest-html>=4.1.1",
+]
+
+[tool.uv]
+# Test groups pin numpy<2.0, which conflicts with newer onnx on Python 3.13+.
+# The test images run Python 3.12, so scope lock resolution to that range rather
+# than narrowing the package's public requires-python (>=3.8).
+environments = ["python_full_version >= '3.10' and python_full_version < '3.13'"]
+# ci and gpu resolve incompatible torch builds (CPU 2.4.1 vs cu124 2.5.1); they
+# are mutually exclusive and never installed together.
+conflicts = [[{ group = "ci" }, { group = "gpu" }]]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", group = "ci" },
+    { index = "pytorch-cu124", group = "gpu" },
+]
+torchvision = [
+    { index = "pytorch-cpu", group = "ci" },
+    { index = "pytorch-cu124", group = "gpu" },
+]
+
 [project.scripts]
 # From lmi_utils
 labels-preprocess = "lmi_utils.label_utils.apply_ops:main"
@@ -58,3 +125,4 @@ log_cli = true
 log_level = "INFO"
 testpaths = ["tests"]
 norecursedirs = ["submodules", "assets", "__pycache__"]
+addopts = "-rs"

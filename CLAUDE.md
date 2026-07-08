@@ -21,28 +21,26 @@ duplicate-key validation (run at registry import) works in any environment.
 
 ## Running Tests Locally
 
-Needs NVIDIA Container Toolkit + a GPU. Run tests yourself, directly in these containers. Prefer a targeted run over the full suite
-while iterating:
+Needs a GPU. Run tests yourself; prefer a targeted run while iterating. HTML reports land in `tests/outputs/`.
+
+Fastest, containerless path for the v1 suite on a GPU host: `bash tests/setup_local_v1.sh` (builds a uv `.venv`), then
+`uv run bash tests/run_tests.sh all-v1`. Iteration aid only — containers remain the source of truth for CI parity, and v2 needs the container.
+
+In containers (services + suite groups live in `tests/docker-compose.yaml` and `tests/run_tests.sh`):
 
 ```bash
-# plain pytest on a file/dir (no TRT engine building)
-docker compose -f tests/docker-compose.yaml run --rm test_ais_v1_all pytest tests/lmi_common/ -q
-
-# a suite group, building any missing TRT engines first: all-v1 | od | utils | cls | ad-v1 | ad-v2
+# a suite group (all-v1 | od | utils | cls | ad-v1), building any missing TRT engines first
 docker compose -f tests/docker-compose.yaml run --rm test_ais_v1_all bash tests/run_tests.sh od
-
-# full suite (v1 then v2) — for final verification
+# full v1+v2 suite — final verification
 docker compose -f tests/docker-compose.yaml up --build
 ```
 
-The `v1`/`v2` split isolates the incompatible Anomalib versions (`test_v1.py` → `1.1.1`, `test_v2.py` → `2.*`, which can't share an
-env). Anything Anomalib v2 must use the v2 service with `--no-deps` (otherwise `run` triggers the full v1 suite it depends on):
+The `v1`/`v2` split isolates incompatible Anomalib versions (`test_v1.py` → `1.1.1`, `test_v2.py` → `2.*`) that can't share an env, so
+anomalib v2 uses its own service and needs `--no-deps` (else `run` pulls in the whole v1 suite):
 
 ```bash
 docker compose -f tests/docker-compose.yaml run --rm --no-deps test_ais_ad_v2 bash tests/run_tests.sh ad-v2
 ```
-
-See `tests/docker-compose.yaml` and `tests/dockerfile.tests` for the services and images. HTML reports land in `tests/outputs/`.
 
 ## Commits
 

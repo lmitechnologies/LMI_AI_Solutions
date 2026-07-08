@@ -1,8 +1,8 @@
 services:
   test_ais_v1_all:
     build:
-      context: .
-      dockerfile: ./dockerfile.tests
+      context: ..
+      dockerfile: ./tests/dockerfile.tests
       target: v1
     volumes:
       - ../:/repo
@@ -17,8 +17,8 @@ services:
       test_ais_v1_all:
         condition: service_completed_successfully
     build:
-      context: .
-      dockerfile: ./dockerfile.tests
+      context: ..
+      dockerfile: ./tests/dockerfile.tests
       target: v2
     volumes:
       - ../:/repo

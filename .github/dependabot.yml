@@ -9,16 +9,19 @@ updates:
     labels:
       - "dependencies"
 
-  - package-ecosystem: "pip"
-    directory: "/tests"
+  - package-ecosystem: "uv"
+    directory: "/"
     schedule:
       interval: "weekly"
       time: "04:00"
     open-pull-requests-limit: 5
-    groups:
-      torch:
-        patterns:
-          - "torch"
-          - "torchvision"
     labels:
       - "dependencies"
+    ignore:
+      # GPU-only packages — GitHub runners are CPU, so CI can't validate these.
+      - dependency-name: "torch"
+      - dependency-name: "torchvision"
+      - dependency-name: "onnxruntime-gpu"
+      - dependency-name: "tensorrt*"
+      - dependency-name: "onnx-graphsurgeon"
+      - dependency-name: "nvidia-*"

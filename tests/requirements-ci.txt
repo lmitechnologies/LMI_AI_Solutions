@@ -1,5 +1,0 @@
-# CPU / CI env — shared pins via -r, plus CPU-specific torch and onnxruntime
--r requirements-base.txt
-torch==2.4.1
-torchvision==0.19.1
-onnxruntime==1.21.0
