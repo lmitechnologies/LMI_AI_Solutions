@@ -30,10 +30,11 @@ DOCS_PATTERNS: list[re.Pattern] = [
     re.compile(r"^\.pre-commit-config\.yaml$"),
 ]
 
-# Files whose change requires rebuilding the CI test Docker images
+# Files whose change requires rebuilding the CI test Docker images. Deps are
+# resolved from the uv lock (pyproject.toml [dependency-groups]) at image build.
 REQ_PATTERNS: list[re.Pattern] = [
-    re.compile(r"^tests/requirements-base\.txt$"),
-    re.compile(r"^tests/requirements-ci\.txt$"),
+    re.compile(r"^pyproject\.toml$"),
+    re.compile(r"^uv\.lock$"),
     re.compile(r"^tests/dockerfile\.ci$"),
 ]
 

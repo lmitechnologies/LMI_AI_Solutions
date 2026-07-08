@@ -1,0 +1,7 @@
+# tests/dockerfile.ci and tests/dockerfile.tests build from the repo root but only
+# COPY pyproject.toml + uv.lock (source is checked out / volume-mounted separately).
+# Exclude everything else so the 14GB repo (incl. .git) isn't sent as build context.
+# The yolov5 Dockerfiles git-clone the repo instead of using context, so they're unaffected.
+*
+!pyproject.toml
+!uv.lock
