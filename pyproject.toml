@@ -30,7 +30,7 @@ test = [
 # transitive dep of rfdetr/ultralytics, hence the ci/gpu conflict below.
 ci = [
     { include-group = "test" },
-    "onnxruntime==1.21.0",
+    "onnxruntime==1.24.3",
     "torch==2.4.1",
     "torchvision==0.19.1",
 ]
