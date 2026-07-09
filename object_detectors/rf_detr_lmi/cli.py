@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Constants
 OPERATION_TRAIN = "train"
 OPERATION_CONVERT = "convert"
+OPERATION_EXPORT = "export"
 TASK_OD = "od"
 TASK_SEGMENTATION = "seg"
 FORMAT_ONNX = "onnx"
@@ -68,6 +69,24 @@ def validate_training_config(training_configs: Dict[str, Any]) -> None:
         raise ValueError("output_dir must be specified in training configuration.")
 
 
+def validate_export_config(export_configs: Dict[str, Any], model_configs: Dict[str, Any]) -> None:
+    """Validate export configuration parameters.
+
+    Args:
+        export_configs: Export configuration dictionary.
+        model_configs: Model configuration dictionary.
+
+    Raises:
+        ValueError: If required export parameters are missing.
+    """
+    if not export_configs:
+        raise ValueError("Export configuration is missing.")
+    if "output_dir" not in export_configs:
+        raise ValueError("output_dir must be specified in export configuration.")
+    if "pretrain_weights" not in model_configs:
+        raise ValueError("pretrain_weights must be specified for export.")
+
+
 def validate_conversion_config(conversion_configs: Dict[str, Any], format: str) -> None:
     """Validate conversion configuration parameters.
 
@@ -101,8 +120,14 @@ def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "operation": config.get("operation", OPERATION_TRAIN),
         "task": config.get("task", TASK_OD),
     }
+    # pretrain_weights is tri-state: an absent key uses the variant's default pretrained
+    # weights, an explicit null skips base-weight loading entirely (e.g. when training.resume
+    # restores weights from a checkpoint), and a path warm-starts from that checkpoint.
+    if "pretrain_weights" in config:
+        model_configs["pretrain_weights"] = config["pretrain_weights"]
     training_configs = config.get("training", {})
     conversion_configs = config.get("conversion", {})
+    export_configs = config.get("export", {})
     format = config.get("format")
 
     operation = model_configs["operation"]
@@ -110,6 +135,8 @@ def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
         validate_training_config(training_configs)
     elif operation == OPERATION_CONVERT:
         validate_conversion_config(conversion_configs, format)
+    elif operation == OPERATION_EXPORT:
+        validate_export_config(export_configs, model_configs)
     else:
         raise ValueError(f"Unsupported operation: {operation}")
 
@@ -117,8 +144,29 @@ def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
         "model_configs": model_configs,
         "training_configs": training_configs,
         "conversion_configs": conversion_configs,
+        "export_configs": export_configs,
         "format": format,
     }
+
+
+def get_model_class(task: str, model_type: str) -> Any:
+    """Look up the RF-DETR model class for a task and model size.
+
+    Args:
+        task: Task name (od or seg).
+        model_type: Model size (nano, small, medium, ...).
+
+    Returns:
+        The RF-DETR model class.
+
+    Raises:
+        ValueError: If the model type or task is unsupported.
+    """
+    model_class = MODEL_REGISTRY.get((task, model_type))
+    if model_class is None:
+        supported = ", ".join(f"{t}/{m}" for t, m in MODEL_REGISTRY)
+        raise ValueError(f"Unsupported combination: task={task}, model_type={model_type}; supported: {supported}")
+    return model_class
 
 
 def load_model(configs: Dict[str, Any]) -> Any:
@@ -138,16 +186,14 @@ def load_model(configs: Dict[str, Any]) -> Any:
     model_type = model_configs.get("model_type", "medium")
     operation = model_configs.get("operation", OPERATION_TRAIN)
 
-    # Look up model class from registry
-    model_key = (task, model_type)
-    model_class = MODEL_REGISTRY.get(model_key)
-
-    if model_class is None:
-        raise ValueError(f"Unsupported combination: task={task}, model_type={model_type}")
+    model_class = get_model_class(task, model_type)
 
     # Instantiate model based on operation
     if operation == OPERATION_TRAIN:
-        return model_class()
+        kwargs = {}
+        if "pretrain_weights" in model_configs:
+            kwargs["pretrain_weights"] = model_configs["pretrain_weights"]
+        return model_class(**kwargs)
     elif operation == OPERATION_CONVERT:
         conversion_configs = configs.get("conversion_configs", {})
         if not conversion_configs:
@@ -197,8 +243,10 @@ def initiate_training(configs: Dict[str, Any]) -> Any:
     if base_output_dir is None:
         raise ValueError("output_dir must be specified in training configuration.")
 
-    # Create versioned output directory
-    training_params["output_dir"] = get_versioned_output_dir(base_output_dir)
+    # By default each run writes to a fresh date-versioned subdirectory; versioned_output_dir: false
+    # trains directly in output_dir (for callers that need a predictable path)
+    if training_params.pop("versioned_output_dir", True):
+        training_params["output_dir"] = get_versioned_output_dir(base_output_dir)
 
     logger.info(f"Starting training with output directory: {training_params['output_dir']}")
     model.train(**training_params)
@@ -298,6 +346,38 @@ def handle_conversion(configs: Dict[str, Any]) -> None:
     handler(model, output_dir)
 
 
+def handle_export(configs: Dict[str, Any]) -> None:
+    """Export trained weights to ONNX with a class-name sidecar via rfdetr's native exporter.
+
+    Unlike the convert operation, this writes the fixed filenames model.onnx and
+    model.classes.json, the convention the RfdetrModel ONNX/TensorRT backends resolve
+    class names from.
+
+    Args:
+        configs: Configuration parameters containing model_configs and export_configs.
+
+    Raises:
+        ValueError: If required export parameters are missing.
+    """
+    model_configs = configs["model_configs"]
+    export_params = configs["export_configs"].copy()
+    output_dir = export_params.pop("output_dir")
+    opset_version = export_params.pop("opset_version", 17)
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Remaining export params (resolution, device, ...) are model constructor kwargs
+    model_class = get_model_class(model_configs["task"], model_configs["model_type"])
+    model = model_class(pretrain_weights=model_configs["pretrain_weights"], **export_params)
+
+    # rfdetr names the exported file after the model variant (e.g. rfdetr-small.onnx);
+    # stage it as model.onnx instead
+    onnx_path = model.export(output_dir=output_dir, opset_version=opset_version)
+    final_path = os.path.join(output_dir, "model.onnx")
+    os.replace(onnx_path, final_path)
+    _write_class_names(final_path, model.class_names)
+    logger.info(f"ONNX model exported to: {final_path}")
+
+
 def main() -> None:
     """Main entry point for the CLI application."""
     logging.basicConfig(level=logging.INFO)
@@ -315,6 +395,8 @@ def main() -> None:
         initiate_training(configs)
     elif operation == OPERATION_CONVERT:
         handle_conversion(configs)
+    elif operation == OPERATION_EXPORT:
+        handle_export(configs)
     else:
         raise ValueError(f"Unsupported operation: {operation}")
 
