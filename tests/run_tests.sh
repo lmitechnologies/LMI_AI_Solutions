@@ -17,19 +17,15 @@ build_engines() {
 
 if [ "$ARGUMENT" == "all-v1" ]; then
     build_engines rf_detr,detectron2,ad_v1
-    pytest --html=$outpath/lmi_utils.html tests/lmi_utils/
-    pytest --html=$outpath/lmi_common.html tests/lmi_common/
-    pytest --html=$outpath/object_detectors.html tests/object_detectors/
-    pytest --html=$outpath/classifiers.html tests/classifiers/
-    pytest --html=$outpath/anomaly_detectors_v1.html tests/anomaly_detectors/anomalib_lmi/test_v1.py
+    pytest --html=$outpath/all-v1.html tests/lmi_utils tests/lmi_common tests/object_detectors tests/classifiers tests/anomaly_detectors/anomalib_lmi/test_v1.py
 elif [ "$ARGUMENT" == "od" ]; then
     build_engines rf_detr,detectron2
-    pytest --html=$outpath/object_detectors.html tests/object_detectors/
+    pytest --html=$outpath/object_detectors.html tests/object_detectors
 elif [ "$ARGUMENT" == "utils" ]; then
-    pytest --html=$outpath/lmi_utils.html tests/lmi_utils/
-    pytest --html=$outpath/lmi_common.html tests/lmi_common/
+    pytest --html=$outpath/lmi_utils.html tests/lmi_utils
+    pytest --html=$outpath/lmi_common.html tests/lmi_common
 elif [ "$ARGUMENT" == "cls" ]; then
-    pytest --html=$outpath/classifiers.html tests/classifiers/
+    pytest --html=$outpath/classifiers.html tests/classifiers
 elif [ "$ARGUMENT" == "ad-v1" ]; then
     build_engines ad_v1
     pytest --html=$outpath/anomaly_detectors_v1.html tests/anomaly_detectors/anomalib_lmi/test_v1.py

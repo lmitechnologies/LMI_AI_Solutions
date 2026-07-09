@@ -23,9 +23,8 @@ uv pip install --no-build-isolation "git+https://github.com/facebookresearch/det
 uv pip install jsonargparse==4.27.7 anomalib==1.1.1 pip
 uv run anomalib install --option core
 
-# 4. `anomalib install` shells out to pip, which perturbs the gpu group: it pulls numpy>=2
-#    and leaves onnxruntime-gpu's package files half-clobbered. Re-assert both.
+# 4. `anomalib install` shells out to pip and pulls numpy>=2, which breaks numba (needs numpy<2.5).
+#    Re-assert the gpu group's numpy<2 pin as the last step.
 uv pip install 'numpy<2'
-uv pip install --reinstall onnxruntime-gpu==1.21.0
 
 echo "Done. Run tests with:  uv run bash tests/run_tests.sh all-v1"
