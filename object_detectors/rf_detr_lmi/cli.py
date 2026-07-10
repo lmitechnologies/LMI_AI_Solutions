@@ -125,6 +125,11 @@ def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
     # restores weights from a checkpoint), and a path warm-starts from that checkpoint.
     if "pretrain_weights" in config:
         model_configs["pretrain_weights"] = config["pretrain_weights"]
+    # Explicit class count for the model head. When absent, training auto-detects it from the
+    # dataset; a warm start passes it so the prior checkpoint loads into a matching head instead
+    # of rfdetr's config default (which would warn while auto-aligning).
+    if "num_classes" in config:
+        model_configs["num_classes"] = config["num_classes"]
     training_configs = config.get("training", {})
     conversion_configs = config.get("conversion", {})
     export_configs = config.get("export", {})
@@ -193,6 +198,8 @@ def load_model(configs: Dict[str, Any]) -> Any:
         kwargs = {}
         if "pretrain_weights" in model_configs:
             kwargs["pretrain_weights"] = model_configs["pretrain_weights"]
+        if "num_classes" in model_configs:
+            kwargs["num_classes"] = model_configs["num_classes"]
         return model_class(**kwargs)
     elif operation == OPERATION_CONVERT:
         conversion_configs = configs.get("conversion_configs", {})
