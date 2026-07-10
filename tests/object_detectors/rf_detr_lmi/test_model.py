@@ -9,7 +9,7 @@ from rfdetr import RFDETRSegSmall
 from rfdetr.assets.coco_classes import COCO_CLASSES
 
 from object_detectors.od_core.object_detector import ObjectDetector
-from object_detectors.rf_detr_lmi.model import RfdetrModel
+from object_detectors.rf_detr_lmi.model import RfdetrBase, RfdetrModel
 
 logger = logging.getLogger(__name__)
 
@@ -288,6 +288,106 @@ class Test_Rfdetr_Model:
 
         out, _ = obj_detector.predict(tensor_batch, configs=0.5)
         assert len(out["boxes"]) == len(imgs_coco)
+
+
+# A class count that differs from rfdetr's config default so the checkpoint/model mismatch path
+# (and its warning) is exercised, mirroring a fine-tuned FSP model with few classes.
+NUM_CLASSES_CANARY = 7
+
+
+class _WarningCollector(logging.Handler):
+    """Collects WARNING+ messages emitted on a logger."""
+
+    def __init__(self):
+        super().__init__(level=logging.WARNING)
+        self.messages = []
+
+    def emit(self, record):
+        self.messages.append(record.getMessage())
+
+
+@pytest.fixture(scope="module")
+def finetuned_checkpoint(tmp_path_factory):
+    """A checkpoint whose detection head is resized to NUM_CLASSES_CANARY classes.
+
+    Built from the installed rfdetr so the saved parameter names and head layout track the pinned
+    version — the point the canary tests below guard.
+    """
+    model = RFDETRSegSmall(pretrain_weights=PTH_FILE, device="cpu")
+    assert hasattr(model.model.model, "reinitialize_detection_head"), (
+        "rfdetr no longer exposes reinitialize_detection_head; the detection-head layout that "
+        "RfdetrBase._num_classes_from_checkpoint depends on may have changed"
+    )
+    model.model.model.reinitialize_detection_head(NUM_CLASSES_CANARY + 1)  # +1 for the background row
+    path = str(tmp_path_factory.mktemp("rf_detr_ckpt") / "finetuned.pth")
+    torch.save({"model": model.model.model.state_dict(), "args": {}}, path)
+    return path
+
+
+class Test_Num_Classes_From_Checkpoint:
+    """Guards RfdetrBase._num_classes_from_checkpoint against rfdetr checkpoint-format changes.
+
+    The wrapper reads a checkpoint's class count and passes it to rfdetr as num_classes so a
+    fine-tuned model loads without the "Checkpoint has N classes but model is configured for 90"
+    warning. That relies on rfdetr storing the head bias as class_embed.bias with a single
+    background row above the class rows. These tests fail loudly if a version bump breaks either
+    assumption instead of silently regressing the suppression.
+    """
+
+    def test_helper_reads_head_count_from_both_layouts(self, finetuned_checkpoint, tmp_path):
+        state_dict = torch.load(finetuned_checkpoint, map_location="cpu", weights_only=False)["model"]
+        assert "class_embed.bias" in state_dict, (
+            "rfdetr no longer stores the detection-head bias as class_embed.bias; update "
+            "RfdetrBase._num_classes_from_checkpoint to match the new checkpoint format"
+        )
+        assert state_dict["class_embed.bias"].shape[0] == NUM_CLASSES_CANARY + 1, (
+            "class_embed.bias no longer has exactly one background row above the class rows; the "
+            "'-1' convention in RfdetrBase._num_classes_from_checkpoint is no longer valid"
+        )
+
+        # BestModelCallback / legacy layout: raw keys under "model" (the fixture file itself).
+        assert RfdetrBase._num_classes_from_checkpoint(finetuned_checkpoint) == NUM_CLASSES_CANARY
+
+        # PyTorch Lightning native .ckpt layout: "model."-prefixed keys under "state_dict".
+        ptl_path = str(tmp_path / "ptl.ckpt")
+        torch.save({"state_dict": {f"model.{k}": v for k, v in state_dict.items()}}, ptl_path)
+        assert RfdetrBase._num_classes_from_checkpoint(ptl_path) == NUM_CLASSES_CANARY
+
+    def test_helper_returns_none_when_head_bias_absent(self, tmp_path):
+        path = str(tmp_path / "no_head.pth")
+        torch.save({"model": {"backbone.weight": torch.zeros(3)}}, path)
+        assert RfdetrBase._num_classes_from_checkpoint(path) is None
+
+    def test_helper_count_suppresses_mismatch_warning(self, finetuned_checkpoint):
+        """End-to-end: the count the helper returns must actually silence rfdetr's warning.
+
+        Loading through the installed rfdetr ties the helper to rfdetr's loader, so a version bump
+        that alters the head convention or the warning fails here rather than regressing quietly.
+        """
+        from rfdetr.utilities.logger import get_logger
+
+        num_classes = RfdetrBase._num_classes_from_checkpoint(finetuned_checkpoint)
+        assert num_classes == NUM_CLASSES_CANARY
+
+        rf_logger = get_logger()
+
+        def _mismatch_warned(**kwargs) -> bool:
+            collector = _WarningCollector()
+            rf_logger.addHandler(collector)
+            try:
+                RFDETRSegSmall(pretrain_weights=finetuned_checkpoint, device="cpu", **kwargs)
+            finally:
+                rf_logger.removeHandler(collector)
+            return any("Checkpoint has" in m and "configured for" in m for m in collector.messages)
+
+        assert _mismatch_warned(), (
+            "expected rfdetr to warn about the class-count mismatch when num_classes is not passed; "
+            "the premise RfdetrBase._num_classes_from_checkpoint addresses no longer holds"
+        )
+        assert not _mismatch_warned(num_classes=num_classes), (
+            "passing the checkpoint's own class count did not suppress rfdetr's mismatch warning; "
+            "rfdetr changed its head or loader behavior and the wrapper's suppression is broken"
+        )
 
 
 def test_clamp_boxes_to_image():
