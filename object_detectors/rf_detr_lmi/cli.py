@@ -363,6 +363,8 @@ def handle_export(configs: Dict[str, Any]) -> None:
     export_params = configs["export_configs"].copy()
     output_dir = export_params.pop("output_dir")
     opset_version = export_params.pop("opset_version", 17)
+    # rfdetr defaults verbose to True, making torch.onnx.export dump the entire graph
+    verbose = export_params.pop("verbose", False)
     os.makedirs(output_dir, exist_ok=True)
 
     # Remaining export params (resolution, device, ...) are model constructor kwargs
@@ -371,7 +373,7 @@ def handle_export(configs: Dict[str, Any]) -> None:
 
     # rfdetr names the exported file after the model variant (e.g. rfdetr-small.onnx);
     # stage it as model.onnx instead
-    onnx_path = model.export(output_dir=output_dir, opset_version=opset_version)
+    onnx_path = model.export(output_dir=output_dir, opset_version=opset_version, verbose=verbose)
     final_path = os.path.join(output_dir, "model.onnx")
     os.replace(onnx_path, final_path)
     _write_class_names(final_path, model.class_names)
