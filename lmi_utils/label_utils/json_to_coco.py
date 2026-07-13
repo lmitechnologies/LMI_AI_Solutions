@@ -81,6 +81,7 @@ def create_coco_dataset(
         )
 
     fnames = set()
+    total_files = len(dataset.files)
     # add images and annotations
     for file_id, file in enumerate(dataset.files):
         filtered_annotations = [ann for ann in file.annotations if ann.label_id in target_classes]
@@ -137,6 +138,9 @@ def create_coco_dataset(
                     coco_dataset.images.remove(coco_image)
                     # removing annotations for this image
                     break
+    # with background, no image may ever be dropped; a mismatch means the invariant broke
+    if background and len(coco_dataset.images) != total_files:
+        raise RuntimeError(f"background is set but {total_files - len(coco_dataset.images)} of {total_files} images were dropped")
     dataset.files = [file for file in dataset.files if os.path.basename(file.path) in fnames]
 
     return dataset, coco_dataset, fnames, file_id_map
