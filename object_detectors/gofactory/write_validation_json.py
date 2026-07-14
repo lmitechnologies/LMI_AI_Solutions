@@ -6,6 +6,8 @@ import os
 import cv2
 import numpy as np
 import torch
+from ultralytics.utils import nms, ops
+from ultralytics.utils.metrics import box_iou, kpt_iou, mask_iou
 
 from lmi_utils.dataset_utils.ops.dataset_pad import pad_annotated_image
 from lmi_utils.dataset_utils.ops.dataset_resize import resize_annotated_image
@@ -18,28 +20,16 @@ from lmi_utils.dataset_utils.representations import (
     Point2d,
     Polygon,
 )
+from object_detectors.ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
 
 logger = logging.getLogger(__name__)
 
-# Training packages the CLI dispatches on (FSP PackageKey values)
-PACKAGE_ULTRALYTICS_8 = "Ultralytics8"
-PACKAGE_RF_DETR = "RfDetr"
-
-# YOLO model class names by model type; resolved lazily so this module imports in environments
-# without ultralytics installed (the RfDetr package path runs in containers that do not ship it)
 MODEL_CLASSES = {
-    "ObjectDetection": "Yolo",
-    "InstanceSegmentation": "YoloSeg",
-    "OrientedObjectDetection": "YoloObb",
-    "KeypointDetection": "YoloPose",
+    "ObjectDetection": Yolo,
+    "InstanceSegmentation": YoloSeg,
+    "OrientedObjectDetection": YoloObb,
+    "KeypointDetection": YoloPose,
 }
-
-
-def _load_model_class(model_type: str):
-    """resolve the YOLO model class for a model type."""
-    from object_detectors.ultralytics_lmi.yolo import model as yolo_model
-
-    return getattr(yolo_model, MODEL_CLASSES[model_type])
 
 
 def parse_annotations(annotations: list[Annotation], h: int, w: int, model_type: str) -> dict:
@@ -178,9 +168,6 @@ def compute_ious(labels: dict, preds: dict, model_type: str, model) -> dict:
         dict: {'n_gt','n_pred','ious'}; for KeypointDetection also
             {'n_gt_kpt','n_pred_kpt','ious_kpt'}. 'ious'/'ious_kpt' are tensors or None.
     """
-    from ultralytics.utils import nms, ops
-    from ultralytics.utils.metrics import box_iou, kpt_iou, mask_iou
-
     ious = None
     if model_type == "InstanceSegmentation":
         n_gt = len(labels["masks"])
@@ -277,7 +264,7 @@ def write_json(
     # load the model by model type
     if model_type not in MODEL_CLASSES:
         raise Exception(f"Not supported model type: {model_type}")
-    model = _load_model_class(model_type)(model_path)
+    model = MODEL_CLASSES[model_type](model_path)
 
     dataset = Dataset.load(label_path)
     pred_annot_id = 0
@@ -378,23 +365,11 @@ def write_json(
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--package",
-        default=PACKAGE_ULTRALYTICS_8,
-        choices=[PACKAGE_ULTRALYTICS_8, PACKAGE_RF_DETR],
-        help=f"[optional] the training package the model comes from, defaults to {PACKAGE_ULTRALYTICS_8}",
-    )
     parser.add_argument("--model_path", required=True, help="a path to a model weights file")
     parser.add_argument(
         "--model_type",
         required=True,
-        help="a type of the model, either ObjectDetection, OrientedObjectDetection, InstanceSegmentation, KeypointDetection; "
-        f"the {PACKAGE_RF_DETR} package supports ObjectDetection and InstanceSegmentation",
-    )
-    parser.add_argument(
-        "--variant",
-        default=None,
-        help=f"the RF-DETR model variant (e.g. small, seg-small); required for the {PACKAGE_RF_DETR} package",
+        help="a type of the model, either ObjectDetection, OrientedObjectDetection, InstanceSegmentation, KeypointDetection",
     )
     parser.add_argument("--config_path", default=None, help="[optional] a path to a model config file")
     parser.add_argument("--img_dir", required=True, help="a input image directory")
@@ -425,13 +400,13 @@ if __name__ == "__main__":
         "--iou",
         default=0.45,
         type=float,
-        help=f"[optional] iou NMS threshold, defaults to 0.45 ({PACKAGE_ULTRALYTICS_8} only)",
+        help="[optional] iou NMS threshold, defaults to 0.45",
     )
     parser.add_argument(
         "--max_det",
         default=600,
         type=int,
-        help=f"[optional] the max number of detections per image, default to 600 ({PACKAGE_ULTRALYTICS_8} only)",
+        help="[optional] the max number of detections per image, default to 600",
     )
     ap = parser.parse_args()
 
@@ -445,38 +420,17 @@ if __name__ == "__main__":
         else:
             raise Exception(f"Invalid image size: {ap.image_size}; must be either w,h or a single number")
 
-    if ap.package == PACKAGE_RF_DETR:
-        # imported lazily: the RfDetr backend needs rfdetr, which the ultralytics containers do not ship
-        from object_detectors.gofactory import rf_detr_validation
-
-        if not ap.variant:
-            raise Exception(f"--variant is required for the {PACKAGE_RF_DETR} package")
-        if image_size is None:
-            raise Exception(f"--image_size is required for the {PACKAGE_RF_DETR} package")
-        rf_detr_validation.write_json(
-            model_path=ap.model_path,
-            model_type=ap.model_type,
-            variant=ap.variant,
-            image_size=image_size,
-            img_dir=ap.img_dir,
-            label_path=ap.label_path,
-            out_pred_json=ap.out_pred_json,
-            out_image_dir=ap.out_image_dir,
-            out_iou_dir=ap.out_iou_dir,
-            confidence=ap.confidence,
-        )
-    else:
-        write_json(
-            ap.model_path,
-            ap.model_type,
-            ap.config_path,
-            ap.img_dir,
-            ap.label_path,
-            ap.out_pred_json,
-            ap.out_image_dir,
-            ap.out_iou_dir,
-            image_size,
-            ap.confidence,
-            ap.iou,
-            ap.max_det,
-        )
+    write_json(
+        ap.model_path,
+        ap.model_type,
+        ap.config_path,
+        ap.img_dir,
+        ap.label_path,
+        ap.out_pred_json,
+        ap.out_image_dir,
+        ap.out_iou_dir,
+        image_size,
+        ap.confidence,
+        ap.iou,
+        ap.max_det,
+    )
