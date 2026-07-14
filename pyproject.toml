@@ -17,7 +17,7 @@ test = [
     "tensorboard==2.21.0",
     "numba==0.66.0",
     "numpy<2.0",
-    "ultralytics==8.4.90",
+    "ultralytics==8.4.95",
     "onnx==1.22.0",
     "pytest==9.1.1",
     "rfdetr==1.8.3",
