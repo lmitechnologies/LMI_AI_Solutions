@@ -1,6 +1,6 @@
 # RF-Detr
 
-Last updated: 2026-04-23
+Last updated: 2026-07-09
 
 ## Training
 
@@ -52,8 +52,9 @@ The following is an example yaml configuration to train an object detector. **Se
 
 ```yaml
 model_type: small
-operation: train  # train or convert
+operation: train  # train, convert, or export
 task: seg         # od or seg
+# pretrain_weights: /path/to/checkpoint.pth  # optional; see below
 training:
     dataset_dir: /app/data/coco/dataset # the path to the dataset directory
     epochs: 20                          # number of epochs to train
@@ -64,6 +65,12 @@ training:
     resolution: 384                     # image size (square image only)
 ```
 
+The optional top-level `pretrain_weights` controls the weights training starts from:
+
+- key absent: the variant's default COCO-pretrained weights (downloaded on first use)
+- a checkpoint path: warm-start training from that checkpoint's weights
+- explicit `null`: skip base-weight loading entirely; use together with `training.resume`, which restores model weights and optimizer state from the resumable checkpoint
+
 <details>
 <summary>Other training parameters that can be passed in</summary>
 
@@ -71,6 +78,7 @@ training:
 | :--- | :--- |
 | **dataset_dir** | Specifies the COCO-formatted dataset location with `train`, `valid`, and `test` folders, each containing `_annotations.coco.json`. Ensures the model can properly read and parse data. |
 | **output_dir** | Directory where training artifacts (checkpoints, logs, etc.) are saved. Important for experiment tracking and resuming training. |
+| **versioned_output_dir** | When `true` (the default), each run writes into a fresh date-versioned subdirectory of `output_dir` (e.g. `2026-07-09-v1`). Set to `false` to write directly into `output_dir` when a predictable path is needed. |
 | **epochs** | Number of full passes over the dataset. Increasing this can improve performance but extends total training time. |
 | **batch_size** | Number of samples processed per iteration. Higher values require more GPU memory but can speed up training. Must be balanced with `grad_accum_steps` to maintain the intended total batch size. |
 | **grad_accum_steps** | Accumulates gradients over multiple mini-batches, effectively raising the total batch size without requiring as much memory at once. Helps train on smaller GPUs at the cost of slightly more time per update. |
@@ -147,6 +155,23 @@ services:
     command: >
       python3 -m object_detectors.rf_detr_lmi.cli -c /app/configs/convert.yaml
 ```
+
+## Exporting to ONNX
+
+The export operation uses rfdetr's native exporter and writes the fixed filenames `model.onnx` plus a `model.classes.json` class-name sidecar, the convention the `RfdetrModel` ONNX/TensorRT backends resolve class names from.
+
+```yaml
+model_type: small
+operation: export
+task: seg         # od or seg
+pretrain_weights: /app/training/checkpoint_best_total.pth   # required; must be a .pth file
+export:
+    output_dir: /app/training   # receives model.onnx + model.classes.json
+    resolution: 384
+    opset_version: 17           # optional, default 17
+```
+
+Any additional keys under `export` (e.g. `device`) are passed to the model constructor.
 
 ## Inference
 

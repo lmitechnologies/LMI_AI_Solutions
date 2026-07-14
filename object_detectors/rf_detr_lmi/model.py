@@ -37,6 +37,27 @@ class RfdetrBase(ODBase):
         self.postprocessor = PostProcess(num_select=300)
 
     @staticmethod
+    def _num_classes_from_checkpoint(model_path: str) -> Optional[int]:
+        """Read the class count the checkpoint's detection head was trained with.
+
+        rfdetr constructs the model with its config-default class count and then aligns the head to
+        the checkpoint, logging a mismatch warning on every load. Passing the checkpoint's own count
+        as num_classes makes the sizes match up front and skips that warning. The class_embed bias
+        holds one row per class plus a background slot, so the class count is its length minus one.
+
+        Returns None when the key is absent (an unexpected checkpoint layout), leaving the caller to
+        fall back to rfdetr's default alignment.
+        """
+        checkpoint = torch.load(model_path, map_location="cpu", weights_only=False)
+        class_bias = checkpoint.get("model", {}).get("class_embed.bias")
+        if class_bias is None:
+            # PyTorch Lightning native .ckpt layout prefixes model weights with "model."
+            class_bias = checkpoint.get("state_dict", {}).get("model.class_embed.bias")
+        if class_bias is None:
+            return None
+        return class_bias.shape[0] - 1
+
+    @staticmethod
     def _load_class_map(model_path: str, provided: Optional[dict]) -> dict:
         """Resolve class_map from explicit argument or sidecar <stem>.classes.json.
 
@@ -345,7 +366,11 @@ class RfdetrPTH(RfdetrBase):
             f"Loading {model_type} RF-DETR model from {model_path} "
             f"with resolution {self.image_size[0]}x{self.image_size[1]} on {self.device}"
         )
-        self.model = model_class(pretrain_weights=model_path, resolution=self.image_size[0], device=self.device)
+        model_kwargs = {"pretrain_weights": model_path, "resolution": self.image_size[0], "device": self.device}
+        num_classes = self._num_classes_from_checkpoint(model_path)
+        if num_classes is not None:
+            model_kwargs["num_classes"] = num_classes
+        self.model = model_class(**model_kwargs)
         if class_map is None:
             class_map = {i: n for i, n in enumerate(self.model.class_names)}
         elif set(class_map.values()) != set(self.model.class_names):

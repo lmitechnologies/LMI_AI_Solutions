@@ -18,7 +18,7 @@ def get_args():
     ap.add_argument("--path_train_imgs", "-ti", required=True, help="the output path for train images")
     ap.add_argument("--path_val_imgs", "-vi", required=False, help="the output path for val images")
     ap.add_argument("--target_classes", default="all", help="[optional] the comma separated target classes, default=all")
-    ap.add_argument("--bg", action="store_true", help="save images with no labels, where yolo models treat them as background")
+    ap.add_argument("--bg", action="store_true", help="keep images with no labels in the output, where models treat them as background")
     ap.add_argument("--merge_box", action="store_true", help="merge multiple instances of same class boxes into one. Brush labels only!")
     ap.add_argument("--idx0", action="store_true", help="start index from 0 instead of 1")
 
@@ -46,7 +46,7 @@ def get_coco_annotation(annotation, **kwargs):
 
 
 def create_coco_dataset(
-    dataset: Dataset, is_crowd: bool = False, target_classes: list = None, **kwargs
+    dataset: Dataset, is_crowd: bool = False, target_classes: list = None, background: bool = False, **kwargs
 ) -> Tuple[Dataset, CocoDataset, Set[str], Dict[str, str]]:
     """
     Create a COCO dataset from a given dataset.
@@ -55,6 +55,8 @@ def create_coco_dataset(
         dataset (Dataset): The dataset to convert.
         is_crowd (bool): Whether annotations are crowd annotations. Default False.
         target_classes (list): List of class IDs to include. If None, all classes are used.
+        background (bool): Keep images without valid annotations for the target classes as
+            background images (a COCO image entry with no annotations). Default False (skip them).
         **kwargs: Additional options (e.g. merge_boxes, idx0).
 
     Returns:
@@ -79,11 +81,12 @@ def create_coco_dataset(
         )
 
     fnames = set()
+    total_files = len(dataset.files)
     # add images and annotations
     for file_id, file in enumerate(dataset.files):
         filtered_annotations = [ann for ann in file.annotations if ann.label_id in target_classes]
         file_id_map[os.path.basename(file.path)] = file.id
-        if len(filtered_annotations) == 0:
+        if len(filtered_annotations) == 0 and not background:
             logger.warning(f"Skipping file {file.path} as it has no annotations for target classes")
             continue
 
@@ -125,7 +128,7 @@ def create_coco_dataset(
             except Exception as e:
                 logger.error(f"Error processing  (annotation could be invalid) {annotation.id} for file {file.path}: {e}")
                 continue
-        if added_annotations > 0:
+        if added_annotations > 0 or background:
             fnames.add(os.path.basename(file.path))
         else:
             # remove the image if no annotations were added
@@ -135,6 +138,9 @@ def create_coco_dataset(
                     coco_dataset.images.remove(coco_image)
                     # removing annotations for this image
                     break
+    # with background, no image may ever be dropped; a mismatch means the invariant broke
+    if background and len(coco_dataset.images) != total_files:
+        raise RuntimeError(f"background is set but {total_files - len(coco_dataset.images)} of {total_files} images were dropped")
     dataset.files = [file for file in dataset.files if os.path.basename(file.path) in fnames]
 
     return dataset, coco_dataset, fnames, file_id_map
@@ -149,8 +155,6 @@ def convert_to_json(args):
     path_val_json = args["path_val_json"] if args["path_val_json"] != "labels.json" else os.path.join(path_val_imgs, args["path_val_json"])
     path_out = args["path_out"]
     background = args.get("bg", False)
-    if background:
-        logger.warning("Background is not supported for COCO format at the moment")
     merge_box = args.get("merge_box", False)
 
     if not os.path.exists(path_train_json):
@@ -188,7 +192,12 @@ def convert_to_json(args):
 
     # create coco datasets
     train_ais_dataset, coco_train_dataset, train_files, train_file_id_map = create_coco_dataset(
-        train_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box, idx0=args.get("idx0", False)
+        train_dataset,
+        is_crowd=False,
+        target_classes=target_classes,
+        background=background,
+        merge_boxes=merge_box,
+        idx0=args.get("idx0", False),
     )
     if use_train_for_val:
         logger.info("Creating validation dataset from train dataset")
@@ -199,7 +208,12 @@ def convert_to_json(args):
     else:
         logger.info("Creating validation dataset from val dataset")
         val_ais_dataset, coco_val_dataset, val_files, val_file_id_map = create_coco_dataset(
-            val_dataset, is_crowd=False, target_classes=target_classes, merge_boxes=merge_box, idx0=args.get("idx0", False)
+            val_dataset,
+            is_crowd=False,
+            target_classes=target_classes,
+            background=background,
+            merge_boxes=merge_box,
+            idx0=args.get("idx0", False),
         )
 
     # save ais datasets
