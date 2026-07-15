@@ -620,10 +620,17 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
         name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
         return name.lower()
 
+    # Dicts whose keys are data (not schema fields) and must never be case-converted
+    preserve_keys = {"attributes"}
+
     def convert_keys(obj):
-        """Recursively convert dictionary keys from camelCase to snake_case."""
+        """Recursively convert dictionary keys from camelCase to snake_case.
+
+        Values stored under keys in ``preserve_keys`` are kept as-is, so
+        data-keyed dicts (e.g. arbitrary artifact attributes) are not mangled.
+        """
         if isinstance(obj, dict):
-            return {camel_to_snake(k): convert_keys(v) for k, v in obj.items()}
+            return {camel_to_snake(k): (v if camel_to_snake(k) in preserve_keys else convert_keys(v)) for k, v in obj.items()}
         elif isinstance(obj, list):
             return [convert_keys(i) for i in obj]
         else:
@@ -635,6 +642,14 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
 
     with open(manifest_path, "r") as f:
         models: List[Dict[str, Any]] = json.load(f)
+
+    # Drop any pre-built configs before key conversion: they are rebuilt below,
+    # and their class-name keys (e.g. "IL_Grooves") must not go through
+    # camel_to_snake. Convert keys up front so validation sees snake_case too.
+    for model in models:
+        if isinstance(model, dict):
+            model.pop("configs", None)
+    models = convert_keys(models)
 
     manifest: Dict[str, Any] = {}
 
@@ -653,8 +668,6 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     classes_key = "classes" if manifest_v3 else "object_class"
 
     for model in models:
-        # convert camel case to snake
-        model = convert_keys(model)
         role = model.get("model_role")
         if role is None:
             continue
