@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+import re
 import tarfile
 import tempfile
 from pathlib import Path
@@ -609,12 +610,44 @@ def get_models_from_static_manifest(manifest_json_path: str, **kwargs):
     """
     version = kwargs.get("version", "3")
     logger.info(f"Loading static manifest from {manifest_json_path} with schema version {version}")
+
+    # Helper methods to convert camel case keys to snake case
+    def camel_to_snake(name):
+        """Convert camelCase or PascalCase to snake_case."""
+        name = re.sub(r"(.)([A-Z][a-z]+)", r"\1_\2", name)
+        name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name)
+        return name.lower()
+
+    # Dicts whose keys are data (not schema fields) and must never be case-converted
+    preserve_keys = {"attributes"}
+
+    def convert_keys(obj):
+        """Recursively convert dictionary keys from camelCase to snake_case.
+
+        Values stored under keys in ``preserve_keys`` are kept as-is, so
+        data-keyed dicts (e.g. arbitrary artifact attributes) are not mangled.
+        """
+        if isinstance(obj, dict):
+            return {camel_to_snake(k): (v if camel_to_snake(k) in preserve_keys else convert_keys(v)) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [convert_keys(i) for i in obj]
+        else:
+            return obj
+
     manifest_path = Path(manifest_json_path).resolve()
     if not manifest_path.exists():
         raise FileNotFoundError(f"Manifest file not found: {manifest_path}")
 
     with open(manifest_path, "r") as f:
         models: List[Dict[str, Any]] = json.load(f)
+
+    # Drop any pre-built configs before key conversion: they are rebuilt below,
+    # and their class-name keys (e.g. "IL_Grooves") must not go through
+    # camel_to_snake. Convert keys up front so validation sees snake_case too.
+    for model in models:
+        if isinstance(model, dict):
+            model.pop("configs", None)
+    models = convert_keys(models)
 
     manifest: Dict[str, Any] = {}
 

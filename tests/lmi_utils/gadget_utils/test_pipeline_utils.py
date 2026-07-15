@@ -595,3 +595,90 @@ class Test_static_manifest_validation:
         manifest_path = self._write_manifest(tmp_path, models)
         with pytest.raises(ValueError, match="unknown type"):
             pipeline_utils.get_models_from_static_manifest(manifest_path)
+
+
+class Test_static_manifest_key_conversion:
+    def _write_manifest(self, tmp_path, models):
+        path = tmp_path / "manifest.json"
+        path.write_text(json.dumps(models))
+        return str(path)
+
+    def test_camel_case_keys_converted(self, tmp_path):
+        models = [
+            {
+                "modelRole": "det",
+                "modelName": "m",
+                "modelVersion": "1",
+                "format": "trt",
+                "artifacts": {"trt": {"modelPath": "model.engine"}},
+                "modelType": "ObjectDetection",
+                "details": {
+                    "imageSize": [640, 640],
+                    "preprocessing": [{"type": "resize", "configuration": {"width": 640, "height": 640, "preserveAspect": True}}],
+                    "trainingPackage": "Ultralytics8",
+                    "trainingAlgorithm": "Yolo",
+                    "confidenceThreshold": 0.7,
+                    "classes": ["board"],
+                },
+            }
+        ]
+        manifest_path = self._write_manifest(tmp_path, models)
+        result = pipeline_utils.get_models_from_static_manifest(manifest_path)
+        model = result["det"]
+        assert model["model_name"] == "m"
+        assert model["details"]["image_size"] == [640, 640]
+        assert model["details"]["preprocessing"][0]["configuration"]["preserve_aspect"] is True
+        assert model["configs"]["confidence"] == {"board": 0.7}
+
+    def test_class_names_not_mangled(self, tmp_path):
+        classes = ["IL_Grooves", "ZG_Base_Color_Too_Dark", "Operator_Hand"]
+        models = [
+            {
+                "model_role": "det",
+                "model_name": "m",
+                "model_version": "1",
+                "format": "trt",
+                "artifacts": {},
+                "model_type": "ObjectDetection",
+                # pre-built configs keyed by class names must be discarded, not converted
+                "configs": {"confidence": {cls: 0.9 for cls in classes}},
+                "details": {
+                    "image_size": [640, 640],
+                    "preprocessing": [],
+                    "training_package": "Ultralytics8",
+                    "training_algorithm": "Yolo",
+                    "confidence_threshold": 0.5,
+                    "classes": classes,
+                },
+            }
+        ]
+        manifest_path = self._write_manifest(tmp_path, models)
+        result = pipeline_utils.get_models_from_static_manifest(manifest_path)
+        configs = result["det"]["configs"]
+        assert set(configs["confidence"]) == set(classes)
+        assert set(configs["to-fail"]) == set(classes)
+        # rebuilt from details, so pre-built values are replaced by defaults
+        assert configs["confidence"]["IL_Grooves"] == 0.5
+
+    def test_artifact_attributes_preserved(self, tmp_path):
+        models = [
+            {
+                "model_role": "det",
+                "model_name": "m",
+                "model_version": "1",
+                "format": "trt",
+                "artifacts": {"trt": {"modelPath": "model.engine", "attributes": {"someCustomKey": "Value", "GPU_Id": 0}}},
+                "model_type": "ObjectDetection",
+                "details": {
+                    "image_size": [640, 640],
+                    "preprocessing": [],
+                    "training_package": "Ultralytics8",
+                    "training_algorithm": "Yolo",
+                },
+            }
+        ]
+        manifest_path = self._write_manifest(tmp_path, models)
+        result = pipeline_utils.get_models_from_static_manifest(manifest_path)
+        artifact = result["det"]["artifacts"]["trt"]
+        assert artifact["attributes"] == {"someCustomKey": "Value", "GPU_Id": 0}
+        assert "model_path" in artifact
