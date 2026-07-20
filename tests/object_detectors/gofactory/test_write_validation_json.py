@@ -10,8 +10,10 @@ from lmi_utils.dataset_utils.representations import (
     Annotation,
     AnnotationType,
     Box,
+    BoxAnnotation,
     Dataset,
     FileAnnotations,
+    KeypointAnnotation,
     Label,
     Mask,
     Point2d,
@@ -90,6 +92,23 @@ def test_parse_keypoint():
     np.testing.assert_array_equal(out["points"][0], [5, 6])
 
 
+def test_parse_keypoints_uses_box_layout_and_visibility():
+    annotations = [
+        KeypointAnnotation("right", "right_eye", Point2d(30, 20), bounding_box_id="box"),
+        BoxAnnotation("box", "person", Box(0, 0, 50, 50)),
+        KeypointAnnotation("left", "left_eye", Point2d(10, 20, visibility=1), bounding_box_id="box"),
+    ]
+    out = wvj.parse_annotations(
+        annotations,
+        100,
+        100,
+        "KeypointDetection",
+        keypoint_layouts={"person": ["left_eye", "nose", "right_eye"]},
+        n_kpts=3,
+    )
+    np.testing.assert_array_equal(out["points"], [[[10, 20, 1], [0, 0, 0], [30, 20, 2]]])
+
+
 def test_parse_unsupported_type_raises():
     bad = Annotation(id="0", label_id="a", value=Box(0, 0, 1, 1, 0))  # type left as None
     with pytest.raises(Exception, match="Not supported type"):
@@ -105,6 +124,15 @@ def test_update_annotation_ids():
     anns = [Annotation(id="x", label_id="a"), Annotation(id="y", label_id="b"), Annotation(id="z", label_id="c")]
     wvj.update_annotation_ids(anns, start_id=5)
     assert [a.id for a in anns] == ["5", "6", "7"]
+
+
+def test_update_annotation_ids_updates_keypoint_links():
+    annotations = [
+        BoxAnnotation("box", "person", Box(0, 0, 10, 10)),
+        KeypointAnnotation("point", "nose", Point2d(5, 5), bounding_box_id="box"),
+    ]
+    wvj.update_annotation_ids(annotations, start_id=5)
+    assert annotations[1].bounding_box_id == "5"
 
 
 # ============================
@@ -149,6 +177,7 @@ def test_build_keypoint_expands_box_plus_points():
     assert out[0].type == AnnotationType.BOX
     assert [a.type for a in out[1:]] == [AnnotationType.KEYPOINT] * 3
     assert out[1].value.x == 10 and out[1].value.y == 11  # visibility dropped, (x, y) kept
+    assert all(a.bounding_box_id == "0" for a in out[1:])
 
 
 def test_build_oriented():
@@ -220,6 +249,26 @@ def test_compute_ious_keypoint():
     assert res["ious"].shape == (1, 1)
     assert res["n_gt_kpt"] == 3 and res["n_pred_kpt"] == 3
     assert res["ious_kpt"].shape == (1, 1)
+
+
+def test_compute_ious_keypoint_uses_ground_truth_visibility(monkeypatch):
+    labels = _empty()
+    labels["boxes"] = np.array([[0, 0, 10, 10, 0]], dtype=float)
+    labels["points"] = np.array([[[2, 2, 1], [0, 0, 0]]], dtype=float)
+    preds = _empty()
+    preds["boxes"] = np.array([[0, 0, 10, 10, 0]], dtype=float)
+    preds["points"] = np.array([[2, 2], [100, 100]], dtype=float)
+    captured = {}
+
+    def fake_kpt_iou(gt_points, pred_points, sigma, area):
+        captured["gt_points"] = gt_points.cpu().numpy()
+        return wvj.torch.ones((len(gt_points), len(pred_points)))
+
+    monkeypatch.setattr(wvj, "kpt_iou", fake_kpt_iou)
+    result = wvj.compute_ious(labels, preds, "KeypointDetection", _StubModel(nkpt=2))
+
+    np.testing.assert_array_equal(captured["gt_points"], labels["points"])
+    assert result["n_gt_kpt"] == 2
 
 
 # ============================

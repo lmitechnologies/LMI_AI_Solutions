@@ -197,9 +197,19 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
                 )
                 delete_ids.append(shape.id)
             else:
-                shape.value = Point2d(x=x, y=y)
+                shape.value = Point2d(x=x, y=y, visibility=shape.value.visibility)
 
         if is_del:
             is_warning = True
+
+    # Keep linked pose annotations atomic when cropping removes their owning box.
+    deleted_box_ids = {shape.id for shape in shapes if shape.type == AnnotationType.BOX and shape.id in delete_ids}
+    delete_ids.extend(
+        shape.id
+        for shape in shapes
+        if shape.type == AnnotationType.KEYPOINT
+        and getattr(shape, "bounding_box_id", None) in deleted_box_ids
+        and shape.id not in delete_ids
+    )
 
     return delete_ids, is_warning

@@ -201,6 +201,12 @@ def convert_to_yolo(args):
         val_yolo_dataset = train_yolo_dataset
         val_file_id_map = train_file_id_map
 
+    if val_yolo_dataset["n_kpts"] != train_yolo_dataset["n_kpts"]:
+        raise ValueError(
+            f"Training and validation datasets have different keypoint counts: "
+            f"{train_yolo_dataset['n_kpts']} and {val_yolo_dataset['n_kpts']}"
+        )
+
     # path for labels files
     path_txts_train = os.path.join(path_out, "labels/train")
     path_txts_val = os.path.join(path_out, "labels/val")
@@ -240,7 +246,7 @@ def convert_to_yolo(args):
             "test": None,
         }
         if train_yolo_dataset["n_kpts"]:
-            dt["kpt_shape"] = [train_yolo_dataset["n_kpts"], 2]
+            dt["kpt_shape"] = [train_yolo_dataset["n_kpts"], 3]
         dt["names"] = {int(v): k for k, v in train_yolo_dataset["class_map"].items()}
         yaml.dump(dt, f, sort_keys=False)
 

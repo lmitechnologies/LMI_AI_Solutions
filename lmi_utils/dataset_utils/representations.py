@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from dataclasses import asdict, dataclass
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import cv2
 import numpy as np
@@ -88,6 +88,7 @@ class Base:
 class Point2d(Base):
     x: float
     y: float
+    visibility: Optional[int] = None
 
     def __post_init__(self):
         self.x = float(self.x)
@@ -95,7 +96,7 @@ class Point2d(Base):
 
     @classmethod
     def from_dict(cls, data: dict) -> "Point2d":
-        return cls(x=data["x"], y=data["y"])
+        return cls(x=data["x"], y=data["y"], visibility=data.get("visibility"))
 
     def resize(self, orig_h: int, orig_w: int, new_h: int, new_w: int):
         _validate_resize_dims(orig_h, orig_w, new_h, new_w)
@@ -245,13 +246,11 @@ class Box(Base):
 
         cx = (self.x_min + self.x_max) / 2
         cy = (self.y_min + self.y_max) / 2
-        if self.angle > 0 and use_obb:
-            rotated_coords = self._rotated_corners(**kwargs)
-            for p in rotated_coords:
-                if p[0] > w:
-                    raise ValueError(f"Rotated point x value {p[0]} is greater than image width {w}")
-                if p[1] > h:
-                    raise ValueError(f"Rotated point y value {p[1]} is greater than image height {h}")
+        if self.angle != 0 and use_obb:
+            rotated_coords = self._rotated_corners(**kwargs).astype(float)
+            # Rotation may move valid edge boxes slightly outside the image; Ultralytics expects clipped normalized corners.
+            rotated_coords[:, 0] = np.clip(rotated_coords[:, 0], 0, w)
+            rotated_coords[:, 1] = np.clip(rotated_coords[:, 1], 0, h)
             return [[pt[0] / w, pt[1] / h] for pt in rotated_coords]
         else:
             if use_obb:
@@ -494,6 +493,7 @@ class Label(Base):
     id: str
     color: Optional[str] = None
     annotation_type: AnnotationType = None
+    keypoints: Optional[List[str]] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "Label":
@@ -501,6 +501,7 @@ class Label(Base):
             id=data["id"],
             color=data.get("color"),
             annotation_type=data.get("annotation_type"),
+            keypoints=data.get("keypoints"),
         )
 
 
@@ -658,20 +659,27 @@ class FileAnnotations(Base):
 
     def assign_keypoints(self, target_ids=None):
         target_ids = target_ids or []
+        boxes_by_id = {annotation.id: annotation for annotation in self.annotations if annotation.type == AnnotationType.BOX}
         for annotation in self.annotations:
-            if annotation.type == AnnotationType.KEYPOINT:
-                assigned = False
-                for box in self.annotations:
-                    if len(target_ids) > 0 and box.label_id not in target_ids:
-                        continue
-                    if box.type == AnnotationType.BOX and box.value.point_in_box(annotation.value.x, annotation.value.y):
-                        if annotation.bounding_box_id is None:
-                            annotation.bounding_box_id = box.id
-                            assigned = True
-                            break
+            if annotation.type != AnnotationType.KEYPOINT:
+                continue
+            if annotation.bounding_box_id is not None:
+                # Exporters provide authoritative links; containment is only a fallback for standalone conversions.
+                if annotation.bounding_box_id not in boxes_by_id:
+                    raise ValueError(f"Bounding box {annotation.bounding_box_id} not found for keypoint {annotation.id}")
+                continue
 
-                if not assigned:
-                    raise Exception(f"Keypoint {annotation.id} not assigned to any box")
+            candidates = [
+                box
+                for box in boxes_by_id.values()
+                if (not target_ids or box.label_id in target_ids) and box.value.point_in_box(annotation.value.x, annotation.value.y)
+            ]
+            if len(candidates) == 1:
+                annotation.bounding_box_id = candidates[0].id
+            elif not candidates:
+                raise ValueError(f"Keypoint {annotation.id} not assigned to any box")
+            else:
+                raise ValueError(f"Keypoint {annotation.id} is contained by multiple boxes")
 
         return self
 
@@ -683,6 +691,8 @@ class FileAnnotations(Base):
         merge_boxes=False,
         target_classes=None,
         use_obb=False,
+        keypoint_layouts: Optional[Dict[str, List[str]]] = None,
+        n_kpts: int = 0,
     ):
         """Convert this file's annotations to YOLO format.
         `label_to_index` is a function mapping a label id to an integer index.
@@ -729,20 +739,40 @@ class FileAnnotations(Base):
                 yolo_annotations_map[annotation.id] = instance
             label_ids.append(annotation.label_id)
 
-        # handle converting keypoints to YOLO format
-        # assign keypoints to bounding boxes
+        if n_kpts:
+            self.assign_keypoints(target_ids=target_classes)
+            keypoint_layouts = keypoint_layouts or {}
+            keypoints_by_box = {}
+            for annotation in self.annotations:
+                if annotation.type != AnnotationType.KEYPOINT or annotation.bounding_box_id not in yolo_annotations_map:
+                    continue
+                points_by_label = keypoints_by_box.setdefault(annotation.bounding_box_id, {})
+                if annotation.label_id in points_by_label:
+                    raise ValueError(f"Duplicate keypoint label {annotation.label_id} for bounding box {annotation.bounding_box_id}")
+                points_by_label[annotation.label_id] = annotation
 
-        self.assign_keypoints(target_ids=target_classes)
-        for annotation in self.annotations:
-            if annotation.type == AnnotationType.KEYPOINT:
-                logger.debug(f"Converting keypoint {annotation.id} to YOLO format with bounding box {annotation.bounding_box_id}")
-                box = yolo_annotations_map.get(annotation.bounding_box_id)
-
-                if box is None:
-                    raise Exception(f"Bounding box {annotation.bounding_box_id} not found for keypoint {annotation.id}")
-                yolo_kp = annotation.to_yolo(h, w, use_obb=use_obb)
-                # Extend the box annotation in-place (list reference is shared with yolo_annotations)
-                box.extend(np.array(yolo_kp).flatten().tolist())
+            boxes_by_id = {annotation.id: annotation for annotation in self.annotations if annotation.type == AnnotationType.BOX}
+            for box_id, row in yolo_annotations_map.items():
+                box_annotation = boxes_by_id.get(box_id)
+                if box_annotation is None:
+                    continue
+                layout = keypoint_layouts.get(box_annotation.label_id, [])
+                points_by_label = keypoints_by_box.get(box_id, {})
+                unknown_labels = set(points_by_label) - set(layout)
+                if unknown_labels:
+                    labels = ", ".join(sorted(unknown_labels))
+                    raise ValueError(f"Keypoint labels {labels} are not in the layout for bounding box {box_id}")
+                # Layout position is the YOLO slot index; annotation order must not affect the row.
+                for label_id in layout:
+                    point = points_by_label.get(label_id)
+                    if point is None:
+                        row.extend([0, 0, 0])
+                    else:
+                        visibility = point.value.visibility if point.value.visibility is not None else 2
+                        row.extend([point.value.x / w, point.value.y / h, visibility])
+                # Every class uses the dataset-wide maximum so all pose rows have the same width.
+                for _ in range(n_kpts - len(layout)):
+                    row.extend([0, 0, 0])
 
         if len(yolo_annotations) == 0:
             logger.debug(f"No annotations found for file {self.path}")
@@ -808,12 +838,23 @@ class Dataset(Base):
         class_map = kwargs.get("class_map", {})
         target_label_ids = []
         if target_classes != ["all"]:
-            # delete the annotations that are not in the target classes
             delete_ids = [label.id for label in self.labels if label.id not in target_classes]
             self.labels = [label for label in self.labels if label.id in target_classes]
             for file_ann in self.files:
-                file_ann.annotations = [ann for ann in file_ann.annotations if ann.label_id not in delete_ids]
-                file_ann.predictions = [ann for ann in file_ann.predictions if ann.label_id not in delete_ids]
+                for list_type in ("annotations", "predictions"):
+                    annotations = file_ann._get_target_list(list_type)
+                    kept_box_ids = {ann.id for ann in annotations if ann.type == AnnotationType.BOX and ann.label_id in target_classes}
+                    # Keypoint labels differ from box classes, so retain them according to their owning box.
+                    filtered = [
+                        ann
+                        for ann in annotations
+                        if ann.label_id in target_classes
+                        or (
+                            ann.type == AnnotationType.KEYPOINT
+                            and (getattr(ann, "bounding_box_id", None) is None or ann.bounding_box_id in kept_box_ids)
+                        )
+                    ]
+                    file_ann.update_annotations(filtered, list_type=list_type)
             logger.debug(f"Deleted annotations for labels {delete_ids}")
 
             target_label_ids = target_classes
@@ -834,14 +875,20 @@ class Dataset(Base):
             # create a sequential index for the labels
             for file_ann in self.files:
                 for annotation in file_ann.annotations:
-                    if annotation.label_id in target_label_ids and annotation.label_id not in label_id_index:
+                    if (
+                        annotation.type != AnnotationType.KEYPOINT
+                        and annotation.label_id in target_label_ids
+                        and annotation.label_id not in label_id_index
+                    ):
                         label_id_index[annotation.label_id] = label_idx
                         label_idx += 1
 
         # sort the label_id_index by label id
         label_id_index = dict(sorted(label_id_index.items(), key=lambda item: item[1]))
 
-        n_kpts = 0
+        keypoint_layouts = {label.id: label.keypoints for label in self.labels if label.keypoints is not None}
+        # Layout length is per instance; counting annotations would vary with images and object counts.
+        n_kpts = max((len(layout) for layout in keypoint_layouts.values()), default=0)
         image_to_labels = {}
         label_ids = []
         for file_ann in self.files:
@@ -851,13 +898,6 @@ class Dataset(Base):
             if file_path not in image_to_labels:
                 image_to_labels[file_path] = []
 
-            keypoints = file_ann.get_annotations_by_type(AnnotationType.KEYPOINT)
-            if keypoints:
-                if n_kpts == 0:
-                    n_kpts = len(keypoints)
-                elif len(keypoints) != n_kpts:
-                    raise Exception(f"Inconsistent number of keypoints: expected {n_kpts}, found {len(keypoints)}")
-
             # Call the file-level to_yolo method:
             file_yolo, file_label_ids = file_ann.to_yolo(
                 label_id_idx=label_id_index,
@@ -866,6 +906,8 @@ class Dataset(Base):
                 merge_boxes=merge_boxes,
                 target_classes=target_label_ids,
                 use_obb=kwargs.get("use_obb", False),
+                keypoint_layouts=keypoint_layouts,
+                n_kpts=n_kpts,
             )
             label_ids.extend(file_label_ids)
             image_to_labels[file_path].extend(file_yolo)

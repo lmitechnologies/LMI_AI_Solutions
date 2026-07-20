@@ -16,6 +16,7 @@ from lmi_utils.dataset_utils.representations import (
     AnnotationType,
     Box,
     Dataset,
+    KeypointAnnotation,
     Mask,
     Point2d,
     Polygon,
@@ -32,7 +33,14 @@ MODEL_CLASSES = {
 }
 
 
-def parse_annotations(annotations: list[Annotation], h: int, w: int, model_type: str) -> dict:
+def parse_annotations(
+    annotations: list[Annotation],
+    h: int,
+    w: int,
+    model_type: str,
+    keypoint_layouts: dict[str, list[str]] | None = None,
+    n_kpts: int = 0,
+) -> dict:
     """parse label annotations from a list.
 
     Args:
@@ -47,10 +55,14 @@ def parse_annotations(annotations: list[Annotation], h: int, w: int, model_type:
     boxes = []
     masks = []
     points = []
+    box_annotations = []
+    keypoint_annotations = []
     label_names = []
     for annot in annotations:
         label_names.append(annot.label_id)
         if annot.type == AnnotationType.BOX:
+            if model_type == "KeypointDetection":
+                box_annotations.append(annot)
             if model_type == "OrientedObjectDetection":
                 boxes.append(annot.value.to_polygon().to_numpy())  # 4 corners (xyxyxyxy) for rotated iou
             elif model_type == "InstanceSegmentation":
@@ -73,9 +85,36 @@ def parse_annotations(annotations: list[Annotation], h: int, w: int, model_type:
             else:
                 logger.warning(f"Not support loading polygons for the model type: {model_type}, skip")
         elif annot.type == AnnotationType.KEYPOINT:
-            points.append(annot.value.to_numpy())
+            if keypoint_layouts is None:
+                points.append(annot.value.to_numpy())
+            else:
+                keypoint_annotations.append(annot)
         else:
             raise Exception(f"Not supported type: {type(annot.type)}")
+
+    if keypoint_layouts is not None:
+        # Ground truth must align with box order and model slots before OKS reshaping.
+        points = np.zeros((len(box_annotations), n_kpts, 3), dtype=float)
+        boxes_by_id = {annot.id: (index, annot) for index, annot in enumerate(box_annotations)}
+        occupied_slots = set()
+        for annot in keypoint_annotations:
+            bounding_box_id = getattr(annot, "bounding_box_id", None)
+            if bounding_box_id not in boxes_by_id:
+                raise ValueError(f"Bounding box {bounding_box_id} not found for keypoint {annot.id}")
+            box_index, box = boxes_by_id[bounding_box_id]
+            layout = keypoint_layouts.get(box.label_id, [])
+            if annot.label_id not in layout:
+                raise ValueError(f"Keypoint label {annot.label_id} is not in the layout for bounding box {bounding_box_id}")
+            slot = layout.index(annot.label_id)
+            if slot >= n_kpts:
+                raise ValueError(f"Keypoint layout for {box.label_id} exceeds the configured keypoint count {n_kpts}")
+            slot_key = (bounding_box_id, slot)
+            if slot_key in occupied_slots:
+                raise ValueError(f"Duplicate keypoint label {annot.label_id} for bounding box {bounding_box_id}")
+            occupied_slots.add(slot_key)
+            visibility = annot.value.visibility if annot.value.visibility is not None else 2
+            points[box_index, slot] = [annot.value.x, annot.value.y, visibility]
+
     return {
         "boxes": np.array(boxes),
         "masks": np.array(masks),
@@ -86,8 +125,13 @@ def parse_annotations(annotations: list[Annotation], h: int, w: int, model_type:
 
 def update_annotation_ids(annotations: list[Annotation], start_id=0):
     """reassign sequential ids to annotations in place, starting from start_id."""
+    # Unpadding can remove predictions, so linked keypoints must follow their box's replacement id.
+    id_map = {annot.id: str(start_id + i) for i, annot in enumerate(annotations)}
     for i, annot in enumerate(annotations):
         annot.id = str(start_id + i)
+        bounding_box_id = getattr(annot, "bounding_box_id", None)
+        if bounding_box_id in id_map:
+            annot.bounding_box_id = id_map[bounding_box_id]
 
 
 def build_prediction_annotations(preds: dict, model_type: str, start_id: int) -> list[Annotation]:
@@ -120,8 +164,9 @@ def build_prediction_annotations(preds: dict, model_type: str, start_id: int) ->
             preds_padded.append(Annotation(**dt))
             current_id += 1
         elif model_type in ["ObjectDetection", "KeypointDetection"]:
+            box_id = str(current_id)
             dt = dict(
-                id=str(current_id),
+                id=box_id,
                 label_id=label_name,
                 type=AnnotationType.BOX,
                 value=Box(*box, angle=0),
@@ -134,13 +179,15 @@ def build_prediction_annotations(preds: dict, model_type: str, start_id: int) ->
                 pts = preds["points"][i]
                 for j in range(len(pts)):
                     pt = np.squeeze(pts[j])[:2]  # keep (x, y); drop visibility when kpt_shape is [N, 3]
-                    dt = dict(
-                        id=str(current_id),
-                        label_id=label_name,
-                        type=AnnotationType.KEYPOINT,
-                        value=Point2d(*pt),
+                    preds_padded.append(
+                        KeypointAnnotation(
+                            id=str(current_id),
+                            label_id=label_name,
+                            value=Point2d(*pt),
+                            # The link lets cropping remove the box and its keypoints as one instance.
+                            bounding_box_id=box_id,
+                        )
                     )
-                    preds_padded.append(Annotation(**dt))
                     current_id += 1
         elif model_type == "OrientedObjectDetection":
             dt = dict(
@@ -192,20 +239,17 @@ def compute_ious(labels: dict, preds: dict, model_type: str, model) -> dict:
         result = {"n_gt": n_gt, "n_pred": n_pred, "ious": ious}
         if model_type == "KeypointDetection":
             ious_kpt = None
-            n_gt_kpt = len(labels["points"])
-            n_pred_kpt = len(preds["points"])
+            nkpt = model.model.kpt_shape[0]
+            n_gt_kpt = labels["points"].shape[0] * labels["points"].shape[1] if labels["points"].ndim == 3 else len(labels["points"])
+            n_pred_kpt = preds["points"].shape[0] * preds["points"].shape[1] if preds["points"].ndim == 3 else len(preds["points"])
             if n_gt_kpt and n_pred_kpt:
-                nkpt = model.model.kpt_shape[0]
-                # parsed points are always (x, y); reshape with 2, independent of kpt_shape's visibility dim
-                labels["points"] = labels["points"].reshape(-1, nkpt, 2)  # (N, n_kp, 2)
-                preds["points"] = preds["points"].reshape(-1, nkpt, 2)  # (M, n_kp, 2)
-                # add ones to the last dimension for visibility
-                # TODO: update point2d in data schema to include visibility
-                gt_points = torch.from_numpy(labels["points"]).to(model.device)
-                gt_points = torch.cat((gt_points, torch.ones_like(gt_points[..., :-1])), dim=-1)  # (N, n_kp, 3)
-
-                pred_points = torch.from_numpy(preds["points"]).to(model.device)
-                pred_points = torch.cat((pred_points, torch.ones_like(pred_points[..., :-1])), dim=-1)  # (M, n_kp, 3)
+                gt_points = torch.from_numpy(labels["points"].reshape(-1, nkpt, labels["points"].shape[-1])).to(model.device)
+                if gt_points.shape[-1] == 2:
+                    gt_points = torch.cat((gt_points, torch.ones_like(gt_points[..., :1])), dim=-1)
+                pred_points = torch.from_numpy(preds["points"].reshape(-1, nkpt, preds["points"].shape[-1])).to(model.device)
+                if pred_points.shape[-1] == 2:
+                    # Predictions always contain every model slot; OKS masking is driven by GT visibility.
+                    pred_points = torch.cat((pred_points, torch.ones_like(pred_points[..., :1])), dim=-1)
                 # `0.53` is from https://github.com/ultralytics/ultralytics/blob/main/ultralytics/models/yolo/pose/val.py#L181
                 area = ops.xyxy2xywh(gt_boxes)[:, 2:].prod(1) * 0.53
                 sigma = np.ones(nkpt) / nkpt
@@ -267,6 +311,8 @@ def write_json(
     model = MODEL_CLASSES[model_type](model_path)
 
     dataset = Dataset.load(label_path)
+    keypoint_layouts = {label.id: label.keypoints for label in dataset.labels if label.keypoints is not None}
+    n_kpts = max((len(layout) for layout in keypoint_layouts.values()), default=0)
     pred_annot_id = 0
     for file_annot in dataset.files:
         fname = os.path.basename(file_annot.path)
@@ -299,7 +345,14 @@ def write_json(
         pred_annot_id += len(preds_unpadded)
 
         # compute ious on the unpadded annotations so the matrix matches the saved output
-        labels = parse_annotations(annotations_unpadded, h_unpad, w_unpad, model_type)
+        labels = parse_annotations(
+            annotations_unpadded,
+            h_unpad,
+            w_unpad,
+            model_type,
+            keypoint_layouts=keypoint_layouts if n_kpts else None,
+            n_kpts=n_kpts,
+        )
         preds = parse_annotations(preds_unpadded, h_unpad, w_unpad, model_type)
         iou_result = compute_ious(labels, preds, model_type, model)
         n_gt = iou_result["n_gt"]

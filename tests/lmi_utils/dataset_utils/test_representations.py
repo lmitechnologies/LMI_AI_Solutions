@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from lmi_utils.dataset_utils.mask_encoder import mask2rle
+from lmi_utils.dataset_utils.ops.dataset_pad import pad_annotated_image
 from lmi_utils.dataset_utils.representations import (
     Box,
     BoxAnnotation,
@@ -31,9 +32,10 @@ logger = logging.getLogger(__name__)
 
 
 def test_point2d_from_dict_and_to_yolo():
-    p = Point2d.from_dict({"x": 10, "y": 20})
+    p = Point2d.from_dict({"x": 10, "y": 20, "visibility": 1})
     assert p.x == 10
     assert p.y == 20
+    assert p.visibility == 1
     yolo = p.to_yolo(100, 200)  # height=100, width=200
     expected = [[10 / 200, 20 / 100]]
     assert yolo == expected
@@ -50,11 +52,32 @@ def test_point2d_resize_and_pad():
     assert np.isclose(p.y, 45)
 
 
+def test_padding_preserves_visibility_and_drops_points_with_box():
+    image = np.zeros((100, 100, 3), dtype=np.uint8)
+    kept_box = BoxAnnotation("kept", "person", Box(40, 40, 60, 60))
+    kept_point = KeypointAnnotation("kept-point", "nose", Point2d(50, 50, visibility=1), bounding_box_id="kept")
+    dropped_box = BoxAnnotation("dropped", "person", Box(0, 0, 20, 20))
+    dropped_point = KeypointAnnotation("dropped-point", "nose", Point2d(50, 50), bounding_box_id="dropped")
+
+    _, annotations, _ = pad_annotated_image(image, [kept_box, kept_point, dropped_box, dropped_point], 50, 50)
+
+    assert [annotation.id for annotation in annotations] == ["kept", "kept-point"]
+    assert annotations[1].value.visibility == 1
+
+
 def test_box_from_dict_and_to_yolo_no_angle():
     b = Box.from_dict({"x_min": 10, "y_min": 20, "x_max": 50, "y_max": 80, "angle": 0})
     yolo = b.to_yolo(100, 100)
     expected = [[0.3, 0.5, 0.4, 0.6]]
     assert yolo == expected
+
+
+def test_box_to_yolo_obb_supports_negative_angles_and_clips():
+    box = Box(0, 0, 20, 20, -45)
+    yolo = np.array(box.to_yolo(100, 100, use_obb=True))
+    assert yolo.shape == (4, 2)
+    assert np.all((0 <= yolo) & (yolo <= 1))
+    assert not np.allclose(yolo, [[0, 0], [0.2, 0], [0.2, 0.2], [0, 0.2]])
 
 
 def test_box_resize_and_pad():
@@ -276,6 +299,35 @@ def test_file_annotations_assign_keypoints_error():
         fa.assign_keypoints()
 
 
+def test_file_annotations_assign_keypoints_accepts_prelinked():
+    box = BoxAnnotation("box", "person", Box(10, 10, 90, 90))
+    point = KeypointAnnotation("point", "nose", Point2d(20, 20), bounding_box_id="box")
+    FileAnnotations("file", "image.jpg", 100, 100, [point, box]).assign_keypoints()
+    assert point.bounding_box_id == "box"
+
+
+def test_file_annotations_assign_keypoints_rejects_dangling_link():
+    point = KeypointAnnotation("point", "nose", Point2d(20, 20), bounding_box_id="missing")
+    annotations = FileAnnotations("file", "image.jpg", 100, 100, [point])
+    with pytest.raises(ValueError, match="missing.*point"):
+        annotations.assign_keypoints()
+
+
+def test_file_annotations_assign_keypoints_requires_unique_containment():
+    point = KeypointAnnotation("point", "nose", Point2d(20, 20))
+    boxes = [
+        BoxAnnotation("box-1", "person", Box(0, 0, 30, 30)),
+        BoxAnnotation("box-2", "person", Box(10, 10, 40, 40)),
+    ]
+    annotations = FileAnnotations("file", "image.jpg", 100, 100, boxes + [point])
+    with pytest.raises(ValueError, match="point.*multiple boxes"):
+        annotations.assign_keypoints()
+
+    annotations.annotations.pop(1)
+    annotations.assign_keypoints()
+    assert point.bounding_box_id == "box-1"
+
+
 def test_file_annotations_to_yolo(dummy_file_annotations):
     yolo, label_ids = dummy_file_annotations.to_yolo(
         to_segmentation=False,
@@ -287,6 +339,60 @@ def test_file_annotations_to_yolo(dummy_file_annotations):
     assert isinstance(yolo, list)
     assert isinstance(label_ids, list)
     assert len(yolo) > 0
+
+
+def test_file_annotations_to_yolo_uses_layout_slots_and_visibility():
+    box = BoxAnnotation("box", "person", Box(10, 20, 50, 80))
+    left = KeypointAnnotation("left", "left_eye", Point2d(20, 30, visibility=1), bounding_box_id="box")
+    right = KeypointAnnotation("right", "right_eye", Point2d(40, 30), bounding_box_id="box")
+    file_annotations = FileAnnotations("file", "image.jpg", 100, 100, [right, box, left])
+
+    rows, _ = file_annotations.to_yolo(
+        label_id_idx={"person": 0},
+        keypoint_layouts={"person": ["left_eye", "nose", "right_eye"]},
+        n_kpts=3,
+    )
+
+    assert rows == [[0, 0.3, 0.5, 0.4, 0.6, 0.2, 0.3, 1, 0, 0, 0, 0.4, 0.3, 2]]
+
+
+def test_file_annotations_to_yolo_pads_mixed_layouts():
+    annotations = [
+        BoxAnnotation("person", "person", Box(0, 0, 20, 20)),
+        KeypointAnnotation("nose", "nose", Point2d(10, 10), bounding_box_id="person"),
+        BoxAnnotation("animal", "animal", Box(20, 20, 40, 40)),
+        KeypointAnnotation("paw", "paw", Point2d(30, 30), bounding_box_id="animal"),
+        BoxAnnotation("object", "object", Box(40, 40, 60, 60)),
+    ]
+    file_annotations = FileAnnotations("file", "image.jpg", 100, 100, annotations)
+    rows, _ = file_annotations.to_yolo(
+        label_id_idx={"person": 0, "animal": 1, "object": 2},
+        keypoint_layouts={"person": ["nose", "eye"], "animal": ["paw"], "object": []},
+        n_kpts=2,
+    )
+
+    assert all(len(row) == 11 for row in rows)
+    assert rows[1][-3:] == [0, 0, 0]
+    assert rows[2][-6:] == [0, 0, 0, 0, 0, 0]
+
+
+@pytest.mark.parametrize(
+    ("points", "message"),
+    [
+        (
+            [
+                KeypointAnnotation("a", "nose", Point2d(10, 10), bounding_box_id="box"),
+                KeypointAnnotation("b", "nose", Point2d(11, 11), bounding_box_id="box"),
+            ],
+            "Duplicate keypoint",
+        ),
+        ([KeypointAnnotation("a", "ear", Point2d(10, 10), bounding_box_id="box")], "not in the layout"),
+    ],
+)
+def test_file_annotations_to_yolo_rejects_invalid_slots(points, message):
+    annotations = FileAnnotations("file", "image.jpg", 100, 100, [BoxAnnotation("box", "person", Box(0, 0, 20, 20))] + points)
+    with pytest.raises(ValueError, match=message):
+        annotations.to_yolo(label_id_idx={"person": 0}, keypoint_layouts={"person": ["nose"]}, n_kpts=1)
 
 
 # ============================
@@ -372,6 +478,39 @@ def test_dataset_to_yolo(dummy_dataset):
     assert "n_kpts" in yolo_data
     for _key, annotations in yolo_data["image_labels"].items():
         assert len(annotations) > 0
+
+
+def test_dataset_to_yolo_derives_keypoint_count_from_layouts():
+    labels = [Label("person", keypoints=["nose", "eye"])]
+    files = [
+        FileAnnotations(
+            "one",
+            "one.jpg",
+            100,
+            100,
+            [
+                BoxAnnotation("box-1", "person", Box(0, 0, 50, 50)),
+                KeypointAnnotation("nose-1", "nose", Point2d(10, 10), bounding_box_id="box-1"),
+            ],
+        ),
+        FileAnnotations(
+            "two",
+            "two.jpg",
+            100,
+            100,
+            [
+                BoxAnnotation("box-2", "person", Box(0, 0, 50, 50)),
+                BoxAnnotation("box-3", "person", Box(50, 50, 100, 100)),
+                KeypointAnnotation("nose-2", "nose", Point2d(10, 10), bounding_box_id="box-2"),
+                KeypointAnnotation("nose-3", "nose", Point2d(60, 60), bounding_box_id="box-3"),
+            ],
+        ),
+    ]
+
+    result = Dataset(labels, files).to_yolo()
+
+    assert result["n_kpts"] == 2
+    assert all(len(row) == 11 for rows in result["image_labels"].values() for row in rows)
 
 
 def test_dataset_save_and_load(tmp_path, dummy_dataset):
@@ -567,14 +706,14 @@ def test_dataset_json_format_preserved():
     rle = mask2rle(mask_arr)
 
     labels = [
-        Label("label_box", "Box Label"),
+        Label("label_box", "Box Label", keypoints=["label_kp"]),
         Label("label_kp", "Keypoint Label"),
         Label("label_poly", "Polygon Label"),
         Label("label_mask", "Mask Label"),
     ]
     annotations = [
         BoxAnnotation("ann_box", "label_box", Box(10, 20, 50, 80, 0)),
-        KeypointAnnotation("ann_kp", "label_kp", Point2d(30, 40)),
+        KeypointAnnotation("ann_kp", "label_kp", Point2d(30, 40, visibility=1)),
         PolygonAnnotation("ann_poly", "label_poly", Polygon([[0, 0], [10, 0], [10, 10], [0, 10]])),
         MaskAnnotation("ann_mask", "label_mask", Mask(rle)),
     ]
@@ -623,6 +762,7 @@ def test_dataset_json_format_preserved():
     assert set(kp_value.keys()) >= {"x", "y"}
     assert kp_value["x"] == pytest.approx(30.0)
     assert kp_value["y"] == pytest.approx(40.0)
+    assert kp_value["visibility"] == 1
     assert "bounding_box_id" in kp_ann
 
     # PolygonAnnotation value structure
@@ -645,4 +785,6 @@ def test_dataset_json_format_preserved():
     loaded_anns_by_id = {a.id: a for a in loaded.files[0].annotations}
     assert loaded_anns_by_id["ann_box"].value.x_min == pytest.approx(10.0)
     assert loaded_anns_by_id["ann_kp"].value.x == pytest.approx(30.0)
+    assert loaded_anns_by_id["ann_kp"].value.visibility == 1
+    assert loaded.labels[0].keypoints == ["label_kp"]
     assert len(loaded_anns_by_id["ann_poly"].value.points) == 4
