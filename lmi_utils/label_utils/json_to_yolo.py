@@ -196,6 +196,8 @@ def convert_to_yolo(args):
             to_object_detection=mask_to_od,
             target_classes=target_classes,
             use_obb=use_obb,
+            # Index the val split against the same class map as train.
+            class_map=class_map,
         )
     else:
         val_yolo_dataset = train_yolo_dataset
