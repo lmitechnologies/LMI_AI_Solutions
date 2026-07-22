@@ -90,7 +90,7 @@ def create_coco_dataset(
             logger.warning(f"Skipping file {file.path} as it has no annotations for target classes")
             continue
 
-        logger.info(f"Processing file {file_id + 1}/{len(dataset.files)}: {file.path}")
+        logger.debug(f"Processing file {file_id + 1}/{len(dataset.files)}: {file.path}")
         image_id = file_id + 1
         # update the image name if id is not part of the image
         out_name = os.path.basename(file.path)

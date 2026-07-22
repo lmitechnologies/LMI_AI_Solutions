@@ -79,7 +79,7 @@ def copy_images_in_folder(path_img, path_out, fnames, file_id_map):
     if fnames is None:
         raise Exception("fnames cannot be None")
     for fname in fnames:
-        logger.info(f"Copying image {fname} to {path_out}")
+        logger.debug(f"Copying image {fname} to {path_out}")
         out_name = os.path.basename(fname)
         if not os.path.isfile(os.path.join(path_img, fname)):
             raise Exception(f"File not found: {os.path.join(path_img, fname)}")
