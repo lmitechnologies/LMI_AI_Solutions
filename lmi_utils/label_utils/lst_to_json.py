@@ -4,11 +4,10 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import List, Union
+from typing import List, Optional, Set, Tuple, Union
 
 import cv2
 import numpy as np
-from label_studio_sdk.converter.brush import decode_rle
 
 from lmi_utils.dataset_utils.representations import (
     Annotation,
@@ -16,12 +15,14 @@ from lmi_utils.dataset_utils.representations import (
     Box,
     Dataset,
     FileAnnotations,
+    KeypointAnnotation,
     Label,
     Mask,
     Point2d,
     Polygon,
 )
 from lmi_utils.label_utils.bbox_utils import convert_from_ls
+from lmi_utils.label_utils.json_to_factory import DATASET_META_FILE, flip_to_indices, scaffold_pose_schema
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,8 @@ logger = logging.getLogger(__name__)
 LABEL_NAME = "labels.json"
 PRED_NAME = "preds.json"
 IMAGES_DIR = "images"
+# Older exports may express ownership as a relation. Native KeyPointLabels nesting uses `parentID`.
+RELATION_TYPE = "relation"
 
 
 def lst_to_shape(result: dict, fname: str, load_confidence=False):
@@ -64,6 +67,9 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
             AnnotationType.POLYGON,
         )
     elif result_type == "brushlabels":
+        # Only brush masks need the Label Studio SDK, so every other export converts without it installed.
+        from label_studio_sdk.converter.brush import decode_rle
+
         rle = result["value"]["rle"]
         h, w = result["original_height"], result["original_width"]
         img = decode_rle(rle).reshape(h, w, 4)[:, :, 3]
@@ -81,9 +87,131 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
         return None, None, None, None
 
 
+def load_pose_schema(path: Optional[Union[str, Path]]) -> Optional[dict]:
+    """Read a declared pose schema from an `annotationSchema` object, or from the `.meta.json` holding one.
+
+    A Label Studio export states no keypoint layout: its labeling configuration declares one flat keypoint
+    vocabulary for the whole project, with no per-class order, flip or skeleton. The declaration therefore has to
+    come from outside the export -- normally the `.meta.json` of the Factory dataset the project was built from.
+    """
+    if path is None:
+        return None
+    path = Path(path)
+    if path.is_dir():
+        path = path / DATASET_META_FILE
+    with open(path) as f:
+        data = json.load(f)
+    return data.get("annotationSchema", data)
+
+
+def pose_labels(pose_schema: Optional[dict]) -> Tuple[List[Label], Set[str]]:
+    """The class labels a pose schema declares, and the keypoint names it reserves as slots of those classes."""
+    labels: List[Label] = []
+    vocabulary: Set[str] = set()
+    for class_id, declaration in (pose_schema or {}).get("classes", {}).items():
+        keypoints = list(declaration.get("keypoints") or [])
+        labels.append(
+            Label(
+                id=str(class_id),
+                annotation_type=AnnotationType.BOX,
+                keypoints=keypoints or None,
+                horizontal_flip=flip_to_indices(keypoints, declaration.get("horizontalFlip")),
+                skeleton=declaration.get("skeleton"),
+            )
+        )
+        vocabulary.update(keypoints)
+    return labels, vocabulary
+
+
+def link_keypoints(relations: List[dict], by_region_id: dict):
+    """Resolve legacy Label Studio relations into keypoint-to-box links.
+
+    Either direction links the pair; relations between other region types are ignored. Native `parentID`
+    ownership is authoritative, so a relation only fills a still-unlinked keypoint.
+    """
+    for relation in relations:
+        ends = [by_region_id.get(relation.get("from_id")), by_region_id.get(relation.get("to_id"))]
+        keypoint = next((a for a in ends if isinstance(a, KeypointAnnotation)), None)
+        box = next((a for a in ends if a is not None and a.type == AnnotationType.BOX), None)
+        if keypoint is not None and box is not None and keypoint.bounding_box_id is None:
+            keypoint.bounding_box_id = box.id
+
+
+def link_keypoint_parents(parent_links: List[Tuple[KeypointAnnotation, str]], by_region_id: dict):
+    """Resolve native Label Studio `parentID` ownership after every region in the result has been indexed."""
+    for keypoint, parent_id in parent_links:
+        parent = by_region_id.get(parent_id)
+        if parent is None:
+            raise ValueError(f"Keypoint region {keypoint.id} has parentID '{parent_id}', but that region does not exist")
+        if parent.type != AnnotationType.BOX:
+            raise ValueError(f"Keypoint region {keypoint.id} has parentID '{parent_id}', which is not a box")
+        keypoint.bounding_box_id = parent.id
+
+
+def check_keypoint_vocabulary(files: List[FileAnnotations], vocabulary: Set[str]):
+    """Every keypoint must name a slot some class declares, otherwise it reaches Factory as a stray label."""
+    unknown = sorted(
+        {
+            annotation.label_id
+            for file in files
+            for annotation in file.annotations + file.predictions
+            if annotation.type == AnnotationType.KEYPOINT and annotation.label_id not in vocabulary
+        }
+    )
+    if unknown:
+        raise ValueError(f"Keypoints {unknown} are not declared by any class in the pose schema")
+
+
 def to_linux_path(path: Union[str, Path]):
     """convert windows path to linux (POSIX) path"""
     return Path(path).as_posix()
+
+
+def build_image_index(images_dir) -> dict:
+    """Local images keyed by every name an export might identify them by: the path relative to `images_dir`, its
+    basename, and its basename without the extension."""
+    index = {}
+    for relative in get_relative_paths(images_dir):
+        relative = to_linux_path(relative)
+        name = os.path.basename(relative)
+        for key in (relative, name, os.path.splitext(name)[0]):
+            index.setdefault(key, relative)
+    return index
+
+
+def resolve_image(url: str, common_prefix: str, index: dict) -> str:
+    """The local image an exported task refers to, as a path relative to the image directory.
+
+    Label Studio keeps whatever the import gave it, which is a file path for a local import but an API URL for a
+    project Factory created -- `.../items/<item id>/image`, whose own tail is a fixed word. The component before
+    it identifies the item, so it is tried too.
+    """
+    candidates = []
+    if common_prefix and url.startswith(common_prefix):
+        candidates.append(url[len(common_prefix) :].lstrip("/"))
+    parts = [part for part in to_linux_path(url).split("/") if part]
+    if parts:
+        candidates += [parts[-1], os.path.splitext(parts[-1])[0]]
+    if len(parts) > 1:
+        candidates.append(parts[-2])
+
+    for candidate in candidates:
+        resolved = index.get(candidate)
+        if resolved is not None:
+            return resolved
+    raise FileNotFoundError(
+        f"No image matches '{url}'. Tried {candidates}. Check that the image directory holds the images this "
+        f"project was annotated on, named as the export identifies them."
+    )
+
+
+def declared_size(task: dict) -> Optional[Tuple[int, int]]:
+    """The image size the export recorded, or None when none of the task's results state one."""
+    for group in list(task.get("annotations", [])) + list(task.get("predictions", [])):
+        for result in group.get("result") or []:
+            if "original_width" in result and "original_height" in result:
+                return result["original_width"], result["original_height"]
+    return None
 
 
 def generate_file_ids(files: List[str]):
@@ -93,33 +221,50 @@ def generate_file_ids(files: List[str]):
     return file_id
 
 
-def collect_results(results, out_list, counter, label_dict, labels, fname, load_confidence=False):
-    """Parse results, append Annotations to out_list, return updated counter."""
+def collect_results(results, out_list, counter, label_dict, labels, fname, load_confidence=False, keypoint_vocabulary=None):
+    """Parse results, append Annotations to out_list, return updated counter.
+
+    Region ids and relations are scoped to the one completion these results belong to, so links are resolved here
+    rather than across a whole file.
+    """
+    keypoint_vocabulary = keypoint_vocabulary or set()
+    by_region_id = {}
+    relations = []
+    parent_links = []
     for result in results:
+        if result.get("type") == RELATION_TYPE:
+            relations.append(result)
+            continue
         shape, label, conf, annot_type = lst_to_shape(result, fname, load_confidence=load_confidence)
         if shape is None:
             continue
-        if label not in label_dict:
+        if label not in label_dict and label not in keypoint_vocabulary:
+            # A declared keypoint names a slot inside its class's layout, not a class of its own.
             label_dict.add(label)
             labels.append(Label(id=str(label), annotation_type=annot_type))
-        out_list.append(
-            Annotation(
-                id=str(counter),
-                label_id=str(label),
-                type=annot_type,
-                value=shape,
-                confidence=conf if load_confidence else None,
-            )
-        )
+        fields = dict(id=str(counter), label_id=str(label), value=shape, confidence=conf if load_confidence else None)
+        if annot_type == AnnotationType.KEYPOINT:
+            annotation = KeypointAnnotation(**fields)
+        else:
+            annotation = Annotation(type=annot_type, **fields)
+        out_list.append(annotation)
+        if result.get("id") is not None:
+            by_region_id[result["id"]] = annotation
+        if isinstance(annotation, KeypointAnnotation) and result.get("parentID") is not None:
+            parent_links.append((annotation, str(result["parentID"])))
         counter += 1
+    link_keypoint_parents(parent_links, by_region_id)
+    link_keypoints(relations, by_region_id)
     return counter
 
 
-def get_annotations_from_json(path_json, images_dir, background=False):
+def get_annotations_from_json(path_json, images_dir, background=False, pose_schema: Optional[dict] = None):
     """read annotation from label studio json file.
 
     Args:
         path_json (str): the path to a directory of label studio json files
+        pose_schema (dict): the declared pose schema, whose classes seed the labels and whose keypoint names are
+            read as slots of those classes rather than as classes of their own
 
     Returns:
         dict: a map <image name, a list of Rect objects>
@@ -129,11 +274,14 @@ def get_annotations_from_json(path_json, images_dir, background=False):
     else:
         json_files = glob.glob(os.path.join(path_json, "*.json"))
 
-    labels: List[Label] = []
+    labels, keypoint_vocabulary = pose_labels(pose_schema)
     annotations: List[FileAnnotations] = []
 
-    label_set = set()
+    label_set = {label.id for label in labels}
     file_id_dict = generate_file_ids(get_relative_paths(images_dir))
+    image_index = build_image_index(images_dir)
+    # Guards the loose name matching in resolve_image: two tasks resolving to one image is a mismatched directory.
+    claimed_by = {}
     processed_files = set()
 
     for path_json in json_files:
@@ -168,11 +316,20 @@ def get_annotations_from_json(path_json, images_dir, background=False):
                 for annot in dt["annotations"]:
                     if len(annot["result"]) > 0:
                         cnt += 1
-                    cnt_anno = collect_results(annot["result"], file_annotations, cnt_anno, label_set, labels, f)
+                    cnt_anno = collect_results(
+                        annot["result"], file_annotations, cnt_anno, label_set, labels, f, keypoint_vocabulary=keypoint_vocabulary
+                    )
 
                     if "prediction" in annot and "result" in annot["prediction"]:
                         cnt_pred = collect_results(
-                            annot["prediction"]["result"], pred_annotations, cnt_pred, label_set, labels, f, load_confidence=True
+                            annot["prediction"]["result"],
+                            pred_annotations,
+                            cnt_pred,
+                            label_set,
+                            labels,
+                            f,
+                            load_confidence=True,
+                            keypoint_vocabulary=keypoint_vocabulary,
                         )
                 if cnt == 0 and dt.get("total_annotations", 0) > 0:
                     cnt_wrong += 1
@@ -181,14 +338,22 @@ def get_annotations_from_json(path_json, images_dir, background=False):
             if "predictions" in dt:
                 for pred in dt["predictions"]:
                     if isinstance(pred, dict):
-                        cnt_pred = collect_results(pred["result"], pred_annotations, cnt_pred, label_set, labels, f, load_confidence=True)
+                        cnt_pred = collect_results(
+                            pred["result"],
+                            pred_annotations,
+                            cnt_pred,
+                            label_set,
+                            labels,
+                            f,
+                            load_confidence=True,
+                            keypoint_vocabulary=keypoint_vocabulary,
+                        )
 
-            f = f[len(common_prefix) :].lstrip("/")
+            url, f = f, resolve_image(f, common_prefix, image_index)
+            if f in claimed_by:
+                raise ValueError(f"Tasks '{claimed_by[f]}' and '{url}' both resolve to the image '{f}'")
+            claimed_by[f] = url
             updated_fp = os.path.join(images_dir, f)
-            if not os.path.isfile(updated_fp):
-                raise FileNotFoundError(
-                    f"Not found '{f}' in '{images_dir}'. Check if the folder structure of images_dir is the same as the path in json file."
-                )
 
             file_id = file_id_dict.get(f)
             if file_id is None:
@@ -198,6 +363,11 @@ def get_annotations_from_json(path_json, images_dir, background=False):
             if image is None:
                 raise ValueError(f"failed to read image: {updated_fp}")
             height, width = image.shape[:2]
+            # Every coordinate is a percentage of the size the export recorded, so a different image here is not
+            # a near miss -- it rescales the whole task.
+            declared = declared_size(dt)
+            if declared is not None and declared != (width, height):
+                raise ValueError(f"'{f}' is {width}x{height}, but '{url}' was annotated on a {declared[0]}x{declared[1]} image")
             if file_annotations or pred_annotations:
                 annotations.append(
                     FileAnnotations(
@@ -245,6 +415,17 @@ def get_annotations_from_json(path_json, images_dir, background=False):
     logger.info(f"total {len(annotations)} images")
     logger.info(f"total {len(labels)} labels")
 
+    if pose_schema is not None:
+        check_keypoint_vocabulary(annotations, keypoint_vocabulary)
+    elif any(file.get_annotations_by_type(AnnotationType.KEYPOINT) for file in annotations):
+        # Silently converting these produces a dataset that imports and then cannot be trained, which only shows
+        # up much later, in Factory.
+        logger.warning(
+            "This export has keypoints but no pose schema was given, so each keypoint label becomes a class of "
+            "its own and no layout is declared. The result imports into Factory but cannot train pose. Pass -ps, "
+            "or --scaffold_schema to draft one."
+        )
+
     return annotations, labels
 
 
@@ -260,11 +441,30 @@ def main():
     ap.add_argument("-imgs", "--path_images", required=True, help="the root directory of images")
     ap.add_argument("-of", "--path_out_json", required=True, help="path to store the json file")
     ap.add_argument("-bg", "--background", action="store_true", help="save background")
+    ap.add_argument(
+        "-ps",
+        "--pose_schema",
+        help="the declared pose schema: a Factory dataset directory, its .meta.json, or an annotationSchema json",
+    )
+    ap.add_argument(
+        "--scaffold_schema",
+        help="[optional] also write a draft pose schema surveyed from the annotations, to edit and pass back as -ps",
+    )
     args = ap.parse_args()
 
-    annotations, labels = get_annotations_from_json(args.path_json, args.path_images, background=args.background)
+    pose_schema = load_pose_schema(args.pose_schema)
+    files, labels = get_annotations_from_json(args.path_json, args.path_images, background=args.background, pose_schema=pose_schema)
 
-    annotations = Dataset(labels=labels, files=annotations)
+    dataset = Dataset(labels=labels, files=files, coordinate_dimensions=(pose_schema or {}).get("coordinateDimensions"))
+
+    if args.scaffold_schema:
+        draft = scaffold_pose_schema(dataset)
+        with open(args.scaffold_schema, "w") as f:
+            json.dump({"annotationSchema": draft}, f, indent=4)
+        logger.warning(
+            f"Wrote a draft schema of {len(draft['classes'])} class(es) to {args.scaffold_schema}. Its keypoint order "
+            f"is only what the annotations showed and every horizontalFlip is null: review it, then pass it as -ps."
+        )
 
     out_path = args.path_out_json
     if not out_path.endswith(".json"):
@@ -273,7 +473,7 @@ def main():
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
-    annotations.save(out_path)
+    dataset.save(out_path)
     logger.info(f"saved to {out_path}")
 
 

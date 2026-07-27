@@ -19,6 +19,9 @@ from lmi_utils.label_utils.bbox_utils import get_rotated_bbox, rotate
 
 logger = logging.getLogger(__name__)
 
+# What becomes of a keypoint that no bounding box owns; see FileAnnotations.assign_keypoints.
+UNASSIGNED_KEYPOINT_POLICIES = ("error", "drop", "keep")
+
 
 def _validate_resize_dims(orig_h: int, orig_w: int, new_h: int, new_w: int):
     if orig_w <= 0 or orig_h <= 0:
@@ -499,6 +502,11 @@ class Label(Base):
     color: Optional[str] = None
     annotation_type: AnnotationType = None
     keypoints: Optional[List[str]] = None
+    # Declared pose contract, carried alongside the layout: indices into `keypoints` giving the slot each one
+    # becomes under a horizontal mirror, and undirected skeleton edges as index pairs. None means undeclared,
+    # which for the flip means mirroring is unsafe rather than that it is the identity.
+    horizontal_flip: Optional[List[int]] = None
+    skeleton: Optional[List[List[int]]] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "Label":
@@ -507,6 +515,8 @@ class Label(Base):
             color=data.get("color"),
             annotation_type=data.get("annotation_type"),
             keypoints=data.get("keypoints"),
+            horizontal_flip=data.get("horizontal_flip"),
+            skeleton=data.get("skeleton"),
         )
 
 
@@ -662,9 +672,19 @@ class FileAnnotations(Base):
         self._get_target_list(list_type)  # validates list_type
         setattr(self, list_type, annotations)
 
-    def assign_keypoints(self, target_ids=None):
+    def assign_keypoints(self, target_ids=None, unassigned: str = "error"):
+        """Link each keypoint to the box that owns it, by its existing link or else by containment.
+
+        `unassigned` says what to become of a keypoint no box owns: "error", "drop" it, or "keep" it unlinked.
+        Sources that allow a standalone keypoint, Label Studio among them, need one of the latter two. Ambiguity
+        is a different matter and always raises: a keypoint inside several boxes needs an explicit link, and
+        picking one would silently attach it to the wrong instance.
+        """
+        if unassigned not in UNASSIGNED_KEYPOINT_POLICIES:
+            raise ValueError(f"unassigned must be one of {UNASSIGNED_KEYPOINT_POLICIES}, got '{unassigned}'")
         target_ids = target_ids or []
         boxes_by_id = {annotation.id: annotation for annotation in self.annotations if annotation.type == AnnotationType.BOX}
+        dropped = []
         for annotation in self.annotations:
             if annotation.type != AnnotationType.KEYPOINT:
                 continue
@@ -682,9 +702,17 @@ class FileAnnotations(Base):
             if len(candidates) == 1:
                 annotation.bounding_box_id = candidates[0].id
             elif not candidates:
-                raise ValueError(f"Keypoint {annotation.id} not assigned to any box")
+                if unassigned == "error":
+                    raise ValueError(f"Keypoint {annotation.id} not assigned to any box")
+                if unassigned == "drop":
+                    dropped.append(annotation)
             else:
                 raise ValueError(f"Keypoint {annotation.id} is contained by multiple boxes")
+
+        if dropped:
+            logger.warning(f"Dropped {len(dropped)} keypoint(s) owned by no box in {self.path}")
+            dropped_ids = {annotation.id for annotation in dropped}
+            self.annotations = [annotation for annotation in self.annotations if annotation.id not in dropped_ids]
 
         return self
 
@@ -788,12 +816,15 @@ class FileAnnotations(Base):
 class Dataset(Base):
     labels: List[Label]
     files: List[FileAnnotations]
+    # Coordinates stored per keypoint, 2 or 3. None leaves it to the consumer, which is every dataset whose
+    # source states no keypoint layout.
+    coordinate_dimensions: Optional[int] = None
 
     @classmethod
     def from_dict(cls, data: dict) -> "Dataset":
         labels = [Label.from_dict(li) for li in data.get("labels", [])]
         files = [FileAnnotations.from_dict(f) for f in data.get("files", [])]
-        return cls(labels=labels, files=files)
+        return cls(labels=labels, files=files, coordinate_dimensions=data.get("coordinate_dimensions"))
 
     @classmethod
     def load(cls, file_path: str) -> "Dataset":

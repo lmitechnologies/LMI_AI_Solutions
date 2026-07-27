@@ -94,6 +94,10 @@ class CocoAnnotation:
     area: float
     bbox: List[float]
     iscrowd: bool = False
+    # Pose instances: the category's keypoints flattened to x, y, visibility triplets, in the category's
+    # declared order. Visibility 0 marks a slot this instance does not observe.
+    keypoints: Optional[List[float]] = None
+    num_keypoints: Optional[int] = None
 
     def __post_init__(self):
         if self.id < 0:
@@ -115,9 +119,12 @@ class CocoAnnotation:
         if self.bbox[2] <= 0 or self.bbox[3] <= 0:
             raise ValueError("bbox width and height must be positive")
 
+        if self.keypoints is not None and len(self.keypoints) % 3 != 0:
+            raise ValueError("keypoints must be a flat list of x, y, visibility triplets")
+
     def to_dict(self) -> Dict[str, Any]:
         """Converts the Annotation object to a dictionary."""
-        return asdict(self)
+        return {k: v for k, v in asdict(self).items() if v is not None}
 
 
 @dataclass
@@ -130,16 +137,22 @@ class CocoCategory:
     id: int
     name: str
     supercategory: str = ""
+    # Pose categories: the class's keypoint names in tensor order, and undirected skeleton edges as index pairs.
+    # COCO writes skeleton indices one-based; `skeleton_base` on the converters states which convention a file uses.
+    keypoints: Optional[List[str]] = None
+    skeleton: Optional[List[List[int]]] = None
 
     def __post_init__(self):
         if self.id < 0:
             raise ValueError("Category ID must be non-negative")
         if not self.name:
             raise ValueError("Category name cannot be empty")
+        if self.keypoints is not None and len(set(self.keypoints)) != len(self.keypoints):
+            raise ValueError(f"Category {self.name} declares a duplicate keypoint name")
 
     def to_dict(self) -> Dict[str, Any]:
         """Converts the Category object to a dictionary."""
-        return asdict(self)
+        return {k: v for k, v in asdict(self).items() if v is not None}
 
 
 @dataclass
@@ -387,7 +400,15 @@ class CocoDataset:
 
         # Load categories
         for cat_data in data.get("categories", []):
-            dataset.add_category(CocoCategory(id=cat_data["id"], name=cat_data["name"], supercategory=cat_data.get("supercategory", "")))
+            dataset.add_category(
+                CocoCategory(
+                    id=cat_data["id"],
+                    name=cat_data["name"],
+                    supercategory=cat_data.get("supercategory", ""),
+                    keypoints=cat_data.get("keypoints"),
+                    skeleton=cat_data.get("skeleton"),
+                )
+            )
 
         # Load images
         for img_data in data.get("images", []):
@@ -415,6 +436,8 @@ class CocoDataset:
                     area=ann_data["area"],
                     bbox=ann_data["bbox"],
                     iscrowd=ann_data.get("iscrowd", False),
+                    keypoints=ann_data.get("keypoints"),
+                    num_keypoints=ann_data.get("num_keypoints"),
                 )
             )
 
