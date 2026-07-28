@@ -115,23 +115,25 @@ def class_slots(class_id: str, kpt_names: Optional[Dict[str, List[str]]], keypoi
     return slots
 
 
-def local_flip(slots: List[int], flip_idx: Optional[List[int]]) -> Optional[List[int]]:
-    """Translate the model's global flip into this class's local order, or None when it does not close over the class.
+def local_flip_pairs(slots: List[int], layout: List[str], flip_idx: Optional[List[int]]) -> Optional[List[List[str]]]:
+    """The class's mirror symmetry as keypoint-name pairs, or None when the model's flip does not close over it.
 
-    A slot whose mirror the class does not own leaves the whole class's flip undeclared: a partial mapping would
-    silently drop keypoints under a horizontal flip rather than mirror them.
+    A slot whose mirror the class does not own leaves the whole class's symmetry undeclared: a partial mapping
+    would silently drop keypoints under a horizontal flip rather than mirror them. A slot that mirrors to itself
+    contributes no pair, so a class the mirror fixes entirely declares an empty list rather than None.
     """
     if flip_idx is None:
         return None
-    local_by_slot = {slot: local for local, slot in enumerate(slots)}
-    flip = []
+    name_by_slot = dict(zip(slots, layout))
+    pairs = []
     for slot in slots:
         target = flip_idx[slot]
-        if target not in local_by_slot:
+        if target not in name_by_slot:
             logger.warning(f"Slot {slot} mirrors to slot {target}, which the class does not own; declaring no flip for it")
             return None
-        flip.append(local_by_slot[target])
-    return flip
+        if target > slot:
+            pairs.append([name_by_slot[slot], name_by_slot[target]])
+    return pairs
 
 
 def build_labels(
@@ -154,7 +156,7 @@ def build_labels(
             id=class_id,
             annotation_type=AnnotationType.BOX,
             keypoints=layout,
-            horizontal_flip=local_flip(slots, flip_idx),
+            horizontal_flip_pairs=local_flip_pairs(slots, layout, flip_idx),
         )
         slots_by_index[index] = slots
     return labels, slots_by_index

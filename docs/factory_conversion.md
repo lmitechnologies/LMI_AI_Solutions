@@ -1,7 +1,6 @@
 # Converting datasets to Factory
 
-Factory imports one directory format.
-COCO, YOLO and Label Studio datasets reach it through the AIS dataset json, which every `label_utils` converter already reads and writes:
+Factory imports one directory format. COCO, YOLO and Label Studio datasets reach it through the AIS dataset json:
 
 ```
 COCO ─────────coco_to_json──┐
@@ -9,33 +8,14 @@ YOLO ─────────yolo_to_json──┼──> labels.json ──j
 Label Studio ──lst_to_json──┘
 ```
 
-Keeping the json in the middle means the existing tools (`json_to_yolo`, `json_to_coco`, `apply_ops`, `plot_with_json`) apply to a converted dataset without further work, and Factory has exactly one writer.
+The json in the middle keeps the existing tools (`json_to_yolo`, `json_to_coco`, `apply_ops`, `plot_with_json`) working on a converted
+dataset, and leaves Factory with one writer. `coco_to_json` and `yolo_to_json` write `labels.json` where `json_to_factory` looks for it,
+so the second command below never needs `-j`.
 
-## Commands
+## Pose datasets need a declared schema
 
-```bash
-# COCO
-python3 -m lmi_utils.label_utils.coco_to_json -j annotations.json -i images/
-python3 -m lmi_utils.label_utils.json_to_factory -i images/ -o factory_dataset/
-
-# YOLO
-python3 -m lmi_utils.label_utils.yolo_to_json -y dataset.yaml
-python3 -m lmi_utils.label_utils.json_to_factory -i <dataset root> -o factory_dataset/
-
-# Label Studio
-python3 -m lmi_utils.label_utils.lst_to_json -i export.json -imgs images/ -of images/labels.json -ps source_dataset/
-python3 -m lmi_utils.label_utils.json_to_factory -i images/ -o factory_dataset/
-
-# Label Studio, when no pose schema exists yet: draft one, edit it, then convert with it
-python3 -m lmi_utils.label_utils.lst_to_json -i export.json -imgs images/ -of images/labels.json --scaffold_schema draft.json
-```
-
-The COCO and YOLO converters write `labels.json` where `json_to_factory` looks for it by default, so the second command needs no `-j`.
-
-## What Factory needs for pose
-
-A pose dataset's keypoint layout is a *declaration*, not a tally of its annotations.
-Factory reads it from the root `.meta.json` that `json_to_factory` writes:
+A keypoint layout is a *declaration*, not a tally of the annotations that happen to be present.
+Factory reads it from a `.meta.json` at the dataset root:
 
 ```json
 {
@@ -46,7 +26,7 @@ Factory reads it from the root `.meta.json` that `json_to_factory` writes:
     "classes": {
       "bolt": {
         "keypoints": ["head", "left-flange", "right-flange"],
-        "horizontalFlip": [0, 2, 1],
+        "horizontalFlipPairs": [["left-flange", "right-flange"]],
         "skeleton": [[0, 1], [0, 2]]
       }
     }
@@ -54,54 +34,121 @@ Factory reads it from the root `.meta.json` that `json_to_factory` writes:
 }
 ```
 
-- `keypoints` is the class's tensor order; its length is that class's K. A slot no image observes stays declared.
-- `horizontalFlip` maps each slot to the slot it becomes under a mirror. It must be a permutation and its own inverse, since flipping twice has to restore every keypoint. `null` imports fine but blocks `fliplr`/`flipud` during training.
-- `skeleton` is visualization metadata, zero-based.
-- Two classes may reuse a keypoint name; the owning box scopes it.
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `type`, `version`, `coordinateDimensions` | yes | Always `"Pose"`, `1` and `3`. A 2D source is normalized to 3 on import. |
+| `classes` | yes | Keyed by class id, one entry per box class that owns keypoints. |
+| `keypoints` | yes | The class's slot order; its length is that class's K. A slot no image observes stays declared. |
+| `horizontalFlipPairs` | yes, may be `null` | Keypoints that trade places under a mirror; anything unpaired is its own mirror. `null` imports fine but blocks `fliplr`/`flipud` in training. `[]` declares a class that mirrors onto itself. Omitting the field is an error — write `null`. |
+| `skeleton` | no | Visualization only, zero-based. Omit it when there is none; `null` is an error. |
 
-Annotations carry the layout by name: each keypoint is one annotation whose `label_id` is the keypoint name and whose `bounding_box_id` links it to its instance.
-`json_to_factory` resolves that link, falling back to box containment for a keypoint that has none, and rejects one that no box or several boxes contain.
+Keypoint annotations name their slot in `label_id` and their instance in `bounding_box_id`.
+Two classes may reuse a keypoint name — the owning box scopes it.
 
-The declaration is carried on `Label` in the dataset json (`keypoints`, `horizontal_flip`, `skeleton`) and `coordinate_dimensions` on `Dataset`, so it survives the intermediate file.
+## Getting a schema
 
-## COCO specifics
+Two ways, neither of which is editing by hand.
 
-- `categories[].name` becomes the Factory class id. `--class_map` supplies a different mapping.
-- `categories[].keypoints` becomes the class layout; `categories[].skeleton` becomes `skeleton`.
-- Skeleton indices are read as one-based, the COCO convention. Pass `--skeleton_base 0` for a file that writes them zero-based.
-- An instance's `keypoints` triplets are read in the category's declared order. A slot with visibility 0 is dropped, leaving the declared slot empty rather than putting a keypoint at the origin.
-- **COCO states no flip symmetry.** Without `--flip_map` every class declares `horizontalFlip: null`. Supply a json mapping each class id to its flip, as keypoint names or local indices:
+**1. Let a converter emit it.** `coco_to_json`, `yolo_to_json` derive what they can from the source, and `json_to_factory` writes the result into every directory the dataset can be imported from. What the source leaves you to supply:
 
-  ```json
-  { "bolt": ["head", "right-flange", "left-flange"] }
-  ```
+| Source | Supplies | You add |
+| --- | --- | --- |
+| COCO | `categories[].keypoints` and `[].skeleton` | `--flip_map` — COCO states no mirror symmetry |
+| YOLO | `kpt_names`/`kpt_shape` layouts, and mirror pairs from `flip_idx` | `--keypoint_names`, only when the yaml declares no `kpt_names` |
 
-- `--segmentation` converts instances of classes declaring no keypoints to polygons or bitmasks instead of boxes.
+**2. Author one** — for Label Studio, or to give several datasets one shared declaration.
+`build_pose_schema` takes the same `Label` objects the converters use and validates the result:
 
-## YOLO specifics
+```python
+import json
+from lmi_utils.dataset_utils.representations import Label
+from lmi_utils.label_utils.json_to_factory import build_pose_schema
 
-- `names` becomes the class ids, `kpt_shape` the slot count and coordinate dimensions.
-- A YOLO pose model has one global slot layout, so a class owning fewer slots pads the rest. `kpt_names`
-  names each class's slots and may key them by numeric class index, as Ultralytics does, or by class name, as
-  Factory's exporter does. Factory padding is marked `__unused_*`; those slots are dropped from the class's
-  declared layout.
-- Without `kpt_names` the file states one layout for the whole model, which is the only sound reading of it: every class gets all K slots, named by `--keypoint_names` or positionally.
-- `flip_idx` is global. It is translated into each class's local order, and a class whose mirror leaves the slots it owns declares no flip — a partial mapping would drop keypoints under a flip rather than mirror them.
-- A zeroed slot is unobserved and produces no annotation.
-- Every split the yaml declares is converted into one dataset, with each image keeping its path relative to the dataset root so same-named images in different splits stay distinct.
-- A stale `path` in the yaml (it records where the dataset was written) falls back to the dataset root.
+schema = build_pose_schema([
+    Label(id="bolt", keypoints=["head", "left-flange", "right-flange"],
+          horizontal_flip_pairs=[["left-flange", "right-flange"]]),
+    Label(id="tab", keypoints=["left-edge", "right-edge"], horizontal_flip_pairs=None),
+])
+json.dump(schema, open("schema.json", "w"), indent=2)
+```
 
-## Label Studio specifics
+Its output is what `lst_to_json -ps` expects, and the fields carry through `labels.json` on `Label` as `keypoints`, `horizontal_flip_pairs` and `skeleton`.
 
-- The export must be the full `JSON` format, not `JSON-MIN`, which drops the fields the converter needs.
-- **A Label Studio export states no keypoint layout.** Its labeling configuration declares one flat keypoint vocabulary for the whole project, with no per-class order, flip or skeleton, so the declaration has to be supplied: `-ps` takes the source Factory dataset directory, its `.meta.json`, or a bare `annotationSchema` object. It is optional -- without it the export still converts, keypoint labels become classes of their own, and no `.meta.json` is written, which is a dataset Factory can import but not train pose on.
-- Where to get the schema: a project Factory created already has one, on the annotation project and on the dataset it came from (the project id is in each task's image URL). For a project built by hand, `--scaffold_schema` writes a draft from the observed annotations to edit and pass back as `-ps`. The draft is a starting point, not a contract -- it groups keypoints under the box class that contains them, in the order the annotator worked, and always leaves `horizontalFlip: null`, because which slot mirrors which is knowledge about the object and appears nowhere in the data.
-- With `-ps` given, a label the schema declares as a keypoint becomes a slot of its class rather than a class of its own, and a keypoint naming no declared slot is rejected.
-- Native Label Studio keypoint nesting links a keypoint to its box with `parentID`. Older generic relation records
-  are accepted as a fallback, in either direction, but cannot override `parentID`. Region ids repeat across
-  completions, so ownership is resolved within the completion that declares it. A keypoint with neither form
-  falls back to containment, which is ambiguous when boxes overlap.
-- **Label Studio allows a keypoint that belongs to no box, which a pose model cannot train on.** `json_to_factory --unlinked_keypoints` decides what becomes of one: `error` (the default, rejecting the dataset), `drop`, or `keep` it in Factory unlinked.
-- Label Studio has no visibility concept, so keypoints arrive without one and Factory reads them as visible.
-- Images are matched by the name the export gives them, then by basename and by basename without extension. A project Factory created identifies images by an API URL (`.../items/<item id>/image`) whose tail is a fixed word, so the item id is matched too -- name the images after their item id and they resolve. Two tasks resolving to one image is an error, as is an image whose size is not the one the task was annotated on.
-- `rectanglelabels`, `polygonlabels`, `brushlabels` and `keypointlabels` convert; anything else is skipped with a warning. Brush masks are the only kind that needs `label_studio_sdk` installed.
+## COCO
+
+```bash
+python3 -m lmi_utils.label_utils.coco_to_json -j annotations.json -i images/
+python3 -m lmi_utils.label_utils.json_to_factory -i images/ -o factory_dataset/
+
+# Rename classes, declare mirror pairs, read zero-based skeletons, keep segmentation
+python3 -m lmi_utils.label_utils.coco_to_json -j annotations.json -i images/ \
+  --class_map class_map.json --flip_map flip_map.json --skeleton_base 0 --segmentation
+```
+
+- `--class_map` maps a COCO category name to a Factory class id: `{"Bolt": "bolt"}`. Without it the category name is the class id.
+- `--flip_map` maps a class id to its mirror pairs: `{"bolt": [["left-flange", "right-flange"]]}`. **COCO declares no flip symmetry**,
+  so without it every class gets `horizontalFlipPairs: null`.
+- `--skeleton_base 0` for zero-based skeleton indices; the COCO convention of one-based is assumed.
+- `--segmentation` writes classes with no keypoints as polygons or bitmasks instead of boxes.
+- A keypoint with visibility 0 leaves its declared slot empty rather than landing at the origin.
+
+## YOLO
+
+```bash
+python3 -m lmi_utils.label_utils.yolo_to_json -y dataset.yaml
+python3 -m lmi_utils.label_utils.json_to_factory -i <dataset root> -o factory_dataset/
+
+# Name the slots of a yaml that declares no kpt_names, and convert two splits instead of three
+python3 -m lmi_utils.label_utils.yolo_to_json -y dataset.yaml \
+  --keypoint_names head,left-flange,right-flange --splits train,val
+```
+
+- `names` becomes the class ids and `kpt_shape` the slot count.
+- `kpt_names` names each class's slots, keyed by class index (as Ultralytics writes it) or class name (as Factory's exporter does).
+  Slots marked `__unused_*` are dropped. Without it, every class gets all K slots, named by `--keypoint_names` or positionally.
+- The global `flip_idx` is restated as each class's own mirror pairs. A class whose mirror leaves the slots it owns declares no symmetry
+  rather than a partial one.
+- `--splits` defaults to `train,val,test`. Each becomes one dataset, images keeping their path relative to the dataset root so
+  same-named images stay distinct.
+- A stale `path` in the yaml falls back to the dataset root, or to `--root`.
+
+## Label Studio
+
+Export the full `JSON`, **not** `JSON-MIN`, which drops fields the converter needs.
+
+```bash
+# With the schema of the Factory dataset the project came from
+python3 -m lmi_utils.label_utils.lst_to_json -i export.json -imgs images/ -of images/labels.json -ps source_dataset/
+python3 -m lmi_utils.label_utils.json_to_factory -i images/ -o factory_dataset/
+
+# No schema yet: draft one from the first export, edit it, then pass it to every export
+python3 -m lmi_utils.label_utils.lst_to_json -i export1.json -imgs images1/ -of images1/labels.json --scaffold_schema draft.json
+# edit draft.json: fix the slot order, add the keypoints this export happens not to show, fill in horizontalFlipPairs or put a null
+python3 -m lmi_utils.label_utils.lst_to_json -i export1.json -imgs images1/ -of images1/labels.json -ps draft.json
+python3 -m lmi_utils.label_utils.lst_to_json -i export2.json -imgs images2/ -of images2/labels.json -ps draft.json
+
+# Drop keypoints that belong to no box instead of rejecting the dataset
+python3 -m lmi_utils.label_utils.json_to_factory -i images/ -o factory_dataset/ --unlinked_keypoints drop
+```
+
+`-ps` takes a Factory dataset directory, its `.meta.json`, or a bare schema file. Skip it and the export still converts, but keypoint
+labels become classes of their own and the result is not pose-trainable.
+
+- A project Factory created already has a schema, on the annotation project and on its source dataset; the project id is in each task's
+  image URL.
+- Otherwise `--scaffold_schema` drafts one, which needs finishing before use: it carries only the keypoints its own export happens to
+  show, in the order the annotator worked, and always leaves `horizontalFlipPairs: null`.
+- **Use one schema for every dataset of the same classes.** Factory will not train on datasets whose shared class declares different
+  keypoint names or mirror pairs — the orders may differ, the names may not. Drafting per export invites exactly that.
+
+### Other notes
+
+- A keypoint label the schema declares becomes a slot of its class; one naming no declared slot is rejected.
+- `--unlinked_keypoints` is `error` (default), `drop` or `keep`, since a pose model cannot train on a keypoint no box owns.
+- Keypoints link to their box by `parentID`, falling back to older relation records and then to containment, which is ambiguous when
+  boxes overlap.
+- Name images after their Factory item id so URL-identified images resolve. Two tasks resolving to one image is an error, as is a size
+  that differs from the annotated one.
+- Keypoints arrive with no visibility, which Factory reads as visible.
+- `rectanglelabels`, `polygonlabels`, `brushlabels` and `keypointlabels` convert; anything else is skipped with a warning.
+  Brush masks need `label_studio_sdk`.

@@ -502,10 +502,10 @@ class Label(Base):
     color: Optional[str] = None
     annotation_type: AnnotationType = None
     keypoints: Optional[List[str]] = None
-    # Declared pose contract, carried alongside the layout: indices into `keypoints` giving the slot each one
-    # becomes under a horizontal mirror, and undirected skeleton edges as index pairs. None means undeclared,
-    # which for the flip means mirroring is unsafe rather than that it is the identity.
-    horizontal_flip: Optional[List[int]] = None
+    # Declared pose contract, carried alongside the layout: the keypoint names that exchange places under a
+    # horizontal mirror, and undirected skeleton edges as index pairs. None means the symmetry is undeclared,
+    # so mirroring is unsafe -- an empty list means the class mirrors onto itself.
+    horizontal_flip_pairs: Optional[List[List[str]]] = None
     skeleton: Optional[List[List[int]]] = None
 
     @classmethod
@@ -515,7 +515,7 @@ class Label(Base):
             color=data.get("color"),
             annotation_type=data.get("annotation_type"),
             keypoints=data.get("keypoints"),
-            horizontal_flip=data.get("horizontal_flip"),
+            horizontal_flip_pairs=data.get("horizontal_flip_pairs"),
             skeleton=data.get("skeleton"),
         )
 

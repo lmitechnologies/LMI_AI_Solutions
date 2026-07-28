@@ -17,7 +17,11 @@ POSE_SCHEMA = {
     "version": 1,
     "coordinateDimensions": 3,
     "classes": {
-        "bolt": {"keypoints": ["head", "left-flange", "right-flange"], "horizontalFlip": [0, 2, 1], "skeleton": [[0, 1], [0, 2]]},
+        "bolt": {
+            "keypoints": ["head", "left-flange", "right-flange"],
+            "horizontalFlipPairs": [["left-flange", "right-flange"]],
+            "skeleton": [[0, 1], [0, 2]],
+        },
     },
 }
 

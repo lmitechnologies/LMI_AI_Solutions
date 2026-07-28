@@ -22,7 +22,6 @@ from lmi_utils.dataset_utils.representations import (
     Polygon,
     PolygonAnnotation,
 )
-from lmi_utils.label_utils.json_to_factory import flip_to_indices
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +43,7 @@ def load_class_map(path: Optional[Path]) -> Dict[str, str]:
 
 
 def load_flip_map(path: Optional[Path]) -> Dict[str, List]:
-    """A Factory class id to horizontal flip mapping, whose entries are keypoint names or local indices."""
+    """A Factory class id to the keypoint-name pairs that exchange places when an image is mirrored."""
     if path is None:
         return {}
     with open(path) as f:
@@ -59,8 +58,8 @@ def build_labels(
 ) -> Dict[int, Label]:
     """The Factory label of each COCO category, keyed by category id.
 
-    COCO carries no flip symmetry, so a class reaches Factory with `horizontalFlip: null` -- importable but not
-    horizontally flippable -- unless `flip_map` supplies one.
+    COCO carries no flip symmetry, so a class reaches Factory with `horizontalFlipPairs: null` -- importable but
+    not horizontally flippable -- unless `flip_map` supplies the mirror pairs.
     """
     labels = {}
     for category in categories:
@@ -75,7 +74,7 @@ def build_labels(
             id=class_id,
             annotation_type=AnnotationType.BOX,
             keypoints=list(category.keypoints) if category.keypoints else None,
-            horizontal_flip=flip_to_indices(category.keypoints or [], flip),
+            horizontal_flip_pairs=flip,
             skeleton=skeleton,
         )
     return labels
@@ -192,8 +191,8 @@ def main():
         "--flip_map",
         type=Path,
         default=None,
-        help="[optional] a json file mapping a Factory class id to its horizontal flip, as keypoint names or local "
-        "indices. Classes left out declare no flip, which blocks horizontal flipping during training.",
+        help="[optional] a json file mapping a Factory class id to its horizontal mirror pairs, each a pair of "
+        "keypoint names. Classes left out declare no symmetry, which blocks horizontal flipping during training.",
     )
     parser.add_argument(
         "--skeleton_base",

@@ -73,7 +73,7 @@ def test_categories_become_declared_pose_classes(tmp_path):
         "coordinateDimensions": 3,
         "classes": {
             # COCO carries no flip symmetry, and a skeleton it writes one-based reaches Factory zero-based.
-            "bolt": {"keypoints": KEYPOINTS, "horizontalFlip": None, "skeleton": [[0, 1], [0, 2]]},
+            "bolt": {"keypoints": KEYPOINTS, "horizontalFlipPairs": None, "skeleton": [[0, 1], [0, 2]]},
         },
     }
 
@@ -88,10 +88,10 @@ def test_a_zero_based_skeleton_is_kept_when_declared(tmp_path):
 def test_a_supplied_flip_enables_mirroring(tmp_path):
     coco_file, image_dir = _coco(tmp_path)
     flip_map = tmp_path / "flip.json"
-    flip_map.write_text(json.dumps({"bolt": ["head", "right-flange", "left-flange"]}))
+    flip_map.write_text(json.dumps({"bolt": [["left-flange", "right-flange"]]}))
     output_dir = _convert(tmp_path, coco_file, image_dir, flip_map_file=flip_map)
 
-    assert _schema(output_dir)["classes"]["bolt"]["horizontalFlip"] == [0, 2, 1]
+    assert _schema(output_dir)["classes"]["bolt"]["horizontalFlipPairs"] == [["left-flange", "right-flange"]]
 
 
 def test_category_names_may_be_mapped_to_factory_class_ids(tmp_path):
@@ -126,7 +126,7 @@ def test_an_instance_disagreeing_with_its_category_layout_is_rejected(tmp_path):
 def test_a_flip_for_a_class_without_keypoints_is_rejected(tmp_path):
     coco_file, image_dir = _coco(tmp_path, keypoints=None, instance_keypoints=None)
     flip_map = tmp_path / "flip.json"
-    flip_map.write_text(json.dumps({"bolt": [0, 1]}))
+    flip_map.write_text(json.dumps({"bolt": [["head", "left-flange"]]}))
 
     with pytest.raises(ValueError, match="declares no keypoints"):
         _convert(tmp_path, coco_file, image_dir, flip_map_file=flip_map)

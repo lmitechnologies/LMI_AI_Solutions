@@ -22,7 +22,7 @@ from lmi_utils.dataset_utils.representations import (
     Polygon,
 )
 from lmi_utils.label_utils.bbox_utils import convert_from_ls
-from lmi_utils.label_utils.json_to_factory import DATASET_META_FILE, flip_to_indices, scaffold_pose_schema
+from lmi_utils.label_utils.json_to_factory import DATASET_META_FILE, scaffold_pose_schema
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
 logger = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ def pose_labels(pose_schema: Optional[dict]) -> Tuple[List[Label], Set[str]]:
                 id=str(class_id),
                 annotation_type=AnnotationType.BOX,
                 keypoints=keypoints or None,
-                horizontal_flip=flip_to_indices(keypoints, declaration.get("horizontalFlip")),
+                horizontal_flip_pairs=declaration.get("horizontalFlipPairs"),
                 skeleton=declaration.get("skeleton"),
             )
         )

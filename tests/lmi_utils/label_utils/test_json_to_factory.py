@@ -43,7 +43,7 @@ def _meta(output_dir):
 def test_declared_schema_reaches_the_root_meta(tmp_path):
     # The layout, its flip and its skeleton are declarations: they must survive conversion whole, including the
     # slot no annotation in this dataset observes.
-    label = Label(id="bolt", keypoints=BOLT_KEYPOINTS, horizontal_flip=[0, 2, 1], skeleton=[[0, 1], [0, 2]])
+    label = Label(id="bolt", keypoints=BOLT_KEYPOINTS, horizontal_flip_pairs=[["left-flange", "right-flange"]], skeleton=[[0, 1], [0, 2]])
     output_dir = _convert(tmp_path, _pose_dataset(label))
 
     assert _meta(output_dir)["annotationSchema"] == {
@@ -51,7 +51,7 @@ def test_declared_schema_reaches_the_root_meta(tmp_path):
         "version": 1,
         "coordinateDimensions": 3,
         "classes": {
-            "bolt": {"keypoints": BOLT_KEYPOINTS, "horizontalFlip": [0, 2, 1], "skeleton": [[0, 1], [0, 2]]},
+            "bolt": {"keypoints": BOLT_KEYPOINTS, "horizontalFlipPairs": [["left-flange", "right-flange"]], "skeleton": [[0, 1], [0, 2]]},
         },
     }
 
@@ -60,24 +60,31 @@ def test_a_class_with_no_declared_flip_declares_none(tmp_path):
     # Importable, but training may not flip it horizontally -- which is the point of stating it explicitly.
     output_dir = _convert(tmp_path, _pose_dataset(Label(id="bolt", keypoints=BOLT_KEYPOINTS)))
 
-    assert _meta(output_dir)["annotationSchema"]["classes"]["bolt"]["horizontalFlip"] is None
+    assert _meta(output_dir)["annotationSchema"]["classes"]["bolt"]["horizontalFlipPairs"] is None
 
 
-def test_a_flip_may_be_declared_by_keypoint_name():
-    schema = build_pose_schema([Label(id="bolt", keypoints=BOLT_KEYPOINTS, horizontal_flip=["head", "right-flange", "left-flange"])])
+def test_a_symmetry_that_swaps_nothing_is_not_the_same_as_declaring_none():
+    # An empty list is a statement: this class mirrors onto itself. None says the symmetry is unknown.
+    schema = build_pose_schema([Label(id="bolt", keypoints=BOLT_KEYPOINTS, horizontal_flip_pairs=[])])
 
-    assert schema["classes"]["bolt"]["horizontalFlip"] == [0, 2, 1]
+    assert schema["classes"]["bolt"]["horizontalFlipPairs"] == []
 
 
-def test_a_flip_that_is_not_an_involution_is_rejected():
-    # Flipping an image twice has to restore every keypoint, so a rotation of the slots is not a mirror.
-    with pytest.raises(ValueError, match="not an involution"):
-        build_pose_schema([Label(id="bolt", keypoints=BOLT_KEYPOINTS, horizontal_flip=[1, 2, 0])])
+def test_a_keypoint_paired_with_itself_is_rejected():
+    with pytest.raises(ValueError, match="with itself"):
+        build_pose_schema([Label(id="bolt", keypoints=BOLT_KEYPOINTS, horizontal_flip_pairs=[["head", "head"]])])
+
+
+def test_a_keypoint_used_in_two_pairs_is_rejected():
+    with pytest.raises(ValueError, match="more than one horizontal flip pair"):
+        build_pose_schema(
+            [Label(id="bolt", keypoints=BOLT_KEYPOINTS, horizontal_flip_pairs=[["head", "left-flange"], ["head", "right-flange"]])]
+        )
 
 
 def test_a_flip_naming_an_undeclared_keypoint_is_rejected():
-    with pytest.raises(ValueError, match="not one of the keypoints"):
-        build_pose_schema([Label(id="bolt", keypoints=BOLT_KEYPOINTS, horizontal_flip=["head", "elbow", "left-flange"])])
+    with pytest.raises(ValueError, match="which it does not declare"):
+        build_pose_schema([Label(id="bolt", keypoints=BOLT_KEYPOINTS, horizontal_flip_pairs=[["head", "elbow"]])])
 
 
 def test_a_skeleton_edge_outside_the_layout_is_rejected():
@@ -90,7 +97,7 @@ def test_a_scaffold_groups_observed_keypoints_under_their_box_class():
     # Label Studio. The flip stays null: no annotation says which slot mirrors which.
     dataset = _pose_dataset(Label(id="bolt"))
 
-    assert scaffold_pose_schema(dataset)["classes"] == {"bolt": {"keypoints": ["head", "left-flange"], "horizontalFlip": None}}
+    assert scaffold_pose_schema(dataset)["classes"] == {"bolt": {"keypoints": ["head", "left-flange"], "horizontalFlipPairs": None}}
 
 
 def test_a_scaffold_skips_keypoints_it_cannot_attribute():

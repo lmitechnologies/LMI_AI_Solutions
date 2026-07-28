@@ -75,9 +75,9 @@ def test_per_class_layouts_drop_the_slots_a_class_does_not_own(tmp_path):
     output_dir = _convert(tmp_path, _write_dataset(tmp_path, [BOLT_ROW, TAB_ROW]))
 
     assert _schema(output_dir)["classes"] == {
-        "bolt": {"keypoints": ["head", "left-flange", "right-flange"], "horizontalFlip": [0, 2, 1]},
-        # The global flip is translated into each class's own order, so tab's pair mirrors at local 0 and 1.
-        "tab": {"keypoints": ["left-edge", "right-edge"], "horizontalFlip": [1, 0]},
+        "bolt": {"keypoints": ["head", "left-flange", "right-flange"], "horizontalFlipPairs": [["left-flange", "right-flange"]]},
+        # The global flip is restated as each class's own mirror pairs, so tab keeps only its own two names.
+        "tab": {"keypoints": ["left-edge", "right-edge"], "horizontalFlipPairs": [["left-edge", "right-edge"]]},
     }
 
 
@@ -90,8 +90,8 @@ def test_ultralytics_numeric_kpt_name_keys_are_resolved_by_class_index(tmp_path)
     output_dir = _convert(tmp_path, _write_dataset(tmp_path, [BOLT_ROW, TAB_ROW], kpt_names=kpt_names))
 
     assert _schema(output_dir)["classes"] == {
-        "bolt": {"keypoints": ["head", "left-flange", "right-flange"], "horizontalFlip": [0, 2, 1]},
-        "tab": {"keypoints": ["left-edge", "right-edge"], "horizontalFlip": [1, 0]},
+        "bolt": {"keypoints": ["head", "left-flange", "right-flange"], "horizontalFlipPairs": [["left-flange", "right-flange"]]},
+        "tab": {"keypoints": ["left-edge", "right-edge"], "horizontalFlipPairs": [["left-edge", "right-edge"]]},
     }
 
 
@@ -133,7 +133,9 @@ def test_a_file_declaring_no_kpt_names_gives_every_class_the_whole_layout(tmp_pa
     )
     output_dir = _convert(tmp_path, dataset_yaml, keypoint_names=["left-flange", "right-flange"])
 
-    assert _schema(output_dir)["classes"] == {"bolt": {"keypoints": ["left-flange", "right-flange"], "horizontalFlip": [1, 0]}}
+    assert _schema(output_dir)["classes"] == {
+        "bolt": {"keypoints": ["left-flange", "right-flange"], "horizontalFlipPairs": [["left-flange", "right-flange"]]}
+    }
 
 
 def test_unnamed_keypoints_are_named_positionally(tmp_path):
@@ -142,16 +144,16 @@ def test_unnamed_keypoints_are_named_positionally(tmp_path):
     )
     output_dir = _convert(tmp_path, dataset_yaml)
 
-    assert _schema(output_dir)["classes"]["bolt"] == {"keypoints": ["point-0", "point-1"], "horizontalFlip": None}
+    assert _schema(output_dir)["classes"]["bolt"] == {"keypoints": ["point-0", "point-1"], "horizontalFlipPairs": None}
 
 
-def test_a_flip_leaving_the_class_declares_no_flip(tmp_path):
+def test_a_flip_leaving_the_class_declares_no_symmetry(tmp_path):
     # Slot 1 mirrors to slot 3, which bolt does not own. A partial mapping would drop the keypoint under a flip
     # instead of mirroring it, so the class declares none.
     flip_idx = [0, 3, 4, 1, 2]
     output_dir = _convert(tmp_path, _write_dataset(tmp_path, [BOLT_ROW, TAB_ROW], flip_idx=flip_idx))
 
-    assert _schema(output_dir)["classes"]["bolt"]["horizontalFlip"] is None
+    assert _schema(output_dir)["classes"]["bolt"]["horizontalFlipPairs"] is None
 
 
 def test_two_dimensional_keypoints_carry_no_visibility(tmp_path):

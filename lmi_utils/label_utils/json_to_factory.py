@@ -3,7 +3,7 @@ import json
 import logging
 import shutil
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Union
+from typing import Dict, Iterable, List, Optional
 
 import cv2
 
@@ -74,21 +74,6 @@ def to_dict(annot: Annotation):
     return _without_nulls(json.loads(annot.to_json()))
 
 
-def flip_to_indices(keypoints: Sequence[str], flip: Optional[Sequence[Union[int, str]]]) -> Optional[List[int]]:
-    """Resolve a declared horizontal flip to indices into `keypoints`, accepting either indices or keypoint names."""
-    if flip is None:
-        return None
-    resolved = []
-    for entry in flip:
-        if isinstance(entry, str):
-            if entry not in keypoints:
-                raise ValueError(f"Flip target '{entry}' is not one of the keypoints {list(keypoints)}")
-            resolved.append(keypoints.index(entry))
-        else:
-            resolved.append(int(entry))
-    return resolved
-
-
 def collect_pose_schema_issues(schema: dict) -> List[str]:
     """Every structural problem in a pose schema, so a bad conversion is fixed in one pass instead of one error per retry."""
     issues = []
@@ -119,23 +104,23 @@ def collect_pose_schema_issues(schema: dict) -> List[str]:
             else:
                 seen_edges.add((min(start, end), max(start, end)))
 
-        flip = class_schema.get("horizontalFlip")
-        if flip is None:
-            continue
-        if len(flip) != len(keypoints):
-            issues.append(f"{where} has a {len(flip)}-entry horizontalFlip for {len(keypoints)} keypoints")
-        elif any(target < 0 or target >= len(keypoints) for target in flip):
-            issues.append(f"{where} has a horizontalFlip entry outside its {len(keypoints)} keypoint slots")
-        elif len(set(flip)) != len(flip):
-            issues.append(f"{where} has a horizontalFlip that is not a permutation")
-        else:
-            # Flipping an image twice must restore every keypoint, so the mapping has to be its own inverse.
-            not_involution = next((index for index, target in enumerate(flip) if flip[target] != index), None)
-            if not_involution is not None:
-                issues.append(
-                    f"{where} has a horizontalFlip that is not an involution: "
-                    f"slot {not_involution} maps to {flip[not_involution]}, which maps to {flip[flip[not_involution]]}"
-                )
+        # Disjoint named swaps are self-inverse by construction, so mirroring twice restores every keypoint with
+        # no permutation invariant left to check; only membership and disjointness can go wrong.
+        swapped = set()
+        for pair in class_schema.get("horizontalFlipPairs") or []:
+            if len(pair) != 2:
+                issues.append(f"{where} has a horizontal flip entry {list(pair)} that is not a pair of keypoints")
+                continue
+            first, second = pair
+            undeclared = [name for name in pair if name not in keypoints]
+            if undeclared:
+                issues.append(f"{where} has a horizontal flip pair naming {', '.join(undeclared)}, which it does not declare")
+            elif first == second:
+                issues.append(f"{where} pairs keypoint '{first}' with itself under a horizontal flip")
+            elif swapped & {first, second}:
+                issues.append(f"{where} uses {', '.join(sorted(swapped & {first, second}))} in more than one horizontal flip pair")
+            else:
+                swapped.update(pair)
 
     return issues
 
@@ -144,8 +129,8 @@ def build_pose_schema(labels: Iterable[Label]) -> Optional[dict]:
     """The declared pose schema of the labels carrying a keypoint layout, or None when none do.
 
     A layout is a declaration, never a tally of observations: a class keeps every slot it declares even when no
-    image in this dataset observes it. A label with no declared flip gets `horizontalFlip: null`, which imports
-    but prevents horizontal flipping during training.
+    image in this dataset observes it. A label with no declared symmetry gets `horizontalFlipPairs: null`, which
+    imports but prevents horizontal flipping during training.
 
     Raises:
         ValueError: if the resulting schema is structurally invalid.
@@ -156,7 +141,11 @@ def build_pose_schema(labels: Iterable[Label]) -> Optional[dict]:
             continue
         class_schema = {
             "keypoints": list(label.keypoints),
-            "horizontalFlip": flip_to_indices(label.keypoints, label.horizontal_flip),
+            "horizontalFlipPairs": (
+                [[str(first), str(second)] for first, second in label.horizontal_flip_pairs]
+                if label.horizontal_flip_pairs is not None
+                else None
+            ),
         }
         if label.skeleton:
             class_schema["skeleton"] = [[int(start), int(end)] for start, end in label.skeleton]
@@ -182,7 +171,7 @@ def scaffold_pose_schema(dataset: Dataset) -> dict:
 
     This is authoring help, never a contract. Slot membership and order here are observations, so they are wrong
     the moment a class owns a slot that no image in this dataset shows, and the order is only the order the
-    annotator worked in. The flip is always left null because no annotation can reveal it -- that `left_eye`
+    annotator worked in. The mirror pairs are always left null because no annotation can reveal them -- that `left_eye`
     mirrors to `right_eye` is knowledge about the object, not about the data. Edit the result, then declare it.
 
     Keypoints in more than one box, or in none, are skipped rather than guessed at.
@@ -209,7 +198,7 @@ def scaffold_pose_schema(dataset: Dataset) -> dict:
         "type": POSE_SCHEMA_TYPE,
         "version": POSE_SCHEMA_VERSION,
         "coordinateDimensions": COORDINATE_DIMENSIONS,
-        "classes": {class_id: {"keypoints": keypoints, "horizontalFlip": None} for class_id, keypoints in classes.items()},
+        "classes": {class_id: {"keypoints": keypoints, "horizontalFlipPairs": None} for class_id, keypoints in classes.items()},
     }
 
 
