@@ -593,9 +593,13 @@ def test_box_flip():
         Box(10, 20, 50, 80, 0).flip(flipx=True, w=0)
 
 
-def get_flip_expected_coords(x, y, w, h, angle, flip_w, flip_h, flip_x=False, flip_y=False):
+def get_flip_expected_corners(x, y, w, h, angle, flip_w, flip_h, flip_x=False, flip_y=False):
     """
-    Helper to calculate ground truth for the test.
+    Helper to calculate ground truth for the test: the flipped box's four corners.
+
+    The corners are the box itself. Which of them the flipped box reports as its pivot, and the angle that
+    goes with it, is a choice of representation -- a box lying flat is equally the corner on its left at 0
+    degrees or the corner on its right at 90 -- so the test compares the geometry rather than the choice.
     """
     # 1. Get exact corners of the input box
     angle_rad = np.deg2rad(angle)
@@ -619,12 +623,7 @@ def get_flip_expected_coords(x, y, w, h, angle, flip_w, flip_h, flip_x=False, fl
     if flip_y:
         pts[:, 1] = flip_h - pts[:, 1]
 
-    # 3. Find the pivot
-    if angle != 90:
-        ind = np.lexsort((pts[:, 0], pts[:, 1]))
-    else:
-        ind = np.lexsort((-pts[:, 0], pts[:, 1]))
-    return pts[ind[0]]
+    return pts[np.lexsort((pts[:, 0], pts[:, 1]))]
 
 
 @pytest.mark.parametrize(
@@ -652,10 +651,11 @@ def test_flip_rotated_robust(box_in, flip_kwargs):
     flip_x = flip_kwargs.get("flipx", False)
     flip_y = flip_kwargs.get("flipy", False)
 
-    expected_pt = get_flip_expected_coords(x1, y1, w_box, h_box, a, flip_w, flip_h, flip_x, flip_y)
+    expected = get_flip_expected_corners(x1, y1, w_box, h_box, a, flip_w, flip_h, flip_x, flip_y)
 
-    assert box.x_min == pytest.approx(expected_pt[0], abs=1.0)
-    assert box.y_min == pytest.approx(expected_pt[1], abs=1.0)
+    corners = np.array(box._rotated_corners(), dtype=float)
+    corners = corners[np.lexsort((corners[:, 0], corners[:, 1]))]
+    assert corners == pytest.approx(expected, abs=1.0)
 
     # verify the width and height
     old_dims = sorted([x2 - x1, y2 - y1])

@@ -60,8 +60,10 @@ class Base:
 
     def save(self, path: str):
         """Save the dataclass as a JSON file."""
-        # create directory if it doesn't exist
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        # create directory if it doesn't exist; a bare filename has none
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         with open(path, "w") as f:
             f.write(self.to_json())
 
