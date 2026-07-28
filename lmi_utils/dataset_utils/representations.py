@@ -307,7 +307,14 @@ class Box(Base):
         return Polygon(points=pts)
 
     def point_in_box(self, x: int, y: int):
-        return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
+        # The box is its extent rotated `angle` about (x_min, y_min), so a rotated box tests the point in the
+        # box's own frame rather than in the extent it happens to span
+        dx, dy = x - self.x_min, y - self.y_min
+        if self.angle:
+            rad = np.deg2rad(self.angle)
+            cos, sin = np.cos(rad), np.sin(rad)
+            dx, dy = dx * cos + dy * sin, -dx * sin + dy * cos
+        return 0 <= dx <= self.x_max - self.x_min and 0 <= dy <= self.y_max - self.y_min
 
 
 @dataclass
@@ -672,16 +679,18 @@ class FileAnnotations(Base):
         self._get_target_list(list_type)  # validates list_type
         setattr(self, list_type, annotations)
 
-    def assign_keypoints(self, target_ids=None, unassigned: str = "error"):
+    def assign_keypoints(self, target_ids=None, unassigned: str = "error", ambiguous: str = "error"):
         """Link each keypoint to the box that owns it, by its existing link or else by containment.
 
-        `unassigned` says what to become of a keypoint no box owns: "error", "drop" it, or "keep" it unlinked.
-        Sources that allow a standalone keypoint, Label Studio among them, need one of the latter two. Ambiguity
-        is a different matter and always raises: a keypoint inside several boxes needs an explicit link, and
-        picking one would silently attach it to the wrong instance.
+        `unassigned` says what to become of a keypoint no box owns, and `ambiguous` what to become of one
+        several boxes contain: "error", "drop" it, or "keep" it unlinked. Sources that allow a standalone
+        keypoint, Label Studio among them, need one of the latter two. Neither case is ever guessed at -- an
+        ambiguous keypoint needs an explicit link, and picking a box for it would silently attach it to the
+        wrong instance.
         """
-        if unassigned not in UNASSIGNED_KEYPOINT_POLICIES:
-            raise ValueError(f"unassigned must be one of {UNASSIGNED_KEYPOINT_POLICIES}, got '{unassigned}'")
+        for name, policy in (("unassigned", unassigned), ("ambiguous", ambiguous)):
+            if policy not in UNASSIGNED_KEYPOINT_POLICIES:
+                raise ValueError(f"{name} must be one of {UNASSIGNED_KEYPOINT_POLICIES}, got '{policy}'")
         target_ids = target_ids or []
         boxes_by_id = {annotation.id: annotation for annotation in self.annotations if annotation.type == AnnotationType.BOX}
         dropped = []
@@ -701,16 +710,21 @@ class FileAnnotations(Base):
             ]
             if len(candidates) == 1:
                 annotation.bounding_box_id = candidates[0].id
-            elif not candidates:
-                if unassigned == "error":
-                    raise ValueError(f"Keypoint {annotation.id} not assigned to any box")
-                if unassigned == "drop":
-                    dropped.append(annotation)
+                continue
+
+            if candidates:
+                policy, reason = ambiguous, f"Keypoint {annotation.id} is contained by multiple boxes"
             else:
-                raise ValueError(f"Keypoint {annotation.id} is contained by multiple boxes")
+                policy, reason = unassigned, f"Keypoint {annotation.id} not assigned to any box"
+            if policy == "error":
+                raise ValueError(reason)
+            if policy == "drop":
+                dropped.append(annotation)
+            else:
+                logger.warning(f"{reason} in {self.path}; left unlinked")
 
         if dropped:
-            logger.warning(f"Dropped {len(dropped)} keypoint(s) owned by no box in {self.path}")
+            logger.warning(f"Dropped {len(dropped)} keypoint(s) with no unambiguous owning box in {self.path}")
             dropped_ids = {annotation.id for annotation in dropped}
             self.annotations = [annotation for annotation in self.annotations if annotation.id not in dropped_ids]
 

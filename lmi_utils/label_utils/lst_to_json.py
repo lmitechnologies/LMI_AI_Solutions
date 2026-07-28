@@ -369,16 +369,21 @@ def get_annotations_from_json(path_json, images_dir, background=False, pose_sche
             if declared is not None and declared != (width, height):
                 raise ValueError(f"'{f}' is {width}x{height}, but '{url}' was annotated on a {declared[0]}x{declared[1]} image")
             if file_annotations or pred_annotations:
-                annotations.append(
-                    FileAnnotations(
-                        id=str(file_id),
-                        path=f,
-                        height=height,
-                        width=width,
-                        annotations=file_annotations,
-                        predictions=pred_annotations,
-                    )
+                file_record = FileAnnotations(
+                    id=str(file_id),
+                    path=f,
+                    height=height,
+                    width=width,
+                    annotations=file_annotations,
+                    predictions=pred_annotations,
                 )
+                # A keypoint drawn in Label Studio is a top-level region: `parentID` exists only where a task was
+                # seeded with linked keypoints or an annotator nested them by hand, so most exports state
+                # ownership through geometry alone. Neither unowned nor ambiguous keypoints stop the conversion
+                # here -- Label Studio projects legitimately hold standalone keypoints, and the export is worth
+                # reading whole -- but they reach Factory unlinked, which rejects them by name.
+                file_record.assign_keypoints(unassigned="keep", ambiguous="keep")
+                annotations.append(file_record)
                 if file_annotations:
                     cnt_image += 1
                 else:

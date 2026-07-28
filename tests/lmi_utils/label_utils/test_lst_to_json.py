@@ -1,10 +1,11 @@
 import json
+import logging
 
 import cv2
 import numpy as np
 import pytest
 
-from lmi_utils.dataset_utils.representations import Dataset
+from lmi_utils.dataset_utils.representations import AnnotationType, Dataset
 from lmi_utils.label_utils.json_to_factory import convert_json_to_factory
 from lmi_utils.label_utils.lst_to_json import get_annotations_from_json, load_pose_schema
 
@@ -266,3 +267,34 @@ def test_an_export_without_a_schema_converts_as_before(tmp_path):
 
     assert not (output_dir / ".meta.json").exists()
     assert [annotation["type"] for annotation in _annotations(output_dir)] == ["Box"]
+
+
+def test_containment_links_keypoints_in_the_exported_json(tmp_path):
+    # Drawing a keypoint in Label Studio makes a top-level region, so an export states ownership only through
+    # geometry. The link is resolved here rather than left to whatever reads the json next.
+    export_path, image_dir = _write_export(tmp_path, ONE_BOLT)
+
+    files, _ = get_annotations_from_json(str(export_path), str(image_dir), pose_schema=POSE_SCHEMA)
+
+    box = next(a for a in files[0].annotations if a.type == AnnotationType.BOX)
+    keypoints = [a for a in files[0].annotations if a.type == AnnotationType.KEYPOINT]
+    assert [kp.bounding_box_id for kp in keypoints] == [box.id, box.id]
+
+
+def test_a_keypoint_geometry_cannot_place_is_left_unlinked(tmp_path, caplog):
+    # A Label Studio project may hold standalone or overlapping keypoints; neither stops the export being read.
+    results = [
+        _box("box1", "bolt", 0, 0, 5, 5),
+        _box("box2", "bolt", 3, 3, 12, 12),
+        _keypoint("kp1", "head", 4, 4),
+        _keypoint("kp2", "head", 18, 18),
+    ]
+    export_path, image_dir = _write_export(tmp_path, results)
+
+    with caplog.at_level(logging.WARNING):
+        files, _ = get_annotations_from_json(str(export_path), str(image_dir), pose_schema=POSE_SCHEMA)
+
+    keypoints = [a for a in files[0].annotations if a.type == AnnotationType.KEYPOINT]
+    assert [kp.bounding_box_id for kp in keypoints] == [None, None]
+    assert "contained by multiple boxes" in caplog.text
+    assert "not assigned to any box" in caplog.text

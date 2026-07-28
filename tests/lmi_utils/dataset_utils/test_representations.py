@@ -130,6 +130,13 @@ def test_box_point_in_box():
     assert not b.point_in_box(5, 50)
 
 
+def test_box_point_in_rotated_box():
+    # A wide box pivoted 90 degrees about its top-left corner stands below that corner, not to its right.
+    b = Box(10, 10, 50, 20, 90)
+    assert b.point_in_box(5, 30)
+    assert not b.point_in_box(30, 15)
+
+
 def test_polygon_from_dict_and_to_yolo():
     poly = Polygon.from_dict({"points": [[10, 20], [30, 20], [30, 40], [10, 40]]})
     yolo = poly.to_yolo(100, 100)
@@ -344,6 +351,32 @@ def test_file_annotations_assign_keypoints_requires_unique_containment():
     annotations.annotations.pop(1)
     annotations.assign_keypoints()
     assert point.bounding_box_id == "box-1"
+
+
+def test_file_annotations_assign_keypoints_may_keep_or_drop_the_ambiguous():
+    # A bulk conversion reports the overlap and moves on; it is still never guessed at.
+    def annotations():
+        point = KeypointAnnotation("point", "nose", Point2d(20, 20))
+        boxes = [
+            BoxAnnotation("box-1", "person", Box(0, 0, 30, 30)),
+            BoxAnnotation("box-2", "person", Box(10, 10, 40, 40)),
+        ]
+        return FileAnnotations("file", "image.jpg", 100, 100, boxes + [point]), point
+
+    kept, point = annotations()
+    kept.assign_keypoints(ambiguous="keep")
+    assert point.bounding_box_id is None
+    assert len(kept.annotations) == 3
+
+    dropped, _ = annotations()
+    dropped.assign_keypoints(ambiguous="drop")
+    assert [annotation.id for annotation in dropped.annotations] == ["box-1", "box-2"]
+
+
+def test_file_annotations_assign_keypoints_rejects_an_unknown_policy():
+    annotations = FileAnnotations("file", "image.jpg", 100, 100, [])
+    with pytest.raises(ValueError, match="ambiguous must be one of"):
+        annotations.assign_keypoints(ambiguous="guess")
 
 
 def test_file_annotations_to_yolo(dummy_file_annotations):
