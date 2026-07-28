@@ -79,14 +79,17 @@ def create_blend_mask(
     y_coords = torch.arange(tile_h, device=device).float()
     x_coords = torch.arange(tile_w, device=device).float()
 
-    # Calculate distance from edges
-    y_dist_from_top = y_coords
-    y_dist_from_bottom = tile_h - 1 - y_coords
-    x_dist_from_left = x_coords
-    x_dist_from_right = tile_w - 1 - x_coords
-
     # create 2D grids
     y_grid, x_grid = torch.meshgrid(y_coords, x_coords, indexing="ij")
+
+    # Calculate distance from edges as 2D grids (not 1D vectors):
+    # torch.minimum(y_blend, x_blend) below combines per-axis blends
+    # elementwise over the full (tile_h, tile_w) surface, which only works
+    # if both operands already have that shape.
+    y_dist_from_top = y_grid
+    y_dist_from_bottom = tile_h - 1 - y_grid
+    x_dist_from_left = x_grid
+    x_dist_from_right = tile_w - 1 - x_grid
 
     # calculate minimum distance to any edge
     y_edge_dist = torch.minimum(y_dist_from_top, y_dist_from_bottom)
