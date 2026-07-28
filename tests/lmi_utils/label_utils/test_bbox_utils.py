@@ -31,7 +31,7 @@ def test_geometric_consistency(angle, size):
 
     # sort the corners
     recon_corners = np.array(sorted(recon_corners, key=lambda p: (p[0], p[1])))
-    gt_corners = np.array(sorted(gt_corners.astype(int), key=lambda p: (p[0], p[1])))
+    gt_corners = np.array(sorted(gt_corners, key=lambda p: (p[0], p[1])))
 
     assert np.allclose(recon_corners, gt_corners), "Reconstructed corners do not match ground truth corners."
 

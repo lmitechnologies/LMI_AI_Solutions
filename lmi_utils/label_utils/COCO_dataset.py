@@ -181,7 +181,7 @@ class COCO_Dataset:
             fname(str): the file name
         """
         img = cv2.imread(annot.path)
-        pts = rotate(*annot.bbox)
+        pts = np.round(rotate(*annot.bbox)).astype(int)
         cv2.drawContours(img, [pts], 0, (0, 255, 0), 3, cv2.LINE_AA)
         if len(annot.segmentation):
             segs = np.array(annot.segmentation).astype(int)

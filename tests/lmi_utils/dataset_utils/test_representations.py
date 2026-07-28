@@ -109,7 +109,7 @@ def test_box_to_mask():
     assert isinstance(m, Mask)
     mask = np.zeros((100, 100), dtype=np.uint8)
     pts = rotate(10, 20, 50 - 10, 80 - 20, 30)
-    cv2.fillPoly(mask, [pts], 1)
+    cv2.fillPoly(mask, [np.round(pts).astype(np.int32)], 1)
     assert np.allclose(m.to_numpy(h=100, w=100), mask)
     poly = b.to_polygon()
     assert np.allclose(poly.to_numpy(), pts)
@@ -160,6 +160,24 @@ def test_polygon_to_mask():
     mask = np.zeros((100, 100), dtype=np.uint8)
     cv2.fillPoly(mask, [np.array(poly.points).astype(np.int32)], 1)
     assert np.allclose(m.to_numpy(h=100, w=100), mask)
+
+
+@pytest.mark.parametrize("angle", [0, 7, 30, 45, 89, -15, -70])
+def test_polygon_to_rbox_round_trips_exactly(angle):
+    """
+    A rotated rectangle survives polygon -> rbox -> polygon.
+
+    Neither direction may round to the pixel grid: a box is stored in image coordinates and only rasterized
+    at the point it is drawn, and a rounding of each corner compounds over an operation chain.
+    """
+    corners = cv2.boxPoints(((123.4, 210.7), (81.3, 46.9), angle))
+
+    round_tripped = np.array(Polygon(points=corners.tolist()).to_rbox().to_polygon().points)
+
+    def sorted_corners(pts):
+        return pts[np.lexsort((pts[:, 0], pts[:, 1]))]
+
+    assert sorted_corners(round_tripped) == pytest.approx(sorted_corners(corners), abs=1e-3)
 
 
 def test_mask_from_dict_and_to_yolo():

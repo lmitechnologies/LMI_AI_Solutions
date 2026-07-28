@@ -47,7 +47,7 @@ def rotate(x, y, w, h, angle=0.0, rot_center="up_left", unit="degree"):
         unit(str): the current unit, either 'degree' or 'radian'. defalt unit is 'degree'
 
     Returns:
-        np.ndarray: 4x2
+        np.ndarray: 4x2 of floats. Callers that rasterize the corners must round them to int themselves.
     """
     if unit == "degree":
         ANGLE = np.deg2rad(angle)
@@ -70,7 +70,7 @@ def rotate(x, y, w, h, angle=0.0, rot_center="up_left", unit="degree"):
             ]
             for px, py in points
         ]
-    ).astype(int)
+    )
 
 
 def get_rotated_bbox(pts: np.ndarray) -> list:
@@ -92,7 +92,7 @@ def get_rotated_bbox(pts: np.ndarray) -> list:
 
     # the pivot is the topmost corner (minimum y, then minimum x if tied)
     idx = np.lexsort((box_points[:, 0], box_points[:, 1]))[0]
-    x, y = box_points[idx]
+    x, y = (float(v) for v in box_points[idx])
 
     # Of the two edges meeting at the pivot, the width axis is the one the height axis follows under a
     # quarter turn in the direction `rotate` turns, which is the positive cross product in image coordinates
