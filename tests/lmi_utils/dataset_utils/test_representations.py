@@ -532,7 +532,7 @@ def test_dataset_to_yolo(dummy_dataset):
 
 
 def test_dataset_to_yolo_derives_keypoint_count_from_layouts():
-    labels = [Label("person", keypoints=["nose", "eye"])]
+    labels = [Label("person", keypoint_ids=["nose", "eye"])]
     files = [
         FileAnnotations(
             "one",
@@ -757,7 +757,7 @@ def test_dataset_json_format_preserved():
     rle = mask2rle(mask_arr)
 
     labels = [
-        Label("label_box", "Box Label", keypoints=["label_kp"]),
+        Label("label_box", "Box Label", keypoint_ids=["label_kp"]),
         Label("label_kp", "Keypoint Label"),
         Label("label_poly", "Polygon Label"),
         Label("label_mask", "Mask Label"),
@@ -837,5 +837,5 @@ def test_dataset_json_format_preserved():
     assert loaded_anns_by_id["ann_box"].value.x_min == pytest.approx(10.0)
     assert loaded_anns_by_id["ann_kp"].value.x == pytest.approx(30.0)
     assert loaded_anns_by_id["ann_kp"].value.visibility == 1
-    assert loaded.labels[0].keypoints == ["label_kp"]
+    assert loaded.labels[0].keypoint_ids == ["label_kp"]
     assert len(loaded_anns_by_id["ann_poly"].value.points) == 4

@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
+from lmi_utils.dataset_utils.pose_identifiers import pose_label_alias
 from lmi_utils.dataset_utils.representations import AnnotationType, Dataset
 from lmi_utils.label_utils.json_to_factory import convert_json_to_factory
 from lmi_utils.label_utils.lst_to_json import get_annotations_from_json, load_pose_schema
@@ -13,13 +14,21 @@ WIDTH = HEIGHT = 20
 # Label Studio stores every coordinate as a percentage of the image.
 PERCENT = 100 / WIDTH
 
+# The class and one keypoint are named differently from their ids, so every assertion below also covers the
+# identity split: what the annotator reads never reaches an annotation.
 POSE_SCHEMA = {
     "type": "Pose",
     "version": 1,
     "coordinateDimensions": 3,
+    "keypoints": {
+        "head": {"name": "Head"},
+        "left-flange": {"name": "left-flange"},
+        "right-flange": {"name": "right-flange"},
+    },
     "classes": {
         "bolt": {
-            "keypoints": ["head", "left-flange", "right-flange"],
+            "name": "Hex bolt",
+            "keypointIds": ["head", "left-flange", "right-flange"],
             "horizontalFlipPairs": [["left-flange", "right-flange"]],
             "skeleton": [[0, 1], [0, 2]],
         },
@@ -40,20 +49,20 @@ def _region(region_id, result_type, value):
     }
 
 
-def _box(region_id, label, x_min, y_min, x_max, y_max):
+def _box(region_id, label_id, x_min, y_min, x_max, y_max):
     value = {
         "x": x_min * PERCENT,
         "y": y_min * PERCENT,
         "width": (x_max - x_min) * PERCENT,
         "height": (y_max - y_min) * PERCENT,
-        "rectanglelabels": [label],
+        "rectanglelabels": [pose_label_alias(label_id)],
     }
     return _region(region_id, "rectanglelabels", value)
 
 
-def _keypoint(region_id, label, x, y, parent_id=None):
+def _keypoint(region_id, label_id, x, y, parent_id=None):
     # A Label Studio keypoint carries no visibility; an unset one reaches Factory as visible.
-    region = _region(region_id, "keypointlabels", {"x": x * PERCENT, "y": y * PERCENT, "keypointlabels": [label]})
+    region = _region(region_id, "keypointlabels", {"x": x * PERCENT, "y": y * PERCENT, "keypointlabels": [pose_label_alias(label_id)]})
     if parent_id is not None:
         region["parentID"] = parent_id
     return region
@@ -65,7 +74,7 @@ def _relation(from_id, to_id):
 
 def _write_export(tmp_path, results, name="image.png", url=None, image_name=None):
     image_dir = tmp_path / "images"
-    image_dir.mkdir(exist_ok=True)
+    image_dir.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(image_dir / (image_name or name)), np.zeros((HEIGHT, WIDTH, 3), dtype=np.uint8))
     export = [{"data": {"image": url or f"/data/upload/1/{name}"}, "annotations": [{"result": results}]}]
     export_path = tmp_path / "export.json"
@@ -86,9 +95,14 @@ def _convert(tmp_path, results, pose_schema=None, unlinked_keypoints="error", **
     declaration surviving the intermediate file.
     """
     export_path, image_dir = _write_export(tmp_path, results, **export_kwargs)
-    files, labels = get_annotations_from_json(str(export_path), str(image_dir), pose_schema=pose_schema)
+    files, labels, keypoint_names = get_annotations_from_json(str(export_path), str(image_dir), pose_schema=pose_schema)
     json_path = tmp_path / "labels.json"
-    Dataset(labels=labels, files=files, coordinate_dimensions=(pose_schema or {}).get("coordinateDimensions")).save(str(json_path))
+    Dataset(
+        labels=labels,
+        files=files,
+        coordinate_dimensions=(pose_schema or {}).get("coordinateDimensions"),
+        keypoints=keypoint_names,
+    ).save(str(json_path))
 
     output_dir = tmp_path / "factory"
     convert_json_to_factory(Dataset.load(str(json_path)), image_dir, output_dir, unlinked_keypoints=unlinked_keypoints)
@@ -217,7 +231,7 @@ def test_a_partly_observed_instance_keeps_the_declared_layout(tmp_path):
     results = [_box("box1", "bolt", 0, 0, WIDTH, HEIGHT), _keypoint("kp1", "head", 10, 4)]
     output_dir = _convert(tmp_path, results, pose_schema=POSE_SCHEMA)
 
-    assert _schema(output_dir)["classes"]["bolt"]["keypoints"] == ["head", "left-flange", "right-flange"]
+    assert _schema(output_dir)["classes"]["bolt"]["keypointIds"] == ["head", "left-flange", "right-flange"]
     assert len([a for a in _annotations(output_dir) if a["type"] == "Keypoint"]) == 1
 
 
@@ -274,7 +288,7 @@ def test_containment_links_keypoints_in_the_exported_json(tmp_path):
     # geometry. The link is resolved here rather than left to whatever reads the json next.
     export_path, image_dir = _write_export(tmp_path, ONE_BOLT)
 
-    files, _ = get_annotations_from_json(str(export_path), str(image_dir), pose_schema=POSE_SCHEMA)
+    files, _, _ = get_annotations_from_json(str(export_path), str(image_dir), pose_schema=POSE_SCHEMA)
 
     box = next(a for a in files[0].annotations if a.type == AnnotationType.BOX)
     keypoints = [a for a in files[0].annotations if a.type == AnnotationType.KEYPOINT]
@@ -292,9 +306,37 @@ def test_a_keypoint_geometry_cannot_place_is_left_unlinked(tmp_path, caplog):
     export_path, image_dir = _write_export(tmp_path, results)
 
     with caplog.at_level(logging.WARNING):
-        files, _ = get_annotations_from_json(str(export_path), str(image_dir), pose_schema=POSE_SCHEMA)
+        files, _, _ = get_annotations_from_json(str(export_path), str(image_dir), pose_schema=POSE_SCHEMA)
 
     keypoints = [a for a in files[0].annotations if a.type == AnnotationType.KEYPOINT]
     assert [kp.bounding_box_id for kp in keypoints] == [None, None]
     assert "contained by multiple boxes" in caplog.text
     assert "not assigned to any box" in caplog.text
+
+
+def test_a_region_names_an_id_rather_than_what_the_annotator_read(tmp_path):
+    # The schema calls the class "Hex bolt" and the keypoint "Head". Neither name reaches an annotation, which is
+    # what lets either be renamed later without stranding the work already done.
+    output_dir = _convert(tmp_path, ONE_BOLT, pose_schema=POSE_SCHEMA)
+
+    assert {annotation["label_id"] for annotation in _annotations(output_dir)} == {"bolt", "head", "left-flange"}
+
+
+def test_renaming_a_class_leaves_every_annotation_where_it_was(tmp_path):
+    renamed = json.loads(json.dumps(POSE_SCHEMA))
+    renamed["classes"]["bolt"]["name"] = "Carriage bolt"
+    renamed["keypoints"]["head"]["name"] = "Cap"
+
+    before = _annotations(_convert(tmp_path / "before", ONE_BOLT, pose_schema=POSE_SCHEMA))
+    after = _annotations(_convert(tmp_path / "after", ONE_BOLT, pose_schema=renamed))
+
+    assert [annotation["label_id"] for annotation in before] == [annotation["label_id"] for annotation in after]
+
+
+def test_a_project_factory_did_not_generate_keeps_its_own_label_values(tmp_path):
+    # Only Factory's own configuration puts labels under the alias prefix. A project built by hand names its
+    # labels however the annotator did, and those values pass through as they stand.
+    results = [_region("box1", "rectanglelabels", {"x": 0, "y": 0, "width": 100, "height": 100, "rectanglelabels": ["bolt"]})]
+    output_dir = _convert(tmp_path, results)
+
+    assert [annotation["label_id"] for annotation in _annotations(output_dir)] == ["bolt"]

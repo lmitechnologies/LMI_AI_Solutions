@@ -2,7 +2,7 @@ import enum
 import json
 import logging
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Dict, List, Optional, Union
 
 import cv2
@@ -508,12 +508,20 @@ class Label(Base):
     id: str
     color: Optional[str] = None
     annotation_type: AnnotationType = None
-    keypoints: Optional[List[str]] = None
-    # Declared pose contract, carried alongside the layout: the keypoint names that exchange places under a
+    # What a person calls this class. None means the id reads well enough to show as it is. Nothing compares
+    # names -- annotations reference the id -- so renaming a class breaks nothing that already stores one.
+    name: Optional[str] = None
+    keypoint_ids: Optional[List[str]] = None
+    # Declared pose contract, carried alongside the layout: the keypoint ids that exchange places under a
     # horizontal mirror, and undirected skeleton edges as index pairs. None means the symmetry is undeclared,
     # so mirroring is unsafe -- an empty list means the class mirrors onto itself.
     horizontal_flip_pairs: Optional[List[List[str]]] = None
     skeleton: Optional[List[List[int]]] = None
+
+    @property
+    def display_name(self) -> str:
+        """What to show for this class."""
+        return self.name or self.id
 
     @classmethod
     def from_dict(cls, data: dict) -> "Label":
@@ -521,7 +529,8 @@ class Label(Base):
             id=data["id"],
             color=data.get("color"),
             annotation_type=data.get("annotation_type"),
-            keypoints=data.get("keypoints"),
+            name=data.get("name"),
+            keypoint_ids=data.get("keypoint_ids"),
             horizontal_flip_pairs=data.get("horizontal_flip_pairs"),
             skeleton=data.get("skeleton"),
         )
@@ -833,12 +842,26 @@ class Dataset(Base):
     # Coordinates stored per keypoint, 2 or 3. None leaves it to the consumer, which is every dataset whose
     # source states no keypoint layout.
     coordinate_dimensions: Optional[int] = None
+    # Every keypoint the dataset's classes draw their slots from, as id to display name. One flat vocabulary
+    # rather than a list per class, because classes that share a keypoint share its identity: two classes each
+    # declaring `left_eye` mean the same keypoint, and Label Studio offers one keypoint vocabulary per project.
+    # A keypoint whose name reads well enough as it is may be left out and shows as its id.
+    keypoints: Dict[str, str] = field(default_factory=dict)
+
+    def keypoint_name(self, keypoint_id: str) -> str:
+        """What to show for a keypoint."""
+        return self.keypoints.get(keypoint_id) or keypoint_id
 
     @classmethod
     def from_dict(cls, data: dict) -> "Dataset":
         labels = [Label.from_dict(li) for li in data.get("labels", [])]
         files = [FileAnnotations.from_dict(f) for f in data.get("files", [])]
-        return cls(labels=labels, files=files, coordinate_dimensions=data.get("coordinate_dimensions"))
+        return cls(
+            labels=labels,
+            files=files,
+            coordinate_dimensions=data.get("coordinate_dimensions"),
+            keypoints=data.get("keypoints") or {},
+        )
 
     @classmethod
     def load(cls, file_path: str) -> "Dataset":
@@ -936,7 +959,7 @@ class Dataset(Base):
         # sort the label_id_index by label id
         label_id_index = dict(sorted(label_id_index.items(), key=lambda item: item[1]))
 
-        keypoint_layouts = {label.id: label.keypoints for label in self.labels if label.keypoints is not None}
+        keypoint_layouts = {label.id: label.keypoint_ids for label in self.labels if label.keypoint_ids is not None}
         # Layout length is per instance; counting annotations would vary with images and object counts.
         n_kpts = max((len(layout) for layout in keypoint_layouts.values()), default=0)
         image_to_labels = {}

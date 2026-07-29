@@ -23,9 +23,15 @@ Factory reads it from a `.meta.json` at the dataset root:
     "type": "Pose",
     "version": 1,
     "coordinateDimensions": 3,
+    "keypoints": {
+      "head": { "name": "Head" },
+      "left-flange": { "name": "Left flange" },
+      "right-flange": { "name": "Right flange" }
+    },
     "classes": {
       "bolt": {
-        "keypoints": ["head", "left-flange", "right-flange"],
+        "name": "Hex bolt",
+        "keypointIds": ["head", "left-flange", "right-flange"],
         "horizontalFlipPairs": [["left-flange", "right-flange"]],
         "skeleton": [[0, 1], [0, 2]]
       }
@@ -37,13 +43,31 @@ Factory reads it from a `.meta.json` at the dataset root:
 | Field | Required | Meaning |
 | --- | --- | --- |
 | `type`, `version`, `coordinateDimensions` | yes | Always `"Pose"`, `1` and `3`. A 2D source is normalized to 3 on import. |
-| `classes` | yes | Keyed by class id, one entry per box class that owns keypoints. |
-| `keypoints` | yes | The class's slot order; its length is that class's K. A slot no image observes stays declared. |
-| `horizontalFlipPairs` | yes, may be `null` | Keypoints that trade places under a mirror; anything unpaired is its own mirror. `null` imports fine but blocks `fliplr`/`flipud` in training. `[]` declares a class that mirrors onto itself. Omitting the field is an error — write `null`. |
+| `keypoints` | yes | Every keypoint the classes draw slots from, keyed by keypoint id, each with the `name` a person reads. |
+| `classes` | yes | Keyed by class id, one entry per box class that owns keypoints, each with a `name`. |
+| `keypointIds` | yes | The class's slot order, as keypoint ids; its length is that class's K. A slot no image observes stays declared. |
+| `horizontalFlipPairs` | yes, may be `null` | Keypoint ids that trade places under a mirror; anything unpaired is its own mirror. `null` imports fine but blocks `fliplr`/`flipud` in training. `[]` declares a class that mirrors onto itself. Omitting the field is an error — write `null`. |
 | `skeleton` | no | Visualization only, zero-based. Omit it when there is none; `null` is an error. |
 
 Keypoint annotations name their slot in `label_id` and their instance in `bounding_box_id`.
-Two classes may reuse a keypoint name — the owning box scopes it.
+
+## Ids and names are separate
+
+Every class and keypoint has a permanent **id** and a **name** someone can change.
+Annotations, class maps and model contracts all store the id, so renaming a class in Factory strands nothing.
+
+Ids are *derived from* names, never allocated: a COCO category `person` and a YOLO class `person`, converted months apart, arrive at the same id without consulting each other.
+The converters do this for you — `class_map`, `flip_map`, `kpt_names` and `--keypoint_names` are all written in names, and nothing asks you for an id.
+A name already usable as an id is kept as it stands, which is why `bolt` and `left-flange` above look unchanged; anything else becomes a readable stem plus a digest, so `Left Eye` derives `left_eye_4c96d10f1b2a`.
+
+Two rules follow, both enforced when the schema is built:
+
+- **Ids must be valid.** Building a `Label` by hand with `id="hex bolt"` is rejected; derive it with `derive_pose_id` from `lmi_utils.dataset_utils.pose_identifiers`.
+- **Names must be unambiguous** within their vocabulary, and may not be another entry's id. Label Studio resolves a region's label by its alias *or* its displayed value, so a repeat is ambiguous to the editor itself. Names also may not contain `$`, which Label Studio reads as a task-data substitution.
+
+Because two classes both declaring `left_eye` mean the same keypoint, `keypoints` is one flat vocabulary for the schema rather than a list per class — which is also the shape Label Studio's own labeling configuration takes.
+
+`derive_pose_id` is a persisted contract shared with GoFactory's TypeScript and Python SDKs; the three copies must agree byte for byte, and `tests/lmi_utils/dataset_utils/test_pose_identifiers.py` holds the frozen vectors that say so.
 
 ## Getting a schema
 
@@ -61,18 +85,24 @@ Two ways, neither of which is editing by hand.
 
 ```python
 import json
+from lmi_utils.dataset_utils.pose_identifiers import derive_pose_id
 from lmi_utils.dataset_utils.representations import Label
 from lmi_utils.label_utils.json_to_factory import build_pose_schema
 
-schema = build_pose_schema([
-    Label(id="bolt", keypoints=["head", "left-flange", "right-flange"],
-          horizontal_flip_pairs=[["left-flange", "right-flange"]]),
-    Label(id="tab", keypoints=["left-edge", "right-edge"], horizontal_flip_pairs=None),
-])
+schema = build_pose_schema(
+    [
+        Label(id="bolt", name="Hex bolt", keypoint_ids=["head", "left-flange", "right-flange"],
+              horizontal_flip_pairs=[["left-flange", "right-flange"]]),
+        # A name that is not usable as an id has to be derived, the same way a converter would
+        Label(id=derive_pose_id("Tab strip"), name="Tab strip",
+              keypoint_ids=["left-edge", "right-edge"], horizontal_flip_pairs=None),
+    ],
+    {"head": "Head", "left-flange": "Left flange", "right-flange": "Right flange"},
+)
 json.dump(schema, open("schema.json", "w"), indent=2)
 ```
 
-Its output is what `lst_to_json -ps` expects, and the fields carry through `labels.json` on `Label` as `keypoints`, `horizontal_flip_pairs` and `skeleton`.
+Its output is what `lst_to_json -ps` expects, and the fields carry through `labels.json` on `Label` as `name`, `keypoint_ids`, `horizontal_flip_pairs` and `skeleton`, with the keypoint names on the dataset's own `keypoints` map.
 
 ## COCO
 
@@ -85,9 +115,10 @@ python3 -m lmi_utils.label_utils.coco_to_json -j annotations.json -i images/ \
   --class_map class_map.json --flip_map flip_map.json --skeleton_base 0 --segmentation
 ```
 
-- `--class_map` maps a COCO category name to a Factory class id: `{"Bolt": "bolt"}`. Without it the category name is the class id.
-- `--flip_map` maps a class id to its mirror pairs: `{"bolt": [["left-flange", "right-flange"]]}`. **COCO declares no flip symmetry**,
-  so without it every class gets `horizontalFlipPairs: null`.
+- `--class_map` renames a COCO category: `{"Bolt": "Hex bolt"}`. Without it the class keeps the category name. Either way the
+  name is what the class shows and what its id is derived from.
+- `--flip_map` maps a class name to its mirror pairs, in keypoint names: `{"Hex bolt": [["left-flange", "right-flange"]]}`.
+  **COCO declares no flip symmetry**, so without it every class gets `horizontalFlipPairs: null`.
 - `--skeleton_base 0` for zero-based skeleton indices; the COCO convention of one-based is assumed.
 - `--segmentation` writes classes with no keypoints as polygons or bitmasks instead of boxes.
 - A keypoint with visibility 0 leaves its declared slot empty rather than landing at the origin.
@@ -103,7 +134,8 @@ python3 -m lmi_utils.label_utils.yolo_to_json -y dataset.yaml \
   --keypoint_names head,left-flange,right-flange --splits train,val
 ```
 
-- `names` becomes the class ids and `kpt_shape` the slot count.
+- `names` becomes the class names, from which the class ids are derived, and `kpt_shape` the slot count. A yaml with no keypoints is
+  unaffected: its class names stay its class ids, exactly as before.
 - `kpt_names` names each class's slots, keyed by class index (as Ultralytics writes it) or class name (as Factory's exporter does).
   Slots marked `__unused_*` are dropped. Without it, every class gets all K slots, named by `--keypoint_names` or positionally.
 - The global `flip_idx` is restated as each class's own mirror pairs. A class whose mirror leaves the slots it owns declares no symmetry
@@ -134,12 +166,16 @@ python3 -m lmi_utils.label_utils.json_to_factory -i images/ -o factory_dataset/ 
 `-ps` takes a Factory dataset directory, its `.meta.json`, or a bare schema file. Skip it and the export still converts, but keypoint
 labels become classes of their own and the result is not pose-trainable.
 
+A project Factory generated stores each label under its own id, so an export names ids rather than the text the annotator saw, and the
+round trip survives a rename. An export from a project built by hand names its labels however the annotator did, and those values are
+read as they stand.
+
 - A project Factory created already has a schema, on the annotation project and on its source dataset; the project id is in each task's
   image URL.
 - Otherwise `--scaffold_schema` drafts one, which needs finishing before use: it carries only the keypoints its own export happens to
   show, in the order the annotator worked, and always leaves `horizontalFlipPairs: null`.
 - **Use one schema for every dataset of the same classes.** Factory will not train on datasets whose shared class declares different
-  keypoint names or mirror pairs — the orders may differ, the names may not. Drafting per export invites exactly that.
+  keypoints or mirror pairs — the orders may differ, the keypoints themselves may not. Drafting per export invites exactly that.
 
 ### Other notes
 

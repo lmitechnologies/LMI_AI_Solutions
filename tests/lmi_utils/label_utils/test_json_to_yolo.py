@@ -15,7 +15,7 @@ def _write_pose_dataset(path, n_kpts):
     if layout:
         annotations.append(KeypointAnnotation("point", layout[0], Point2d(10, 10), bounding_box_id="box"))
     dataset = Dataset(
-        labels=[Label(id="person", keypoints=layout)],
+        labels=[Label(id="person", keypoint_ids=layout)],
         files=[FileAnnotations("file", "image.png", 20, 20, annotations)],
     )
     dataset.save(str(path / "labels.json"))

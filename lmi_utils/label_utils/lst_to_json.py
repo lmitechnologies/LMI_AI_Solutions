@@ -4,11 +4,12 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import List, Optional, Set, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 import cv2
 import numpy as np
 
+from lmi_utils.dataset_utils.pose_identifiers import pose_id_from_label_alias
 from lmi_utils.dataset_utils.representations import (
     Annotation,
     AnnotationType,
@@ -45,7 +46,10 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
         logger.warning(f"found empty label in {fname}, skip")
         return None, None, None, None
 
-    label = labels[0]
+    # A project Factory generated stores each label under its own alias, so a region names an id rather than the
+    # text the annotator saw -- which is what lets a class or keypoint be renamed without stranding annotations.
+    # A value from any other project is outside that namespace and passes through as it stands.
+    label = pose_id_from_label_alias(labels[0])
     conf = result["value"].get("score", 1.0) if load_confidence else 1.0
     if result_type == "rectanglelabels":
         # get bbox
@@ -104,23 +108,28 @@ def load_pose_schema(path: Optional[Union[str, Path]]) -> Optional[dict]:
     return data.get("annotationSchema", data)
 
 
-def pose_labels(pose_schema: Optional[dict]) -> Tuple[List[Label], Set[str]]:
-    """The class labels a pose schema declares, and the keypoint names it reserves as slots of those classes."""
+def pose_labels(pose_schema: Optional[dict]) -> Tuple[List[Label], Set[str], Dict[str, str]]:
+    """What a pose schema declares: its class labels, the keypoint ids reserved as slots, and keypoint names."""
     labels: List[Label] = []
     vocabulary: Set[str] = set()
+    keypoint_names = {
+        str(keypoint_id): (definition or {}).get("name") or str(keypoint_id)
+        for keypoint_id, definition in ((pose_schema or {}).get("keypoints") or {}).items()
+    }
     for class_id, declaration in (pose_schema or {}).get("classes", {}).items():
-        keypoints = list(declaration.get("keypoints") or [])
+        keypoint_ids = [str(keypoint_id) for keypoint_id in declaration.get("keypointIds") or []]
         labels.append(
             Label(
                 id=str(class_id),
+                name=declaration.get("name"),
                 annotation_type=AnnotationType.BOX,
-                keypoints=keypoints or None,
+                keypoint_ids=keypoint_ids or None,
                 horizontal_flip_pairs=declaration.get("horizontalFlipPairs"),
                 skeleton=declaration.get("skeleton"),
             )
         )
-        vocabulary.update(keypoints)
-    return labels, vocabulary
+        vocabulary.update(keypoint_ids)
+    return labels, vocabulary, keypoint_names
 
 
 def link_keypoints(relations: List[dict], by_region_id: dict):
@@ -263,7 +272,7 @@ def get_annotations_from_json(path_json, images_dir, background=False, pose_sche
 
     Args:
         path_json (str): the path to a directory of label studio json files
-        pose_schema (dict): the declared pose schema, whose classes seed the labels and whose keypoint names are
+        pose_schema (dict): the declared pose schema, whose classes seed the labels and whose keypoints are
             read as slots of those classes rather than as classes of their own
 
     Returns:
@@ -274,7 +283,7 @@ def get_annotations_from_json(path_json, images_dir, background=False, pose_sche
     else:
         json_files = glob.glob(os.path.join(path_json, "*.json"))
 
-    labels, keypoint_vocabulary = pose_labels(pose_schema)
+    labels, keypoint_vocabulary, keypoint_names = pose_labels(pose_schema)
     annotations: List[FileAnnotations] = []
 
     label_set = {label.id for label in labels}
@@ -431,7 +440,7 @@ def get_annotations_from_json(path_json, images_dir, background=False, pose_sche
             "or --scaffold_schema to draft one."
         )
 
-    return annotations, labels
+    return annotations, labels, keypoint_names
 
 
 def main():
@@ -458,9 +467,16 @@ def main():
     args = ap.parse_args()
 
     pose_schema = load_pose_schema(args.pose_schema)
-    files, labels = get_annotations_from_json(args.path_json, args.path_images, background=args.background, pose_schema=pose_schema)
+    files, labels, keypoint_names = get_annotations_from_json(
+        args.path_json, args.path_images, background=args.background, pose_schema=pose_schema
+    )
 
-    dataset = Dataset(labels=labels, files=files, coordinate_dimensions=(pose_schema or {}).get("coordinateDimensions"))
+    dataset = Dataset(
+        labels=labels,
+        files=files,
+        coordinate_dimensions=(pose_schema or {}).get("coordinateDimensions"),
+        keypoints=keypoint_names,
+    )
 
     if args.scaffold_schema:
         draft = scaffold_pose_schema(dataset)

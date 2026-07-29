@@ -7,6 +7,7 @@ from typing import Dict, Iterable, List, Optional
 
 import cv2
 
+from lmi_utils.dataset_utils.pose_identifiers import collect_pose_display_name_issues, describe_pose_label, is_pose_id
 from lmi_utils.dataset_utils.representations import UNASSIGNED_KEYPOINT_POLICIES, Annotation, AnnotationType, Dataset, Label
 
 logger = logging.getLogger(__name__)
@@ -74,29 +75,67 @@ def to_dict(annot: Annotation):
     return _without_nulls(json.loads(annot.to_json()))
 
 
+def _collect_name_collisions(names_by_id: Dict[str, str], kind: str) -> List[str]:
+    """Display names that repeat, or that are another entry's id, within one vocabulary.
+
+    Factory generates a Label Studio labeling configuration from this schema, and Label Studio resolves a
+    region's label by its alias or by its displayed value. Either collision makes a region ambiguous to the
+    annotation editor itself.
+    """
+    issues = []
+    identifiers = set(names_by_id)
+    seen: Dict[str, str] = {}
+    for identifier, name in names_by_id.items():
+        if name in seen:
+            issues.append(f"{kind} '{seen[name]}' and {kind} '{identifier}' are both named '{name}'")
+        elif name != identifier and name in identifiers:
+            issues.append(f"{kind} '{identifier}' is named '{name}', which is another {kind}'s identifier")
+        else:
+            seen[name] = identifier
+    return issues
+
+
 def collect_pose_schema_issues(schema: dict) -> List[str]:
     """Every structural problem in a pose schema, so a bad conversion is fixed in one pass instead of one error per retry."""
     issues = []
-    if schema.get("coordinateDimensions") not in (2, 3):
-        issues.append(f"coordinateDimensions is {schema.get('coordinateDimensions')}, which must be 2 or 3")
+    if schema.get("coordinateDimensions") != COORDINATE_DIMENSIONS:
+        issues.append(f"coordinateDimensions is {schema.get('coordinateDimensions')}, which must be {COORDINATE_DIMENSIONS}")
+
+    keypoints = schema.get("keypoints") or {}
+    keypoint_names = {keypoint_id: (definition or {}).get("name") or keypoint_id for keypoint_id, definition in keypoints.items()}
+    for keypoint_id, name in keypoint_names.items():
+        if not is_pose_id(keypoint_id):
+            issues.append(f"keypoint id '{keypoint_id}' is not a valid identifier; derive one with derive_pose_id")
+        issues.extend(collect_pose_display_name_issues(name, f"the name of keypoint '{keypoint_id}'"))
+    issues.extend(_collect_name_collisions(keypoint_names, "keypoint"))
+
     classes = schema.get("classes") or {}
     if not classes:
         issues.append("the schema declares no classes")
+    class_names = {class_id: (class_schema or {}).get("name") or class_id for class_id, class_schema in classes.items()}
+    issues.extend(_collect_name_collisions(class_names, "class"))
 
     for class_id, class_schema in classes.items():
-        where = f"class '{class_id}'"
-        keypoints = class_schema.get("keypoints") or []
-        if not keypoints:
+        where = f"class {describe_pose_label(class_names[class_id], class_id)}"
+        if not is_pose_id(class_id):
+            issues.append(f"class id '{class_id}' is not a valid identifier; derive one with derive_pose_id")
+        issues.extend(collect_pose_display_name_issues(class_names[class_id], f"the name of class '{class_id}'"))
+
+        slots = class_schema.get("keypointIds") or []
+        if not slots:
             issues.append(f"{where} declares no keypoints")
-        duplicates = sorted({name for name in keypoints if keypoints.count(name) > 1})
+        duplicates = sorted({slot for slot in slots if slots.count(slot) > 1})
         if duplicates:
             issues.append(f"{where} declares keypoint(s) {', '.join(duplicates)} more than once")
+        undefined = [slot for slot in slots if slot not in keypoints]
+        if undefined:
+            issues.append(f"{where} uses keypoint(s) {', '.join(sorted(set(undefined)))} that the schema does not define")
 
         seen_edges = set()
         for edge in class_schema.get("skeleton") or []:
             start, end = edge
-            if not (0 <= start < len(keypoints)) or not (0 <= end < len(keypoints)):
-                issues.append(f"{where} has skeleton edge [{start}, {end}] outside its {len(keypoints)} keypoint slots")
+            if not (0 <= start < len(slots)) or not (0 <= end < len(slots)):
+                issues.append(f"{where} has skeleton edge [{start}, {end}] outside its {len(slots)} keypoint slots")
             elif start == end:
                 issues.append(f"{where} has skeleton self-edge [{start}, {end}]")
             elif (min(start, end), max(start, end)) in seen_edges:
@@ -104,15 +143,15 @@ def collect_pose_schema_issues(schema: dict) -> List[str]:
             else:
                 seen_edges.add((min(start, end), max(start, end)))
 
-        # Disjoint named swaps are self-inverse by construction, so mirroring twice restores every keypoint with
-        # no permutation invariant left to check; only membership and disjointness can go wrong.
+        # Disjoint swaps are self-inverse by construction, so mirroring twice restores every keypoint with no
+        # permutation invariant left to check; only membership and disjointness can go wrong.
         swapped = set()
         for pair in class_schema.get("horizontalFlipPairs") or []:
             if len(pair) != 2:
                 issues.append(f"{where} has a horizontal flip entry {list(pair)} that is not a pair of keypoints")
                 continue
             first, second = pair
-            undeclared = [name for name in pair if name not in keypoints]
+            undeclared = [slot for slot in pair if slot not in slots]
             if undeclared:
                 issues.append(f"{where} has a horizontal flip pair naming {', '.join(undeclared)}, which it does not declare")
             elif first == second:
@@ -125,22 +164,33 @@ def collect_pose_schema_issues(schema: dict) -> List[str]:
     return issues
 
 
-def build_pose_schema(labels: Iterable[Label]) -> Optional[dict]:
+def build_pose_schema(labels: Iterable[Label], keypoint_names: Optional[Dict[str, str]] = None) -> Optional[dict]:
     """The declared pose schema of the labels carrying a keypoint layout, or None when none do.
 
     A layout is a declaration, never a tally of observations: a class keeps every slot it declares even when no
     image in this dataset observes it. A label with no declared symmetry gets `horizontalFlipPairs: null`, which
     imports but prevents horizontal flipping during training.
 
+    Classes and keypoints are identified by id and named separately, so renaming one in Factory later leaves
+    every annotation, model contract and class map that already stores the id intact. Keypoints are defined once
+    for the whole schema because a keypoint two classes both use is one keypoint.
+
+    Args:
+        labels: the classes to declare; only those carrying `keypoint_ids` reach the schema.
+        keypoint_names: display name of each keypoint id, for those whose id does not read well as it is.
+
     Raises:
         ValueError: if the resulting schema is structurally invalid.
     """
+    keypoint_names = keypoint_names or {}
     classes = {}
+    keypoints = {}
     for label in labels:
-        if not label.keypoints:
+        if not label.keypoint_ids:
             continue
         class_schema = {
-            "keypoints": list(label.keypoints),
+            "name": label.display_name,
+            "keypointIds": [str(keypoint_id) for keypoint_id in label.keypoint_ids],
             "horizontalFlipPairs": (
                 [[str(first), str(second)] for first, second in label.horizontal_flip_pairs]
                 if label.horizontal_flip_pairs is not None
@@ -150,6 +200,8 @@ def build_pose_schema(labels: Iterable[Label]) -> Optional[dict]:
         if label.skeleton:
             class_schema["skeleton"] = [[int(start), int(end)] for start, end in label.skeleton]
         classes[label.id] = class_schema
+        for keypoint_id in class_schema["keypointIds"]:
+            keypoints.setdefault(keypoint_id, {"name": keypoint_names.get(keypoint_id) or keypoint_id})
 
     if not classes:
         return None
@@ -158,6 +210,7 @@ def build_pose_schema(labels: Iterable[Label]) -> Optional[dict]:
         "type": POSE_SCHEMA_TYPE,
         "version": POSE_SCHEMA_VERSION,
         "coordinateDimensions": COORDINATE_DIMENSIONS,
+        "keypoints": keypoints,
         "classes": classes,
     }
     issues = collect_pose_schema_issues(schema)
@@ -177,6 +230,7 @@ def scaffold_pose_schema(dataset: Dataset) -> dict:
     Keypoints in more than one box, or in none, are skipped rather than guessed at.
     """
     classes: Dict[str, List[str]] = {}
+    names = {label.id: label.display_name for label in dataset.labels}
     for file in dataset.files:
         boxes = [a for a in file.annotations if a.type == AnnotationType.BOX]
         boxes_by_id = {box.id: box for box in boxes}
@@ -198,7 +252,18 @@ def scaffold_pose_schema(dataset: Dataset) -> dict:
         "type": POSE_SCHEMA_TYPE,
         "version": POSE_SCHEMA_VERSION,
         "coordinateDimensions": COORDINATE_DIMENSIONS,
-        "classes": {class_id: {"keypoints": keypoints, "horizontalFlipPairs": None} for class_id, keypoints in classes.items()},
+        "keypoints": {
+            keypoint_id: {"name": dataset.keypoint_name(keypoint_id)}
+            for keypoint_id in dict.fromkeys(slot for slots in classes.values() for slot in slots)
+        },
+        "classes": {
+            class_id: {
+                "name": names.get(class_id) or class_id,
+                "keypointIds": slots,
+                "horizontalFlipPairs": None,
+            }
+            for class_id, slots in classes.items()
+        },
     }
 
 
@@ -228,9 +293,12 @@ def convert_json_to_factory(
             model trains on box-linked keypoints only, so a kept one reaches Factory but not training.
     """
     if annotation_schema is None:
-        annotation_schema = build_pose_schema(dataset.labels)
+        annotation_schema = build_pose_schema(dataset.labels, dataset.keypoints)
     elif annotation_schema.get("type") == POSE_SCHEMA_TYPE:
         annotation_schema = {**annotation_schema, "coordinateDimensions": COORDINATE_DIMENSIONS}
+        issues = collect_pose_schema_issues(annotation_schema)
+        if issues:
+            raise ValueError(f"Invalid pose schema: {'; '.join(issues)}")
 
     fname_to_list = {}
     for file in dataset.files:

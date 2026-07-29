@@ -71,9 +71,10 @@ def test_categories_become_declared_pose_classes(tmp_path):
         "type": "Pose",
         "version": 1,
         "coordinateDimensions": 3,
+        "keypoints": {name: {"name": name} for name in KEYPOINTS},
         "classes": {
             # COCO carries no flip symmetry, and a skeleton it writes one-based reaches Factory zero-based.
-            "bolt": {"keypoints": KEYPOINTS, "horizontalFlipPairs": None, "skeleton": [[0, 1], [0, 2]]},
+            "bolt": {"name": "bolt", "keypointIds": KEYPOINTS, "horizontalFlipPairs": None, "skeleton": [[0, 1], [0, 2]]},
         },
     }
 
@@ -113,7 +114,7 @@ def test_observed_keypoints_are_linked_and_unobserved_slots_are_dropped(tmp_path
     assert {annotation["bounding_box_id"] for annotation in keypoints} == {"7"}
     assert keypoints[0]["value"] == {"x": 10.0, "y": 4.0, "visibility": 2}
     # The slot the instance does not observe stays declared in the schema rather than becoming a point at the origin.
-    assert _schema(output_dir)["classes"]["bolt"]["keypoints"] == KEYPOINTS
+    assert _schema(output_dir)["classes"]["bolt"]["keypointIds"] == KEYPOINTS
 
 
 def test_an_instance_disagreeing_with_its_category_layout_is_rejected(tmp_path):

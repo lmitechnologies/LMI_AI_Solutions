@@ -7,6 +7,7 @@ import cv2
 import yaml
 
 from lmi_utils.dataset_utils.file_utils import IMG_FORMATS
+from lmi_utils.dataset_utils.pose_identifiers import derive_pose_id
 from lmi_utils.dataset_utils.representations import (
     AnnotationType,
     Box,
@@ -38,25 +39,25 @@ def load_dataset_yaml(path: Path) -> dict:
         return yaml.load(f, Loader=yaml.SafeLoader)
 
 
-def class_ids_by_index(names) -> Dict[int, str]:
-    """The yaml's `names` as an index to class id map, accepting either the mapping or the list form."""
+def class_names_by_index(names) -> Dict[int, str]:
+    """The yaml's `names` as an index to class name map, accepting either the mapping or the list form."""
     entries = names.items() if isinstance(names, dict) else enumerate(names)
-    class_ids = {}
-    for raw_index, raw_class_id in entries:
+    class_names = {}
+    for raw_index, raw_name in entries:
         index = int(raw_index)
-        class_id = str(raw_class_id)
-        if index in class_ids:
+        class_name = str(raw_name)
+        if index in class_names:
             raise ValueError(f"names declares class index {index} more than once")
-        if class_id in class_ids.values():
-            raise ValueError(f"names declares class id '{class_id}' more than once")
-        class_ids[index] = class_id
-    if not class_ids:
+        if class_name in class_names.values():
+            raise ValueError(f"names declares class name '{class_name}' more than once")
+        class_names[index] = class_name
+    if not class_names:
         raise ValueError("names declares no classes")
-    return class_ids
+    return class_names
 
 
-def keypoint_names_by_class(class_ids: Dict[int, str], kpt_names: Optional[dict], keypoint_count: int) -> Optional[Dict[str, List[str]]]:
-    """Normalize Ultralytics and Factory `kpt_names` maps to Factory class ids.
+def keypoint_names_by_class(class_names: Dict[int, str], kpt_names: Optional[dict], keypoint_count: int) -> Optional[Dict[str, List[str]]]:
+    """Normalize Ultralytics and Factory `kpt_names` maps to the yaml's class names.
 
     Ultralytics' built-in datasets key layouts by numeric class index, while Factory-exported datasets key them
     by class name. YAML may also deserialize a numeric index as either an integer or a string, so all three forms
@@ -65,30 +66,30 @@ def keypoint_names_by_class(class_ids: Dict[int, str], kpt_names: Optional[dict]
     if kpt_names is None:
         return None
     if not isinstance(kpt_names, dict):
-        raise ValueError("kpt_names must map each class index or class id to an ordered keypoint list")
+        raise ValueError("kpt_names must map each class index or class name to an ordered keypoint list")
 
     normalized = {}
     used_keys = set()
-    for index, class_id in class_ids.items():
+    for index, class_name in class_names.items():
         candidates = []
-        for key in dict.fromkeys((index, str(index), class_id)):
+        for key in dict.fromkeys((index, str(index), class_name)):
             if key in kpt_names:
                 candidates.append((key, kpt_names[key]))
         if not candidates:
-            raise ValueError(f"kpt_names declares no layout for class '{class_id}' (index {index})")
+            raise ValueError(f"kpt_names declares no layout for class '{class_name}' (index {index})")
 
         layouts = []
         for key, value in candidates:
             if not isinstance(value, list) or any(not isinstance(name, str) or not name for name in value):
                 raise ValueError(f"kpt_names entry {key!r} must be a list of non-empty strings")
             if len(value) != keypoint_count:
-                raise ValueError(f"kpt_names for '{class_id}' has {len(value)} entries for a {keypoint_count} slot model")
+                raise ValueError(f"kpt_names for '{class_name}' has {len(value)} entries for a {keypoint_count} slot model")
             layouts.append(value)
             used_keys.add(key)
         if any(layout != layouts[0] for layout in layouts[1:]):
             aliases = ", ".join(repr(key) for key, _ in candidates)
-            raise ValueError(f"kpt_names entries {aliases} disagree for class '{class_id}'")
-        normalized[class_id] = list(layouts[0])
+            raise ValueError(f"kpt_names entries {aliases} disagree for class '{class_name}'")
+        normalized[class_name] = list(layouts[0])
 
     unused = [key for key in kpt_names if key not in used_keys]
     if unused:
@@ -96,7 +97,7 @@ def keypoint_names_by_class(class_ids: Dict[int, str], kpt_names: Optional[dict]
     return normalized
 
 
-def class_slots(class_id: str, kpt_names: Optional[Dict[str, List[str]]], keypoint_count: int) -> List[int]:
+def class_slots(class_name: str, kpt_names: Optional[Dict[str, List[str]]], keypoint_count: int) -> List[int]:
     """The model slots this class owns, in slot order.
 
     Without `kpt_names` a YOLO file states one layout for the whole model, so every class owns every slot. The
@@ -104,19 +105,19 @@ def class_slots(class_id: str, kpt_names: Optional[Dict[str, List[str]]], keypoi
     """
     if kpt_names is None:
         return list(range(keypoint_count))
-    if class_id not in kpt_names:
-        raise ValueError(f"kpt_names declares no layout for class '{class_id}'")
-    names = kpt_names[class_id]
+    if class_name not in kpt_names:
+        raise ValueError(f"kpt_names declares no layout for class '{class_name}'")
+    names = kpt_names[class_name]
     if len(names) != keypoint_count:
-        raise ValueError(f"kpt_names for '{class_id}' has {len(names)} entries for a {keypoint_count} slot model")
+        raise ValueError(f"kpt_names for '{class_name}' has {len(names)} entries for a {keypoint_count} slot model")
     slots = [slot for slot, name in enumerate(names) if not name.startswith(UNUSED_SLOT_PREFIX)]
     if not slots:
-        raise ValueError(f"kpt_names for '{class_id}' declares no owned slots")
+        raise ValueError(f"kpt_names for '{class_name}' declares no owned slots")
     return slots
 
 
-def local_flip_pairs(slots: List[int], layout: List[str], flip_idx: Optional[List[int]]) -> Optional[List[List[str]]]:
-    """The class's mirror symmetry as keypoint-name pairs, or None when the model's flip does not close over it.
+def local_flip_pairs(slots: List[int], layout_ids: List[str], flip_idx: Optional[List[int]]) -> Optional[List[List[str]]]:
+    """The class's mirror symmetry as keypoint-id pairs, or None when the model's flip does not close over it.
 
     A slot whose mirror the class does not own leaves the whole class's symmetry undeclared: a partial mapping
     would silently drop keypoints under a horizontal flip rather than mirror them. A slot that mirrors to itself
@@ -124,42 +125,51 @@ def local_flip_pairs(slots: List[int], layout: List[str], flip_idx: Optional[Lis
     """
     if flip_idx is None:
         return None
-    name_by_slot = dict(zip(slots, layout))
+    id_by_slot = dict(zip(slots, layout_ids))
     pairs = []
     for slot in slots:
         target = flip_idx[slot]
-        if target not in name_by_slot:
+        if target not in id_by_slot:
             logger.warning(f"Slot {slot} mirrors to slot {target}, which the class does not own; declaring no flip for it")
             return None
         if target > slot:
-            pairs.append([name_by_slot[slot], name_by_slot[target]])
+            pairs.append([id_by_slot[slot], id_by_slot[target]])
     return pairs
 
 
 def build_labels(
-    class_ids: Dict[int, str],
+    class_names: Dict[int, str],
     kpt_names: Optional[Dict[str, List[str]]],
     keypoint_count: int,
     flip_idx: Optional[List[int]],
     default_layout: List[str],
-) -> Tuple[Dict[int, Label], Dict[int, List[int]]]:
-    """The Factory label of each class index, with the model slots each one owns."""
+) -> Tuple[Dict[int, Label], Dict[int, List[int]], Dict[str, str]]:
+    """The Factory label of each class index, the model slots each one owns, and the keypoint vocabulary.
+
+    A yaml names classes and keypoint slots for people to read, so each name is kept as the display name and the
+    identity is derived from it. A dataset with no keypoints keeps its class names as ids exactly as before: the
+    identity split exists so a keypoint layout can be renamed, and there is no layout here to rename.
+    """
     labels = {}
     slots_by_index = {}
-    for index, class_id in class_ids.items():
+    keypoint_names: Dict[str, str] = {}
+    for index, class_name in class_names.items():
         if not keypoint_count:
-            labels[index] = Label(id=class_id, annotation_type=AnnotationType.BOX)
+            labels[index] = Label(id=class_name, annotation_type=AnnotationType.BOX)
             continue
-        slots = class_slots(class_id, kpt_names, keypoint_count)
-        layout = [kpt_names[class_id][slot] for slot in slots] if kpt_names else [default_layout[slot] for slot in slots]
+        slots = class_slots(class_name, kpt_names, keypoint_count)
+        layout = [kpt_names[class_name][slot] for slot in slots] if kpt_names else [default_layout[slot] for slot in slots]
+        layout_ids = [derive_pose_id(name) for name in layout]
+        keypoint_names.update(zip(layout_ids, layout))
         labels[index] = Label(
-            id=class_id,
+            id=derive_pose_id(class_name),
+            name=class_name,
             annotation_type=AnnotationType.BOX,
-            keypoints=layout,
-            horizontal_flip_pairs=local_flip_pairs(slots, layout, flip_idx),
+            keypoint_ids=layout_ids,
+            horizontal_flip_pairs=local_flip_pairs(slots, layout_ids, flip_idx),
         )
         slots_by_index[index] = slots
-    return labels, slots_by_index
+    return labels, slots_by_index, keypoint_names
 
 
 def split_image_dirs(config: dict, root: Path, splits: List[str]) -> Dict[str, Path]:
@@ -274,8 +284,8 @@ def _keypoint_annotations(
             continue
         annotations.append(
             KeypointAnnotation(
-                id=f"{box.id}-{label.keypoints[local]}",
-                label_id=label.keypoints[local],
+                id=f"{box.id}-{label.keypoint_ids[local]}",
+                label_id=label.keypoint_ids[local],
                 value=Point2d(x=x * width, y=y * height, visibility=visibility),
                 bounding_box_id=box.id,
             )
@@ -289,7 +299,7 @@ def build_dataset(config: dict, root: Path, splits: List[str], default_keypoint_
     Every split is read into one dataset, with each image keeping its path relative to the dataset root so images
     of the same name in different splits stay distinct.
     """
-    class_ids = class_ids_by_index(config["names"])
+    class_names = class_names_by_index(config["names"])
     kpt_shape = config.get("kpt_shape")
     if kpt_shape is not None:
         if not isinstance(kpt_shape, (list, tuple)) or len(kpt_shape) != 2:
@@ -318,14 +328,14 @@ def build_dataset(config: dict, root: Path, splits: List[str], default_keypoint_
                 f"which maps to {flip_idx[flip_idx[not_involution]]}"
             )
 
-    kpt_names = keypoint_names_by_class(class_ids, config.get("kpt_names"), keypoint_count)
+    kpt_names = keypoint_names_by_class(class_names, config.get("kpt_names"), keypoint_count)
     if kpt_names is not None and not keypoint_count:
         raise ValueError("kpt_names is declared without kpt_shape")
 
     default_layout = default_keypoint_names or [f"point-{slot}" for slot in range(keypoint_count)]
     if keypoint_count and len(default_layout) != keypoint_count:
         raise ValueError(f"{len(default_layout)} keypoint names were given for a {keypoint_count} keypoint model")
-    labels, slots_by_index = build_labels(class_ids, kpt_names, keypoint_count, flip_idx, default_layout)
+    labels, slots_by_index, keypoint_names = build_labels(class_names, kpt_names, keypoint_count, flip_idx, default_layout)
 
     files = []
     for split, image_dir in split_image_dirs(config, root, splits).items():
@@ -351,7 +361,12 @@ def build_dataset(config: dict, root: Path, splits: List[str], default_keypoint_
                 )
             )
 
-    return Dataset(labels=list(labels.values()), files=files, coordinate_dimensions=coordinate_dimensions or None)
+    return Dataset(
+        labels=list(labels.values()),
+        files=files,
+        coordinate_dimensions=coordinate_dimensions or None,
+        keypoints=keypoint_names,
+    )
 
 
 def convert_yolo_to_json(

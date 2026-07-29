@@ -2,12 +2,13 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from pycocotools import mask as coco_mask
 
 from lmi_utils.dataset_utils.coco_dataset import CocoCategory, CocoDataset
+from lmi_utils.dataset_utils.pose_identifiers import derive_pose_id
 from lmi_utils.dataset_utils.representations import (
     AnnotationType,
     Box,
@@ -35,7 +36,7 @@ VISIBILITY_UNOBSERVED = 0
 
 
 def load_class_map(path: Optional[Path]) -> Dict[str, str]:
-    """A COCO category name to Factory class id mapping; empty when no file is given."""
+    """A COCO category name to the name it should carry in Factory; empty when no file is given."""
     if path is None:
         return {}
     with open(path) as f:
@@ -43,7 +44,7 @@ def load_class_map(path: Optional[Path]) -> Dict[str, str]:
 
 
 def load_flip_map(path: Optional[Path]) -> Dict[str, List]:
-    """A Factory class id to the keypoint-name pairs that exchange places when an image is mirrored."""
+    """A class name to the keypoint-name pairs that exchange places when an image is mirrored."""
     if path is None:
         return {}
     with open(path) as f:
@@ -55,29 +56,37 @@ def build_labels(
     class_map: Dict[str, str],
     flip_map: Dict[str, List],
     skeleton_base: int,
-) -> Dict[int, Label]:
-    """The Factory label of each COCO category, keyed by category id.
+) -> Tuple[Dict[int, Label], Dict[str, str]]:
+    """The Factory label of each COCO category, keyed by category id, and the keypoint vocabulary they draw on.
+
+    COCO names classes and keypoints for people to read, so each name is kept as the display name and its
+    identity is derived from it. `class_map` and `flip_map` are written in those same names, after any
+    renaming `class_map` does -- nothing asks the caller for an id.
 
     COCO carries no flip symmetry, so a class reaches Factory with `horizontalFlipPairs: null` -- importable but
     not horizontally flippable -- unless `flip_map` supplies the mirror pairs.
     """
     labels = {}
+    keypoint_names: Dict[str, str] = {}
     for category in categories:
-        class_id = class_map.get(category.name, category.name)
+        class_name = class_map.get(category.name, category.name)
         skeleton = None
         if category.skeleton:
             skeleton = [[int(start) - skeleton_base, int(end) - skeleton_base] for start, end in category.skeleton]
-        flip = flip_map.get(class_id)
+        flip = flip_map.get(class_name)
         if flip is not None and not category.keypoints:
-            raise ValueError(f"A horizontal flip was supplied for '{class_id}', which declares no keypoints")
+            raise ValueError(f"A horizontal flip was supplied for '{class_name}', which declares no keypoints")
+        for keypoint_name in category.keypoints or []:
+            keypoint_names[derive_pose_id(keypoint_name)] = keypoint_name
         labels[category.id] = Label(
-            id=class_id,
+            id=derive_pose_id(class_name),
+            name=class_name,
             annotation_type=AnnotationType.BOX,
-            keypoints=list(category.keypoints) if category.keypoints else None,
-            horizontal_flip_pairs=flip,
+            keypoint_ids=[derive_pose_id(name) for name in category.keypoints] if category.keypoints else None,
+            horizontal_flip_pairs=[[derive_pose_id(first), derive_pose_id(second)] for first, second in flip] if flip else flip,
             skeleton=skeleton,
         )
-    return labels
+    return labels, keypoint_names
 
 
 def _segmentation_annotation(annotation, label_id: str, height: int, width: int):
@@ -101,7 +110,7 @@ def build_dataset(
     Each instance becomes one box (the anchor its keypoints link to) plus one keypoint annotation per observed
     slot. With `segmentation`, instances of classes declaring no keypoints become polygons or bitmasks instead.
     """
-    labels = build_labels(coco.categories, class_map, flip_map, skeleton_base)
+    labels, keypoint_names = build_labels(coco.categories, class_map, flip_map, skeleton_base)
     files = []
     for image in coco.images:
         annotations = []
@@ -111,7 +120,7 @@ def build_dataset(
                 raise ValueError(f"Annotation {annotation.id} references undeclared category {annotation.category_id}")
 
             instance = None
-            if segmentation and not label.keypoints:
+            if segmentation and not label.keypoint_ids:
                 instance = _segmentation_annotation(annotation, label.id, image.height, image.width)
             if instance is None:
                 x, y, w, h = annotation.bbox
@@ -120,21 +129,22 @@ def build_dataset(
 
             if not annotation.keypoints:
                 continue
-            if not label.keypoints:
-                raise ValueError(f"Annotation {annotation.id} has keypoints but category '{label.id}' declares none")
+            if not label.keypoint_ids:
+                raise ValueError(f"Annotation {annotation.id} has keypoints but category '{label.display_name}' declares none")
             observed = len(annotation.keypoints) // COORDINATE_DIMENSIONS
-            if observed != len(label.keypoints):
+            if observed != len(label.keypoint_ids):
                 raise ValueError(
-                    f"Annotation {annotation.id} has {observed} keypoints for the {len(label.keypoints)} declared by '{label.id}'"
+                    f"Annotation {annotation.id} has {observed} keypoints for the "
+                    f"{len(label.keypoint_ids)} declared by '{label.display_name}'"
                 )
-            for index, name in enumerate(label.keypoints):
+            for index, keypoint_id in enumerate(label.keypoint_ids):
                 x, y, visibility = annotation.keypoints[index * COORDINATE_DIMENSIONS : (index + 1) * COORDINATE_DIMENSIONS]
                 if visibility == VISIBILITY_UNOBSERVED:
                     continue
                 annotations.append(
                     KeypointAnnotation(
-                        id=f"{annotation.id}-{name}",
-                        label_id=name,
+                        id=f"{annotation.id}-{keypoint_id}",
+                        label_id=keypoint_id,
                         value=Point2d(x=x, y=y, visibility=int(visibility)),
                         bounding_box_id=instance.id,
                     )
@@ -144,8 +154,13 @@ def build_dataset(
             FileAnnotations(id=str(image.id), path=image.file_name, height=image.height, width=image.width, annotations=annotations)
         )
 
-    pose = any(label.keypoints for label in labels.values())
-    return Dataset(labels=list(labels.values()), files=files, coordinate_dimensions=COORDINATE_DIMENSIONS if pose else None)
+    pose = any(label.keypoint_ids for label in labels.values())
+    return Dataset(
+        labels=list(labels.values()),
+        files=files,
+        coordinate_dimensions=COORDINATE_DIMENSIONS if pose else None,
+        keypoints=keypoint_names,
+    )
 
 
 def convert_coco_to_json(
