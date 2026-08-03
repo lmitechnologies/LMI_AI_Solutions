@@ -1007,7 +1007,7 @@ ci = [
     { name = "onnxruntime", specifier = "==1.21.0" },
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
-    { name = "rfdetr", specifier = "==1.8.3" },
+    { name = "rfdetr", specifier = "==1.9.0" },
     { name = "scikit-learn", specifier = "==1.7.2" },
     { name = "shapely", specifier = "==2.1.2" },
     { name = "tensorboard", specifier = "==2.21.0" },
@@ -1026,7 +1026,7 @@ gpu = [
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "pytest-html", specifier = ">=4.1.1" },
-    { name = "rfdetr", specifier = "==1.8.3" },
+    { name = "rfdetr", specifier = "==1.9.0" },
     { name = "scikit-learn", specifier = "==1.7.2" },
     { name = "shapely", specifier = "==2.1.2" },
     { name = "tensorboard", specifier = "==2.21.0" },
@@ -1043,7 +1043,7 @@ test = [
     { name = "onnx", specifier = "==1.22.0" },
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
-    { name = "rfdetr", specifier = "==1.8.3" },
+    { name = "rfdetr", specifier = "==1.9.0" },
     { name = "scikit-learn", specifier = "==1.7.2" },
     { name = "shapely", specifier = "==2.1.2" },
     { name = "tensorboard", specifier = "==2.21.0" },
@@ -2562,7 +2562,7 @@ wheels = [
 
 [[package]]
 name = "rfdetr"
-version = "1.8.3"
+version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", marker = "(python_full_version >= '3.10' and python_full_version < '3.13') or (python_full_version < '3.10' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version >= '3.13' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu')" },
@@ -2583,9 +2583,9 @@ dependencies = [
     { name = "tqdm", marker = "(python_full_version >= '3.10' and python_full_version < '3.13') or (python_full_version < '3.10' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version >= '3.13' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu')" },
     { name = "transformers", marker = "(python_full_version >= '3.10' and python_full_version < '3.13') or (python_full_version < '3.10' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version >= '3.13' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f5/24/6396e220701e3eb7a2cc09a0b9552f6dffe8b94a7421bd5e21cea3060285/rfdetr-1.8.3.tar.gz", hash = "sha256:a6306654a1566f126cb1bc511d5f2f87f04fb3b98b50af4bc3d7e9743766eafc", size = 359808, upload-time = "2026-06-29T07:53:38.082Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/72/a6b4f40786d94acfa083c4c25799c55c7509bf51c7a396045112debd4134/rfdetr-1.9.0.tar.gz", hash = "sha256:f42293527ffebe2f0599602f66c5604a73af37b05055a1fbc512f01061fe75c3", size = 439306, upload-time = "2026-07-29T09:03:58.779Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1f/a3/0554e5534e2e9a1118540f713d1c22123018539326b017dceed9fd7f48e0/rfdetr-1.8.3-py3-none-any.whl", hash = "sha256:345e55b897ce590464e64ae4750e60b668436cbc6bf58d87f438895a93c3e9a4", size = 406294, upload-time = "2026-06-29T07:53:36.561Z" },
+    { url = "https://files.pythonhosted.org/packages/97/5e/5b7696a6bfe46b0da7e3ca82c0ae535e5a2221bcb8fff2ccd7768376af57/rfdetr-1.9.0-py3-none-any.whl", hash = "sha256:2fe800acd555fe006e80e1b5c44af0cd4a3d3924854f09ade61bcc9b97cc7445", size = 486317, upload-time = "2026-07-29T09:03:56.811Z" },
 ]
 
 [[package]]

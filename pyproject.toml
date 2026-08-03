@@ -20,7 +20,7 @@ test = [
     "ultralytics==8.4.113",
     "onnx==1.22.0",
     "pytest==9.1.1",
-    "rfdetr==1.8.3",
+    "rfdetr==1.9.0",
     "albumentations>=2.0.8,<3.0.0",
     "transformers==5.13.1",
     "pycocotools==2.0.11",
