@@ -108,28 +108,38 @@ def load_pose_schema(path: Optional[Union[str, Path]]) -> Optional[dict]:
     return data.get("annotationSchema", data)
 
 
-def pose_labels(pose_schema: Optional[dict]) -> Tuple[List[Label], Set[str], Dict[str, str]]:
-    """What a pose schema declares: its class labels, the keypoint ids reserved as slots, and keypoint names."""
+def pose_labels(pose_schema: Optional[dict]) -> Tuple[List[Label], Set[str], Dict[str, str], Dict[AnnotationType, Dict[str, str]]]:
+    """Return the labels, slots, names and display-name-to-id mappings a pose schema declares."""
     labels: List[Label] = []
     vocabulary: Set[str] = set()
+    ids_by_name: Dict[AnnotationType, Dict[str, str]] = {AnnotationType.BOX: {}, AnnotationType.KEYPOINT: {}}
     keypoint_names = {
         str(keypoint_id): (definition or {}).get("name") or str(keypoint_id)
         for keypoint_id, definition in ((pose_schema or {}).get("keypoints") or {}).items()
     }
+    for keypoint_id, name in keypoint_names.items():
+        previous = ids_by_name[AnnotationType.KEYPOINT].setdefault(name, keypoint_id)
+        if previous != keypoint_id:
+            raise ValueError(f"Pose schema keypoints '{previous}' and '{keypoint_id}' are both named '{name}'")
     for class_id, declaration in (pose_schema or {}).get("classes", {}).items():
+        class_id = str(class_id)
+        class_name = declaration.get("name") or class_id
         keypoint_ids = [str(keypoint_id) for keypoint_id in declaration.get("keypointIds") or []]
         labels.append(
             Label(
-                id=str(class_id),
-                name=declaration.get("name"),
+                id=class_id,
+                name=class_name,
                 annotation_type=AnnotationType.BOX,
                 keypoint_ids=keypoint_ids or None,
                 horizontal_flip_pairs=declaration.get("horizontalFlipPairs"),
                 skeleton=declaration.get("skeleton"),
             )
         )
+        previous = ids_by_name[AnnotationType.BOX].setdefault(class_name, class_id)
+        if previous != class_id:
+            raise ValueError(f"Pose schema classes '{previous}' and '{class_id}' are both named '{class_name}'")
         vocabulary.update(keypoint_ids)
-    return labels, vocabulary, keypoint_names
+    return labels, vocabulary, keypoint_names, ids_by_name
 
 
 def link_keypoints(relations: List[dict], by_region_id: dict):
@@ -230,13 +240,24 @@ def generate_file_ids(files: List[str]):
     return file_id
 
 
-def collect_results(results, out_list, counter, label_dict, labels, fname, load_confidence=False, keypoint_vocabulary=None):
+def collect_results(
+    results,
+    out_list,
+    counter,
+    label_dict,
+    labels,
+    fname,
+    load_confidence=False,
+    keypoint_vocabulary=None,
+    label_ids_by_name=None,
+):
     """Parse results, append Annotations to out_list, return updated counter.
 
     Region ids and relations are scoped to the one completion these results belong to, so links are resolved here
     rather than across a whole file.
     """
     keypoint_vocabulary = keypoint_vocabulary or set()
+    label_ids_by_name = label_ids_by_name or {}
     by_region_id = {}
     relations = []
     parent_links = []
@@ -247,6 +268,7 @@ def collect_results(results, out_list, counter, label_dict, labels, fname, load_
         shape, label, conf, annot_type = lst_to_shape(result, fname, load_confidence=load_confidence)
         if shape is None:
             continue
+        label = label_ids_by_name.get(annot_type, {}).get(label, label)
         if label not in label_dict and label not in keypoint_vocabulary:
             # A declared keypoint names a slot inside its class's layout, not a class of its own.
             label_dict.add(label)
@@ -282,8 +304,13 @@ def get_annotations_from_json(path_json, images_dir, background=False, pose_sche
         json_files = [path_json]
     else:
         json_files = glob.glob(os.path.join(path_json, "*.json"))
+    json_files = [path for path in json_files if os.path.basename(path) not in (LABEL_NAME, PRED_NAME)]
+    if not json_files:
+        raise FileNotFoundError(
+            f"No Label Studio JSON exports found at '{path_json}'. Files named '{LABEL_NAME}' and '{PRED_NAME}' are reserved outputs."
+        )
 
-    labels, keypoint_vocabulary, keypoint_names = pose_labels(pose_schema)
+    labels, keypoint_vocabulary, keypoint_names, label_ids_by_name = pose_labels(pose_schema)
     annotations: List[FileAnnotations] = []
 
     label_set = {label.id for label in labels}
@@ -294,12 +321,14 @@ def get_annotations_from_json(path_json, images_dir, background=False, pose_sche
     processed_files = set()
 
     for path_json in json_files:
-        if path_json.endswith(LABEL_NAME) or path_json.endswith(PRED_NAME):
-            continue
         logger.info(f"Extracting labels from: {path_json}")
         logger.info(f"dir_path : {images_dir}")
         with open(path_json) as f:
             li = json.load(f)
+        if not isinstance(li, list):
+            raise ValueError(
+                f"'{path_json}' is not a Label Studio JSON export: expected a top-level array of tasks, got {type(li).__name__}."
+            )
 
         cnt_anno = 0
         cnt_image = 0
@@ -326,7 +355,14 @@ def get_annotations_from_json(path_json, images_dir, background=False, pose_sche
                     if len(annot["result"]) > 0:
                         cnt += 1
                     cnt_anno = collect_results(
-                        annot["result"], file_annotations, cnt_anno, label_set, labels, f, keypoint_vocabulary=keypoint_vocabulary
+                        annot["result"],
+                        file_annotations,
+                        cnt_anno,
+                        label_set,
+                        labels,
+                        f,
+                        keypoint_vocabulary=keypoint_vocabulary,
+                        label_ids_by_name=label_ids_by_name,
                     )
 
                     if "prediction" in annot and "result" in annot["prediction"]:
@@ -339,6 +375,7 @@ def get_annotations_from_json(path_json, images_dir, background=False, pose_sche
                             f,
                             load_confidence=True,
                             keypoint_vocabulary=keypoint_vocabulary,
+                            label_ids_by_name=label_ids_by_name,
                         )
                 if cnt == 0 and dt.get("total_annotations", 0) > 0:
                     cnt_wrong += 1
@@ -356,6 +393,7 @@ def get_annotations_from_json(path_json, images_dir, background=False, pose_sche
                             f,
                             load_confidence=True,
                             keypoint_vocabulary=keypoint_vocabulary,
+                            label_ids_by_name=label_ids_by_name,
                         )
 
             url, f = f, resolve_image(f, common_prefix, image_index)
@@ -432,12 +470,11 @@ def get_annotations_from_json(path_json, images_dir, background=False, pose_sche
     if pose_schema is not None:
         check_keypoint_vocabulary(annotations, keypoint_vocabulary)
     elif any(file.get_annotations_by_type(AnnotationType.KEYPOINT) for file in annotations):
-        # Silently converting these produces a dataset that imports and then cannot be trained, which only shows
-        # up much later, in Factory.
+        # Factory rejects keypoints with no declared layout, so callers using this function directly need the
+        # same warning the CLI turns into an error below.
         logger.warning(
-            "This export has keypoints but no pose schema was given, so each keypoint label becomes a class of "
-            "its own and no layout is declared. The result imports into Factory but cannot train pose. Pass -ps, "
-            "or --scaffold_schema to draft one."
+            "This export has keypoints but no pose schema was given. The result is not a valid Factory pose dataset; "
+            "pass -ps, or use --scaffold_schema to draft and apply the latest pose schema."
         )
 
     return annotations, labels, keypoint_names
@@ -484,8 +521,22 @@ def main():
             json.dump({"annotationSchema": draft}, f, indent=4)
         logger.warning(
             f"Wrote a draft schema of {len(draft['classes'])} class(es) to {args.scaffold_schema}. Its keypoint order "
-            f"is only what the annotations showed and every horizontalFlip is null: review it, then pass it as -ps."
+            f"is only what the annotations showed and horizontalFlipPairs is null for every class: review it, then pass it as -ps."
         )
+        if pose_schema is None and any(file.get_annotations_by_type(AnnotationType.KEYPOINT) for file in files):
+            pose_schema = draft
+            files, labels, keypoint_names = get_annotations_from_json(
+                args.path_json, args.path_images, background=args.background, pose_schema=pose_schema
+            )
+            dataset = Dataset(
+                labels=labels,
+                files=files,
+                coordinate_dimensions=pose_schema.get("coordinateDimensions"),
+                keypoints=keypoint_names,
+            )
+
+    if pose_schema is None and any(file.get_annotations_by_type(AnnotationType.KEYPOINT) for file in files):
+        raise ValueError("Keypoint exports require -ps/--pose_schema or --scaffold_schema in the latest AIS JSON format.")
 
     out_path = args.path_out_json
     if not out_path.endswith(".json"):

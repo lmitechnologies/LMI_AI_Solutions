@@ -7,7 +7,12 @@ from typing import Dict, Iterable, List, Optional
 
 import cv2
 
-from lmi_utils.dataset_utils.pose_identifiers import collect_pose_display_name_issues, describe_pose_label, is_pose_id
+from lmi_utils.dataset_utils.pose_identifiers import (
+    collect_pose_display_name_issues,
+    derive_pose_id,
+    describe_pose_label,
+    is_pose_id,
+)
 from lmi_utils.dataset_utils.representations import UNASSIGNED_KEYPOINT_POLICIES, Annotation, AnnotationType, Dataset, Label
 
 logger = logging.getLogger(__name__)
@@ -230,6 +235,8 @@ def scaffold_pose_schema(dataset: Dataset) -> dict:
     Keypoints in more than one box, or in none, are skipped rather than guessed at.
     """
     classes: Dict[str, List[str]] = {}
+    class_names: Dict[str, str] = {}
+    keypoint_names: Dict[str, str] = {}
     names = {label.id: label.display_name for label in dataset.labels}
     for file in dataset.files:
         boxes = [a for a in file.annotations if a.type == AnnotationType.BOX]
@@ -244,27 +251,46 @@ def scaffold_pose_schema(dataset: Dataset) -> dict:
                     logger.warning(f"Skipped keypoint '{annotation.label_id}' in {file.path}: {len(containing)} boxes contain it")
                     continue
                 owner = containing[0]
-            keypoints = classes.setdefault(owner.label_id, [])
-            if annotation.label_id not in keypoints:
-                keypoints.append(annotation.label_id)
+            class_id = derive_pose_id(owner.label_id)
+            keypoint_id = derive_pose_id(annotation.label_id)
+            class_names.setdefault(class_id, names.get(owner.label_id) or owner.label_id)
+            keypoint_names.setdefault(keypoint_id, dataset.keypoint_name(annotation.label_id))
+            keypoints = classes.setdefault(class_id, [])
+            if keypoint_id not in keypoints:
+                keypoints.append(keypoint_id)
 
     return {
         "type": POSE_SCHEMA_TYPE,
         "version": POSE_SCHEMA_VERSION,
         "coordinateDimensions": COORDINATE_DIMENSIONS,
-        "keypoints": {
-            keypoint_id: {"name": dataset.keypoint_name(keypoint_id)}
-            for keypoint_id in dict.fromkeys(slot for slots in classes.values() for slot in slots)
-        },
+        "keypoints": {keypoint_id: {"name": keypoint_names[keypoint_id]} for keypoint_id in keypoint_names},
         "classes": {
             class_id: {
-                "name": names.get(class_id) or class_id,
+                "name": class_names[class_id],
                 "keypointIds": slots,
                 "horizontalFlipPairs": None,
             }
             for class_id, slots in classes.items()
         },
     }
+
+
+def require_pose_declaration(dataset: Dataset) -> None:
+    """Reject keypoint observations that the latest AIS dataset JSON does not declare as pose slots."""
+    keypoint_files = [
+        file.path
+        for file in dataset.files
+        if any(annotation.type == AnnotationType.KEYPOINT for annotation in file.annotations + file.predictions)
+    ]
+    if keypoint_files and not any(label.keypoint_ids for label in dataset.labels):
+        shown = keypoint_files[:5]
+        remaining = len(keypoint_files) - len(shown)
+        paths = ", ".join(shown) + (f" and {remaining} more file(s)" if remaining else "")
+        raise ValueError(
+            "Keypoint annotations require the latest AIS pose declaration: labels[].keypoint_ids, "
+            "labels[].horizontal_flip_pairs, and the dataset-level keypoints map. "
+            f"Found undeclared keypoints in {paths}."
+        )
 
 
 def convert_json_to_factory(
@@ -292,6 +318,7 @@ def convert_json_to_factory(
         unlinked_keypoints (str): What becomes of a keypoint no box owns -- "error", "drop" or "keep". A pose
             model trains on box-linked keypoints only, so a kept one reaches Factory but not training.
     """
+    require_pose_declaration(dataset)
     if annotation_schema is None:
         annotation_schema = build_pose_schema(dataset.labels, dataset.keypoints)
     elif annotation_schema.get("type") == POSE_SCHEMA_TYPE:

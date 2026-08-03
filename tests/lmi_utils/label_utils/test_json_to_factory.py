@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 import pytest
 
+from lmi_utils.dataset_utils.pose_identifiers import derive_pose_id
 from lmi_utils.dataset_utils.representations import Box, BoxAnnotation, Dataset, FileAnnotations, KeypointAnnotation, Label, Point2d
 from lmi_utils.label_utils.json_to_factory import build_pose_schema, convert_json_to_factory, scaffold_pose_schema
 
@@ -110,6 +111,31 @@ def test_a_scaffold_groups_observed_keypoints_under_their_box_class():
     }
 
 
+def test_a_scaffold_separates_hand_built_display_names_from_ids():
+    dataset = Dataset(
+        labels=[Label(id="Hex bolt")],
+        files=[
+            FileAnnotations(
+                "file",
+                "image.png",
+                20,
+                20,
+                [
+                    BoxAnnotation("box", "Hex bolt", Box(0, 0, 20, 20)),
+                    KeypointAnnotation("kp", "Left eye", Point2d(10, 4), bounding_box_id="box"),
+                ],
+            )
+        ],
+    )
+
+    schema = scaffold_pose_schema(dataset)
+    class_id = derive_pose_id("Hex bolt")
+    keypoint_id = derive_pose_id("Left eye")
+
+    assert schema["classes"] == {class_id: {"name": "Hex bolt", "keypointIds": [keypoint_id], "horizontalFlipPairs": None}}
+    assert schema["keypoints"] == {keypoint_id: {"name": "Left eye"}}
+
+
 def test_a_scaffold_skips_keypoints_it_cannot_attribute():
     annotations = [
         BoxAnnotation("box", "bolt", Box(0, 0, 10, 10)),
@@ -167,6 +193,11 @@ def test_a_dataset_declaring_no_keypoints_writes_no_schema(tmp_path):
     output_dir = _convert(tmp_path, dataset)
 
     assert not (output_dir / ".meta.json").exists()
+
+
+def test_keypoints_without_a_latest_pose_declaration_are_rejected(tmp_path):
+    with pytest.raises(ValueError, match=r"latest AIS pose declaration: labels\[\]\.keypoint_ids"):
+        _convert(tmp_path, _pose_dataset(Label(id="bolt")))
 
 
 def test_keypoints_reach_factory_linked_and_without_unset_fields(tmp_path):

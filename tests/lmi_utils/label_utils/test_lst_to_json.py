@@ -5,10 +5,10 @@ import cv2
 import numpy as np
 import pytest
 
-from lmi_utils.dataset_utils.pose_identifiers import pose_label_alias
+from lmi_utils.dataset_utils.pose_identifiers import derive_pose_id, pose_label_alias
 from lmi_utils.dataset_utils.representations import AnnotationType, Dataset
 from lmi_utils.label_utils.json_to_factory import convert_json_to_factory
-from lmi_utils.label_utils.lst_to_json import get_annotations_from_json, load_pose_schema
+from lmi_utils.label_utils.lst_to_json import get_annotations_from_json, load_pose_schema, main
 
 WIDTH = HEIGHT = 20
 # Label Studio stores every coordinate as a percentage of the image.
@@ -340,3 +340,84 @@ def test_a_project_factory_did_not_generate_keeps_its_own_label_values(tmp_path)
     output_dir = _convert(tmp_path, results)
 
     assert [annotation["label_id"] for annotation in _annotations(output_dir)] == ["bolt"]
+
+
+def test_a_hand_built_project_resolves_display_names_to_declared_ids(tmp_path):
+    results = [
+        _region(
+            "box1",
+            "rectanglelabels",
+            {"x": 0, "y": 0, "width": 100, "height": 100, "rectanglelabels": ["Hex bolt"]},
+        ),
+        _region("kp1", "keypointlabels", {"x": 50, "y": 25, "keypointlabels": ["Head"]}),
+    ]
+    output_dir = _convert(tmp_path, results, pose_schema=POSE_SCHEMA)
+
+    assert [annotation["label_id"] for annotation in _annotations(output_dir)] == ["bolt", "head"]
+
+
+def test_directory_input_only_skips_exact_reserved_output_names(tmp_path):
+    export_path, image_dir = _write_export(tmp_path, ONE_BOLT)
+    export_path.rename(tmp_path / "project-1-labels.json")
+
+    files, _, _ = get_annotations_from_json(str(tmp_path), str(image_dir), pose_schema=POSE_SCHEMA)
+
+    assert [file.path for file in files] == ["image.png"]
+
+
+def test_a_factory_dataset_json_is_not_mistaken_for_a_label_studio_export(tmp_path):
+    export_path, image_dir = _write_export(tmp_path, ONE_BOLT)
+    export_path.write_text(json.dumps({"labels": [], "files": []}))
+
+    with pytest.raises(ValueError, match="expected a top-level array of tasks, got dict"):
+        get_annotations_from_json(str(export_path), str(image_dir))
+
+
+def test_a_directory_with_only_reserved_outputs_has_no_export(tmp_path):
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
+    (tmp_path / "labels.json").write_text("[]")
+    (tmp_path / "preds.json").write_text("[]")
+
+    with pytest.raises(FileNotFoundError, match="No Label Studio JSON exports"):
+        get_annotations_from_json(str(tmp_path), str(image_dir))
+
+
+def test_scaffold_cli_applies_latest_ids_to_its_dataset_json(tmp_path, monkeypatch):
+    results = [
+        _region(
+            "box1",
+            "rectanglelabels",
+            {"x": 0, "y": 0, "width": 100, "height": 100, "rectanglelabels": ["Hex bolt"]},
+        ),
+        _region("kp1", "keypointlabels", {"x": 50, "y": 25, "keypointlabels": ["Left eye"]}),
+    ]
+    export_path, image_dir = _write_export(tmp_path, results)
+    output_path = tmp_path / "labels.json"
+    schema_path = tmp_path / "schema.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "lst_to_json",
+            "-i",
+            str(export_path),
+            "-imgs",
+            str(image_dir),
+            "-of",
+            str(output_path),
+            "--scaffold_schema",
+            str(schema_path),
+        ],
+    )
+
+    main()
+
+    dataset = json.loads(output_path.read_text())
+    schema = json.loads(schema_path.read_text())["annotationSchema"]
+    class_id = derive_pose_id("Hex bolt")
+    keypoint_id = derive_pose_id("Left eye")
+    assert dataset["labels"][0]["id"] == class_id
+    assert dataset["labels"][0]["keypoint_ids"] == [keypoint_id]
+    assert dataset["keypoints"] == {keypoint_id: "Left eye"}
+    assert {annotation["label_id"] for annotation in dataset["files"][0]["annotations"]} == {class_id, keypoint_id}
+    assert schema["classes"][class_id]["keypointIds"] == [keypoint_id]

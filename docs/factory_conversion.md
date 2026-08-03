@@ -153,7 +153,7 @@ Export the full `JSON`, **not** `JSON-MIN`, which drops fields the converter nee
 python3 -m lmi_utils.label_utils.lst_to_json -i export.json -imgs images/ -of images/labels.json -ps source_dataset/
 python3 -m lmi_utils.label_utils.json_to_factory -i images/ -o factory_dataset/
 
-# No schema yet: draft one from the first export, edit it, then pass it to every export
+# No schema yet: draft and apply one from the first export, edit it, then pass it to every export
 python3 -m lmi_utils.label_utils.lst_to_json -i export1.json -imgs images1/ -of images1/labels.json --scaffold_schema draft.json
 # edit draft.json: fix the slot order, add the keypoints this export happens not to show, fill in horizontalFlipPairs or put a null
 python3 -m lmi_utils.label_utils.lst_to_json -i export1.json -imgs images1/ -of images1/labels.json -ps draft.json
@@ -163,12 +163,13 @@ python3 -m lmi_utils.label_utils.lst_to_json -i export2.json -imgs images2/ -of 
 python3 -m lmi_utils.label_utils.json_to_factory -i images/ -o factory_dataset/ --unlinked_keypoints drop
 ```
 
-`-ps` takes a Factory dataset directory, its `.meta.json`, or a bare schema file. Skip it and the export still converts, but keypoint
-labels become classes of their own and the result is not pose-trainable.
+`-ps` takes a Factory dataset directory, its `.meta.json`, or a bare schema file. A keypoint export requires either `-ps` or
+`--scaffold_schema`; otherwise conversion stops instead of writing a dataset Factory cannot import. Scaffolding derives valid ids from
+the project's display names and applies the draft to the intermediate `labels.json`, so even the draft pass uses the latest format.
 
 A project Factory generated stores each label under its own id, so an export names ids rather than the text the annotator saw, and the
-round trip survives a rename. An export from a project built by hand names its labels however the annotator did, and those values are
-read as they stand.
+round trip survives a rename. An export from a project built by hand names its labels however the annotator did. A supplied or
+scaffolded schema resolves those display names to its permanent ids before writing annotations.
 
 - A project Factory created already has a schema, on the annotation project and on its source dataset; the project id is in each task's
   image URL.
