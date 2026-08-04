@@ -3,7 +3,15 @@ import os
 import cv2
 import numpy as np
 
-from lmi_utils.dataset_utils.representations import Box, BoxAnnotation, Dataset, FileAnnotations, Label
+from lmi_utils.dataset_utils.representations import (
+    Box,
+    BoxAnnotation,
+    Dataset,
+    FileAnnotations,
+    Label,
+    Mask,
+    MaskAnnotation,
+)
 from lmi_utils.label_utils.json_to_coco import convert_to_json, create_coco_dataset
 
 
@@ -75,3 +83,51 @@ def test_convert_to_json_bg_copies_background_images(tmp_path):
     for split in ("train", "valid"):
         copied = {f for f in os.listdir(out_dir / split) if f.endswith(".png")}
         assert copied == {"id0_img0.png", "id1_img1.png", "id2_img2.png"}
+
+
+def build_mask_dataset(blobs):
+    """One file holding one mask annotation, with a filled rectangle per (y0, y1, x0, x1) blob."""
+    mask = np.zeros((100, 200), dtype=np.uint8)
+    for y0, y1, x0, x1 in blobs:
+        mask[y0:y1, x0:x1] = 1
+    file = FileAnnotations(
+        id="0",
+        path="img0.png",
+        height=100,
+        width=200,
+        annotations=[MaskAnnotation(id="a0", label_id="defect", confidence=1.0, value=Mask(mask=mask))],
+        predictions=[],
+    )
+    return Dataset(labels=[Label(id="defect")], files=[file])
+
+
+def test_disconnected_mask_is_one_annotation_by_default():
+    _, coco, _, _ = create_coco_dataset(build_mask_dataset([(10, 30, 10, 30), (60, 80, 65, 85)]))
+    assert len(coco.annotations) == 1
+    # the union of both regions, so the box covers the gap between them
+    assert [round(v) for v in coco.annotations[0].bbox] == [10, 10, 74, 69]
+
+
+def test_split_regions_gives_each_region_its_own_annotation():
+    _, coco, _, _ = create_coco_dataset(build_mask_dataset([(10, 30, 10, 30), (60, 80, 65, 85)]), split_regions=True)
+    assert len(coco.annotations) == 2
+    boxes = sorted([round(v) for v in ann.bbox] for ann in coco.annotations)
+    assert boxes == [[10, 10, 19, 19], [65, 60, 19, 19]]
+
+
+def test_connected_mask_is_one_annotation_either_way():
+    for split_regions in (False, True):
+        _, coco, _, _ = create_coco_dataset(build_mask_dataset([(10, 30, 10, 30)]), split_regions=split_regions)
+        assert len(coco.annotations) == 1
+        assert [round(v) for v in coco.annotations[0].bbox] == [10, 10, 19, 19]
+
+
+def test_split_regions_carry_their_own_segmentation():
+    _, coco, _, _ = create_coco_dataset(build_mask_dataset([(10, 30, 10, 30), (60, 80, 65, 85)]), split_regions=True)
+    for annotation in coco.annotations:
+        xs = annotation.segmentation[0][0::2]
+        ys = annotation.segmentation[0][1::2]
+        # each outline stays inside its own box rather than spanning both regions
+        assert min(xs) == annotation.bbox[0] and min(ys) == annotation.bbox[1]
+        assert max(xs) - min(xs) == annotation.bbox[2]
+        assert max(ys) - min(ys) == annotation.bbox[3]

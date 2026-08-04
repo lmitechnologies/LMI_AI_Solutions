@@ -38,17 +38,8 @@ def get_args():
         default="all",
         help="[optional] the comma separated target classes, default=all",
     )
-    ap.add_argument("--obb", action="store_true", help="support for oriented bounding box support")
-    ap.add_argument(
-        "--seg",
-        action="store_true",
-        help='convert label formats: mask-to-bbox if "--convert" is enabled, otherwise bbox-to-mask',
-    )
-    ap.add_argument(
-        "--convert",
-        action="store_true",
-        help='convert label formats: bbox-to-mask if "--seg" is enabled, otherwise mask-to-bbox',
-    )
+    ap.add_argument("--obb", action="store_true", help="emit oriented bounding boxes")
+    ap.add_argument("--seg", action="store_true", help="emit segmentation outlines")
     ap.add_argument(
         "--bg",
         action="store_true",
@@ -57,7 +48,7 @@ def get_args():
     ap.add_argument(
         "--merge_box",
         action="store_true",
-        help="merge multiple instances of same class boxes into one. Brush labels only!",
+        help="keep a mask's disconnected regions as one instance under a single box",
     )
     args = vars(ap.parse_args())
     return args
@@ -142,10 +133,11 @@ def convert_to_yolo(args):
     path_val_json = args["path_val_json"] if args["path_val_json"] != "labels.json" else os.path.join(path_val_imgs, args["path_val_json"])
     path_out = args["path_out"]
     merge_box = args.get("merge_box", False)
-    bbox_to_mask = True if args.get("convert", False) and args.get("seg", False) else False
-    mask_to_od = True if args.get("convert", False) and not args.get("seg", False) else False
     target_classes = args["target_classes"].split(",")
     use_obb = args.get("obb", False)
+    # The target format decides the conversion: a detect label file holds boxes, a segment one outlines
+    bbox_to_mask = args.get("seg", False)
+    mask_to_od = not bbox_to_mask and not use_obb
     path_class_yaml = args.get("path_dataset_yaml", None)
 
     # check if the dataset path exists

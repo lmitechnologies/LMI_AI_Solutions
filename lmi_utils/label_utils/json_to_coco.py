@@ -19,28 +19,35 @@ def get_args():
     ap.add_argument("--path_val_imgs", "-vi", required=False, help="the output path for val images")
     ap.add_argument("--target_classes", default="all", help="[optional] the comma separated target classes, default=all")
     ap.add_argument("--bg", action="store_true", help="keep images with no labels in the output, where models treat them as background")
-    ap.add_argument("--merge_box", action="store_true", help="merge multiple instances of same class boxes into one. Brush labels only!")
+    ap.add_argument("--split_regions", action="store_true", help="give each disconnected region of a mask its own annotation")
     ap.add_argument("--idx0", action="store_true", help="start index from 0 instead of 1")
 
     args = vars(ap.parse_args())
     return args
 
 
-def get_coco_annotation(annotation, **kwargs):
-    """Convert a dataset annotation to COCO format. Returns (segmentation, bbox, area)."""
+def _outline_entry(polygon, **kwargs):
+    """The COCO entry for a single outline."""
+    return polygon.to_coco(**kwargs), polygon.to_box(**kwargs).to_coco(**kwargs), polygon.area(**kwargs)
+
+
+def get_coco_annotations(annotation, **kwargs):
+    """Convert a dataset annotation to COCO entries, each a (segmentation, bbox, area) triple.
+
+    A mask holding disconnected regions stays one entry under one box, the way COCO expresses a single
+    occluded instance. split_regions gives each region its own entry instead, for consumers that read
+    only the box and would otherwise train on one that is mostly background.
+    """
     if isinstance(annotation, MaskAnnotation):
+        if kwargs.get("split_regions", False):
+            return [_outline_entry(region, **kwargs) for region in annotation.value.to_polygons(**kwargs)]
         bbox = annotation.value.to_box(**kwargs)
-        area = annotation.value.area(**kwargs)
-        return annotation.value.to_coco(**kwargs), bbox.to_coco(**kwargs), area
+        return [(annotation.value.to_coco(**kwargs), bbox.to_coco(**kwargs), annotation.value.area(**kwargs))]
     elif isinstance(annotation, PolygonAnnotation):
-        bbox = annotation.value.to_box(**kwargs)
-        area = annotation.value.area(**kwargs)
-        return annotation.value.to_coco(**kwargs), bbox.to_coco(**kwargs), area
+        return [_outline_entry(annotation.value, **kwargs)]
     elif isinstance(annotation, BoxAnnotation):
         poly = annotation.value.to_polygon(**kwargs)
-        segm = poly.to_coco(**kwargs)
-        area = poly.area(**kwargs)
-        return segm, annotation.value.to_coco(**kwargs), area
+        return [(poly.to_coco(**kwargs), annotation.value.to_coco(**kwargs), poly.area(**kwargs))]
     else:
         raise ValueError(f"Unsupported annotation type: {type(annotation)}")
 
@@ -57,7 +64,7 @@ def create_coco_dataset(
         target_classes (list): List of class IDs to include. If None, all classes are used.
         background (bool): Keep images without valid annotations for the target classes as
             background images (a COCO image entry with no annotations). Default False (skip them).
-        **kwargs: Additional options (e.g. merge_boxes, idx0).
+        **kwargs: Additional options (e.g. split_regions, idx0).
 
     Returns:
         Tuple of (Dataset, CocoDataset, Set[str], Dict[str, str]):
@@ -108,7 +115,11 @@ def create_coco_dataset(
         for annotation in filtered_annotations:
             try:
                 # both segmentation and bbox are required for COCO format
-                segmentation, bbox, area = get_coco_annotation(annotation, h=file.height, w=file.width, **kwargs)
+                entries = get_coco_annotations(annotation, h=file.height, w=file.width, **kwargs)
+            except Exception as e:
+                logger.error(f"Error processing  (annotation could be invalid) {annotation.id} for file {file.path}: {e}")
+                continue
+            for segmentation, bbox, area in entries:
                 if bbox[2] <= 0 or bbox[3] <= 0:
                     logger.warning(f"Skipping annotation {annotation.id} for file {file.path} as bbox is invalid: {bbox}")
                     continue
@@ -125,9 +136,6 @@ def create_coco_dataset(
                     )
                 )
                 added_annotations += 1
-            except Exception as e:
-                logger.error(f"Error processing  (annotation could be invalid) {annotation.id} for file {file.path}: {e}")
-                continue
         if added_annotations > 0 or background:
             fnames.add(os.path.basename(file.path))
         else:
@@ -155,7 +163,7 @@ def convert_to_json(args):
     path_val_json = args["path_val_json"] if args["path_val_json"] != "labels.json" else os.path.join(path_val_imgs, args["path_val_json"])
     path_out = args["path_out"]
     background = args.get("bg", False)
-    merge_box = args.get("merge_box", False)
+    split_regions = args.get("split_regions", False)
 
     if not os.path.exists(path_train_json):
         raise FileNotFoundError(f"Train annotations file {path_train_json} does not exist")
@@ -196,7 +204,7 @@ def convert_to_json(args):
         is_crowd=False,
         target_classes=target_classes,
         background=background,
-        merge_boxes=merge_box,
+        split_regions=split_regions,
         idx0=args.get("idx0", False),
     )
     if use_train_for_val:
@@ -212,7 +220,7 @@ def convert_to_json(args):
             is_crowd=False,
             target_classes=target_classes,
             background=background,
-            merge_boxes=merge_box,
+            split_regions=split_regions,
             idx0=args.get("idx0", False),
         )
 
