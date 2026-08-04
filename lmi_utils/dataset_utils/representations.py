@@ -42,6 +42,11 @@ def _require_hw(kwargs):
     return h, w
 
 
+def _pixel_points(points) -> np.ndarray:
+    """Round points to the pixel grid for OpenCV rasterization, which only accepts integer coordinates."""
+    return np.round(np.asarray(points, dtype=float)).astype(np.int32)
+
+
 class AnnotationType(enum.Enum):
     BOX = "Box"
     POLYGON = "Polygon"
@@ -60,8 +65,10 @@ class Base:
 
     def save(self, path: str):
         """Save the dataclass as a JSON file."""
-        # create directory if it doesn't exist
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        # create directory if it doesn't exist; a bare filename has none
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         with open(path, "w") as f:
             f.write(self.to_json())
 
@@ -279,8 +286,7 @@ class Box(Base):
         h, w = _require_hw(kwargs)
         mask = np.zeros((h, w), dtype=np.uint8)
         if self.angle != 0:
-            pts = self._rotated_corners(**kwargs)
-            cv2.fillPoly(mask, [pts], 1)
+            cv2.fillPoly(mask, [_pixel_points(self._rotated_corners(**kwargs))], 1)
         else:
             mask[int(self.y_min) : int(self.y_max), int(self.x_min) : int(self.x_max)] = 1
         return Mask(mask=mask)
@@ -366,8 +372,7 @@ class Polygon(Base):
     def to_mask(self, **kwargs):
         h, w = _require_hw(kwargs)
         mask = np.zeros((h, w), dtype=np.uint8)
-        pts = self.to_numpy().astype(np.int32)
-        cv2.fillPoly(mask, [pts], 1)
+        cv2.fillPoly(mask, [_pixel_points(self.to_numpy())], 1)
         return Mask(mask=mask)
 
     def to_box(self, **kwargs):
@@ -379,7 +384,7 @@ class Polygon(Base):
         return Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max)
 
     def to_rbox(self, **kwargs):
-        x1, y1, w, h, angle = get_rotated_bbox(self.to_numpy().astype(int))
+        x1, y1, w, h, angle = get_rotated_bbox(self.to_numpy())
         return Box(x_min=x1, y_min=y1, x_max=x1 + w, y_max=y1 + h, angle=angle)
 
 

@@ -31,22 +31,47 @@ def test_geometric_consistency(angle, size):
 
     # sort the corners
     recon_corners = np.array(sorted(recon_corners, key=lambda p: (p[0], p[1])))
-    gt_corners = np.array(sorted(gt_corners.astype(int), key=lambda p: (p[0], p[1])))
+    gt_corners = np.array(sorted(gt_corners, key=lambda p: (p[0], p[1])))
 
     assert np.allclose(recon_corners, gt_corners), "Reconstructed corners do not match ground truth corners."
 
 
 def test_pivot_logic():
     """
-    Verifies that the returned point is the 'Top-right' and angle is 90 degrees when the box is horizontal.
+    Verifies that a horizontal box is returned unrotated, from its top-left corner.
     """
     # Create a box where the "top" is flat (0 degrees)
     pts = create_rotated_rect_points((100, 100), (40, 20), 0)
 
     x, y, w, h, angle = get_rotated_bbox(pts)
-    assert angle == 90
-    assert x == 120
-    assert y == 90
+    assert (x, y, w, h, angle) == pytest.approx((80, 90, 40, 20, 0))
+
+
+def _restated(rect):
+    """The same rectangle, stated in the angle range the other OpenCV releases use."""
+    (cx, cy), (w, h), angle = rect
+    return (cx, cy), (h, w), angle + (-90 if angle > 0 else 90)
+
+
+@pytest.mark.parametrize("angle", [0, 1, 30, 45, 89, 90, -15, -89])
+def test_reconstruction_is_independent_of_the_minarearect_angle_range(angle, monkeypatch):
+    """
+    The reconstruction must survive whichever angle range the installed OpenCV reports.
+
+    OpenCV has redefined minAreaRect's range across releases -- 4.5 through 4.12 return (0, 90], 4.13
+    returns [-90, 0) -- and the same rectangle is describable in either. Reading the corners as if they came
+    from the other range picks the wrong pivot, which reflects the box across itself.
+    """
+    pts = create_rotated_rect_points((200, 200), (100, 50), angle)
+
+    def corners():
+        return np.array(sorted(rotate(*get_rotated_bbox(pts)), key=lambda p: (p[0], p[1])))
+
+    as_reported = corners()
+    real_min_area_rect = cv2.minAreaRect
+    monkeypatch.setattr(cv2, "minAreaRect", lambda points: _restated(real_min_area_rect(points)))
+
+    assert np.allclose(corners(), as_reported)
 
 
 def test_diamond_shape_top_vertex():

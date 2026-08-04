@@ -143,7 +143,7 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
             elif status == "clip":
                 logger.log(crop_warning_level, f"Rotated box {shape.id} was clipped to image dimensions [{W}, {H}]")
                 is_warning = True
-                shape.value = Polygon(points=np.array(list(zip(new_X, new_Y))).astype(int).tolist()).to_rbox()
+                shape.value = Polygon(points=np.array(list(zip(new_X, new_Y))).tolist()).to_rbox()
 
         elif shape.type == AnnotationType.BOX:
             box = shape.value.to_numpy()[:-1]
