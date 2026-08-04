@@ -197,6 +197,29 @@ class Box(Base):
             unit=angle_unit,
         )
 
+    def _corners(self, **kwargs) -> np.ndarray:
+        """The box's four corners, rotated when it carries an angle."""
+        if self.angle != 0:
+            return self._rotated_corners(**kwargs).astype(float)
+        return np.array(
+            [
+                [self.x_min, self.y_min],
+                [self.x_max, self.y_min],
+                [self.x_max, self.y_max],
+                [self.x_min, self.y_max],
+            ],
+            dtype=float,
+        )
+
+    def _enclosing_bounds(self, **kwargs) -> tuple:
+        """The axis-aligned extent enclosing the box, its rotation included.
+
+        A rotated box's own x_min..x_max is the extent it had before rotating, which is not where the
+        object is, so any axis-aligned consumer has to measure the rotated corners instead.
+        """
+        pts = self._corners(**kwargs)
+        return pts[:, 0].min(), pts[:, 1].min(), pts[:, 0].max(), pts[:, 1].max()
+
     def flip(self, **kwargs):
         flipx = kwargs.get("flipx", False)
         flipy = kwargs.get("flipy", False)
@@ -245,42 +268,23 @@ class Box(Base):
         return (self.x_max - self.x_min) * (self.y_max - self.y_min)
 
     def to_coco(self, **kwargs):
-        """Convert to COCO format (x_min, y_min, width, height)."""
-        return self.to_xywh().tolist()[:4]  # Exclude angle for COCO format
+        """Convert to COCO format (x_min, y_min, width, height); a COCO bbox is axis-aligned."""
+        x_min, y_min, x_max, y_max = self._enclosing_bounds(**kwargs)
+        return [float(x_min), float(y_min), float(x_max - x_min), float(y_max - y_min)]
 
     def to_yolo(self, h, w, **kwargs):
-        use_obb = kwargs.get("use_obb", False)
-
-        cx = (self.x_min + self.x_max) / 2
-        cy = (self.y_min + self.y_max) / 2
-        if self.angle != 0 and use_obb:
-            rotated_coords = self._rotated_corners(**kwargs).astype(float)
+        if kwargs.get("use_obb", False):
+            corners = self._corners(**kwargs)
             # Rotation may move valid edge boxes slightly outside the image; Ultralytics expects clipped normalized corners.
-            rotated_coords[:, 0] = np.clip(rotated_coords[:, 0], 0, w)
-            rotated_coords[:, 1] = np.clip(rotated_coords[:, 1], 0, h)
-            return [[pt[0] / w, pt[1] / h] for pt in rotated_coords]
-        else:
-            if use_obb:
-                logger.debug(f"Use_obb is True but angle is {self.angle}; returning obb formatted bounding box.")
-                corners = np.array(
-                    [
-                        [self.x_min, self.y_min],
-                        [self.x_max, self.y_min],
-                        [self.x_max, self.y_max],
-                        [self.x_min, self.y_max],
-                    ]
-                )
-                return [[pt[0] / w, pt[1] / h] for pt in corners]
-            else:
-                # convert to center_x, center_y, width, height
-                return [
-                    [
-                        cx / w,
-                        cy / h,
-                        (self.x_max - self.x_min) / w,
-                        (self.y_max - self.y_min) / h,
-                    ]
-                ]
+            corners[:, 0] = np.clip(corners[:, 0], 0, w)
+            corners[:, 1] = np.clip(corners[:, 1], 0, h)
+            return [[x / w, y / h] for x, y in corners]
+
+        # center_x, center_y, width, height of the axis-aligned extent
+        x_min, y_min, x_max, y_max = self._enclosing_bounds(**kwargs)
+        x_min, x_max = np.clip([x_min, x_max], 0, w)
+        y_min, y_max = np.clip([y_min, y_max], 0, h)
+        return [[(x_min + x_max) / 2 / w, (y_min + y_max) / 2 / h, (x_max - x_min) / w, (y_max - y_min) / h]]
 
     def to_mask(self, **kwargs):
         h, w = _require_hw(kwargs)
@@ -292,16 +296,7 @@ class Box(Base):
         return Mask(mask=mask)
 
     def to_polygon(self, **kwargs):
-        if self.angle != 0:
-            pts = self._rotated_corners(**kwargs)
-        else:
-            pts = [
-                [self.x_min, self.y_min],
-                [self.x_max, self.y_min],
-                [self.x_max, self.y_max],
-                [self.x_min, self.y_max],
-            ]
-        return Polygon(points=pts)
+        return Polygon(points=self._corners(**kwargs).tolist())
 
     def point_in_box(self, x: int, y: int):
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
@@ -367,7 +362,14 @@ class Polygon(Base):
         return [np.array(self.points).ravel().tolist()]
 
     def to_yolo(self, h, w, **kwargs):
+        if kwargs.get("use_obb", False):
+            # an obb row is exactly four corners, so an arbitrary outline has to become its rotated box
+            return self.to_rbox(**kwargs).to_yolo(h, w, **kwargs)
         return [[point[0] / w, point[1] / h] for point in self.points]
+
+    def encloses_area(self, **kwargs) -> bool:
+        """Whether the outline encloses at least one pixel; a point, a line, or collinear points do not."""
+        return cv2.contourArea(self.to_numpy().astype(np.float32).reshape(-1, 2)) >= 1
 
     def to_mask(self, **kwargs):
         h, w = _require_hw(kwargs)
@@ -440,12 +442,17 @@ class Mask(Base):
         ys, xs = np.nonzero(mask == 1)
         return xs.tolist(), ys.tolist()
 
-    def to_polygon(self, **kwargs) -> List[Polygon]:
+    def to_polygons(self, **kwargs) -> List[Polygon]:
+        """One outline per connected region, skipping any that encloses no area.
+
+        Plural because a mask may hold several disconnected regions; a Box, which is always one connected
+        shape, has the singular `to_polygon`.
+        """
         h, w = _require_hw(kwargs)
         mask_array = self.to_numpy(h=h, w=w)
         contours, _ = cv2.findContours(mask_array, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        polygons = [contour.reshape(-1, 2) for contour in contours]
-        return [Polygon([[x, y] for x, y in polygon]) for polygon in polygons]
+        polygons = [Polygon([[x, y] for x, y in contour.reshape(-1, 2)]) for contour in contours]
+        return [polygon for polygon in polygons if polygon.encloses_area(**kwargs)]
 
     def to_coco(self, **kwargs):
         """Convert the mask to COCO format."""
@@ -458,39 +465,39 @@ class Mask(Base):
 
     def to_yolo(self, h, w, **kwargs):
         instances = []
-        for polygon in self.to_polygon(h=h, w=w):
+        for polygon in self.to_polygons(h=h, w=w):
             instances.append(polygon.to_yolo(h, w, **kwargs))
         return instances
 
     def area(self, **kwargs):
-        polygons = self.to_polygon(**kwargs)
+        polygons = self.to_polygons(**kwargs)
         area = 0
         for polygon in polygons:
             area += polygon.area(**kwargs)
         return area
 
     def to_box(self, **kwargs):
+        """The single box enclosing the whole mask, disconnected regions included.
+
+        This is what an axis-aligned consumer of one instance wants: a COCO annotation holds its regions
+        together under one bbox. Formats that cannot express a disconnected instance want `to_boxes`.
+        """
         h, w = _require_hw(kwargs)
-        merge_boxes = kwargs.get("merge_boxes", False)
         mask_array = self.to_numpy(h=h, w=w)
         boxes = masks_to_boxes(torch.from_numpy(mask_array).unsqueeze(0))
-        if merge_boxes:
-            if boxes is not None:
-                x_min = boxes[:, 0].min().item()
-                y_min = boxes[:, 1].min().item()
-                x_max = boxes[:, 2].max().item()
-                y_max = boxes[:, 3].max().item()
-            else:
-                raise ValueError("No boxes found in the mask for merging.")
-            return Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max, angle=0)
-        else:
-            if boxes is None or boxes.numel() == 0:
-                raise ValueError("No boxes found in the mask.")
-            bboxes = []
-            for box in boxes:
-                x_min, y_min, x_max, y_max = box.tolist()
-                bboxes.append(Box(x_min=x_min, y_min=y_min, x_max=x_max, y_max=y_max, angle=0))
-            return bboxes if len(bboxes) > 1 else bboxes[0]  # Return a list if multiple boxes, otherwise a single box
+        if boxes is None or boxes.numel() == 0:
+            raise ValueError("No boxes found in the mask.")
+        return Box(
+            x_min=boxes[:, 0].min().item(),
+            y_min=boxes[:, 1].min().item(),
+            x_max=boxes[:, 2].max().item(),
+            y_max=boxes[:, 3].max().item(),
+            angle=0,
+        )
+
+    def to_boxes(self, **kwargs) -> List[Box]:
+        """One box per connected region, for formats where an instance is a single connected shape."""
+        return [polygon.to_box(**kwargs) for polygon in self.to_polygons(**kwargs)]
 
 
 @dataclass
@@ -598,6 +605,17 @@ class PolygonAnnotation(Annotation):
     @classmethod
     def from_dict(cls, data: dict) -> "PolygonAnnotation":
         return cls(**cls._base_fields(data), value=Polygon.from_dict(data["value"]))
+
+
+def _annotation_encloses_area(annotation: Annotation, h: int, w: int) -> bool:
+    """Whether an annotation covers any pixels; geometry that covers none cannot be trained on."""
+    if annotation.type == AnnotationType.MASK:
+        return bool(annotation.value.to_polygons(h=h, w=w))
+    if annotation.type == AnnotationType.POLYGON:
+        return annotation.value.encloses_area(h=h, w=w)
+    if annotation.type == AnnotationType.BOX:
+        return annotation.value.to_polygon().encloses_area(h=h, w=w)
+    return True
 
 
 @dataclass
@@ -716,13 +734,18 @@ class FileAnnotations(Base):
             if len(target_classes) > 0 and annotation.label_id not in target_classes:
                 continue
 
+            if not _annotation_encloses_area(annotation, h, w):
+                logger.warning(f"Skipping {annotation.type.value} annotation {annotation.id}, which encloses no area")
+                continue
+
             # Conversion steps:
             if annotation.type == AnnotationType.BOX and to_segmentation:
                 logger.debug(f"Converting box {annotation.id} to YOLO format with mask_type=AnnotationType.MASK")
                 updated_annotations.append(annotation.value.to_mask(h=h, w=w))
             elif annotation.type == AnnotationType.MASK and to_object_detection:
                 logger.debug(f"Converting mask {annotation.id} to YOLO format with mask_type=AnnotationType.MASK")
-                updated_annotations.append(annotation.value.to_box(h=h, w=w, merge_boxes=merge_boxes))
+                # a YOLO instance is one connected shape, so each region becomes its own box
+                updated_annotations.extend([annotation.value.to_box(h=h, w=w)] if merge_boxes else annotation.value.to_boxes(h=h, w=w))
             elif annotation.type == AnnotationType.POLYGON and to_object_detection:
                 logger.debug(f"Converting polygon {annotation.id} to YOLO format with mask_type=AnnotationType.POLYGON")
                 updated_annotations.append(annotation.value.to_box(h=h, w=w))

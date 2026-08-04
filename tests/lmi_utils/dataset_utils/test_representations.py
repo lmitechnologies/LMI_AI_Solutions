@@ -806,3 +806,144 @@ def test_dataset_json_format_preserved():
     assert loaded_anns_by_id["ann_kp"].value.visibility == 1
     assert loaded.labels[0].keypoints == ["label_kp"]
     assert len(loaded_anns_by_id["ann_poly"].value.points) == 4
+
+
+# =====================================================
+#  Target-format Shape Conversion Tests
+# =====================================================
+#
+# Every row a YOLO label file receives must already be in the target format's shape. Ultralytics will
+# reinterpret rows it considers malformed -- a detect row of more than six fields is read as a segment and
+# reduced to its bounding box -- so a row of the wrong width trains without complaint. These tests pin the
+# width at the source rather than relying on that.
+
+_TASK_FLAGS = {
+    "detect": dict(to_segmentation=False, to_object_detection=True, use_obb=False),
+    "segment": dict(to_segmentation=True, to_object_detection=False, use_obb=False),
+    "obb": dict(to_segmentation=False, to_object_detection=False, use_obb=True),
+}
+
+
+def _two_blob_mask():
+    mask = np.zeros((100, 100), np.uint8)
+    mask[10:30, 10:30] = 1
+    mask[60:80, 65:85] = 1
+    return mask
+
+
+def _export(annotation, task, **overrides):
+    """The YOLO rows one annotation produces for a target format."""
+    flags = dict(_TASK_FLAGS[task], merge_boxes=False, target_classes=[], label_id_idx={"label1": 0})
+    flags.update(overrides)
+    rows, _ = FileAnnotations("f", "image.png", 100, 100, [annotation]).to_yolo(**flags)
+    return rows
+
+
+def _annotation(annotation_type):
+    if annotation_type == "box":
+        return BoxAnnotation("a", "label1", Box(10, 10, 30, 30))
+    if annotation_type == "rotated box":
+        return BoxAnnotation("a", "label1", Box(10, 10, 40, 30, angle=30))
+    if annotation_type == "quad polygon":
+        return PolygonAnnotation("a", "label1", Polygon(points=[[10, 10], [30, 12], [28, 30], [12, 28]]))
+    if annotation_type == "hexagon polygon":
+        return PolygonAnnotation("a", "label1", Polygon(points=[[10, 20], [20, 10], [40, 10], [50, 20], [40, 30], [20, 30]]))
+    mask = np.zeros((100, 100), np.uint8)
+    mask[10:30, 10:30] = 1
+    return MaskAnnotation("a", "label1", Mask(mask))
+
+
+@pytest.mark.parametrize("annotation_type", ["box", "rotated box", "quad polygon", "hexagon polygon", "mask"])
+def test_detect_rows_are_always_five_fields(annotation_type):
+    rows = _export(_annotation(annotation_type), "detect")
+    assert [len(row) for row in rows] == [5]  # class + cx cy w h
+
+
+@pytest.mark.parametrize("annotation_type", ["box", "rotated box", "quad polygon", "hexagon polygon", "mask"])
+def test_obb_rows_are_always_nine_fields(annotation_type):
+    rows = _export(_annotation(annotation_type), "obb")
+    assert [len(row) for row in rows] == [9]  # class + four corners
+
+
+@pytest.mark.parametrize("annotation_type", ["box", "rotated box", "quad polygon", "hexagon polygon", "mask"])
+def test_segment_rows_are_a_class_and_point_pairs(annotation_type):
+    rows = _export(_annotation(annotation_type), "segment")
+    assert rows and all(len(row) >= 7 and (len(row) - 1) % 2 == 0 for row in rows)
+
+
+@pytest.mark.parametrize("task,expected_width", [("detect", 5), ("obb", 9)])
+def test_disconnected_mask_becomes_one_instance_per_region(task, expected_width):
+    """A YOLO instance is one connected shape, so two blobs cannot share a row."""
+    rows = _export(MaskAnnotation("a", "label1", Mask(_two_blob_mask())), task)
+    assert [len(row) for row in rows] == [expected_width, expected_width]
+
+
+def test_merge_boxes_keeps_a_disconnected_mask_as_one_box():
+    rows = _export(MaskAnnotation("a", "label1", Mask(_two_blob_mask())), "detect", merge_boxes=True)
+    assert len(rows) == 1
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        PolygonAnnotation("a", "label1", Polygon(points=[[5, 5], [20, 20]])),
+        PolygonAnnotation("a", "label1", Polygon(points=[[5, 5], [10, 5], [20, 5]])),
+        MaskAnnotation("a", "label1", Mask(np.zeros((100, 100), np.uint8))),
+        BoxAnnotation("a", "label1", Box(10, 10, 10, 40)),
+    ],
+    ids=["line", "collinear points", "empty mask", "zero-width box"],
+)
+@pytest.mark.parametrize("task", ["detect", "segment", "obb"])
+def test_geometry_enclosing_no_area_is_not_exported(annotation, task):
+    assert _export(annotation, task) == []
+
+
+def test_detect_box_encloses_the_rotated_object():
+    """A rotated box's own x_min..x_max is where it sat before rotating, not where the object is."""
+    box = Box(20, 40, 80, 60, angle=45)
+    corners = box.to_polygon().to_numpy()
+
+    ((cx, cy, width, height),) = box.to_yolo(100, 100)
+    x_min, x_max = (cx - width / 2) * 100, (cx + width / 2) * 100
+    y_min, y_max = (cy - height / 2) * 100, (cy + height / 2) * 100
+
+    assert x_min <= corners[:, 0].min() and x_max >= corners[:, 0].max()
+    assert y_min <= corners[:, 1].min() and y_max >= corners[:, 1].max()
+
+
+def test_coco_box_encloses_the_rotated_object():
+    box = Box(20, 40, 80, 60, angle=45)
+    corners = box.to_polygon().to_numpy()
+
+    x, y, width, height = box.to_coco()
+
+    assert x <= corners[:, 0].min() and x + width >= corners[:, 0].max()
+    assert y <= corners[:, 1].min() and y + height >= corners[:, 1].max()
+
+
+def test_mask_to_box_merges_and_to_boxes_splits():
+    mask = Mask(_two_blob_mask())
+
+    merged = mask.to_box(h=100, w=100)
+    split = mask.to_boxes(h=100, w=100)
+
+    assert len(split) == 2
+    assert merged.x_min <= min(b.x_min for b in split) and merged.x_max >= max(b.x_max for b in split)
+
+
+def test_mask_to_polygons_skips_regions_enclosing_no_area():
+    mask = np.zeros((100, 100), np.uint8)
+    mask[10:30, 10:30] = 1
+    mask[50, 60:70] = 1  # a one-pixel-tall line
+
+    assert len(Mask(mask).to_polygons(h=100, w=100)) == 1
+
+
+def test_polygon_obb_output_is_its_rotated_box():
+    polygon = Polygon(points=[[10, 20], [20, 10], [40, 10], [50, 20], [40, 30], [20, 30]])
+
+    corners = np.array(polygon.to_yolo(100, 100, use_obb=True))
+    expected = np.array(polygon.to_rbox().to_yolo(100, 100, use_obb=True))
+
+    assert corners.shape == (4, 2)
+    assert corners == pytest.approx(expected)
