@@ -3,7 +3,7 @@ import logging
 import os
 import shutil
 
-import cv2
+from PIL import Image
 
 from lmi_utils.dataset_utils.representations import Dataset
 
@@ -45,14 +45,15 @@ def update_file_dimensions(dataset, path_imgs):
     update the file dimensions
     """
     for file in dataset.files:
-        if os.path.isfile(os.path.join(path_imgs, file.path)) is False:
-            raise Exception(f"File not found: {os.path.join(path_imgs, file.path)}")
-        img = cv2.imread(os.path.join(path_imgs, file.path))
-        if img is None:
-            raise Exception(f"cannot read image: {file.path}")
-        h, w = img.shape[:2]
-        file.height = h
-        file.width = w
+        image_path = os.path.join(path_imgs, file.path)
+        if os.path.isfile(image_path) is False:
+            raise Exception(f"File not found: {image_path}")
+        try:
+            # Image.open parses the header only; decoding the pixels to read two integers costs ~100x more.
+            with Image.open(image_path) as image:
+                file.width, file.height = image.size
+        except Exception as error:
+            raise Exception(f"cannot read image: {file.path}") from error
     return dataset
 
 

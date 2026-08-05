@@ -871,9 +871,14 @@ def test_segment_rows_are_a_class_and_point_pairs(annotation_type):
     assert rows and all(len(row) >= 7 and (len(row) - 1) % 2 == 0 for row in rows)
 
 
-@pytest.mark.parametrize("task,expected_width", [("detect", 5), ("obb", 9)])
-def test_disconnected_mask_becomes_one_instance_per_region(task, expected_width):
+@pytest.mark.parametrize("task", ["detect", "segment", "obb"])
+def test_disconnected_mask_becomes_one_instance_per_region(task):
     """A YOLO instance is one connected shape, so two blobs cannot share a row."""
+    assert len(_export(MaskAnnotation("a", "label1", Mask(_two_blob_mask())), task)) == 2
+
+
+@pytest.mark.parametrize("task,expected_width", [("detect", 5), ("obb", 9)])
+def test_split_regions_keep_the_task_row_width(task, expected_width):
     rows = _export(MaskAnnotation("a", "label1", Mask(_two_blob_mask())), task)
     assert [len(row) for row in rows] == [expected_width, expected_width]
 

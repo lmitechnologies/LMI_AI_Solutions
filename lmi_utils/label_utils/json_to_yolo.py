@@ -4,9 +4,9 @@ import logging
 import os
 import shutil
 
-import cv2
 import yaml
 
+from lmi_utils.dataset_utils.file_utils import update_file_dimensions
 from lmi_utils.dataset_utils.representations import Dataset
 
 logger = logging.getLogger(__name__)
@@ -85,22 +85,6 @@ def write_txts(fname_to_rows, path_txts, fnames, file_id_map):
                 row2 += "\n"
                 f.write(row2)
     logger.debug(f" wrote {len(fnames) if fnames is not None else len(fname_to_rows)} txt files to {path_txts}")
-
-
-def update_file_dimensions(dataset, path_imgs):
-    """
-    update the file dimensions
-    """
-    for file in dataset.files:
-        if os.path.isfile(os.path.join(path_imgs, file.path)) is False:
-            raise Exception(f"File not found: {file.path}")
-        img = cv2.imread(os.path.join(path_imgs, file.path))
-        if img is None:
-            raise Exception(f"cannot read image: {file.path}")
-        h, w = img.shape[:2]
-        file.height = h
-        file.width = w
-    return dataset
 
 
 def copy_images_in_folder(path_img, path_out, fnames, file_id_map):
