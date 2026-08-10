@@ -3,13 +3,17 @@ import logging
 import os
 import shutil
 
-from PIL import Image
+from PIL import ExifTags, Image
 
 from lmi_utils.dataset_utils.representations import Dataset
 
 logger = logging.getLogger(__name__)
 
 IMAGE_FORMATS = IMG_FORMATS = ["jpeg", "jpg", "png", "tif", "tiff", "heic"]
+
+_EXIF_ORIENTATION_TAG = ExifTags.Base.Orientation
+_EXIF_QUARTER_TURNS = {5, 6, 7, 8}  # the orientations that transpose the axes; a flip or half turn does not
+_ORIENTATION_UNAPPLIED_FORMATS = {"JPEG", "MPO", "PNG"}
 
 
 def get_files(directory, extensions):
@@ -51,7 +55,12 @@ def update_file_dimensions(dataset, path_imgs):
         try:
             # Image.open parses the header only; decoding the pixels to read two integers costs ~100x more.
             with Image.open(image_path) as image:
-                file.width, file.height = image.size
+                width, height = image.size
+                # A camera can tag a quarter turn instead of rewriting the pixels. Viewers and cv2 apply
+                # the tag, so annotations are drawn against the turned image and must be normalized to it.
+                if image.format in _ORIENTATION_UNAPPLIED_FORMATS and image.getexif().get(_EXIF_ORIENTATION_TAG) in _EXIF_QUARTER_TURNS:
+                    width, height = height, width
+                file.width, file.height = width, height
         except Exception as error:
             raise Exception(f"cannot read image: {file.path}") from error
     return dataset
