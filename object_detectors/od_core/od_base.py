@@ -10,7 +10,7 @@ import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
 from lmi_utils.image_utils.img_resize import resize_and_pad
-from lmi_utils.image_utils.types import ImageBatch, ImageLike, normalize_image_batch, to_rgb
+from lmi_utils.image_utils.types import ImageBatch, ImageLike, normalize_image_batch, to_3channel
 
 from .results import Results
 
@@ -90,7 +90,7 @@ class ODBase(abc.ABC):
             }
             time_info (dict): timing info with keys 'preproc', 'proc', 'postproc'.
         """
-        images = [to_rgb(img) for img in normalize_image_batch(image)]
+        images = [to_3channel(img) for img in normalize_image_batch(image)]
         operators = self._normalize_operators(operators, len(images))
         use_tensor = isinstance(images[0], torch.Tensor) if images else False
 
