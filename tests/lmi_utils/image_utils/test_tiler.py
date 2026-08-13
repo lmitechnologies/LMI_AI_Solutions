@@ -91,3 +91,15 @@ def test_batch(im, tile, stride):
     tiles = t.tile(im, mode)
     im2 = t.untile(tiles, mode)
     assert torch.equal(im, im2)
+
+
+def test_untile_non_integral_feature_scale_covers_output():
+    image = torch.ones(1, 1, 640, 640)
+    tiler = Tiler([224, 224], [112, 112])
+    features = torch.nn.functional.interpolate(tiler.tile(image), size=(55, 55), mode="nearest")
+
+    reconstructed = tiler.untile(features)
+
+    assert reconstructed.shape == (1, 1, 157, 157)
+    assert torch.isfinite(reconstructed).all()
+    assert torch.equal(reconstructed, torch.ones_like(reconstructed))

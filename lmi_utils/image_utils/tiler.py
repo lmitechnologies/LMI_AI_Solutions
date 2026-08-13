@@ -409,7 +409,10 @@ class Tiler:
 
         out_tile_size = [tile_h, tile_w]
         out_stride = [max(1, d) for d in scale_2d(self.stride, scale_h, scale_w)]
-        out_scale_size = scale_2d(self.scale_size, scale_h, scale_w)
+        out_scale_size = [
+            out_tile_size[0] + (self.n_tiles[0] - 1) * out_stride[0],
+            out_tile_size[1] + (self.n_tiles[1] - 1) * out_stride[1],
+        ]
         out_im_size = scale_2d(self.im_size, scale_h, scale_w)
         # ----------------------------------------
 
