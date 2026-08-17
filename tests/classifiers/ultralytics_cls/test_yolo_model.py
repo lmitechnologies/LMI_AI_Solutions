@@ -17,21 +17,21 @@ MODEL_SZ = 224
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 CLS_MODELS = [
-    "tests/assets/models/cls/yolo26n-cls.pt",
-    "tests/assets/models/cls/yolo11n-cls.pt",
+    ("tests/assets/models/cls/yolo26n-cls.pt", "yolov26"),
+    ("tests/assets/models/cls/yolo11n-cls.pt", "yolov11"),
 ]
 
 
 @pytest.fixture
 def model_det():
-    return [YoloCls(model, device=DEVICE, image_size=[MODEL_SZ, MODEL_SZ]) for model in CLS_MODELS]
+    return [YoloCls(model_path, device=DEVICE, image_size=[MODEL_SZ, MODEL_SZ]) for model_path, _ in CLS_MODELS]
 
 
-def _make_api_model(model_path):
+def _make_api_model(model_path, model_name):
     return Classifier(
         metadata=dict(
             version="v1",
-            model_name="yolov8",
+            model_name=model_name,
             task="classification",
             framework="ultralytics",
             model_path=model_path,
@@ -74,9 +74,9 @@ def _assert_results(out, n):
 
 
 def test_model_class_comparison():
-    for model_path in CLS_MODELS:
+    for model_path, model_name in CLS_MODELS:
         direct = YoloCls(model_path, device=DEVICE, image_size=[MODEL_SZ, MODEL_SZ])
-        api = _make_api_model(model_path)
+        api = _make_api_model(model_path, model_name)
         assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
 
 
