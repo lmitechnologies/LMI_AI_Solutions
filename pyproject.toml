@@ -26,6 +26,7 @@ test = [
     "transformers==5.16.1",
     "pycocotools==2.0.11",
     "shapely==2.1.2",
+    "tabulate>=0.9.0",
 ]
 # CPU / CI env (GitHub runners): CPU torch + CPU onnxruntime. torch is also a
 # transitive dep of rfdetr/ultralytics, hence the ci/gpu conflict below.
@@ -41,7 +42,7 @@ ad-v1 = [
     "jsonargparse==4.27.7",
 ]
 ad-v2 = [
-    "anomalib==2.4.1",
+    "anomalib==2.2.0",
 ]
 # GPU / TensorRT env (local + compose): cu124 torch, onnxruntime-gpu, and the
 # TensorRT engine-build stack. tensorrt is pinned to the nvcr:25.04 image's

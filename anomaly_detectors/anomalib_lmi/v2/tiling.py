@@ -6,38 +6,12 @@ from typing import Any
 
 import lightning.pytorch as pl
 from anomalib.callbacks.tiler_configuration import TilerConfigurationCallback
-from anomalib.data.utils.tiler import Tiler as BaseAnomalibTiler
+from anomalib.data.utils.tiler import Tiler as AnomalibTiler
 from anomalib.models.components import AnomalibModule
-from torch import Tensor
 
 from lmi_utils.image_utils.tiler import ScaleMode, Tiler
 
 logger = logging.getLogger(__name__)
-
-
-class AnomalibTiler(Tiler, BaseAnomalibTiler):
-    def __init__(self, *args, **kwargs):
-        BaseAnomalibTiler.__init__(self, *args, **kwargs)
-
-    @property
-    def scale_mode(self):
-        return self.mode
-
-    @property
-    def overlap_mode(self):
-        return None
-
-    def tile(self, *args, **kwargs) -> Tensor:
-        return BaseAnomalibTiler.tile(self, *args, **kwargs)
-
-    def untile(self, tiles, scale_mode=None, overlap_mode=None) -> Tensor:
-        orig_mode, self.mode = self.mode, scale_mode or self.mode
-        # overlap_mode unused
-        try:
-            result = BaseAnomalibTiler.untile(self, tiles)
-        finally:
-            self.mode = orig_mode
-        return result
 
 
 class CallbackTiler(Tiler):

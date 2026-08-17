@@ -233,7 +233,9 @@ def test_folder_dataset_non_empty():
         normal_dir = os.path.join(tmpdir, "normal")
         os.makedirs(normal_dir)
         dummy = np.zeros((32, 32, 3), dtype=np.uint8)
-        cv2.imwrite(os.path.join(normal_dir, "img.png"), dummy)
+        # Two images so the 0.5 synthetic split yields at least 1 image per subset (floor(2*0.5)=1).
+        cv2.imwrite(os.path.join(normal_dir, "img0.png"), dummy)
+        cv2.imwrite(os.path.join(normal_dir, "img1.png"), dummy)
 
         datamodule = build_data(
             {
