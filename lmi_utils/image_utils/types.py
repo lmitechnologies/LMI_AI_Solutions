@@ -46,8 +46,11 @@ def assert_ndim(image: ImageLike) -> None:
         raise ValueError(f"Expected 2D (HW) or 3D (HWC) image, got {image.ndim}D array with shape {image.shape}")
 
 
-def to_rgb(image: ImageLike) -> ImageLike:
-    """Convert a grayscale image to RGB by repeating the single channel.
+def to_3channel(image: ImageLike) -> ImageLike:
+    """Expand a single-channel image to 3 channels by repeating it.
+
+    Channel *order* is never touched: a 3-channel input is returned as-is, so BGR in is BGR out. Backends expect RGB, so callers
+    that load with cv2 must convert first.
 
     Args:
         image: np.ndarray or torch.Tensor with shape (H, W), (H, W, 1), or (H, W, 3).
@@ -85,7 +88,7 @@ def normalize_image_batch(image: ImageBatch) -> List[ImageLike]:
     Accepts a single HW or HWC image (numpy or tensor), a list of HW/HWC images,
     or a BHWC batch (numpy or tensor), and always returns a plain list
     preserving the original type. 2D (HW) images are passed through as-is;
-    callers are responsible for expanding channels (e.g. via to_rgb).
+    callers are responsible for expanding channels (e.g. via to_3channel).
 
     Args:
         image: A single HW/HWC image, list of HW/HWC images, or BHWC batch.

@@ -3,11 +3,35 @@
 Requires TensorRT >= 8.5 (matches `lmi_common/trt_engine.py`).
 """
 
+import inspect
 import logging
 
 logger = logging.getLogger(__name__)
 
 _trt_logger_singleton = None
+
+_ULTRALYTICS_AUTHOR = "Ultralytics"
+
+
+def _ultralytics_metadata(onnx_path: str):
+    """Return the export metadata of a static-shape ultralytics ONNX, or None if it is not one.
+
+    Dynamic-shape models return None: the builder below owns the batch profile, and onnx2engine cannot express a batch-only one.
+    """
+    try:
+        import onnx
+    except ImportError:
+        return None
+
+    model = onnx.load(onnx_path, load_external_data=False)
+    metadata = {prop.key: prop.value for prop in model.metadata_props}
+    if metadata.get("author") != _ULTRALYTICS_AUTHOR:
+        return None
+    for inp in model.graph.input:
+        for dim in inp.type.tensor_type.shape.dim:
+            if not dim.HasField("dim_value") or dim.dim_value <= 0:
+                return None
+    return metadata
 
 
 def _get_trt_logger():
@@ -53,9 +77,9 @@ def onnx_to_trt(
 ) -> None:
     """Build a serialized TensorRT engine from an ONNX file.
 
-    Static-batch ONNX (no dynamic dims) ignores the batch kwargs.
-    Dynamic-batch ONNX (axis 0 == -1) gets an optimization profile from the kwargs;
-    other dynamic axes are not supported and will raise.
+    A static-shape ultralytics ONNX is built by ``ultralytics.utils.export.onnx2engine`` so its export metadata is embedded in the
+    plan file; everything else is built here. Static-batch ONNX (no dynamic dims) ignores the batch kwargs. Dynamic-batch ONNX
+    (axis 0 == -1) gets an optimization profile from the kwargs; other dynamic axes are not supported and will raise.
 
     Args:
         onnx_path: source .onnx path.
@@ -66,6 +90,21 @@ def onnx_to_trt(
         opt_batch: batch size to optimize for; defaults to ``max_batch``.
         max_batch: maximum batch in the optimization profile.
     """
+    metadata = _ultralytics_metadata(onnx_path)
+    if metadata is not None:
+        try:
+            from ultralytics.utils.export import onnx2engine
+        except ImportError:
+            # Pre-8.4 ultralytics: no writer for the metadata, so fall through and build without it.
+            logger.warning("ultralytics.utils.export.onnx2engine unavailable; building without embedded export metadata")
+        else:
+            logger.info(f"Ultralytics ONNX: building via onnx2engine to embed export metadata in {engine_path}")
+            # Mid-8.4 replaced the half/int8 flags with a single `quantize` precision selector.
+            params = inspect.signature(onnx2engine).parameters
+            precision = {"quantize": 16 if fp16 else None} if "quantize" in params else {"half": fp16}
+            onnx2engine(onnx_path, engine_path, workspace=workspace_gb, metadata=metadata, **precision)
+            return
+
     import tensorrt as trt
 
     trt_logger = _get_trt_logger()

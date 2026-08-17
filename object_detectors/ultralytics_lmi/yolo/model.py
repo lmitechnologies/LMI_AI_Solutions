@@ -9,7 +9,7 @@ from ultralytics.utils.torch_utils import smart_inference_mode
 
 from lmi_common.yolo_core import YoloCore
 from lmi_utils.gadget_utils.pipeline_utils import resize_image
-from lmi_utils.image_utils.types import ImageLike, to_rgb
+from lmi_utils.image_utils.types import ImageLike, to_3channel
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 
@@ -71,7 +71,7 @@ class Yolo(YoloCore, ODBase):
             im = self.from_numpy(im)
 
         im = im.to(self.device)
-        im = to_rgb(im)
+        im = to_3channel(im)
 
         img = im.permute((2, 0, 1))  # HWC to CHW, (3, h, w)
         img = img.contiguous()
