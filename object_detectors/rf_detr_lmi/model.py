@@ -7,9 +7,11 @@ import cv2
 import numpy as np
 import torch
 import torchvision.transforms.functional as F
+from rfdetr.assets.coco_classes import COCO_CLASS_NAMES, COCO_CLASSES
 from rfdetr.models.postprocess import PostProcess
 
 from lmi_common.model_factory import ModelFactory
+from lmi_common.onnx_engine import ONNXEngine
 from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
 from object_detectors.od_core.od_base import ODBase
@@ -58,7 +60,20 @@ class RfdetrBase(ODBase):
         return class_bias.shape[0] - 1
 
     @staticmethod
-    def _load_class_map(model_path: str, provided: Optional[dict]) -> dict:
+    def _class_map_from_names(class_names, num_logit_slots: Optional[int] = None) -> dict:
+        """Map an ordered list of class names to the label ids the model emits.
+
+        Mirrors rfdetr's own predict(): COCO-pretrained checkpoints emit sparse COCO category ids (1-90) while
+        fine-tuned models emit 0-based indices. rfdetr distinguishes them by the COCO names plus a logit count
+        wider than the name list; num_logit_slots is that count, when the backend can supply it.
+        """
+        names = list(class_names)
+        if names == list(COCO_CLASS_NAMES) and (num_logit_slots is None or num_logit_slots > len(names)):
+            return {coco_id: names[i] for i, coco_id in enumerate(COCO_CLASSES) if i < len(names)}
+        return dict(enumerate(names))
+
+    @staticmethod
+    def _load_class_map(model_path: str, provided: Optional[dict], num_logit_slots: Optional[int] = None) -> dict:
         """Resolve class_map from explicit argument or sidecar <stem>.classes.json.
 
         Args:
@@ -77,7 +92,7 @@ class RfdetrBase(ODBase):
         if os.path.isfile(sidecar):
             RfdetrBase.logger.info(f"Loading class names from sidecar: {sidecar}")
             with open(sidecar, encoding="utf-8") as f:
-                return {i: n for i, n in enumerate(json.load(f))}
+                return RfdetrBase._class_map_from_names(json.load(f), num_logit_slots)
         raise FileNotFoundError(
             f"class_map not provided and no sidecar found at {sidecar}. "
             "Pass class_map explicitly or place a <model>.classes.json next to the model."
@@ -85,7 +100,8 @@ class RfdetrBase(ODBase):
 
     def warmup(self) -> None:
         """Warm up the model by running a dummy inference. Requires self.image_size."""
-        dummy_input = torch.zeros((1, 3, self.image_size[0], self.image_size[1]), dtype=torch.float32).to(self.device)
+        batch = self.fixed_batch_size or 1
+        dummy_input = torch.zeros((batch, 3, self.image_size[0], self.image_size[1]), dtype=torch.float32).to(self.device)
         self.forward(dummy_input)
 
     def _to_float_chw(self, image: ImageLike) -> torch.Tensor:
@@ -97,13 +113,14 @@ class RfdetrBase(ODBase):
     def preprocess(self, images: List[ImageLike]) -> torch.Tensor:
         """Preprocess input image(s) to a BCHW normalized tensor.
 
-        RF-DETR is trained with a square (stretch) resize, applied with antialiasing on the float tensor.
+        RF-DETR is trained with a square (stretch) resize, applied without antialiasing on the float tensor.
         """
         if not isinstance(images, list):
             images = [images]
 
         def resize_stretch(img_tensor, size):
-            return F.resize(img_tensor, [size[0], size[1]], antialias=True)
+            # antialias=False matches rfdetr >= 1.9.0 predict(), which mirrors Albumentations' cv2.INTER_LINEAR training resize.
+            return F.resize(img_tensor, [size[0], size[1]], antialias=False)
 
         tensors = [self._to_float_chw(img) for img in images]
         tensors = self._fit_to_input_size(tensors, preserve_aspect=False, resize_fn=resize_stretch, channels_first=True)
@@ -213,78 +230,73 @@ class RfdetrModel(ModelFactory, ODBase):
 
     Supported extensions:
         .engine → RfdetrTRT (TensorRT)
-        .pt     → RfdetrPT  (TorchScript)
+        .onnx   → RfdetrONNX (ONNX Runtime)
         .pth    → RfdetrPTH (PyTorch checkpoint via rfdetr library)
     """
 
     _registry = {}
 
 
-@RfdetrModel.register("engine")
-class RfdetrTRT(RfdetrBase):
-    def __init__(self, model_path: str, class_map: Optional[dict] = None, **kwargs) -> None:
-        self._setup_device("cuda")
-        self.trt = TRTEngine(model_path, device=str(self.device))
-        if len(self.trt._input_names) != 1:
-            raise ValueError(f"Expected a single-input TRT engine, got inputs: {self.trt._input_names}")
-        self.input_shape = self.trt.input_shape  # (C, H, W)
+class _RfdetrEngine(RfdetrBase):
+    """Shared base for the compiled-graph backends. Subclasses set `_engine_cls`.
+
+    Both engines are built from the same rfdetr ONNX export, whose outputs are ordered
+    (dets, labels[, masks]) — the order RfdetrBase.postprocess unpacks.
+    """
+
+    _engine_cls = None
+
+    def __init__(self, model_path: str, class_map: Optional[dict] = None, device: str = "cuda", **kwargs) -> None:
+        self._setup_device(device)
+        self.engine = self._engine_cls(model_path, device=str(self.device))
+        if len(self.engine._input_names) != 1:
+            raise ValueError(f"Expected a single-input {type(self).__name__} model, got inputs: {self.engine._input_names}")
+        self.input_shape = self.engine.input_shape  # (C, H, W)
         self.image_size = list(self.input_shape[-2:])  # (H, W) — used by the input-size guard
-        self.input_dtype = self.trt.input_dtype
-        if not self.trt.is_dynamic:
-            self.fixed_batch_size = self.trt.max_batch
+        self.input_dtype = self.engine.input_dtype
+        if not self.engine.is_dynamic:
+            self.fixed_batch_size = self.engine.max_batch
         self._init_common()
-        self._setup_class_map(self._load_class_map(model_path, class_map))
+        # Outputs are (dets, labels[, masks]); the labels tensor is (B, queries, logit slots).
+        self._setup_class_map(self._load_class_map(model_path, class_map, self.engine._output_buffers[1].shape[-1]))
 
     def warmup(self):
         """Warm up the model by running a dummy inference."""
-        dummy = torch.zeros((self.fixed_batch_size, *self.input_shape), dtype=self.input_dtype, device=self.device)
+        batch = self.fixed_batch_size or 1
+        dummy = torch.zeros((batch, *self.input_shape), dtype=self.input_dtype, device=self.device)
         self.forward(dummy)
 
     def forward(self, image: torch.Tensor) -> list:
-        """Perform TensorRT inference.
+        """Run the engine.
 
         Args:
-            image: BCHW tensor with batch_size <= self.fixed_batch_size.
+            image: BCHW tensor with batch_size <= self.engine.max_batch.
 
         Returns:
             List of output tensors on self.device, each with shape (B, ...).
         """
-        return self.trt.infer(image)
+        return self.engine.infer(image)
 
     def release(self) -> None:
-        self.trt.release()
+        self.engine.release()
 
 
-@RfdetrModel.register("ts")
-@RfdetrModel.register("pt")
-class RfdetrPT(RfdetrBase):
-    def __init__(
-        self, model_path: str, class_map: Optional[dict] = None, device: str = "cuda", image_size: Optional[List[int]] = None, **kwargs
-    ) -> None:
-        self.image_size = image_size or [640, 640]
-        self._setup_device(device)
-        self._init_common()
+@RfdetrModel.register("engine")
+class RfdetrTRT(_RfdetrEngine):
+    """TensorRT backend (CUDA only)."""
 
-        try:
-            self.model = torch.jit.load(model_path, map_location=self.device)
-        except Exception as e:
-            raise RuntimeError(f"Failed to load TorchScript model from {model_path}") from e
+    _engine_cls = TRTEngine
 
-        self.model.eval()
+    def __init__(self, model_path: str, class_map: Optional[dict] = None, **kwargs) -> None:
+        kwargs.pop("device", None)
+        super().__init__(model_path, class_map=class_map, device="cuda", **kwargs)
 
-        self.fixed_batch_size = 1
-        self._setup_class_map(self._load_class_map(model_path, class_map))
 
-    def forward(self, image: torch.Tensor, **kwargs) -> list:
-        """Perform TorchScript inference on a single image (batch=1).
+@RfdetrModel.register("onnx")
+class RfdetrONNX(_RfdetrEngine):
+    """ONNX Runtime backend. Runs on CUDA or CPU."""
 
-        Args:
-            image: BCHW tensor with batch size 1.
-
-        Returns:
-            List of output tensors, each with batch dimension (1, ...).
-        """
-        return self.model(image)
+    _engine_cls = ONNXEngine
 
 
 @RfdetrModel.register("pth")
@@ -302,6 +314,7 @@ class RfdetrPTH(RfdetrBase):
         class_map: Optional[dict] = None,
         device: str = "cuda",
         image_size: Optional[tuple] = None,
+        batch_size: int = 1,
     ) -> None:
         """Initialize RF-DETR model from checkpoint.
 
@@ -311,11 +324,13 @@ class RfdetrPTH(RfdetrBase):
             class_map: Dict mapping class indices to class names. If None, inferred from the model's built-in class names.
                 If provided, values must exactly match the model's class names.
             device: Device to run on (cuda/cpu). Default: cuda if available
-            image_size: Tuple of (height, width). Default: model-specific
+            image_size: Tuple of (height, width); must be square. Default: model-specific
+            batch_size: Number of images per forward pass. Fixed at load time, so predict() chunks to it and zero-pads
+                a short final chunk. Default: 1
 
         Raises:
             FileNotFoundError: If model_path does not exist
-            ValueError: If model_type is not supported
+            ValueError: If model_type is not supported, image_size is not square, or batch_size is not positive
         """
         from rfdetr import (
             RFDETRLarge,
@@ -348,6 +363,9 @@ class RfdetrPTH(RfdetrBase):
         if not os.path.isfile(model_path):
             raise FileNotFoundError(f"Model checkpoint not found: {model_path}")
 
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be a positive integer; got {batch_size}")
+
         self._setup_device(device)
 
         model_type = model_type.lower()
@@ -358,6 +376,10 @@ class RfdetrPTH(RfdetrBase):
         default_resolution, model_class = model_configs[model_type]
 
         if image_size is not None:
+            # rfdetr takes a single resolution and traces the graph at it; a non-square image_size
+            # would only fail once the first frame reaches the traced model.
+            if image_size[0] != image_size[1]:
+                raise ValueError(f"RF-DETR runs at a square resolution; got image_size=({image_size[0]}, {image_size[1]})")
             self.image_size = (image_size[0], image_size[1])
         else:
             self.image_size = (default_resolution, default_resolution)
@@ -372,23 +394,25 @@ class RfdetrPTH(RfdetrBase):
             model_kwargs["num_classes"] = num_classes
         self.model = model_class(**model_kwargs)
         if class_map is None:
-            class_map = {i: n for i, n in enumerate(self.model.class_names)}
+            # num_classes counts the real classes; the head adds a background slot.
+            class_map = self._class_map_from_names(self.model.class_names, None if num_classes is None else num_classes + 1)
         elif set(class_map.values()) != set(self.model.class_names):
             raise ValueError(
                 f"Provided class_map values {set(class_map.values())} do not match model class names {set(self.model.class_names)}"
             )
         self._setup_class_map(class_map)
-        self.model.optimize_for_inference()
-        self.fixed_batch_size = 1
+        # The traced graph has batch_size baked in, so fixed_batch_size must match it.
+        self.model.inference(batch_size=batch_size)
+        self.fixed_batch_size = batch_size
         self._init_common()
 
     def forward(self, image: torch.Tensor, **kwargs) -> list:
-        """Perform inference on a single image (batch=1).
+        """Perform inference on a batch of images.
 
         Args:
-            image: BCHW tensor with batch size 1.
+            image: BCHW tensor with batch size exactly self.fixed_batch_size.
 
         Returns:
-            List of output tensors, each with batch dimension (1, ...).
+            List of output tensors, each with batch dimension (B, ...).
         """
         return self.model.model.inference_model(image)
