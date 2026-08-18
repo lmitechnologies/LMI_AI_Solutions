@@ -64,8 +64,8 @@ class RfdetrBase(ODBase):
         """Map an ordered list of class names to the label ids the model emits.
 
         Mirrors rfdetr's own predict(): COCO-pretrained checkpoints emit sparse COCO category ids (1-90) while
-        fine-tuned models emit 0-based indices. rfdetr distinguishes them by the COCO names plus a logit count
-        wider than the name list; num_logit_slots is that count, when the backend can supply it.
+        fine-tuned models emit 0-based indices. rfdetr distinguishes them by the COCO names plus a num_classes
+        wider than the name list; num_logit_slots is that count (excluding background), when a backend can supply it.
         """
         names = list(class_names)
         if names == list(COCO_CLASS_NAMES) and (num_logit_slots is None or num_logit_slots > len(names)):
@@ -257,8 +257,8 @@ class _RfdetrEngine(RfdetrBase):
         if not self.engine.is_dynamic:
             self.fixed_batch_size = self.engine.max_batch
         self._init_common()
-        # Outputs are (dets, labels[, masks]); the labels tensor is (B, queries, logit slots).
-        self._setup_class_map(self._load_class_map(model_path, class_map, self.engine._output_buffers[1].shape[-1]))
+        # Outputs are (dets, labels[, masks]); labels is (B, queries, num_classes + background).
+        self._setup_class_map(self._load_class_map(model_path, class_map, self.engine._output_buffers[1].shape[-1] - 1))
 
     def warmup(self):
         """Warm up the model by running a dummy inference."""
@@ -394,8 +394,8 @@ class RfdetrPTH(RfdetrBase):
             model_kwargs["num_classes"] = num_classes
         self.model = model_class(**model_kwargs)
         if class_map is None:
-            # num_classes counts the real classes; the head adds a background slot.
-            class_map = self._class_map_from_names(self.model.class_names, None if num_classes is None else num_classes + 1)
+            # Same quantity rfdetr's own predict() keys the sparse-COCO decision on.
+            class_map = self._class_map_from_names(self.model.class_names, getattr(self.model.model.args, "num_classes", None))
         elif set(class_map.values()) != set(self.model.class_names):
             raise ValueError(
                 f"Provided class_map values {set(class_map.values())} do not match model class names {set(self.model.class_names)}"
