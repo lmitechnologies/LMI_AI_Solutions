@@ -77,7 +77,7 @@ def test_trt_warmup(trt_model):
 def test_operators_batch(imgs_coco, trt_model):
     from lmi_utils.preprocess_utils.ops import ResizeMeta
 
-    # Non-square inputs (!= engine input) exercise the antialiased stretch guard together with
+    # Non-square inputs (!= engine input) exercise the antialias-free stretch guard together with
     # per-image operators that revert boxes/masks back to each original frame.
     original_sizes = [img.shape[:2] for img in imgs_coco]  # (h, w)
     resized_dims = [OFF_SIZES[i % len(OFF_SIZES)] for i in range(len(imgs_coco))]
@@ -119,7 +119,7 @@ def test_empty(trt_model):
 def test_operators_batch_cuda(imgs_coco, trt_model):
     from lmi_utils.preprocess_utils.ops import ResizeMeta
 
-    # Non-square CUDA-tensor inputs (!= engine input) exercise the on-device antialiased stretch
+    # Non-square CUDA-tensor inputs (!= engine input) exercise the on-device antialias-free stretch
     # guard together with per-image operators that revert boxes/masks back to each original frame.
     original_sizes = [img.shape[:2] for img in imgs_coco]  # (h, w)
     resized_dims = [OFF_SIZES[i % len(OFF_SIZES)] for i in range(len(imgs_coco))]
