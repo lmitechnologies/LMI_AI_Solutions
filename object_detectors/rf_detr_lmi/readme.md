@@ -1,6 +1,6 @@
 # RF-Detr
 
-Last updated: 2026-07-09
+Last updated: 2026-08-19
 
 ## Training
 
@@ -36,9 +36,11 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies
 RUN apt-get update && apt-get install libgl1 -y
-RUN pip install --user opencv-python
+RUN pip install onnxruntime-gpu
+RUN sed -i '/setuptools/d' /etc/pip/constraint.txt && \
+    pip install --upgrade setuptools
 RUN sed -i '/lightning-utilities/d;/pycocotools/d' /etc/pip/constraint.txt && \
-    pip install label_studio_sdk shapely "rfdetr[train]==1.6.4"
+    pip install label_studio_sdk shapely "rfdetr[train]==1.8.3"
 
 # clone repos
 WORKDIR /repos
