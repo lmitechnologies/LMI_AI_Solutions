@@ -23,7 +23,7 @@ except ImportError as e:
     logging.error(f"Failed to import rfdetr models: {e}")
     raise
 
-from object_detectors.rf_detr_lmi.convert import _write_class_names, convert_to_onnx, convert_to_tensorrt
+from object_detectors.rf_detr_lmi.convert import convert_to_onnx, convert_to_tensorrt
 
 logger = logging.getLogger(__name__)
 
@@ -279,36 +279,33 @@ def get_conversion_output_dir(conversion_configs: Dict[str, Any]) -> str:
     return os.path.dirname(pretrain_weights) if pretrain_weights else "."
 
 
-def convert_model_to_onnx(model: Any, output_dir: str) -> None:
+def convert_model_to_onnx(model: Any, output_dir: str) -> str:
     """Convert model to ONNX format.
 
     Args:
         model: The model instance to convert.
         output_dir: Directory to save the converted model.
+
+    Returns:
+        Path to the exported ONNX file; rfdetr names it after the model variant.
     """
     logger.info("Starting model conversion to ONNX format...")
-    convert_to_onnx(model, output_dir)
-    onnx_path = os.path.join(output_dir, "inference_model.onnx")
-    _write_class_names(onnx_path, model.class_names)
-    logger.info(f"ONNX model saved to: {output_dir}")
+    onnx_path = convert_to_onnx(model, output_dir)
+    logger.info(f"ONNX model saved to: {onnx_path}")
+    return onnx_path
 
 
 def convert_model_to_tensorrt(model: Any, output_dir: str) -> None:
-    """Convert model to TensorRT format.
+    """Convert model to TensorRT format, exporting the ONNX it is built from first.
 
     Args:
         model: The model instance to convert.
         output_dir: Directory to save the converted model.
     """
-    onnx_model_path = os.path.join(output_dir, "inference_model.onnx")
-
-    # Convert to ONNX first if not already done
-    if not os.path.exists(onnx_model_path):
-        convert_model_to_onnx(model, output_dir=output_dir)
-
+    onnx_path = convert_model_to_onnx(model, output_dir)
     logger.info("Converting to TensorRT engine...")
-    convert_to_tensorrt(onnx_model_path)
-    logger.info(f"TensorRT model saved to: {output_dir}")
+    engine_path = convert_to_tensorrt(onnx_path)
+    logger.info(f"TensorRT model saved to: {engine_path}")
 
 
 def handle_conversion(configs: Dict[str, Any]) -> None:
@@ -337,11 +334,9 @@ def handle_conversion(configs: Dict[str, Any]) -> None:
 
 
 def handle_export(configs: Dict[str, Any]) -> None:
-    """Export trained weights to ONNX with a class-name sidecar via rfdetr's native exporter.
+    """Export trained weights to ONNX via rfdetr's native exporter, with class names embedded in the file.
 
-    Unlike the convert operation, this writes the fixed filenames model.onnx and
-    model.classes.json, the convention the RfdetrModel ONNX/TensorRT backends resolve
-    class names from.
+    Unlike the convert operation, this writes the fixed filename model.onnx.
 
     Args:
         configs: Configuration parameters containing model_configs and export_configs.
@@ -363,10 +358,9 @@ def handle_export(configs: Dict[str, Any]) -> None:
 
     # rfdetr names the exported file after the model variant (e.g. rfdetr-small.onnx);
     # stage it as model.onnx instead
-    onnx_path = model.export(output_dir=output_dir, opset_version=opset_version, verbose=verbose)
+    onnx_path = convert_to_onnx(model, output_dir, opset_version=opset_version, verbose=verbose)
     final_path = os.path.join(output_dir, "model.onnx")
     os.replace(onnx_path, final_path)
-    _write_class_names(final_path, model.class_names)
     logger.info(f"ONNX model exported to: {final_path}")
 
 

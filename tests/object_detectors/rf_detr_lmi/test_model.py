@@ -1,10 +1,12 @@
 import logging
 import os
+from importlib.metadata import version
 
 import cv2
 import numpy as np
 import pytest
 import torch
+from packaging.version import Version
 from rfdetr import RFDETRSegSmall
 from rfdetr.assets.coco_classes import COCO_CLASSES
 
@@ -21,6 +23,8 @@ OUT_DIR = "tests/outputs/od/rf_detr"
 IMAGE_SIZE = 384
 MODEL_TYPE = "seg-small"
 OFF_SIZES = [(512, 640), (576, 704), (704, 512)]  # (h, w), non-square
+# rfdetr 1.9.0 dropped antialiasing from predict(); older versions can't match preprocess() pixel for pixel.
+RFDETR_ANTIALIASES_PREDICT = Version(version("rfdetr")) < Version("1.9.0")
 
 
 def load_image(path):
@@ -196,11 +200,17 @@ class Test_Rfdetr_Model:
 
             assert_outputs_match_rf(rf_preds, outputs_pth, "pth_model")
 
+    @pytest.mark.xfail(
+        RFDETR_ANTIALIASES_PREDICT,
+        reason="rfdetr < 1.9.0 antialiases in predict(); preprocess() follows the training resize instead",
+        strict=False,
+    )
     def test_compare_with_rfdetr_nonsquare(self, imgs_coco, cpu_models):
         """Non-square inputs exercise the off-size resize guard.
 
-        Our guard fits inputs to the square model input with an antialias-free stretch on the float
-        tensor, matching rfdetr's own predict() preprocessing, so detections must match exactly.
+        Our guard fits inputs to the square model input with an antialias-free stretch on the float tensor, matching
+        rfdetr >= 1.9.0's own predict(), so detections must match exactly. Only this test resizes; the square case
+        is already model-sized.
         """
 
         rf_model, pth_model = cpu_models
@@ -419,11 +429,14 @@ def test_clamp_boxes_to_image():
     Backend-agnostic: built without an engine, feed synthetic raw head outputs (one query with an
     oversized cxcywh box that decodes past every edge, one inside) through RfdetrBase.postprocess.
     """
+    from rfdetr.models.postprocess import PostProcess
+
     from object_detectors.rf_detr_lmi.model import RfdetrTRT
 
     model = object.__new__(RfdetrTRT)
     model.device = torch.device("cpu")
     model._init_common()
+    model.postprocessor = PostProcess(num_select=300)  # normally from the engine's metadata
     model._setup_class_map({0: "person"})
 
     image_h, image_w = 100, 200

@@ -6,6 +6,8 @@ Requires TensorRT >= 8.5 (matches `lmi_common/trt_engine.py`).
 import inspect
 import logging
 
+from lmi_common.model_metadata import engine_metadata_header, read_onnx_metadata
+
 logger = logging.getLogger(__name__)
 
 _trt_logger_singleton = None
@@ -78,8 +80,9 @@ def onnx_to_trt(
     """Build a serialized TensorRT engine from an ONNX file.
 
     A static-shape ultralytics ONNX is built by ``ultralytics.utils.export.onnx2engine`` so its export metadata is embedded in the
-    plan file; everything else is built here. Static-batch ONNX (no dynamic dims) ignores the batch kwargs. Dynamic-batch ONNX
-    (axis 0 == -1) gets an optimization profile from the kwargs; other dynamic axes are not supported and will raise.
+    plan file; everything else is built here, and metadata embedded in the source ONNX is carried over to the engine's header.
+    Static-batch ONNX (no dynamic dims) ignores the batch kwargs. Dynamic-batch ONNX (axis 0 == -1) gets an optimization profile
+    from the kwargs; other dynamic axes are not supported and will raise.
 
     Args:
         onnx_path: source .onnx path.
@@ -154,6 +157,9 @@ def onnx_to_trt(
     if serialized_engine is None:
         raise RuntimeError("TensorRT engine build failed")
 
+    metadata = read_onnx_metadata(onnx_path)
     with open(engine_path, "wb") as f:
+        if metadata:
+            f.write(engine_metadata_header(metadata))
         f.write(serialized_engine)
     logger.info(f"TensorRT engine saved to {engine_path}")

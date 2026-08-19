@@ -1,7 +1,9 @@
 import logging
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
 import torch
+
+from lmi_common.model_metadata import split_engine_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +14,9 @@ class TRTEngine:
     I/O buffers are allocated as torch CUDA tensors at init (at max-batch shape for
     dynamic engines). Only a dynamic batch dim (dim 0) is supported; dynamic spatial
     dims raise ``NotImplementedError``.
+
+    A metadata header written by ``lmi_common.trt_convert`` is stripped before deserializing and
+    exposed as ``self.metadata`` ({} for an engine without one).
 
     Not thread-safe — create one instance per thread.
 
@@ -41,9 +46,12 @@ class TRTEngine:
 
         runtime = trt.Runtime(trt_logger)
         with open(engine_path, "rb") as f:
-            engine = runtime.deserialize_cuda_engine(f.read())
+            metadata, plan = split_engine_metadata(f.read())
+        engine = runtime.deserialize_cuda_engine(plan)
         if engine is None:
             raise RuntimeError(f"Failed to deserialize TensorRT engine: {engine_path}")
+        if metadata:
+            logger.info(f"Engine metadata: {sorted(metadata)}")
 
         self._engine = engine
         self.context = engine.create_execution_context()
@@ -127,6 +135,7 @@ class TRTEngine:
         self.input_shape: Tuple[int, ...] = tuple(first_input_buf.shape[1:])  # (C, H, W)
         self.fp16: bool = first_input_buf.dtype == torch.float16
         self.is_dynamic: bool = is_dynamic
+        self.metadata: Dict[str, Any] = metadata
 
     def release(self) -> None:
         """Release TensorRT resources deterministically (context before engine) and drop CUDA I/O buffers.

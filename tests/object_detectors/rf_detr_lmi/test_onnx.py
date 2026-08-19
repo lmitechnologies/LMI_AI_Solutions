@@ -91,18 +91,49 @@ def test_matches_pth(imgs_coco, onnx_model, pth_model):
         np.testing.assert_allclose(ref["scores"][i], out["scores"][i], atol=5e-3)
 
 
-def test_class_map_from_sidecar(imgs_coco, onnx_file, pth_model):
-    """cli.py writes an ordered <stem>.classes.json; names resolved from it must match an explicit class_map."""
-    from object_detectors.rf_detr_lmi.convert import _write_class_names
-
-    _write_class_names(onnx_file, list(COCO_CLASSES.values()))
+def test_class_map_from_embedded_metadata(imgs_coco, onnx_file, pth_model):
+    """convert_to_onnx embeds the ordered class names in the file; names read back from it must match an explicit class_map."""
     model = ObjectDetector(metadata=METADATA, model_path=onnx_file, image_size=[IMAGE_SIZE, IMAGE_SIZE], device="cpu")
     assert model.class_map == COCO_CLASSES
 
     out, _ = model.predict(imgs_coco, configs=0.5)
     ref, _ = pth_model.predict(imgs_coco, configs=0.5)
     for i in range(len(imgs_coco)):
-        assert np.array_equal(ref["classes"][i], out["classes"][i]), f"image {i}: sidecar names disagree with explicit class_map"
+        assert np.array_equal(ref["classes"][i], out["classes"][i]), f"image {i}: embedded names disagree with explicit class_map"
+
+
+def test_num_select_from_embedded_metadata(onnx_model, pth_model):
+    """The engine backend must reuse the checkpoint's num_select (100 for seg-small), not a hardcoded 300."""
+    assert pth_model.postprocessor.num_select == 100, "rfdetr changed seg-small's num_select; update this test"
+    assert onnx_model.postprocessor.num_select == pth_model.postprocessor.num_select
+
+
+def test_num_select_falls_back_when_absent(tmp_path, onnx_file):
+    """An ONNX exported before num_select was embedded must still load, at rfdetr's 300 default."""
+    import onnx
+
+    from lmi_common.model_metadata import embed_onnx_metadata
+
+    legacy = str(tmp_path / "no_num_select.onnx")
+    onnx.save(onnx.load(onnx_file), legacy)
+    embed_onnx_metadata(legacy, {"class_names": list(COCO_CLASSES.values())})
+
+    assert RfdetrONNX(legacy, device="cpu").postprocessor.num_select == 300
+
+
+def test_missing_class_names_raises(tmp_path, onnx_file):
+    """A model carrying no embedded names and no class_map must fail with a clear error, not a wrong class map."""
+    import onnx
+
+    from lmi_common.model_metadata import ONNX_METADATA_KEY
+
+    stripped = str(tmp_path / "no_metadata.onnx")
+    model = onnx.load(onnx_file)
+    del model.metadata_props[[p.key for p in model.metadata_props].index(ONNX_METADATA_KEY)]
+    onnx.save(model, stripped)
+
+    with pytest.raises(ValueError, match="no class names embedded"):
+        ObjectDetector(metadata=METADATA, model_path=stripped, image_size=[IMAGE_SIZE, IMAGE_SIZE], device="cpu")
 
 
 def test_cuda(imgs_coco, onnx_file):

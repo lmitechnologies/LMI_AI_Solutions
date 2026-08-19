@@ -74,6 +74,18 @@ def test_trt_warmup(trt_model):
     trt_model.warmup()
 
 
+def test_class_map_from_embedded_metadata(trt_model):
+    """Names embedded at export ride in the engine's header, so no class_map argument is needed."""
+    if not trt_model.engine.metadata.get("class_names"):
+        pytest.skip(f"{TRT_MODEL} carries no embedded class names; rebuild it with tests/build_test_engines.py")
+    model = ObjectDetector(
+        metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
+        model_path=TRT_MODEL,
+        image_size=[IMAGE_SIZE, IMAGE_SIZE],
+    )
+    assert model.class_map == COCO_CLASSES
+
+
 def test_operators_batch(imgs_coco, trt_model):
     from lmi_utils.preprocess_utils.ops import ResizeMeta
 
