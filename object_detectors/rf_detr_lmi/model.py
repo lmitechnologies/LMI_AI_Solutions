@@ -1,4 +1,4 @@
-import json
+import inspect
 import logging
 import os
 from typing import List, Optional
@@ -17,6 +17,9 @@ from lmi_utils.image_utils.types import ImageLike
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 
+# Added in rfdetr 1.9.1; passing it to older versions raises TypeError.
+_POSTPROCESS_TAKES_SCORE_THRESHOLD = "score_threshold" in inspect.signature(PostProcess.forward).parameters
+
 
 class RfdetrBase(ODBase):
     """Shared base class for all RF-DETR model backends.
@@ -33,10 +36,9 @@ class RfdetrBase(ODBase):
     STDS = [0.229, 0.224, 0.225]
 
     def _init_common(self) -> None:
-        """Initialize normalization constants and postprocessor shared by all backends."""
+        """Initialize normalization constants shared by all backends; each backend sets its own postprocessor."""
         self.means = self.MEANS
         self.stds = self.STDS
-        self.postprocessor = PostProcess(num_select=300)
 
     @staticmethod
     def _num_classes_from_checkpoint(model_path: str) -> Optional[int]:
@@ -73,30 +75,31 @@ class RfdetrBase(ODBase):
         return dict(enumerate(names))
 
     @staticmethod
-    def _load_class_map(model_path: str, provided: Optional[dict], num_logit_slots: Optional[int] = None) -> dict:
-        """Resolve class_map from explicit argument or sidecar <stem>.classes.json.
+    def _resolve_class_map(model_path: str, engine_metadata: dict, provided: Optional[dict], num_logit_slots: Optional[int] = None) -> dict:
+        """Resolve class_map from the class names embedded in the model file, or from an explicit override.
 
         Args:
-            model_path: Path to the model file.
-            provided: Caller-supplied class_map, or None to auto-discover.
+            model_path: Path to the model file, for the error message.
+            engine_metadata: Metadata read off the model file by the engine wrapper; its "class_names" is the default source.
+            provided: Override class_map, used as-is when given. Needed only for a model exported without embedded names.
+            num_logit_slots: Detection-head class count, used to spot COCO-pretrained checkpoints.
 
         Returns:
             Dict mapping int index to str class name.
 
         Raises:
-            FileNotFoundError: If class_map is None and no sidecar exists.
+            ValueError: If the model file carries no class names and no override was given.
         """
         if provided is not None:
             return provided
-        sidecar = os.path.splitext(model_path)[0] + ".classes.json"
-        if os.path.isfile(sidecar):
-            RfdetrBase.logger.info(f"Loading class names from sidecar: {sidecar}")
-            with open(sidecar, encoding="utf-8") as f:
-                return RfdetrBase._class_map_from_names(json.load(f), num_logit_slots)
-        raise FileNotFoundError(
-            f"class_map not provided and no sidecar found at {sidecar}. "
-            "Pass class_map explicitly or place a <model>.classes.json next to the model."
-        )
+        class_names = engine_metadata.get("class_names")
+        if not class_names:
+            raise ValueError(
+                f"class_map not provided and no class names embedded in {model_path}. "
+                "Pass class_map explicitly, or re-export the model with rf_detr_lmi/cli.py to embed them."
+            )
+        RfdetrBase.logger.info(f"Loaded {len(class_names)} class names embedded in {model_path}")
+        return RfdetrBase._class_map_from_names(class_names, num_logit_slots)
 
     def warmup(self) -> None:
         """Warm up the model by running a dummy inference. Requires self.image_size."""
@@ -119,7 +122,7 @@ class RfdetrBase(ODBase):
             images = [images]
 
         def resize_stretch(img_tensor, size):
-            # antialias=False matches rfdetr >= 1.9.0 predict(), which mirrors Albumentations' cv2.INTER_LINEAR training resize.
+            # antialias=False mirrors the cv2.INTER_LINEAR training resize; rfdetr's predict() only matches from 1.9.0.
             return F.resize(img_tensor, [size[0], size[1]], antialias=False)
 
         tensors = [self._to_float_chw(img) for img in images]
@@ -221,8 +224,18 @@ class RfdetrBase(ODBase):
 
         orig_sizes = [img.shape[:2] for img in images]
         target_sizes = torch.tensor(orig_sizes, device=self.device)
-        rs = self.postprocessor(return_predictions, target_sizes=target_sizes)
+        extra = {"score_threshold": self._mask_score_floor(configs)} if _POSTPROCESS_TAKES_SCORE_THRESHOLD else {}
+        rs = self.postprocessor(return_predictions, target_sizes=target_sizes, **extra)
         return [self._postprocess_single(r, configs, operators[i], return_segments) for i, r in enumerate(rs)]
+
+    @staticmethod
+    def _mask_score_floor(configs: dict) -> float:
+        """Lowest score _apply_confidence_filter can keep, letting PostProcess skip masks it would discard anyway.
+
+        PostProcess tests ``score > floor`` while ours is ``score >= threshold``, so step one float32 below.
+        """
+        smallest = min(configs.values(), default=1.0)
+        return float(np.nextafter(np.float32(smallest), np.float32("-inf")))
 
 
 class RfdetrModel(ModelFactory, ODBase):
@@ -242,6 +255,9 @@ class _RfdetrEngine(RfdetrBase):
 
     Both engines are built from the same rfdetr ONNX export, whose outputs are ordered
     (dets, labels[, masks]) — the order RfdetrBase.postprocess unpacks.
+
+    Class names come from the metadata embedded in the model file at export; the class_map argument is
+    an override, needed only for a model exported without it.
     """
 
     _engine_cls = None
@@ -257,8 +273,11 @@ class _RfdetrEngine(RfdetrBase):
         if not self.engine.is_dynamic:
             self.fixed_batch_size = self.engine.max_batch
         self._init_common()
+        # No rfdetr model here, so rebuild its postprocessor from the num_select embedded at export; 300 is rfdetr's default.
+        self.postprocessor = PostProcess(num_select=int(self.engine.metadata.get("num_select", 300)))
         # Outputs are (dets, labels[, masks]); labels is (B, queries, num_classes + background).
-        self._setup_class_map(self._load_class_map(model_path, class_map, self.engine._output_buffers[1].shape[-1] - 1))
+        num_logit_slots = self.engine._output_buffers[1].shape[-1] - 1
+        self._setup_class_map(self._resolve_class_map(model_path, self.engine.metadata, class_map, num_logit_slots))
 
     def warmup(self):
         """Warm up the model by running a dummy inference."""
@@ -321,8 +340,8 @@ class RfdetrPTH(RfdetrBase):
         Args:
             model_path: Path to the model checkpoint file (.pth)
             model_type: Model variant (nano/small/medium/large/ or seg-nano/seg-small/seg-medium/seg-large/seg-xlarge/seg-2xlarge).
-            class_map: Dict mapping class indices to class names. If None, inferred from the model's built-in class names.
-                If provided, values must exactly match the model's class names.
+            class_map: Dict mapping class indices to class names. Defaults to the checkpoint's built-in class names; pass it
+                only to override the index mapping — values must still exactly match the model's class names.
             device: Device to run on (cuda/cpu). Default: cuda if available
             image_size: Tuple of (height, width); must be square. Default: model-specific
             batch_size: Number of images per forward pass. Fixed at load time, so predict() chunks to it and zero-pads
@@ -402,9 +421,13 @@ class RfdetrPTH(RfdetrBase):
             )
         self._setup_class_map(class_map)
         # The traced graph has batch_size baked in, so fixed_batch_size must match it.
-        self.model.inference(batch_size=batch_size)
+        # rfdetr renamed optimize_for_inference() to inference() in 1.9.0; the old name is still an alias there.
+        optimize = getattr(self.model, "inference", None) or self.model.optimize_for_inference
+        optimize(batch_size=batch_size)
         self.fixed_batch_size = batch_size
         self._init_common()
+        # Built from the checkpoint's resolved config, and survives the optimize call above.
+        self.postprocessor = self.model.model.postprocess
 
     def forward(self, image: torch.Tensor, **kwargs) -> list:
         """Perform inference on a batch of images.

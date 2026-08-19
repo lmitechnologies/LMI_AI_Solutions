@@ -1,4 +1,4 @@
-from typing import List, Protocol, Tuple, runtime_checkable
+from typing import Any, Dict, List, Protocol, Tuple, runtime_checkable
 
 import torch
 
@@ -18,5 +18,6 @@ class InferenceEngine(Protocol):
     input_shape: Tuple[int, ...]
     fp16: bool
     is_dynamic: bool
+    metadata: Dict[str, Any]  # embedded model metadata; {} when the file carries none
 
     def infer(self, *inputs: torch.Tensor) -> List[torch.Tensor]: ...

@@ -158,7 +158,7 @@ services:
 
 ## Exporting to ONNX
 
-The export operation uses rfdetr's native exporter and writes the fixed filenames `model.onnx` plus a `model.classes.json` class-name sidecar, the convention the `RfdetrModel` ONNX/TensorRT backends resolve class names from.
+The export operation uses rfdetr's native exporter and writes the fixed filename `model.onnx`, with the class names embedded in the file's own metadata — the `RfdetrModel` ONNX/TensorRT backends read them from there, so the model deploys as a single file.
 
 ```yaml
 model_type: small
@@ -166,7 +166,7 @@ operation: export
 task: seg         # od or seg
 pretrain_weights: /app/training/checkpoint_best_total.pth   # required; must be a .pth file
 export:
-    output_dir: /app/training   # receives model.onnx + model.classes.json
+    output_dir: /app/training   # receives model.onnx
     resolution: 384
     opset_version: 17           # optional, default 17
 ```
@@ -185,7 +185,8 @@ Any additional keys under `export` (e.g. `device`) are passed to the model const
 
 The `.pth` backend takes `model_type` and an optional `batch_size` (fixed at load time, since the traced graph bakes it in).
 The `.onnx` and `.engine` backends read the batch size and resolution from the model, and take class names from `class_map`
-or the `<model>.classes.json` sidecar written at export.
+or from the metadata embedded at export (`metadata_props` in an ONNX, a JSON header on an engine). Passing `class_map`
+is required for a model exported elsewhere, which carries no embedded names.
 
 docker-compose file
 ```yaml
@@ -201,5 +202,5 @@ services:
       - ./preprocessed/test:/app/data/
       - ./training:/app/training
     command: >
-      python3 -m object_detectors.rf_detr_lmi.infer --weights /app/training/checkpoint_best_total.pth --input /app/data/test --output /app/training/predictions --model_type seg-small --image_size 384 384
+      python3 -m object_detectors.rf_detr_lmi.infer --weights /app/training/checkpoint_best_total.pth --input /app/data/test --output /app/training/predictions --model_type seg-small
 ```

@@ -1,61 +1,37 @@
-import json
-import logging
 import os
 
-logger = logging.getLogger(__name__)
+from lmi_common.model_metadata import embed_onnx_metadata
+from lmi_common.trt_convert import onnx_to_trt
 
 
-def _write_class_names(model_path: str, class_names: list) -> None:
-    """Write class names to a sidecar JSON file next to model_path."""
-    sidecar = os.path.splitext(model_path)[0] + ".classes.json"
-    with open(sidecar, "w", encoding="utf-8") as f:
-        json.dump(list(class_names), f)
-    logger.info(f"Class names written to: {sidecar}")
+def convert_to_onnx(model, output_dir: str, **kwargs) -> str:
+    """Export an rfdetr model to ONNX with its class names and num_select embedded, and return the .onnx path.
 
+    Args:
+        model: An rfdetr model instance.
+        output_dir (str): Directory to write the export into; rfdetr names the file itself.
+        **kwargs: opset_version (int, default 17), plus any rfdetr export kwargs.
 
-def build_trt_engine(onnx_dir: str, **kwargs) -> None:
-    try:
-        import tensorrt as trt
-    except ImportError as e:
-        raise ImportError("tensorrt is required for TensorRT conversion. Install it with: pip install tensorrt") from e
-
-    engine_dir = onnx_dir.replace(".onnx", ".engine")
-    workspace_mb = 4096
-    verbose = kwargs.get("verbose", False)
-
-    trt_logger = trt.Logger(trt.Logger.VERBOSE if verbose else trt.Logger.WARNING)
-    builder = trt.Builder(trt_logger)
-    network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
-    parser = trt.OnnxParser(network, trt_logger)
-
-    with open(onnx_dir, "rb") as f:
-        if not parser.parse(f.read()):
-            for i in range(parser.num_errors):
-                logger.error(parser.get_error(i))
-            raise RuntimeError(f"Failed to parse ONNX: {onnx_dir}")
-
-    config = builder.create_builder_config()
-    config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace_mb << 20)
-    if builder.platform_has_fast_fp16:
-        config.set_flag(trt.BuilderFlag.FP16)
-
-    logger.info(f"Building TensorRT engine, saving to {engine_dir} ...")
-    engine_bytes = builder.build_serialized_network(network, config)
-    with open(engine_dir, "wb") as f:
-        f.write(engine_bytes)
-    logger.info("Done.")
-
-
-def convert_to_tensorrt(onnx_path: str, **kwargs) -> None:
+    Returns:
+        Path to the exported ONNX file.
     """
-    Convert an ONNX model to TensorRT engine.
+    # num_select varies by variant and is not recoverable from the exported graph.
+    metadata = {"class_names": list(model.class_names), "num_select": int(model.model.postprocess.num_select)}
+    onnx_path = model.export(output_dir=output_dir, opset_version=kwargs.pop("opset_version", 17), **kwargs)
+    embed_onnx_metadata(onnx_path, metadata)
+    return onnx_path
+
+
+def convert_to_tensorrt(onnx_path: str, **kwargs) -> str:
+    """Build a TensorRT engine next to the ONNX, carrying over the ONNX's embedded metadata.
 
     Args:
         onnx_path (str): Path to the ONNX model file.
-        **kwargs: Additional keyword arguments for conversion options.
+        **kwargs: Forwarded to ``lmi_common.trt_convert.onnx_to_trt`` (fp16, workspace_gb, batch profile).
+
+    Returns:
+        Path to the built engine.
     """
-    build_trt_engine(onnx_path, **kwargs)
-
-
-def convert_to_onnx(model, output_dir: str, **kwargs) -> None:
-    model.export(output_dir=output_dir, opset_version=kwargs.get("opset_version", 17))
+    engine_path = os.path.splitext(onnx_path)[0] + ".engine"
+    onnx_to_trt(onnx_path, engine_path, **kwargs)
+    return engine_path

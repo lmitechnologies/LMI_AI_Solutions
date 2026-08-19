@@ -24,9 +24,8 @@ def setup_parser():
         "-m",
         type=str,
         default=None,
-        help="Path to class map JSON file (optional; auto-discovered from <model>.classes.json)",
+        help="Optional override; by default class names come from the model file itself (embedded at export, or the .pth checkpoint)",
     )
-    parser.add_argument("--image_size", "-s", type=int, nargs=2, required=True, help="Input image size [h,w] for the model")
     parser.add_argument("--model_type", "-t", type=str, required=False, help="Type of the model to use for inference")
     return parser
 
@@ -36,7 +35,6 @@ def inference_run(args):
     imgs_path = args.input
     out_path = args.output
     class_map_path = args.class_map
-    image_size = args.image_size
     model_type = args.model_type
     model_ext = os.path.splitext(model_path)[1].lower()
     if model_ext == ".pth":
@@ -52,7 +50,8 @@ def inference_run(args):
         class_map = {int(k): v for k, v in class_map.items()}
 
     # load model
-    model = RfdetrModel(model_path, class_map=class_map, image_size=image_size, model_type=model_type)
+    model = RfdetrModel(model_path, class_map=class_map, model_type=model_type)
+    image_size = model.image_size  # onnx/engine report their own input size; .pth uses the variant default
     # model warmup
     model.warmup()
     # find images
