@@ -35,12 +35,8 @@ def embed_onnx_metadata(onnx_path: str, metadata: Mapping[str, Any]) -> None:
 
 
 def read_onnx_metadata(onnx_path: str) -> Dict[str, Any]:
-    """Read embedded metadata from an ONNX file ({} when it carries none, or when ``onnx`` is not installed)."""
-    try:
-        import onnx
-    except ImportError:
-        logger.warning(f"onnx is not installed; reading no metadata from {onnx_path}")
-        return {}
+    """Read embedded metadata from an ONNX file ({} when it carries none)."""
+    import onnx
 
     model = onnx.load(onnx_path, load_external_data=False)
     return metadata_from_onnx_props({p.key: p.value for p in model.metadata_props})
