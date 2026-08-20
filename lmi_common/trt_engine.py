@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Tuple
 
 import torch
 
-from lmi_common.model_metadata import split_engine_metadata
+from lmi_common.model_metadata import metadata_from_props, split_engine_props
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +15,9 @@ class TRTEngine:
     dynamic engines). Only a dynamic batch dim (dim 0) is supported; dynamic spatial
     dims raise ``NotImplementedError``.
 
-    A metadata header written by ``lmi_common.trt_convert`` is stripped before deserializing and
-    exposed as ``self.metadata`` ({} for an engine without one).
+    A props header written by ``lmi_common.trt_convert`` is stripped before deserializing; the payload
+    decoded from it is exposed as ``self.metadata``, the shape ``ONNXEngine`` reports ({} for an engine
+    carrying none).
 
     Not thread-safe — create one instance per thread.
 
@@ -46,10 +47,11 @@ class TRTEngine:
 
         runtime = trt.Runtime(trt_logger)
         with open(engine_path, "rb") as f:
-            metadata, plan = split_engine_metadata(f.read())
+            props, plan = split_engine_props(f.read())
         engine = runtime.deserialize_cuda_engine(plan)
         if engine is None:
             raise RuntimeError(f"Failed to deserialize TensorRT engine: {engine_path}")
+        metadata = metadata_from_props(props)
         if metadata:
             logger.info(f"Engine metadata: {sorted(metadata)}")
 

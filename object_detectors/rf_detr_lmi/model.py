@@ -16,6 +16,7 @@ from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
+from object_detectors.rf_detr_lmi.metadata import RfdetrMetadata
 
 # Added in rfdetr 1.9.1; passing it to older versions raises TypeError.
 _POSTPROCESS_TAKES_SCORE_THRESHOLD = "score_threshold" in inspect.signature(PostProcess.forward).parameters
@@ -75,12 +76,14 @@ class RfdetrBase(ODBase):
         return dict(enumerate(names))
 
     @staticmethod
-    def _resolve_class_map(model_path: str, engine_metadata: dict, provided: Optional[dict], num_logit_slots: Optional[int] = None) -> dict:
+    def _resolve_class_map(
+        model_path: str, embedded_names: Optional[List[str]], provided: Optional[dict], num_logit_slots: Optional[int] = None
+    ) -> dict:
         """Resolve class_map from the class names embedded in the model file, or from an explicit override.
 
         Args:
             model_path: Path to the model file, for the error message.
-            engine_metadata: Metadata read off the model file by the engine wrapper; its "class_names" is the default source.
+            embedded_names: Class names recorded at export, or None for a model carrying none.
             provided: Override class_map, used as-is when given. Needed only for a model exported without embedded names.
             num_logit_slots: Detection-head class count, used to spot COCO-pretrained checkpoints.
 
@@ -92,14 +95,13 @@ class RfdetrBase(ODBase):
         """
         if provided is not None:
             return provided
-        class_names = engine_metadata.get("class_names")
-        if not class_names:
+        if not embedded_names:
             raise ValueError(
                 f"class_map not provided and no class names embedded in {model_path}. "
                 "Pass class_map explicitly, or re-export the model with rf_detr_lmi/cli.py to embed them."
             )
-        RfdetrBase.logger.info(f"Loaded {len(class_names)} class names embedded in {model_path}")
-        return RfdetrBase._class_map_from_names(class_names, num_logit_slots)
+        RfdetrBase.logger.info(f"Loaded {len(embedded_names)} class names embedded in {model_path}")
+        return RfdetrBase._class_map_from_names(embedded_names, num_logit_slots)
 
     def warmup(self) -> None:
         """Warm up the model by running a dummy inference. Requires self.image_size."""
@@ -273,11 +275,12 @@ class _RfdetrEngine(RfdetrBase):
         if not self.engine.is_dynamic:
             self.fixed_batch_size = self.engine.max_batch
         self._init_common()
-        # No rfdetr model here, so rebuild its postprocessor from the num_select embedded at export; 300 is rfdetr's default.
-        self.postprocessor = PostProcess(num_select=int(self.engine.metadata.get("num_select", 300)))
+        metadata = RfdetrMetadata.from_engine(self.engine.metadata, model_path)
+        # No rfdetr model here, so rebuild its postprocessor from the num_select recorded at export.
+        self.postprocessor = PostProcess(num_select=metadata.num_select)
         # Outputs are (dets, labels[, masks]); labels is (B, queries, num_classes + background).
         num_logit_slots = self.engine._output_buffers[1].shape[-1] - 1
-        self._setup_class_map(self._resolve_class_map(model_path, self.engine.metadata, class_map, num_logit_slots))
+        self._setup_class_map(self._resolve_class_map(model_path, metadata.class_names, class_map, num_logit_slots))
 
     def warmup(self):
         """Warm up the model by running a dummy inference."""

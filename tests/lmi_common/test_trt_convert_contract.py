@@ -6,6 +6,7 @@ of the convention. Without the metadata a YOLO26 segmentation engine decodes dow
 misses the shape check that saves the detect head.
 """
 
+import inspect
 import shutil
 from pathlib import Path
 
@@ -17,7 +18,7 @@ onnx = pytest.importorskip("onnx")
 from ultralytics import YOLO  # noqa: E402
 from ultralytics.nn.autobackend import AutoBackend  # noqa: E402
 
-from lmi_common.trt_convert import _ultralytics_metadata, onnx_to_trt  # noqa: E402
+from lmi_common.trt_convert import _inspect_onnx, onnx_to_trt  # noqa: E402
 
 ASSET_MODEL = "tests/assets/models/od/ultralytics/yolo11n.pt"
 POSE_ASSET = "tests/assets/models/od/ultralytics/yolo11n-pose.pt"
@@ -37,6 +38,12 @@ needs_engine = pytest.mark.skipif(
 )
 
 
+def _claim(onnx_path: str):
+    """What onnx_to_trt decides about an ONNX: its props if onnx2engine will build it, else None."""
+    props, use_onnx2engine = _inspect_onnx(onnx_path)
+    return props if use_onnx2engine else None
+
+
 def _export(tmp_dir, asset: str = ASSET_MODEL, task: str = "detect", **kwargs) -> str:
     """Export an asset model to ONNX inside tmp_dir; ultralytics writes next to the weights, so copy them there first."""
     weights = tmp_dir / Path(asset).name
@@ -51,10 +58,23 @@ def ultralytics_onnx(tmp_path_factory):
 
 
 def test_metadata_detected_on_ultralytics_export(ultralytics_onnx):
-    metadata = _ultralytics_metadata(ultralytics_onnx)
+    metadata = _claim(ultralytics_onnx)
     assert metadata is not None, "ultralytics stopped marking its exports with author=Ultralytics"
     assert metadata["task"] == "detect"
     assert "end2end" in metadata
+
+
+def test_onnx2engine_call_surface_is_unchanged():
+    """The kwargs onnx_to_trt passes onnx2engine, pinned without a GPU: otherwise a rename surfaces as a TypeError mid-build."""
+    try:
+        from ultralytics.utils.export import onnx2engine
+    except ImportError as e:
+        pytest.fail(f"onnx2engine moved; onnx_to_trt now silently falls back to the local builder: {e}")
+
+    params = inspect.signature(onnx2engine).parameters
+    assert "metadata" in params, "onnx2engine no longer takes metadata; nothing would embed the props map"
+    assert "workspace" in params, "onnx2engine renamed its workspace argument"
+    assert "quantize" in params or "half" in params, "onnx2engine changed its precision selector again"
 
 
 def test_plain_onnx_is_not_claimed(tmp_path):
@@ -68,13 +88,13 @@ def test_plain_onnx_is_not_claimed(tmp_path):
         output_names=["output"],
         opset_version=17,
     )
-    assert _ultralytics_metadata(str(path)) is None
+    assert _claim(str(path)) is None
 
 
 def test_dynamic_shape_export_is_not_claimed(tmp_path_factory):
     """onnx2engine cannot express a batch-only profile, so dynamic models stay on the local builder."""
     exported = _export(tmp_path_factory.mktemp("ul_dyn"), dynamic=True)
-    assert _ultralytics_metadata(exported) is None
+    assert _claim(exported) is None
 
 
 @needs_engine
@@ -100,3 +120,20 @@ def test_engine_carries_kpt_shape(tmp_path_factory, tmp_path):
     backend = AutoBackend(str(engine_path), torch.device("cuda:0"))
     assert list(backend.kpt_shape) == [17, 3]
     assert backend.task == "pose"
+
+
+@needs_engine
+def test_our_metadata_survives_the_ultralytics_builder(ultralytics_onnx, tmp_path):
+    """onnx2engine writes the whole props map, so our payload must come back off its engine too, not just ours."""
+    from lmi_common.model_metadata import embed_onnx_metadata
+    from lmi_common.trt_engine import TRTEngine
+
+    annotated = tmp_path / "annotated.onnx"
+    shutil.copy(ultralytics_onnx, annotated)
+    embed_onnx_metadata(str(annotated), {"class_names": ["cat", "dog"]})
+
+    engine_path = tmp_path / "annotated.engine"
+    onnx_to_trt(str(annotated), str(engine_path), fp16=False, workspace_gb=2)
+
+    assert TRTEngine(str(engine_path), device="cuda").metadata == {"class_names": ["cat", "dog"]}
+    assert AutoBackend(str(engine_path), torch.device("cuda:0")).task == "detect", "ultralytics' own keys must survive too"

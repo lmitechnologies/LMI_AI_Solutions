@@ -947,6 +947,7 @@ ci = [
     { name = "numpy" },
     { name = "onnx" },
     { name = "onnxruntime" },
+    { name = "onnxslim" },
     { name = "pycocotools" },
     { name = "pytest" },
     { name = "rfdetr" },
@@ -967,6 +968,7 @@ gpu = [
     { name = "onnx" },
     { name = "onnx-graphsurgeon" },
     { name = "onnxruntime-gpu" },
+    { name = "onnxslim" },
     { name = "pycocotools" },
     { name = "pytest" },
     { name = "pytest-html" },
@@ -987,6 +989,7 @@ test = [
     { name = "numba" },
     { name = "numpy" },
     { name = "onnx" },
+    { name = "onnxslim" },
     { name = "pycocotools" },
     { name = "pytest" },
     { name = "rfdetr" },
@@ -1006,6 +1009,7 @@ ci = [
     { name = "numpy", specifier = "<2.0" },
     { name = "onnx", specifier = "==1.22.0" },
     { name = "onnxruntime", specifier = "==1.21.0" },
+    { name = "onnxslim", specifier = "==0.1.94" },
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "rfdetr", specifier = "==1.9.3" },
@@ -1024,6 +1028,7 @@ gpu = [
     { name = "onnx", specifier = "==1.22.0" },
     { name = "onnx-graphsurgeon", specifier = ">=0.5.0" },
     { name = "onnxruntime-gpu", specifier = "==1.21.0" },
+    { name = "onnxslim", specifier = "==0.1.94" },
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "pytest-html", specifier = ">=4.1.1" },
@@ -1042,6 +1047,7 @@ test = [
     { name = "numba", specifier = "==0.67.0" },
     { name = "numpy", specifier = "<2.0" },
     { name = "onnx", specifier = "==1.22.0" },
+    { name = "onnxslim", specifier = "==0.1.94" },
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "rfdetr", specifier = "==1.9.3" },
@@ -1837,6 +1843,22 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/d8/c2/3d4807b3555f80501ee126e4fad40f9a47a9d3882b0369e2d624e9d19df8/onnxruntime_gpu-1.21.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:379f473c767e3cbaa1ee8563de29060cbf813ffc79967e932c2ae5780394bbb7", size = 280810186, upload-time = "2025-03-07T23:44:14.565Z" },
     { url = "https://files.pythonhosted.org/packages/f2/49/465afd3264e4707900851f53412c5cebe964c7a4d3a04fe6836af4fc6604/onnxruntime_gpu-1.21.0-cp313-cp313-win_amd64.whl", hash = "sha256:e6e5d9dc78b8e16bc631e675af6b094449b7adf4ec41bb2aeaa69b25a6d8f181", size = 213081727, upload-time = "2025-03-07T23:37:56.289Z" },
     { url = "https://files.pythonhosted.org/packages/12/f2/4549463ba3b756041a492b9f9959a4a88c302246fd12d0601a01079d76b8/onnxruntime_gpu-1.21.0-cp313-cp313t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:5fb033a0647534590fc57219b59a12917c47bbdd79c41854a1549f3125306aea", size = 280804460, upload-time = "2025-03-07T23:44:26.911Z" },
+]
+
+[[package]]
+name = "onnxslim"
+version = "0.1.94"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama" },
+    { name = "ml-dtypes" },
+    { name = "onnx" },
+    { name = "packaging" },
+    { name = "sympy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/63/70/08f6099dee785ede13d38c36de20347df34f67046fc670f24c65ad741287/onnxslim-0.1.94.tar.gz", hash = "sha256:83a3d428e55a0d1b7db88a4eadf8b1763bc38e8f7e4a48cbe72c5a7bbaf583b3", size = 598083, upload-time = "2026-05-22T01:37:56.937Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/93/42/749b09a43bb21542097071ed43cc7c129a62d535ff5166b9ed53c01ac9cb/onnxslim-0.1.94-py3-none-any.whl", hash = "sha256:1ec3f828cad98ff4fc92d06c6eb243e16c0e314728d88ea0bc1f6da19f250522", size = 238391, upload-time = "2026-05-22T01:37:55.056Z" },
 ]
 
 [[package]]
