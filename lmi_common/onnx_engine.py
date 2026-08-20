@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 import torch
 
-from lmi_common.model_metadata import metadata_from_onnx_props
+from lmi_common.model_metadata import metadata_from_props
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +180,7 @@ class ONNXEngine:
         self.input_shape: Tuple[int, ...] = input_spatial[first]
         self.fp16: bool = self.input_dtype == torch.float16
         self.is_dynamic: bool = is_dynamic
-        self.metadata: Dict[str, Any] = metadata_from_onnx_props(self._session.get_modelmeta().custom_metadata_map)
+        self.metadata: Dict[str, Any] = metadata_from_props(self._session.get_modelmeta().custom_metadata_map)
         if self.metadata:
             logger.info(f"ONNX metadata: {sorted(self.metadata)}")
 

@@ -5,8 +5,9 @@ Requires TensorRT >= 8.5 (matches `lmi_common/trt_engine.py`).
 
 import inspect
 import logging
+from typing import Dict, Tuple
 
-from lmi_common.model_metadata import engine_metadata_header, read_onnx_metadata
+from lmi_common.model_metadata import engine_props_header
 
 logger = logging.getLogger(__name__)
 
@@ -15,25 +16,19 @@ _trt_logger_singleton = None
 _ULTRALYTICS_AUTHOR = "Ultralytics"
 
 
-def _ultralytics_metadata(onnx_path: str):
-    """Return the export metadata of a static-shape ultralytics ONNX, or None if it is not one.
+def _inspect_onnx(onnx_path: str) -> Tuple[Dict[str, str], bool]:
+    """(metadata_props map, whether onnx2engine should build this ONNX) — one load, one decision.
 
-    Dynamic-shape models return None: the builder below owns the batch profile, and onnx2engine cannot express a batch-only one.
+    Dynamic-shape models are excluded: the builder below owns the batch profile, and onnx2engine cannot express a batch-only one.
     """
-    try:
-        import onnx
-    except ImportError:
-        return None
+    import onnx
 
     model = onnx.load(onnx_path, load_external_data=False)
-    metadata = {prop.key: prop.value for prop in model.metadata_props}
-    if metadata.get("author") != _ULTRALYTICS_AUTHOR:
-        return None
-    for inp in model.graph.input:
-        for dim in inp.type.tensor_type.shape.dim:
-            if not dim.HasField("dim_value") or dim.dim_value <= 0:
-                return None
-    return metadata
+    props = {prop.key: prop.value for prop in model.metadata_props}
+    static_shape = all(
+        dim.HasField("dim_value") and dim.dim_value > 0 for inp in model.graph.input for dim in inp.type.tensor_type.shape.dim
+    )
+    return props, static_shape and props.get("author") == _ULTRALYTICS_AUTHOR
 
 
 def _get_trt_logger():
@@ -80,9 +75,9 @@ def onnx_to_trt(
     """Build a serialized TensorRT engine from an ONNX file.
 
     A static-shape ultralytics ONNX is built by ``ultralytics.utils.export.onnx2engine`` so its export metadata is embedded in the
-    plan file; everything else is built here, and metadata embedded in the source ONNX is carried over to the engine's header.
-    Static-batch ONNX (no dynamic dims) ignores the batch kwargs. Dynamic-batch ONNX (axis 0 == -1) gets an optimization profile
-    from the kwargs; other dynamic axes are not supported and will raise.
+    plan file; everything else is built here, and the source ONNX's whole metadata_props map is carried over to the engine's header
+    in the same layout. Static-batch ONNX (no dynamic dims) ignores the batch kwargs. Dynamic-batch ONNX (axis 0 == -1) gets an
+    optimization profile from the kwargs; other dynamic axes are not supported and will raise.
 
     Args:
         onnx_path: source .onnx path.
@@ -93,8 +88,10 @@ def onnx_to_trt(
         opt_batch: batch size to optimize for; defaults to ``max_batch``.
         max_batch: maximum batch in the optimization profile.
     """
-    metadata = _ultralytics_metadata(onnx_path)
-    if metadata is not None:
+    # Read before the build: an unreadable ONNX must not cost a full engine build first.
+    props, use_onnx2engine = _inspect_onnx(onnx_path)
+
+    if use_onnx2engine:
         try:
             from ultralytics.utils.export import onnx2engine
         except ImportError:
@@ -105,7 +102,7 @@ def onnx_to_trt(
             # Mid-8.4 replaced the half/int8 flags with a single `quantize` precision selector.
             params = inspect.signature(onnx2engine).parameters
             precision = {"quantize": 16 if fp16 else None} if "quantize" in params else {"half": fp16}
-            onnx2engine(onnx_path, engine_path, workspace=workspace_gb, metadata=metadata, **precision)
+            onnx2engine(onnx_path, engine_path, workspace=workspace_gb, metadata=props, **precision)
             return
 
     import tensorrt as trt
@@ -118,11 +115,11 @@ def onnx_to_trt(
     network = builder.create_network(1 << int(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH))
     parser = trt.OnnxParser(network, trt_logger)
 
-    with open(onnx_path, "rb") as f:
-        if not parser.parse(f.read()):
-            for i in range(parser.num_errors):
-                logger.error(f"ONNX parse error: {parser.get_error(i)}")
-            raise RuntimeError(f"Failed to parse ONNX model: {onnx_path}")
+    # By path, not by buffer: a buffer has no directory, so external weights beside the model cannot resolve.
+    if not parser.parse_from_file(str(onnx_path)):
+        for i in range(parser.num_errors):
+            logger.error(f"ONNX parse error: {parser.get_error(i)}")
+        raise RuntimeError(f"Failed to parse ONNX model: {onnx_path}")
 
     config = builder.create_builder_config()
     config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, workspace_gb << 30)
@@ -157,9 +154,8 @@ def onnx_to_trt(
     if serialized_engine is None:
         raise RuntimeError("TensorRT engine build failed")
 
-    metadata = read_onnx_metadata(onnx_path)
     with open(engine_path, "wb") as f:
-        if metadata:
-            f.write(engine_metadata_header(metadata))
+        if props:
+            f.write(engine_props_header(props))
         f.write(serialized_engine)
     logger.info(f"TensorRT engine saved to {engine_path}")

@@ -1,6 +1,11 @@
 # conftest.py
 import logging
+import os
 import sys
+
+# ultralytics AutoUpdate pip-installs CPU onnxruntime over onnxruntime-gpu, silently killing the CUDA provider.
+# Must be set before anything imports ultralytics, which reads this at import time.
+os.environ.setdefault("YOLO_AUTOINSTALL", "false")
 
 logging.basicConfig()
 

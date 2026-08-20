@@ -2,6 +2,7 @@ import os
 
 from lmi_common.model_metadata import embed_onnx_metadata
 from lmi_common.trt_convert import onnx_to_trt
+from object_detectors.rf_detr_lmi.metadata import RfdetrMetadata
 
 
 def convert_to_onnx(model, output_dir: str, **kwargs) -> str:
@@ -15,10 +16,9 @@ def convert_to_onnx(model, output_dir: str, **kwargs) -> str:
     Returns:
         Path to the exported ONNX file.
     """
-    # num_select varies by variant and is not recoverable from the exported graph.
-    metadata = {"class_names": list(model.class_names), "num_select": int(model.model.postprocess.num_select)}
+    metadata = RfdetrMetadata.from_model(model)
     onnx_path = model.export(output_dir=output_dir, opset_version=kwargs.pop("opset_version", 17), **kwargs)
-    embed_onnx_metadata(onnx_path, metadata)
+    embed_onnx_metadata(onnx_path, metadata.as_payload())
     return onnx_path
 
 

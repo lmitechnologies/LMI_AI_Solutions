@@ -125,11 +125,11 @@ def test_missing_class_names_raises(tmp_path, onnx_file):
     """A model carrying no embedded names and no class_map must fail with a clear error, not a wrong class map."""
     import onnx
 
-    from lmi_common.model_metadata import ONNX_METADATA_KEY
+    from lmi_common.model_metadata import METADATA_KEY
 
     stripped = str(tmp_path / "no_metadata.onnx")
     model = onnx.load(onnx_file)
-    del model.metadata_props[[p.key for p in model.metadata_props].index(ONNX_METADATA_KEY)]
+    del model.metadata_props[[p.key for p in model.metadata_props].index(METADATA_KEY)]
     onnx.save(model, stripped)
 
     with pytest.raises(ValueError, match="no class names embedded"):
