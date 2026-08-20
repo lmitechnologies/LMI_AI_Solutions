@@ -2,7 +2,7 @@ import argparse
 import logging
 import os
 from datetime import date
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import yaml
 
@@ -23,6 +23,7 @@ except ImportError as e:
     logging.error(f"Failed to import rfdetr models: {e}")
     raise
 
+from object_detectors.rf_detr_lmi.checkpoint import load_from_checkpoint, resolution_from_checkpoint
 from object_detectors.rf_detr_lmi.convert import convert_to_onnx, convert_to_tensorrt
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,14 @@ MODEL_REGISTRY = {
     (TASK_SEGMENTATION, "xlarge"): RFDETRSegXLarge,
     (TASK_SEGMENTATION, "2xlarge"): RFDETRSeg2XLarge,
 }
+
+
+DEFAULT_MODEL_TYPE = "medium"
+
+
+def supported_model_types(task: str) -> List[str]:
+    """Model sizes registered for a task."""
+    return sorted(m for t, m in MODEL_REGISTRY if t == task)
 
 
 def validate_training_config(training_configs: Dict[str, Any]) -> None:
@@ -115,7 +124,9 @@ def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
         ValueError: If configuration is invalid or incomplete.
     """
     model_configs = {
-        "model_type": config.get("model_type", "medium"),
+        # Absent means the variant comes from the checkpoint (convert/export); training has no checkpoint
+        # to read and falls back to DEFAULT_MODEL_TYPE.
+        "model_type": config.get("model_type"),
         "operation": config.get("operation", OPERATION_TRAIN),
         "task": config.get("task", TASK_OD),
     }
@@ -173,6 +184,33 @@ def get_model_class(task: str, model_type: str) -> Any:
     return model_class
 
 
+def load_pretrained_model(model_configs: Dict[str, Any], weights: str, **kwargs: Any) -> Any:
+    """Load an existing checkpoint, reading its variant from the file unless the config names one.
+
+    Args:
+        model_configs: Parsed model configuration; its optional model_type overrides what the checkpoint records.
+        weights: Path to the checkpoint.
+        **kwargs: Forwarded to the rfdetr model constructor (resolution, device, ...). resolution defaults to the
+            one the checkpoint was trained at.
+
+    Returns:
+        An rfdetr model instance.
+    """
+    task = model_configs.get("task", TASK_OD)
+    model_type = model_configs.get("model_type")
+    if "resolution" not in kwargs:
+        # rfdetr < 1.9 drops the checkpoint's model_config, and naming the variant skips it on every version,
+        # so without this we would export at the variant's default resolution instead of the trained one.
+        resolution = resolution_from_checkpoint(weights)
+        if resolution is not None:
+            logger.info(f"Using the resolution recorded in {weights}: {resolution}")
+            kwargs["resolution"] = resolution
+    if model_type:
+        return get_model_class(task, model_type)(pretrain_weights=weights, **kwargs)
+    logger.info(f"Reading the model variant from {weights}")
+    return load_from_checkpoint(weights, supported_model_types(task), **kwargs)
+
+
 def load_model(configs: Dict[str, Any]) -> Any:
     """Load the RF-DETR model based on the configuration.
 
@@ -187,13 +225,12 @@ def load_model(configs: Dict[str, Any]) -> Any:
     """
     model_configs = configs["model_configs"]
     task = model_configs.get("task", TASK_OD)
-    model_type = model_configs.get("model_type", "medium")
     operation = model_configs.get("operation", OPERATION_TRAIN)
-
-    model_class = get_model_class(task, model_type)
 
     # Instantiate model based on operation
     if operation == OPERATION_TRAIN:
+        # Training may start from scratch, so there is no checkpoint to read the variant from.
+        model_class = get_model_class(task, model_configs.get("model_type") or DEFAULT_MODEL_TYPE)
         kwargs = {}
         if "pretrain_weights" in model_configs:
             kwargs["pretrain_weights"] = model_configs["pretrain_weights"]
@@ -201,10 +238,14 @@ def load_model(configs: Dict[str, Any]) -> Any:
             kwargs["num_classes"] = model_configs["num_classes"]
         return model_class(**kwargs)
     elif operation == OPERATION_CONVERT:
-        conversion_configs = configs.get("conversion_configs", {})
+        conversion_configs = dict(configs.get("conversion_configs", {}))
         if not conversion_configs:
             raise ValueError("Conversion configuration is missing.")
-        return model_class(**conversion_configs)
+        weights = conversion_configs.pop("pretrain_weights", None)
+        if weights is None:
+            # No checkpoint to read from — convert the variant's own COCO-pretrained weights.
+            return get_model_class(task, model_configs.get("model_type") or DEFAULT_MODEL_TYPE)(**conversion_configs)
+        return load_pretrained_model(model_configs, weights, **conversion_configs)
     else:
         raise ValueError(f"Unsupported operation: {operation}")
 
@@ -353,8 +394,7 @@ def handle_export(configs: Dict[str, Any]) -> None:
     os.makedirs(output_dir, exist_ok=True)
 
     # Remaining export params (resolution, device, ...) are model constructor kwargs
-    model_class = get_model_class(model_configs["task"], model_configs["model_type"])
-    model = model_class(pretrain_weights=model_configs["pretrain_weights"], **export_params)
+    model = load_pretrained_model(model_configs, model_configs["pretrain_weights"], **export_params)
 
     # rfdetr names the exported file after the model variant (e.g. rfdetr-small.onnx);
     # stage it as model.onnx instead

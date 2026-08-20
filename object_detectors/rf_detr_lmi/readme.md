@@ -130,7 +130,7 @@ services:
 conversion config file:
 
 ```yaml
-model_type: small
+# model_type: small  # optional; by default the variant is read from pretrain_weights
 operation: convert
 task: seg         # od or seg
 format: tensorrt  # onnx tensorrt
@@ -163,7 +163,7 @@ services:
 The export operation uses rfdetr's native exporter and writes the fixed filename `model.onnx`, with the class names embedded in the file's own metadata — the `RfdetrModel` ONNX/TensorRT backends read them from there, so the model deploys as a single file.
 
 ```yaml
-model_type: small
+# model_type: small  # optional; by default the variant is read from pretrain_weights
 operation: export
 task: seg         # od or seg
 pretrain_weights: /app/training/checkpoint_best_total.pth   # required; must be a .pth file
@@ -172,6 +172,11 @@ export:
     resolution: 384
     opset_version: 17           # optional, default 17
 ```
+
+For `convert` and `export`, `model_type` is optional: the variant is read from the checkpoint named by
+`pretrain_weights`. rfdetr records it from 1.7.0 on, so set `model_type` only for an older checkpoint or
+Roboflow's published starter weights, which record none. `train` has no checkpoint to read and still needs it
+(defaulting to `medium`).
 
 Any additional keys under `export` (e.g. `device`) are passed to the model constructor.
 
@@ -185,7 +190,9 @@ Any additional keys under `export` (e.g. `device`) are passed to the model const
 | `.onnx` | ONNX Runtime | cuda or cpu |
 | `.engine` | TensorRT | cuda |
 
-The `.pth` backend takes `model_type` and an optional `batch_size` (fixed at load time, since the traced graph bakes it in).
+The `.pth` backend reads its variant and resolution from the checkpoint, and takes an optional `batch_size` (fixed at load
+time, since the traced graph bakes it in). rfdetr records the variant from 1.7.0 on; pass `model_type` only for an older
+checkpoint or Roboflow's published starter weights, which record none.
 The `.onnx` and `.engine` backends read the batch size and resolution from the model, and take class names from `class_map`
 or from the metadata embedded at export (`metadata_props` in an ONNX, a JSON header on an engine). Passing `class_map`
 is required for a model exported elsewhere, which carries no embedded names.
@@ -204,5 +211,5 @@ services:
       - ./preprocessed/test:/app/data/
       - ./training:/app/training
     command: >
-      python3 -m object_detectors.rf_detr_lmi.infer --weights /app/training/checkpoint_best_total.pth --input /app/data/test --output /app/training/predictions --model_type seg-small
+      python3 -m object_detectors.rf_detr_lmi.infer --weights /app/training/checkpoint_best_total.pth --input /app/data/test --output /app/training/predictions
 ```

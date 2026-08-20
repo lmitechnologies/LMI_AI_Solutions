@@ -26,7 +26,13 @@ def setup_parser():
         default=None,
         help="Optional override; by default class names come from the model file itself (embedded at export, or the .pth checkpoint)",
     )
-    parser.add_argument("--model_type", "-t", type=str, required=False, help="Type of the model to use for inference")
+    parser.add_argument(
+        "--model_type",
+        "-t",
+        type=str,
+        default=None,
+        help="Optional override for .pth weights; by default the variant is read from the checkpoint",
+    )
     return parser
 
 
@@ -36,10 +42,6 @@ def inference_run(args):
     out_path = args.output
     class_map_path = args.class_map
     model_type = args.model_type
-    model_ext = os.path.splitext(model_path)[1].lower()
-    if model_ext == ".pth":
-        if not model_type:
-            raise ValueError("Model type must be specified when using .pth weights")
     if not os.path.exists(out_path):
         os.makedirs(out_path)
     class_map = None
@@ -51,7 +53,8 @@ def inference_run(args):
 
     # load model
     model = RfdetrModel(model_path, class_map=class_map, model_type=model_type)
-    image_size = model.image_size  # onnx/engine report their own input size; .pth uses the variant default
+    image_size = model.image_size  # onnx/engine report their own input size; .pth uses the checkpoint's resolution
+    logger.info(f"Model loaded with image size: {image_size}")
     # model warmup
     model.warmup()
     # find images
