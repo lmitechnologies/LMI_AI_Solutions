@@ -23,7 +23,7 @@ except ImportError as e:
     logging.error(f"Failed to import rfdetr models: {e}")
     raise
 
-from object_detectors.rf_detr_lmi.checkpoint import load_from_checkpoint, resolution_from_checkpoint
+from object_detectors.rf_detr_lmi.checkpoint import load_from_checkpoint
 from object_detectors.rf_detr_lmi.convert import convert_to_onnx, convert_to_tensorrt
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ MODEL_REGISTRY = {
 }
 
 
-DEFAULT_MODEL_TYPE = "medium"
+DEFAULT_MODEL_TYPE = "small"
 
 
 def supported_model_types(task: str) -> List[str]:
@@ -75,6 +75,8 @@ def validate_training_config(training_configs: Dict[str, Any]) -> None:
         raise ValueError("Training configuration is missing.")
     if "output_dir" not in training_configs:
         raise ValueError("output_dir must be specified in training configuration.")
+    if "resolution" not in training_configs:
+        raise ValueError("resolution must be specified in training configuration.")
 
 
 def validate_export_config(export_configs: Dict[str, Any], model_configs: Dict[str, Any]) -> None:
@@ -93,6 +95,11 @@ def validate_export_config(export_configs: Dict[str, Any], model_configs: Dict[s
         raise ValueError("output_dir must be specified in export configuration.")
     if "pretrain_weights" not in model_configs:
         raise ValueError("pretrain_weights must be specified for export.")
+    if "resolution" not in export_configs:
+        raise ValueError(
+            "resolution must be specified in export configuration; use the resolution the model was trained at, "
+            "which training_config.json records under model_config."
+        )
 
 
 def validate_conversion_config(conversion_configs: Dict[str, Any], format: str) -> None:
@@ -109,6 +116,11 @@ def validate_conversion_config(conversion_configs: Dict[str, Any], format: str) 
         raise ValueError("Conversion format must be specified.")
     if not conversion_configs:
         raise ValueError("Conversion configuration is missing.")
+    if "resolution" not in conversion_configs:
+        raise ValueError(
+            "resolution must be specified in conversion configuration; use the resolution the model was trained at, "
+            "which training_config.json records under model_config."
+        )
 
 
 def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -190,21 +202,13 @@ def load_pretrained_model(model_configs: Dict[str, Any], weights: str, **kwargs:
     Args:
         model_configs: Parsed model configuration; its optional model_type overrides what the checkpoint records.
         weights: Path to the checkpoint.
-        **kwargs: Forwarded to the rfdetr model constructor (resolution, device, ...). resolution defaults to the
-            one the checkpoint was trained at.
+        **kwargs: Forwarded to the rfdetr model constructor (resolution, device, ...).
 
     Returns:
         An rfdetr model instance.
     """
     task = model_configs.get("task", TASK_OD)
     model_type = model_configs.get("model_type")
-    if "resolution" not in kwargs:
-        # rfdetr < 1.9 drops the checkpoint's model_config, and naming the variant skips it on every version,
-        # so without this we would export at the variant's default resolution instead of the trained one.
-        resolution = resolution_from_checkpoint(weights)
-        if resolution is not None:
-            logger.info(f"Using the resolution recorded in {weights}: {resolution}")
-            kwargs["resolution"] = resolution
     if model_type:
         return get_model_class(task, model_type)(pretrain_weights=weights, **kwargs)
     logger.info(f"Reading the model variant from {weights}")
@@ -375,9 +379,9 @@ def handle_conversion(configs: Dict[str, Any]) -> None:
 
 
 def handle_export(configs: Dict[str, Any]) -> None:
-    """Export trained weights to ONNX via rfdetr's native exporter, with class names embedded in the file.
+    """Export a checkpoint to ONNX under the fixed filename model.onnx.
 
-    Unlike the convert operation, this writes the fixed filename model.onnx.
+    Same export path as the convert operation, which keeps rfdetr's variant-named file and can also build a TensorRT engine.
 
     Args:
         configs: Configuration parameters containing model_configs and export_configs.

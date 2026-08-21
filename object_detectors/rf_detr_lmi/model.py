@@ -16,7 +16,7 @@ from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
-from object_detectors.rf_detr_lmi.checkpoint import load_from_checkpoint, resolution_from_checkpoint
+from object_detectors.rf_detr_lmi.checkpoint import load_from_checkpoint
 from object_detectors.rf_detr_lmi.metadata import RfdetrMetadata
 
 # Added in rfdetr 1.9.1; passing it to older versions raises TypeError.
@@ -352,7 +352,8 @@ class RfdetrPTH(RfdetrBase):
             class_map: Dict mapping class indices to class names. Defaults to the checkpoint's built-in class names; pass it
                 only to override the index mapping — values must still exactly match the model's class names.
             device: Device to run on (cuda/cpu). Default: cuda if available
-            image_size: Tuple of (height, width); must be square. Default: the checkpoint's own resolution
+            image_size: Tuple of (height, width); must be square. Default: the variant's own resolution, which a
+                checkpoint trained at another size does not carry — pass it to run at the training resolution.
             batch_size: Number of images per forward pass. Fixed at load time, so predict() chunks to it and zero-pads
                 a short final chunk. Default: 1
 
@@ -399,17 +400,9 @@ class RfdetrPTH(RfdetrBase):
 
         model_kwargs = {"device": self.device}
         if image_size is not None:
-            # rfdetr takes a single resolution and traces the graph at it; a non-square image_size
-            # would only fail once the first frame reaches the traced model.
             if image_size[0] != image_size[1]:
                 raise ValueError(f"RF-DETR runs at a square resolution; got image_size=({image_size[0]}, {image_size[1]})")
             model_kwargs["resolution"] = image_size[0]
-        else:
-            # rfdetr < 1.9 drops the checkpoint's model_config, and the named-variant path below never reads it,
-            # so without this the model runs at the variant's default resolution instead of the trained one.
-            resolution = resolution_from_checkpoint(model_path)
-            if resolution is not None:
-                model_kwargs["resolution"] = resolution
 
         if model_type is None:
             self.logger.info(f"Loading RF-DETR model from {model_path} on {self.device}, variant read from the checkpoint")
@@ -427,9 +420,12 @@ class RfdetrPTH(RfdetrBase):
 
         resolution = self.model.model_config.resolution
         self.image_size = (resolution, resolution)
-        self.logger.info(f"Running at resolution {resolution}x{resolution}")
+        if image_size is None:
+            self.logger.warning(f"image_size is not specified, using the variant's default size {resolution}x{resolution}")
+        else:
+            self.logger.info(f"Running at resolution {resolution}x{resolution}")
+
         if class_map is None:
-            # Same quantity rfdetr's own predict() keys the sparse-COCO decision on.
             class_map = self._class_map_from_names(self.model.class_names, getattr(self.model.model.args, "num_classes", None))
         elif set(class_map.values()) != set(self.model.class_names):
             raise ValueError(

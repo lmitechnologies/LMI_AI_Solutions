@@ -33,6 +33,13 @@ def setup_parser():
         default=None,
         help="Optional override for .pth weights; by default the variant is read from the checkpoint",
     )
+    parser.add_argument(
+        "--image_size",
+        "-s",
+        type=int,
+        default=None,
+        help="Square input size for .pth weights, which record none; by default the variant's own. onnx/engine carry their own size",
+    )
     return parser
 
 
@@ -52,8 +59,9 @@ def inference_run(args):
         class_map = {int(k): v for k, v in class_map.items()}
 
     # load model
-    model = RfdetrModel(model_path, class_map=class_map, model_type=model_type)
-    image_size = model.image_size  # onnx/engine report their own input size; .pth uses the checkpoint's resolution
+    size = [args.image_size, args.image_size] if args.image_size else None
+    model = RfdetrModel(model_path, class_map=class_map, model_type=model_type, image_size=size)
+    image_size = model.image_size  # onnx/engine report their own input size, ignoring the argument
     logger.info(f"Model loaded with image size: {image_size}")
     # model warmup
     model.warmup()

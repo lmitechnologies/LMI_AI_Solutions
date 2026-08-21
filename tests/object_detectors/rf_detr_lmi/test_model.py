@@ -181,33 +181,42 @@ def test_variant_read_from_checkpoint():
     assert inferred.image_size == override.image_size == (IMAGE_SIZE, IMAGE_SIZE)
 
 
-def test_resolution_comes_from_the_checkpoint(tmp_path):
-    """A model trained at a non-default resolution must run at it, not at the variant's default."""
+def test_resolution_defaults_to_the_variant(tmp_path):
+    """No image_size means the variant's own resolution, whatever size the checkpoint was trained at."""
     path = str(tmp_path / "trained_at_432.pth")
     ckpt = torch.load(PTH_FILE, map_location="cpu", weights_only=False)
     ckpt["model_config"]["resolution"] = 432
     torch.save(ckpt, path)
 
-    inferred = RfdetrModel(path, device="cpu", class_map=COCO_CLASSES)
-    override = RfdetrModel(path, model_type=MODEL_TYPE, device="cpu", class_map=COCO_CLASSES)
-    assert inferred.image_size == override.image_size == (432, 432)
+    assert RfdetrModel(path, model_type=MODEL_TYPE, device="cpu", class_map=COCO_CLASSES).image_size == (IMAGE_SIZE, IMAGE_SIZE)
 
 
-def test_resolution_survives_a_stripped_checkpoint(tmp_path):
-    """rfdetr strips model_config out of checkpoint_best_total.pth; the position grid must still give the resolution."""
+def test_unspecified_image_size_is_logged(tmp_path, caplog):
+    """The variant default is only right by luck for a model trained at another size; the fallback must be visible."""
+    with caplog.at_level(logging.WARNING):
+        model = RfdetrModel(PTH_FILE, device="cpu", class_map=COCO_CLASSES)
+    assert model.image_size == (IMAGE_SIZE, IMAGE_SIZE)
+    assert "image_size is not specified" in caplog.text
+
+
+def test_explicit_image_size_is_not_logged_as_a_default(caplog):
+    with caplog.at_level(logging.WARNING):
+        RfdetrModel(PTH_FILE, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
+    assert "image_size is not specified" not in caplog.text
+
+
+def test_stripped_checkpoint_loads_at_the_variant_default(tmp_path):
+    """rfdetr strips model_config out of checkpoint_best_total.pth, the only weights file the workflow deploys."""
     path = str(tmp_path / "stripped.pth")
     ckpt = torch.load(PTH_FILE, map_location="cpu", weights_only=False)
     del ckpt["model_config"]
-    key = "backbone.0.encoder.encoder.embeddings.position_embeddings"
-    position = ckpt["model"][key]
-    ckpt["model"][key] = torch.zeros(1, 36 * 36 + 1, position.shape[2], dtype=position.dtype)  # 36 patches of 12 px
     torch.save(ckpt, path)
 
-    assert RfdetrModel(path, device="cpu", class_map=COCO_CLASSES).image_size == (432, 432)
+    assert RfdetrModel(path, device="cpu", class_map=COCO_CLASSES).image_size == (IMAGE_SIZE, IMAGE_SIZE)
 
 
 def test_explicit_image_size_still_wins(tmp_path):
-    """image_size is an override; the checkpoint's own resolution must not shadow it."""
+    """image_size is the only way to run at a non-default resolution."""
     path = str(tmp_path / "trained_at_432.pth")
     ckpt = torch.load(PTH_FILE, map_location="cpu", weights_only=False)
     ckpt["model_config"]["resolution"] = 432

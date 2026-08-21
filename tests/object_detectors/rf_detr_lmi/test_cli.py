@@ -39,7 +39,9 @@ def loaded(monkeypatch):
 
 def test_absent_model_type_is_not_defaulted():
     """No model_type must stay None, so convert/export can read the variant off the checkpoint."""
-    configs = cli.parse_config({"operation": "export", "task": "seg", "pretrain_weights": PTH_FILE, "export": {"output_dir": "/tmp"}})
+    configs = cli.parse_config(
+        {"operation": "export", "task": "seg", "pretrain_weights": PTH_FILE, "export": {"output_dir": "/tmp", "resolution": 384}}
+    )
     assert configs["model_configs"]["model_type"] is None
 
 
@@ -54,16 +56,30 @@ def test_convert_reads_variant_from_checkpoint(loaded):
     assert loaded["kwargs"] == {"resolution": 384}
 
 
-def test_convert_defaults_the_resolution_to_the_checkpoint(loaded):
-    """Exporting at the variant's default would silently shrink a model trained at another resolution."""
-    configs = cli.parse_config({"operation": "convert", "task": "seg", "format": "onnx", "conversion": {"pretrain_weights": PTH_FILE}})
-    cli.load_model(configs)
-    assert loaded["kwargs"] == {"resolution": 384}
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"operation": "train", "task": "od", "training": {"output_dir": "/tmp"}},
+        {"operation": "convert", "task": "seg", "format": "onnx", "conversion": {"pretrain_weights": PTH_FILE}},
+        {"operation": "export", "task": "seg", "pretrain_weights": PTH_FILE, "export": {"output_dir": "/tmp"}},
+    ],
+    ids=["train", "convert", "export"],
+)
+def test_resolution_is_required(config):
+    """The size is never read off the checkpoint, and an export bakes it in, so every operation must state it."""
+    with pytest.raises(ValueError, match="resolution must be specified"):
+        cli.parse_config(config)
 
 
 def test_convert_model_type_overrides_checkpoint(loaded):
     configs = cli.parse_config(
-        {"operation": "convert", "task": "seg", "format": "onnx", "model_type": "small", "conversion": {"pretrain_weights": PTH_FILE}}
+        {
+            "operation": "convert",
+            "task": "seg",
+            "format": "onnx",
+            "model_type": "small",
+            "conversion": {"pretrain_weights": PTH_FILE, "resolution": 384},
+        }
     )
     cli.load_model(configs)
     assert loaded["source"] == "model_type"
@@ -101,7 +117,7 @@ def test_export_model_type_overrides_checkpoint(loaded, tmp_path):
             "task": "seg",
             "model_type": "small",
             "pretrain_weights": PTH_FILE,
-            "export": {"output_dir": str(tmp_path)},
+            "export": {"output_dir": str(tmp_path), "resolution": 384},
         }
     )
     cli.handle_export(configs)
@@ -111,7 +127,7 @@ def test_export_model_type_overrides_checkpoint(loaded, tmp_path):
 
 def test_train_still_defaults_the_variant(loaded):
     """Training may start from scratch, so it cannot read a variant and keeps the default."""
-    configs = cli.parse_config({"operation": "train", "task": "od", "training": {"output_dir": "/tmp"}})
+    configs = cli.parse_config({"operation": "train", "task": "od", "training": {"output_dir": "/tmp", "resolution": 384}})
     cli.load_model(configs)
     assert loaded["model_type"] == cli.DEFAULT_MODEL_TYPE
 

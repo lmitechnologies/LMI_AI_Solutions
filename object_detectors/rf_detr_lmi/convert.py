@@ -11,12 +11,14 @@ def convert_to_onnx(model, output_dir: str, **kwargs) -> str:
     Args:
         model: An rfdetr model instance.
         output_dir (str): Directory to write the export into; rfdetr names the file itself.
-        **kwargs: opset_version (int, default 17), plus any rfdetr export kwargs.
+        **kwargs: opset_version (int, default 17), verbose (bool, default False), plus any rfdetr export kwargs.
 
     Returns:
         Path to the exported ONNX file.
     """
     metadata = RfdetrMetadata.from_model(model)
+    # rfdetr defaults verbose to True, which makes torch.onnx.export dump every node in the graph.
+    kwargs.setdefault("verbose", False)
     onnx_path = model.export(output_dir=output_dir, opset_version=kwargs.pop("opset_version", 17), **kwargs)
     embed_onnx_metadata(onnx_path, metadata.as_payload())
     return onnx_path
