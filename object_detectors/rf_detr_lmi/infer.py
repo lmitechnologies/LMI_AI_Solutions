@@ -69,7 +69,7 @@ def inference_run(args):
     img_list = get_images(imgs_path)
     logger.info(f"Found {len(img_list)} images in {imgs_path}")
     inference_times = []
-    for img_path in img_list:
+    for img_path in sorted(img_list):
         img_name = os.path.basename(img_path)
         image = cv2.imread(img_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
