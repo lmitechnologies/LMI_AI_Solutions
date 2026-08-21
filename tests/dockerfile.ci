@@ -15,7 +15,7 @@ RUN apt-get update && \
     git lfs install && \
     rm -rf /var/lib/apt/lists/*
 
-# Install the CI (CPU) dependency group from the uv lock. torch==2.4.1+cpu comes from the CPU index.
+# Install the CI (CPU) dependency group from the uv lock. torch==2.5.1+cpu comes from the CPU index.
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
 RUN uv export --frozen --no-hashes --no-emit-project --only-group ci -o requirements-ci.txt && \
