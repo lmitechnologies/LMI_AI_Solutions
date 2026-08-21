@@ -16,6 +16,7 @@ from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
+from object_detectors.rf_detr_lmi.checkpoint import load_from_checkpoint
 from object_detectors.rf_detr_lmi.metadata import RfdetrMetadata
 
 # Added in rfdetr 1.9.1; passing it to older versions raises TypeError.
@@ -327,12 +328,15 @@ class RfdetrPTH(RfdetrBase):
 
     This class provides an interface for RF-DETR models loaded from PyTorch checkpoint files.
     Supports multiple model variants: nano, small, medium, large.
+
+    The variant is read from the checkpoint itself; model_type is an override for checkpoints that
+    do not record it (see __init__).
     """
 
     def __init__(
         self,
         model_path: str,
-        model_type: str,
+        model_type: Optional[str] = None,
         class_map: Optional[dict] = None,
         device: str = "cuda",
         image_size: Optional[tuple] = None,
@@ -343,16 +347,20 @@ class RfdetrPTH(RfdetrBase):
         Args:
             model_path: Path to the model checkpoint file (.pth)
             model_type: Model variant (nano/small/medium/large/ or seg-nano/seg-small/seg-medium/seg-large/seg-xlarge/seg-2xlarge).
+                Defaults to the variant recorded in the checkpoint. Pass it only for a checkpoint that records none —
+                rfdetr writes the variant since 1.7.0, but Roboflow's published starter weights predate that.
             class_map: Dict mapping class indices to class names. Defaults to the checkpoint's built-in class names; pass it
                 only to override the index mapping — values must still exactly match the model's class names.
             device: Device to run on (cuda/cpu). Default: cuda if available
-            image_size: Tuple of (height, width); must be square. Default: model-specific
+            image_size: Tuple of (height, width); must be square. Default: the variant's own resolution, which a
+                checkpoint trained at another size does not carry — pass it to run at the training resolution.
             batch_size: Number of images per forward pass. Fixed at load time, so predict() chunks to it and zero-pads
                 a short final chunk. Default: 1
 
         Raises:
             FileNotFoundError: If model_path does not exist
-            ValueError: If model_type is not supported, image_size is not square, or batch_size is not positive
+            ValueError: If model_type is not supported, the checkpoint records no variant and none was given,
+                image_size is not square, or batch_size is not positive
         """
         from rfdetr import (
             RFDETRLarge,
@@ -367,19 +375,19 @@ class RfdetrPTH(RfdetrBase):
             RFDETRSmall,
         )
 
-        model_configs = {
-            "nano": (384, RFDETRNano),
-            "small": (512, RFDETRSmall),
-            "medium": (576, RFDETRMedium),
-            "large": (704, RFDETRLarge),
-            # "xlarge": (700, RFDETRXLarge),    # require license
-            # "2xlarge": (880, RFDETR2XLarge),  # require license
-            "seg-nano": (312, RFDETRSegNano),
-            "seg-small": (384, RFDETRSegSmall),
-            "seg-medium": (432, RFDETRSegMedium),
-            "seg-large": (504, RFDETRSegLarge),
-            "seg-xlarge": (624, RFDETRSegXLarge),
-            "seg-2xlarge": (768, RFDETRSeg2XLarge),
+        model_classes = {
+            "nano": RFDETRNano,
+            "small": RFDETRSmall,
+            "medium": RFDETRMedium,
+            "large": RFDETRLarge,
+            # "xlarge": RFDETRXLarge,    # require license
+            # "2xlarge": RFDETR2XLarge,  # require license
+            "seg-nano": RFDETRSegNano,
+            "seg-small": RFDETRSegSmall,
+            "seg-medium": RFDETRSegMedium,
+            "seg-large": RFDETRSegLarge,
+            "seg-xlarge": RFDETRSegXLarge,
+            "seg-2xlarge": RFDETRSeg2XLarge,
         }
 
         if not os.path.isfile(model_path):
@@ -390,33 +398,34 @@ class RfdetrPTH(RfdetrBase):
 
         self._setup_device(device)
 
-        model_type = model_type.lower()
-        if model_type not in model_configs:
-            supported = ", ".join(model_configs.keys())
-            raise ValueError(f"Unsupported model type: '{model_type}'. Supported types: {supported}")
-
-        default_resolution, model_class = model_configs[model_type]
-
+        model_kwargs = {"device": self.device}
         if image_size is not None:
-            # rfdetr takes a single resolution and traces the graph at it; a non-square image_size
-            # would only fail once the first frame reaches the traced model.
             if image_size[0] != image_size[1]:
                 raise ValueError(f"RF-DETR runs at a square resolution; got image_size=({image_size[0]}, {image_size[1]})")
-            self.image_size = (image_size[0], image_size[1])
-        else:
-            self.image_size = (default_resolution, default_resolution)
+            model_kwargs["resolution"] = image_size[0]
 
-        self.logger.info(
-            f"Loading {model_type} RF-DETR model from {model_path} "
-            f"with resolution {self.image_size[0]}x{self.image_size[1]} on {self.device}"
-        )
-        model_kwargs = {"pretrain_weights": model_path, "resolution": self.image_size[0], "device": self.device}
-        num_classes = self._num_classes_from_checkpoint(model_path)
-        if num_classes is not None:
-            model_kwargs["num_classes"] = num_classes
-        self.model = model_class(**model_kwargs)
+        if model_type is None:
+            self.logger.info(f"Loading RF-DETR model from {model_path} on {self.device}, variant read from the checkpoint")
+            self.model = load_from_checkpoint(model_path, sorted(model_classes), **model_kwargs)
+        else:
+            model_type = model_type.lower()
+            if model_type not in model_classes:
+                supported = ", ".join(model_classes.keys())
+                raise ValueError(f"Unsupported model type: '{model_type}'. Supported types: {supported}")
+            self.logger.info(f"Loading {model_type} RF-DETR model from {model_path} on {self.device}")
+            num_classes = self._num_classes_from_checkpoint(model_path)
+            if num_classes is not None:
+                model_kwargs["num_classes"] = num_classes
+            self.model = model_classes[model_type](pretrain_weights=model_path, **model_kwargs)
+
+        resolution = self.model.model_config.resolution
+        self.image_size = (resolution, resolution)
+        if image_size is None:
+            self.logger.warning(f"image_size is not specified, using the variant's default size {resolution}x{resolution}")
+        else:
+            self.logger.info(f"Running at resolution {resolution}x{resolution}")
+
         if class_map is None:
-            # Same quantity rfdetr's own predict() keys the sparse-COCO decision on.
             class_map = self._class_map_from_names(self.model.class_names, getattr(self.model.model.args, "num_classes", None))
         elif set(class_map.values()) != set(self.model.class_names):
             raise ValueError(

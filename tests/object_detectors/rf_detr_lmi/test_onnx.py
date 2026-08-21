@@ -19,7 +19,6 @@ COCO_DIR = "tests/assets/images/coco"
 PTH_FILE = "tests/assets/models/od/rf_detr/rf-detr-seg-small.pth"
 KEYS = ["boxes", "scores", "masks", "segments", "classes"]
 IMAGE_SIZE = 384
-MODEL_TYPE = "seg-small"
 METADATA = dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr")
 
 
@@ -55,7 +54,6 @@ def pth_model():
     return ObjectDetector(
         metadata=METADATA,
         model_path=PTH_FILE,
-        model_type=MODEL_TYPE,
         class_map=COCO_CLASSES,
         image_size=[IMAGE_SIZE, IMAGE_SIZE],
         device="cpu",

@@ -26,7 +26,20 @@ def setup_parser():
         default=None,
         help="Optional override; by default class names come from the model file itself (embedded at export, or the .pth checkpoint)",
     )
-    parser.add_argument("--model_type", "-t", type=str, required=False, help="Type of the model to use for inference")
+    parser.add_argument(
+        "--model_type",
+        "-t",
+        type=str,
+        default=None,
+        help="Optional override for .pth weights; by default the variant is read from the checkpoint",
+    )
+    parser.add_argument(
+        "--image_size",
+        "-s",
+        type=int,
+        default=None,
+        help="Square input size for .pth weights, which record none; by default the variant's own. onnx/engine carry their own size",
+    )
     return parser
 
 
@@ -36,10 +49,6 @@ def inference_run(args):
     out_path = args.output
     class_map_path = args.class_map
     model_type = args.model_type
-    model_ext = os.path.splitext(model_path)[1].lower()
-    if model_ext == ".pth":
-        if not model_type:
-            raise ValueError("Model type must be specified when using .pth weights")
     if not os.path.exists(out_path):
         os.makedirs(out_path)
     class_map = None
@@ -50,15 +59,17 @@ def inference_run(args):
         class_map = {int(k): v for k, v in class_map.items()}
 
     # load model
-    model = RfdetrModel(model_path, class_map=class_map, model_type=model_type)
-    image_size = model.image_size  # onnx/engine report their own input size; .pth uses the variant default
+    size = [args.image_size, args.image_size] if args.image_size else None
+    model = RfdetrModel(model_path, class_map=class_map, model_type=model_type, image_size=size)
+    image_size = model.image_size  # onnx/engine report their own input size, ignoring the argument
+    logger.info(f"Model loaded with image size: {image_size}")
     # model warmup
     model.warmup()
     # find images
     img_list = get_images(imgs_path)
     logger.info(f"Found {len(img_list)} images in {imgs_path}")
     inference_times = []
-    for img_path in img_list:
+    for img_path in sorted(img_list):
         img_name = os.path.basename(img_path)
         image = cv2.imread(img_path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)

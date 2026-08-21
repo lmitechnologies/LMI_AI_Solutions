@@ -57,7 +57,6 @@ def obj_detector():
     obj_detector = ObjectDetector(
         metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
         model_path=PTH_FILE,
-        model_type=MODEL_TYPE,
         device=DEVICE,
         class_map=COCO_CLASSES,
         image_size=[IMAGE_SIZE, IMAGE_SIZE],
@@ -87,7 +86,6 @@ def cpu_models():
     od_pth = ObjectDetector(
         metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
         model_path=PTH_FILE,
-        model_type=MODEL_TYPE,
         device="cpu",
         class_map=COCO_CLASSES,
         image_size=[IMAGE_SIZE, IMAGE_SIZE],
@@ -144,12 +142,12 @@ def assert_outputs_match_rf(rf_preds, outputs, label):
 def test_nonsquare_image_size_rejected():
     """A non-square image_size must fail at load, not on the first frame in production."""
     with pytest.raises(ValueError, match="square resolution"):
-        RfdetrModel(PTH_FILE, model_type=MODEL_TYPE, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE + 24])
+        RfdetrModel(PTH_FILE, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE + 24])
 
 
 def test_class_map_inferred_from_model(imgs_coco, obj_detector):
     """With no class_map, names come from the model itself and must match an explicit COCO map."""
-    inferred = RfdetrModel(PTH_FILE, model_type=MODEL_TYPE, device=DEVICE, image_size=[IMAGE_SIZE, IMAGE_SIZE])
+    inferred = RfdetrModel(PTH_FILE, device=DEVICE, image_size=[IMAGE_SIZE, IMAGE_SIZE])
     assert inferred.class_map == COCO_CLASSES
 
     img = cv2.resize(imgs_coco[0], (IMAGE_SIZE, IMAGE_SIZE))
@@ -160,17 +158,13 @@ def test_class_map_inferred_from_model(imgs_coco, obj_detector):
 
 def test_nonpositive_batch_size_rejected():
     with pytest.raises(ValueError, match="positive integer"):
-        RfdetrModel(
-            PTH_FILE, model_type=MODEL_TYPE, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE], batch_size=0
-        )
+        RfdetrModel(PTH_FILE, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE], batch_size=0)
 
 
 def test_batch_size_chunks_and_pads(imgs_coco):
     """batch_size=2 over 3 images must chunk and zero-pad the short last chunk, returning one result per image."""
     imgs = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco[:3]]
-    batched = RfdetrModel(
-        PTH_FILE, model_type=MODEL_TYPE, device=DEVICE, class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE], batch_size=2
-    )
+    batched = RfdetrModel(PTH_FILE, device=DEVICE, class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE], batch_size=2)
     assert batched.fixed_batch_size == 2
 
     out, _ = batched.predict(imgs, configs=0.5)
@@ -179,8 +173,69 @@ def test_batch_size_chunks_and_pads(imgs_coco):
         _assert_nonempty_out({k: out[k][i] for k in KEYS})
 
 
+def test_variant_read_from_checkpoint():
+    """The default path resolves the variant from the checkpoint, matching an explicit model_type."""
+    inferred = RfdetrModel(PTH_FILE, device="cpu", class_map=COCO_CLASSES)
+    override = RfdetrModel(PTH_FILE, model_type=MODEL_TYPE, device="cpu", class_map=COCO_CLASSES)
+    assert type(inferred.model) is type(override.model)
+    assert inferred.image_size == override.image_size == (IMAGE_SIZE, IMAGE_SIZE)
+
+
+def test_resolution_defaults_to_the_variant(tmp_path):
+    """No image_size means the variant's own resolution, whatever size the checkpoint was trained at."""
+    path = str(tmp_path / "trained_at_432.pth")
+    ckpt = torch.load(PTH_FILE, map_location="cpu", weights_only=False)
+    ckpt["model_config"]["resolution"] = 432
+    torch.save(ckpt, path)
+
+    assert RfdetrModel(path, model_type=MODEL_TYPE, device="cpu", class_map=COCO_CLASSES).image_size == (IMAGE_SIZE, IMAGE_SIZE)
+
+
+def test_unspecified_image_size_is_logged(tmp_path, caplog):
+    """The variant default is only right by luck for a model trained at another size; the fallback must be visible."""
+    with caplog.at_level(logging.WARNING):
+        model = RfdetrModel(PTH_FILE, device="cpu", class_map=COCO_CLASSES)
+    assert model.image_size == (IMAGE_SIZE, IMAGE_SIZE)
+    assert "image_size is not specified" in caplog.text
+
+
+def test_explicit_image_size_is_not_logged_as_a_default(caplog):
+    with caplog.at_level(logging.WARNING):
+        RfdetrModel(PTH_FILE, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
+    assert "image_size is not specified" not in caplog.text
+
+
+def test_stripped_checkpoint_loads_at_the_variant_default(tmp_path):
+    """rfdetr strips model_config out of checkpoint_best_total.pth, the only weights file the workflow deploys."""
+    path = str(tmp_path / "stripped.pth")
+    ckpt = torch.load(PTH_FILE, map_location="cpu", weights_only=False)
+    del ckpt["model_config"]
+    torch.save(ckpt, path)
+
+    assert RfdetrModel(path, device="cpu", class_map=COCO_CLASSES).image_size == (IMAGE_SIZE, IMAGE_SIZE)
+
+
+def test_explicit_image_size_still_wins(tmp_path):
+    """image_size is the only way to run at a non-default resolution."""
+    path = str(tmp_path / "trained_at_432.pth")
+    ckpt = torch.load(PTH_FILE, map_location="cpu", weights_only=False)
+    ckpt["model_config"]["resolution"] = 432
+    torch.save(ckpt, path)
+
+    model = RfdetrModel(path, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
+    assert model.image_size == (IMAGE_SIZE, IMAGE_SIZE)
+
+
+def test_checkpoint_without_variant_asks_for_model_type(tmp_path):
+    """Starter weights record no variant; the error must name model_type rather than surface rfdetr's KeyError."""
+    path = str(tmp_path / "no_variant.pth")
+    torch.save({"model": {}}, path)
+    with pytest.raises(ValueError, match="Specify model_type explicitly"):
+        RfdetrModel(path, device="cpu", class_map=COCO_CLASSES)
+
+
 def test_model_class_comparison(obj_detector):
-    direct = RfdetrModel(PTH_FILE, model_type=MODEL_TYPE, device=DEVICE, class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
+    direct = RfdetrModel(PTH_FILE, device=DEVICE, class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
     api = obj_detector
     assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
 

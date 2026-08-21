@@ -64,7 +64,7 @@ training:
     grad_accum_steps: 4                 # gradient accumulation steps
     lr: 1e-4                            # learning rate
     output_dir: /app/training           # output directory
-    resolution: 384                     # image size (square image only)
+    resolution: 384                     # required; image size (square image only)
 ```
 
 The optional top-level `pretrain_weights` controls the weights training starts from:
@@ -130,13 +130,13 @@ services:
 conversion config file:
 
 ```yaml
-model_type: small
+# model_type: small  # optional; by default the variant is read from pretrain_weights
 operation: convert
 task: seg         # od or seg
 format: tensorrt  # onnx tensorrt
 conversion:
     pretrain_weights: /app/training/checkpoint_best_total.pth   # must be .pth file
-    resolution: 384
+    resolution: 384   # required; set it to the resolution the model was trained at
     device: cuda
     output_dir: /app/training
 ```
@@ -163,15 +163,26 @@ services:
 The export operation uses rfdetr's native exporter and writes the fixed filename `model.onnx`, with the class names embedded in the file's own metadata — the `RfdetrModel` ONNX/TensorRT backends read them from there, so the model deploys as a single file.
 
 ```yaml
-model_type: small
+# model_type: small  # optional; by default the variant is read from pretrain_weights
 operation: export
 task: seg         # od or seg
 pretrain_weights: /app/training/checkpoint_best_total.pth   # required; must be a .pth file
 export:
     output_dir: /app/training   # receives model.onnx
-    resolution: 384
+    resolution: 384             # required; set it to the resolution the model was trained at
     opset_version: 17           # optional, default 17
 ```
+
+For `convert` and `export`, `model_type` is optional: the variant is read from the checkpoint named by
+`pretrain_weights`. rfdetr records it from 1.7.0 on, so set `model_type` only for an older checkpoint or
+Roboflow's published starter weights, which record none. `train` has no checkpoint to read and still needs it
+(defaulting to `small`).
+
+`resolution` is required by `train`, `convert` and `export` alike — a config without it is rejected. Nothing reads
+the size off a checkpoint: rfdetr does not keep it in `checkpoint_best_total.pth`, and it resizes the position
+embeddings to fit whatever it loads at without failing, so a wrong size costs accuracy instead of raising. The
+exported ONNX and TensorRT engine bake the size in permanently. For `convert` and `export`, use the resolution the
+model was trained at — `training_config.json`, written beside the checkpoints, records it under `model_config`.
 
 Any additional keys under `export` (e.g. `device`) are passed to the model constructor.
 
@@ -185,7 +196,8 @@ Any additional keys under `export` (e.g. `device`) are passed to the model const
 | `.onnx` | ONNX Runtime | cuda or cpu |
 | `.engine` | TensorRT | cuda |
 
-The `.pth` backend takes `model_type` and an optional `batch_size` (fixed at load time, since the traced graph bakes it in).
+The `.pth` backend reads its variant from the checkpoint and takes an optional `batch_size` (fixed at load time, since
+the traced graph bakes it in). It runs at the variant's default resolution unless passing a `image_size`.
 The `.onnx` and `.engine` backends read the batch size and resolution from the model, and take class names from `class_map`
 or from the metadata embedded at export (`metadata_props` in an ONNX, a JSON header on an engine). Passing `class_map`
 is required for a model exported elsewhere, which carries no embedded names.
@@ -204,5 +216,8 @@ services:
       - ./preprocessed/test:/app/data/
       - ./training:/app/training
     command: >
-      python3 -m object_detectors.rf_detr_lmi.infer --weights /app/training/checkpoint_best_total.pth --input /app/data/test --output /app/training/predictions --model_type seg-small
+      python3 -m object_detectors.rf_detr_lmi.infer --weights /app/training/checkpoint_best_total.pth --input /app/data/test --output /app/training/predictions --image_size 384
 ```
+
+Pass `--image_size` for `.pth` weights trained at anything other than the variant's default size, which is what they
+fall back to. An `.onnx` or `.engine` carries its own input size and ignores the argument.
