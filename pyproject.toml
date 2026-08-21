@@ -32,8 +32,8 @@ test = [
 ci = [
     { include-group = "test" },
     "onnxruntime==1.21.0",
-    "torch==2.4.1",
-    "torchvision==0.19.1",
+    "torch==2.5.1",
+    "torchvision==0.20.1",
 ]
 # GPU / TensorRT env (local + compose): cu124 torch, onnxruntime-gpu, and the
 # TensorRT engine-build stack. tensorrt is pinned to the nvcr:25.04 image's
@@ -53,7 +53,7 @@ gpu = [
 # The test images run Python 3.12, so scope lock resolution to that range rather
 # than narrowing the package's public requires-python (>=3.8).
 environments = ["python_full_version >= '3.10' and python_full_version < '3.13'"]
-# ci and gpu resolve incompatible torch builds (CPU 2.4.1 vs cu124 2.5.1); they
+# ci and gpu resolve incompatible torch builds (+cpu vs +cu124); they
 # are mutually exclusive and never installed together.
 conflicts = [[{ group = "ci" }, { group = "gpu" }]]
 
