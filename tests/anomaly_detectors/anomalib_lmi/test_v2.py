@@ -15,6 +15,7 @@ from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v2_torchscript
 from anomaly_detectors.anomalib_lmi.v2.model import AnomalyModel as AnomalyModelV2
+from anomaly_detectors.anomalib_lmi.v2.train import build_data, build_preprocessor
 
 os.environ["TRUST_REMOTE_CODE"] = "1"
 
@@ -218,3 +219,64 @@ def test_compare_trt_onnx(trt_model):
         pred_trt = trt_model.predict(rgb)[0]
         pred_onnx = onnx_model.predict(rgb)[0]
         assert np.allclose(pred_trt, pred_onnx, atol=0.01, rtol=0.05), f"TRT vs ONNX mismatch for {os.path.basename(p)}"
+
+
+def test_folder_dataset_non_empty():
+    """Ensure build_data produces a non-empty samples frame with correct label values.
+
+    Regression guard: pandas 3.x stores StrEnum labels as their str() representation
+    (e.g. "DirType.NORMAL") instead of the enum value ("normal"), which causes
+    make_folder_dataset to produce an empty samples frame and training to fail.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a minimal normal_dir structure: tmpdir/normal/img.png
+        normal_dir = os.path.join(tmpdir, "normal")
+        os.makedirs(normal_dir)
+        dummy = np.zeros((32, 32, 3), dtype=np.uint8)
+        # Two images so the 0.5 synthetic split yields at least 1 image per subset (floor(2*0.5)=1).
+        cv2.imwrite(os.path.join(normal_dir, "img0.png"), dummy)
+        cv2.imwrite(os.path.join(normal_dir, "img1.png"), dummy)
+
+        datamodule = build_data(
+            {
+                "name": "test_dataset",
+                "root": tmpdir,
+                "normal_dir": "normal",
+                "extensions": [".png"],
+                "train_batch_size": 1,
+                "eval_batch_size": 1,
+                "num_workers": 0,
+                "test_split_mode": "synthetic",
+                "test_split_ratio": 0.5,
+                "val_split_mode": "same_as_test",
+                "val_split_ratio": 0.5,
+            }
+        )
+
+        datamodule.setup()
+        samples = datamodule.train_data.samples
+
+        assert len(samples) > 0, (
+            "Dataset is empty — pandas may be storing StrEnum labels as 'DirType.NORMAL' instead of 'normal'. Ensure pandas<3 is installed."
+        )
+
+        label_col = "label_index" if "label_index" in samples.columns else "label"
+        assert label_col in samples.columns, f"Expected label column not found; columns: {list(samples.columns)}"
+
+        if "label" in samples.columns:
+            bad = [v for v in samples["label"].unique() if "DirType" in str(v)]
+            assert not bad, (
+                f"Labels contain raw StrEnum repr: {bad}. Ensure pandas<3 is installed to fix DirType.NORMAL label serialization."
+            )
+
+
+def test_build_preprocessor():
+    pre_processor = build_preprocessor(
+        [
+            {"class_name": "Resize", "params": {"size": [64, 32]}},
+            {"class_name": "Normalize", "params": {"mean": [0.5, 0.5, 0.5], "std": [0.5, 0.5, 0.5]}},
+        ]
+    )
+
+    assert pre_processor.transform is not None
+    assert [type(transform).__name__ for transform in pre_processor.transform.transforms] == ["Resize", "Normalize"]

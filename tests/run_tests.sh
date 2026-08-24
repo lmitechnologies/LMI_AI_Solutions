@@ -31,7 +31,7 @@ elif [ "$ARGUMENT" == "ad-v1" ]; then
     pytest --html=$outpath/anomaly_detectors_v1.html tests/anomaly_detectors/anomalib_lmi/test_v1.py
 elif [ "$ARGUMENT" == "ad-v2" ]; then
     build_engines ad_v2
-    pytest --html=$outpath/anomaly_detectors_v2.html tests/anomaly_detectors/anomalib_lmi/test_v2.py
+    pytest --html=$outpath/anomaly_detectors_v2.html tests/anomaly_detectors/anomalib_lmi/test_v2.py tests/anomaly_detectors/anomalib_lmi/memory_estimation/
 else
     echo "Invalid argument. Please use 'all-v1' 'od' 'utils' 'ad-v1' 'ad-v2' 'cls'. "
     exit 1

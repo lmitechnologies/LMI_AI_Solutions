@@ -35,4 +35,5 @@ RUN pip install 'numpy<2'
 
 # --- anomalib v2 suite (test_v2.py) ---
 FROM base AS v2
-RUN pip install anomalib==2.4.1
+RUN pip install anomalib==2.2.0
+RUN pip install 'pandas<3'
