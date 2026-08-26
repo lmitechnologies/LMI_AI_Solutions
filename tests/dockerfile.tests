@@ -1,22 +1,24 @@
 # Multi-stage GPU test image. The `base` stage holds everything shared by the
 # anomalib v1/v2 suites (torch, detectron2, common deps) so it builds once and
 # both targets reuse its cached layers. Select a target via docker-compose `target:`.
+
+# The pip tensorrt wheels are excluded since TensorRT ships in the nvcr base image.
+ARG TRT_EXCLUDES="--no-emit-package tensorrt --no-emit-package tensorrt-cu12 --no-emit-package tensorrt-cu12-bindings --no-emit-package tensorrt-cu12-libs"
+
 FROM nvcr.io/nvidia/tensorrt:25.04-py3 AS base
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TRT_EXCLUDES
 
 # Install dependencies
 RUN apt-get update && apt-get install libgl1 -y
 
 WORKDIR /home/gadget
 
-# Install the GPU dependency group from the uv lock. torch==2.5.1+cu124 comes from the cu124
-# index; the pip tensorrt wheels are excluded since TensorRT ships in the nvcr base image.
+# Install the GPU dependency group from the uv lock. torch==2.5.1+cu124 comes from the cu124 index.
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/pip \
-    uv export --frozen --no-hashes --no-emit-project --only-group gpu \
-      --no-emit-package tensorrt --no-emit-package tensorrt-cu12 \
-      --no-emit-package tensorrt-cu12-bindings --no-emit-package tensorrt-cu12-libs \
+    uv export --frozen --no-hashes --no-emit-project --only-group gpu ${TRT_EXCLUDES} \
       -o requirements-gpu.txt && \
     pip install -r requirements-gpu.txt --extra-index-url https://download.pytorch.org/whl/cu124
 
@@ -26,13 +28,20 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN git clone https://github.com/facebookresearch/detectron2 detectron2
 RUN pip install --no-build-isolation ./detectron2
 
+# ad groups export alongside gpu: alone they resolve torch without +cu124, downgrading the base install.
+
 # --- anomalib v1 suite (test_v1.py) ---
 FROM base AS v1
-RUN pip install jsonargparse==4.27.7
-RUN pip install anomalib==1.1.1 && anomalib install --option core
-# anomalib install may pull numpy>=2; re-pin
-RUN pip install 'numpy<2'
+ARG TRT_EXCLUDES
+RUN --mount=type=cache,target=/root/.cache/pip \
+    uv export --frozen --no-hashes --no-emit-project --only-group gpu --only-group ad-v1 ${TRT_EXCLUDES} \
+      -o requirements-ad.txt && \
+    pip install -r requirements-ad.txt --extra-index-url https://download.pytorch.org/whl/cu124
 
 # --- anomalib v2 suite (test_v2.py) ---
 FROM base AS v2
-RUN pip install anomalib==2.4.1
+ARG TRT_EXCLUDES
+RUN --mount=type=cache,target=/root/.cache/pip \
+    uv export --frozen --no-hashes --no-emit-project --only-group gpu --only-group ad-v2 ${TRT_EXCLUDES} \
+      -o requirements-ad.txt && \
+    pip install -r requirements-ad.txt --extra-index-url https://download.pytorch.org/whl/cu124

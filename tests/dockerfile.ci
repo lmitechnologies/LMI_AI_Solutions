@@ -2,8 +2,7 @@
 ARG PYTHON_VERSION=3.10
 FROM python:${PYTHON_VERSION}-slim
 
-# Define the argument for Anomalib version (default provided if needed)
-ARG ANOMALIB_VERSION=v1.1.1
+ARG AD_GROUP=ad-v1
 
 WORKDIR /app
 
@@ -15,10 +14,10 @@ RUN apt-get update && \
     git lfs install && \
     rm -rf /var/lib/apt/lists/*
 
-# Install the CI (CPU) dependency group from the uv lock. torch==2.5.1+cpu comes from the CPU index.
+# Install the CI (CPU) deps plus the selected anomalib group from the uv lock. torch==2.5.1+cpu comes from the CPU index.
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
-RUN uv export --frozen --no-hashes --no-emit-project --only-group ci -o requirements-ci.txt && \
+RUN uv export --frozen --no-hashes --no-emit-project --only-group ci --only-group ${AD_GROUP} -o requirements-ci.txt && \
     pip install --no-cache-dir -r requirements-ci.txt \
         --extra-index-url https://download.pytorch.org/whl/cpu
 
@@ -26,12 +25,3 @@ RUN uv export --frozen --no-hashes --no-emit-project --only-group ci -o requirem
 RUN git clone --depth 1 https://github.com/facebookresearch/detectron2 detectron2 && \
     pip install --no-cache-dir --no-build-isolation ./detectron2 && \
     rm -rf detectron2
-
-# Install anomalib using the build argument (shallow clone, remove source after install)
-RUN git clone --depth 1 -b ${ANOMALIB_VERSION} https://github.com/open-edge-platform/anomalib.git anomalib && \
-    pip install --no-cache-dir ./anomalib && \
-    if [ "${ANOMALIB_VERSION}" != "v2.2.0" ]; then \
-        pip install --no-cache-dir "jsonargparse==4.27.7" && \
-        anomalib install --option core; \
-    fi && \
-    rm -rf anomalib

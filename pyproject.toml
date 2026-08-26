@@ -35,6 +35,14 @@ ci = [
     "torch==2.5.1",
     "torchvision==0.20.1",
 ]
+# Resolving [core] replaces `anomalib install --option core`, which pip-installed numpy>=2 behind the lock's back.
+ad-v1 = [
+    "anomalib[core]==1.1.1",
+    "jsonargparse==4.27.7",
+]
+ad-v2 = [
+    "anomalib==2.4.1",
+]
 # GPU / TensorRT env (local + compose): cu124 torch, onnxruntime-gpu, and the
 # TensorRT engine-build stack. tensorrt is pinned to the nvcr:25.04 image's
 # version (10.9.0.34) so local engines match CI. pytest-html backs run_tests.sh.
@@ -49,13 +57,13 @@ gpu = [
 ]
 
 [tool.uv]
-# Test groups pin numpy<2.0, which conflicts with newer onnx on Python 3.13+.
-# The test images run Python 3.12, so scope lock resolution to that range rather
-# than narrowing the package's public requires-python (>=3.8).
+# Scoped to the test images' Pythons (3.10 CI, 3.12 nvcr) rather than requires-python; numpy<2.0 breaks onnx on 3.13+.
 environments = ["python_full_version >= '3.10' and python_full_version < '3.13'"]
-# ci and gpu resolve incompatible torch builds (+cpu vs +cu124); they
-# are mutually exclusive and never installed together.
-conflicts = [[{ group = "ci" }, { group = "gpu" }]]
+# ci/gpu are incompatible torch builds (+cpu vs +cu124); ad-v1/ad-v2 are incompatible anomalib majors.
+conflicts = [
+    [{ group = "ci" }, { group = "gpu" }],
+    [{ group = "ad-v1" }, { group = "ad-v2" }],
+]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
