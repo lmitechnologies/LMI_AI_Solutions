@@ -18,7 +18,7 @@ jobs:
       matrix:
         python-version: ['3.10']
         # Add the anomalib versions you want to build here
-        anomalib-version: ['v1.1.1', 'v2.2.0'] 
+        ad-group: ['ad-v1', 'ad-v2']
         runner-config:
           - runner: ubuntu-latest
             platform: linux/amd64
@@ -53,7 +53,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           # Update tag to include anomalib version to avoid overwrites
           tags: |
-            type=raw,value=py${{ matrix.python-version }}-${{ matrix.runner-config.arch }}-${{ matrix.anomalib-version }}
+            type=raw,value=py${{ matrix.python-version }}-${{ matrix.runner-config.arch }}-${{ matrix.ad-group }}
 
       - name: Build and push image
         uses: docker/build-push-action@v7
@@ -64,7 +64,7 @@ jobs:
           # Pass the variables to Docker
           build-args: |
             PYTHON_VERSION=${{ matrix.python-version }}
-            ANOMALIB_VERSION=${{ matrix.anomalib-version }}
+            AD_GROUP=${{ matrix.ad-group }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

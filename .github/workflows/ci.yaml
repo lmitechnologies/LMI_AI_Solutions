@@ -45,7 +45,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ['3.10']
-        anomalib-version: ['v1.1.1', 'v2.2.0']
+        ad-group: ['ad-v1', 'ad-v2']
         runner-config:
           - runner: ubuntu-latest
             platform: linux/amd64
@@ -63,7 +63,7 @@ jobs:
       - name: Compute image tag
         id: tag
         run: |
-          BASE="py${{ matrix.python-version }}-${{ matrix.runner-config.arch }}-${{ matrix.anomalib-version }}"
+          BASE="py${{ matrix.python-version }}-${{ matrix.runner-config.arch }}-${{ matrix.ad-group }}"
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo "tag=${BASE}-pr-${{ github.event.pull_request.number }}" >> $GITHUB_OUTPUT
           else
@@ -88,7 +88,7 @@ jobs:
           platforms: ${{ matrix.runner-config.platform }}
           build-args: |
             PYTHON_VERSION=${{ matrix.python-version }}
-            ANOMALIB_VERSION=${{ matrix.anomalib-version }}
+            AD_GROUP=${{ matrix.ad-group }}
           push: true
           tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
 
@@ -131,20 +131,20 @@ jobs:
           - runner: ubuntu-24.04-arm
             arch: arm64
         python-version: ['3.10']
-        test_scenario: 
+        test_scenario:
           - name: "no_ad"
-            version: "v1.1.1"
+            group: "ad-v1"
           - name: "ad_v1"
-            version: "v1.1.1"
+            group: "ad-v1"
           - name: "ad_v2"
-            version: "v2.2.0" 
+            group: "ad-v2"
     
     timeout-minutes: 30
     runs-on: ${{ matrix.runner-config.runner }}
     
     # Use PR-tagged image when requirements changed in a PR, otherwise use stable image
     container:
-      image: ghcr.io/lmitechnologies/ais-test-env:py${{ matrix.python-version }}-${{ matrix.runner-config.arch }}-${{ matrix.test_scenario.version }}${{ needs.check-changes.outputs.req_changed == 'true' && github.event_name == 'pull_request' && format('-pr-{0}', github.event.pull_request.number) || '' }}
+      image: ghcr.io/lmitechnologies/ais-test-env:py${{ matrix.python-version }}-${{ matrix.runner-config.arch }}-${{ matrix.test_scenario.group }}${{ needs.check-changes.outputs.req_changed == 'true' && github.event_name == 'pull_request' && format('-pr-{0}', github.event.pull_request.number) || '' }}
 
     steps:
       - name: Check out repository
@@ -189,7 +189,7 @@ jobs:
             echo "Running Anomaly Detection Tests..."
             pytest tests/anomaly_detectors/anomalib_lmi/test_v1.py
           elif [[ "$MODE" == ad_v2 ]]; then
-            echo "Running Anomaly Detection Tests with Anomalib v2.2.0..."
+            echo "Running Anomaly Detection Tests (anomalib v2)..."
             pytest tests/anomaly_detectors/anomalib_lmi/test_v2.py
           else
             echo "Running Standard (No-AD) Tests..."

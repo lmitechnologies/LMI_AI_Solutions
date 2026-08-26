@@ -17,10 +17,14 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
+    cooldown:
+      default-days: 7
     ignore:
       # GPU-only packages — GitHub runners are CPU, so CI can't validate these.
       - dependency-name: "torch"
       - dependency-name: "torchvision"
+      # Pinned to the same version as onnxruntime-gpu; bumping one alone splits CI from GPU.
+      - dependency-name: "onnxruntime"
       - dependency-name: "onnxruntime-gpu"
       - dependency-name: "tensorrt*"
       - dependency-name: "onnx-graphsurgeon"

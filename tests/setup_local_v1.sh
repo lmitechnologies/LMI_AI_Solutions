@@ -8,23 +8,13 @@
 # run is a fast iteration aid, not a full substitute for the container run.
 #
 # NOTE: `uv sync` makes .venv match the lock exactly, so re-running step 1 later
-# REMOVES the git-installed detectron2/anomalib below. Re-run steps 2-4 after any
-# `uv sync`.
+# REMOVES the git-installed detectron2 below. Re-run step 2 after any `uv sync`.
 set -e
 
-# 1. GPU dependency group from the frozen lock + the project itself.
-uv sync --frozen --group gpu
+# 1. GPU + anomalib v1 dependency groups from the frozen lock, plus the project itself.
+uv sync --frozen --group gpu --group ad-v1
 
 # 2. detectron2 — git-built against the torch just installed (not in the lock).
 uv pip install --no-build-isolation "git+https://github.com/facebookresearch/detectron2"
-
-# 3. anomalib v1 stack (git-pinned; not in the lock). `anomalib install` shells out to
-#    pip._internal, which a uv-managed .venv omits, so seed pip into the env first.
-uv pip install jsonargparse==4.27.7 anomalib==1.1.1 pip
-uv run anomalib install --option core
-
-# 4. `anomalib install` shells out to pip and pulls numpy>=2, which breaks numba (needs numpy<2.5).
-#    Re-assert the gpu group's numpy<2 pin as the last step.
-uv pip install 'numpy<2'
 
 echo "Done. Run tests with:  uv run bash tests/run_tests.sh all-v1"
