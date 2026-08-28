@@ -824,3 +824,50 @@ def test_patchcore_cli_float16_bank_is_half_float32(tmp_path):
     f16_bytes = f16.numel() * f16.element_size()
     ratio = f16_bytes / f32_bytes
     assert ratio == pytest.approx(0.5, rel=0.1), f"fp16 bank bytes are not ~half of fp32: {f16_bytes=} {f32_bytes=} ratio={ratio:.3f}"
+
+
+# ---------------------------------------------------------------------------
+# TolerantAnomalyDINO (.pt) tests
+# ---------------------------------------------------------------------------
+
+TAD_MODEL_PATH = "/home/justice.vidal/projects/lmi_anomalib_utils/training/BMX_cap_ad/TolerantAnomalyDINO/dataset/v68/weights/torch/model.pt"
+
+
+@pytest.fixture(scope="module")
+def tad_model():
+    if not os.path.isfile(TAD_MODEL_PATH):
+        pytest.skip(f"TAD model not found: {TAD_MODEL_PATH}")
+    return AnomalyModelV2(TAD_MODEL_PATH, device=DEVICE)
+
+
+def test_tad_predict_returns_map(tad_model):
+    img = np.random.randint(0, 255, (252, 252, 3), dtype=np.uint8)
+    results = tad_model.predict(img)
+    assert isinstance(results, list) and len(results) == 1
+    assert isinstance(results[0], np.ndarray) and results[0].ndim == 2
+
+
+@pytest.mark.parametrize("n_images", [1, 3])
+def test_tad_predict_batch(tad_model, n_images):
+    imgs = [np.random.randint(0, 255, (252, 252, 3), dtype=np.uint8) for _ in range(n_images)]
+    results = tad_model.predict(imgs)
+    assert len(results) == n_images
+    for r in results:
+        assert isinstance(r, np.ndarray) and r.ndim == 2
+
+
+def test_tad_return_scores(tad_model):
+    imgs = [np.random.randint(0, 255, (252, 252, 3), dtype=np.uint8) for _ in range(3)]
+    maps, scores = tad_model.predict(imgs, return_scores=True)
+    assert len(maps) == 3 and len(scores) == 3
+    for m, s in zip(maps, scores):
+        assert isinstance(m, np.ndarray) and m.ndim == 2
+        assert isinstance(s, float) and np.isfinite(s)
+
+
+def test_tad_return_scores_chunked(tad_model):
+    imgs = [np.random.randint(0, 255, (252, 252, 3), dtype=np.uint8) for _ in range(5)]
+    maps, scores = tad_model.predict(imgs, batch_size=2, return_scores=True)
+    assert len(maps) == 5 and len(scores) == 5
+    for s in scores:
+        assert isinstance(s, float) and np.isfinite(s)
