@@ -78,6 +78,48 @@ class ADBase(ABC):
         """Convert raw model output [N,H,W] to a list of per-image anomaly maps."""
         pass
 
+    def _forward_with_scores(self, input_batch: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Run inference and optionally return native image-level anomaly scores."""
+        return self.forward(input_batch), None
+
+    @staticmethod
+    def _normalize_score_batch(scores, expected_batch: int) -> torch.Tensor | None:
+        """Validate native scores and aggregate tiled scores to one value per image."""
+        if scores is None:
+            return None
+        if not isinstance(scores, torch.Tensor) or scores.dtype == torch.bool or not scores.is_floating_point():
+            return None
+        if scores.numel() == 0 or scores.numel() % expected_batch:
+            return None
+        scores = scores.reshape(expected_batch, -1)
+        if not torch.isfinite(scores).all():
+            return None
+        return scores.amax(dim=1)
+
+    @staticmethod
+    def _map_max_scores(output: torch.Tensor) -> torch.Tensor:
+        """Return one fallback score per map using its maximum pixel value."""
+        return output.reshape(output.shape[0], -1).amax(dim=1)
+
+    def _predict_chunk(
+        self, images: List[ImageLike], return_numpy: bool, return_scores: bool
+    ) -> List[ImageLike] | tuple[List[ImageLike], List[float] | List[torch.Tensor]]:
+        """Predict one already-normalized image chunk."""
+        input_batch = self.preprocess(images)
+        if return_scores:
+            output, native_scores = self._forward_with_scores(input_batch)
+        else:
+            output = self.forward(input_batch)
+            native_scores = None
+        maps = self.postprocess(output, return_numpy=return_numpy)
+        if not return_scores:
+            return maps
+        scores = self._normalize_score_batch(native_scores, len(images))
+        scores = scores if scores is not None else self._map_max_scores(output)
+        if return_numpy:
+            return maps, [float(score) for score in scores.cpu()]
+        return maps, [scores[i] for i in range(scores.shape[0])]
+
     @torch.inference_mode()
     def predict(self, image: ImageBatch, **kwargs) -> List[ImageLike]:
         """Run the full inference pipeline: normalize → preprocess → forward → postprocess.
@@ -96,28 +138,41 @@ class ADBase(ABC):
             **kwargs:
                 batch_size (int): chunk size for mini-batch inference (default: None = all at once).
                     Ignored when self.fixed_batch_size is set.
+                return_scores (bool): Return ``(maps, scores)`` when True. Native image-level scores
+                    are used when available; otherwise scores are the maximum of each anomaly map.
 
         Returns:
-            List of per-image anomaly maps [H,W]. dtype mirrors input:
-            numpy arrays if input was numpy, tensors if input was tensors.
+            Per-image anomaly maps [H,W], or ``(maps, scores)`` when ``return_scores`` is True.
+            Map dtype mirrors input; scores are Python floats for numpy input and scalar tensors
+            for tensor input.
         """
         images = [to_3channel(img) for img in normalize_image_batch(image)]
         use_tensor = isinstance(images[0], torch.Tensor) if images else False
+        return_scores = kwargs.get("return_scores", False)
 
         fixed_bs = self.fixed_batch_size
         batch_size = fixed_bs or kwargs.get("batch_size", None)
 
         if batch_size is None:
-            input_batch = self.preprocess(images)
-            output = self.forward(input_batch)
-            return self.postprocess(output, return_numpy=not use_tensor)
+            return self._predict_chunk(images, return_numpy=not use_tensor, return_scores=return_scores)
 
-        return self._run_batched_predict(images, batch_size, pad_last=fixed_bs is not None, return_numpy=not use_tensor)
+        return self._run_batched_predict(
+            images,
+            batch_size,
+            pad_last=fixed_bs is not None,
+            return_numpy=not use_tensor,
+            return_scores=return_scores,
+        )
 
     @torch.inference_mode()
     def _run_batched_predict(
-        self, images: List[ImageLike], batch_size: int, pad_last: bool = False, return_numpy: bool = True
-    ) -> List[ImageLike]:
+        self,
+        images: List[ImageLike],
+        batch_size: int,
+        pad_last: bool = False,
+        return_numpy: bool = True,
+        return_scores: bool = False,
+    ) -> List[ImageLike] | tuple[List[ImageLike], List[float] | List[torch.Tensor]]:
         """Run preprocess → forward → postprocess in chunks and collect per-image results.
 
         Each chunk is preprocessed, forwarded, and postprocessed independently so that peak
@@ -129,14 +184,17 @@ class ADBase(ABC):
             pad_last: If True, zero-pad the last chunk to exactly batch_size (required
                 for fixed-batch TRT engines). If False, the last chunk may be smaller.
             return_numpy: Passed through to postprocess.
+            return_scores: Collect and return per-image scores alongside maps.
 
         Returns:
-            Flat list of per-image anomaly maps in input order, length == len(images).
+            Flat list of per-image anomaly maps in input order, length == len(images),
+            or ``(maps, scores)`` when return_scores is True.
         """
         if batch_size <= 0:
             raise ValueError(f"batch_size must be a positive integer, got {batch_size}")
 
         results = []
+        all_scores = []
         for start in range(0, len(images), batch_size):
             chunk = images[start : start + batch_size]
             chunk_n = len(chunk)
@@ -144,13 +202,15 @@ class ADBase(ABC):
                 ref = chunk[0]
                 pad_img = np.zeros_like(ref) if isinstance(ref, np.ndarray) else torch.zeros_like(ref)
                 chunk = chunk + [pad_img] * (batch_size - chunk_n)
-            input_batch = self.preprocess(chunk)
-            out = self.forward(input_batch)
-            if out is None:
-                raise RuntimeError(f"forward() returned None for chunk [{start}:{start + batch_size}]")
-            results.extend(self.postprocess(out, return_numpy=return_numpy)[:chunk_n])
+            chunk_result = self._predict_chunk(chunk, return_numpy=return_numpy, return_scores=return_scores)
+            if return_scores:
+                chunk_maps, chunk_scores = chunk_result
+                results.extend(chunk_maps[:chunk_n])
+                all_scores.extend(chunk_scores[:chunk_n])
+            else:
+                results.extend(chunk_result[:chunk_n])
 
-        return results
+        return (results, all_scores) if return_scores else results
 
     @torch.inference_mode()
     def annotate(self, img: ImageLike, ad_scores, ad_threshold, ad_max) -> np.ndarray:

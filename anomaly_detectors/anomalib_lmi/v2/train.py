@@ -6,6 +6,9 @@ from typing import Any, Dict, List, Optional
 import anomalib.models as ad_models
 import yaml
 from anomalib.data import Folder
+from .models import TolerantAnomalyDINO  # noqa: F401 — registers class into anomalib.models
+
+ad_models.TolerantAnomalyDINO = TolerantAnomalyDINO
 from anomalib.deploy import ExportType
 from anomalib.engine import Engine
 from torchvision.transforms import v2

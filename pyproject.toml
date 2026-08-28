@@ -41,7 +41,7 @@ ad-v1 = [
     "jsonargparse==4.27.7",
 ]
 ad-v2 = [
-    "anomalib==2.4.1",
+    "anomalib==2.2.0",
 ]
 # GPU / TensorRT env (local + compose): cu124 torch, onnxruntime-gpu, and the
 # TensorRT engine-build stack. tensorrt is pinned to the nvcr:25.04 image's

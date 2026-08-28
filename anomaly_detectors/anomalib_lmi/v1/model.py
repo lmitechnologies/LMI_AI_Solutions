@@ -26,6 +26,18 @@ class AnomalibPTv1(AnomalibPT):
             return preds[1]
         raise TypeError(f"Unknown prediction type: {type(preds)}")
 
+    def _forward_with_scores(self, input_batch: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+        preds = self.pt_model(input_batch)
+        if isinstance(preds, torch.Tensor):
+            return preds, None
+        if isinstance(preds, dict):
+            score = preds.get("pred_score", preds.get("pred_scores"))
+            return preds["anomaly_map"], score
+        if isinstance(preds, Sequence):
+            score = preds[0] if len(preds) > 2 and isinstance(preds[0], torch.Tensor) else None
+            return preds[1], score
+        raise TypeError(f"Unknown prediction type: {type(preds)}")
+
 
 class AnomalyModel(ModelFactory, Anomalib_Base):
     """AD model factory for Anomalib v1. Dispatches on file extension.

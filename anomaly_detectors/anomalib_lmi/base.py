@@ -56,6 +56,14 @@ class Anomalib_Base(ADBase):
         """Run inference on the input batch. Subclasses must override."""
         raise NotImplementedError("Subclasses must implement forward()")
 
+    @staticmethod
+    def _pick_score_output_idx(names) -> int | None:
+        """Return output index for a recognized scalar-score output name, else None."""
+        for name in ("pred_score", "pred_scores", "anomaly_score"):
+            if name in names:
+                return names.index(name)
+        return None
+
     def _pick_anomaly_output_idx(self, names, buffers) -> int:
         if "anomaly_map" in names:
             return names.index("anomaly_map")
@@ -210,6 +218,7 @@ class _AnomalibEngine(Anomalib_Base):
             self.fixed_batch_size = engine.max_batch
 
         self._anomaly_output_idx = self._pick_anomaly_output_idx(engine._output_names, engine._output_buffers)
+        self._score_output_idx = self._pick_score_output_idx(engine._output_names)
         self.logger.info(
             f"{type(self).__name__} anomaly-map output: index {self._anomaly_output_idx} "
             f"('{engine._output_names[self._anomaly_output_idx]}')"
@@ -217,6 +226,11 @@ class _AnomalibEngine(Anomalib_Base):
 
     def forward(self, input_batch: torch.Tensor) -> torch.Tensor:
         return self.engine.infer(input_batch)[self._anomaly_output_idx]
+
+    def _forward_with_scores(self, input_batch: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+        outputs = self.engine.infer(input_batch)
+        score = outputs[self._score_output_idx] if self._score_output_idx is not None else None
+        return outputs[self._anomaly_output_idx], score
 
     def release(self) -> None:
         self.engine.release()
@@ -276,6 +290,10 @@ class AnomalibPT(Anomalib_Base):
 
     def forward(self, input_batch: torch.Tensor) -> torch.Tensor:
         return self._extract_pt_output(self.pt_model(input_batch))
+
+    def _forward_with_scores(self, input_batch: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Subclasses override to also extract native image-level scores from PT output."""
+        return self.forward(input_batch), None
 
 
 def register_backends(factory_cls, pt_cls) -> None:

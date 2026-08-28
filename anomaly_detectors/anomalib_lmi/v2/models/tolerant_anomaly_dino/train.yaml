@@ -1,0 +1,225 @@
+# Target compatibility: Anomalib 2.3.3. Intermediate blocks use DinoVisionTransformer.get_intermediate_layers().
+# On Anomalib 2.5.1+, revisit the newer timm/NLC public feature-extraction API for simplification.
+# TolerantAnomalyDINO v7.1 mode-invariant projection fitting + ONNX-safe inference
+# Leakage-safe reference / calibration / final-test experiment.
+#
+# v5 scoring stages:
+#   base   -> stock AnomalyDINO
+#   patch  -> hard acceptable-patch damping
+#   veto   -> reject-like aggregate evidence restores base score
+#   accept -> calibrated aggregate ACCEPT suppression (v4 final)
+#   v5     -> calibrated continuous raw-space REJECT boost
+#   final  -> max(direction-only projected boost, magnitude-aware projected boost)
+#
+# If raw reject samples are sorted as reject/<type>/*.jpg, prepare_splits.py
+# preserves those folders and stratifies reject splitting by <type> by default.
+# Reject type can balance/weight projection training and calibration objectives; it is never an inference input.
+#
+# IMPORTANT: thresholds/calibrate/defect_data retain the nested schema expected
+# by anomaly_detectors/anomalib_lmi/v2/train.py.
+
+model:
+  class_name: "TolerantAnomalyDINO"
+  params:
+    encoder_name: "dinov2_vit_small_14"
+    num_neighbours: 1
+    masking: false
+    scoring_mode: "cosine"
+    pca_components: 32
+    coreset_subsampling: false
+    sampling_ratio: 0.1
+    image_size: [224, 224]
+    precision: "float16"
+
+    # Patch-level tolerance head.
+    detector_only: false
+    strict_stock_when_damping_one: true
+    residual_creation_threshold: 0.10
+    residual_topk_per_image: 20
+    accept_damping: 0.0
+    emit_patch_class: false
+
+    # v4 calibrated continuous image-level ACCEPT evidence.
+    # top_mean_accept_advantage = mean(d_reject - d_accept) over top 1% base
+    # anomaly patches. Positive -> acceptable-like; negative -> reject-like.
+    image_accept_enable: true
+    image_accept_threshold: 999.0       # overwritten from calibration split
+    image_accept_damping: 0.0
+    image_reject_veto_enable: true
+    image_reject_veto_threshold: 0.0
+    image_accept_calibrate: true
+    image_accept_max_reject_false_accept_rate: 0.05
+    image_accept_safety_margin: 0.01
+    image_accept_min_threshold: 0.0
+
+    # v5 calibrated continuous REJECT evidence.
+    # boost = lambda * max(A0 - top_mean_accept_advantage, 0)
+    # The calibration grid chooses A0 and lambda to maximize recall while
+    # meeting image_reject_boost_target_precision on CALIBRATION data only.
+    # lambda=0 is included, so calibration can automatically fall back to v4.
+    image_reject_boost_enable: true
+    image_reject_boost_advantage_threshold: 0.0   # overwritten by calibration
+    image_reject_boost_lambda: 0.0                # overwritten by calibration
+    image_reject_boost_max: 0.75
+    image_reject_boost_calibrate: true
+    image_reject_boost_target_precision: 0.99
+    image_reject_boost_advantage_candidates:
+      [-0.30, -0.25, -0.20, -0.15, -0.10, -0.075, -0.05, -0.025, 0.0]
+    image_reject_boost_lambda_candidates:
+      [0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
+
+    # Dual supervised residual metric projection with optional spatial/intermediate
+    # context. Training uses only REFERENCE
+    # acceptable/reject residual patches. Reject subfolders are sampled
+    # uniformly. Optional per-type loss weights are generic and affect training
+    # only; inference never receives a subtype label.
+    residual_projection_enable: true
+    residual_projection_dim: 32
+    residual_projection_margin: 0.10
+    residual_projection_epochs: 40
+    residual_projection_steps_per_epoch: 64
+    residual_projection_batch_size: 128
+    residual_projection_lr: 0.002
+    residual_projection_weight_decay: 0.0001
+    residual_projection_orthogonality_weight: 0.001
+
+    # Magnitude head: append one standardized residual-severity channel to the 384-D
+    # unit residual direction before the learned 32-D projection. Mean/std are
+    # fit from REFERENCE acceptable+reject residuals only and exported with model.
+    # Persisted deployment execution mode. Training always fits + calibrates both
+    # heads deterministically; changing this does not retrain a different head.
+    # The selected mode is saved in state_dict and restored automatically on load;
+    # ONNX/runtime still receive image only (no mode input).
+    #   direction = execute/export v6b direction head only
+    #   magnitude = execute/export v6c magnitude head only
+    #   dual      = execute/export both, max-fused
+    residual_projection_mode: "dual"
+    # TRAINING-ONLY: cpu = deterministic FP32 PCA/SVD + ranking optimization.
+    # model = fit on the detector device for faster training but weaker bitwise reproducibility.
+    # This setting is not used by inference or ONNX export.
+    residual_projection_fit_device: "cpu"
+
+    # Optional NEW-INFORMATION channels for the learned projection only.
+    # XY = patch-center coordinate relative to the cropped patch grid, normalized
+    # to [-1, 1]. This assumes the object/crop is reasonably aligned.
+    residual_projection_use_relative_xy: false
+    residual_projection_xy_scale: 1.0
+
+    # 0-based DINO transformer block indices before the final block. For
+    # DINOv2-S/14 the final block is 11; [8] is a late-intermediate starting
+    # point. Intermediate residuals use the SAME final-layer nearest-normal
+    # patch, so this adds no second normal kNN search. Each extra layer adds one
+    # aligned normal bank (~384 dims/patch for ViT-S). Set [] to disable.
+    residual_projection_intermediate_layers: [8]
+    residual_projection_intermediate_scale: 1.0
+
+    residual_projection_magnitude_transform: "log"
+    residual_projection_magnitude_scale: 1.0
+    residual_projection_magnitude_clip: 5.0
+    residual_projection_magnitude_eps: 1.0e-6
+
+    residual_projection_reject_type_weights:
+      foreign_material: 3.0   # example objective emphasis; any reject folder name is valid
+    residual_projection_seed: 1337
+    residual_projection_reject_class_depth: 1
+
+    # Shared calibration search for both projected heads. Each head receives its own
+    # calibrated A0/lambda; inference fuses their boost amounts with max(). The calibration objective
+    # is intentionally P99.9; on this dataset that effectively requires zero
+    # calibration false positives. Optional per-type objective weights are
+    # generic; unlisted types still contribute through overall reject recall.
+    projected_reject_boost_enable: true
+    projected_reject_boost_advantage_threshold: 0.0  # overwritten by calibration
+    projected_reject_boost_lambda: 0.0               # overwritten by calibration
+    projected_reject_boost_max: 0.75
+    projected_reject_boost_calibrate: true
+    projected_reject_boost_target_precision: 0.999
+    projected_reject_boost_reject_type_weights:
+      foreign_material: 3.0   # extra calibration importance; add/remove types freely
+    projected_reject_boost_require_non_decreasing_overall_recall: true
+    projected_reject_boost_advantage_candidates:
+      [-0.40, -0.30, -0.25, -0.20, -0.15, -0.10, -0.075, -0.05, -0.025, 0.0, 0.025, 0.05]
+    projected_reject_boost_lambda_candidates:
+      [0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0]
+
+    # Legacy train.py shim expects these as mappings.
+    thresholds:
+      t_normal: 0.10
+      t_known: 0.50
+      margin: 0.05
+
+    t_accept_known: 0.50
+    t_reject_known: 0.50
+
+    calibrate:
+      enable: true
+      t_normal_percentile: 95.0
+      t_known_percentile: 95.0
+
+    calibration_normal_samples: 4096
+    calibration_seed: 1337
+    calibration_query_chunk_size: 256
+
+    # Exact kNN streaming limits memory use with the full normal bank.
+    normal_bank_chunk_size: 65536
+    residual_bank_chunk_size: 65536
+
+    # REFERENCE ONLY: builds acceptable/reject residual banks.
+    # reject/ may contain nested type folders; all remain one REJECT bank.
+    defect_data:
+      acceptable_dir: "/app/data/tolerance_split_v5/reference/acceptable"
+      reject_dir: "/app/data/tolerance_split_v5/reference/reject"
+      batch_size: 8
+      num_workers: 4
+
+    normal_reference_dir: "/app/data/tolerance_split_v5/reference/good"
+
+    # CALIBRATION ONLY: never added to memory banks and never reported as final
+    # test performance. First freezes ACCEPT threshold, then freezes v5 REJECT
+    # boost parameters from the same calibration partition.
+    image_calibration_good_dir: "/app/data/tolerance_split_v5/calibration/good"
+    image_calibration_acceptable_dir: "/app/data/tolerance_split_v5/calibration/acceptable"
+    image_calibration_reject_dir: "/app/data/tolerance_split_v5/calibration/reject"
+    image_calibration_output_dir: "/app/out/tolerance_diagnostics_v7_modeinv_dual"
+    image_calibration_batch_size: 4
+    image_calibration_num_workers: 4
+
+    # FINAL TEST ONLY. Path + inode leakage checks run before diagnostics.
+    # Reports base/patch/veto/accept/v5/direction_projected/magnitude_projected/final and per-type P95/P99/P99.9 recall. Final is max-fused dual projection.
+    diagnostic_enable: true
+    diagnostic_good_dir: "/app/data/tolerance_split_v5/test/good"
+    diagnostic_acceptable_dir: "/app/data/tolerance_split_v5/test/acceptable"
+    diagnostic_reject_dir: "/app/data/tolerance_split_v5/test/reject"
+    diagnostic_output_dir: "/app/out/tolerance_diagnostics_v7_modeinv_dual"
+    diagnostic_batch_size: 4
+    diagnostic_num_workers: 4
+    diagnostic_target_precisions: [0.95, 0.99, 0.999]
+    diagnostic_report_threshold: null
+    diagnostic_fail_on_overlap: true
+
+    # DIAGNOSTIC ONLY: reject/type_a/image.jpg -> reject_type="type_a".
+    # Set 2 for reject/family/type/image.jpg -> "family/type"; <=0 keeps the
+    # entire relative parent path. Does not affect training or inference.
+    diagnostic_reject_class_depth: 1
+
+data:
+  name: "dataset"
+  root: "/app/data/tolerance_split_v5/reference/"
+  normal_dir: "good"
+  extensions: [".png", ".jpg", ".jpeg"]
+  train_batch_size: 32
+  eval_batch_size: 8
+  num_workers: 8
+  seed: 1337
+
+  # Final evaluation uses explicit held-out diagnostic dirs above.
+  test_split_mode: "none"
+  test_split_ratio: 0.2
+  val_split_mode: "synthetic"
+  val_split_ratio: 0.05
+
+engine:
+  max_epochs: 1
+  accelerator: "auto"
+  devices: 1
+  default_root_dir: "/app/out/"
