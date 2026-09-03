@@ -64,7 +64,8 @@ class Reconstructor(BaseProcessor):
                 raise ValueError(f"No Operation registered for meta {type(meta).__name__}")
             transform = op.revert_coords if reverse else op.apply_coords
             per_image = transform(per_image, meta)
-            input_populated = self.validate_coord_handler_output(per_image, type(meta).__name__, input_populated=input_populated)
+            expected = None if op.filters_instances else input_populated
+            input_populated = self.validate_coord_handler_output(per_image, type(meta).__name__, input_populated=expected)
 
         per_image = self.from_tensor_results(per_image, is_numpy)
         keys = per_image[0].keys()
