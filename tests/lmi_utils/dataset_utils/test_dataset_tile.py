@@ -167,3 +167,33 @@ def test_tile_dataset_keeps_empty_tiles_for_the_caller_to_drop():
 
     tiled.delete_empty_files()
     assert [f.path for f in tiled.files] == ["id1_r0_c0_a.png"]
+
+
+def test_tile_dataset_keeps_several_source_images_apart():
+    dataset = Dataset(
+        labels=[Label(id="defect")],
+        files=[
+            FileAnnotations(id="1", path="sub_a/im.png", height=64, width=114, annotations=[_box("b", 40, 10, 70, 30)]),
+            FileAnnotations(id="2", path="sub_b/im.png", height=64, width=114, annotations=[_box("b", 40, 10, 70, 30)]),
+        ],
+    )
+    images = {"sub_a/im.png": _image(64, 114), "sub_b/im.png": _image(64, 114)}
+
+    tiled_images, tiled = tile_dataset(dataset, images, tile_size=64, stride=50)
+
+    assert len(tiled.files) == 4
+    assert len(tiled_images) == 4, "same basename in two folders must not collide into one output image"
+    assert [f.source_id for f in tiled.files] == ["1", "1", "2", "2"]
+    assert [f.path for f in tiled.files] == ["id1_r0_c0_im.png", "id1_r0_c1_im.png", "id2_r0_c0_im.png", "id2_r0_c1_im.png"]
+
+
+def test_non_square_tiles_and_strides():
+    annotations = [_box("b", 10, 10, 120, 40)]
+    tiles = tile_annotated_image(_image(60, 140), annotations, tile_size=[32, 64], stride=[28, 50])
+
+    # h: 32 + ceil((60-32)/28)*28 = 60 -> 2 rows; w: 64 + ceil((140-64)/50)*50 = 164 -> 3 cols
+    assert [(r, c) for r, c, _, _ in tiles] == [(r, c) for r in range(2) for c in range(3)]
+    assert all(tile.shape[:2] == (32, 64) for _, _, tile, _ in tiles)
+
+    top_left = tiles[0][3][0].value
+    assert (top_left.x_min, top_left.y_min, top_left.x_max, top_left.y_max) == (10, 10, 64, 32)

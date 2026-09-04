@@ -59,14 +59,14 @@ Applies OD-based masks to suppress regions in an AD error map.
       "global_weight": float,  # Global multiplier for all masks
       "masking_params": {
           "class_id": {
-              "weight": float,                    # Default: 1.0
-              "weight_by_confidence": bool,       # Default: True
-              "erode_kernel_size": int,           # Default: 0 (no erosion)
-              "blur_kernel_size": int,            # Default: 11
-              "multiply_by_mask": bool,           # Default: True
-              "simple_blur": bool,                # Default: True
+              "weight": float,  # Default: 1.0
+              "weight_by_confidence": bool,  # Default: True
+              "erode_kernel_size": int,  # Default: 0 (no erosion)
+              "blur_kernel_size": int,  # Default: 11
+              "multiply_by_mask": bool,  # Default: True
+              "simple_blur": bool,  # Default: True
           }
-      }
+      },
   }
   ```
 - `class_names` (list, optional): List of class names to process. If None, processes all classes.
@@ -98,22 +98,14 @@ mask_config = {
             "erode_kernel_size": 3,
             "blur_kernel_size": 11,
             "multiply_by_mask": True,
-            "simple_blur": True
+            "simple_blur": True,
         },
-        "vehicle": {
-            "weight": 0.5,
-            "weight_by_confidence": True
-        }
-    }
+        "vehicle": {"weight": 0.5, "weight_by_confidence": True},
+    },
 }
 
 # Apply masking
-masked_err_map, total_mask = apply_ad_mask(
-    err_map, 
-    od_predictions, 
-    mask_config,
-    class_names=["person", "vehicle"]
-)
+masked_err_map, total_mask = apply_ad_mask(err_map, od_predictions, mask_config, class_names=["person", "vehicle"])
 ```
 
 ---
@@ -141,12 +133,7 @@ Performs AD prediction with OD-based masking applied.
 from pipeline_utils import masked_ad_predict
 
 masked_err, od_preds, mask_vis = masked_ad_predict(
-    pipe,
-    input_image,
-    ad_model_role="anomaly_detector",
-    od_model_role="object_detector",
-    configs=configs,
-    class_names=["person"]
+    pipe, input_image, ad_model_role="anomaly_detector", od_model_role="object_detector", configs=configs, class_names=["person"]
 )
 ```
 
@@ -188,7 +175,7 @@ annotated = masked_ad_annotate(
     err_map=masked_err_map,
     od_predictions=od_preds,
     configs=configs,
-    color=(0, 255, 0)  # Green
+    color=(0, 255, 0),  # Green
 )
 ```
 
@@ -203,39 +190,23 @@ from pipeline_utils import masked_ad_predict, masked_ad_annotate
 # Define masking configuration
 mask_config = {
     "global_weight": 0.9,
-    "masking_params": {
-        "defect": {"weight": 1.0, "blur_kernel_size": 15},
-        "scratch": {"weight": 0.7, "blur_kernel_size": 9}
-    }
+    "masking_params": {"defect": {"weight": 1.0, "blur_kernel_size": 15}, "scratch": {"weight": 0.7, "blur_kernel_size": 9}},
 }
 
 # Configuration with model thresholds
 configs = {
-    "models": {
-        "ad_model": {"configs": {"min_threshold": 0.2, "max_threshold": 0.8}},
-        "od_model": {"configs": {"confidence": 0.5}}
-    },
-    "od_model": mask_config
+    "models": {"ad_model": {"configs": {"min_threshold": 0.2, "max_threshold": 0.8}}, "od_model": {"configs": {"confidence": 0.5}}},
+    "od_model": mask_config,
 }
 
 # Step 1: Run masked AD prediction
 masked_err_map, od_preds, mask_vis = masked_ad_predict(
-    pipe,
-    input_image,
-    ad_model_role="ad_model",
-    od_model_role="od_model",
-    configs=configs
+    pipe, input_image, ad_model_role="ad_model", od_model_role="od_model", configs=configs
 )
 
 # Step 2: Annotate results
 result_img = masked_ad_annotate(
-    pipe,
-    input_image,
-    ad_model_role="ad_model",
-    od_model_role="od_model",
-    err_map=masked_err_map,
-    od_predictions=od_preds,
-    configs=configs
+    pipe, input_image, ad_model_role="ad_model", od_model_role="od_model", err_map=masked_err_map, od_predictions=od_preds, configs=configs
 )
 ```
 
