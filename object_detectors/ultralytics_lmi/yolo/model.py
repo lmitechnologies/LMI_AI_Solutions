@@ -96,7 +96,7 @@ class Yolo(YoloCore, ODBase):
         images = self._fit_to_input_size(images, resize_fn=letterbox)
         return torch.stack([self._preprocess_single(im) for im in images])
 
-    def construct_result(self, pred, img, orig_img, confs: dict, operators=None, do_scale_boxes=True, **kwargs):
+    def construct_result(self, pred, img, orig_img, confs: dict, do_scale_boxes=True, **kwargs):
         """Constructs the result from the model prediction.
 
         Args:
@@ -104,7 +104,6 @@ class Yolo(YoloCore, ODBase):
             img (torch.Tensor): the preprocessed image
             orig_img (np.ndarray | torch.Tensor): Original image. If this is a tensor, this function will return tensor results.
             confs (dict): per-class confidence thresholds, pre-parsed by postprocess.
-            operators (list): operator chain for coordinate reversion.
             do_scale_boxes (bool): Scale boxes from network input to orig_img space. Set False when the
                 caller has already scaled pred[:, :4] (e.g. YoloSeg needs scaled boxes for mask cropping).
         """
@@ -113,11 +112,9 @@ class Yolo(YoloCore, ODBase):
         xyxy, scores, clss = pred[:, :4], pred[:, 4], pred[:, 5]
         classes = np.array([self.model.names[c.item()] for c in clss])
         xyxy, scores, classes, _, keep = self._apply_confidence_filter(scores, xyxy, classes, confs)
-        result = Results(xyxy, scores, classes)
-        result = self._apply_revert_to_result(result, operators, **kwargs)
-        return result, keep
+        return Results(xyxy, scores, classes), keep
 
-    def construct_results(self, preds, img, orig_imgs, conf, operators=None, **kwargs):
+    def construct_results(self, preds, img, orig_imgs, conf, **kwargs):
         """Constructs the results from the model predictions.
 
         Args:
@@ -125,15 +122,8 @@ class Yolo(YoloCore, ODBase):
             img (torch.Tensor): the preprocessed image(s)
             orig_imgs (list): list of original images. If this is a list of tensors, this function will return tensor results.
             conf (float | dict): float or dictionary of <class: confidence level>.
-            operators (list[dict]): per-image preprocessing history slice for this image
-                (each entry's ``metadata`` is a single-image list). Built by od_base's
-                ``_normalize_operators`` from the unified history passed to ``predict()``.
         """
-        ops_list = operators or [[] for _ in range(len(orig_imgs))]
-        return [
-            self.construct_result(pred, img, orig_img, conf, operators=op, **kwargs)[0]
-            for pred, orig_img, op in zip(preds, orig_imgs, ops_list)
-        ]
+        return [self.construct_result(pred, img, orig_img, conf, **kwargs)[0] for pred, orig_img in zip(preds, orig_imgs)]
 
     def _run_nms(self, preds, conf: float, iou=0.45, agnostic=False, max_det=300):
         """runs non-maximum suppression on inference results"""
@@ -151,8 +141,6 @@ class Yolo(YoloCore, ODBase):
                 preprocessed (torch.Tensor): the preprocessed image(s) (BCHW tensor).
                 images (list): list of original images.
                 configs (float | dict): confidence threshold(s).
-                operators (list): per-image-sliced preprocessing history (one slice per
-                    image in the batch). Produced by ODBase._normalize_operators.
                 iou (float): IoU threshold for NMS. Default 0.45.
                 agnostic (bool): class-agnostic NMS. Default False.
                 max_det (int): max detections. Default 300.
@@ -164,7 +152,6 @@ class Yolo(YoloCore, ODBase):
         img = kwargs.pop("preprocessed", None)
         orig_imgs = kwargs.pop("images", [])
         conf = kwargs.pop("configs", None)
-        operators = kwargs.pop("operators", [[] for _ in range(len(orig_imgs))])
         iou = kwargs.pop("iou", 0.45)
         agnostic = kwargs.pop("agnostic", False)
         max_det = kwargs.pop("max_det", 300)
@@ -172,7 +159,7 @@ class Yolo(YoloCore, ODBase):
         confs = self._parse_confidence_config(conf, list(self.model.names.values()))
         preds2 = self._run_nms(preds, min(confs.values()), iou, agnostic, max_det)
         orig_imgs = orig_imgs if isinstance(orig_imgs, list) else [orig_imgs]
-        return self.construct_results(preds2, img, orig_imgs, confs, operators=operators, **kwargs)
+        return self.construct_results(preds2, img, orig_imgs, confs, **kwargs)
 
 
 class YoloSeg(Yolo):
@@ -195,7 +182,7 @@ class YoloSeg(Yolo):
         segments = [ops.scale_coords(masks.shape[1:], x, img_shape, normalize=False) for x in ops.masks2segments(masks)]
         return segments
 
-    def construct_result(self, pred, img, orig_img, conf, operators=None, proto=None, return_segments=True, **kwargs):
+    def construct_result(self, pred, img, orig_img, conf, proto=None, return_segments=True, **kwargs):
         """Constructs a Results object from the model prediction.
 
         Args:
@@ -203,9 +190,6 @@ class YoloSeg(Yolo):
             img (torch.Tensor): the preprocessed image
             orig_img (np.ndarray | torch.Tensor): Original image.
             conf (float | dict): Confidence threshold for filtering predictions.
-            operators (list[dict]): preprocessing history slice for this single image
-                (each entry's ``metadata`` is a 1-element list). See the unified schema
-                in PRERELEASE §9.
             proto (torch.Tensor): The prototype tensor for the masks.
             return_segments (bool): If True, return the segments of the masks.
         """
@@ -226,10 +210,9 @@ class YoloSeg(Yolo):
             if return_segments:
                 segments = self.to_segments(masks[M], orig_img.shape)  # list of [ (n1,2), (n2,2), ... ]
                 results.segments = [self.from_numpy(x) for x in segments]
-        results = self._apply_revert_to_result(results, operators, **kwargs)
         return results, M
 
-    def construct_results(self, preds, img, orig_imgs, conf, operators=None, protos=None, return_segments=True, **kwargs):
+    def construct_results(self, preds, img, orig_imgs, conf, protos=None, return_segments=True, **kwargs):
         """Constructs the results from the model predictions.
 
         Args:
@@ -237,16 +220,12 @@ class YoloSeg(Yolo):
             img (torch.Tensor): the preprocessed image(s)
             orig_imgs (list): A list of original images. If this is a list of tensors, this function will return tensor results.
             conf (float | dict): float or dictionary of <class: confidence level>.
-            operators (list[dict]): per-image preprocessing history slice for this image
-                (each entry's ``metadata`` is a single-image list). Built by od_base's
-                ``_normalize_operators`` from the unified history passed to ``predict()``.
             protos (torch.Tensor): The prototype tensors for the masks.
             return_segments (bool): If True, return the segments of the masks.
         """
-        ops_list = operators or [[] for _ in range(len(orig_imgs))]
         return [
-            self.construct_result(pred, img, orig_img, conf, operators=op, proto=proto, return_segments=return_segments, **kwargs)[0]
-            for pred, orig_img, proto, op in zip(preds, orig_imgs, protos, ops_list)
+            self.construct_result(pred, img, orig_img, conf, proto=proto, return_segments=return_segments, **kwargs)[0]
+            for pred, orig_img, proto in zip(preds, orig_imgs, protos)
         ]
 
     @smart_inference_mode()
@@ -277,7 +256,7 @@ class YoloObb(Yolo):
             end2end=getattr(self.model, "end2end", False),
         )
 
-    def construct_result(self, pred, img, orig_img, confs: dict, operators=None, **kwargs):
+    def construct_result(self, pred, img, orig_img, confs: dict, **kwargs):
         """Constructs the result from the model prediction.
 
         Args:
@@ -285,9 +264,6 @@ class YoloObb(Yolo):
             img (torch.Tensor): the preprocessed image
             orig_img (torch.Tensor): the original image
             confs (dict): per-class confidence thresholds, pre-parsed by postprocess.
-            operators (list[dict]): preprocessing history slice for this single image
-                (each entry's ``metadata`` is a 1-element list). See the unified schema
-                in PRERELEASE §9.
 
         Returns:
             dict: the constructed result dictionary
@@ -301,9 +277,7 @@ class YoloObb(Yolo):
         rboxes = ops.xywhr2xyxyxyxy(rboxes)  # [n_obj, 4, 2]
 
         rboxes, scores, classes, _, keep = self._apply_confidence_filter(scores, rboxes, classes, confs)
-        result = Results(rboxes, scores, classes)
-        result = self._apply_revert_to_result(result, operators, **kwargs)
-        return result, keep
+        return Results(rboxes, scores, classes), keep
 
 
 class YoloPose(Yolo):
@@ -313,7 +287,7 @@ class YoloPose(Yolo):
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.task = "pose"
 
-    def construct_result(self, pred, img, orig_img, conf, operators=None, **kwargs):
+    def construct_result(self, pred, img, orig_img, conf, **kwargs):
         """Constructs a Results object from the model prediction.
 
         Args:
@@ -321,13 +295,9 @@ class YoloPose(Yolo):
             img (torch.Tensor): the preprocessed image
             orig_img (np.ndarray | torch.Tensor): Original image.
             conf (float | dict): Confidence threshold for filtering predictions.
-            operators (list[dict]): preprocessing history slice for this single image
-                (each entry's ``metadata`` is a 1-element list). See the unified schema
-                in PRERELEASE §9.
         """
         results, M = super().construct_result(pred, img, orig_img, conf)
         pred_kpts = pred[:, 6:].view(pred.shape[0], *self.model.kpt_shape)
         pred_kpts = ops.scale_coords(img.shape[2:], pred_kpts, orig_img.shape)
         results.points = pred_kpts[M]  # [n_obj,n_kp,3]
-        results = self._apply_revert_to_result(results, operators, **kwargs)
         return results, M

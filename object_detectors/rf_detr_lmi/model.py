@@ -156,14 +156,13 @@ class RfdetrBase(ODBase):
                 segments.append(np.zeros((0, 2), dtype=np.float32))
         return segments
 
-    def _postprocess_single(self, output, configs, ops, return_segments) -> Results:
+    def _postprocess_single(self, output, configs, return_segments) -> Results:
         """Postprocess a single image's decoded output from PostProcess.
 
         Args:
             output (dict): Decoded output with keys 'boxes', 'scores', 'labels',
                 and optionally 'masks'. Values are tensors on self.device.
             configs (dict): Per-class confidence thresholds.
-            ops (list): Coordinate transform operators to revert.
             return_segments (bool): Whether to convert masks to segments.
 
         Returns:
@@ -181,7 +180,7 @@ class RfdetrBase(ODBase):
         segments = (
             [torch.from_numpy(s).to(self.device) for s in self._masks_to_segments(masks)] if len(masks) > 0 and return_segments else None
         )
-        result = Results(
+        return Results(
             boxes=boxes,
             scores=scores,
             classes=classes,
@@ -189,7 +188,6 @@ class RfdetrBase(ODBase):
             segments=segments,
             is_seg=is_seg,
         )
-        return self._apply_revert_to_result(result, ops)
 
     def postprocess(self, outputs, **kwargs) -> List[Results]:
         """Postprocess outputs for a batch using the rfdetr PostProcess decoder.
@@ -203,8 +201,6 @@ class RfdetrBase(ODBase):
             **kwargs:
                 images (list[np.ndarray]): Original images, used to determine target sizes.
                 configs: Confidence threshold (float) or per-class dict.
-                operators (list): per-image-sliced preprocessing history (one slice per image).
-                    Produced by ODBase._normalize_operators from the unified history.
                 return_segments (bool): Whether to convert masks to segments.
 
         Returns:
@@ -212,7 +208,6 @@ class RfdetrBase(ODBase):
         """
         images = kwargs["images"]
         configs = self._parse_confidence_config(kwargs.get("configs"), list(self.class_map.values()))
-        operators = kwargs.get("operators", [[] for _ in range(len(images))])
         return_segments = kwargs.get("return_segments", True)
 
         if len(outputs) < 2:
@@ -229,7 +224,7 @@ class RfdetrBase(ODBase):
         target_sizes = torch.tensor(orig_sizes, device=self.device)
         extra = {"score_threshold": self._mask_score_floor(configs)} if _POSTPROCESS_TAKES_SCORE_THRESHOLD else {}
         rs = self.postprocessor(return_predictions, target_sizes=target_sizes, **extra)
-        return [self._postprocess_single(r, configs, operators[i], return_segments) for i, r in enumerate(rs)]
+        return [self._postprocess_single(r, configs, return_segments) for r in rs]
 
     @staticmethod
     def _mask_score_floor(configs: dict) -> float:
