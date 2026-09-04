@@ -255,7 +255,7 @@ class PipelineBase(metaclass=ABCMeta):
         if isinstance(model, ODBase):
             return self._ensure_od_input_size(model_role, processed, history)
         if isinstance(model, ADBase):
-            return self._record_ad_internal_resize(model_role, images, processed, history)
+            return self._record_ad_internal_resize(model_role, processed, history)
         return processed, history
 
     def _ensure_od_input_size(
@@ -287,7 +287,6 @@ class PipelineBase(metaclass=ABCMeta):
     def _record_ad_internal_resize(
         self,
         model_role: str,
-        images: List[ImageLike],
         processed: List[ImageLike],
         history: List[Meta],
     ) -> Tuple[List[ImageLike], List[Meta]]:
@@ -296,20 +295,15 @@ class PipelineBase(metaclass=ABCMeta):
         The forward images are left off-size for the model to resize internally, so ``predict()`` scores are
         unchanged. This only appends the inverse so ``revert_preprocess`` upsamples the score maps back to
         input space (overlay/output, not re-thresholding). No-op when the sizes already match.
+
+        A step that changes the image count (tiling) is fine: the inverse is recorded against the images
+        it actually saw, and ``reconstruct_images`` unwinds it before the tile step.
         """
         model = self.models[model_role]
         th, tw = int(model.image_size[0]), int(model.image_size[1])
         mismatched = sorted({tuple(p.shape[:2]) for p in processed} - {(th, tw)})
         if not mismatched:
             return processed, history
-
-        if len(processed) != len(images):
-            # Reachable only once AD tiling exists (a tile op changes the image count); per-tile score reverting is not handled.
-            raise NotImplementedError(
-                f"AD inverse-resize assumes a 1:1 image mapping, but preprocessing changed the image "
-                f"count ({len(images)} -> {len(processed)}) for AD model '{model_role}'. Configure a "
-                f"resize to {(th, tw)} in global preprocessing."
-            )
 
         if model.RESIZE_PRESERVE_ASPECT:
             # Letterbox would need the model's internal pad metadata to invert; only stretch is supported.

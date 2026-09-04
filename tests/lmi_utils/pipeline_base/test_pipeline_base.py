@@ -2,6 +2,7 @@ import logging
 import os
 
 import cv2
+import numpy as np
 import pytest
 import torch
 
@@ -225,6 +226,36 @@ class PipelineAD(PipelineBase):
             },
             "ops_list": ops_list,
         }
+
+
+def test_pipeline_AD_tiles_and_stitches_the_score_map(caplog):
+    """A tile step whose tiles are not the model's input size: the inverse resize is recorded per
+    tile and unwound before the tile step, so the score map comes back at the source image size."""
+    model_path = os.path.abspath("tests/assets/models/ad/model_v1/model.pt")
+    image_path = os.path.join(os.path.abspath("tests/assets/images/nvtec-ad"), "000-bad.png")
+
+    # 300px tiles for a 224 model, so every tile is off-size.
+    preprocessing_steps = [{"type": "tile", "configuration": {"height": 300, "width": 300, "y_stride": 300, "x_stride": 300}}]
+    model_roles = _build_ad_model_roles("3", model_path, preprocessing_steps)
+
+    pipeline = PipelineAD(version="3")
+    pipeline.load(model_roles, {})
+
+    image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
+    with caplog.at_level(logging.WARNING):
+        tiles, ops_list = pipeline.preprocess("mock-model", image)
+
+    assert len(tiles) > 1, "tiling should produce several images"
+    assert [type(op).__name__.removesuffix("Meta").lower() for op in ops_list] == ["tile", "resize"]
+
+    maps = pipeline.models["mock-model"].predict(tiles)
+    assert len(maps) == len(tiles), "one score map per tile"
+
+    restored = pipeline.revert_preprocess([np.asarray(m) for m in maps], ops_list)
+    assert len(restored) == 1, "the tiles must stitch back into one score map"
+    out = restored[0].cpu().numpy() if isinstance(restored[0], torch.Tensor) else np.asarray(restored[0])
+    assert out.shape[:2] == image.shape[:2], f"{out.shape} != {image.shape}"
+    assert np.isfinite(out).all()
 
 
 def _build_ad_model_roles(version, model_path, preprocessing_steps):
