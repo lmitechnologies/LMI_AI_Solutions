@@ -10,6 +10,10 @@ class BaseProcessor:
     _COORD_FIELDS = frozenset({"boxes", "segments", "points", "masks"})
     # Subset of _COORD_FIELDS whose value is a list-of-tensors instead of a single tensor.
     _COORD_LIST_FIELDS = frozenset({"segments"})
+    # Per-instance fields that carry no coordinates. Converted alongside the coord fields so ops
+    # that filter or concatenate instances (tiling) can index them, but exempt from drop validation.
+    _INSTANCE_FIELDS = frozenset({"scores"})
+    _TENSOR_FIELDS = _COORD_FIELDS | _INSTANCE_FIELDS
 
     @staticmethod
     def as_image_list(images: Any) -> List[ImageLike]:
@@ -68,7 +72,7 @@ class BaseProcessor:
 
     def _result_to_tensor(self, result: Dict[str, Any]) -> Dict[str, Any]:
         out = dict(result)
-        for field in self._COORD_FIELDS:
+        for field in self._TENSOR_FIELDS:
             val = result.get(field)
             if val is None or len(val) == 0:
                 continue
@@ -80,7 +84,7 @@ class BaseProcessor:
 
     def _result_from_tensor(self, result: Dict[str, Any]) -> Dict[str, Any]:
         out = dict(result)
-        for field in self._COORD_FIELDS:
+        for field in self._TENSOR_FIELDS:
             val = result.get(field)
             if val is None or len(val) == 0:
                 continue

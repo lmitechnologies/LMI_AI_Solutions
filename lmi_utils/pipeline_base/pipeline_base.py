@@ -253,7 +253,7 @@ class PipelineBase(metaclass=ABCMeta):
 
         model = self.models.get(model_role)
         if isinstance(model, ODBase):
-            return self._ensure_od_input_size(model_role, images, processed, history)
+            return self._ensure_od_input_size(model_role, processed, history)
         if isinstance(model, ADBase):
             return self._record_ad_internal_resize(model_role, images, processed, history)
         return processed, history
@@ -261,26 +261,20 @@ class PipelineBase(metaclass=ABCMeta):
     def _ensure_od_input_size(
         self,
         model_role: str,
-        images: List[ImageLike],
         processed: List[ImageLike],
         history: List[Meta],
     ) -> Tuple[List[ImageLike], List[Meta]]:
         """Append a resize so an OD model's preprocessed input matches its training size.
         No-op when the size already matches.
+
+        A step that changes the image count (tiling) is fine: the resize is recorded against the
+        images it actually saw, and the reconstructor unwinds it before the tile step.
         """
         model = self.models[model_role]
         th, tw = int(model.image_size[0]), int(model.image_size[1])
         mismatched = sorted({tuple(p.shape[:2]) for p in processed} - {(th, tw)})
         if not mismatched:
             return processed, history
-
-        if len(processed) != len(images):
-            # Reachable only once OD tiling exists (a tile op changes the image count).
-            raise NotImplementedError(
-                f"Resize injection assumes a 1:1 image mapping, but preprocessing changed the image "
-                f"count ({len(images)} -> {len(processed)}) for OD model '{model_role}'. Add tile-aware "
-                "resize/revert handling and a round-trip test before enabling this."
-            )
 
         self.logger.warning(
             f"[{model_role}] preprocessed size(s) {mismatched} != model input {(th, tw)}; injecting a resize. "

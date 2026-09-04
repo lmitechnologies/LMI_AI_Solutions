@@ -560,3 +560,62 @@ def test_clamp_keypoints_to_image(yolo_models):
     assert (pts[..., 0] >= 0).all() and (pts[..., 0] <= image_w).all()
     assert (pts[..., 1] >= 0).all() and (pts[..., 1] <= image_h).all()
     assert torch.allclose(pts[..., 2], torch.full_like(pts[..., 2], 0.7))
+
+
+def _tile_and_predict(model, images, conf, **tile_kwargs):
+    """Tile ``images``, run the detector on the tiles, and merge back to image space."""
+    from lmi_utils.preprocess_utils import steps
+    from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+
+    net_h, net_w = model.image_size
+    configs = [
+        steps.tile(tile_size=[320, 320], scale_mode="padding", **tile_kwargs),
+        steps.resize(width=net_w, height=net_h, preserve_aspect=False),
+    ]
+    tiles, history = Preprocessor().preprocess(images, configs)
+    out, _ = model.predict(tiles, configs=conf, operators=history)
+    return tiles, out
+
+
+def test_tiled_predict_merges_tiles_back_to_source_images(yolo_models, imgs_coco):
+    """predict() takes the tiles but returns one entry per source image, in source coordinates."""
+    model = yolo_models["det"][0]
+    images = imgs_coco[0][:2]
+
+    tiles, out = _tile_and_predict(model, images, 0.25, stride=[320, 320])
+
+    assert len(tiles) > len(images), "tiling must produce more images than it was given"
+    for key in ("boxes", "scores", "classes"):
+        assert len(out[key]) == len(images), f"out['{key}'] has {len(out[key])} entries, expected {len(images)}"
+
+    for idx, img in enumerate(images):
+        h, w = img.shape[:2]
+        boxes = out["boxes"][idx]
+        assert len(boxes) == len(out["scores"][idx]) == len(out["classes"][idx])
+        if len(boxes):
+            assert boxes[:, 0::2].min() >= 0 and boxes[:, 1::2].min() >= 0
+            assert boxes[:, 0::2].max() <= w and boxes[:, 1::2].max() <= h
+
+
+def test_tiled_predict_merge_fragments_rejoins_seam_splits(yolo_models, imgs_coco):
+    """Overlapping tiles plus merge_fragments must not leave more detections than the split run."""
+    model = yolo_models["det"][0]
+    images = imgs_coco[0][:1]
+    overlapping = {"stride": [256, 256], "nms_iou": 0.45, "containment": 0.8}
+
+    _, split = _tile_and_predict(model, images, 0.25, merge_fragments=False, **overlapping)
+    _, merged = _tile_and_predict(model, images, 0.25, merge_fragments=True, **overlapping)
+
+    assert len(merged["boxes"][0]) < len(split["boxes"][0]), "merging should collapse seam fragments"
+
+
+def test_tiled_predict_rejects_a_tile_count_that_does_not_match(yolo_models, imgs_coco):
+    from lmi_utils.preprocess_utils import steps
+    from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+
+    model = yolo_models["det"][0]
+    images = imgs_coco[0][:1]
+    tiles, history = Preprocessor().preprocess(images, [steps.tile(tile_size=[320, 320], stride=[320, 320], scale_mode="padding")])
+
+    with pytest.raises(ValueError, match="tiles, but"):
+        model.predict(tiles[:-1], configs=0.25, operators=history)

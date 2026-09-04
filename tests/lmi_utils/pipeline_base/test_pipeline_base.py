@@ -157,6 +157,41 @@ def test_pipeline_OD_injects_resize_on_size_mismatch(caplog):
     assert any("injecting a resize" in r.message for r in caplog.records), "Expected an injection warning"
 
 
+def test_pipeline_OD_injects_resize_per_tile(caplog):
+    """A tile step changes the image count; the corrective resize is still injected, recorded against
+    the tiles, and reverted before the tile step so results come back per source image."""
+    model_path = os.path.abspath("tests/assets/models/od/ultralytics/yolo11n-seg.pt")
+    image_path = os.path.join(os.path.abspath("tests/assets/images/coco"), "221872164_2e4d0bcc08_z.jpg")
+
+    # 300px tiles for a 640 model: every tile needs the injected resize.
+    preprocessing_steps = [{"type": "tile", "configuration": {"height": 300, "width": 300, "y_stride": 300, "x_stride": 300}}]
+    model_roles = _build_od_model_roles("3", model_path, preprocessing_steps)
+
+    pipeline = PipelineOD(version="3")
+    pipeline.load(model_roles, {})
+
+    image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
+    with caplog.at_level(logging.WARNING):
+        tiles, ops_list = pipeline.preprocess("mock-model", image)
+
+    assert len(tiles) > 1, "tiling should produce several images"
+    assert all(t.shape[:2] == (640, 640) for t in tiles), "the injected resize should bring every tile to the model input"
+    assert [type(op).__name__.removesuffix("Meta").lower() for op in ops_list] == ["tile", "resize"]
+    assert any("injecting a resize" in r.message for r in caplog.records), "Expected an injection warning"
+
+    out, _ = pipeline.models["mock-model"].predict(tiles, 0.25, operators=ops_list)
+    h, w = image.shape[:2]
+    assert len(out["boxes"]) == 1, "the tiles must merge back to one result per source image"
+    boxes = out["boxes"][0]
+    assert len(boxes) == len(out["scores"][0]) == len(out["classes"][0]) == len(out["masks"][0])
+    assert boxes[:, 0::2].max() <= w and boxes[:, 1::2].max() <= h
+    assert out["masks"][0].shape[-2:] == (h, w), "masks must come back at the source image size"
+
+    # revert_preprocess must agree with passing the same history into predict()
+    plain, _ = pipeline.models["mock-model"].predict(tiles, 0.25)
+    assert len(pipeline.revert_preprocess(plain, ops_list)["boxes"][0]) == len(boxes)
+
+
 class PipelineAD(PipelineBase):
     def load(self, model_roles: dict, configs: dict):
         self.load_models(model_roles, configs, device=DEVICE)
