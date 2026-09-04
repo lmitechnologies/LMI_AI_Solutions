@@ -61,7 +61,6 @@ def test_reconstruct_coordinates_preserves_device(prep, recon, device_str):
     boxes_per_tile = torch.tensor([[1.0, 2.0, 5.0, 6.0]], device=device)
     masks_per_tile = torch.ones((1, 16, 16), device=device)
     segs_per_tile = [torch.tensor([[1.0, 2.0], [3.0, 4.0]], device=device)]
-    pts_per_tile = torch.tensor([[[1.0, 2.0, 1.0], [3.0, 4.0, 1.0]]], device=device)
     scores_per_tile = torch.tensor([0.9], device=device)
     classes_per_tile = torch.tensor([0])
 
@@ -69,14 +68,13 @@ def test_reconstruct_coordinates_preserves_device(prep, recon, device_str):
         "boxes": [boxes_per_tile.clone() for _ in range(n_tiles)],
         "masks": [masks_per_tile.clone() for _ in range(n_tiles)],
         "segments": [list(segs_per_tile) for _ in range(n_tiles)],
-        "points": [pts_per_tile.clone() for _ in range(n_tiles)],
         "scores": [scores_per_tile.clone() for _ in range(n_tiles)],
         "classes": [classes_per_tile.clone() for _ in range(n_tiles)],
     }
 
     out = recon.reconstruct_coordinates(results, history)
 
-    for field in ("boxes", "masks", "points"):
+    for field in ("boxes", "masks"):
         for t in out[field]:
             assert _device_type(t) == device.type, f"{field}: {_device_type(t)} != {device.type}"
     for segs in out["segments"]:

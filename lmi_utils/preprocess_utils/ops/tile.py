@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -11,10 +12,14 @@ from lmi_utils.postprocess_utils.tile_merge import DEFAULT_EDGE_TOLERANCE, insta
 from .._coords import apply_coord_transform
 from ..operation import Config, Meta, Operation
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class TileConfig(Config):
     """Tile each image into fixed-size patches; remember per-image grid for stitching.
+
+    Keypoints and oriented boxes are not supported and raise; only boxes, segments and masks tile.
 
     tile_size: int or [h, w] — patch size.
     stride: int or [h, w] — step between tile origins. Overlap is ``tile_size - stride``.
@@ -25,8 +30,9 @@ class TileConfig(Config):
 
     merge_fragments: union predictions of one object that adjacent tiles each saw only part of.
         Needs ``scale_mode="padding"`` and more than ``2 * edge_tolerance`` px of overlap on both
-        axes; rejects keypoints and oriented boxes. Off by default — without it seam-split objects
-        stay split, as before.
+        axes. None (default) merges wherever the grid allows it and quietly skips where it does not.
+        True demands it and raises when the grid cannot support it. False turns it off, leaving
+        seam-split objects split.
     score_threshold: dropped after merging, so a fragment is judged on its group's score.
     nms_iou: class-aware NMS IoU threshold across tiles. None disables both NMS rules.
     containment: fraction of one prediction that must lie inside another to count as contained.
@@ -46,7 +52,7 @@ class TileConfig(Config):
     stride: Union[int, List[int], None] = None
     scale_mode: str = "padding"
     overlap_mode: str = "average"
-    merge_fragments: bool = False
+    merge_fragments: Optional[bool] = None
     score_threshold: float = 0.0
     nms_iou: Optional[float] = 0.5
     containment: Optional[float] = 0.8
@@ -56,7 +62,7 @@ class TileConfig(Config):
     def __post_init__(self):
         if self.tile_size is None or self.stride is None:
             raise ValueError("TileConfig: 'tile_size' and 'stride' are required")
-        if self.merge_fragments:
+        if self.merge_fragments is True:
             if self.scale_mode != "padding":
                 raise ValueError("TileConfig: merge_fragments needs scale_mode='padding'; interpolation rescales tile origins")
             _validate_merge_overlap(_as_pair(self.tile_size), _as_pair(self.stride), self.edge_tolerance)
@@ -249,13 +255,8 @@ class TileOperation(Operation[TileConfig, TileMeta]):
         row-major order matching ``forward``). Instances that don't overlap a given tile
         are dropped from that tile; partially overlapping ones are clipped:
             - xyxy boxes: axis-aligned clip to tile rect.
-            - OBB boxes: Sutherland-Hodgman clip then refit a rect aligned with the original
-              OBB's orientation (AABB in the OBB's local frame, rotated back). Preserves the
-              source object's rotation rather than the clipped fragment's tightest fit.
             - segments: Sutherland-Hodgman clip; instances with empty clipped polygon are dropped.
             - masks: per-tile spatial slice.
-        Keypoint visibility flags are set to 0 for any keypoint falling outside the tile,
-        and instances with all keypoints invisible are dropped.
 
         Results carrying no geometry (only image-level scores/classes) are passed through to
         every tile unchanged, since there is nothing to clip.
@@ -264,6 +265,8 @@ class TileOperation(Operation[TileConfig, TileMeta]):
             - interpolation: masks are in ``im_size``; resampled to ``scale_size`` before tiling.
             - padding: masks are in ``im_size``; zero-padded to ``scale_size`` before tiling.
         """
+        for r in results:
+            _reject_unsupported(r)
         if len(results) != len(meta.n_tiles):
             raise ValueError(f"tile: results count ({len(results)}) != meta count ({len(meta.n_tiles)})")
         output = []
@@ -278,6 +281,8 @@ class TileOperation(Operation[TileConfig, TileMeta]):
     @torch.inference_mode()
     def revert_coords(self, results: List[Dict[str, Any]], meta: TileMeta) -> List[Dict[str, Any]]:
         """Rebuild per-tile predictions in image space. See ``_merge_tile_coords`` for the steps."""
+        for r in results:
+            _reject_unsupported(r)
         output = []
         cursor = 0
         for i in range(len(meta.n_tiles)):
@@ -332,21 +337,26 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     if not is_interp and (scale_h != im_h or scale_w != im_w):
         merged, tile_idx = _drop_in_padding(merged, tile_idx, im_h, im_w)
 
-    if tiler_meta.get("merge_fragments"):
-        _reject_unsupported(merged)
-        rc = np.array([[i // n_tiles_w, i % n_tiles_w] for i in range(n_tiles_h * n_tiles_w)])
-        origins = rc * np.array([stride_h, stride_w])
+    requested = tiler_meta.get("merge_fragments", False)  # absent means a hand-built meta: off
+    if requested is not False:
         tolerance = tiler_meta.get("edge_tolerance")
-        merged = merge_tile_fragments(
-            merged,
-            tile_idx,
-            rc,
-            origins,
-            (tile_h, tile_w),
-            (im_h, im_w),
-            containment=tiler_meta.get("containment") or 1.0,
-            edge_tolerance=DEFAULT_EDGE_TOLERANCE if tolerance is None else float(tolerance),
-        )
+        tolerance = DEFAULT_EDGE_TOLERANCE if tolerance is None else float(tolerance)
+        skip = None if requested is True else _auto_merge_skip_reason((tile_h, tile_w), (stride_h, stride_w), is_interp, tolerance)
+        if skip is not None:
+            logger.debug("tile: skipping fragment merging - %s", skip)
+        else:
+            rc = np.array([[i // n_tiles_w, i % n_tiles_w] for i in range(n_tiles_h * n_tiles_w)])
+            origins = rc * np.array([stride_h, stride_w])
+            merged = merge_tile_fragments(
+                merged,
+                tile_idx,
+                rc,
+                origins,
+                (tile_h, tile_w),
+                (im_h, im_w),
+                containment=tiler_meta.get("containment") or 1.0,
+                edge_tolerance=tolerance,
+            )
 
     merged = _apply_score_threshold(merged, float(tiler_meta.get("score_threshold") or 0.0))
 
@@ -357,14 +367,37 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     return _clip_to_image(merged, im_h, im_w)
 
 
-def _reject_unsupported(merged: Dict[str, Any]) -> None:
-    """Fragment merging has no rule for keypoints or oriented boxes; fail rather than drop them."""
-    points = merged.get("points")
+def _auto_merge_skip_reason(
+    tile_size: Tuple[int, int],
+    stride: Tuple[int, int],
+    is_interp: bool,
+    tolerance: float,
+) -> Optional[str]:
+    """Why a grid cannot support automatic merging; None when it can.
+
+    Only grid geometry — an unsupported model type raises instead, see ``_reject_unsupported``.
+    """
+    if is_interp:
+        return "scale_mode='interpolation' rescales tile origins"
+    overlap = [tile_size[i] - stride[i] for i in (0, 1)]
+    if min(overlap) <= 2 * tolerance:
+        # Below this the facing tile edges are one line, so two objects touching at a seam are
+        # indistinguishable from one cut object and would be fused.
+        return f"overlap {overlap} is not more than 2 x edge_tolerance ({2 * tolerance})"
+    return None
+
+
+def _reject_unsupported(result: Dict[str, Any]) -> None:
+    """Tiling has no rule for keypoints or oriented boxes; fail rather than return them wrong.
+
+    The clip/refit code for both is still in ``_project_to_tile``, kept for future support.
+    """
+    points = result.get("points")
     if isinstance(points, torch.Tensor) and len(points):
-        raise ValueError("tile: merge_fragments does not support keypoints")
-    boxes = merged.get("boxes")
+        raise ValueError("tile: tiling does not support keypoints")
+    boxes = result.get("boxes")
     if isinstance(boxes, torch.Tensor) and len(boxes) and boxes.ndim == 3:
-        raise ValueError("tile: merge_fragments does not support oriented boxes")
+        raise ValueError("tile: tiling does not support oriented boxes")
 
 
 def _drop_in_padding(merged: Dict[str, Any], tile_idx: torch.Tensor, im_h: int, im_w: int) -> Tuple[Dict[str, Any], torch.Tensor]:
@@ -498,6 +531,7 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
     if boxes is not None and len(boxes):
         has_spatial = True
         if boxes.ndim == 3:  # OBB (N, 4, 2)
+            # Unreachable: _reject_unsupported turns OBB away. Kept for future support.
             obb_t = to_tile_xy(boxes.reshape(-1, 2)).reshape(n, 4, 2)
             obb_kept = torch.zeros(n, dtype=torch.bool, device=device)
             refit = obb_t.clone()
@@ -532,6 +566,7 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
 
     points = result.get("points")
     if points is not None and len(points):
+        # Unreachable: _reject_unsupported turns keypoints away. Kept for future support.
         has_spatial = True
         xy = points[..., :2]
         xy_t = to_tile_xy(xy.reshape(-1, 2)).reshape(xy.shape)
@@ -685,6 +720,8 @@ def _polygon_clip(poly: torch.Tensor, w: float, h: float) -> torch.Tensor:
 
 def _refit_obb_keep_orientation(clipped: torch.Tensor, original: torch.Tensor) -> Optional[torch.Tensor]:
     """Refit a clipped polygon as a 4-corner rect aligned with the original OBB's orientation.
+
+    Unreachable while tiling rejects OBB; kept for future support.
 
     Project clipped points into the original OBB's local frame, take the AABB there,
     then rotate back. Result keeps the original rotation (so a near-vertical OBB stays

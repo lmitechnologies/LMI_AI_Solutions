@@ -49,7 +49,7 @@ def test_tile_apply_coords_xyxy_clips_and_drops_per_tile():
     assert len(out["scores"][2]) == 0 and len(out["classes"][3]) == 0
 
 
-def test_tile_apply_coords_obb_clipped_and_refit_to_min_area_rect():
+def test_tile_apply_coords_rejects_obb():
     _, rec, history = _tile_pipeline()
     obb = torch.tensor([[[70.0, 40.0], [130.0, 40.0], [130.0, 80.0], [70.0, 80.0]]])
     results = {
@@ -59,23 +59,11 @@ def test_tile_apply_coords_obb_clipped_and_refit_to_min_area_rect():
         "segments": [[]],
         "points": [torch.zeros((0, 1, 3))],
     }
-    out = rec.apply_coordinates(results, history)
-
-    assert out["boxes"][0].shape == (1, 4, 2)
-    tl = out["boxes"][0][0]
-    assert tl[:, 0].min().item() >= 70.0 - 1e-4 and tl[:, 0].max().item() <= 100.0 + 1e-4
-    assert tl[:, 1].min().item() >= 40.0 - 1e-4 and tl[:, 1].max().item() <= 80.0 + 1e-4
-
-    assert out["boxes"][1].shape == (1, 4, 2)
-    tr = out["boxes"][1][0]
-    assert tr[:, 0].min().item() >= 0.0 - 1e-4 and tr[:, 0].max().item() <= 30.0 + 1e-4
-    assert tr[:, 1].min().item() >= 40.0 - 1e-4 and tr[:, 1].max().item() <= 80.0 + 1e-4
-
-    assert out["boxes"][2].shape == (0, 4, 2)
-    assert out["boxes"][3].shape == (0, 4, 2)
+    with pytest.raises(ValueError, match="does not support oriented boxes"):
+        rec.apply_coordinates(results, history)
 
 
-def test_tile_apply_coords_points_visibility_zeroed_outside_tile():
+def test_tile_apply_coords_rejects_keypoints():
     _, rec, history = _tile_pipeline()
     pts = torch.tensor([[[30.0, 30.0, 2.0], [150.0, 30.0, 2.0], [30.0, 150.0, 2.0]]])
     results = {
@@ -85,12 +73,8 @@ def test_tile_apply_coords_points_visibility_zeroed_outside_tile():
         "segments": [[]],
         "points": [pts],
     }
-    out = rec.apply_coordinates(results, history)
-    assert out["points"][0].shape == (1, 3, 3)
-    assert out["points"][0][0, 0].tolist() == [pytest.approx(30.0), pytest.approx(30.0), pytest.approx(2.0)]
-    assert out["points"][0][0, 1, 2].item() == 0.0
-    assert out["points"][0][0, 2, 2].item() == 0.0
-    assert out["points"][3].shape == (0, 3, 3)
+    with pytest.raises(ValueError, match="does not support keypoints"):
+        rec.apply_coordinates(results, history)
 
 
 def test_tile_apply_coords_segments_clipped_to_tile_rect():
@@ -429,10 +413,10 @@ def test_tile_merge_fragments_rejects_zero_overlap():
         steps.tile(tile_size=100, stride=100, merge_fragments=True)
 
 
-def test_tile_merge_fragments_rejects_keypoints():
+def test_tile_revert_coords_rejects_keypoints():
     pre, rec = Preprocessor(), Reconstructor()
     img = torch.zeros(100, 250, 3)
-    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=80, merge_fragments=True)])
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=80)])
     results = _empty_results(n=3, points=[torch.zeros((1, 2, 3)) for _ in range(3)])
     with pytest.raises(ValueError, match="does not support keypoints"):
         rec.reconstruct_coordinates(results, history)
@@ -647,3 +631,96 @@ def test_tile_edge_tolerance_reaches_the_merge_step():
     out = rec.reconstruct_coordinates(_two_tile_results(boxes, scores), history)
     assert out["boxes"][0].shape == (1, 4)
     assert torch.allclose(out["boxes"][0], torch.tensor([[40.0, 20.0, 120.0, 50.0]]))
+
+
+def _two_dogs_either_side_of_a_seam(stride):
+    """Two separate same-class objects meeting at x=320: one ends at the seam, the other starts there."""
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(320, 576, 3)  # 2 tiles wide at either stride
+    _, history = pre.preprocess([img], [steps.tile(tile_size=320, stride=[320, stride])])
+    left_local = torch.tensor([[200.0, 100.0, 320.0, 200.0]])  # tile 0, ends on its right edge
+    right_local = torch.tensor([[float(320 - stride), 100.0, float(440 - stride), 200.0]])  # tile 1, global 320..440
+    results = _empty_results(
+        n=2,
+        boxes=[left_local, right_local],
+        scores=[torch.tensor([0.9]), torch.tensor([0.8])],
+        classes=[np.array([0], np.int32) for _ in range(2)],
+        points=[torch.zeros((0, 1, 3)) for _ in range(2)],
+    )
+    return rec.reconstruct_coordinates(results, history)
+
+
+def test_tile_merge_defaults_to_auto_and_skips_without_overlap():
+    """Zero overlap puts both tile edges on one line, so two touching objects would fuse. Skip instead."""
+    out = _two_dogs_either_side_of_a_seam(stride=320)
+    assert out["boxes"][0].shape == (2, 4)
+
+
+def test_tile_merge_auto_runs_once_there_is_overlap():
+    """With overlap the neighbour sees the right-hand object whole, so the two stay separate..."""
+    out = _two_dogs_either_side_of_a_seam(stride=256)
+    assert out["boxes"][0].shape == (2, 4)
+
+
+def test_tile_merge_auto_unions_a_genuinely_cut_object():
+    """...while one object actually cut by the seam is rejoined, with no merge_fragments passed."""
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 150, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=60)])  # 40px overlap, auto
+    results = _empty_results(
+        n=2,
+        boxes=[torch.tensor([[40.0, 20.0, 100.0, 50.0]]), torch.tensor([[0.0, 20.0, 60.0, 50.0]])],
+        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        classes=[np.array([0], np.int32) for _ in range(2)],
+        points=[torch.zeros((0, 1, 3)) for _ in range(2)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[40.0, 20.0, 120.0, 50.0]]))
+
+
+def test_tile_revert_coords_rejects_oriented_boxes():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 250, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=80)])
+    obb = torch.tensor([[[10.0, 10.0], [40.0, 10.0], [40.0, 40.0], [10.0, 40.0]]])
+    results = _empty_results(
+        n=3,
+        boxes=[obb, torch.zeros((0, 4, 2)), torch.zeros((0, 4, 2))],
+        scores=[torch.tensor([0.9]), torch.zeros((0,)), torch.zeros((0,))],
+        classes=[np.array([0], np.int32), np.zeros((0,), np.int32), np.zeros((0,), np.int32)],
+    )
+    with pytest.raises(ValueError, match="does not support oriented boxes"):
+        rec.reconstruct_coordinates(results, history)
+
+
+def test_tile_rejects_keypoints_even_with_merging_off():
+    """Turning merging off is not a way in: tiling itself has no rule for keypoints."""
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 250, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=80, merge_fragments=False)])
+    results = _empty_results(n=3, points=[torch.zeros((1, 2, 3)) for _ in range(3)])
+    with pytest.raises(ValueError, match="does not support keypoints"):
+        rec.reconstruct_coordinates(results, history)
+
+
+def test_tile_merge_false_stays_off_with_overlap():
+    """Explicitly off must not merge a cut object, even where auto would."""
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 150, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=60, merge_fragments=False)])
+    results = _empty_results(
+        n=2,
+        boxes=[torch.tensor([[40.0, 20.0, 100.0, 50.0]]), torch.tensor([[0.0, 20.0, 60.0, 50.0]])],
+        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        classes=[np.array([0], np.int32) for _ in range(2)],
+        points=[torch.zeros((0, 1, 3)) for _ in range(2)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (2, 4)
+
+
+def test_tile_merge_auto_does_not_validate_overlap_at_construction():
+    """Only an explicit True demands enough overlap; the default accepts any grid."""
+    steps.tile(tile_size=100, stride=100)
+    steps.tile(tile_size=100, stride=80, scale_mode="interpolation")

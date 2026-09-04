@@ -619,3 +619,26 @@ def test_tiled_predict_rejects_a_tile_count_that_does_not_match(yolo_models, img
 
     with pytest.raises(ValueError, match="tiles, but"):
         model.predict(tiles[:-1], configs=0.25, operators=history)
+
+
+def test_tiled_predict_rejects_pose(yolo_models, imgs_coco):
+    """Tiling has no rule for keypoints, so a pose model must refuse rather than return them wrong."""
+    from lmi_utils.preprocess_utils import steps
+    from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+
+    model = yolo_models["pose"][0]
+    tiles, history = Preprocessor().preprocess(imgs_coco[0][:1], [steps.tile(tile_size=320, stride=256)])
+
+    with pytest.raises(ValueError, match="does not support keypoints"):
+        model.predict(tiles, configs=0.25, operators=history)
+
+
+def test_tiled_predict_rejects_obb(yolo_models, imgs_dota8):
+    from lmi_utils.preprocess_utils import steps
+    from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+
+    model = yolo_models["obb_dota8"][0]
+    tiles, history = Preprocessor().preprocess(imgs_dota8[0][:1], [steps.tile(tile_size=512, stride=400)])
+
+    with pytest.raises(ValueError, match="does not support oriented boxes"):
+        model.predict(tiles, configs=0.1, operators=history)
