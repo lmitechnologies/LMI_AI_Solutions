@@ -21,7 +21,7 @@ test = [
     "onnx==1.22.0",
     "onnxslim==0.1.96",
     "pytest==9.1.1",
-    "rfdetr==1.9.3",
+    "rfdetr==1.9.4",
     "albumentations>=2.0.8,<3.0.0",
     "transformers==5.15.1",
     "pycocotools==2.0.11",
