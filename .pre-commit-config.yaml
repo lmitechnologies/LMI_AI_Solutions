@@ -5,6 +5,7 @@ repos:
       - id: ruff
         args: [ --fix ]
       - id: ruff-format
+        exclude: '\.md$'
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
