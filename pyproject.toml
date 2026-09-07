@@ -23,7 +23,7 @@ test = [
     "pytest==9.1.1",
     "rfdetr==1.9.4",
     "albumentations>=2.0.8,<3.0.0",
-    "transformers==5.15.1",
+    "transformers==5.16.1",
     "pycocotools==2.0.11",
     "shapely==2.1.2",
 ]
