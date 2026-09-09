@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from lmi_utils.image_utils.tiler import Tiler
-from lmi_utils.postprocess_utils.nms import class_aware_nms, filter_instances
+from lmi_utils.postprocess_utils.nms import binarize_masks, class_aware_nms, filter_instances
 from lmi_utils.postprocess_utils.tile_merge import DEFAULT_EDGE_TOLERANCE, instance_boxes, merge_tile_fragments
 
 from .._coords import apply_coord_transform
@@ -459,13 +459,15 @@ def _shift_tile_coords(
                     masks.float().unsqueeze(1), size=(new_h, new_w), mode="bilinear", align_corners=False
                 ).squeeze(1)
                 > 0.5
-            ).float()
+            )
             paste_y = round(offset_y * sy)
             paste_x = round(offset_x * sx)
         else:
-            masks = masks.float()
+            masks = binarize_masks(masks)
             paste_y, paste_x = offset_y, offset_x
-        canvas = torch.zeros(len(masks), canvas_h, canvas_w, dtype=masks.dtype, device=masks.device)
+        # bool, not float: a full-image float32 canvas per tile is gigabytes on a dense scene.
+        # od_base restores the caller's dtype once the whole batch is reverted.
+        canvas = torch.zeros(len(masks), canvas_h, canvas_w, dtype=torch.bool, device=masks.device)
         h_end = min(paste_y + masks.shape[1], canvas_h)
         w_end = min(paste_x + masks.shape[2], canvas_w)
         canvas[:, paste_y:h_end, paste_x:w_end] = masks[:, : h_end - paste_y, : w_end - paste_x]

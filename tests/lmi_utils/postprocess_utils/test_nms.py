@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import torch
 
+import lmi_utils.postprocess_utils.nms as nms
 from lmi_utils.postprocess_utils.nms import class_aware_nms
 
 
@@ -55,3 +56,41 @@ def test_iou_rule_still_applies_when_containment_is_disabled():
 def test_no_thresholds_is_a_no_op():
     merged = _result([[0, 0, 80, 80], [20, 20, 40, 40]], [0.9, 0.6])
     assert class_aware_nms(merged, None, None) is merged
+
+
+def _dense_overlap(masks):
+    """The unblocked formulation _mask_overlap replaced."""
+    flat = (masks.flatten(1) != 0).float()
+    return flat @ flat.t(), flat.sum(dim=1)
+
+
+@pytest.mark.parametrize("n", [0, 1, 7, 16])
+def test_blocked_mask_overlap_matches_the_dense_formulation(monkeypatch, n):
+    monkeypatch.setattr(nms, "_OVERLAP_BLOCK_BYTES", 4 * 4 * 25)  # forces several blocks per axis
+    masks = torch.rand(n, 5, 5) > 0.5
+    inter, area = nms._mask_overlap(masks)
+    want_inter, want_area = _dense_overlap(masks)
+    assert torch.equal(inter, want_inter)
+    assert torch.equal(area, want_area)
+
+
+def test_mask_overlap_area_counts_pixels_not_promoted_sums():
+    masks = torch.zeros(2, 4, 4, dtype=torch.bool)
+    masks[0, :2, :2] = True
+    masks[1, 0, 0] = True
+    _, area = nms._mask_overlap(masks)
+    assert area.tolist() == [4.0, 1.0]
+
+
+@pytest.mark.parametrize(
+    "masks, want",
+    [
+        (torch.tensor([[[0, 1]]], dtype=torch.uint8), [[[False, True]]]),
+        (torch.tensor([[[0.0, 0.4, 0.6]]]), [[[False, False, True]]]),  # soft masks threshold at 0.5
+        (torch.tensor([[[False, True]]]), [[[False, True]]]),
+    ],
+)
+def test_binarize_masks(masks, want):
+    out = nms.binarize_masks(masks)
+    assert out.dtype == torch.bool
+    assert out.tolist() == want

@@ -18,6 +18,9 @@ import torch
 _EPS = 1e-9
 
 
+_OVERLAP_BLOCK_BYTES = 256 << 20  # float32 operand budget per matmul block
+
+
 def class_aware_nms(merged: Dict[str, Any], iou_thr: Optional[float], containment_thr: Optional[float] = None) -> Dict[str, Any]:
     """Greedy class-aware NMS over a merged result dict. No-op without usable scores/geometry.
 
@@ -86,10 +89,32 @@ def _box_overlap(boxes: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     return inter_w * inter_h, area
 
 
+def binarize_masks(masks: torch.Tensor) -> torch.Tensor:
+    """Instance masks as bool. Floats threshold at 0.5, matching the resampling path."""
+    if masks.dtype == torch.bool:
+        return masks
+    return masks > 0.5 if masks.is_floating_point() else masks != 0
+
+
 def _mask_overlap(masks: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Intersection matrix and areas for binary instance masks (N, H, W)."""
-    flat = (masks.reshape(masks.shape[0], -1) != 0).float()
-    return flat @ flat.t(), flat.sum(dim=1)
+    """Intersection matrix and areas for binary instance masks (N, H, W).
+
+    Blocked over both axes: the dense (N, H*W) float operand the matmul wants is gigabytes once a
+    tiled batch and a full-size image meet. Same dot products, so the result is unchanged.
+    """
+    flat = binarize_masks(masks).flatten(1)  # flatten, not reshape: reshape(0, -1) is ambiguous and raises
+    n, hw = flat.shape
+    inter = torch.zeros(n, n, dtype=torch.float32, device=flat.device)
+    block = max(1, min(n, int(_OVERLAP_BLOCK_BYTES // max(hw * 4, 1))))
+    for i in range(0, n, block):
+        rows = flat[i : i + block].float()
+        for j in range(i, n, block):
+            v = rows @ flat[j : j + block].float().t()
+            inter[i : i + block, j : j + block] = v
+            if j > i:
+                inter[j : j + block, i : i + block] = v.t()
+    # areas off the diagonal: torch promotes a bool .sum() to int64 across the whole array first
+    return inter, inter.diagonal().clone()
 
 
 def _polygon_overlap(polys: List[np.ndarray]) -> Tuple[torch.Tensor, torch.Tensor]:
