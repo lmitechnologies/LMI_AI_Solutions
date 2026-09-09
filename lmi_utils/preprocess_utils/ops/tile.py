@@ -316,23 +316,27 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     sx = im_w / scale_w if is_interp else 1.0
     sy = im_h / scale_h if is_interp else 1.0
 
-    target_size = (im_h, im_w) if is_interp else (scale_h, scale_w)
+    # paste straight at image size: a padded canvas sliced afterwards stays a non-contiguous view that
+    # pins the bigger tensor and forces a fresh contiguous copy on every downstream flatten
+    target_size = (im_h, im_w)
+
+    counts = [_instance_count(r) for r in tile_results]
+    mask_buf = _allocate_mask_buffer(tile_results, sum(counts), target_size)
 
     shifted = []
     tile_idx_parts = []
+    at = 0
     for idx, r in enumerate(tile_results):
         row = idx // n_tiles_w
         col = idx % n_tiles_w
-        s = _shift_tile_coords(r, col * stride_w, row * stride_h, sx, sy, target_size)
+        out = None if mask_buf is None else mask_buf[at : at + counts[idx]]
+        s = _shift_tile_coords(r, col * stride_w, row * stride_h, sx, sy, target_size, mask_out=out)
+        at += counts[idx]
         shifted.append(s)
         tile_idx_parts.append(torch.full((_instance_count(s),), idx, dtype=torch.long))
 
-    merged = _concat_tile_results(shifted)
+    merged = _concat_tile_results(shifted, masks=mask_buf)
     tile_idx = torch.cat(tile_idx_parts) if tile_idx_parts else torch.zeros(0, dtype=torch.long)
-
-    masks = merged.get("masks")
-    if masks is not None and (masks.shape[-2] != im_h or masks.shape[-1] != im_w):
-        merged["masks"] = masks[..., :im_h, :im_w]
 
     if not is_interp and (scale_h != im_h or scale_w != im_w):
         merged, tile_idx = _drop_in_padding(merged, tile_idx, im_h, im_w)
@@ -437,8 +441,19 @@ def _clip_to_image(merged: Dict[str, Any], im_h: int, im_w: int) -> Dict[str, An
 
 
 def _shift_tile_coords(
-    result: Dict[str, Any], offset_x: int, offset_y: int, sx: float, sy: float, target_size: Tuple[int, int]
+    result: Dict[str, Any],
+    offset_x: int,
+    offset_y: int,
+    sx: float,
+    sy: float,
+    target_size: Tuple[int, int],
+    mask_out: Optional[torch.Tensor] = None,
 ) -> Dict[str, Any]:
+    """Offset one tile's predictions into image space.
+
+    ``mask_out`` is this tile's zeroed slice of the batch mask buffer; passing it keeps the caller
+    from holding every tile's canvas alive while ``torch.cat`` allocates the combined one.
+    """
     scaled = sx != 1.0 or sy != 1.0
 
     def xy_fn(xy: torch.Tensor) -> torch.Tensor:
@@ -467,7 +482,7 @@ def _shift_tile_coords(
             paste_y, paste_x = offset_y, offset_x
         # bool, not float: a full-image float32 canvas per tile is gigabytes on a dense scene.
         # od_base restores the caller's dtype once the whole batch is reverted.
-        canvas = torch.zeros(len(masks), canvas_h, canvas_w, dtype=torch.bool, device=masks.device)
+        canvas = mask_out if mask_out is not None else torch.zeros(len(masks), canvas_h, canvas_w, dtype=torch.bool, device=masks.device)
         h_end = min(paste_y + masks.shape[1], canvas_h)
         w_end = min(paste_x + masks.shape[2], canvas_w)
         canvas[:, paste_y:h_end, paste_x:w_end] = masks[:, : h_end - paste_y, : w_end - paste_x]
@@ -476,12 +491,22 @@ def _shift_tile_coords(
     return apply_coord_transform(result, xy_fn=xy_fn, mask_fn=mask_fn)
 
 
-def _concat_tile_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _allocate_mask_buffer(tile_results: List[Dict[str, Any]], total: int, target_size: Tuple[int, int]) -> Optional[torch.Tensor]:
+    """One zeroed (total, H, W) bool buffer for the batch, or None when no tile carries masks."""
+    sample = next((r["masks"] for r in tile_results if isinstance(r.get("masks"), torch.Tensor) and len(r["masks"])), None)
+    if sample is None or not total:
+        return None
+    return torch.zeros(total, target_size[0], target_size[1], dtype=torch.bool, device=sample.device)
+
+
+def _concat_tile_results(results: List[Dict[str, Any]], masks: Optional[torch.Tensor] = None) -> Dict[str, Any]:
     if not results:
         return {}
 
     merged = {}
     all_keys = {k for r in results for k in r}
+    if masks is not None:
+        all_keys.discard("masks")  # already written in place, concatenating would double the peak
 
     for key in all_keys:
         vals = [r[key] for r in results if key in r and r[key] is not None]
@@ -496,6 +521,8 @@ def _concat_tile_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
             non_empty = [v for v in vals if len(v) > 0]
             merged[key] = torch.cat(non_empty) if non_empty else vals[0]
 
+    if masks is not None:
+        merged["masks"] = masks
     return merged
 
 
