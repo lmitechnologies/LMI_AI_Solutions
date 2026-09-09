@@ -42,15 +42,17 @@ def merge_tile_fragments(
         tile_origins: (T, 2) tile top-left (y, x) in image coordinates.
         tile_size: (tile_h, tile_w).
         im_size: (im_h, im_w) of the original, unpadded image.
-        containment: fraction of a fragment that must sit inside an untruncated prediction for
-            that prediction to explain it (and so clear its truncation flags).
+        containment: fraction of a fragment that must sit inside a same-class prediction from an
+            overlapping tile for that prediction to cover it. A covered fragment joins that
+            prediction's group instead of pairing across the seam.
         edge_tolerance: px from a tile edge that still counts as touching it. Reflects the
             detector's box-regression error at a crop boundary, which is set by the detection
             head's feature stride, so it does not scale with tile size.
 
-    Returns the dict with each fragment group replaced by a single unioned instance. Scores are
-    the group maximum, since fragment scores are consistently low and averaging would penalise an
-    object for spanning more tiles.
+    Returns the dict with each fragment group replaced by one instance: an uncut member's own
+    geometry when the group has one, else the union of the fragments. Scores are the group
+    maximum, since fragment scores are consistently low and averaging would penalise an object
+    for spanning more tiles.
     """
     n = len(tile_idx)
     if n < 2:
@@ -66,13 +68,17 @@ def merge_tile_fragments(
 
     codes = class_codes(merged.get("classes"), len(tile_idx))
     flags = _truncation_flags(boxes, tile_idx, tile_origins, tile_size, im_size, edge_tolerance)
-    flags = _clear_explained(merged, flags, tile_idx, tile_origins, tile_size, codes, containment)
+    covers = _covers(merged, flags, tile_idx, tile_origins, tile_size, codes, containment)
+    covered = covers.any(dim=0)
+    flags = flags.clone()
+    flags[covered] = False  # must not chain to another object across the seam
+    whole = ~flags.any(dim=1) & ~covered
 
-    pairs = _pair_fragments(boxes, flags, tile_idx, tile_rc, codes)
+    pairs = _pair_fragments(boxes, flags, tile_idx, tile_rc, codes) | covers | covers.t()
     groups = _connected_groups(pairs, len(tile_idx))
     if all(len(g) == 1 for g in groups):
         return merged
-    return _union_groups(merged, groups)
+    return _union_groups(merged, groups, whole)
 
 
 def _drop_below_floor(merged: Dict[str, Any], tile_idx: torch.Tensor) -> Tuple[Dict[str, Any], torch.Tensor]:
@@ -151,7 +157,7 @@ def _tile_overlap_matrix(tile_origins: np.ndarray, tile_size: Tuple[int, int]) -
     return (inter_h > 0) & (inter_w > 0)
 
 
-def _clear_explained(
+def _covers(
     merged: Dict[str, Any],
     flags: torch.Tensor,
     tile_idx: torch.Tensor,
@@ -160,27 +166,25 @@ def _clear_explained(
     codes: Optional[torch.Tensor],
     containment: float,
 ) -> torch.Tensor:
-    """Drop the truncation flags of any fragment an untruncated prediction already explains.
+    """(N, N) bool [j, i]: prediction j from another, overlapping tile covers fragment i — i is cut at a seam,
+    same class, and at least ``containment`` of it lies inside j.
 
-    With overlap the whole object is usually also detected outright by a neighbouring tile.
-    Left flagged, its fragments still merge behind it and the merged box beats the correct
-    detection at containment NMS.
+    j may itself be cut: an object wider than a tile is never seen whole, and its middle-row
+    pieces are the only detections that span the pieces cut off at the rows above and below.
     """
+    n = len(tile_idx)
     if not flags.any():
-        return flags
+        return torch.zeros(n, n, dtype=torch.bool)
     overlap = pairwise_overlap(merged)
-    if overlap is None or overlap[0].shape[0] != len(tile_idx):
-        return flags
+    if overlap is None or overlap[0].shape[0] != n:
+        return torch.zeros(n, n, dtype=torch.bool)
 
     contained = containment_matrix(*(t.detach().cpu() for t in overlap)) >= containment  # [j, i]: i inside j
-    explains = contained & (~flags.any(dim=1))[:, None] & (tile_idx[:, None] != tile_idx[None, :])
-    explains &= _tile_overlap_matrix(tile_origins, tile_size)[tile_idx][:, tile_idx]
+    covers = contained & flags.any(dim=1)[None, :] & (tile_idx[:, None] != tile_idx[None, :])
+    covers &= _tile_overlap_matrix(tile_origins, tile_size)[tile_idx][:, tile_idx]
     if codes is not None:
-        explains &= codes[:, None] == codes[None, :]
-
-    flags = flags.clone()
-    flags[explains.any(dim=0)] = False
-    return flags
+        covers &= codes[:, None] == codes[None, :]
+    return covers
 
 
 def _pair_fragments(
@@ -241,18 +245,22 @@ def _connected_groups(pairs: torch.Tensor, n: int) -> List[List[int]]:
     return list(buckets.values())
 
 
-def _union_groups(merged: Dict[str, Any], groups: List[List[int]]) -> Dict[str, Any]:
-    """Collapse each group to its highest-scoring member, then widen that member's geometry."""
+def _union_groups(merged: Dict[str, Any], groups: List[List[int]], whole: torch.Tensor) -> Dict[str, Any]:
+    """Collapse each group to its highest-scoring member; widen it only when no member saw the object whole."""
     scores = merged.get("scores")
     reps: List[int] = []
+    widen: List[bool] = []
     for g in groups:
-        if len(g) == 1 or not isinstance(scores, torch.Tensor) or len(scores) <= max(g):
-            reps.append(g[0])
+        pool = [i for i in g if whole[i]] or g
+        if len(pool) == 1 or not isinstance(scores, torch.Tensor) or len(scores) <= max(g):
+            reps.append(pool[0])
         else:
-            reps.append(max(g, key=lambda i: float(scores[i])))
+            reps.append(max(pool, key=lambda i: float(scores[i])))
+        widen.append(len(g) > 1 and pool is g)
     order = sorted(range(len(groups)), key=lambda k: reps[k])
     groups = [groups[k] for k in order]
     reps = [reps[k] for k in order]
+    widen = [widen[k] for k in order]
 
     out = filter_instances(merged, torch.tensor(reps, dtype=torch.long))
 
@@ -260,6 +268,8 @@ def _union_groups(merged: Dict[str, Any], groups: List[List[int]]) -> Dict[str, 
     if isinstance(boxes, torch.Tensor) and len(boxes):
         stacked = out["boxes"].clone()
         for k, g in enumerate(groups):
+            if not widen[k]:
+                continue
             members = boxes[torch.tensor(g, dtype=torch.long, device=boxes.device)]
             stacked[k, :2] = members[:, :2].amin(dim=0)
             stacked[k, 2:] = members[:, 2:].amax(dim=0)
@@ -269,14 +279,14 @@ def _union_groups(merged: Dict[str, Any], groups: List[List[int]]) -> Dict[str, 
     if isinstance(masks, torch.Tensor) and len(masks):
         unioned = out["masks"].clone()
         for k, g in enumerate(groups):
-            if len(g) > 1:
+            if widen[k]:
                 idx = torch.tensor(g, dtype=torch.long, device=masks.device)
                 unioned[k] = (masks[idx] != 0).any(dim=0).to(masks.dtype)
         out["masks"] = unioned
 
     segments = merged.get("segments")
     if segments is not None and len(segments):
-        out["segments"] = [_union_polygons([segments[i] for i in g]) if len(g) > 1 else segments[g[0]] for g in groups]
+        out["segments"] = [_union_polygons([segments[i] for i in g]) if widen[k] else segments[reps[k]] for k, g in enumerate(groups)]
 
     return out
 

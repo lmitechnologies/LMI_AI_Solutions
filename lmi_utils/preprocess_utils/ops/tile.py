@@ -36,8 +36,8 @@ class TileConfig(Config):
     score_threshold: dropped after merging, so a fragment is judged on its group's score.
     nms_iou: class-aware NMS IoU threshold across tiles. None disables both NMS rules.
     containment: fraction of one prediction that must lie inside another to count as contained.
-        Used to suppress a fragment nested in a whole detection, and to clear the truncation flag
-        of a fragment that an overlapping tile already explains. None disables the containment rule.
+        Used to suppress a fragment nested in a whole detection, and to fold a fragment into the
+        overlapping tile's prediction that covers it. None disables the containment rule.
 
     edge_tolerance: px from a tile edge that still counts as touching it, which is what marks a
         prediction as a fragment. Absolute, not a fraction of the tile: it tracks the detector's

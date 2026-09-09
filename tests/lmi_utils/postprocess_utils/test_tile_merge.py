@@ -44,15 +44,17 @@ def test_seam_fragments_union_into_one_box():
     assert out["scores"].item() == pytest.approx(0.9)  # group max, not mean
 
 
-def test_untruncated_prediction_explains_a_fragment_and_blocks_the_merge():
-    # T1 also saw the object whole (0.9); T0's fragment is contained in it, so its flag clears and
-    # it must not pair with T1's left-flagged detection behind that correct answer.
+def test_covered_fragment_joins_the_whole_detection_and_keeps_its_extent():
+    # T1 also saw the object whole (0.9); T0's fragment is contained in it, so it joins that group
+    # instead of pairing with T1's left-flagged detection, and the whole detection's box is kept.
     out = _merge(
         [[70, 20, 100, 50], [70, 20, 120, 50], [60, 20, 120, 50]],
         [0.4, 0.9, 0.5],
         [0, 1, 1],
     )
-    assert out["boxes"].shape == (3, 4)
+    assert out["boxes"].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([70.0, 20.0, 120.0, 50.0]))
+    assert out["scores"].item() == pytest.approx(0.9)
 
 
 def test_without_the_explanation_the_same_fragments_do_merge():
@@ -120,14 +122,16 @@ def test_fragment_within_the_edge_tolerance_still_pairs():
 
 def test_two_objects_abutting_at_the_seam_do_not_merge():
     # A ends where B begins. Each tile sees one whole and the other cut, so the two cut halves
-    # face each other across the seam and would pair — the whole detections explain them instead.
+    # face each other across the seam and would pair — the whole detections claim them instead.
     # This is the defence that is absent at zero overlap, which is why merging refuses it.
     out = _merge(
         [[20, 20, 80, 50], [80, 20, 100, 50], [60, 20, 80, 50], [80, 20, 140, 50]],
         [0.9, 0.5, 0.5, 0.9],
         [0, 0, 1, 1],
     )
-    assert out["boxes"].shape == (4, 4)
+    assert out["boxes"].shape == (2, 4)
+    assert sorted(out["boxes"][:, 0].tolist()) == [20.0, 80.0]
+    assert sorted(out["boxes"][:, 2].tolist()) == [80.0, 140.0]
 
 
 # A 2x2 block of 100px tiles at stride 60 over a 150x150 image.
@@ -174,6 +178,36 @@ def test_object_spanning_three_tiles_vertically():
     assert out["boxes"].shape == (1, 4)
     assert torch.allclose(out["boxes"][0], torch.tensor([30.0, 40.0, 70.0, 200.0]))
     assert out["scores"].item() == pytest.approx(0.5)
+
+
+def test_object_wider_than_a_tile_across_three_overlapping_rows():
+    # 3 rows x 2 cols at stride 60 over a 210x150 image. The object (x 20..140, y 80..130) is wider
+    # than a tile, so no piece is uncut: rows 0 and 2 hold a top and a bottom half, row 1 holds the
+    # full height cut left/right. The halves are not cut at row 1's edges, so seam pairing alone
+    # leaves three groups and NMS then keeps the higher-scoring halves over the whole.
+    rc, origins = _grid(3, 2)
+    out = merge_tile_fragments(
+        _result(
+            [
+                [20, 80, 100, 100],
+                [60, 80, 140, 100],
+                [20, 80, 100, 130],
+                [60, 80, 140, 130],
+                [20, 120, 100, 130],
+                [60, 120, 140, 130],
+            ],
+            [0.5, 0.55, 0.4, 0.45, 0.6, 0.65],
+        ),
+        torch.tensor([0, 1, 2, 3, 4, 5]),
+        rc,
+        origins,
+        (100, 100),
+        (210, 150),
+        0.8,
+    )
+    assert out["boxes"].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([20.0, 80.0, 140.0, 130.0]))
+    assert out["scores"].item() == pytest.approx(0.65)
 
 
 def test_object_spanning_a_3x2_block_of_six_tiles():
