@@ -356,7 +356,6 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
             merged = merge_tile_fragments(
                 merged,
                 tile_idx,
-                rc,
                 origins,
                 (tile_h, tile_w),
                 (im_h, im_w),
