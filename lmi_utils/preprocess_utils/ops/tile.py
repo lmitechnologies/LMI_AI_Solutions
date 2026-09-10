@@ -365,8 +365,8 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
 
     merged = _apply_score_threshold(merged, float(tiler_meta.get("score_threshold") or 0.0))
 
-    # containment suppression runs once: in the merge if it ran, here if it did not. Merging widens a box
-    # to its group's union, so re-testing containment would delete the neighbours that union now encloses.
+    # merging replaces containment suppression: it widens a box to its group's union, so a containment test
+    # would delete the neighbours that union now encloses.
     iou_thr = tiler_meta.get("nms_iou")
     containment = None if did_merge else tiler_meta.get("containment")
     if iou_thr is not None or containment is not None:

@@ -41,13 +41,13 @@ def merge_tile_fragments(
         tile_size: (tile_h, tile_w).
         im_size: (im_h, im_w) of the original image, without padding.
         containment: min fraction of a fragment that must lie inside an uncut prediction for the two to link.
-            A fragment-only output lying this far inside another output is dropped.
         edge_tolerance: px from a tile edge that still counts as touching it. Matches the detector's box error
             at a crop edge, so it does not scale with tile size.
 
     Returns:
         The dict with each linked group replaced by its uncut members, one per distinct object. A group with
-        no uncut member becomes the union of its fragments, scored by its best fragment.
+        no uncut member becomes the union of its fragments, scored by its best fragment, and is dropped when
+        another tile saw all of it.
     """
     n = len(tile_idx)
     if n < 2:
@@ -70,7 +70,7 @@ def merge_tile_fragments(
     if any(len(g) > 1 for g in groups):
         out, groups = _union_groups(merged, groups, whole)
     fragment_only = torch.tensor([not bool(whole[torch.tensor(g)].any()) for g in groups])
-    return _absorb_fragments(out, fragment_only, containment)
+    return _drop_fragments_seen_whole(out, fragment_only, tile_origins, tile_size, im_size, edge_tolerance)
 
 
 def _drop_below_floor(merged: Dict[str, Any], tile_idx: torch.Tensor) -> Tuple[Dict[str, Any], torch.Tensor]:
@@ -343,37 +343,39 @@ def _union_groups(merged: Dict[str, Any], groups: List[List[int]], whole: torch.
     return out, groups
 
 
-def _absorb_fragments(out: Dict[str, Any], fragment_only: torch.Tensor, containment: float) -> Dict[str, Any]:
-    """Drop leftover fragments. Output r is dropped when all hold:
+def _drop_fragments_seen_whole(
+    out: Dict[str, Any],
+    fragment_only: torch.Tensor,
+    tile_origins: np.ndarray,
+    tile_size: Tuple[int, int],
+    im_size: Tuple[int, int],
+    tolerance: float,
+) -> Dict[str, Any]:
+    """Drop leftover fragments that another tile saw in full. Output r is dropped when all hold:
 
     1. r was built only from fragments.
-    2. Another output k has the same class and holds at least ``containment`` of r.
-    3. k was seen whole, or outranks r (higher score, or same score and earlier row).
+    2. r's box lies inside some tile and touches none of that tile's interior edges.
 
-    The agreement check refuses some true links, which would leave pieces of a found object as extra detections.
+    That tile would have detected an object there whole, so r is a noisy extra view of it, or junk. Only position
+    is checked: slivers at a tile edge have noisy boxes that fail a containment test.
     """
     n = len(fragment_only)
-    boxes = instance_boxes(out) if n >= 2 and fragment_only.any() else None
+    boxes = instance_boxes(out) if fragment_only.any() else None
     if boxes is None or len(boxes) != n:
         return out
 
     frag = fragment_only.nonzero(as_tuple=True)[0]
-    scores = out.get("scores")
-    s = scores.detach().cpu().float() if isinstance(scores, torch.Tensor) and len(scores) == n else torch.zeros(n)
-    idx = torch.arange(n)
-    outranks = (s[:, None] > s[frag][None, :]) | ((s[:, None] == s[frag][None, :]) & (idx[:, None] < frag[None, :]))
-    cand = _touching(boxes, frag) & (~fragment_only[:, None] | outranks) & (idx[:, None] != frag[None, :])
-    codes = class_codes(out.get("classes"), n)
-    if codes is not None:
-        cand &= codes[:, None] == codes[frag][None, :]
-    k, col = cand.nonzero(as_tuple=True)
-    if not len(k):
+    n_tiles = len(tile_origins)
+    b = boxes[frag].repeat_interleave(n_tiles, dim=0)
+    tiles = torch.arange(n_tiles).repeat(len(frag))
+    lo = torch.as_tensor(tile_origins, dtype=torch.float32)[tiles].flip(1)  # (x, y)
+    hi = lo + torch.tensor([tile_size[1], tile_size[0]], dtype=torch.float32)
+    inside = (b[:, :2] >= lo).all(dim=1) & (b[:, 2:] <= hi).all(dim=1)
+    seen = (inside & ~_cut_flags(b, tiles, tile_origins, tile_size, im_size, tolerance)).view(len(frag), n_tiles).any(dim=1)
+    if not seen.any():
         return out
-    inside = _containment(out, boxes, k, frag[col]) >= containment
     drop = torch.zeros(n, dtype=torch.bool)
-    drop[frag[col[inside]]] = True
-    if not drop.any():
-        return out
+    drop[frag[seen]] = True
     return filter_instances(out, (~drop).nonzero(as_tuple=True)[0])
 
 

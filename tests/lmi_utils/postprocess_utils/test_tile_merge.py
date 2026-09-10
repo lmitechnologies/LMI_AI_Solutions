@@ -1,4 +1,4 @@
-"""Fragment merging: cut flags, links between tiles, union, absorption."""
+"""Fragment merging: cut flags, links between tiles, union, dropping fragments another tile saw in full."""
 
 import numpy as np
 import pytest
@@ -120,12 +120,36 @@ def test_two_whole_objects_joined_through_a_cut_coverer_both_survive():
     assert tuple(map(float, s)) in kept
 
 
-def test_a_leftover_fragment_inside_a_whole_detection_is_dropped():
+def test_a_leftover_fragment_the_other_tile_saw_in_full_is_dropped():
     # A is whole in T1. Its T0 piece is cut at x=100 but, from an irregular shape, spans only y 40-60 there,
-    # so it does not agree with A in the shared strip and stays unlinked. It sits inside A, so it is dropped.
+    # so it does not agree with A in the shared strip and stays unlinked. T1 saw all of it, so it is dropped.
     a = [65, 20, 120, 80]
     out = _merge([[65, 40, 100, 60], a], [0.4, 0.9], [0, 1])
     assert out["boxes"].tolist() == [list(map(float, a))]
+
+
+def test_a_noisy_sliver_sticking_out_of_its_whole_detection_is_dropped():
+    # The T0 sliver at x=100 reaches past A in y, so A holds under 0.8 of it and the boxes disagree. T1 saw it in full.
+    a = [70, 25, 120, 45]
+    out = _merge([[90, 20, 100, 55], a], [0.6, 0.9], [0, 1])
+    assert out["boxes"].tolist() == [list(map(float, a))]
+
+
+def test_an_unmatched_sliver_the_other_tile_saw_in_full_is_dropped():
+    out = _merge([[90, 20, 100, 50], [10, 20, 40, 50]], [0.6, 0.9], [0, 0])
+    assert out["boxes"].tolist() == [[10.0, 20.0, 40.0, 50.0]]
+
+
+def test_a_fragment_no_tile_saw_in_full_is_kept():
+    # Reaches past T1's left edge (x=60), so T1 did not see all of it.
+    out = _merge([[30, 20, 100, 50], [10, 60, 40, 90]], [0.6, 0.9], [0, 0])
+    assert out["boxes"].shape == (2, 4)
+
+
+def test_a_fragment_cut_by_both_tiles_is_kept():
+    # Spans the whole overlap: cut at T0's right edge and touching T1's left edge, so neither tile saw it whole.
+    out = _merge([[61, 20, 100, 50], [10, 60, 40, 90]], [0.6, 0.9], [0, 0])
+    assert out["boxes"].shape == (2, 4)
 
 
 def test_fragments_of_different_classes_do_not_pair():
