@@ -100,6 +100,20 @@ def test_a_sliver_inside_one_object_seen_from_two_tiles_still_merges():
     assert torch.allclose(out["boxes"][0], torch.tensor([20.0, 30.0, 80.0, 60.0]))
 
 
+def test_two_whole_objects_joined_through_a_cut_coverer_both_survive():
+    # Q and S are whole in T0 and look cut at T1's left edge (x=60). A large cut box P in T0 covers both
+    # T1 copies, which chains Q and S into one group; the group must still return both objects.
+    q, s = [61, 20, 75, 40], [61, 45, 75, 65]
+    out = _merge(
+        [[30, 10, 100, 70], q, s, q, s],
+        [0.4, 0.9, 0.8, 0.5, 0.5],
+        [0, 0, 0, 1, 1],
+    )
+    kept = {tuple(b) for b in out["boxes"].tolist()}
+    assert tuple(map(float, q)) in kept
+    assert tuple(map(float, s)) in kept
+
+
 def test_fragments_of_different_classes_do_not_pair():
     out = _merge([[40, 20, 100, 50], [60, 20, 120, 50]], [0.5, 0.5], [0, 1], classes=[0, 1])
     assert out["boxes"].shape == (2, 4)

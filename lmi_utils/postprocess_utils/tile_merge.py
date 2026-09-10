@@ -50,8 +50,8 @@ def merge_tile_fragments(
             detector's box-regression error at a crop boundary, which is set by the detection
             head's feature stride, so it does not scale with tile size.
 
-    Returns the dict with each fragment group replaced by one instance: an uncut member's own
-    geometry when the group has one, else the union of the fragments. Scores are the group
+    Returns the dict with each fragment group replaced by one instance per distinct uncut member,
+    using that member's own geometry, else by the union of the fragments. Scores are the group
     maximum, since fragment scores are consistently low and averaging would penalise an object
     for spanning more tiles.
     """
@@ -69,7 +69,7 @@ def merge_tile_fragments(
 
     codes = class_codes(merged.get("classes"), len(tile_idx))
     flags = _truncation_flags(boxes, tile_idx, tile_origins, tile_size, im_size, edge_tolerance)
-    covers = _covers(merged, flags, tile_idx, tile_origins, tile_size, codes, containment)
+    covers, frac = _covers(merged, flags, tile_idx, tile_origins, tile_size, codes, containment)
     covered = covers.any(dim=0)
     flags = flags.clone()
     flags[covered] = False  # must not chain to another object across the seam
@@ -77,6 +77,8 @@ def merge_tile_fragments(
 
     pairs = _pair_fragments(boxes, flags, tile_idx, tile_rc, codes) | covers | covers.t()
     groups = _connected_groups(pairs, len(tile_idx))
+    if frac is not None:
+        groups = _split_distinct_whole(groups, whole, frac)
     if all(len(g) == 1 for g in groups):
         return merged
     return _union_groups(merged, groups, whole)
@@ -166,20 +168,21 @@ def _covers(
     tile_size: Tuple[int, int],
     codes: Optional[torch.Tensor],
     containment: float,
-) -> torch.Tensor:
+) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """(N, N) bool [j, i]: prediction j from another, overlapping tile covers fragment i — i is cut at a seam,
     same class, and at least ``containment`` of it lies inside j.
 
     j may itself be cut: an object wider than a tile is never seen whole, and its middle-row
     pieces are the only detections that span the pieces cut off at the rows above and below.
     Links that would weld two distinct whole objects together are dropped; see ``_unweld``.
+    Also returns the containment fractions it measured, or None when it measured none.
     """
     n = len(tile_idx)
     if not flags.any():
-        return torch.zeros(n, n, dtype=torch.bool)
+        return torch.zeros(n, n, dtype=torch.bool), None
     overlap = pairwise_overlap(merged)
     if overlap is None or overlap[0].shape[0] != n:
-        return torch.zeros(n, n, dtype=torch.bool)
+        return torch.zeros(n, n, dtype=torch.bool), None
 
     frac = containment_matrix(*(t.detach().cpu() for t in overlap))  # [j, i]: fraction of i inside j
     cut = flags.any(dim=1)
@@ -187,7 +190,7 @@ def _covers(
     covers &= _tile_overlap_matrix(tile_origins, tile_size)[tile_idx][:, tile_idx]
     if codes is not None:
         covers &= codes[:, None] == codes[None, :]
-    return _unweld(covers, frac, cut)
+    return _unweld(covers, frac, cut), frac
 
 
 def _unweld(covers: torch.Tensor, frac: torch.Tensor, cut: torch.Tensor) -> torch.Tensor:
@@ -202,8 +205,35 @@ def _unweld(covers: torch.Tensor, frac: torch.Tensor, cut: torch.Tensor) -> torc
     if not conflicted.any():
         return covers
     best = frac.masked_fill(~uncut, -1.0).argmax(dim=0)
-    same = (frac >= SAME_OBJECT_CONTAINMENT) | (frac.t() >= SAME_OBJECT_CONTAINMENT)
+    same = _same_object(frac)
     return torch.where(conflicted[None, :], (covers & cut[:, None]) | (uncut & same[:, best]), covers)
+
+
+def _same_object(frac: torch.Tensor) -> torch.Tensor:
+    return (frac >= SAME_OBJECT_CONTAINMENT) | (frac.t() >= SAME_OBJECT_CONTAINMENT)
+
+
+def _split_distinct_whole(groups: List[List[int]], whole: torch.Tensor, frac: torch.Tensor) -> List[List[int]]:
+    """Give each distinct uncut member of a group its own group.
+
+    A group keeps one uncut member, so a wrong link between neighbours would otherwise delete a whole object.
+    """
+    same = _same_object(frac)
+    out: List[List[int]] = []
+    for g in groups:
+        clusters: List[List[int]] = []
+        for i in (m for m in g if whole[m]):
+            home = next((c for c in clusters if same[c[0], i]), None)
+            if home is None:
+                clusters.append([i])
+            else:
+                home.append(i)
+        if len(clusters) < 2:
+            out.append(g)
+            continue
+        out.append(clusters[0] + [m for m in g if not whole[m]])
+        out.extend(clusters[1:])
+    return out
 
 
 def _pair_fragments(
