@@ -163,7 +163,8 @@ def test_image_border_is_not_a_seam():
     assert out["boxes"].shape == (2, 4)
 
 
-def test_masks_union_and_segments_union():
+@pytest.mark.parametrize("in_place", [False, True])
+def test_masks_union_and_segments_union(in_place):
     masks = torch.zeros((2, 100, 150), dtype=torch.uint8)
     masks[0, 20:50, 40:100] = 1
     masks[1, 20:50, 60:120] = 1
@@ -177,7 +178,7 @@ def test_masks_union_and_segments_union():
         "scores": torch.tensor([0.4, 0.9]),
         "classes": np.array([0, 0], dtype=np.int32),
     }
-    out = merge_tile_fragments(merged, torch.tensor([0, 1]), _ORIGINS, _TILE_SIZE, _IM_SIZE, 0.8)
+    out = merge_tile_fragments(merged, torch.tensor([0, 1]), _ORIGINS, _TILE_SIZE, _IM_SIZE, 0.8, in_place=in_place)
     assert out["masks"].shape == (1, 100, 150)
     assert int(out["masks"].sum()) == 30 * 80  # x 40..120, y 20..50
     ring = out["segments"][0]
@@ -309,7 +310,9 @@ def test_object_spanning_a_3x2_block_of_six_tiles():
     assert out["scores"].item() == pytest.approx(0.7)
 
 
-def test_masks_union_across_a_three_tile_chain():
+@pytest.mark.parametrize("in_place", [False, True])
+def test_masks_union_across_a_three_tile_chain(in_place):
+    # the best-scoring member is the last row, so an in-place filter moves it onto a row the union reads
     origins = _grid(1, 3)
     masks = torch.zeros((3, 100, 210), dtype=torch.uint8)
     masks[0, 30:60, 40:100] = 1
@@ -321,7 +324,7 @@ def test_masks_union_across_a_three_tile_chain():
         "scores": torch.tensor([0.3, 0.4, 0.5]),
         "classes": np.zeros(3, dtype=np.int32),
     }
-    out = merge_tile_fragments(merged, torch.tensor([0, 1, 2]), origins, (100, 100), (100, 210), 0.8)
+    out = merge_tile_fragments(merged, torch.tensor([0, 1, 2]), origins, (100, 100), (100, 210), 0.8, in_place=in_place)
     assert out["masks"].shape == (1, 100, 210)
     assert int(out["masks"].sum()) == 30 * 160  # x 40..200, y 30..60
 

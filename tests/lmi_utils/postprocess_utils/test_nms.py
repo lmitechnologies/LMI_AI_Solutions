@@ -96,6 +96,20 @@ def test_boxes_from_masks_bound_the_pixels_with_exclusive_max_edges():
     assert not boxes[~full].any()
 
 
+def test_in_place_filter_matches_a_copy_without_allocating_new_masks():
+    masks = _scattered_masks(12)
+    keep = torch.tensor([1, 3, 4, 9, 11])
+    want = nms.filter_instances({"masks": masks.clone()}, keep)["masks"]
+    out = nms.filter_instances({"masks": masks}, keep, in_place=True)["masks"]
+    assert torch.equal(out, want)
+    assert out.untyped_storage().data_ptr() == masks.untyped_storage().data_ptr()
+
+
+def test_in_place_filter_rejects_unsorted_indices():
+    with pytest.raises(ValueError, match="ascending"):
+        nms.filter_instances({"masks": _scattered_masks(4)}, torch.tensor([2, 0]), in_place=True)
+
+
 def test_mask_overlap_area_counts_pixels_not_promoted_sums():
     masks = torch.zeros(2, 4, 4, dtype=torch.bool)
     masks[0, :2, :2] = True

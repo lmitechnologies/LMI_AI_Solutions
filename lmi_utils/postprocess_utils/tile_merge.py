@@ -31,6 +31,7 @@ def merge_tile_fragments(
     im_size: Tuple[int, int],
     containment: float,
     edge_tolerance: float = DEFAULT_EDGE_TOLERANCE,
+    in_place: bool = False,
 ) -> Dict[str, Any]:
     """Merge the pieces of each object that overlapping tiles detected separately.
 
@@ -43,6 +44,8 @@ def merge_tile_fragments(
         containment: min fraction of a fragment that must lie inside an uncut prediction for the two to link.
         edge_tolerance: px from a tile edge that still counts as touching it. Matches the detector's box error
             at a crop edge, so it does not scale with tile size.
+        in_place: reuse ``merged``'s masks tensor instead of copying it (see ``filter_instances``). For a caller
+            that owns that tensor.
 
     Returns:
         The dict with each linked group replaced by its uncut members, one per distinct object. A group with
@@ -53,7 +56,7 @@ def merge_tile_fragments(
     if n < 2:
         return merged
 
-    merged, tile_idx = _drop_below_floor(merged, tile_idx)
+    merged, tile_idx = _drop_below_floor(merged, tile_idx, in_place)
     if len(tile_idx) < 2:
         return merged
 
@@ -68,19 +71,19 @@ def merge_tile_fragments(
     groups = _split_distinct_whole(merged, boxes, _connected_groups(links | links.t(), len(tile_idx)), whole)
     out = merged
     if any(len(g) > 1 for g in groups):
-        out, groups = _union_groups(merged, groups, whole)
+        out, groups = _union_groups(merged, groups, whole, in_place)
     fragment_only = torch.tensor([not bool(whole[torch.tensor(g)].any()) for g in groups])
-    return _drop_fragments_seen_whole(out, fragment_only, tile_origins, tile_size, im_size, edge_tolerance)
+    return _drop_fragments_seen_whole(out, fragment_only, tile_origins, tile_size, im_size, edge_tolerance, in_place)
 
 
-def _drop_below_floor(merged: Dict[str, Any], tile_idx: torch.Tensor) -> Tuple[Dict[str, Any], torch.Tensor]:
+def _drop_below_floor(merged: Dict[str, Any], tile_idx: torch.Tensor, in_place: bool) -> Tuple[Dict[str, Any], torch.Tensor]:
     scores = merged.get("scores")
     if not isinstance(scores, torch.Tensor) or len(scores) != len(tile_idx):
         return merged, tile_idx
     keep = (scores.detach().cpu().float() >= SCORE_FLOOR).nonzero(as_tuple=True)[0]
     if len(keep) == len(tile_idx):
         return merged, tile_idx
-    return filter_instances(merged, keep), tile_idx[keep]
+    return filter_instances(merged, keep, in_place), tile_idx[keep]
 
 
 def instance_boxes(merged: Dict[str, Any]) -> Optional[torch.Tensor]:
@@ -290,7 +293,9 @@ def _connected_groups(pairs: torch.Tensor, n: int) -> List[List[int]]:
     return list(buckets.values())
 
 
-def _union_groups(merged: Dict[str, Any], groups: List[List[int]], whole: torch.Tensor) -> Tuple[Dict[str, Any], List[List[int]]]:
+def _union_groups(
+    merged: Dict[str, Any], groups: List[List[int]], whole: torch.Tensor, in_place: bool
+) -> Tuple[Dict[str, Any], List[List[int]]]:
     """Turn each group into one output row, keeping input order.
 
     A group with uncut members keeps its best-scoring uncut member. A group of fragments only becomes the union
@@ -311,27 +316,30 @@ def _union_groups(merged: Dict[str, Any], groups: List[List[int]], whole: torch.
     reps = [reps[k] for k in order]
     widen = [widen[k] for k in order]
 
-    out = filter_instances(merged, torch.tensor(reps, dtype=torch.long))
+    # unions first: an in-place filter overwrites the member rows they read
+    masks = merged.get("masks")
+    unions = {}
+    if isinstance(masks, torch.Tensor) and len(masks):
+        for k, g in enumerate(groups):
+            if widen[k]:
+                u = masks[g[0]] != 0
+                for m in g[1:]:
+                    u |= masks[m] != 0
+                unions[k] = u.to(masks.dtype)
+
+    out = filter_instances(merged, torch.tensor(reps, dtype=torch.long), in_place)  # boxes are always a fresh copy
 
     boxes = merged.get("boxes")
     if isinstance(boxes, torch.Tensor) and len(boxes):
-        stacked = out["boxes"].clone()
         for k, g in enumerate(groups):
             if not widen[k]:
                 continue
             members = boxes[torch.tensor(g, dtype=torch.long, device=boxes.device)]
-            stacked[k, :2] = members[:, :2].amin(dim=0)
-            stacked[k, 2:] = members[:, 2:].amax(dim=0)
-        out["boxes"] = stacked
+            out["boxes"][k, :2] = members[:, :2].amin(dim=0)
+            out["boxes"][k, 2:] = members[:, 2:].amax(dim=0)
 
-    masks = merged.get("masks")
-    if isinstance(masks, torch.Tensor) and len(masks):
-        unioned = out["masks"].clone()
-        for k, g in enumerate(groups):
-            if widen[k]:
-                idx = torch.tensor(g, dtype=torch.long, device=masks.device)
-                unioned[k] = (masks[idx] != 0).any(dim=0).to(masks.dtype)
-        out["masks"] = unioned
+    for k, u in unions.items():
+        out["masks"][k] = u
 
     segments = merged.get("segments")
     if segments is not None and len(segments):
@@ -347,6 +355,7 @@ def _drop_fragments_seen_whole(
     tile_size: Tuple[int, int],
     im_size: Tuple[int, int],
     tolerance: float,
+    in_place: bool,
 ) -> Dict[str, Any]:
     """Drop leftover fragments that another tile saw in full. Output r is dropped when all hold:
 
@@ -373,7 +382,7 @@ def _drop_fragments_seen_whole(
         return out
     drop = torch.zeros(n, dtype=torch.bool)
     drop[frag[seen]] = True
-    return filter_instances(out, (~drop).nonzero(as_tuple=True)[0])
+    return filter_instances(out, (~drop).nonzero(as_tuple=True)[0], in_place)
 
 
 def _union_polygons(polys: List[Any]) -> torch.Tensor:

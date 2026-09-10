@@ -361,6 +361,7 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
                 (im_h, im_w),
                 containment=tiler_meta.get("containment") or 1.0,
                 edge_tolerance=tolerance,
+                in_place=True,
             )
 
     merged = _apply_score_threshold(merged, float(tiler_meta.get("score_threshold") or 0.0))
@@ -370,7 +371,10 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     iou_thr = tiler_meta.get("nms_iou")
     containment = None if did_merge else tiler_meta.get("containment")
     if iou_thr is not None or containment is not None:
-        merged = class_aware_nms(merged, iou_thr, containment)
+        merged = class_aware_nms(merged, iou_thr, containment, in_place=True)
+    masks = merged.get("masks")
+    if isinstance(masks, torch.Tensor) and masks.untyped_storage().nbytes() > masks.nbytes:
+        merged["masks"] = masks.clone()  # the kept rows are a view: returning it would pin the whole-batch buffer
     return _clip_to_image(merged, im_h, im_w)
 
 
@@ -415,7 +419,7 @@ def _drop_in_padding(merged: Dict[str, Any], tile_idx: torch.Tensor, im_h: int, 
     keep = ((boxes[:, 0] < im_w) & (boxes[:, 1] < im_h)).nonzero(as_tuple=True)[0]
     if len(keep) == len(tile_idx):
         return merged, tile_idx
-    return filter_instances(merged, keep), tile_idx[keep]
+    return filter_instances(merged, keep, in_place=True), tile_idx[keep]  # the masks are this merge's own buffer
 
 
 def _apply_score_threshold(merged: Dict[str, Any], threshold: float) -> Dict[str, Any]:
@@ -425,7 +429,7 @@ def _apply_score_threshold(merged: Dict[str, Any], threshold: float) -> Dict[str
     keep = (scores.detach().cpu().float() >= threshold).nonzero(as_tuple=True)[0]
     if len(keep) == len(scores):
         return merged
-    return filter_instances(merged, keep)
+    return filter_instances(merged, keep, in_place=True)  # the masks are this merge's own buffer
 
 
 def _clip_to_image(merged: Dict[str, Any], im_h: int, im_w: int) -> Dict[str, Any]:

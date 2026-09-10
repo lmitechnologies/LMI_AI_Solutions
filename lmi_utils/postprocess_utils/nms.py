@@ -18,7 +18,9 @@ import torch
 _EPS = 1e-9
 
 
-def class_aware_nms(merged: Dict[str, Any], iou_thr: Optional[float], containment_thr: Optional[float] = None) -> Dict[str, Any]:
+def class_aware_nms(
+    merged: Dict[str, Any], iou_thr: Optional[float], containment_thr: Optional[float] = None, in_place: bool = False
+) -> Dict[str, Any]:
     """Greedy class-aware NMS over a merged result dict. No-op without usable scores/geometry.
 
     Suppresses a lower-scoring instance of the same class when it either overlaps the kept one
@@ -26,6 +28,7 @@ def class_aware_nms(merged: Dict[str, Any], iou_thr: Optional[float], containmen
     fragment nested in a whole detection, which IoU alone misses). Suppression only — instances
     are dropped, never merged. Returns ``merged`` unchanged when fewer than two scores are
     present, no geometry field can yield an overlap, or both thresholds are None.
+    ``in_place``: see ``filter_instances``.
     """
     if iou_thr is None and containment_thr is None:
         return merged
@@ -38,7 +41,7 @@ def class_aware_nms(merged: Dict[str, Any], iou_thr: Optional[float], containmen
     keep = _greedy_nms(overlap, scores, merged.get("classes"), iou_thr, containment_thr)
     if len(keep) == len(scores):
         return merged
-    return filter_instances(merged, keep)
+    return filter_instances(merged, keep, in_place)
 
 
 def pairwise_overlap(merged: Dict[str, Any]) -> Optional[Tuple[torch.Tensor, torch.Tensor]]:
@@ -207,13 +210,18 @@ def _greedy_nms(
     return torch.tensor(keep, dtype=torch.long)
 
 
-def filter_instances(merged: Dict[str, Any], keep: torch.Tensor) -> Dict[str, Any]:
-    """Index every per-instance field of a merged result by ``keep`` (a CPU LongTensor)."""
+def filter_instances(merged: Dict[str, Any], keep: torch.Tensor, in_place: bool = False) -> Dict[str, Any]:
+    """Index every per-instance field of a merged result by ``keep`` (a CPU LongTensor).
+
+    ``in_place`` moves the kept mask rows to the front of the existing masks tensor and returns a view of them,
+    so no second full-size copy is allocated. It overwrites the caller's masks and needs ascending ``keep``.
+    """
     out = dict(merged)
     for key in ("boxes", "scores", "points", "masks"):
         v = merged.get(key)
         if isinstance(v, torch.Tensor) and len(v):
-            out[key] = v[keep]  # CPU index into a CUDA tensor is allowed
+            # CPU index into a CUDA tensor is allowed
+            out[key] = _compact_rows(v, keep) if in_place and key == "masks" else v[keep]
     classes = merged.get("classes")
     if classes is not None and len(classes):
         out["classes"] = classes[keep.numpy()] if isinstance(classes, np.ndarray) else classes[keep]
@@ -221,3 +229,15 @@ def filter_instances(merged: Dict[str, Any], keep: torch.Tensor) -> Dict[str, An
     if segments is not None and len(segments):
         out["segments"] = [segments[i] for i in keep.tolist()]
     return out
+
+
+def _compact_rows(t: torch.Tensor, keep: torch.Tensor) -> torch.Tensor:
+    """Move rows ``keep`` to the front of ``t`` and return that view. Ascending ``keep`` only moves a row to an
+    earlier slot, so no row is overwritten before it is read."""
+    rows = keep.tolist()
+    if any(b <= a for a, b in zip(rows, rows[1:])):
+        raise ValueError("filter_instances: in_place needs strictly ascending indices")
+    for new, old in enumerate(rows):
+        if new != old:
+            t[new] = t[old]
+    return t[: len(rows)]
