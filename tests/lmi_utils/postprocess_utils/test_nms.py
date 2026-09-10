@@ -59,19 +59,41 @@ def test_no_thresholds_is_a_no_op():
 
 
 def _dense_overlap(masks):
-    """The unblocked formulation _mask_overlap replaced."""
+    """Every pixel of every pair: the formulation the box-cropped _mask_overlap must reproduce."""
     flat = (masks.flatten(1) != 0).float()
     return flat @ flat.t(), flat.sum(dim=1)
 
 
-@pytest.mark.parametrize("n", [0, 1, 7, 16])
-def test_blocked_mask_overlap_matches_the_dense_formulation(monkeypatch, n):
-    monkeypatch.setattr(nms, "_OVERLAP_BLOCK_BYTES", 4 * 4 * 25)  # forces several blocks per axis
-    masks = torch.rand(n, 5, 5) > 0.5
+def _scattered_masks(n, size=24):
+    """Speckled patches at random spots, every fifth mask empty, so many pairs never touch."""
+    g = torch.Generator().manual_seed(n)
+    masks = torch.zeros(n, size, size, dtype=torch.bool)
+    for i in range(n):
+        if i % 5 == 4:
+            continue
+        x, y = torch.randint(0, size - 6, (2,), generator=g).tolist()
+        masks[i, y : y + 7, x : x + 7] = torch.rand(7, 7, generator=g) > 0.3
+    return masks
+
+
+@pytest.mark.parametrize(
+    "masks", [torch.rand(0, 5, 5) > 0.5, torch.rand(1, 5, 5) > 0.5, torch.rand(7, 5, 5) > 0.5, _scattered_masks(16), _scattered_masks(40)]
+)
+def test_mask_overlap_matches_the_dense_formulation(masks):
     inter, area = nms._mask_overlap(masks)
     want_inter, want_area = _dense_overlap(masks)
     assert torch.equal(inter, want_inter)
     assert torch.equal(area, want_area)
+
+
+def test_boxes_from_masks_bound_the_pixels_with_exclusive_max_edges():
+    from torchvision.ops import masks_to_boxes
+
+    masks = _scattered_masks(10)
+    boxes = nms.boxes_from_masks(masks)
+    full = masks.flatten(1).any(dim=1)
+    assert torch.equal(boxes[full], masks_to_boxes(masks[full]) + torch.tensor([0.0, 0.0, 1.0, 1.0]))
+    assert not boxes[~full].any()
 
 
 def test_mask_overlap_area_counts_pixels_not_promoted_sums():

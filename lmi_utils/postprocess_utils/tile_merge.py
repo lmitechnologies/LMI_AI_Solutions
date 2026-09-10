@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import torch
 
-from .nms import binarize_masks, class_codes, filter_instances, pairwise_overlap
+from .nms import binarize_masks, boxes_from_masks, class_codes, filter_instances, pairwise_overlap
 
 # Fixed: they depend on the detector and tile geometry, not the dataset.
 DEFAULT_EDGE_TOLERANCE = 2.0  # px from a tile edge that still counts as touching it
@@ -94,9 +94,7 @@ def instance_boxes(merged: Dict[str, Any]) -> Optional[torch.Tensor]:
 
     masks = merged.get("masks")
     if isinstance(masks, torch.Tensor) and len(masks):
-        from torchvision.ops import masks_to_boxes
-
-        return masks_to_boxes((masks != 0).cpu()).float()
+        return boxes_from_masks(masks).cpu()
 
     segments = merged.get("segments")
     if segments is not None and len(segments):
@@ -218,9 +216,8 @@ def _containment(merged: Dict[str, Any], boxes: torch.Tensor, j: torch.Tensor, i
     if isinstance(masks, torch.Tensor) and len(masks) == len(boxes):
         for r in i.unique().tolist():
             ks = (i == r).nonzero(as_tuple=True)[0]
-            x0, y0 = boxes[r, :2].floor().clamp(min=0).long().tolist()
-            x1, y1 = boxes[r, 2:].ceil().long().tolist()
-            piece = binarize_masks(masks[r, y0:y1, x0:x1])  # a mask stays inside its box, so the crop loses nothing
+            x0, y0, x1, y1 = boxes_from_masks(masks[r : r + 1])[0].long().tolist()  # any overlap lies inside r's own pixels
+            piece = binarize_masks(masks[r, y0:y1, x0:x1])
             area = int(piece.sum())
             if area:
                 inter = (binarize_masks(masks[j[ks], y0:y1, x0:x1]) & piece).flatten(1).sum(dim=1)

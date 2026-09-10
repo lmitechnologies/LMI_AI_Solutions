@@ -18,9 +18,6 @@ import torch
 _EPS = 1e-9
 
 
-_OVERLAP_BLOCK_BYTES = 256 << 20  # float32 operand budget per matmul block
-
-
 def class_aware_nms(merged: Dict[str, Any], iou_thr: Optional[float], containment_thr: Optional[float] = None) -> Dict[str, Any]:
     """Greedy class-aware NMS over a merged result dict. No-op without usable scores/geometry.
 
@@ -96,24 +93,40 @@ def binarize_masks(masks: torch.Tensor) -> torch.Tensor:
     return masks > 0.5 if masks.is_floating_point() else masks != 0
 
 
-def _mask_overlap(masks: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Intersection matrix and areas for binary instance masks (N, H, W).
+def boxes_from_masks(masks: torch.Tensor) -> torch.Tensor:
+    """(N, 4) xyxy box around each mask's pixels, on the masks' device. Max edges are exclusive; an empty mask gets zeros."""
+    m = binarize_masks(masks)
+    rows, cols = m.any(dim=2), m.any(dim=1)
+    h, w = rows.shape[1], cols.shape[1]
+    # argmax returns the first maximum, so it finds the first set row/column from each end
+    y0, y1 = rows.float().argmax(dim=1), h - rows.flip(1).float().argmax(dim=1)
+    x0, x1 = cols.float().argmax(dim=1), w - cols.flip(1).float().argmax(dim=1)
+    boxes = torch.stack([x0, y0, x1, y1], dim=1).float()
+    boxes[~rows.any(dim=1)] = 0
+    return boxes
 
-    Blocked over both axes: the dense (N, H*W) float operand the matmul wants is gigabytes once a
-    tiled batch and a full-size image meet. Same dot products, so the result is unchanged.
+
+def _mask_overlap(masks: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Intersection matrix and areas for binary instance masks (N, H, W), on the CPU.
+
+    Only pairs whose mask boxes overlap are measured, and only inside the first mask's box: most pairs in a
+    full-size image never touch, and comparing every pixel of every pair is what made tiled NMS slow.
     """
-    flat = binarize_masks(masks).flatten(1)  # flatten, not reshape: reshape(0, -1) is ambiguous and raises
-    n, hw = flat.shape
-    inter = torch.zeros(n, n, dtype=torch.float32, device=flat.device)
-    block = max(1, min(n, int(_OVERLAP_BLOCK_BYTES // max(hw * 4, 1))))
-    for i in range(0, n, block):
-        rows = flat[i : i + block].float()
-        for j in range(i, n, block):
-            v = rows @ flat[j : j + block].float().t()
-            inter[i : i + block, j : j + block] = v
-            if j > i:
-                inter[j : j + block, i : i + block] = v.t()
-    # areas off the diagonal: torch promotes a bool .sum() to int64 across the whole array first
+    m = binarize_masks(masks)
+    n = len(m)
+    b = boxes_from_masks(m).long().cpu()
+    touch = (torch.minimum(b[:, None, 2], b[None, :, 2]) > torch.maximum(b[:, None, 0], b[None, :, 0])) & (
+        torch.minimum(b[:, None, 3], b[None, :, 3]) > torch.maximum(b[:, None, 1], b[None, :, 1])
+    )
+    inter = torch.zeros(n, n, dtype=torch.float32)
+    for i in range(n):
+        js = touch[i, i:].nonzero(as_tuple=True)[0] + i  # an empty mask touches nothing, itself included
+        if not len(js):
+            continue
+        x0, y0, x1, y1 = b[i].tolist()
+        v = (m[js, y0:y1, x0:x1] & m[i, y0:y1, x0:x1]).flatten(1).sum(dim=1).float().cpu()
+        inter[i, js] = v
+        inter[js, i] = v
     return inter, inter.diagonal().clone()
 
 

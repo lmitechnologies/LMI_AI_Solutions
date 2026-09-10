@@ -118,10 +118,13 @@ class ODBase(abc.ABC):
             all_results = self.postprocess(outputs, images=images, configs=configs, preprocessed=preprocessed, **kwargs)
             time_info["postproc"] = time.time() - t0
 
-        results = self._aggregate_results(all_results, return_numpy=not use_tensor)
+        # revert while still on the model's device: merging tiled masks on the CPU is several times slower
+        results = self._aggregate_results(all_results, return_numpy=False)
         t0 = time.time()
         results = self._revert_coordinates(results, operators)
         time_info["postproc"] += time.time() - t0
+        if not use_tensor:
+            results = self._results_to_numpy(results, float32=bool(operators))
         return results, time_info
 
     def _run_batched_predict(self, images, configs, batch_size, pad_last=False, **kwargs):
@@ -435,6 +438,25 @@ class ODBase(abc.ABC):
         if masks is None or not len(masks):
             return masks
         return masks.to(dtype) if torch.is_tensor(masks) else masks.astype(dtype)
+
+    @staticmethod
+    def _results_to_numpy(results: dict, float32: bool) -> dict:
+        """Move an aggregated batch dict to numpy.
+
+        ``float32`` casts boxes, scores, points and segments, matching what a revert on numpy input returned.
+        """
+        cast = {"boxes", "scores", "points", "segments"} if float32 else set()
+
+        def to_numpy(key, v):
+            if not isinstance(v, torch.Tensor):
+                return v
+            a = v.cpu().numpy()
+            return a.astype(np.float32) if key in cast else a
+
+        out = {}
+        for k, vs in results.items():
+            out[k] = [[to_numpy(k, s) for s in v] if k == "segments" and isinstance(v, list) else to_numpy(k, v) for v in vs]
+        return out
 
     @staticmethod
     def _aggregate_results(list_results: List[Results], return_numpy: bool = True) -> dict:
