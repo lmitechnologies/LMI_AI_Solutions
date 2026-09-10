@@ -342,6 +342,7 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
         merged, tile_idx = _drop_in_padding(merged, tile_idx, im_h, im_w)
 
     requested = tiler_meta.get("merge_fragments", False)  # absent means a hand-built meta: off
+    did_merge = False
     if requested is not False:
         tolerance = tiler_meta.get("edge_tolerance")
         tolerance = DEFAULT_EDGE_TOLERANCE if tolerance is None else float(tolerance)
@@ -349,6 +350,7 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
         if skip is not None:
             logger.debug("tile: skipping fragment merging - %s", skip)
         else:
+            did_merge = True
             rc = np.array([[i // n_tiles_w, i % n_tiles_w] for i in range(n_tiles_h * n_tiles_w)])
             origins = rc * np.array([stride_h, stride_w])
             merged = merge_tile_fragments(
@@ -364,8 +366,10 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
 
     merged = _apply_score_threshold(merged, float(tiler_meta.get("score_threshold") or 0.0))
 
+    # containment suppression runs once: in the merge if it ran, here if it did not. Merging widens a box
+    # to its group's union, so re-testing containment would delete the neighbours that union now encloses.
     iou_thr = tiler_meta.get("nms_iou")
-    containment = tiler_meta.get("containment")
+    containment = None if did_merge else tiler_meta.get("containment")
     if iou_thr is not None or containment is not None:
         merged = class_aware_nms(merged, iou_thr, containment)
     return _clip_to_image(merged, im_h, im_w)

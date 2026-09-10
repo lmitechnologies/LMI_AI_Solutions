@@ -291,11 +291,14 @@ def test_tile_revert_images_cursor_mismatch_raises():
         rec.reconstruct_images(extra, history)
 
 
-def _overlap_history(nms_iou=0.5, containment=None):
+def _overlap_history(nms_iou=0.5, containment=None, merge_fragments=False):
     # 150x150 with tile 100 / stride 50 -> 2x2 overlapping tiles; box [55,55,95,95] lands in all 4.
     pre, rec = Preprocessor(), Reconstructor()
     img = torch.zeros(150, 150, 3)
-    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=50, nms_iou=nms_iou, containment=containment)])
+    _, history = pre.preprocess(
+        [img],
+        [steps.tile(tile_size=100, stride=50, nms_iou=nms_iou, containment=containment, merge_fragments=merge_fragments)],
+    )
     return rec, history
 
 
@@ -423,6 +426,7 @@ def test_tile_revert_coords_rejects_keypoints():
 
 
 def test_tile_containment_nms_drops_a_fragment_nested_in_a_whole_detection():
+    # Merging off, so NMS is the only containment check.
     rec, history = _overlap_history(containment=0.8)
     results = _empty_results(
         n=4,
@@ -438,6 +442,28 @@ def test_tile_containment_nms_drops_a_fragment_nested_in_a_whole_detection():
     out = rec.reconstruct_coordinates(results, history)
     assert out["boxes"][0].shape == (1, 4)
     assert torch.allclose(out["boxes"][0], torch.tensor([[10.0, 10.0, 90.0, 90.0]]))
+
+
+def test_tile_containment_nms_is_skipped_once_merging_has_run():
+    """Merging already folds fragments in by containment; re-testing it would delete widened neighbours.
+
+    The nested box here is not cut at a seam, so merging leaves it and it now survives. That is the
+    cost of running containment once, and it measured far cheaper than over-deleting real objects.
+    """
+    rec, history = _overlap_history(containment=0.8, merge_fragments=True)
+    results = _empty_results(
+        n=4,
+        boxes=[
+            torch.tensor([[10.0, 10.0, 90.0, 90.0]]),
+            torch.tensor([[10.0, 10.0, 30.0, 30.0]]),
+            torch.zeros((0, 4)),
+            torch.zeros((0, 4)),
+        ],
+        scores=[torch.tensor([0.9]), torch.tensor([0.6]), torch.zeros((0,)), torch.zeros((0,))],
+        classes=[np.array([0], np.int32), np.array([0], np.int32), np.zeros((0,), np.int32), np.zeros((0,), np.int32)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (2, 4)
 
 
 def test_tile_containment_disabled_keeps_the_nested_detection():

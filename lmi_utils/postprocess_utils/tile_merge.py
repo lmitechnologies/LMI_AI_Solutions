@@ -19,6 +19,7 @@ from .nms import class_codes, containment_matrix, filter_instances, pairwise_ove
 # Fixed, not exposed: these reflect detector and geometry behaviour, not the dataset.
 DEFAULT_EDGE_TOLERANCE = 2.0  # px from a tile edge that still counts as touching it
 PAIR_OVERLAP_RATIO = 0.5  # of the smaller perpendicular extent; guards against diagonal chaining
+SAME_OBJECT_CONTAINMENT = 0.95  # two coverers this deep in each other are one object seen from two tiles
 SCORE_FLOOR = 0.01  # keeps junk out of merge and NMS
 SIMPLIFY_TOLERANCE = 1.0  # px, when a merged polygon is traced back from a union
 
@@ -171,6 +172,7 @@ def _covers(
 
     j may itself be cut: an object wider than a tile is never seen whole, and its middle-row
     pieces are the only detections that span the pieces cut off at the rows above and below.
+    Links that would weld two distinct whole objects together are dropped; see ``_unweld``.
     """
     n = len(tile_idx)
     if not flags.any():
@@ -179,12 +181,29 @@ def _covers(
     if overlap is None or overlap[0].shape[0] != n:
         return torch.zeros(n, n, dtype=torch.bool)
 
-    contained = containment_matrix(*(t.detach().cpu() for t in overlap)) >= containment  # [j, i]: i inside j
-    covers = contained & flags.any(dim=1)[None, :] & (tile_idx[:, None] != tile_idx[None, :])
+    frac = containment_matrix(*(t.detach().cpu() for t in overlap))  # [j, i]: fraction of i inside j
+    cut = flags.any(dim=1)
+    covers = (frac >= containment) & cut[None, :] & (tile_idx[:, None] != tile_idx[None, :])
     covers &= _tile_overlap_matrix(tile_origins, tile_size)[tile_idx][:, tile_idx]
     if codes is not None:
         covers &= codes[:, None] == codes[None, :]
-    return covers
+    return _unweld(covers, frac, cut)
+
+
+def _unweld(covers: torch.Tensor, frac: torch.Tensor, cut: torch.Tensor) -> torch.Tensor:
+    """Drop the links that would weld two whole objects into one group through a fragment both cover.
+
+    Union-find reads covering as symmetric, so a sliver inside two uncut predictions joins them and the
+    group then collapses to a single box, deleting the rest. Links to cut coverers stay untouched: those
+    are what chain an object wider than a tile.
+    """
+    uncut = covers & ~cut[:, None]
+    conflicted = uncut.sum(dim=0) > 1
+    if not conflicted.any():
+        return covers
+    best = frac.masked_fill(~uncut, -1.0).argmax(dim=0)
+    same = (frac >= SAME_OBJECT_CONTAINMENT) | (frac.t() >= SAME_OBJECT_CONTAINMENT)
+    return torch.where(conflicted[None, :], (covers & cut[:, None]) | (uncut & same[:, best]), covers)
 
 
 def _pair_fragments(

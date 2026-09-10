@@ -75,6 +75,31 @@ def test_objects_stacked_along_the_seam_do_not_chain():
     assert ys == [pytest.approx(10.0), pytest.approx(60.0)]
 
 
+def test_a_sliver_inside_two_objects_does_not_weld_them():
+    # Both T0 detections are whole and are different objects; a T1 sliver at the x=60 seam sits inside
+    # each. Linking it to both would join them into one group, and the group keeps only one box.
+    out = _merge(
+        [[20, 30, 80, 60], [55, 45, 95, 85], [60, 46, 75, 56]],
+        [0.9, 0.8, 0.3],
+        [0, 0, 1],
+    )
+    assert out["boxes"].shape == (2, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([20.0, 30.0, 80.0, 60.0]))
+    assert torch.allclose(out["boxes"][1], torch.tensor([55.0, 45.0, 95.0, 85.0]))
+
+
+def test_a_sliver_inside_one_object_seen_from_two_tiles_still_merges():
+    # Same shape, but now the two coverers are one object detected in both tiles, so the sliver
+    # must keep both links and everything collapses to a single box.
+    out = _merge(
+        [[20, 30, 80, 60], [20, 30, 80, 60], [60, 46, 75, 56]],
+        [0.9, 0.8, 0.3],
+        [0, 0, 1],
+    )
+    assert out["boxes"].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([20.0, 30.0, 80.0, 60.0]))
+
+
 def test_fragments_of_different_classes_do_not_pair():
     out = _merge([[40, 20, 100, 50], [60, 20, 120, 50]], [0.5, 0.5], [0, 1], classes=[0, 1])
     assert out["boxes"].shape == (2, 4)
