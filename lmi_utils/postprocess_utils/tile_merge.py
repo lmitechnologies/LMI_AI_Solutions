@@ -20,6 +20,7 @@ from .nms import class_codes, containment_matrix, filter_instances, pairwise_ove
 DEFAULT_EDGE_TOLERANCE = 2.0  # px from a tile edge that still counts as touching it
 PAIR_OVERLAP_RATIO = 0.5  # of the smaller perpendicular extent; guards against diagonal chaining
 SAME_OBJECT_CONTAINMENT = 0.95  # two coverers this deep in each other are one object seen from two tiles
+AGREEMENT_IOU = 0.5  # a fragment and its coverer, both trimmed to the region their two tiles share
 SCORE_FLOOR = 0.01  # keeps junk out of merge and NMS
 SIMPLIFY_TOLERANCE = 1.0  # px, when a merged polygon is traced back from a union
 
@@ -45,7 +46,8 @@ def merge_tile_fragments(
         im_size: (im_h, im_w) of the original, unpadded image.
         containment: fraction of a fragment that must sit inside a same-class prediction from an
             overlapping tile for that prediction to cover it. A covered fragment joins that
-            prediction's group instead of pairing across the seam.
+            prediction's group instead of pairing across the seam. An instance built only from
+            fragments that lies this deep inside another output of its class is dropped.
         edge_tolerance: px from a tile edge that still counts as touching it. Reflects the
             detector's box-regression error at a crop boundary, which is set by the detection
             head's feature stride, so it does not scale with tile size.
@@ -69,7 +71,7 @@ def merge_tile_fragments(
 
     codes = class_codes(merged.get("classes"), len(tile_idx))
     flags = _truncation_flags(boxes, tile_idx, tile_origins, tile_size, im_size, edge_tolerance)
-    covers, frac = _covers(merged, flags, tile_idx, tile_origins, tile_size, codes, containment)
+    covers, frac = _covers(merged, boxes, flags, tile_idx, tile_origins, tile_size, codes, containment)
     covered = covers.any(dim=0)
     flags = flags.clone()
     flags[covered] = False  # must not chain to another object across the seam
@@ -79,9 +81,11 @@ def merge_tile_fragments(
     groups = _connected_groups(pairs, len(tile_idx))
     if frac is not None:
         groups = _split_distinct_whole(groups, whole, frac)
-    if all(len(g) == 1 for g in groups):
-        return merged
-    return _union_groups(merged, groups, whole)
+    out = merged
+    if any(len(g) > 1 for g in groups):
+        out, groups = _union_groups(merged, groups, whole)
+    fragment_only = torch.tensor([not bool(whole[torch.tensor(g)].any()) for g in groups])
+    return _absorb_fragments(out, fragment_only, containment)
 
 
 def _drop_below_floor(merged: Dict[str, Any], tile_idx: torch.Tensor) -> Tuple[Dict[str, Any], torch.Tensor]:
@@ -162,6 +166,7 @@ def _tile_overlap_matrix(tile_origins: np.ndarray, tile_size: Tuple[int, int]) -
 
 def _covers(
     merged: Dict[str, Any],
+    boxes: torch.Tensor,
     flags: torch.Tensor,
     tile_idx: torch.Tensor,
     tile_origins: np.ndarray,
@@ -170,7 +175,7 @@ def _covers(
     containment: float,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
     """(N, N) bool [j, i]: prediction j from another, overlapping tile covers fragment i — i is cut at a seam,
-    same class, and at least ``containment`` of it lies inside j.
+    same class, at least ``containment`` of it lies inside j, and the two agree where both tiles see.
 
     j may itself be cut: an object wider than a tile is never seen whole, and its middle-row
     pieces are the only detections that span the pieces cut off at the rows above and below.
@@ -190,7 +195,39 @@ def _covers(
     covers &= _tile_overlap_matrix(tile_origins, tile_size)[tile_idx][:, tile_idx]
     if codes is not None:
         covers &= codes[:, None] == codes[None, :]
+    covers = _agree_in_shared_region(covers, boxes, tile_idx, tile_origins, tile_size)
     return _unweld(covers, frac, cut), frac
+
+
+def _agree_in_shared_region(
+    covers: torch.Tensor,
+    boxes: torch.Tensor,
+    tile_idx: torch.Tensor,
+    tile_origins: np.ndarray,
+    tile_size: Tuple[int, int],
+) -> torch.Tensor:
+    """Keep a cover link only when both boxes, trimmed to the region their tiles share, overlap by ``AGREEMENT_IOU``.
+
+    Both tiles see that region, so one object gives two near-equal boxes there, while a neighbour's larger box
+    that merely contains the fragment does not.
+    """
+    j, i = covers.nonzero(as_tuple=True)
+    if not len(j):
+        return covers
+    tile_h, tile_w = tile_size
+    origins = torch.as_tensor(tile_origins, dtype=torch.float32)[tile_idx].flip(1)  # (x, y)
+    lo = torch.maximum(origins[j], origins[i])
+    hi = torch.minimum(origins[j], origins[i]) + torch.tensor([tile_w, tile_h], dtype=torch.float32)
+    lo, hi = torch.cat([lo, lo], dim=1), torch.cat([hi, hi], dim=1)
+    a = torch.minimum(torch.maximum(boxes[j], lo), hi)
+    b = torch.minimum(torch.maximum(boxes[i], lo), hi)
+    inter = (torch.minimum(a[:, 2:], b[:, 2:]) - torch.maximum(a[:, :2], b[:, :2])).clamp(min=0).prod(dim=1)
+    area_a = (a[:, 2:] - a[:, :2]).prod(dim=1)
+    area_b = (b[:, 2:] - b[:, :2]).prod(dim=1)
+    iou = inter / (area_a + area_b - inter).clamp(min=1e-9)
+    out = covers.clone()
+    out[j[iou < AGREEMENT_IOU], i[iou < AGREEMENT_IOU]] = False
+    return out
 
 
 def _unweld(covers: torch.Tensor, frac: torch.Tensor, cut: torch.Tensor) -> torch.Tensor:
@@ -294,8 +331,11 @@ def _connected_groups(pairs: torch.Tensor, n: int) -> List[List[int]]:
     return list(buckets.values())
 
 
-def _union_groups(merged: Dict[str, Any], groups: List[List[int]], whole: torch.Tensor) -> Dict[str, Any]:
-    """Collapse each group to its highest-scoring member; widen it only when no member saw the object whole."""
+def _union_groups(merged: Dict[str, Any], groups: List[List[int]], whole: torch.Tensor) -> Tuple[Dict[str, Any], List[List[int]]]:
+    """Collapse each group to its highest-scoring member; widen it only when no member saw the object whole.
+
+    Also returns the groups reordered to match the output rows.
+    """
     scores = merged.get("scores")
     reps: List[int] = []
     widen: List[bool] = []
@@ -337,7 +377,43 @@ def _union_groups(merged: Dict[str, Any], groups: List[List[int]], whole: torch.
     if segments is not None and len(segments):
         out["segments"] = [_union_polygons([segments[i] for i in g]) if widen[k] else segments[reps[k]] for k, g in enumerate(groups)]
 
-    return out
+    return out, groups
+
+
+def _absorb_fragments(out: Dict[str, Any], fragment_only: torch.Tensor, containment: float) -> Dict[str, Any]:
+    """Drop each instance built only from fragments that lies ``containment`` deep inside another output of its class.
+
+    Agreement refuses some genuine links, which would leave pieces of a found object behind as extra detections.
+    The container must have been seen whole, or outrank the instance when it is a fragment too.
+    """
+    n = len(fragment_only)
+    boxes = instance_boxes(out) if n >= 2 and fragment_only.any() else None
+    if boxes is None or len(boxes) != n:
+        return out
+
+    codes = class_codes(out.get("classes"), n)
+    scores = out.get("scores")
+    s = scores.detach().cpu().float() if isinstance(scores, torch.Tensor) and len(scores) == n else torch.zeros(n)
+    idx = torch.arange(n)
+    drop = torch.zeros(n, dtype=torch.bool)
+    for r in fragment_only.nonzero(as_tuple=True)[0].tolist():
+        # only outputs whose boxes touch r: a full pairwise mask overlap costs as much as the merge itself
+        b = boxes[r]
+        cand = (torch.minimum(boxes[:, 2], b[2]) > torch.maximum(boxes[:, 0], b[0])) & (
+            torch.minimum(boxes[:, 3], b[3]) > torch.maximum(boxes[:, 1], b[1])
+        )
+        cand &= ~fragment_only | (s > s[r]) | ((s == s[r]) & (idx < r))
+        cand[r] = False
+        if codes is not None:
+            cand &= codes == codes[r]
+        if not cand.any():
+            continue
+        overlap = pairwise_overlap(filter_instances(out, torch.cat([idx[r : r + 1], cand.nonzero(as_tuple=True)[0]])))
+        if overlap is not None:
+            drop[r] = bool((containment_matrix(*(t.detach().cpu() for t in overlap))[1:, 0] >= containment).any())
+    if not drop.any():
+        return out
+    return filter_instances(out, (~drop).nonzero(as_tuple=True)[0])
 
 
 def _union_polygons(polys: List[Any]) -> torch.Tensor:

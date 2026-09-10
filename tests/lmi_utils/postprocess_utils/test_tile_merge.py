@@ -89,10 +89,10 @@ def test_a_sliver_inside_two_objects_does_not_weld_them():
 
 
 def test_a_sliver_inside_one_object_seen_from_two_tiles_still_merges():
-    # Same shape, but now the two coverers are one object detected in both tiles, so the sliver
-    # must keep both links and everything collapses to a single box.
+    # Now the two coverers are one object detected twice, and the T1 piece is that object's part past the
+    # x=60 seam, so it keeps both links and everything collapses to a single box.
     out = _merge(
-        [[20, 30, 80, 60], [20, 30, 80, 60], [60, 46, 75, 56]],
+        [[20, 30, 80, 60], [20, 30, 80, 60], [60, 30, 80, 60]],
         [0.9, 0.8, 0.3],
         [0, 0, 1],
     )
@@ -100,18 +100,34 @@ def test_a_sliver_inside_one_object_seen_from_two_tiles_still_merges():
     assert torch.allclose(out["boxes"][0], torch.tensor([20.0, 30.0, 80.0, 60.0]))
 
 
+def test_a_neighbour_box_that_contains_a_fragment_does_not_claim_it():
+    # Q and S are whole in T0 and look cut at T1's left edge (x=60). P's cut box in T0 contains both T1 copies,
+    # but trimmed to the shared strip x 60-100 it is far larger than either, so it links to neither.
+    p, q, s = [30, 10, 100, 70], [61, 20, 75, 40], [61, 45, 75, 65]
+    out = _merge([p, q, s, q, s], [0.4, 0.9, 0.8, 0.5, 0.5], [0, 0, 0, 1, 1])
+    assert sorted(map(tuple, out["boxes"].tolist())) == sorted(tuple(map(float, b)) for b in (p, q, s))
+
+
 def test_two_whole_objects_joined_through_a_cut_coverer_both_survive():
-    # Q and S are whole in T0 and look cut at T1's left edge (x=60). A large cut box P in T0 covers both
-    # T1 copies, which chains Q and S into one group; the group must still return both objects.
-    q, s = [61, 20, 75, 40], [61, 45, 75, 65]
+    # X spans the seam and is cut in both tiles. Its T0 piece covers Q's T1 copy and its T1 piece covers S's T0
+    # copy, and both links agree in the shared strip, so Q and S land in X's group. Both whole objects must remain.
+    q, s = [62, 20, 90, 60], [70, 20, 125, 60]
     out = _merge(
-        [[30, 10, 100, 70], q, s, q, s],
-        [0.4, 0.9, 0.8, 0.5, 0.5],
-        [0, 0, 0, 1, 1],
+        [q, [55, 20, 100, 60], [70, 20, 100, 60], q, [60, 20, 110, 60], s],
+        [0.9, 0.5, 0.5, 0.5, 0.5, 0.8],
+        [0, 0, 0, 1, 1, 1],
     )
-    kept = {tuple(b) for b in out["boxes"].tolist()}
+    kept = set(map(tuple, out["boxes"].tolist()))
     assert tuple(map(float, q)) in kept
     assert tuple(map(float, s)) in kept
+
+
+def test_a_leftover_fragment_inside_a_whole_detection_is_dropped():
+    # A is whole in T1. Its T0 piece is cut at x=100 but, from an irregular shape, spans only y 40-60 there,
+    # so it does not agree with A in the shared strip and stays unlinked. It sits inside A, so it is dropped.
+    a = [65, 20, 120, 80]
+    out = _merge([[65, 40, 100, 60], a], [0.4, 0.9], [0, 1])
+    assert out["boxes"].tolist() == [list(map(float, a))]
 
 
 def test_fragments_of_different_classes_do_not_pair():
