@@ -23,6 +23,7 @@ from anomalib.pre_processing.utils.transform import disable_antialiasing
 
 # import before anomalib to avoid partial-init circular import
 from torchvision.transforms import v2
+from .training_hooks import notify_model_exported, prepare_model_training_config
 
 from .tiling import TilerConfigCallback
 
@@ -236,6 +237,7 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    cfg = prepare_model_training_config(cfg, args.config)
 
     # --- Build Model Dynamically ---
     model_params = cfg["model"]["params"]
@@ -327,6 +329,9 @@ def main():
             export_onnx(external_data=True)
         else:
             raise e
+
+    # Optional model-owned artifact publication. Standard models are no-ops.
+    notify_model_exported(model, cfg)
 
 
 if __name__ == "__main__":

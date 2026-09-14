@@ -18,7 +18,7 @@ from torch.utils.data import DataLoader
 from torchvision.transforms.v2 import Compose, InterpolationMode, Normalize, Resize
 
 from anomalib import LearningType, PrecisionType
-from anomalib.data import Batch
+from anomalib.data import Batch, InferenceBatch
 from anomalib.metrics import Evaluator
 from anomalib.models.components import AnomalibModule, MemoryBankMixin
 from anomalib.post_processing import PostProcessor
@@ -74,6 +74,9 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         projected_image_accept_max_reject_false_accept_rate: float = 0.05,
         projected_image_accept_safety_margin: float = 0.01,
         projected_image_accept_min_threshold: float = 0.0,
+        # v8.4: calibrate raw + projected whole-image ACCEPT thresholds jointly
+        # against one shared reject false-accept budget.
+        joint_image_accept_calibrate: bool = True,
         # calibrated continuous REJECT evidence (v5)
         image_reject_boost_enable: bool = True,
         image_reject_boost_advantage_threshold: float = 0.0,
@@ -162,10 +165,21 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         diagnostic_output_dir: str | Path | None = None,
         diagnostic_batch_size: int = 4,
         diagnostic_num_workers: int = 4,
-        diagnostic_target_precisions: tuple[float, ...] | list[float] = (0.95, 0.99),
+        diagnostic_target_precisions: tuple[float, ...] | list[float] = (0.95, 0.99, 0.999),
         diagnostic_report_threshold: float | None = None,
         diagnostic_fail_on_overlap: bool = True,
         diagnostic_reject_class_depth: int = 1,
+        # Deployment threshold calibration. Enabled by default and derived from
+        # image_calibration_{good,acceptable,reject}_dir after all tolerance rules
+        # are frozen. Export-domain conversion is finalized after anomalib's
+        # validation PostProcessor has learned its normalization state.
+        deployment_thresholds_enable: bool = True,
+        deployment_target_precisions: tuple[float, ...] | list[float] = (0.95, 0.99, 0.999),
+        deployment_thresholds_output_dir: str | Path | None = None,
+        # Internal training-adapter bookkeeping. These are injected automatically
+        # by this model's prepare_training_config hook and are not user-facing.
+        training_workspace: str | Path | None = None,
+        training_original_config_path: str | Path | None = None,
         precision: str | PrecisionType = PrecisionType.FLOAT32,
         pre_processor: nn.Module | bool = True,
         post_processor: nn.Module | bool = True,
@@ -177,6 +191,11 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             post_processor=post_processor,
             evaluator=evaluator,
             visualizer=visualizer,
+        )
+
+        self.training_workspace = Path(training_workspace) if training_workspace else None
+        self.training_original_config_path = (
+            Path(training_original_config_path) if training_original_config_path else None
         )
 
         self.normal_reference_dir = Path(normal_reference_dir) if normal_reference_dir else None
@@ -207,6 +226,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         if self.projected_image_accept_safety_margin < 0.0:
             raise ValueError("projected_image_accept_safety_margin must be >= 0")
         self.projected_image_accept_min_threshold = float(projected_image_accept_min_threshold)
+        self.joint_image_accept_calibrate = bool(joint_image_accept_calibrate)
 
         self.image_reject_boost_calibrate = bool(image_reject_boost_calibrate)
         self.image_reject_boost_target_precision = float(image_reject_boost_target_precision)
@@ -282,6 +302,24 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         self.diagnostic_fail_on_overlap = bool(diagnostic_fail_on_overlap)
         self.diagnostic_reject_class_depth = int(diagnostic_reject_class_depth)
 
+        self.deployment_thresholds_enable = bool(deployment_thresholds_enable)
+        targets = (
+            self.diagnostic_target_precisions
+            if deployment_target_precisions is None
+            else tuple(float(v) for v in deployment_target_precisions)
+        )
+        self.deployment_target_precisions = tuple(float(v) for v in targets)
+        if not self.deployment_target_precisions:
+            raise ValueError("deployment_target_precisions must not be empty")
+        if any(not 0.0 < v <= 1.0 for v in self.deployment_target_precisions):
+            raise ValueError("deployment_target_precisions values must be in (0, 1]")
+        self.deployment_thresholds_output_dir = (
+            Path(deployment_thresholds_output_dir) if deployment_thresholds_output_dir else None
+        )
+        self._pending_deployment_threshold_payload: dict[str, Any] | None = None
+        self._pending_deployment_labels: np.ndarray | None = None
+        self._pending_deployment_raw_scores: np.ndarray | None = None
+
         self.model = TolerantAnomalyDINOModel(
             encoder_name=encoder_name,
             num_neighbours=num_neighbours,
@@ -350,6 +388,12 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             precision = PrecisionType(precision.lower())
         if precision == PrecisionType.FLOAT16:
             self.model = self.model.half()
+            # Anomalib's PatchCore AnomalyMapGenerator applies Gaussian blur via
+            # reflection padding. CPU reflection_pad2d does not support FP16 on
+            # the PyTorch build used by the ONNX export preflight. Keep only the
+            # anomaly-map generator in FP32; the detector/features/banks remain
+            # FP16. torch_model.py casts the map into/out of this FP32 island.
+            self.model.anomaly_map_generator.float()
         elif precision == PrecisionType.FLOAT32:
             self.model = self.model.float()
         else:
@@ -357,6 +401,19 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 f"Unsupported precision: {precision}. "
                 f"Supported: {PrecisionType.FLOAT16}, {PrecisionType.FLOAT32}."
             )
+
+    @classmethod
+    def prepare_training_config(cls, cfg: dict, *, config_path: Path) -> dict:
+        """Resolve concise TAD YAML without coupling the shared trainer to TAD."""
+        from .training_config import prepare_training_config
+
+        return prepare_training_config(cls, cfg, config_path=config_path)
+
+    def on_training_exported(self, cfg: dict) -> None:
+        """Publish TAD-owned split/calibration artifacts after PT+ONNX export."""
+        from .training_config import publish_training_artifacts
+
+        publish_training_artifacts(self, cfg)
 
     @classmethod
     def configure_pre_processor(
@@ -392,6 +449,21 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
     def configure_post_processor() -> PostProcessor:
         return PostProcessor()
 
+    def on_train_end(self) -> None:
+        """Finalize recommended thresholds in the exact exported score domain.
+
+        The raw target-precision thresholds are selected earlier from the held-out
+        image calibration directories.  This hook runs after Lightning validation,
+        when anomalib's PostProcessor has finalized image/pixel min/max + adaptive
+        thresholds.  Converting here guarantees that the saved threshold is in the
+        same score domain emitted by exported PT and ONNX artifacts.
+        """
+        super_hook = getattr(super(), "on_train_end", None)
+        if callable(super_hook):
+            super_hook()
+        if self.deployment_thresholds_enable:
+            self._finalize_deployment_thresholds()
+
     def training_step(self, batch: Batch, *args, **kwargs) -> STEP_OUTPUT:
         del args, kwargs
         _ = self.model(batch.image)
@@ -417,6 +489,8 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
 
         if self.model.detector_only:
             logger.info("detector_only=True: skipping residual-bank construction/calibration.")
+            if self.deployment_thresholds_enable:
+                self._run_deployment_threshold_calibration()
             if self.diagnostic_enable:
                 logger.warning("Diagnostics requested in detector_only mode; tolerance fields will be empty/base-only.")
                 self._run_heldout_diagnostics()
@@ -450,20 +524,30 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                     t_known_percentile=self.calibrate_t_known_percentile,
                 )
 
-        if self.model.image_accept_enable and self.image_accept_calibrate:
-            self._run_image_accept_calibration()
+        raw_accept_calibration = bool(self.model.image_accept_enable and self.image_accept_calibrate)
+        projected_accept_calibration = bool(
+            getattr(self.model, "projected_image_accept_enable", False)
+        ) and bool(self.projected_image_accept_calibrate)
 
-        if (
-            bool(getattr(self.model, "projected_image_accept_enable", False))
-            and self.projected_image_accept_calibrate
-        ):
-            self._run_projected_image_accept_calibration()
+        if self.joint_image_accept_calibrate and raw_accept_calibration and projected_accept_calibration:
+            self._run_joint_image_accept_calibration()
+        else:
+            if raw_accept_calibration:
+                self._run_image_accept_calibration()
+            if projected_accept_calibration:
+                self._run_projected_image_accept_calibration()
 
         if self.model.image_reject_boost_enable and self.image_reject_boost_calibrate:
             self._run_image_reject_boost_calibration()
 
         if self.model.projected_reject_boost_enable and self.projected_reject_boost_calibrate:
             self._run_projected_reject_boost_calibration()
+
+        # Production decision thresholds are calibrated only after every model-side
+        # ACCEPT/REJECT rule is frozen.  This uses the calibration partition, never
+        # the final diagnostic/test partition.
+        if self.deployment_thresholds_enable:
+            self._run_deployment_threshold_calibration()
 
         if self.diagnostic_enable:
             self._run_heldout_diagnostics()
@@ -688,13 +772,205 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                         rows.append(row)
         return rows
 
-    def _run_image_accept_calibration(self) -> None:
+    def _run_joint_image_accept_calibration(self) -> None:
+        """Jointly calibrate raw and projected whole-image ACCEPT thresholds.
+
+        v8.4 replaces the sequential budget allocation used by v8.3.  Both
+        thresholds are selected from the calibration partition in one search,
+        maximizing acceptable-image coverage while constraining the UNION
+        ``raw_accept OR projected_accept`` on reject calibration images.
+
+        Downstream raw/projected REJECT boosts are calibrated only after these
+        two ACCEPT thresholds are frozen, so score calibration remains ordered
+        and leakage-safe.
+        """
         dirs = self._image_calibration_dirs()
         missing = {"acceptable", "reject"} - set(dirs)
         if missing:
             logger.warning(
-                "Image-level acceptance calibration skipped; missing calibration dirs: %s. "
-                "Image-level acceptance remains disabled by an infinite threshold.",
+                "Joint image ACCEPT calibration skipped; missing calibration dirs: %s. "
+                "Both ACCEPT thresholds are set to infinity.",
+                sorted(missing),
+            )
+            self.model.image_accept_threshold.fill_(float("inf"))
+            self.model.projected_image_accept_threshold.fill_(float("inf"))
+            return
+
+        mode = self.model.residual_projection_mode
+        direction_available = self.model.residual_projection_direction_weight.numel() > 0
+        magnitude_available = self.model.residual_projection_magnitude_weight.numel() > 0
+        mode_available = (
+            (mode == "direction" and direction_available)
+            or (mode == "magnitude" and magnitude_available)
+            or (mode == "dual" and direction_available and magnitude_available)
+        )
+        if not mode_available:
+            logger.warning(
+                "Joint image ACCEPT calibration cannot use projected evidence for mode=%s "
+                "(direction=%s magnitude=%s); falling back to raw-only calibration.",
+                mode,
+                direction_available,
+                magnitude_available,
+            )
+            self._run_image_accept_calibration()
+            self.model.projected_image_accept_threshold.fill_(float("inf"))
+            return
+
+        self._assert_no_cross_partition_overlap()
+        logger.info(
+            "Running JOINT raw+projected image ACCEPT calibration: mode=%s; "
+            "all ACCEPT/REJECT score modifications disabled during evidence collection...",
+            mode,
+        )
+        rows = self._collect_diagnostic_rows(
+            dirs,
+            batch_size=self.image_calibration_batch_size,
+            num_workers=self.image_calibration_num_workers,
+            apply_image_accept=False,
+            apply_reject_boost=False,
+            apply_projected_reject_boost=False,
+            purpose="joint-image-accept-calibration",
+        )
+        if not rows:
+            logger.warning("Joint image ACCEPT calibration produced no rows.")
+            self.model.image_accept_threshold.fill_(float("inf"))
+            self.model.projected_image_accept_threshold.fill_(float("inf"))
+            return
+
+        # Both legacy knobs constrain the same union in joint mode.  Taking the
+        # stricter value preserves backwards-compatible safety expectations.
+        union_budget = min(
+            float(self.image_accept_max_reject_false_accept_rate),
+            float(self.projected_image_accept_max_reject_false_accept_rate),
+        )
+        calibration = _calibrate_joint_image_accept_rule(
+            rows,
+            mode=mode,
+            max_combined_reject_false_accept_rate=union_budget,
+            raw_safety_margin=self.image_accept_safety_margin,
+            projected_safety_margin=self.projected_image_accept_safety_margin,
+            raw_min_threshold=self.image_accept_min_threshold,
+            projected_min_threshold=self.projected_image_accept_min_threshold,
+            raw_image_reject_veto_enable=bool(self.model.image_reject_veto_enable),
+            raw_image_reject_veto_threshold=float(
+                self.model.image_reject_veto_threshold.detach().float().cpu()
+            ),
+        )
+        calibration["calibration_seed"] = int(self.calibration_seed)
+        self.model.image_accept_threshold.fill_(float(calibration["raw_threshold"]))
+        self.model.projected_image_accept_threshold.fill_(
+            float(calibration["projected_threshold"])
+        )
+
+        out_dir = self.image_calibration_output_dir or self.diagnostic_output_dir
+        if out_dir is None:
+            trainer_root = getattr(getattr(self, "trainer", None), "default_root_dir", None)
+            out_dir = Path(trainer_root or "/app/out") / "tolerance_diagnostics"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        csv_path = out_dir / "joint_image_accept_calibration.csv"
+        json_path = out_dir / "joint_image_accept_calibration.json"
+        self._write_diagnostic_csv(csv_path, rows)
+        json_path.write_text(json.dumps(calibration, indent=2, sort_keys=True))
+
+        # Preserve familiar per-gate filenames for scripts that collect calibration
+        # artifacts, but make it explicit that the values came from a joint search.
+        (out_dir / "image_accept_calibration.json").write_text(
+            json.dumps({
+                "fit_policy": "joint_raw_projected",
+                "threshold": calibration["raw_threshold"],
+                "raw_threshold_before_safety_margin": calibration["raw_threshold_before_safety_margin"],
+                "safety_margin": calibration["raw_safety_margin"],
+                "combined_reject_false_accept_rate": calibration["combined_reject_false_accept_rate"],
+                "combined_reject_false_accepted": calibration["combined_reject_false_accepted"],
+                "reject_count": calibration["reject_count"],
+                "calibration_seed": int(self.calibration_seed),
+            }, indent=2, sort_keys=True)
+        )
+        (out_dir / "projected_image_accept_calibration.json").write_text(
+            json.dumps({
+                "fit_policy": "joint_raw_projected",
+                "projection_mode": mode,
+                "threshold": calibration["projected_threshold"],
+                "raw_threshold_before_safety_margin": calibration["projected_threshold_before_safety_margin"],
+                "safety_margin": calibration["projected_safety_margin"],
+                "combined_reject_false_accept_rate": calibration["combined_reject_false_accept_rate"],
+                "combined_reject_false_accepted": calibration["combined_reject_false_accepted"],
+                "reject_count": calibration["reject_count"],
+                "calibration_seed": int(self.calibration_seed),
+            }, indent=2, sort_keys=True)
+        )
+
+        logger.info(
+            "JOINT-IMAGE-ACCEPT-CALIBRATION mode=%s raw_T=%.6f projected_T=%.6f "
+            "acceptable_union_rate=%.4f (%d/%d) reject_union_rate=%.4f (%d/%d) "
+            "raw_reject=%d projected_reject=%d status=%s",
+            mode,
+            calibration["raw_threshold"],
+            calibration["projected_threshold"],
+            calibration["acceptable_combined_accept_rate"],
+            calibration["acceptable_combined_accepted"],
+            calibration["acceptable_count"],
+            calibration["combined_reject_false_accept_rate"],
+            calibration["combined_reject_false_accepted"],
+            calibration["reject_count"],
+            calibration["raw_reject_false_accepted"],
+            calibration["projected_reject_false_accepted"],
+            calibration["status"],
+        )
+        logger.info("Joint ACCEPT calibration CSV: %s", csv_path)
+        logger.info("Joint ACCEPT calibration JSON: %s", json_path)
+
+    def _run_image_accept_calibration(self) -> None:
+        dirs = self._image_calibration_dirs()
+        has_accept_bank = self.model.accept_dir_bank.numel() > 0
+        has_reject_bank = self.model.reject_dir_bank.numel() > 0
+        if not has_accept_bank:
+            logger.warning(
+                "Image-level acceptance calibration skipped; ACCEPT residual bank is empty. "
+                "Image-level acceptance remains disabled by an infinite threshold."
+            )
+            self.model.image_accept_threshold.fill_(float("inf"))
+            return
+
+        # ACCEPT-only mode is deliberately one-sided.  The torch model defines
+        # image evidence as ``t_accept_known - mean(d_accept)``; therefore zero is
+        # the calibrated class boundary and no held-out ACCEPT/REJECT calibration
+        # directory is required to activate useful suppression.  We cannot estimate
+        # reject false-accept risk without a REJECT bank, so record that limitation
+        # explicitly rather than pretending this is precision-constrained.
+        if not has_reject_bank:
+            threshold = 0.0
+            self.model.image_accept_threshold.fill_(threshold)
+            out_dir = self.image_calibration_output_dir or self.diagnostic_output_dir
+            if out_dir is None:
+                trainer_root = getattr(getattr(self, "trainer", None), "default_root_dir", None)
+                out_dir = Path(trainer_root or "/app/out") / "tolerance_diagnostics"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "status": "accept_only_known_threshold",
+                "mode": "accept_only",
+                "threshold": threshold,
+                "evidence": "t_accept_known - top_mean_d_accept",
+                "decision": "accept when evidence > threshold (with transition ramp)",
+                "t_accept_known": float(self.model.t_accept_known.detach().float().cpu()),
+                "reject_false_accept_rate_available": False,
+                "calibration_seed": int(self.calibration_seed),
+            }
+            json_path = out_dir / "image_accept_calibration.json"
+            json_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+            logger.info(
+                "IMAGE-CALIBRATION accept-only: threshold=0.0 using calibrated "
+                "T_accept_known=%.6f; reject false-accept risk is unavailable.",
+                payload["t_accept_known"],
+            )
+            logger.info("Image calibration JSON: %s", json_path)
+            return
+
+        missing = {"acceptable", "reject"} - set(dirs)
+        if missing:
+            logger.warning(
+                "Comparative image-level ACCEPT calibration skipped; missing calibration dirs: %s. "
+                "Keeping ACCEPT disabled by an infinite threshold.",
                 sorted(missing),
             )
             self.model.image_accept_threshold.fill_(float("inf"))
@@ -856,15 +1132,46 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         logger.info("Projected image ACCEPT calibration JSON: %s", json_path)
 
     def _run_image_reject_boost_calibration(self) -> None:
-        """Calibrate v5 continuous REJECT boost using calibration images only."""
+        """Calibrate v5 continuous REJECT boost using calibration images only.
+
+        ACCEPTABLE samples are useful negatives but are not required.  In
+        REJECT-only tolerance mode, GOOD provides the negative class and REJECT
+        provides the positive class; the model's signed evidence is
+        ``d_reject - t_reject_known`` and the existing boost grid remains valid.
+        """
         dirs = self._image_calibration_dirs()
-        missing = {"good", "acceptable", "reject"} - set(dirs)
-        if missing:
-            logger.warning(
-                "Image-level REJECT boost calibration skipped; missing calibration dirs: %s. "
-                "Keeping configured boost parameters.",
-                sorted(missing),
-            )
+        has_reject_bank = self.model.reject_dir_bank.numel() > 0
+        has_accept_bank = self.model.accept_dir_bank.numel() > 0
+        if not has_reject_bank:
+            logger.warning("Image-level REJECT boost calibration skipped; REJECT residual bank is empty.")
+            return
+
+        if "reject" not in dirs or not ({"good", "acceptable"} & set(dirs)):
+            # REJECT-only remains functional even when the dataset is too small to
+            # allocate a calibration partition.  Zero is the calibrated known-class
+            # boundary for d_reject-t_reject_known; lambda=1 is a conservative
+            # distance-proportional fallback.  Full two-bank mode keeps its existing
+            # configured parameters because comparative boosting should not be
+            # altered without calibration.
+            if not has_accept_bank:
+                self.model.image_reject_boost_advantage_threshold.fill_(0.0)
+                current_lambda = float(self.model.image_reject_boost_lambda.detach().float().cpu())
+                if current_lambda <= 0.0:
+                    self.model.image_reject_boost_lambda.fill_(1.0)
+                logger.warning(
+                    "REJECT-only boost calibration has insufficient held-out data (present=%s). "
+                    "Using one-sided fallback A0=0, lambda=%.6f based on T_reject_known=%.6f.",
+                    sorted(dirs),
+                    float(self.model.image_reject_boost_lambda.detach().float().cpu()),
+                    float(self.model.t_reject_known.detach().float().cpu()),
+                )
+            else:
+                logger.warning(
+                    "Image-level REJECT boost calibration skipped; requires REJECT plus at least "
+                    "one non-reject calibration directory (GOOD or ACCEPTABLE). Present=%s. "
+                    "Keeping configured boost parameters.",
+                    sorted(dirs),
+                )
             return
 
         self._assert_no_cross_partition_overlap()
@@ -1198,6 +1505,411 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             fused_op["met"],
         )
         logger.info("Projected boost calibration JSON: %s", aggregate_json)
+
+    def _deployment_threshold_output_dir(self) -> Path:
+        """Resolve the stable output directory for recommended thresholds."""
+        if self.deployment_thresholds_output_dir is not None:
+            return self.deployment_thresholds_output_dir
+        if self.image_calibration_output_dir is not None:
+            return self.image_calibration_output_dir
+        if self.diagnostic_output_dir is not None:
+            return self.diagnostic_output_dir
+        trainer_root = getattr(getattr(self, "trainer", None), "default_root_dir", None)
+        return Path(trainer_root or "/app/out") / "tolerance_diagnostics"
+
+    def _run_deployment_threshold_calibration(self) -> None:
+        """Collect calibration scores for production threshold selection.
+
+        With reject calibration samples, thresholds target precision normally.
+        Without rejects, training remains usable and falls back to an empirical
+        non-reject upper quantile (q=0.95/0.99/0.999 by default). That fallback is
+        explicitly reported as an FPR/quantile criterion, never mislabeled as
+        precision.
+        """
+        dirs = self._image_calibration_dirs()
+        if "good" not in dirs:
+            logger.warning(
+                "Deployment threshold calibration skipped; no GOOD calibration directory is available."
+            )
+            self._pending_deployment_threshold_payload = None
+            return
+
+        self._assert_no_cross_partition_overlap()
+        logger.info(
+            "Running deployment threshold calibration after all ACCEPT/REJECT rules are frozen..."
+        )
+        rows = self._collect_diagnostic_rows(
+            dirs,
+            batch_size=self.image_calibration_batch_size,
+            num_workers=self.image_calibration_num_workers,
+            apply_image_accept=True,
+            apply_reject_boost=True,
+            apply_projected_reject_boost=True,
+            purpose="deployment-threshold-calibration",
+        )
+        if not rows:
+            logger.warning("Deployment threshold calibration produced no rows.")
+            self._pending_deployment_threshold_payload = None
+            return
+
+        labels = np.asarray([int(r["label"]) for r in rows], dtype=np.int64)
+        scores = np.asarray([float(r["final_pred_score"]) for r in rows], dtype=np.float64)
+        finite = np.isfinite(scores)
+        if not np.all(finite):
+            logger.warning(
+                "Ignoring %d non-finite scores during deployment threshold calibration.",
+                int(np.sum(~finite)),
+            )
+            labels = labels[finite]
+            scores = scores[finite]
+
+        source_counts = {
+            source: int(sum(str(r.get("source")) == source for r in rows))
+            for source in ("good", "acceptable", "reject")
+        }
+        has_reject = bool(np.any(labels == 1))
+        nonreject_scores = scores[labels == 0]
+        if nonreject_scores.size == 0:
+            logger.warning("Deployment threshold calibration has no non-reject samples; skipping.")
+            self._pending_deployment_threshold_payload = None
+            return
+
+        raw_ops: dict[str, Any] = {}
+        if has_reject:
+            for target in self.deployment_target_precisions:
+                key = f"precision_{target:.4f}".rstrip("0").rstrip(".")
+                raw_ops[key] = _target_precision_operating_point_deployment(
+                    labels, scores, float(target)
+                )
+
+        raw_quantiles: dict[str, Any] = {}
+        for q in self.deployment_target_precisions:
+            q = float(q)
+            key = f"nonreject_q{q:.4f}".rstrip("0").rstrip(".")
+            raw_quantiles[key] = self._nonreject_quantile_operating_point(nonreject_scores, q)
+
+        payload: dict[str, Any] = {
+            "schema_version": 2,
+            "status": "raw_thresholds_ready_postprocessor_pending",
+            "calibration_source": "image_calibration_dirs",
+            "uses_final_test_for_threshold_selection": False,
+            "score_source_raw": "inner_model_final_pred_score",
+            "decision_rule": {"pass": "score <= threshold", "fail": "score > threshold"},
+            "selection_mode": "precision" if has_reject else "nonreject_quantile_fallback",
+            "target_precisions": [float(v) for v in self.deployment_target_precisions],
+            "source_counts": source_counts,
+            "raw_operating_points": raw_ops,
+            "raw_nonreject_quantiles": raw_quantiles,
+            "calibration_seed": int(self.calibration_seed),
+        }
+        self._pending_deployment_threshold_payload = payload
+        self._pending_deployment_labels = labels.copy()
+        self._pending_deployment_raw_scores = scores.copy()
+
+        out_dir = self._deployment_threshold_output_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        raw_path = out_dir / "recommended_thresholds_raw.json"
+        raw_path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+        logger.info("Raw recommended thresholds (pre-PostProcessor): %s", raw_path)
+        if has_reject:
+            for key, op in raw_ops.items():
+                logger.info(
+                    "RAW-DEPLOYMENT-THRESHOLD %s threshold=%s P=%.4f R=%.4f met=%s",
+                    key,
+                    op.get("threshold"),
+                    float(op.get("precision", 0.0)),
+                    float(op.get("recall", 0.0)),
+                    bool(op.get("met", False)),
+                )
+        else:
+            logger.warning(
+                "No reject calibration samples: precision cannot be estimated. "
+                "Using explicit non-reject quantile/FPR fallback thresholds."
+            )
+            for key, op in raw_quantiles.items():
+                logger.info(
+                    "RAW-NONREJECT-QUANTILE %s threshold=%s empirical_FPR=%.6f n=%d",
+                    key,
+                    op.get("threshold"),
+                    float(op.get("empirical_fpr", 0.0)),
+                    int(op.get("nonreject_count", 0)),
+                )
+
+    @staticmethod
+    def _nonreject_quantile_operating_point(scores: np.ndarray, quantile: float) -> dict[str, Any]:
+        values = np.asarray(scores, dtype=np.float64)
+        values = values[np.isfinite(values)]
+        q = float(quantile)
+        if values.size == 0:
+            return {
+                "criterion": "nonreject_quantile",
+                "quantile": q,
+                "threshold": None,
+                "empirical_fpr": None,
+                "nonreject_count": 0,
+            }
+        # numpy linear quantile is deterministic. Deployment fails strictly on >,
+        # matching LMI_AI_Solutions, so values equal to the threshold remain PASS.
+        threshold = float(np.quantile(values, q, method="linear"))
+        empirical_fpr = float(np.mean(values > threshold))
+        return {
+            "criterion": "nonreject_quantile",
+            "quantile": q,
+            "threshold": threshold,
+            "empirical_fpr": empirical_fpr,
+            "nonreject_count": int(values.size),
+        }
+
+    @staticmethod
+    def _tensor_scalar(value: Any) -> float | None:
+        """Safely convert a tensor/scalar PostProcessor field to a Python float."""
+        if value is None:
+            return None
+        try:
+            if isinstance(value, torch.Tensor):
+                if value.numel() != 1:
+                    return None
+                return float(value.detach().float().cpu().item())
+            return float(value)
+        except (TypeError, ValueError, RuntimeError):
+            return None
+
+    def _postprocessor_export_scores(self, raw_scores: np.ndarray) -> tuple[np.ndarray, str]:
+        """Map raw scores through the exact normalization embedded in PT/ONNX export."""
+        values_np = np.asarray(raw_scores, dtype=np.float64)
+        post = getattr(self, "post_processor", None)
+        if post is None or post is False:
+            return values_np.copy(), "raw_postprocessor_disabled"
+        if not bool(getattr(post, "enable_normalization", False)):
+            return values_np.copy(), "raw_normalization_disabled"
+
+        normalize = getattr(post, "_normalize", None)
+        image_min = getattr(post, "image_min", None)
+        image_max = getattr(post, "image_max", None)
+        image_threshold = getattr(post, "image_threshold", None)
+        if callable(normalize) and isinstance(image_min, torch.Tensor) and isinstance(image_max, torch.Tensor):
+            device = image_min.device
+            values = torch.as_tensor(values_np, device=device, dtype=torch.float32)
+            threshold = image_threshold
+            if not isinstance(threshold, torch.Tensor):
+                threshold = torch.tensor(float(threshold), device=device, dtype=torch.float32)
+            else:
+                threshold = threshold.to(device=device, dtype=torch.float32)
+            with torch.no_grad():
+                converted = normalize(
+                    values,
+                    image_min.to(device=device, dtype=torch.float32),
+                    image_max.to(device=device, dtype=torch.float32),
+                    threshold,
+                )
+            if converted is not None:
+                return converted.detach().float().cpu().numpy().astype(np.float64), "postprocessed_export"
+
+        # Conservative fallback reproducing anomalib OneClassPostProcessor._normalize.
+        mn = self._tensor_scalar(image_min)
+        mx = self._tensor_scalar(image_max)
+        th = self._tensor_scalar(image_threshold)
+        if mn is None or mx is None or not (np.isfinite(mn) and np.isfinite(mx)):
+            return values_np.copy(), "raw_normalization_stats_unavailable"
+        if th is None or not np.isfinite(th):
+            th = 0.5 * (mn + mx)
+        denom = mx - mn
+        if not np.isfinite(denom) or abs(denom) <= 1.0e-12:
+            return values_np.copy(), "raw_invalid_normalization_range"
+        converted = ((values_np - th) / denom) + 0.5
+        return np.clip(converted, 0.0, 1.0), "postprocessed_export_formula_fallback"
+
+    def _postprocessor_metadata(self) -> dict[str, Any]:
+        post = getattr(self, "post_processor", None)
+        if post is None or post is False:
+            return {"enabled": False}
+
+        fields: dict[str, Any] = {
+            "enabled": True,
+            "class": type(post).__name__,
+            "enable_normalization": bool(getattr(post, "enable_normalization", False)),
+            "enable_thresholding": bool(getattr(post, "enable_thresholding", False)),
+        }
+        for name in (
+            "image_min", "image_max", "image_threshold",
+            "pixel_min", "pixel_max", "pixel_threshold",
+            "normalized_image_threshold", "normalized_pixel_threshold",
+        ):
+            fields[name] = self._tensor_scalar(getattr(post, name, None))
+        return fields
+
+    def _finalize_deployment_thresholds(self) -> None:
+        """Convert and save recommended thresholds in exported PT/ONNX score space."""
+        payload = self._pending_deployment_threshold_payload
+        if not payload:
+            return
+
+        labels = self._pending_deployment_labels
+        raw_scores = self._pending_deployment_raw_scores
+        if labels is None or raw_scores is None or labels.size != raw_scores.size:
+            logger.warning("Deployment threshold finalization skipped; calibration scores are unavailable.")
+            return
+
+        export_scores, domain = self._postprocessor_export_scores(raw_scores)
+        finite = np.isfinite(export_scores)
+        if not np.all(finite):
+            logger.warning(
+                "Ignoring %d non-finite exported scores during deployment threshold finalization.",
+                int(np.sum(~finite)),
+            )
+        export_labels = labels[finite]
+        export_scores = export_scores[finite]
+        has_reject = bool(np.any(export_labels == 1))
+        nonreject_scores = export_scores[export_labels == 0]
+
+        export_ops: dict[str, Any] = {}
+        if has_reject:
+            for target in self.deployment_target_precisions:
+                key = f"precision_{target:.4f}".rstrip("0").rstrip(".")
+                op = _target_precision_operating_point_deployment(
+                    export_labels, export_scores, float(target)
+                )
+                op["score_domain"] = domain
+                raw_op = payload.get("raw_operating_points", {}).get(key, {})
+                op["raw_domain_threshold"] = raw_op.get("threshold")
+                export_ops[key] = op
+
+        export_quantiles: dict[str, Any] = {}
+        for q in self.deployment_target_precisions:
+            q = float(q)
+            key = f"nonreject_q{q:.4f}".rstrip("0").rstrip(".")
+            op = self._nonreject_quantile_operating_point(nonreject_scores, q)
+            op["score_domain"] = domain
+            raw_op = payload.get("raw_nonreject_quantiles", {}).get(key, {})
+            op["raw_domain_threshold"] = raw_op.get("threshold")
+            export_quantiles[key] = op
+
+        post_meta = self._postprocessor_metadata()
+        if bool(post_meta.get("enable_normalization", False)):
+            annotation_min = post_meta.get("normalized_pixel_threshold")
+        else:
+            annotation_min = post_meta.get("pixel_threshold")
+
+        recommended = None
+        if has_reject:
+            met_candidates = [
+                (float(op.get("target_precision", 0.0)), key, op)
+                for key, op in export_ops.items()
+                if bool(op.get("met", False)) and op.get("threshold") is not None
+            ]
+            preferred = max(met_candidates, default=None, key=lambda item: item[0])
+            if preferred is not None:
+                target, key, op = preferred
+                recommended = {
+                    "name": key,
+                    "criterion": "target_precision",
+                    "target_precision": target,
+                    "threshold": float(op["threshold"]),
+                    "raw_threshold": (
+                        None if op.get("raw_domain_threshold") is None
+                        else float(op["raw_domain_threshold"])
+                    ),
+                    "observed_precision": float(op.get("precision", 0.0)),
+                    "observed_recall": float(op.get("recall", 0.0)),
+                }
+        else:
+            # No reject examples means precision/recall are unknowable. Select the
+            # strictest requested non-reject quantile and label it explicitly.
+            candidates = [
+                (float(op.get("quantile", 0.0)), key, op)
+                for key, op in export_quantiles.items()
+                if op.get("threshold") is not None
+            ]
+            preferred = max(candidates, default=None, key=lambda item: item[0])
+            if preferred is not None:
+                q, key, op = preferred
+                recommended = {
+                    "name": key,
+                    "criterion": "nonreject_quantile",
+                    "quantile": q,
+                    "target_fpr_nominal": float(max(0.0, 1.0 - q)),
+                    "threshold": float(op["threshold"]),
+                    "raw_threshold": (
+                        None if op.get("raw_domain_threshold") is None
+                        else float(op["raw_domain_threshold"])
+                    ),
+                    "empirical_fpr": float(op.get("empirical_fpr", 0.0)),
+                    "nonreject_count": int(op.get("nonreject_count", 0)),
+                }
+
+        payload = {
+            **payload,
+            "status": "ok" if has_reject else "ok_nonreject_quantile_fallback",
+            "score_source_export": "exported_pt_onnx_pred_score",
+            "pt_onnx_same_threshold": True,
+            "post_processor": post_meta,
+            "export_operating_points": export_ops,
+            "export_nonreject_quantiles": export_quantiles,
+            "recommended": recommended,
+            "recommended_threshold": None if recommended is None else recommended["threshold"],
+            "annotation": {
+                "ad_threshold": annotation_min,
+                "ad_max": None if recommended is None else recommended["threshold"],
+                "ad_max_by_precision": {
+                    key: op.get("threshold") for key, op in export_ops.items()
+                },
+                "ad_max_by_nonreject_quantile": {
+                    key: op.get("threshold") for key, op in export_quantiles.items()
+                },
+                "note": (
+                    "For LMI ad_base.annotate, ad_threshold is the post-processor pixel decision "
+                    "boundary and ad_max may use the selected deployment fail threshold."
+                ),
+            },
+        }
+
+        out_dir = self._deployment_threshold_output_dir()
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / "recommended_thresholds.json"
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True))
+        self._pending_deployment_threshold_payload = payload
+
+        logger.info("Recommended exported PT/ONNX thresholds: %s", path)
+        if recommended is not None and recommended.get("criterion") == "target_precision":
+            logger.info(
+                "RECOMMENDED-DEPLOYMENT-THRESHOLD target_precision=%.4f threshold=%.8f "
+                "observed_P=%.4f observed_R=%.4f",
+                recommended["target_precision"],
+                recommended["threshold"],
+                recommended["observed_precision"],
+                recommended["observed_recall"],
+            )
+        elif recommended is not None:
+            logger.warning(
+                "RECOMMENDED-DEPLOYMENT-THRESHOLD uses non-reject quantile fallback: "
+                "q=%.4f threshold=%.8f empirical_FPR=%.6f (precision unavailable; no reject calibration samples)",
+                recommended["quantile"],
+                recommended["threshold"],
+                recommended["empirical_fpr"],
+            )
+        else:
+            logger.warning("No deployment threshold could be recommended from calibration data.")
+
+        for key, op in export_ops.items():
+            logger.info(
+                "EXPORT-DEPLOYMENT-THRESHOLD %s threshold=%s raw=%s P=%.4f R=%.4f met=%s domain=%s",
+                key,
+                op.get("threshold"),
+                op.get("raw_domain_threshold"),
+                float(op.get("precision", 0.0)),
+                float(op.get("recall", 0.0)),
+                bool(op.get("met", False)),
+                op.get("score_domain"),
+            )
+        for key, op in export_quantiles.items():
+            logger.info(
+                "EXPORT-NONREJECT-QUANTILE %s threshold=%s raw=%s empirical_FPR=%s domain=%s",
+                key,
+                op.get("threshold"),
+                op.get("raw_domain_threshold"),
+                op.get("empirical_fpr"),
+                op.get("score_domain"),
+            )
 
     def _run_heldout_diagnostics(self) -> None:
         dirs = self._diagnostic_dirs()
@@ -1701,6 +2413,212 @@ def _reject_type_from_path(path: Path, reject_root: Path, depth: int = 1) -> str
     return "/".join(parts[:depth])
 
 
+def _calibrate_joint_image_accept_rule(
+    rows: list[dict[str, Any]],
+    *,
+    mode: str,
+    max_combined_reject_false_accept_rate: float,
+    raw_safety_margin: float,
+    projected_safety_margin: float,
+    raw_min_threshold: float,
+    projected_min_threshold: float,
+    raw_image_reject_veto_enable: bool,
+    raw_image_reject_veto_threshold: float,
+) -> dict[str, Any]:
+    """Choose raw/projected ACCEPT thresholds jointly on calibration data only.
+
+    The search objective is lexicographic:
+      1. satisfy the configured reject UNION false-accept budget,
+      2. maximize acceptable images accepted by raw OR projected evidence,
+      3. minimize reject union count,
+      4. minimize reliance on the raw gate (projected evidence is the intended
+         rescue path for raw-space false positives),
+      5. prefer more conservative deployed thresholds on remaining ties.
+
+    Dual projected evidence is ``min(direction_advantage, magnitude_advantage)``,
+    so both projected heads must agree that an image is acceptable-like.
+    """
+    if mode not in {"direction", "magnitude", "dual"}:
+        raise ValueError(f"Unsupported residual_projection_mode for joint ACCEPT: {mode!r}")
+
+    def projected_value(row: dict[str, Any]) -> float:
+        direction = row.get("top_mean_direction_projected_accept_advantage")
+        magnitude = row.get("top_mean_magnitude_projected_accept_advantage")
+        d = float(direction) if direction is not None else float("nan")
+        m = float(magnitude) if magnitude is not None else float("nan")
+        if mode == "direction":
+            return d
+        if mode == "magnitude":
+            return m
+        if not (np.isfinite(d) and np.isfinite(m)):
+            return float("nan")
+        return float(min(d, m))
+
+    acc_rows = [r for r in rows if r.get("source") == "acceptable"]
+    rej_rows = [r for r in rows if r.get("source") == "reject"]
+    good_rows = [r for r in rows if r.get("source") == "good"]
+
+    def arrays(source_rows: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
+        raw = np.asarray([
+            float(r["top_mean_accept_advantage"])
+            if r.get("top_mean_accept_advantage") is not None
+            else float("nan")
+            for r in source_rows
+        ], dtype=np.float64)
+        projected = np.asarray([projected_value(r) for r in source_rows], dtype=np.float64)
+        return raw, projected
+
+    acc_raw, acc_proj = arrays(acc_rows)
+    rej_raw, rej_proj = arrays(rej_rows)
+    good_raw, good_proj = arrays(good_rows)
+
+    if len(acc_rows) == 0 or len(rej_rows) == 0 or not np.any(np.isfinite(acc_proj)) or not np.any(np.isfinite(rej_proj)):
+        return {
+            "raw_threshold": float("inf"),
+            "projected_threshold": float("inf"),
+            "raw_threshold_before_safety_margin": float("inf"),
+            "projected_threshold_before_safety_margin": float("inf"),
+            "projection_mode": mode,
+            "dual_fusion": "min(direction,magnitude)" if mode == "dual" else mode,
+            "max_combined_reject_false_accept_rate": float(max_combined_reject_false_accept_rate),
+            "acceptable_count": int(len(acc_rows)),
+            "good_count": int(len(good_rows)),
+            "reject_count": int(len(rej_rows)),
+            "acceptable_combined_accepted": 0,
+            "acceptable_combined_accept_rate": 0.0,
+            "combined_reject_false_accepted": 0,
+            "combined_reject_false_accept_rate": 0.0,
+            "status": "insufficient_calibration_samples",
+        }
+
+    def candidates(values_a: np.ndarray, values_b: np.ndarray, minimum: float) -> np.ndarray:
+        finite = np.concatenate([values_a[np.isfinite(values_a)], values_b[np.isfinite(values_b)]])
+        vals = np.unique(np.concatenate([finite, np.asarray([minimum], dtype=np.float64)]))
+        vals = np.sort(vals)
+        fallback = np.nextafter(float(max(np.max(vals), minimum)), float("inf"))
+        return np.concatenate([vals, np.asarray([fallback], dtype=np.float64)])
+
+    raw_candidates = candidates(acc_raw, rej_raw, float(raw_min_threshold))
+    projected_candidates = candidates(acc_proj, rej_proj, float(projected_min_threshold))
+
+    budget = float(max_combined_reject_false_accept_rate)
+    raw_margin = max(0.0, float(raw_safety_margin))
+    projected_margin = max(0.0, float(projected_safety_margin))
+
+    def raw_accept(values: np.ndarray, threshold: float) -> np.ndarray:
+        accepted = np.isfinite(values) & (values > threshold)
+        if raw_image_reject_veto_enable:
+            accepted &= values > float(raw_image_reject_veto_threshold)
+        return accepted
+
+    def projected_accept(values: np.ndarray, threshold: float) -> np.ndarray:
+        return np.isfinite(values) & (values > threshold)
+
+    selected: dict[str, Any] | None = None
+    selected_key: tuple[Any, ...] | None = None
+
+    # Search exact transition boundaries.  Typical calibration sizes are only a
+    # few hundred images, so O(N_raw * N_projected * N_images) is small and keeps
+    # the implementation transparent/deterministic.
+    for raw_base in raw_candidates:
+        raw_deployed = max(float(raw_min_threshold), float(raw_base)) + raw_margin
+        acc_raw_accept = raw_accept(acc_raw, raw_deployed)
+        rej_raw_accept = raw_accept(rej_raw, raw_deployed)
+        good_raw_accept = raw_accept(good_raw, raw_deployed)
+
+        for projected_base in projected_candidates:
+            projected_deployed = max(float(projected_min_threshold), float(projected_base)) + projected_margin
+            acc_proj_accept = projected_accept(acc_proj, projected_deployed)
+            rej_proj_accept = projected_accept(rej_proj, projected_deployed)
+            good_proj_accept = projected_accept(good_proj, projected_deployed)
+
+            acc_union = acc_raw_accept | acc_proj_accept
+            rej_union = rej_raw_accept | rej_proj_accept
+            good_union = good_raw_accept | good_proj_accept
+
+            rej_count = int(np.sum(rej_union))
+            rej_rate = float(np.mean(rej_union)) if rej_union.size else 0.0
+            if rej_rate > budget + 1e-12:
+                continue
+
+            acc_count = int(np.sum(acc_union))
+            good_count = int(np.sum(good_union))
+            raw_rej_count = int(np.sum(rej_raw_accept))
+            projected_rej_count = int(np.sum(rej_proj_accept))
+
+            key = (
+                acc_count,
+                -rej_count,
+                -raw_rej_count,
+                good_count,
+                raw_deployed,
+                projected_deployed,
+            )
+            if selected_key is None or key > selected_key:
+                selected_key = key
+                selected = {
+                    "raw_threshold": float(raw_deployed),
+                    "projected_threshold": float(projected_deployed),
+                    "raw_threshold_before_safety_margin": float(max(float(raw_min_threshold), float(raw_base))),
+                    "projected_threshold_before_safety_margin": float(max(float(projected_min_threshold), float(projected_base))),
+                    "acceptable_combined_accepted": acc_count,
+                    "acceptable_combined_accept_rate": float(np.mean(acc_union)) if acc_union.size else 0.0,
+                    "acceptable_raw_accepted": int(np.sum(acc_raw_accept)),
+                    "acceptable_projected_accepted": int(np.sum(acc_proj_accept)),
+                    "good_combined_accepted": good_count,
+                    "good_combined_accept_rate": float(np.mean(good_union)) if good_union.size else 0.0,
+                    "raw_reject_false_accepted": raw_rej_count,
+                    "projected_reject_false_accepted": projected_rej_count,
+                    "combined_reject_false_accepted": rej_count,
+                    "combined_reject_false_accept_rate": rej_rate,
+                }
+
+    if selected is None:
+        # Infinite thresholds are a safe fallback and guarantee zero additional
+        # ACCEPT decisions if the configured budget is impossible to satisfy.
+        selected = {
+            "raw_threshold": float("inf"),
+            "projected_threshold": float("inf"),
+            "raw_threshold_before_safety_margin": float("inf"),
+            "projected_threshold_before_safety_margin": float("inf"),
+            "acceptable_combined_accepted": 0,
+            "acceptable_combined_accept_rate": 0.0,
+            "acceptable_raw_accepted": 0,
+            "acceptable_projected_accepted": 0,
+            "good_combined_accepted": 0,
+            "good_combined_accept_rate": 0.0,
+            "raw_reject_false_accepted": 0,
+            "projected_reject_false_accepted": 0,
+            "combined_reject_false_accepted": 0,
+            "combined_reject_false_accept_rate": 0.0,
+        }
+        status = "no_feasible_pair"
+    else:
+        status = "ok"
+
+    return {
+        **selected,
+        "projection_mode": mode,
+        "dual_fusion": "min(direction,magnitude)" if mode == "dual" else mode,
+        "fit_policy": "joint_raw_projected",
+        "max_combined_reject_false_accept_rate": budget,
+        "raw_safety_margin": raw_margin,
+        "projected_safety_margin": projected_margin,
+        "raw_min_threshold": float(raw_min_threshold),
+        "projected_min_threshold": float(projected_min_threshold),
+        "raw_image_reject_veto_enable": bool(raw_image_reject_veto_enable),
+        "raw_image_reject_veto_threshold": float(raw_image_reject_veto_threshold),
+        "acceptable_count": int(len(acc_rows)),
+        "good_count": int(len(good_rows)),
+        "reject_count": int(len(rej_rows)),
+        "acceptable_raw_advantage_stats": _score_stats(acc_raw[np.isfinite(acc_raw)]),
+        "acceptable_projected_evidence_stats": _score_stats(acc_proj[np.isfinite(acc_proj)]),
+        "reject_raw_advantage_stats": _score_stats(rej_raw[np.isfinite(rej_raw)]),
+        "reject_projected_evidence_stats": _score_stats(rej_proj[np.isfinite(rej_proj)]),
+        "status": status,
+    }
+
+
 def _calibrate_image_accept_rule(
     rows: list[dict[str, Any]],
     *,
@@ -1986,7 +2904,11 @@ def _calibrate_image_reject_boost_rule(
     """Choose REJECT-boost parameters on calibration data only.
 
     Candidate scores are:
-        accept_pred_score + lambda * max(A0 - accept_advantage, 0)
+        accept_pred_score + lambda * max(A0 - signed_tolerance_evidence, 0)
+
+    ``top_mean_accept_advantage`` retains its historical name for compatibility.
+    With both banks it is ``d_reject-d_accept``; in REJECT-only mode it is
+    ``d_reject-t_reject_known``.  Lower values are REJECT-like in either case.
 
     Parameters are selected to maximize recall at the configured precision
     constraint.  ``lambda=0`` is always evaluated, so calibration can choose
@@ -2355,6 +3277,86 @@ def _auroc_binary(labels: np.ndarray, scores: np.ndarray) -> float:
     rank_sum_pos = float(np.sum(ranks[labels == 1]))
     auc = (rank_sum_pos - n_pos * (n_pos + 1) / 2.0) / (n_pos * n_neg)
     return float(auc)
+
+
+def _metrics_at_threshold_deployment(
+    labels: np.ndarray,
+    scores: np.ndarray,
+    threshold: float,
+) -> dict[str, Any]:
+    """Metrics for the LMI deployment rule: FAIL iff score > threshold."""
+    pred = scores > threshold
+    pos = labels == 1
+    neg = ~pos
+    tp = int(np.sum(pred & pos))
+    fp = int(np.sum(pred & neg))
+    tn = int(np.sum((~pred) & neg))
+    fn = int(np.sum((~pred) & pos))
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    tnr = tn / (tn + fp) if tn + fp else 0.0
+    fpr = fp / (fp + tn) if fp + tn else 0.0
+    fnr = fn / (fn + tp) if fn + tp else 0.0
+    accuracy = (tp + tn) / max(1, labels.size)
+    balanced = 0.5 * (recall + tnr)
+    f1 = (2 * precision * recall / (precision + recall)) if precision + recall else 0.0
+    return {
+        "threshold": float(threshold),
+        "accuracy": float(accuracy),
+        "balanced_acc": float(balanced),
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+        "fpr": float(fpr),
+        "fnr": float(fnr),
+        "confusion_matrix": {"TP": tp, "FP": fp, "TN": tn, "FN": fn},
+    }
+
+
+def _candidate_thresholds_deployment(scores: np.ndarray) -> np.ndarray:
+    """Stable >-rule boundaries between distinct scores.
+
+    Midpoints avoid equality ambiguity while representing every possible binary
+    partition of the observed finite scores.
+    """
+    values = np.unique(scores[np.isfinite(scores)].astype(np.float64))
+    values = np.sort(values)
+    if values.size == 0:
+        return np.asarray([], dtype=np.float64)
+    if values.size == 1:
+        return np.asarray([np.nextafter(values[0], -np.inf), values[0]], dtype=np.float64)
+    mids = values[:-1] + (values[1:] - values[:-1]) * 0.5
+    return np.concatenate((
+        np.asarray([np.nextafter(values[0], -np.inf)], dtype=np.float64),
+        mids,
+        np.asarray([values[-1]], dtype=np.float64),
+    ))
+
+
+def _target_precision_operating_point_deployment(
+    labels: np.ndarray,
+    scores: np.ndarray,
+    target_precision: float,
+) -> dict[str, Any]:
+    """Best-recall threshold meeting precision under PASS<=T / FAIL>T."""
+    qualifying: list[dict[str, Any]] = []
+    all_nonempty: list[dict[str, Any]] = []
+    for threshold in _candidate_thresholds_deployment(scores):
+        metrics = _metrics_at_threshold_deployment(labels, scores, float(threshold))
+        if metrics["confusion_matrix"]["TP"] > 0:
+            all_nonempty.append(metrics)
+            if metrics["precision"] + 1e-12 >= target_precision:
+                qualifying.append(metrics)
+
+    if qualifying:
+        best = max(qualifying, key=lambda m: (m["recall"], m["precision"], -m["threshold"]))
+        return {"met": True, "target_precision": float(target_precision), **best}
+    if all_nonempty:
+        best = max(all_nonempty, key=lambda m: (m["precision"], m["recall"]))
+        return {"met": False, "target_precision": float(target_precision), **best}
+    empty = _metrics_at_threshold_deployment(labels, scores, float("inf"))
+    empty["threshold"] = None
+    return {"met": False, "target_precision": float(target_precision), **empty}
 
 
 def _metrics_at_threshold(labels: np.ndarray, scores: np.ndarray, threshold: float) -> dict[str, Any]:
