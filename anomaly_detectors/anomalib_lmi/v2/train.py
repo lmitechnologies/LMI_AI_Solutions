@@ -12,6 +12,7 @@ ad_models.TolerantAnomalyDINO = TolerantAnomalyDINO
 from anomalib.deploy import ExportType
 from anomalib.engine import Engine
 from torchvision.transforms import v2
+from .training_hooks import notify_model_exported, prepare_model_training_config
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,7 @@ def main():
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    cfg = prepare_model_training_config(cfg, args.config)
 
     # --- Build Model Dynamically ---
     model = build_model(cfg["model"])
@@ -151,6 +153,9 @@ def main():
 
     # --- Export to ONNX---
     engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model))
+
+    # Optional model-owned artifact publication. Standard models are no-ops.
+    notify_model_exported(model, cfg)
 
 
 if __name__ == "__main__":

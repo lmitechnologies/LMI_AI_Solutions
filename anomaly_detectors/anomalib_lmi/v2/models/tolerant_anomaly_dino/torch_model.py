@@ -46,6 +46,8 @@ V82_DEFAULT_RESIDUAL_ANCHOR_SEARCH_K = 128
 V82_RESIDUAL_RERANK_CANDIDATE_CHUNK = 8
 
 
+
+
 def _block_index_from_layer_name(layer_name: str) -> int:
     """Return a zero-based transformer block index from a timm layer name."""
     text = str(layer_name).strip()
@@ -2068,9 +2070,10 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         ).scatter(0, flat_pos, accept_strength_all).view(b, n_grid)
 
         # Image-level evidence is computed from the same top 1% *base* anomaly
-        # patches used by AnomalyDINO's image score.  This is deliberately
-        # continuous: positive advantage means those high-anomaly patches are
-        # closer to the acceptable residual bank than the reject bank.
+        # patches used by AnomalyDINO's image score.  With both reference classes
+        # it is the historical comparative ACCEPT-vs-REJECT advantage.  With only
+        # one reference class it becomes signed distance to that class's calibrated
+        # known threshold, enabling standalone ACCEPT suppression / REJECT boosting.
         base_score = self.mean_top1p(base_full).reshape(b)
         patch_score = self.mean_top1p(effective_full).reshape(b)
 
@@ -2124,7 +2127,36 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         top_magnitude_projected_dd = top_magnitude_projected_dd.float()
         finite_da = torch.where(torch.isfinite(top_da), top_da, torch.full_like(top_da, float("nan")))
         finite_dd = torch.where(torch.isfinite(top_dd), top_dd, torch.full_like(top_dd, float("nan")))
-        accept_advantage = top_dd - top_da  # positive => closer to acceptable bank
+
+        # Signed image-level tolerance evidence.  Preserve the historical v8.4
+        # comparative definition when BOTH reference classes exist, but degrade
+        # naturally to an absolute one-sided distance when only one class is
+        # available:
+        #   both        : d_reject - d_accept       (positive => ACCEPT-like)
+        #   ACCEPT only : t_accept_known - d_accept (positive => known ACCEPT)
+        #   REJECT only : d_reject - t_reject_known (negative => known REJECT)
+        #   neither     : NaN                        (ordinary AnomalyDINO)
+        #
+        # These are static trained-model branches (bank presence is frozen before
+        # export), so ONNX still receives no extra input.  The BOTH-bank branch is
+        # intentionally byte-for-byte the previous arithmetic to preserve v8.4
+        # behavior for the full tolerance model.
+        has_accept_bank = self.accept_dir_bank.numel() > 0
+        has_reject_bank = self.reject_dir_bank.numel() > 0
+        if has_accept_bank and has_reject_bank:
+            accept_advantage = top_dd - top_da  # positive => closer to acceptable bank
+        elif has_accept_bank:
+            accept_threshold_evidence = self.t_accept_known.to(
+                device=device, dtype=torch.float32
+            )
+            accept_advantage = accept_threshold_evidence - top_da
+        elif has_reject_bank:
+            reject_threshold_evidence = self.t_reject_known.to(
+                device=device, dtype=torch.float32
+            )
+            accept_advantage = top_dd - reject_threshold_evidence
+        else:
+            accept_advantage = torch.full_like(top_da, float("nan"))
         accept_advantage = torch.where(
             torch.isfinite(accept_advantage),
             accept_advantage,
@@ -2278,10 +2310,12 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         # v4 score after all ACCEPT-side processing and before the v5 REJECT boost.
         accept_score = self.mean_top1p(effective_full).reshape(b)
 
-        # v5: continuous positive REJECT evidence.  Negative accept-advantage
-        # means the top anomaly patches are closer to the reject residual bank.
-        # Convert the amount by which the image falls below the calibrated
-        # advantage threshold into an additive anomaly-score boost.  The boost
+        # v5: continuous positive REJECT evidence.  In the full model a negative
+        # comparative advantage means the top anomaly patches are closer to the
+        # REJECT bank.  In REJECT-only mode the same signed field is
+        # ``d_reject - t_reject_known``, so negative values mean the image matches
+        # the known REJECT bank closely enough.  The same calibrated boost formula
+        # therefore works in both modes without an inference/API change.  The boost
         # is written only onto the same top base-anomaly patches used for the
         # image score, preserving spatial localization rather than lifting the
         # entire anomaly map.
@@ -2435,7 +2469,15 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
 
         image_score = self.mean_top1p(effective_full).reshape(b)
         anomaly_map = effective_full.view(b, 1, *grid_size)
-        anomaly_map = self.anomaly_map_generator(anomaly_map, (cropped_h, cropped_w))
+        # Anomalib 2.3.x keeps GaussianBlur2d.kernel in FP32. Passing an FP16
+        # map directly therefore fails on CUDA (Half input vs Float weight), while
+        # CPU reflection padding does not support FP16. Keep the stock module and
+        # evaluate only this inexpensive spatial map-generation step in FP32.
+        anomaly_map_dtype = anomaly_map.dtype
+        anomaly_map = self.anomaly_map_generator(
+            anomaly_map.float(),
+            (cropped_h, cropped_w),
+        ).to(dtype=anomaly_map_dtype)
         if crop_h > 0 or crop_w > 0:
             anomaly_map = F.pad(
                 anomaly_map,

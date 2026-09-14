@@ -25,7 +25,7 @@ class AnomalyDetectorRegistry(ModelRegistry):
         },
         {
             "frameworks": ["anomalib2"],
-            "model_names": ["patchcore", "padim", "efficientad"],
+            "model_names": ["patchcore", "padim", "efficientad", "tolerantanomalydino"],
             "tasks": ["anomalydetection", "seg"],
             "versions": ["v2"],
             "class_path": "anomaly_detectors.anomalib_lmi.v2.model:AnomalyModel",
