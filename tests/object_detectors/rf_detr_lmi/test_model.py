@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 COCO_DIR = "tests/assets/images/coco"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 PTH_FILE = "tests/assets/models/od/rf_detr/rf-detr-seg-small.pth"
-OD_MODEL = f"tests/assets/models/od/rf_detr/model_{DEVICE}.pt"
 TRT_MODEL = "tests/assets/models/od/rf_detr/inference_model.engine"
 OUT_DIR = "tests/outputs/od/rf_detr"
 IMAGE_SIZE = 384
@@ -53,7 +52,8 @@ def rf_model():
 def obj_detector():
     obj_detector = ObjectDetector(
         metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
-        model_path=OD_MODEL,
+        model_path=PTH_FILE,
+        model_type=MODEL_TYPE,
         device=DEVICE,
         class_map=COCO_CLASSES,
         image_size=[IMAGE_SIZE, IMAGE_SIZE],
@@ -79,15 +79,6 @@ def trt_model():
 @pytest.fixture(scope="module")
 def cpu_models():
     rf_model = RFDETRSegSmall(pretrain_weights=PTH_FILE, device="cpu")
-    # rf_model.optimize_for_inference()
-
-    od_pt = ObjectDetector(
-        metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
-        model_path=OD_MODEL.replace("cuda", "cpu"),
-        device="cpu",
-        class_map=COCO_CLASSES,
-        image_size=[IMAGE_SIZE, IMAGE_SIZE],
-    )
 
     od_pth = ObjectDetector(
         metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
@@ -97,7 +88,7 @@ def cpu_models():
         class_map=COCO_CLASSES,
         image_size=[IMAGE_SIZE, IMAGE_SIZE],
     )
-    return rf_model, od_pt, od_pth
+    return rf_model, od_pth
 
 
 KEYS = ["boxes", "scores", "masks", "segments", "classes"]
@@ -146,8 +137,46 @@ def assert_outputs_match_rf(rf_preds, outputs, label):
         assert np.array_equal(rf_masks, outputs["masks"]), f"{label}: Masks mismatch"
 
 
+def test_nonsquare_image_size_rejected():
+    """A non-square image_size must fail at load, not on the first frame in production."""
+    with pytest.raises(ValueError, match="square resolution"):
+        RfdetrModel(PTH_FILE, model_type=MODEL_TYPE, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE + 24])
+
+
+def test_class_map_inferred_from_model(imgs_coco, obj_detector):
+    """With no class_map, names come from the model itself and must match an explicit COCO map."""
+    inferred = RfdetrModel(PTH_FILE, model_type=MODEL_TYPE, device=DEVICE, image_size=[IMAGE_SIZE, IMAGE_SIZE])
+    assert inferred.class_map == COCO_CLASSES
+
+    img = cv2.resize(imgs_coco[0], (IMAGE_SIZE, IMAGE_SIZE))
+    out, _ = inferred.predict(img, configs=0.5)
+    ref, _ = obj_detector.predict(img, configs=0.5)
+    assert np.array_equal(ref["classes"][0], out["classes"][0])
+
+
+def test_nonpositive_batch_size_rejected():
+    with pytest.raises(ValueError, match="positive integer"):
+        RfdetrModel(
+            PTH_FILE, model_type=MODEL_TYPE, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE], batch_size=0
+        )
+
+
+def test_batch_size_chunks_and_pads(imgs_coco):
+    """batch_size=2 over 3 images must chunk and zero-pad the short last chunk, returning one result per image."""
+    imgs = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco[:3]]
+    batched = RfdetrModel(
+        PTH_FILE, model_type=MODEL_TYPE, device=DEVICE, class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE], batch_size=2
+    )
+    assert batched.fixed_batch_size == 2
+
+    out, _ = batched.predict(imgs, configs=0.5)
+    assert len(out["boxes"]) == len(imgs)
+    for i in range(len(imgs)):
+        _assert_nonempty_out({k: out[k][i] for k in KEYS})
+
+
 def test_model_class_comparison(obj_detector):
-    direct = RfdetrModel(OD_MODEL, device=DEVICE, class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
+    direct = RfdetrModel(PTH_FILE, model_type=MODEL_TYPE, device=DEVICE, class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
     api = obj_detector
     assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
 
@@ -156,40 +185,34 @@ class Test_Rfdetr_Model:
     def test_compare_with_rfdetr(self, imgs_coco, cpu_models):
         "Use cpu to avoid gpu non-determinism issues."
 
-        rf_model, pt_model, pth_model = cpu_models
+        rf_model, pth_model = cpu_models
 
         for img in imgs_coco:
             resized = cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE))
             rf_preds = rf_model.predict(resized, threshold=0.5)
 
-            batch_pt, _ = pt_model.predict(resized, configs=0.5)
             batch_pth, _ = pth_model.predict(resized, configs=0.5)
-            outputs_pt = {k: batch_pt[k][0] for k in ("boxes", "scores", "classes", "masks")}
             outputs_pth = {k: batch_pth[k][0] for k in ("boxes", "scores", "classes", "masks")}
 
-            assert_outputs_match_rf(rf_preds, outputs_pt, "pt_model")
             assert_outputs_match_rf(rf_preds, outputs_pth, "pth_model")
 
     def test_compare_with_rfdetr_nonsquare(self, imgs_coco, cpu_models):
         """Non-square inputs exercise the off-size resize guard.
 
-        Our guard fits inputs to the square model input with an antialiased stretch on the float
+        Our guard fits inputs to the square model input with an antialias-free stretch on the float
         tensor, matching rfdetr's own predict() preprocessing, so detections must match exactly.
         """
 
-        rf_model, pt_model, pth_model = cpu_models
+        rf_model, pth_model = cpu_models
 
         for i, img in enumerate(imgs_coco):
             rh, rw = OFF_SIZES[i % len(OFF_SIZES)]
             resized = cv2.resize(img, (rw, rh))
             rf_preds = rf_model.predict(resized, threshold=0.5)
 
-            batch_pt, _ = pt_model.predict(resized, configs=0.5)
             batch_pth, _ = pth_model.predict(resized, configs=0.5)
-            outputs_pt = {k: batch_pt[k][0] for k in ("boxes", "scores", "classes", "masks")}
             outputs_pth = {k: batch_pth[k][0] for k in ("boxes", "scores", "classes", "masks")}
 
-            assert_outputs_match_rf(rf_preds, outputs_pt, "pt_model")
             assert_outputs_match_rf(rf_preds, outputs_pth, "pth_model")
 
     def test_warmup(self, obj_detector):

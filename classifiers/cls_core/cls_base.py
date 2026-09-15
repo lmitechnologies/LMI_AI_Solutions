@@ -5,7 +5,7 @@ from typing import List
 import numpy as np
 import torch
 
-from lmi_utils.image_utils.types import ImageBatch, normalize_image_batch, to_rgb
+from lmi_utils.image_utils.types import ImageBatch, normalize_image_batch, to_3channel
 
 
 class ClassifierBase(abc.ABC):
@@ -54,7 +54,7 @@ class ClassifierBase(abc.ABC):
             }
             time_info (dict): timing info with keys 'preproc', 'proc', 'postproc'.
         """
-        images = [to_rgb(img) for img in normalize_image_batch(image)]
+        images = [to_3channel(img) for img in normalize_image_batch(image)]
 
         fixed_bs = self.fixed_batch_size
         batch_size = kwargs.pop("batch_size", None)

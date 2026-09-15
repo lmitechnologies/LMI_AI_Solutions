@@ -131,11 +131,11 @@ conversion config file:
 model_type: small
 operation: convert
 task: seg         # od or seg
-format: tensorrt  # torchscript onnx tensorrt
+format: tensorrt  # onnx tensorrt
 conversion:
     pretrain_weights: /app/training/checkpoint_best_total.pth   # must be .pth file
     resolution: 384
-    device: cuda  # cpu for torchscript export
+    device: cuda
     output_dir: /app/training
 ```
 
@@ -174,6 +174,18 @@ export:
 Any additional keys under `export` (e.g. `device`) are passed to the model constructor.
 
 ## Inference
+
+`RfdetrModel` picks a backend from the file extension:
+
+| Extension | Backend | Device |
+| :--- | :--- | :--- |
+| `.pth` | rfdetr checkpoint, JIT-traced at load | cuda or cpu |
+| `.onnx` | ONNX Runtime | cuda or cpu |
+| `.engine` | TensorRT | cuda |
+
+The `.pth` backend takes `model_type` and an optional `batch_size` (fixed at load time, since the traced graph bakes it in).
+The `.onnx` and `.engine` backends read the batch size and resolution from the model, and take class names from `class_map`
+or the `<model>.classes.json` sidecar written at export.
 
 docker-compose file
 ```yaml

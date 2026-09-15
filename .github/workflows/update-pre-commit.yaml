@@ -22,6 +22,15 @@ jobs:
           client-id: ${{ secrets.AIS_CI_APP_ID }}
           private-key: ${{ secrets.AIS_CI_APP_KEY }}
 
+      - name: Resolve app bot identity
+        id: bot
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SLUG: ${{ steps.app-token.outputs.app-slug }}
+        run: |
+          user_id=$(gh api "/users/${SLUG}[bot]" --jq .id)
+          echo "identity=${SLUG}[bot] <${user_id}+${SLUG}[bot]@users.noreply.github.com>" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v7
 
       - name: Set up Python
@@ -38,6 +47,8 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app-token.outputs.token }}
+          author: ${{ steps.bot.outputs.identity }}
+          committer: ${{ steps.bot.outputs.identity }}
           commit-message: "chore: update pre-commit hooks"
           title: "Update Pre-commit Hooks"
           body: "This is an automated PR to update the pre-commit hooks to their latest versions."

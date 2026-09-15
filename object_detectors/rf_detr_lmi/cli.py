@@ -35,7 +35,6 @@ TASK_OD = "od"
 TASK_SEGMENTATION = "seg"
 FORMAT_ONNX = "onnx"
 FORMAT_TENSORRT = "tensorrt"
-FORMAT_TORCHSCRIPT = "torchscript"
 
 # Model registry: maps (task, model_type) -> model class
 MODEL_REGISTRY = {
@@ -280,21 +279,6 @@ def get_conversion_output_dir(conversion_configs: Dict[str, Any]) -> str:
     return os.path.dirname(pretrain_weights) if pretrain_weights else "."
 
 
-def convert_model_to_torchscript(model: Any, output_dir: str) -> None:
-    """Convert model to TorchScript format.
-
-    Args:
-        model: The model instance to convert.
-        output_dir: Directory to save the converted model.
-    """
-    logger.info("Optimizing model for TorchScript conversion...")
-    model.optimize_for_inference()
-    output_path = os.path.join(output_dir, "model.ts")
-    model.model.inference_model.save(output_path)
-    _write_class_names(output_path, model.class_names)
-    logger.info(f"TorchScript model saved to: {output_path}")
-
-
 def convert_model_to_onnx(model: Any, output_dir: str) -> None:
     """Convert model to ONNX format.
 
@@ -341,7 +325,6 @@ def handle_conversion(configs: Dict[str, Any]) -> None:
     format = configs.get("format")
 
     conversion_handlers = {
-        FORMAT_TORCHSCRIPT: convert_model_to_torchscript,
         FORMAT_ONNX: convert_model_to_onnx,
         FORMAT_TENSORRT: convert_model_to_tensorrt,
     }

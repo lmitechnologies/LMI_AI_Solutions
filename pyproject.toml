@@ -17,7 +17,7 @@ test = [
     "tensorboard==2.21.0",
     "numba==0.66.0",
     "numpy<2.0",
-    "ultralytics==8.4.115",
+    "ultralytics==8.4.102",
     "onnx==1.22.0",
     "pytest==9.1.1",
     "rfdetr==1.8.3",
@@ -49,6 +49,9 @@ gpu = [
 ]
 
 [tool.uv]
+# Supply-chain guard: a version published in the last 30 days has had no time to be caught if it is
+# malicious or broken.
+exclude-newer = "30 days ago"
 # Test groups pin numpy<2.0, which conflicts with newer onnx on Python 3.13+.
 # The test images run Python 3.12, so scope lock resolution to that range rather
 # than narrowing the package's public requires-python (>=3.8).

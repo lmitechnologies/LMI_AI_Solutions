@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 import lmi_utils.gadget_utils.pipeline_utils as pipeline_utils
-from lmi_utils.image_utils.types import ImageBatch, ImageLike, normalize_image_batch, to_rgb
+from lmi_utils.image_utils.types import ImageBatch, ImageLike, normalize_image_batch, to_3channel
 
 
 class ADBase(ABC):
@@ -101,7 +101,7 @@ class ADBase(ABC):
             List of per-image anomaly maps [H,W]. dtype mirrors input:
             numpy arrays if input was numpy, tensors if input was tensors.
         """
-        images = [to_rgb(img) for img in normalize_image_batch(image)]
+        images = [to_3channel(img) for img in normalize_image_batch(image)]
         use_tensor = isinstance(images[0], torch.Tensor) if images else False
 
         fixed_bs = self.fixed_batch_size
