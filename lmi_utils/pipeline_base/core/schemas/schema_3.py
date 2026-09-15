@@ -77,7 +77,7 @@ class _ModelBase(BaseModel):
 
 
 class ODModel(_ModelBase):
-    model_type: Literal["ObjectDetection", "InstanceSegmentation"]
+    model_type: Literal["ObjectDetection", "InstanceSegmentation", "OrientedObjectDetection"]
     configs: ODConfigs
 
 
