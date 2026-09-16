@@ -2,10 +2,12 @@ import logging
 import os
 
 import cv2
+import numpy as np
 import pytest
 import torch
 
 from lmi_utils.pipeline_base.pipeline_base import PipelineBase
+from object_detectors.od_core.od_base import ODBase
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 OUT_DIR = "tests/outputs/pipeline_base"
@@ -54,7 +56,8 @@ class PipelineOD(PipelineBase):
         }
 
 
-def _build_od_model_roles(version, model_path, preprocessing_steps):
+def _build_od_model_roles(version, model_path, preprocessing_steps, model_type="InstanceSegmentation", image_size=(640, 640)):
+    image_size = list(image_size)
     if version == "2":
         return {
             "mock-model": {
@@ -65,9 +68,9 @@ def _build_od_model_roles(version, model_path, preprocessing_steps):
                     "training_algorithm": "Yolo",
                     "global_preprocessing": preprocessing_steps,
                 },
-                "artifacts": {"pt": {"image_size": [640, 640], "model_path": model_path}},
+                "artifacts": {"pt": {"image_size": image_size, "model_path": model_path}},
                 "model_role": "mock-model",
-                "model_type": "InstanceSegmentation",
+                "model_type": model_type,
                 "model_version": "1",
             }
         }
@@ -77,7 +80,7 @@ def _build_od_model_roles(version, model_path, preprocessing_steps):
                 "format": "pt",
                 "configs": {"to-fail": {}, "confidence": {}},
                 "details": {
-                    "image_size": [640, 640],
+                    "image_size": image_size,
                     "preprocessing": preprocessing_steps,
                     "training_package": "Ultralytics",
                     "training_algorithm": "Yolo",
@@ -85,7 +88,7 @@ def _build_od_model_roles(version, model_path, preprocessing_steps):
                 "artifacts": {"pt": {"attributes": {}, "model_path": model_path}},
                 "model_role": "mock-model",
                 "model_name": "mock-model",
-                "model_type": "InstanceSegmentation",
+                "model_type": model_type,
                 "model_version": "1",
             }
         }
@@ -128,6 +131,99 @@ def test_pipeline_OD(version, preprocessing_steps, expected_types):
     os.makedirs(OUT_DIR, exist_ok=True)
     for idx, annot in enumerate(annotated_imgs):
         cv2.imwrite(os.path.join(OUT_DIR, f"annot_od_{idx}.png"), cv2.cvtColor(annot, cv2.COLOR_RGB2BGR))
+
+
+OBB_CASE = ("OrientedObjectDetection", "yolo11n-obb.pt", (1024, 1024), "tests/assets/images/dota8", "YoloObb")
+POSE_CASE = ("KeypointDetection", "yolo11n-pose.pt", (640, 640), "tests/assets/images/coco", "YoloPose")
+
+
+def _load_pipeline_from_manifest(model_type, weights, image_size, version="3"):
+    """Load a v3 manifest through PipelineBase, the way the gadget does."""
+    model_path = os.path.abspath(f"tests/assets/models/od/ultralytics/{weights}")
+    steps = [{"type": "resize", "id": "r1", "configuration": {"height": image_size[0], "width": image_size[1], "preserve_aspect": True}}]
+    model_roles = _build_od_model_roles(version, model_path, steps, model_type=model_type, image_size=image_size)
+
+    pipeline = PipelineOD(version=version)
+    pipeline.load(model_roles, {})
+    return pipeline
+
+
+def _read_images(image_dir, limit=2):
+    files = sorted(f for f in os.listdir(image_dir) if f.lower().endswith((".png", ".jpg", ".jpeg")))[:limit]
+    assert files, f"No images found in {image_dir}"
+    return [cv2.cvtColor(cv2.imread(os.path.join(image_dir, f)), cv2.COLOR_BGR2RGB) for f in files]
+
+
+@pytest.mark.parametrize("model_type, weights, image_size, image_dir, backend", [OBB_CASE, POSE_CASE])
+def test_pipeline_loads_obb_and_keypoint_from_manifest(model_type, weights, image_size, image_dir, backend):
+    """A manifest naming an OBB or keypoint model routes to its backend and survives predict + revert."""
+    pipeline = _load_pipeline_from_manifest(model_type, weights, image_size)
+    try:
+        assert type(pipeline.models["mock-model"]).__name__ == backend
+
+        images = _read_images(image_dir)
+        results = pipeline.predict({}, {"images": images})
+        assert len(results["outputs"]["annotated"]) == len(images)
+        assert [type(op).__name__.removesuffix("Meta").lower() for op in results["ops_list"]] == ["resize"]
+
+        processed, ops = pipeline.preprocess("mock-model", images)
+        raw, _ = pipeline.models["mock-model"].predict(processed, 0.25)
+        reverted = pipeline.revert_preprocess(raw, ops)
+
+        assert {"boxes", "scores", "classes"} <= set(reverted)
+        # these weights detect on these assets, so an empty result means the pipeline dropped something
+        assert any(len(b) for b in reverted["boxes"]), "expected at least one detection"
+
+        # an image that is not already the network size must come back moved, or the revert did nothing
+        for i, image in enumerate(images):
+            if image.shape[:2] != tuple(image_size) and len(reverted["boxes"][i]):
+                before = np.asarray(ODBase._to_numpy(raw["boxes"][i]), dtype=float)
+                assert not np.allclose(before, np.asarray(reverted["boxes"][i], dtype=float))
+
+        for i, image in enumerate(images):
+            boxes = np.asarray(reverted["boxes"][i])
+            if len(boxes):
+                # OBB carries four corners per box; an axis-aligned detector carries xyxy
+                expected = (len(boxes), 4, 2) if model_type == "OrientedObjectDetection" else (len(boxes), 4)
+                assert boxes.shape == expected
+                # reverted into original image space, not left at the network's. A box clipped by the
+                # image edge may overhang it, so this bounds the scale rather than asserting containment.
+                h, w = image.shape[:2]
+                assert -0.05 * w <= boxes[..., 0].min() and boxes[..., 0].max() <= 1.05 * w
+                assert -0.05 * h <= boxes[..., 1].min() and boxes[..., 1].max() <= 1.05 * h
+
+        if model_type == "KeypointDetection":
+            assert "points" in reverted
+            points = np.asarray(reverted["points"][0])
+            n_kpts, ndim = pipeline.models["mock-model"].model.kpt_shape
+            assert points.shape == (len(reverted["boxes"][0]), n_kpts, ndim)
+    finally:
+        pipeline.clean_up()
+
+
+def test_pipeline_obb_predictions_become_rotated_box_labels():
+    """A YoloObb prediction is uploadable as-is: its four corners become a rotated Box annotation."""
+    model_type, weights, image_size, image_dir, _ = OBB_CASE
+    pipeline = _load_pipeline_from_manifest(model_type, weights, image_size)
+    try:
+        image = _read_images(image_dir, limit=1)[0]
+        processed, ops = pipeline.preprocess("mock-model", image)
+        raw, _ = pipeline.models["mock-model"].predict(processed, 0.25)
+        reverted = pipeline.revert_preprocess(raw, ops)
+
+        boxes, classes, scores = reverted["boxes"][0], reverted["classes"][0], reverted["scores"][0]
+        assert len(boxes), "expected at least one detection"
+        h, w = image.shape[:2]
+        for box, label, score in zip(boxes, classes, scores):
+            pipeline.add_prediction("boxes", box, float(score), str(label), h, w)
+
+        predictions = pipeline.results["outputs"]["labels"]["content"]["predictions"]
+        assert len(predictions) == len(boxes)
+        assert all(p["type"] == "Box" for p in predictions)
+        # a rotated detection must not be flattened to an axis-aligned box
+        assert any(p["value"]["angle"] != 0 for p in predictions)
+    finally:
+        pipeline.clean_up()
 
 
 def test_pipeline_OD_injects_resize_on_size_mismatch(caplog):
@@ -486,3 +582,25 @@ def test_clean_up_continues_when_release_fails(caplog):
     assert released == ["good"], "Remaining models must still be released after one release() fails"
     assert len(pipeline.models) == 0
     assert any("Failed to release 'bad'" in r.message for r in caplog.records)
+
+
+def test_add_prediction_box_shapes():
+    """xyxy, xyxy+angle and a 4-corner OBB all become a Box annotation."""
+    pipeline = PipelineOD(version="3")
+
+    pipeline.add_prediction("boxes", [10, 20, 30, 40], 0.9, "A", 100, 100)
+    pipeline.add_prediction("boxes", [10, 20, 30, 40, 15], 0.8, "B", 100, 100)
+
+    theta = np.deg2rad(30)
+    rot = np.array([[np.cos(theta), np.sin(theta)], [-np.sin(theta), np.cos(theta)]])
+    corners = np.array([[0, 0], [40, 0], [40, 20], [0, 20]], dtype=float) @ rot + [100, 50]
+    pipeline.add_prediction("boxes", corners, 0.7, "C", 100, 100)
+
+    preds = pipeline.results["outputs"]["labels"]["content"]["predictions"]
+    assert [p["type"] for p in preds] == ["Box"] * 3
+    assert [p["value"]["angle"] for p in preds[:2]] == [0.0, 15.0]
+
+    obb = preds[2]["value"]
+    assert obb["angle"] == pytest.approx(30.0, abs=1e-3)
+    assert obb["x_max"] - obb["x_min"] == pytest.approx(40.0, abs=1e-3)
+    assert obb["y_max"] - obb["y_min"] == pytest.approx(20.0, abs=1e-3)
