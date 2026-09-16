@@ -1,5 +1,7 @@
 from typing import Any, Dict, List, Tuple, Type
 
+import torch
+
 from lmi_utils.image_utils.types import ImageLike
 
 from .base import BaseProcessor
@@ -55,6 +57,7 @@ class Reconstructor(BaseProcessor):
             return results
         per_image = [{k: v[i] for k, v in results.items()} for i in range(n)]
         per_image, is_numpy = self.to_tensor_results(per_image)
+        mask_dtype = next((r["masks"].dtype for r in per_image if isinstance(r.get("masks"), torch.Tensor) and len(r["masks"])), None)
 
         ordered = reversed(history) if reverse else history
         input_populated = self._populated_coord_fields(per_image)
@@ -64,7 +67,14 @@ class Reconstructor(BaseProcessor):
                 raise ValueError(f"No Operation registered for meta {type(meta).__name__}")
             transform = op.revert_coords if reverse else op.apply_coords
             per_image = transform(per_image, meta)
-            input_populated = self.validate_coord_handler_output(per_image, type(meta).__name__, input_populated=input_populated)
+            expected = None if op.filters_instances else input_populated
+            input_populated = self.validate_coord_handler_output(per_image, type(meta).__name__, input_populated=expected)
+
+        if mask_dtype is not None:  # ops may resample or merge masks in another dtype
+            for r in per_image:
+                masks = r.get("masks")
+                if isinstance(masks, torch.Tensor) and len(masks) and masks.dtype != mask_dtype:
+                    r["masks"] = masks.to(mask_dtype)
 
         per_image = self.from_tensor_results(per_image, is_numpy)
         keys = per_image[0].keys()

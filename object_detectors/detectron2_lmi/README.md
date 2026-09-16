@@ -194,11 +194,16 @@ services:
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     command: >
-      python3 -m detectron2_lmi.cli test -w /home/weights/model.pt
+      python3 -m object_detectors.detectron2_lmi.cli test -w /home/weights/model.pt --json
 ```
+
+To run on tiles, add `--tile` and `--stride`, each one int for a square or two ints for `h w`, e.g. `--tile 640 --stride 480`.
+The tile predictions are merged back, so outputs are per image, in the original image coordinates. Tiling also saves an image per
+input to `tiles/` in the output folder, showing the tile grid and each detection colored by how merging built it.
+
 ### Outputs
 
-A LMI formated csv file with all predictions is automatically saved in the the the output folder defined in the docker compose file.
+With `--json`, all predictions are saved as `predictions.json`, in the LMI dataset json format, in the output folder defined in the docker compose file.
 
 ## Convert to TensorRT
 

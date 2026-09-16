@@ -626,10 +626,12 @@ class FileAnnotations(Base):
     width: int  # File width
     annotations: List[Annotation] = None
     predictions: List[Annotation] = None
+    source_id: Optional[str] = None  # id of the file this one was derived from; set by 1 -> N ops so tiles of one image stay in one split
 
     def __post_init__(self):
         self.annotations = self.annotations or []
         self.predictions = self.predictions or []
+        self.source_id = str(self.source_id) if self.source_id is not None else None
 
     @classmethod
     def from_dict(cls, data: dict) -> "FileAnnotations":
@@ -642,6 +644,7 @@ class FileAnnotations(Base):
             width=data.get("width", None),
             annotations=annotations,
             predictions=predictions,
+            source_id=data.get("source_id"),
         )
 
     @property

@@ -35,6 +35,9 @@ class Operation(ABC, Generic[CfgT, MetaT]):
     config_cls: ClassVar[Type[Config]]
     meta_cls: ClassVar[Type[Meta]]
 
+    #: Coord handlers may drop instances, so an emptied coord field is expected, not a lost one.
+    filters_instances: ClassVar[bool] = False
+
     @abstractmethod
     def forward(self, images: List[torch.Tensor], config: CfgT) -> Tuple[List[torch.Tensor], MetaT]:
         """Run the op. Returns (processed_images, batched_meta)."""

@@ -4,11 +4,14 @@ from enum import Enum
 from itertools import product
 from math import ceil
 from pathlib import Path
+from typing import Tuple
 
 import torch
 from torch.nn import functional as F
 
 logger = logging.getLogger()
+
+GAUSSIAN_SIGMA = 0.5  # gaussian falloff width, as a fraction of the blend region; weight at a tile edge is exp(-2)
 
 
 class ScaleMode(str, Enum):
@@ -30,8 +33,10 @@ class OverlapMode(str, Enum):
 
 def compute_new_edges(edges: list, tile_size: list, stride: list):
     def __compute_new_edge(edge, tile, stride):
+        if edge <= tile:
+            return tile
         if (edge - tile) % stride != 0:
-            return tile + max(0, ceil((edge - tile) / stride) * stride)
+            return tile + ceil((edge - tile) / stride) * stride
         return edge
 
     out_h = __compute_new_edge(edges[0], tile_size[0], stride[0])
@@ -44,6 +49,7 @@ def create_blend_mask(
     stride: list,
     overlap_mode: OverlapMode = OverlapMode.AVERAGE,
     device="cpu",
+    neighbours: Tuple[bool, bool, bool, bool] = (True, True, True, True),
 ) -> torch.Tensor:
     """Create a blending mask for tile transitions.
 
@@ -52,6 +58,8 @@ def create_blend_mask(
         stride (list): [stride_h, stride_w]
         overlap_mode (OverlapMode): Type of blending to apply
         device: Device to create tensor on
+        neighbours: whether another tile sits (top, left, bottom, right) of this one. An edge with no
+            neighbour keeps full weight; tapering it leaves the image border with no weight to divide by.
 
     Returns:
         torch.Tensor: Blending mask of shape [tile_h, tile_w]
@@ -86,43 +94,40 @@ def create_blend_mask(
     # torch.minimum(y_blend, x_blend) below combines per-axis blends
     # elementwise over the full (tile_h, tile_w) surface, which only works
     # if both operands already have that shape.
-    y_dist_from_top = y_grid
-    y_dist_from_bottom = tile_h - 1 - y_grid
-    x_dist_from_left = x_grid
-    x_dist_from_right = tile_w - 1 - x_grid
+    has_top, has_left, has_bottom, has_right = neighbours
+    far = torch.full_like(y_grid, float(tile_h + tile_w))  # an edge with no neighbour must never be the nearest one
+    y_dist_from_top = y_grid if has_top else far
+    y_dist_from_bottom = tile_h - 1 - y_grid if has_bottom else far
+    x_dist_from_left = x_grid if has_left else far
+    x_dist_from_right = tile_w - 1 - x_grid if has_right else far
 
     # calculate minimum distance to any edge
     y_edge_dist = torch.minimum(y_dist_from_top, y_dist_from_bottom)
     x_edge_dist = torch.minimum(x_dist_from_left, x_dist_from_right)
 
-    # apply blending in overlap regions only
-    blend_region_h = overlap_h // 2
-    blend_region_w = overlap_w // 2
+    # blend over half the overlap, at least 1 px
+    blend_region_h = max(1, overlap_h // 2)
+    blend_region_w = max(1, overlap_w // 2)
+
+    # the ramp is offset by a pixel so the outermost row and column still carry weight: on a 1 px overlap both
+    # tiles sit on their own edge, and a ramp reaching 0 there leaves that seam with no weight to divide by
+    y_ramp = torch.clamp((y_edge_dist + 1) / (blend_region_h + 1), 0, 1)
+    x_ramp = torch.clamp((x_edge_dist + 1) / (blend_region_w + 1), 0, 1)
 
     if overlap_mode == OverlapMode.LINEAR:
-        y_blend = torch.clamp(y_edge_dist / blend_region_h, 0, 1)
-        x_blend = torch.clamp(x_edge_dist / blend_region_w, 0, 1)
-        mask = torch.minimum(y_blend, x_blend)
+        mask = torch.minimum(y_ramp, x_ramp)
 
     elif overlap_mode == OverlapMode.COSINE:
-        y_blend = torch.clamp(y_edge_dist / blend_region_h, 0, 1)
-        x_blend = torch.clamp(x_edge_dist / blend_region_w, 0, 1)
-        y_blend = 0.5 * (1 + torch.cos(torch.pi * (1 - y_blend)))
-        x_blend = 0.5 * (1 + torch.cos(torch.pi * (1 - x_blend)))
+        y_blend = 0.5 * (1 + torch.cos(torch.pi * (1 - y_ramp)))
+        x_blend = 0.5 * (1 + torch.cos(torch.pi * (1 - x_ramp)))
         mask = torch.minimum(y_blend, x_blend)
 
     elif overlap_mode == OverlapMode.GAUSSIAN:
-        center_h, center_w = tile_h // 2, tile_w // 2
-        y_dist_center = torch.abs(y_grid - center_h)
-        x_dist_center = torch.abs(x_grid - center_w)
-
-        sigma_h = blend_region_h / 2
-        sigma_w = blend_region_w / 2
-
-        gaussian_y = torch.exp(-(y_dist_center**2) / (2 * sigma_h**2))
-        gaussian_x = torch.exp(-(x_dist_center**2) / (2 * sigma_w**2))
-
-        mask = torch.minimum(gaussian_y, gaussian_x)
+        # taper inside the overlap band only, like linear and cosine: a gaussian of the distance from the tile
+        # centre underflows to zero over the whole tile once the overlap drops below about 15% of the tile
+        y_blend = torch.exp(-((1 - y_ramp) ** 2) / (2 * GAUSSIAN_SIGMA**2))
+        x_blend = torch.exp(-((1 - x_ramp) ** 2) / (2 * GAUSSIAN_SIGMA**2))
+        mask = torch.minimum(y_blend, x_blend)
 
     return mask
 
@@ -350,6 +355,17 @@ class Tiler:
 
         return tiles.contiguous().view(-1, self.num_channel, *self.tile_size)
 
+    def tile_boxes(self) -> torch.Tensor:
+        """(n, 4) xyxy box per tile, one row per tile in the row-major order ``tile`` emits them.
+
+        Coordinates are in the scaled image, so under padding the trailing row and column run past ``im_size``.
+        """
+        self._validate_state()
+        tile_h, tile_w = self.tile_size
+        rows = range(0, self.scale_size[0] - tile_h + 1, self.stride[0])
+        cols = range(0, self.scale_size[1] - tile_w + 1, self.stride[1])
+        return torch.tensor([[j, i, j + tile_w, i + tile_h] for i, j in product(rows, cols)], dtype=torch.float32)
+
     @torch.inference_mode()
     def untile(
         self,
@@ -406,14 +422,7 @@ class Tiler:
                     tile,
                 )
         else:
-            cache_key = (overlap_mode.value, device.type, device.index if device.index is not None else -1)
-            if cache_key not in self._blend_mask_cache:
-                self._blend_mask_cache[cache_key] = create_blend_mask(self.tile_size, self.stride, overlap_mode, device)
-
-            blend_mask = self._blend_mask_cache[cache_key]
             weight_sum = torch.zeros(self.batch_size, num_channel, *self.scale_size, device=device)
-
-            blend_mask_broadcast = blend_mask.unsqueeze(0).unsqueeze(0).expand(self.batch_size, num_channel, -1, -1)
 
             for tile, (i, j) in zip(
                 tiles,
@@ -422,6 +431,8 @@ class Tiler:
                     range(0, self.scale_size[1] - self.tile_size[1] + 1, self.stride[1]),
                 ),
             ):
+                blend_mask = self._blend_mask(overlap_mode, device, i, j)
+                blend_mask_broadcast = blend_mask.unsqueeze(0).unsqueeze(0).expand(self.batch_size, num_channel, -1, -1)
                 weighted_tile = tile * blend_mask_broadcast
 
                 im[:, :, i : i + self.tile_size[0], j : j + self.tile_size[1]] += weighted_tile
@@ -431,3 +442,19 @@ class Tiler:
             im = torch.div(im, weight_sum + eps)
 
         return downscale_image(im, self.im_size, scale_mode).to(tiles.dtype)
+
+    def _blend_mask(self, overlap_mode: OverlapMode, device, i: int, j: int) -> torch.Tensor:
+        """(tile_h, tile_w) blend mask for the tile whose top-left sits at (i, j) in the scaled image.
+
+        Cached per overlap mode, device and which sides have a neighbouring tile, so a grid needs at most 9 masks.
+        """
+        neighbours = (
+            i > 0,
+            j > 0,
+            i + self.tile_size[0] < self.scale_size[0],
+            j + self.tile_size[1] < self.scale_size[1],
+        )
+        key = (overlap_mode.value, device.type, device.index if device.index is not None else -1, neighbours)
+        if key not in self._blend_mask_cache:
+            self._blend_mask_cache[key] = create_blend_mask(self.tile_size, self.stride, overlap_mode, device, neighbours)
+        return self._blend_mask_cache[key]
