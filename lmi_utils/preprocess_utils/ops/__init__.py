@@ -2,6 +2,7 @@ from .cropbox import CropBoxConfig, CropBoxMeta, CropBoxOperation
 from .flip import FlipConfig, FlipMeta, FlipOperation
 from .pad import PadConfig, PadMeta, PadOperation
 from .resize import ResizeConfig, ResizeMeta, ResizeOperation
+from .rotate import RotateConfig, RotateMeta, RotateOperation
 from .tile import TileConfig, TileMeta, TileOperation
 
 # Operations registered by default on both Preprocessor and Reconstructor.
@@ -11,6 +12,7 @@ DEFAULT_OPERATIONS = (
     FlipOperation,
     TileOperation,
     CropBoxOperation,
+    RotateOperation,
 )
 
 __all__ = [
@@ -27,6 +29,9 @@ __all__ = [
     "ResizeConfig",
     "ResizeMeta",
     "ResizeOperation",
+    "RotateConfig",
+    "RotateMeta",
+    "RotateOperation",
     "TileConfig",
     "TileMeta",
     "TileOperation",

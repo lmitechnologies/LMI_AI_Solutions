@@ -115,3 +115,19 @@ def test_preprocessing_step_missing_id_stays_none(schema3):
 
     ops = mc.get_global_preprocessing()["top_od_defect"]
     assert all("id" not in op for op in ops)
+
+
+def test_rotate_step_reaches_typed_config(schema3):
+    # GoFactory's RotateConfiguration is {"angle": float}; it must survive to RotateConfig.
+    from lmi_utils.preprocess_utils import parse_steps
+    from lmi_utils.preprocess_utils.ops import RotateConfig
+
+    steps = schema3["top_od_defect"]["details"]["preprocessing"]
+    steps.insert(0, {"id": "r1", "type": "rotate", "configuration": {"angle": 90.0}})
+
+    ops = ModelCollectionV3.from_dict(schema3).get_global_preprocessing()["top_od_defect"]
+    assert ops[0] == {"type": "rotate", "configuration": {"angle": 90.0}, "id": "r1"}
+
+    cfg = parse_steps(ops)[0]
+    assert isinstance(cfg, RotateConfig)
+    assert cfg.angle == 90.0 and cfg.id == "r1"

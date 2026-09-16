@@ -15,6 +15,7 @@ from lmi_utils.preprocess_utils.ops import (
     FlipConfig,
     PadConfig,
     ResizeConfig,
+    RotateConfig,
     TileConfig,
 )
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
@@ -70,6 +71,17 @@ def test_pad_with_explicit_pad():
     cfg = steps.pad(pad=[5, 5, 3, 3], value=128)
     assert cfg.pad == [5, 5, 3, 3]
     assert cfg.value == 128
+
+
+def test_rotate():
+    cfg = steps.rotate(angle=30)
+    assert isinstance(cfg, RotateConfig)
+    assert cfg.angle == 30
+
+
+def test_rotate_with_id():
+    cfg = steps.rotate(angle=-45, id="r")
+    assert cfg.angle == -45 and cfg.id == "r"
 
 
 def test_tile():
