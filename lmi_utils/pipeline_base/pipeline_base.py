@@ -10,6 +10,7 @@ from logging import Logger
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
+import numpy as np
 import torch
 
 from anomaly_detectors.ad_core.ad_base import ADBase
@@ -47,6 +48,14 @@ def compact_json(obj: Any, indent: int = 2) -> str:
     )
 
 
+def _box_value(value: object) -> Box:
+    """A 4-corner OBB becomes a rotated box; anything else is xyxy with an optional trailing angle."""
+    arr = np.asarray(value, dtype=float)
+    if arr.size == 8:
+        return Polygon(points=arr.reshape(4, 2)).to_rbox()
+    return Box(x_min=arr[0], y_min=arr[1], x_max=arr[2], y_max=arr[3], angle=arr[4] if arr.size > 4 else 0)
+
+
 class PipelineBase(metaclass=ABCMeta):
     logger = logging.getLogger(__name__)
 
@@ -54,13 +63,7 @@ class PipelineBase(metaclass=ABCMeta):
     # This is used for uploading labels to label studio.
     _PREDICTION_HANDLERS = {
         "boxes": {
-            "value_factory": lambda v: Box(
-                x_min=v[0],
-                y_min=v[1],
-                x_max=v[2],
-                y_max=v[3],
-                angle=v[4] if len(v) > 4 else 0,
-            ),
+            "value_factory": _box_value,
             "type": AnnotationType.BOX.value,
         },
         "polygons": {
