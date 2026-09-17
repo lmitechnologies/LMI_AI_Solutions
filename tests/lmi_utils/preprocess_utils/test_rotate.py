@@ -1,4 +1,5 @@
 import logging
+import math
 
 import numpy as np
 import pytest
@@ -35,8 +36,8 @@ def test_rotate_forward_metadata_shape():
     m = history[0]
     assert m.angles[0] == 30.0
     assert m.src_sizes[0] == [60, 40]
-    assert m.dst_sizes[0] == [71, 64]
-    assert out[0].shape[:2] == (64, 71)
+    assert m.dst_sizes[0] == [72, 65]  # rounded up from 71.96 x 64.64
+    assert out[0].shape[:2] == (65, 72)
 
 
 def test_rotate_90_grows_canvas_correctly():
@@ -155,28 +156,157 @@ def test_rotate_segments_round_trip():
     assert torch.allclose(back["segments"][0][1], seg_b, atol=1e-3)
 
 
-def test_rotate_image_matches_cv2_recipe():
+@pytest.mark.parametrize("angle", [7.0, 37.5, -62.0, 123.4])
+def test_rotate_image_matches_cv2_recipe(angle):
+    """Cross-check against cv2, on the interior and at cv2 4.x's precision.
+
+    cv2 4.x quantizes sample coords to 1/32 px, putting its interior error at local_gradient/64
+    (0.047 here); 5.x resamples in float and lands near 3e-5. The tolerance covers either. Sub-pixel
+    error also decides inside-vs-outside at the content edge, so both versions can differ by a whole
+    pixel value in the outer fringe — hence the mask. Placement is pinned by the analytic tests.
+    """
     cv2 = pytest.importorskip("cv2")
     pre = Preprocessor()
     H, W = 50, 70
-    img_np = (np.arange(H * W * 3).reshape(H, W, 3) % 256).astype(np.float32)
-    img = torch.from_numpy(img_np)
+    yy, xx = np.mgrid[0:H, 0:W]
+    img_np = np.stack([xx + yy, 2.0 * xx, 255 - yy * 3.0], axis=-1).astype(np.float32)  # gradient 3/px, no cliffs
 
-    out, history = pre.preprocess([img], [steps.rotate(angle=37.5)])
-    m = history[0]
-    nW, nH = m.dst_sizes[0]
-    angle = m.angles[0]
+    out, history = pre.preprocess([torch.from_numpy(img_np)], [steps.rotate(angle=angle)])
+    nW, nH = history[0].dst_sizes[0]
 
-    M = cv2.getRotationMatrix2D((W // 2, H // 2), -angle, 1.0)
-    M[0, 2] += nW / 2 - W // 2
-    M[1, 2] += nH / 2 - H // 2
+    # Centers are (S-1)/2, not the S//2 that cv2 examples usually pass; see _affine.
+    M = cv2.getRotationMatrix2D(((W - 1) / 2, (H - 1) / 2), -angle, 1.0)
+    M[0, 2] += (nW - 1) / 2 - (W - 1) / 2
+    M[1, 2] += (nH - 1) / 2 - (H - 1) / 2
     expected = cv2.warpAffine(img_np, M, (nW, nH))
+    coverage = cv2.warpAffine(np.ones((H, W), np.float32), M, (nW, nH))
+    interior = cv2.erode(coverage, np.ones((3, 3), np.uint8)) > 0.999
 
-    ours = out[0].cpu().numpy()
-    diff = np.abs(ours - expected)
-    logger.info(f"max diff={diff.max():.2f}  mean={diff.mean():.3f}  (>1.0)={(diff > 1).sum()}")
-    assert diff.mean() < 0.5
-    assert diff.max() < 6.0
+    diff = np.abs(out[0].cpu().numpy() - expected).max(axis=-1)
+    logger.info(f"a={angle}: interior max={diff[interior].max():.4f}  full-canvas max={diff.max():.2f}")
+    assert interior.sum() > 0.5 * H * W
+    assert diff[interior].max() < 0.1  # 3/64 = 0.047 from cv2's quantization, plus headroom
+
+
+@pytest.mark.parametrize("angle", [7.0, 37.5, -62.0, 123.4])
+def test_rotate_geometry_matches_analytic_ramp(angle):
+    """Placement, against a closed-form reference and to float32 precision.
+
+    Bilinear reproduces a linear function exactly, so a ramp's expected output is analytic — no
+    reference resampler, no error floor. The inverse map here is written longhand, so unlike the
+    other accuracy tests this shares no code with ``_affine`` and does check the geometry.
+    """
+    H, W = 61, 83
+    alpha, beta = 0.37, -0.21
+    gradient = math.hypot(alpha, beta)
+    ys, xs = np.mgrid[0:H, 0:W].astype(np.float64)
+    img = (alpha * xs + beta * ys).astype(np.float32)
+
+    out, history = Preprocessor().preprocess([torch.from_numpy(img)], [steps.rotate(angle=angle)])
+    nW, nH = history[0].dst_sizes[0]
+
+    theta = math.radians(angle)
+    cos_t, sin_t = math.cos(theta), math.sin(theta)
+    out_y, out_x = np.mgrid[0:nH, 0:nW].astype(np.float64)
+    u, v = out_x - (nW - 1) / 2, out_y - (nH - 1) / 2  # undo the canvas re-centring
+    src_x = u * cos_t + v * sin_t + (W - 1) / 2  # rotate back by -angle, restore the src centre
+    src_y = -u * sin_t + v * cos_t + (H - 1) / 2
+
+    margin = 1e-3  # a tap landing within float-eps of the border reads the zero fill, which the ramp does not model
+    interior = (src_x >= margin) & (src_x <= W - 1 - margin) & (src_y >= margin) & (src_y <= H - 1 - margin)
+    err = np.abs(out[0].cpu().numpy() - (alpha * src_x + beta * src_y))[interior] / gradient
+    logger.info(f"a={angle}: placement max={err.max():.6f} px  mean={err.mean():.6f} px")
+    assert interior.sum() > 0.5 * H * W
+    assert err.max() < 0.001  # float32 grid resolution: ~1e-5 px at this size (it grows to ~1e-3 px at 4000x3000)
+
+
+@pytest.mark.parametrize("angle", [7.0, 37.5, -62.0])
+def test_rotate_sampling_kernel_is_bilinear(angle):
+    """The interpolation kernel itself, against a float64 bilinear reference.
+
+    Needs non-linear content: every sane kernel reproduces a ramp exactly, so the analytic test
+    above cannot tell bilinear from bicubic. On noise this separates them by ~70 intensity levels.
+    Shares the production affine, so it pins the kernel, not the placement.
+    """
+    from lmi_utils.preprocess_utils.ops.rotate import _affine
+
+    H, W = 50, 70
+    img = (np.random.default_rng(7).random((H, W, 3)) * 255).astype(np.float32)
+
+    out, history = Preprocessor().preprocess([torch.from_numpy(img)], [steps.rotate(angle=angle)])
+    nW, nH = history[0].dst_sizes[0]
+
+    a, b, tx, c, d, ty = _affine(nW, nH, W, H, -angle)  # the dst->src map
+    ys, xs = np.mgrid[0:nH, 0:nW].astype(np.float64)
+    sx, sy = a * xs + b * ys + tx, c * xs + d * ys + ty
+    x0, y0 = np.floor(sx).astype(int), np.floor(sy).astype(int)
+    fx, fy = (sx - x0)[..., None], (sy - y0)[..., None]
+    padded = np.zeros((H + 2, W + 2, 3))
+    padded[1 : H + 1, 1 : W + 1] = img  # 1px zero ring, so samples just outside read as the zero fill
+
+    def tap(X, Y):
+        inside = (X >= -1) & (X <= W) & (Y >= -1) & (Y <= H)
+        return np.where(inside[..., None], padded[np.clip(Y + 1, 0, H + 1), np.clip(X + 1, 0, W + 1)], 0.0)
+
+    top = tap(x0, y0) * (1 - fx) + tap(x0 + 1, y0) * fx
+    bottom = tap(x0, y0 + 1) * (1 - fx) + tap(x0 + 1, y0 + 1) * fx
+    expected = top * (1 - fy) + bottom * fy
+
+    diff = np.abs(out[0].cpu().numpy() - expected)
+    logger.info(f"a={angle}: max={diff.max():.5f} mean={diff.mean():.6f}")
+    assert diff.max() < 0.01  # float32 rounding only
+
+
+@pytest.mark.parametrize("angle, k", [(90.0, -1), (180.0, 2), (270.0, 1), (-90.0, 1), (360.0, 0)])
+def test_rotate_right_angles_are_exact(angle, k):
+    """Multiples of 90 must be a lossless transpose, not a resample."""
+    pre = Preprocessor()
+    img = _hwc_image(50, 70)
+    out, history = pre.preprocess([img], [steps.rotate(angle=angle)])
+    expected = torch.rot90(img, k, dims=(0, 1))
+    assert out[0].shape == expected.shape
+    assert torch.equal(out[0], expected)
+    nW, nH = history[0].dst_sizes[0]
+    assert (nH, nW) == expected.shape[:2]
+
+
+def test_rotate_zero_is_exact_image_noop():
+    pre = Preprocessor()
+    img = _hwc_image(40, 60)
+    out, _ = pre.preprocess([img], [steps.rotate(angle=0.0)])
+    assert torch.equal(out[0], img)
+
+
+@pytest.mark.parametrize("angle", [13.0, 30.0, 90.0, 180.0, -47.0])
+def test_rotate_canvas_holds_all_corners(angle):
+    """The expanded canvas must contain every source corner, or content is silently clipped."""
+    pre = Preprocessor()
+    H, W = 50, 70
+    _, history = pre.preprocess([_hwc_image(H, W)], [steps.rotate(angle=angle)])
+    nW, nH = history[0].dst_sizes[0]
+    corners = torch.tensor([[[0.0, 0.0, 1.0], [W - 1.0, 0.0, 1.0], [0.0, H - 1.0, 1.0], [W - 1.0, H - 1.0, 1.0]]])
+    moved = Reconstructor().apply_coordinates(_empty_results(points=[corners]), history)["points"][0][0, :, :2]
+    assert moved[:, 0].min() >= -0.5 and moved[:, 0].max() <= nW - 0.5
+    assert moved[:, 1].min() >= -0.5 and moved[:, 1].max() <= nH - 0.5
+
+
+@pytest.mark.parametrize("angle", [30.0, 90.0, 180.0])
+def test_rotate_preserves_content_area(angle):
+    pre = Preprocessor()
+    img = torch.full((100, 140, 1), 255.0)
+    out, _ = pre.preprocess([img], [steps.rotate(angle=angle)])
+    assert (out[0] > 127).sum().item() == 100 * 140
+
+
+def test_rotate_coord_count_mismatch_raises():
+    from lmi_utils.preprocess_utils.ops import RotateMeta
+
+    rec = Reconstructor()
+    meta = RotateMeta(angles=[20.0], src_sizes=[[50, 50]], dst_sizes=[[69, 69]])
+    results = _empty_results(2, boxes=[torch.tensor([[1.0, 2.0, 3.0, 4.0]])] * 2)
+    for fn in (rec.apply_coordinates, rec.reconstruct_coordinates):
+        with pytest.raises(ValueError, match="result count"):
+            fn(results, [meta])
 
 
 def test_rotate_revert_image_returns_src_size():
