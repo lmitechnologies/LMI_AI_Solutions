@@ -1,15 +1,15 @@
 import logging
 import os
 
-import cv2
 import numpy as np
+import torch
 
 from lmi_utils.dataset_utils.mask_encoder import mask2rle
 
 # LMI packages
 from lmi_utils.dataset_utils.representations import AnnotationType
 from lmi_utils.label_utils.bbox_utils import get_rotated_bbox, rotate
-from lmi_utils.preprocess_utils.ops.rotate import rotate_transform
+from lmi_utils.preprocess_utils.ops.rotate import rotate_tensor, rotate_transform
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +45,10 @@ def rotate_dataset(dataset, images, angle, counter_clockwise=False):
         height, width = img.shape[:2]
         file.height = height
         file.width = width
-        affine, new_width, new_height = rotate_transform(width, height, angle_cw)
+        affine, _, _ = rotate_transform(width, height, angle_cw)  # the annotations below need the matrix form
         rotation_matrix = np.array(affine, dtype=np.float32).reshape(2, 3)
 
-        rotated_img = cv2.warpAffine(img, rotation_matrix, (new_width, new_height))
+        rotated_img = rotate_tensor(torch.from_numpy(img), angle_cw).numpy()
 
         for annot in file.annotations:
             if annot.type == AnnotationType.BOX:
@@ -100,7 +100,7 @@ def rotate_dataset(dataset, images, angle, counter_clockwise=False):
 
             elif annot.type == AnnotationType.MASK:
                 mask = annot.value.to_numpy(h=height, w=width)
-                mask = cv2.warpAffine(mask, rotation_matrix, (new_width, new_height), flags=cv2.INTER_NEAREST)
+                mask = rotate_tensor(torch.from_numpy(np.ascontiguousarray(mask)), angle_cw, mode="nearest").numpy()
                 annot.value.mask = mask2rle(mask)
 
             else:

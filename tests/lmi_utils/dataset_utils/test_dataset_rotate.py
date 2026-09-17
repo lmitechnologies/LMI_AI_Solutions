@@ -96,3 +96,67 @@ def test_positive_angle_is_clockwise():
     moved = M[:, :2] @ right_of_center + M[:, 2]
     new_center = M[:, :2] @ center + M[:, 2]
     assert moved[1] > new_center[1] + 2.9
+
+
+def _textured_image(h, w):
+    """Smooth content plus a hard edge: where two different resamplers would disagree most."""
+    yy, xx = np.mgrid[0:h, 0:w]
+    base = ((np.sin(xx / 15.0) * 60 + 128) + yy * 0.3).astype(np.uint8)
+    img = np.ascontiguousarray(np.stack([base, np.roll(base, 20, 1), np.roll(base, 40, 0)], -1))
+    img[h // 3 : 2 * h // 3, w // 3 : 2 * w // 3] = 250
+    return img
+
+
+@pytest.mark.parametrize("angle", [1.0, 7.0, 37.0, 90.0, 123.0, 180.0, 270.0])
+def test_training_rotate_pixels_match_the_inference_op(angle):
+    """Training data and inference must be the same pixels, at arbitrary angles too -- the factory
+    UI accepts any integer, so the quarter-turn cases are not the only ones that matter."""
+    from lmi_utils.dataset_utils.ops.dataset_rotate import rotate_dataset
+    from lmi_utils.dataset_utils.representations import Dataset, FileAnnotations
+
+    h, w = 120, 170
+    img = _textured_image(h, w)
+    dataset = Dataset(labels=[], files=[FileAnnotations("f", "image.png", h, w)])
+    trained, _ = rotate_dataset(dataset, {"image.png": img.copy()}, angle, counter_clockwise=False)
+
+    inferred = RotateOperation().forward([torch.from_numpy(img.copy())], RotateConfig(angle=angle))[0][0].numpy()
+    assert trained["image.png"].shape == inferred.shape
+    assert np.array_equal(trained["image.png"], inferred)
+
+
+@pytest.mark.parametrize("angle", [37.0, 90.0])
+def test_counter_clockwise_matches_the_op_at_negative_angle(angle):
+    from lmi_utils.dataset_utils.ops.dataset_rotate import rotate_dataset
+    from lmi_utils.dataset_utils.representations import Dataset, FileAnnotations
+
+    h, w = 120, 170
+    img = _textured_image(h, w)
+    dataset = Dataset(labels=[], files=[FileAnnotations("f", "image.png", h, w)])
+    ccw, _ = rotate_dataset(dataset, {"image.png": img.copy()}, angle, counter_clockwise=True)
+
+    expected = RotateOperation().forward([torch.from_numpy(img.copy())], RotateConfig(angle=-angle))[0][0].numpy()
+    assert np.array_equal(ccw["image.png"], expected)
+
+
+@pytest.mark.parametrize("angle", [37.0, 7.0, 90.0])
+def test_training_mask_matches_the_inference_mask_path(angle):
+    from lmi_utils.dataset_utils.mask_encoder import mask2rle, rle2mask
+    from lmi_utils.dataset_utils.ops.dataset_rotate import rotate_dataset
+    from lmi_utils.dataset_utils.representations import Annotation, AnnotationType, Dataset, FileAnnotations, Mask
+
+    h, w = 120, 170
+    img = _textured_image(h, w)
+    mask = np.zeros((h, w), dtype=np.uint8)
+    mask[20:90, 30:140] = 1
+
+    f = FileAnnotations("f", "image.png", h, w)
+    f.annotations = [Annotation(id="a", label_id="L", type=AnnotationType.MASK, value=Mask(mask=mask2rle(mask)))]
+    dataset = Dataset(labels=[], files=[f])
+    rotate_dataset(dataset, {"image.png": img.copy()}, angle, counter_clockwise=False)
+
+    op = RotateOperation()
+    _, meta = op.forward([torch.zeros(h, w)], RotateConfig(angle=angle))
+    nw, nh = meta.dst_sizes[0]
+    trained = rle2mask(dataset.files[0].annotations[0].value.mask, h=nh, w=nw)
+    inferred = op.apply_coords([{"masks": torch.from_numpy(mask.copy()).unsqueeze(0)}], meta)[0]["masks"][0].numpy()
+    assert np.array_equal(trained, inferred)

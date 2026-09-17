@@ -133,15 +133,28 @@ def _affine(W: int, H: int, new_W: int, new_H: int, angle_deg: float) -> Affine:
     return (a, b, tx, c, d, ty)
 
 
-def _rotate_image(img: torch.Tensor, *, W: int, H: int, nW: int, nH: int, angle_deg: float, forward: bool) -> torch.Tensor:
+def _rotate_image(
+    img: torch.Tensor, *, W: int, H: int, nW: int, nH: int, angle_deg: float, forward: bool, mode: str = "bilinear"
+) -> torch.Tensor:
     """Rotate one HW/HWC image src->dst (``forward``) or dst->src. W,H is src size; nW,nH is dst size."""
     k = _rot90_k(angle_deg)
     if k is not None:  # exact and allocation-free; also makes angle 0 a true no-op
         return torch.rot90(img, k if forward else -k, dims=(0, 1)).contiguous()
     # grid_sample pulls, so it needs the map running opposite to the direction being travelled.
     if forward:
-        return _warp(img, in_W=W, in_H=H, out_W=nW, out_H=nH, sample_M=_affine(nW, nH, W, H, -angle_deg))
-    return _warp(img, in_W=nW, in_H=nH, out_W=W, out_H=H, sample_M=_affine(W, H, nW, nH, angle_deg))
+        return _warp(img, in_W=W, in_H=H, out_W=nW, out_H=nH, sample_M=_affine(nW, nH, W, H, -angle_deg), mode=mode)
+    return _warp(img, in_W=nW, in_H=nH, out_W=W, out_H=H, sample_M=_affine(W, H, nW, nH, angle_deg), mode=mode)
+
+
+def rotate_tensor(img: torch.Tensor, angle_deg: float, *, mode: str = "bilinear") -> torch.Tensor:
+    """Rotate one HW or HWC image clockwise by ``angle_deg``, expanding the canvas so nothing is clipped.
+
+    The resampler the dataset-level rotate shares, so training data and inference see the same pixels.
+    Use ``mode="nearest"`` for label masks, whose values must not be blended.
+    """
+    H, W = int(img.shape[0]), int(img.shape[1])
+    nW, nH = _expand_size(W, H, angle_deg)
+    return _rotate_image(img, W=W, H=H, nW=nW, nH=nH, angle_deg=angle_deg, forward=True, mode=mode)
 
 
 def _sample_grid(*, in_W: int, in_H: int, out_W: int, out_H: int, sample_M: Affine, device: torch.device) -> torch.Tensor:
@@ -163,8 +176,8 @@ def _sample_grid(*, in_W: int, in_H: int, out_W: int, out_H: int, sample_M: Affi
     return F.affine_grid(theta, (1, 1, out_H, out_W), align_corners=False)
 
 
-def _warp(img: torch.Tensor, *, in_W: int, in_H: int, out_W: int, out_H: int, sample_M: Affine) -> torch.Tensor:
-    """Bilinear warp of an HW or HWC image. ``out[i, j] = img[sample_M @ [j, i, 1]]``, zero outside."""
+def _warp(img: torch.Tensor, *, in_W: int, in_H: int, out_W: int, out_H: int, sample_M: Affine, mode: str = "bilinear") -> torch.Tensor:
+    """Warp an HW or HWC image. ``out[i, j] = img[sample_M @ [j, i, 1]]``, zero outside."""
     grid = _sample_grid(in_W=in_W, in_H=in_H, out_W=out_W, out_H=out_H, sample_M=sample_M, device=img.device)
     orig_dtype = img.dtype
     round_int = not orig_dtype.is_floating_point  # truncating the float result biases integer pixels down
@@ -175,7 +188,7 @@ def _warp(img: torch.Tensor, *, in_W: int, in_H: int, out_W: int, out_H: int, sa
         # Channels ride the batch dim: grid_sample's CPU kernel threads over batch only, so (1, C, H, W) runs serial.
         inp = img.permute(2, 0, 1).unsqueeze(1).float()
         grid = grid.expand(inp.shape[0], out_H, out_W, 2)
-    out = F.grid_sample(inp, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
+    out = F.grid_sample(inp, grid, mode=mode, padding_mode="zeros", align_corners=False)
     out = out[0, 0] if hw_only else out.squeeze(1).permute(1, 2, 0)
     return (out.round_() if round_int else out).to(orig_dtype)  # out is grid_sample's fresh buffer, safe to round in place
 
