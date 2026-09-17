@@ -9,6 +9,7 @@ from lmi_utils.dataset_utils.mask_encoder import mask2rle
 # LMI packages
 from lmi_utils.dataset_utils.representations import AnnotationType
 from lmi_utils.label_utils.bbox_utils import get_rotated_bbox, rotate
+from lmi_utils.preprocess_utils.ops.rotate import rotate_transform
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,7 @@ def rotate_dataset(dataset, images, angle, counter_clockwise=False):
     Rotate annotations clockwise or counterclockwise
     """
     rotated_images = {}
-    if counter_clockwise is False:
-        angle = -angle
+    angle_cw = -angle if counter_clockwise else angle
     for file in dataset.files:
         logger.debug(f"rotating {os.path.basename(file.path)} with angle {angle} degrees counter_clockwise : {counter_clockwise}")
 
@@ -45,19 +45,8 @@ def rotate_dataset(dataset, images, angle, counter_clockwise=False):
         height, width = img.shape[:2]
         file.height = height
         file.width = width
-        center = (width // 2, height // 2)
-        rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
-        # Calculate the sine and cosine (i.e., the rotation components)
-        abs_cos = abs(rotation_matrix[0, 0])
-        abs_sin = abs(rotation_matrix[0, 1])
-
-        # Compute new bounding dimensions of the image
-        new_width = int((height * abs_sin) + (width * abs_cos))
-        new_height = int((height * abs_cos) + (width * abs_sin))
-
-        # Adjust the rotation matrix to account for the translation
-        rotation_matrix[0, 2] += (new_width / 2) - center[0]
-        rotation_matrix[1, 2] += (new_height / 2) - center[1]
+        affine, new_width, new_height = rotate_transform(width, height, angle_cw)
+        rotation_matrix = np.array(affine, dtype=np.float32).reshape(2, 3)
 
         rotated_img = cv2.warpAffine(img, rotation_matrix, (new_width, new_height))
 
@@ -111,7 +100,7 @@ def rotate_dataset(dataset, images, angle, counter_clockwise=False):
 
             elif annot.type == AnnotationType.MASK:
                 mask = annot.value.to_numpy(h=height, w=width)
-                mask = cv2.warpAffine(mask, rotation_matrix, (new_width, new_height))
+                mask = cv2.warpAffine(mask, rotation_matrix, (new_width, new_height), flags=cv2.INTER_NEAREST)
                 annot.value.mask = mask2rle(mask)
 
             else:

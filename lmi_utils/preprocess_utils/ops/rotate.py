@@ -98,6 +98,21 @@ def _expand_size(W: int, H: int, angle_deg: float) -> Tuple[int, int]:
     return new_W, new_H
 
 
+def rotate_transform(width: int, height: int, angle_deg: float) -> Tuple[Affine, int, int]:
+    """Affine taking src pixel coords onto the expanded canvas, plus that canvas size.
+
+    Args:
+        width: source image width.
+        height: source image height.
+        angle_deg: rotation in degrees, positive = clockwise (image y-down).
+
+    Returns:
+        ``((a, b, tx, c, d, ty), new_width, new_height)`` — the affine in row-major order.
+    """
+    new_W, new_H = _expand_size(width, height, angle_deg)
+    return _affine(width, height, new_W, new_H, angle_deg), new_W, new_H
+
+
 def _rot90_k(angle_deg: float) -> Optional[int]:
     """``k`` for ``torch.rot90(dims=(0, 1))`` when the angle is a multiple of 90, else None."""
     if angle_deg % 90 != 0:
@@ -154,9 +169,14 @@ def _warp(img: torch.Tensor, *, in_W: int, in_H: int, out_W: int, out_H: int, sa
     orig_dtype = img.dtype
     round_int = not orig_dtype.is_floating_point  # truncating the float result biases integer pixels down
     hw_only = img.dim() == 2
-    inp = img.unsqueeze(0).unsqueeze(0).float() if hw_only else img.permute(2, 0, 1).unsqueeze(0).float()
+    if hw_only:
+        inp = img.unsqueeze(0).unsqueeze(0).float()
+    else:
+        # Channels ride the batch dim: grid_sample's CPU kernel threads over batch only, so (1, C, H, W) runs serial.
+        inp = img.permute(2, 0, 1).unsqueeze(1).float()
+        grid = grid.expand(inp.shape[0], out_H, out_W, 2)
     out = F.grid_sample(inp, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
-    out = out[0, 0] if hw_only else out[0].permute(1, 2, 0)
+    out = out[0, 0] if hw_only else out.squeeze(1).permute(1, 2, 0)
     return (out.round_() if round_int else out).to(orig_dtype)  # out is grid_sample's fresh buffer, safe to round in place
 
 

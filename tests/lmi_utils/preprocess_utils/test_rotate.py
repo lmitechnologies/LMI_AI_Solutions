@@ -316,3 +316,37 @@ def test_rotate_revert_image_returns_src_size():
     out, history = pre.preprocess([img], [steps.rotate(angle=37.5)])
     back = rec.reconstruct_images(out, history)
     assert back[0].shape == img.shape
+
+
+@pytest.mark.parametrize("channels", [1, 3, 4])
+def test_rotate_channels_warp_independently(channels):
+    """The affine warp puts channels on grid_sample's batch dim; each must still warp on its own."""
+    pre = Preprocessor()
+    H, W = 40, 60
+    img = torch.zeros(H, W, channels)
+    for c in range(channels):  # one distinct lit pixel per channel
+        img[10 + c, 15 + 2 * c, c] = 1.0
+
+    out, _ = pre.preprocess([img], [steps.rotate(angle=22.5)])
+    rotated = out[0]
+    assert rotated.shape[2] == channels
+    for c in range(channels):
+        peak = torch.nonzero(rotated[..., c] > 0.2)
+        assert len(peak) >= 1
+        # a channel's content must not bleed into its neighbours
+        for other in range(channels):
+            if other != c:
+                assert rotated[peak[0][0], peak[0][1], other] == pytest.approx(0.0, abs=1e-4)
+
+
+def test_rotate_hwc_matches_per_channel_hw_warp():
+    """Warping HWC in one call must equal warping each channel separately as HW."""
+    pre = Preprocessor()
+    H, W = 37, 53
+    torch.manual_seed(0)
+    img = torch.rand(H, W, 3)
+
+    together, _ = pre.preprocess([img], [steps.rotate(angle=31.0)])
+    for c in range(3):
+        alone, _ = pre.preprocess([img[..., c].contiguous()], [steps.rotate(angle=31.0)])
+        assert torch.equal(together[0][..., c], alone[0])
