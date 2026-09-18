@@ -8,6 +8,16 @@ import torch
 from lmi_utils.image_utils.types import ImageBatch, normalize_image_batch, to_3channel
 
 
+def _elapsed_since(t0: float) -> float:
+    """Seconds since ``t0``, after any queued CUDA work finishes.
+
+    Without the wait an async forward() bills its GPU time to whatever blocks first in the next phase.
+    """
+    if torch.cuda.is_initialized():
+        torch.cuda.synchronize()
+    return time.time() - t0
+
+
 class ClassifierBase(abc.ABC):
     # Set to a positive integer in subclasses that use a fixed-batch-size model.
     fixed_batch_size: int = None
@@ -65,15 +75,15 @@ class ClassifierBase(abc.ABC):
 
         t0 = time.time()
         preprocessed = self.preprocess(images)
-        time_info = {"preproc": time.time() - t0}
+        time_info = {"preproc": _elapsed_since(t0)}
 
         t0 = time.time()
         outputs = self.forward(preprocessed)
-        time_info["proc"] = time.time() - t0
+        time_info["proc"] = _elapsed_since(t0)
 
         t0 = time.time()
         results = self.postprocess(outputs)
-        time_info["postproc"] = time.time() - t0
+        time_info["postproc"] = _elapsed_since(t0)
 
         return results, time_info
 
@@ -102,15 +112,15 @@ class ClassifierBase(abc.ABC):
 
             t0 = time.time()
             preprocessed = self.preprocess(chunk_imgs)
-            t_preproc += time.time() - t0
+            t_preproc += _elapsed_since(t0)
 
             t0 = time.time()
             outputs = self.forward(preprocessed)
-            t_proc += time.time() - t0
+            t_proc += _elapsed_since(t0)
 
             t0 = time.time()
             chunk_results = self.postprocess(outputs)
-            t_postproc += time.time() - t0
+            t_postproc += _elapsed_since(t0)
 
             for k, v in chunk_results.items():
                 all_results.setdefault(k, []).extend(v[:chunk_n])

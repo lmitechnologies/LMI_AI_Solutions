@@ -952,3 +952,15 @@ def test_polygon_obb_output_is_its_rotated_box():
 
     assert corners.shape == (4, 2)
     assert corners == pytest.approx(expected)
+
+
+def test_file_annotations_source_id_defaults_to_none_and_survives_a_round_trip():
+    plain = FileAnnotations("f1", "image.png", 100, 100)
+    assert plain.source_id is None
+
+    tile = FileAnnotations("f1_r0_c0", "image_r0_c0.png", 50, 50, source_id=1)
+    assert tile.source_id == "1", "source_id is stringified like the other ids"
+
+    restored = FileAnnotations.from_dict(json.loads(json.dumps(tile.to_dict())))
+    assert restored.source_id == "1"
+    assert FileAnnotations.from_dict(json.loads(json.dumps(plain.to_dict()))).source_id is None

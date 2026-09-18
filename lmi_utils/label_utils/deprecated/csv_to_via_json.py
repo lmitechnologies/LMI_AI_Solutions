@@ -3,7 +3,7 @@ import argparse
 import json
 
 import numpy as np
-from lmi_utils.eval_utils.iou_from_csv import csv_to_dictionary
+from lmi_utils.label_utils.crop_scale_by_csv import csv_to_dictionary
 
 
 # %% read csv

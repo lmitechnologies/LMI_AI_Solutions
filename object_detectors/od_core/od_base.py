@@ -15,6 +15,16 @@ from lmi_utils.image_utils.types import ImageBatch, ImageLike, normalize_image_b
 from .results import Results
 
 
+def _elapsed_since(t0: float) -> float:
+    """Seconds since ``t0``, after any queued CUDA work finishes.
+
+    Without the wait an async forward() bills its GPU time to whatever blocks first in the next phase.
+    """
+    if torch.cuda.is_initialized():
+        torch.cuda.synchronize()
+    return time.time() - t0
+
+
 class ODBase(abc.ABC):
     logger = logging.getLogger(__name__)
 
@@ -70,10 +80,12 @@ class ODBase(abc.ABC):
                 Accepts both numpy arrays and torch tensors. 2D (HW) images are
                 expanded to 3-channel RGB. All images in a batch must have the same dimensions.
             configs: Confidence threshold (float) or per-class thresholds (dict).
-            operators: Unified preprocessing history for coordinate reversion. Accepts:
+            operators: Unified preprocessing history for coordinate reversion, applied to the whole
+                batch at once after inference. Accepts:
                 - None: no coordinate reversion.
                 - List of history entries matching what ``Preprocessor.preprocess()`` returns.
-                  ``metadata`` length must be 1 (broadcast to all images) or equal to batch size (per-image).
+                  Each entry's batched fields must have length 1 (broadcast to all images) or
+                  equal to the number of images that entry saw.
         kwargs:
             batch_size (int): chunk size for dynamic mini-batch inference (default: None = all at once).
                 Ignored when self.fixed_batch_size is set.
@@ -81,7 +93,7 @@ class ODBase(abc.ABC):
 
         Returns:
             (results, time_info)
-            results (dict): a dictionary where each value is a list of length B (batch size), e.g., {
+            results (dict): a dictionary where each value is a list with one entry per image, e.g., {
                 'boxes': [numpy or tensor, ...],
                 'scores': [numpy or tensor, ...],
                 'classes': [numpy strings, ...],
@@ -89,9 +101,12 @@ class ODBase(abc.ABC):
                 'segments': [[numpy or tensor], ...],
             }
             time_info (dict): timing info with keys 'preproc', 'proc', 'postproc'.
+
+            The lists are as long as the input batch, except when ``operators`` contains a tile
+            entry: the tiles are merged, so the results are one entry per source image.
         """
         images = [to_3channel(img) for img in normalize_image_batch(image)]
-        operators = self._normalize_operators(operators, len(images))
+        operators = self._prepare_operators(operators, len(images))
         use_tensor = isinstance(images[0], torch.Tensor) if images else False
 
         fixed_bs = self.fixed_batch_size
@@ -99,32 +114,38 @@ class ODBase(abc.ABC):
         effective_bs = fixed_bs or batch_size
 
         if effective_bs:
-            all_results, time_info = self._run_batched_predict(
-                images, operators, configs, effective_bs, pad_last=fixed_bs is not None, **kwargs
-            )
+            all_results, time_info = self._run_batched_predict(images, configs, effective_bs, pad_last=fixed_bs is not None, **kwargs)
         else:
             t0 = time.time()
             preprocessed = self.preprocess(images)
-            time_info = {"preproc": time.time() - t0}
+            time_info = {"preproc": _elapsed_since(t0)}
 
             t0 = time.time()
             outputs = self.forward(preprocessed)
-            time_info["proc"] = time.time() - t0
+            time_info["proc"] = _elapsed_since(t0)
 
             t0 = time.time()
-            all_results = self.postprocess(
-                outputs, images=images, configs=configs, operators=operators, preprocessed=preprocessed, **kwargs
-            )
-            time_info["postproc"] = time.time() - t0
+            all_results = self.postprocess(outputs, images=images, configs=configs, preprocessed=preprocessed, **kwargs)
+            time_info["postproc"] = _elapsed_since(t0)
 
-        return self._aggregate_results(all_results, return_numpy=not use_tensor), time_info
+        # revert while still on the model's device: merging tiled masks on the CPU is several times slower
+        results = self._aggregate_results(all_results, return_numpy=False)
+        t0 = time.time()
+        results = self._revert_coordinates(results, operators)
+        time_info["postproc"] += _elapsed_since(t0)
+        if not use_tensor:
+            t0 = time.time()
+            results = self._results_to_numpy(results, float32=bool(operators))
+            time_info["postproc"] += _elapsed_since(t0)
+        return results, time_info
 
-    def _run_batched_predict(self, images, operators, configs, batch_size, pad_last=False, **kwargs):
+    def _run_batched_predict(self, images, configs, batch_size, pad_last=False, **kwargs):
         """Run preprocess → forward → postprocess in chunks and collect per-image results.
+
+        Coordinates stay in preprocessed space; ``predict`` reverts the whole batch at the end.
 
         Args:
             images: Flat list of HWC images (numpy or tensor).
-            operators: Per-image operator chains, length == len(images).
             configs: Confidence threshold passed through to postprocess.
             batch_size: Number of images per chunk.
             pad_last: If True, zero-pad the last chunk to exactly batch_size (for fixed-batch TRT engines).
@@ -137,28 +158,24 @@ class ODBase(abc.ABC):
 
         for start in range(0, len(images), batch_size):
             chunk_imgs = images[start : start + batch_size]
-            chunk_ops = operators[start : start + batch_size]
             chunk_n = len(chunk_imgs)
 
             if pad_last and chunk_n < batch_size:
                 ref = chunk_imgs[0]
                 pad = torch.zeros_like(ref) if isinstance(ref, torch.Tensor) else np.zeros_like(ref)
                 chunk_imgs = chunk_imgs + [pad] * (batch_size - chunk_n)
-                chunk_ops = chunk_ops + [[]] * (batch_size - chunk_n)
 
             t0 = time.time()
             preprocessed = self.preprocess(chunk_imgs)
-            t_preproc += time.time() - t0
+            t_preproc += _elapsed_since(t0)
 
             t0 = time.time()
             outputs = self.forward(preprocessed)
-            t_proc += time.time() - t0
+            t_proc += _elapsed_since(t0)
 
             t0 = time.time()
-            list_results = self.postprocess(
-                outputs, images=chunk_imgs, configs=configs, operators=chunk_ops, preprocessed=preprocessed, **kwargs
-            )
-            t_postproc += time.time() - t0
+            list_results = self.postprocess(outputs, images=chunk_imgs, configs=configs, preprocessed=preprocessed, **kwargs)
+            t_postproc += _elapsed_since(t0)
 
             all_results.extend(list_results[:chunk_n])
 
@@ -321,93 +338,91 @@ class ODBase(abc.ABC):
         return np.vectorize(confs.get)(classes, 1.0).astype(np.float32)
 
     @staticmethod
-    def _normalize_operators(operators, batch_size: int) -> list:
-        """Slice a typed preprocessing history into per-image chains.
+    def _prepare_operators(operators, batch_size: int) -> list:
+        """Validate a typed preprocessing history and broadcast length-1 records to the batch.
 
-        The history is a list of typed ``Meta`` records (struct-of-arrays). Each
-        Meta's batched fields must have length 1 (broadcast) or ``batch_size``
-        (per-image).
+        The history is a list of typed ``Meta`` records (struct-of-arrays). Walking it backwards
+        (revert order) tracks how many results each record will be handed: most records leave the
+        count alone, while a tile record folds its tiles back onto one entry per source image.
 
         Returns:
-            List of length ``batch_size``, each element a per-image history list
-            of single-record Meta instances.
+            The history with every batched field sized to what its record sees during a single
+            Reconstructor pass over the whole batch.
         """
         from dataclasses import fields
 
         from lmi_utils.preprocess_utils.operation import Meta
+        from lmi_utils.preprocess_utils.ops import TileMeta
 
         if not operators:
-            return [[] for _ in range(batch_size)]
+            return []
         if not isinstance(operators, list) or not all(isinstance(e, Meta) for e in operators):
             raise ValueError("operators must be a list of typed Meta records.")
 
-        per_image: list = [[] for _ in range(batch_size)]
-        for entry in operators:
+        prepared = []
+        count = batch_size
+        for entry in reversed(operators):
+            if isinstance(entry, TileMeta):
+                n_tiles = sum(h * w for h, w in entry.n_tiles)
+                if n_tiles != count:
+                    raise ValueError(f"tile history entry describes {n_tiles} tiles, but {count} images were passed to predict().")
+                count = len(entry.n_tiles)
+                prepared.append(entry)
+                continue
+
             entry_fields = fields(entry)
             list_field = next((f for f in entry_fields if isinstance(getattr(entry, f.name), list)), None)
             n = len(getattr(entry, list_field.name)) if list_field else 1
-            if n not in (1, batch_size):
-                raise ValueError(f"history entry '{type(entry).__name__}' batch size {n} is not 1 (broadcast) or {batch_size} (per-image).")
-            for i in range(batch_size):
-                sliced = type(entry).__new__(type(entry))
-                for f in entry_fields:
-                    v = getattr(entry, f.name)
-                    if isinstance(v, list):
-                        object.__setattr__(sliced, f.name, [v[0] if n == 1 else v[i]])
-                    else:
-                        object.__setattr__(sliced, f.name, v)
-                per_image[i].append(sliced)
-        return per_image
+            if n not in (1, count):
+                raise ValueError(f"history entry '{type(entry).__name__}' batch size {n} is not 1 (broadcast) or {count} (per-image).")
+            if n == count:
+                prepared.append(entry)
+                continue
+            broadcast = type(entry).__new__(type(entry))
+            for f in entry_fields:
+                v = getattr(entry, f.name)
+                object.__setattr__(broadcast, f.name, [v[0]] * count if isinstance(v, list) else v)
+            prepared.append(broadcast)
 
-    def _revert_coordinates(self, results: dict, operators: list, round: bool = True, **kwargs) -> dict:
-        """Revert prediction coordinates to the original pre-transform space.
+        prepared.reverse()
+        return prepared
+
+    def _revert_coordinates(self, results: dict, operators: list, round: bool = True) -> dict:
+        """Revert a batch of predictions to the original pre-transform space.
 
         Reverts boxes (regular and OBB), masks, segments, and points (with optional
         visibility column) in a single Reconstructor pass over ``operators``. No-op
         when operators is empty.
 
         Args:
-            results: Dict with keys like 'boxes', 'masks', 'segments', 'points'.
-            operators: Operator chain for coordinate reversion.
+            results: Aggregated batch dict as built by ``_aggregate_results`` — every value
+                is a list with one entry per image.
+            operators: History whose batched fields are all at ``len(results)`` (see ``_prepare_operators``).
             round: Round and clamp the reverted point-like coords (boxes, segments,
                 and the xy of points) to non-negative integers, matching
-                ``revert_to_origin``. Masks are always left as resampled floats.
+                ``revert_to_origin``. Masks are not rounded.
 
         Returns:
-            The same results dict with coordinates reverted in-place.
+            The reverted batch dict. Entries are keyed by source image, so the length can differ
+            from the input when an operator maps many inputs onto one image (e.g. tiling).
         """
-        if not operators:
+        if not operators or not results:
             return results
 
-        fields = ("boxes", "segments", "points", "masks")
-        payload = {k: [results[k]] for k in fields if results.get(k) is not None and len(results[k])}
-        if not payload:
-            return results
+        reverted = pipeline_utils._reconstructor().reconstruct_coordinates(results, operators)
 
-        reverted = pipeline_utils._reconstructor().reconstruct_coordinates(payload, operators)
+        if round and "boxes" in reverted:  # (N,4) xyxy or (N,4,2) OBB
+            reverted["boxes"] = [self._round_clamp_coords(b) if b is not None and len(b) else b for b in reverted["boxes"]]
 
-        if "boxes" in reverted:  # (N,4) xyxy or (N,4,2) OBB
-            box = reverted["boxes"][0]
-            results["boxes"] = self._round_clamp_coords(box) if round else box
+        if round and "segments" in reverted:
+            reverted["segments"] = [
+                [self._round_clamp_coords(s) if len(s) else s for s in segs] if segs is not None else segs for segs in reverted["segments"]
+            ]
 
-        if "segments" in reverted:
-            results["segments"] = [self._round_clamp_coords(s) if round and len(s) else s for s in reverted["segments"][0]]
+        if round and "points" in reverted:  # (N,K,2) or (N,K,3) with a trailing visibility column
+            reverted["points"] = [self._round_clamp_points(p) for p in reverted["points"]]
 
-        if "points" in reverted:  # (N,K,2) or (N,K,3) with a trailing visibility column
-            pts = reverted["points"][0]
-            if round:
-                if pts.shape[-1] == 3:  # round only xy, leave visibility untouched
-                    xy, vis = self._round_clamp_coords(pts[..., :2]), pts[..., 2:]
-                    pts = torch.cat((xy, vis), dim=-1) if torch.is_tensor(pts) else np.concatenate((xy, vis), axis=-1)
-                else:
-                    pts = self._round_clamp_coords(pts)
-            results["points"] = pts
-
-        if "masks" in reverted:  # resampled, not rounded; restore the original dtype
-            mask, orig = reverted["masks"][0], results["masks"]
-            results["masks"] = mask.to(orig.dtype) if torch.is_tensor(orig) else mask.astype(orig.dtype)
-
-        return results
+        return reverted
 
     @staticmethod
     def _round_clamp_coords(value):
@@ -416,21 +431,34 @@ class ODBase(abc.ABC):
             return value.round().clamp(min=0)
         return np.clip(np.round(value), 0, None)
 
-    def _apply_revert_to_result(self, result: Results, operators, **kwargs) -> "Results":
-        """Apply coordinate reversion to a Results object and return a new Results.
+    @classmethod
+    def _round_clamp_points(cls, pts):
+        """Round only the xy of keypoints; a trailing visibility column is left untouched."""
+        if pts is None or not len(pts):
+            return pts
+        if pts.shape[-1] == 3:
+            xy, vis = cls._round_clamp_coords(pts[..., :2]), pts[..., 2:]
+            return torch.cat((xy, vis), dim=-1) if torch.is_tensor(pts) else np.concatenate((xy, vis), axis=-1)
+        return cls._round_clamp_coords(pts)
 
-        Args:
-            result: Results object to revert.
-            operators: Operator chain for coordinate reversion. No-op when empty.
+    @staticmethod
+    def _results_to_numpy(results: dict, float32: bool) -> dict:
+        """Move an aggregated batch dict to numpy.
 
-        Returns:
-            New Results object with reverted coordinates, or the original if operators is empty.
+        ``float32`` casts boxes, scores, points and segments, matching what a revert on numpy input returned.
         """
-        if not operators:
-            return result
-        single = result.to_dict()
-        self._revert_coordinates(single, operators, **kwargs)
-        return Results(**{k: v for k, v in single.items() if v is not None}, is_seg=result.is_seg)
+        cast = {"boxes", "scores", "points", "segments"} if float32 else set()
+
+        def to_numpy(key, v):
+            if not isinstance(v, torch.Tensor):
+                return v
+            a = v.cpu().numpy()
+            return a.astype(np.float32) if key in cast else a
+
+        out = {}
+        for k, vs in results.items():
+            out[k] = [[to_numpy(k, s) for s in v] if k == "segments" and isinstance(v, list) else to_numpy(k, v) for v in vs]
+        return out
 
     @staticmethod
     def _aggregate_results(list_results: List[Results], return_numpy: bool = True) -> dict:

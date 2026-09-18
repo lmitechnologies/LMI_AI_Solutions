@@ -16,10 +16,8 @@ from lmi_utils.gadget_utils.pipeline_utils import (
     resize_image,
     revert_to_origin,
 )
-from lmi_utils.label_utils.bbox_utils import get_rotated_bbox
-from lmi_utils.label_utils.csv_utils import write_to_csv
-from lmi_utils.label_utils.shapes import Mask, Rect
 from lmi_utils.preprocess_utils import steps
+from object_detectors.od_core.infer_cli import JSON_NAME, PredictionsJson, add_infer_args, check_infer_args, predict_tiled, save_tile_plot
 from object_detectors.ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
 
 BATCH_SIZE = 1
@@ -40,33 +38,7 @@ if __name__ == "__main__":
     import time
 
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "-w",
-        "--wts_file",
-        required=True,
-        help='the path to the model weights file. The type of supported files are: ".pt" or ".engine"',
-    )
-    parser.add_argument("-i", "--path_imgs", required=True, help="the path to the testing images")
-    parser.add_argument("-o", "--path_out", required=True, help="the path to the output folder")
-    parser.add_argument(
-        "--sz",
-        required=True,
-        nargs=2,
-        type=int,
-        help="the model input size, two numbers: h w",
-    )
-    parser.add_argument(
-        "-c",
-        "--confidence",
-        default=0.25,
-        type=float,
-        help="[optional] the confidence for all classes, default=0.25",
-    )
-    parser.add_argument(
-        "--csv",
-        action="store_true",
-        help="[optional] whether to save the results to csv file",
-    )
+    add_infer_args(parser, confidence=0.25)
     parser.add_argument(
         "--obb",
         action="store_true",
@@ -81,28 +53,27 @@ if __name__ == "__main__":
         default=False,
     )
     parser.add_argument("--resize", required=False, nargs=2, type=int, help="resize")
-    parser.add_argument("--no-label", action="store_true", help="[optional] do not show label")
     parser.add_argument("--no-box", action="store_true", help="[optional] do not show bounding box")
     parser.add_argument("--pad", required=False, nargs=2, type=int, help="pad")
     args = parser.parse_args()
+    check_infer_args(parser, args)
+    tile = args.tile_step
+    if tile is not None and (args.obb or args.pose):
+        parser.error("--tile does not support --obb or --pose")
+    if tile is not None and (args.resize or args.pad):
+        parser.error("--tile cannot be combined with --resize or --pad")
 
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
     if args.el:
         logger.propagate = False
 
-    model = None
-    if args.pose:
-        model = YoloPose(args.wts_file)
-    elif args.obb:
-        model = YoloObb(args.wts_file)
-    elif args.seg:
-        model = YoloSeg(args.wts_file)
-    else:
-        model = Yolo(args.wts_file)
+    model_cls = YoloPose if args.pose else YoloObb if args.obb else YoloSeg if args.seg else Yolo
+    model = model_cls(args.weights, image_size=args.image_size)
+    sz = model.image_size
 
-    if not os.path.isdir(args.path_out):
-        os.makedirs(args.path_out)
+    if not os.path.isdir(args.output):
+        os.makedirs(args.output)
 
     # get color map
     color_map = {}
@@ -115,14 +86,14 @@ if __name__ == "__main__":
 
     # warm up
     t1 = time.time()
-    model.warmup(args.sz)
+    model.warmup(sz)
     t2 = time.time()
-    logger.info(f"warmup input shape: {args.sz}")
+    logger.info(f"warmup input shape: {sz}")
     logger.info(f"warmup proc time -> {t2 - t1:.4f}")
 
-    fname_to_shapes = collections.defaultdict(list)
-    batches = get_img_path_batches(batch_size=BATCH_SIZE, img_dir=args.path_imgs, fmt="jpg") + get_img_path_batches(
-        batch_size=BATCH_SIZE, img_dir=args.path_imgs, fmt="png"
+    predictions_json = PredictionsJson(model.names.values())
+    batches = get_img_path_batches(batch_size=BATCH_SIZE, img_dir=args.input, fmt="jpg") + get_img_path_batches(
+        batch_size=BATCH_SIZE, img_dir=args.input, fmt="png"
     )
     logger.info(f"loaded {len(batches)} with a batch size of {BATCH_SIZE}")
 
@@ -139,7 +110,7 @@ if __name__ == "__main__":
             operators = []
             im1 = im0
             fname = os.path.basename(p)
-            save_path = os.path.join(args.path_out, fname)
+            save_path = os.path.join(args.output, fname)
             if args.resize:
                 im1 = resize_image(
                     im=im0,
@@ -160,20 +131,26 @@ if __name__ == "__main__":
                 operators.append(steps.revert_pad(pads=[[pad_L, pad_R, pad_T, pad_B]]))
                 logger.warning(f"{im1.shape}, padding")
 
-            if args.sz[0] != im1.shape[0] or args.sz[1] != im1.shape[1]:
+            if tile is not None:
+                rh, rw = 1.0, 1.0  # predict_tiled returns results in image coordinates
+            elif sz[0] != im1.shape[0] or sz[1] != im1.shape[1]:
                 logger.warning(f"{im1.shape}, warping")
-                rh, rw = args.sz[0] / im0.shape[0], args.sz[1] / im0.shape[1]
-                im1 = cv2.resize(im0, (args.sz[1], args.sz[0]))
+                rh, rw = sz[0] / im0.shape[0], sz[1] / im0.shape[1]
+                im1 = cv2.resize(im0, (sz[1], sz[0]))
             else:
                 rh, rw = 1.0, 1.0
 
             # inference
-            im = model.preprocess(im1)
-            preds = model.forward(im)
-            results = model.postprocess(preds, im, im1, args.confidence)
+            if tile is not None:
+                results, _, tile_boxes = predict_tiled(model, im0, tile, configs=args.confidence)
+                outputs = {k: v[0] for k, v in results.items()}
+                save_tile_plot(args.output, fname, im0, outputs, tile_boxes, hide_label=args.no_label, line_thickness=args.line_thickness)
+            else:
+                results, _ = model.predict(im1, configs=args.confidence)
             t2 = time.time()
 
             im_out = np.copy(im0)
+            final = collections.defaultdict(list)  # per-instance results in image coordinates, for the json
 
             if len(results["boxes"]):
                 # uppack results for a single image
@@ -210,12 +187,17 @@ if __name__ == "__main__":
                             box[[0, 2]] /= rw
                             box[[1, 3]] /= rh
 
+                    final["boxes"].append(box.copy())
+                    final["scores"].append(scores[j])
+                    final["classes"].append(classes[j])
+                    if mask is not None:
+                        final["masks"].append(mask)
                     box = box.astype(np.int32)
                     # annotation
                     color = color_map[classes[j]]
                     label = None if args.no_label else f"{classes[j]}: {scores[j]:.2f}"
                     if args.obb:
-                        plot_one_rbox(box, im_out, color=color, label=label, hide_bbox=args.no_box)
+                        plot_one_rbox(box, im_out, color=color, label=label, line_thickness=args.line_thickness, hide_bbox=args.no_box)
                     else:
                         plot_one_box(
                             box,
@@ -223,6 +205,7 @@ if __name__ == "__main__":
                             mask,
                             color=color,
                             label=label,
+                            line_thickness=args.line_thickness,
                             hide_bbox=args.no_box,
                         )
 
@@ -234,20 +217,7 @@ if __name__ == "__main__":
                             seg[:, 1] /= rh
                         else:
                             seg = revert_to_origin(seg, operators)
-                        seg = seg.astype(np.int32)
-                        seg2 = segments[j].reshape((-1, 1, 2)).astype(np.int32)
-                        cv2.drawContours(im_out, [seg2], -1, color, 1)
-
-                        # add masks to csv
-                        if args.csv:
-                            M = Mask(
-                                im_name=fname,
-                                category=classes[j],
-                                x_vals=seg[:, 0].tolist(),
-                                y_vals=seg[:, 1].tolist(),
-                                confidence=scores[j],
-                            )
-                            fname_to_shapes[fname].append(M)
+                        cv2.drawContours(im_out, [seg.reshape((-1, 1, 2)).astype(np.int32)], -1, color, 1)
 
                     if len(points):
                         pts = points[j]
@@ -257,29 +227,10 @@ if __name__ == "__main__":
                             pts[:, 1] /= rh
                         else:
                             pts = revert_to_origin(pts, operators)
+                        final["points"].append(pts.copy())
                         pts = pts.astype(np.int32)
-                        for pt in pts:
+                        for pt in pts[:, :2]:  # a third column, when present, is visibility
                             cv2.circle(im_out, tuple(pt), 4, color, -1)
-
-                    # add rects to csv
-                    if mask is None and args.csv:
-                        bbox = box
-                        angle = 0
-                        if args.obb:
-                            bbox = get_rotated_bbox(box)
-                            x1, y1, w, h, angle = bbox
-                            box = [x1, y1, x1 + w, y1 + h]
-                            box = np.array(box)
-
-                        R = Rect(
-                            im_name=fname,
-                            category=classes[j],
-                            up_left=box[:2].astype(int).tolist(),
-                            bottom_right=box[2:].astype(int).tolist(),
-                            confidence=scores[j],
-                            angle=angle,
-                        )
-                        fname_to_shapes[fname].append(R)
 
                 # log
                 cnts = collections.Counter(classes)
@@ -288,11 +239,12 @@ if __name__ == "__main__":
                     logger.info(f"found {cnts[c]} {c}")
             else:
                 logger.info(f"fname: {fname} --- no object detected")
+            if args.json:
+                predictions_json.add(os.path.relpath(p, args.input), im0.shape[0], im0.shape[1], final)
             # save output image from RGB to BGR
             cv2.imwrite(save_path, im_out[:, :, ::-1])
             t3 = time.time()
             logger.info(f"proc time: {t2 - t1:.4f}, cycle time: {t3 - t1:.4f}\n")
 
-    # write to csv
-    if args.csv:
-        write_to_csv(fname_to_shapes, os.path.join(args.path_out, "preds.csv"))
+    if args.json:
+        predictions_json.save(os.path.join(args.output, JSON_NAME))
