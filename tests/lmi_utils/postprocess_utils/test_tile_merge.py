@@ -1,4 +1,4 @@
-"""Fragment merging: cut flags, links between tiles, union, dropping fragments another tile saw in full."""
+"""Fragment merging: cut flags, joins between tiles, union, dropping fragments another tile saw in full."""
 
 import numpy as np
 import pytest
@@ -76,7 +76,7 @@ def test_objects_stacked_along_the_seam_do_not_chain():
 
 def test_a_sliver_inside_two_objects_does_not_weld_them():
     # Both T0 detections are whole and are different objects; a T1 sliver at the x=60 seam sits inside
-    # each. Linking it to both would join them into one group, and the group keeps only one box.
+    # each. Joining it to both would put them in one group, and the group keeps only one box.
     out = _merge(
         [[20, 30, 80, 60], [55, 45, 95, 85], [60, 46, 75, 56]],
         [0.9, 0.8, 0.3],
@@ -89,7 +89,7 @@ def test_a_sliver_inside_two_objects_does_not_weld_them():
 
 def test_a_sliver_inside_one_object_seen_from_two_tiles_still_merges():
     # Now the two coverers are one object detected twice, and the T1 piece is that object's part past the
-    # x=60 seam, so it keeps both links and everything collapses to a single box.
+    # x=60 seam, so it keeps both joins and everything collapses to a single box.
     out = _merge(
         [[20, 30, 80, 60], [20, 30, 80, 60], [60, 30, 80, 60]],
         [0.9, 0.8, 0.3],
@@ -101,7 +101,7 @@ def test_a_sliver_inside_one_object_seen_from_two_tiles_still_merges():
 
 def test_a_neighbour_box_that_contains_a_fragment_does_not_claim_it():
     # Q and S are whole in T0 and look cut at T1's left edge (x=60). P's cut box in T0 contains both T1 copies,
-    # but trimmed to the shared strip x 60-100 it is far larger than either, so it links to neither.
+    # but trimmed to the shared strip x 60-100 it is far larger than either, so it joins to neither.
     p, q, s = [30, 10, 100, 70], [61, 20, 75, 40], [61, 45, 75, 65]
     out = _merge([p, q, s, q, s], [0.4, 0.9, 0.8, 0.5, 0.5], [0, 0, 0, 1, 1])
     assert sorted(map(tuple, out["boxes"].tolist())) == sorted(tuple(map(float, b)) for b in (p, q, s))
@@ -109,7 +109,7 @@ def test_a_neighbour_box_that_contains_a_fragment_does_not_claim_it():
 
 def test_two_whole_objects_joined_through_a_cut_coverer_both_survive():
     # X spans the seam and is cut in both tiles. Its T0 piece covers Q's T1 copy and its T1 piece covers S's T0
-    # copy, and both links agree in the shared strip, so Q and S land in X's group. Both whole objects must remain.
+    # copy, and both joins agree in the shared strip, so Q and S land in X's group. Both whole objects must remain.
     q, s = [62, 20, 90, 60], [70, 20, 125, 60]
     out = _merge(
         [q, [55, 20, 100, 60], [70, 20, 100, 60], q, [60, 20, 110, 60], s],
@@ -123,7 +123,7 @@ def test_two_whole_objects_joined_through_a_cut_coverer_both_survive():
 
 def test_a_leftover_fragment_the_other_tile_saw_in_full_is_dropped():
     # A is whole in T1. Its T0 piece is cut at x=100 but, from an irregular shape, spans only y 40-60 there,
-    # so it does not agree with A in the shared strip and stays unlinked. T1 saw all of it, so it is dropped.
+    # so it does not agree with A in the shared strip and stays unjoined. T1 saw all of it, so it is dropped.
     a = [65, 20, 120, 80]
     out = _merge([[65, 40, 100, 60], a], [0.4, 0.9], [0, 1])
     assert out["boxes"].tolist() == [list(map(float, a))]
@@ -257,7 +257,7 @@ def test_object_spanning_three_tiles_vertically():
 def test_object_wider_than_a_tile_across_three_overlapping_rows():
     # 3 rows x 2 cols at stride 60 over a 210x150 image. The object (x 20..140, y 80..130) is wider
     # than a tile, so no piece is uncut: rows 0 and 2 hold a top and a bottom half, row 1 holds the
-    # full height cut left/right. The halves are not cut at row 1's edges, so only their links to
+    # full height cut left/right. The halves are not cut at row 1's edges, so only their joins to
     # row 1's pieces join the three rows into one object.
     origins = _grid(3, 2)
     out = merge_tile_fragments(
@@ -284,7 +284,7 @@ def test_object_wider_than_a_tile_across_three_overlapping_rows():
 
 
 def test_object_spanning_a_3x2_block_of_six_tiles():
-    # 2 rows x 3 cols at stride 60 over a 150x210 image. Every fragment links to its row and
+    # 2 rows x 3 cols at stride 60 over a 150x210 image. Every fragment joins to its row and
     # column neighbours; union-find has to fold all six into one group.
     origins = _grid(2, 3)
     out = merge_tile_fragments(
@@ -372,7 +372,7 @@ def test_a_wider_edge_tolerance_recovers_the_fragment_it_missed():
     assert torch.allclose(out["boxes"][0], torch.tensor([40.0, 20.0, 120.0, 50.0]))
 
 
-def test_a_zero_edge_tolerance_still_links_within_the_link_margin():
+def test_a_zero_edge_tolerance_still_joins_within_the_join_margin():
     assert _merge([[40, 20, 99, 50], [60, 20, 120, 50]], [0.4, 0.9], [0, 1], edge_tolerance=0)["boxes"].shape == (1, 4)
 
 
@@ -383,7 +383,7 @@ def test_a_zero_edge_tolerance_drops_only_a_sliver_that_hits_the_edge_exactly():
 
 
 def test_a_whole_object_near_the_seam_is_not_dropped_as_a_fragment():
-    # 4px short of T0's right edge: inside the link margin, outside the edge tolerance. T1 saw that area but found nothing.
+    # 4px short of T0's right edge: inside the join margin, outside the edge tolerance. T1 saw that area but found nothing.
     out = _merge([[70, 20, 96, 50], [10, 60, 40, 90]], [0.6, 0.9], [0, 0])
     assert out["boxes"].shape == (2, 4)
 
@@ -409,37 +409,42 @@ def test_merge_origin_separates_a_kept_fragment_from_a_whole_detection():
     assert out["merge_origin"].tolist() == [tile_merge.ORIGIN_FRAGMENT, tile_merge.ORIGIN_WHOLE]
 
 
+def _split(boxes, groups, whole, joins):
+    """_split_distinct_whole with the pair scan merge_tile_fragments would have handed it."""
+    return tile_merge._split_distinct_whole({"boxes": boxes}, boxes, groups, whole, joins, tile_merge.intersecting_pairs(boxes))
+
+
 def test_split_distinct_whole_treats_a_chain_of_overlaps_as_one_object():
     # A holds 0.96 of B and B holds 0.96 of C, but A and C only reach 0.92: a chain is still one object
     boxes = torch.tensor([[0.0, 0, 100, 10], [4.0, 0, 104, 10], [8.0, 0, 108, 10]])
     whole = torch.ones(3, dtype=torch.bool)
-    assert tile_merge._split_distinct_whole({"boxes": boxes}, boxes, [[0, 1, 2]], whole, torch.zeros(3, 3, dtype=torch.bool)) == [[0, 1, 2]]
+    assert _split(boxes, [[0, 1, 2]], whole, tile_merge._NO_PAIRS) == [[0, 1, 2]]
 
 
 def test_split_distinct_whole_still_separates_two_distinct_objects():
     boxes = torch.tensor([[0.0, 0, 10, 10], [100.0, 0, 110, 10]])
     whole = torch.ones(2, dtype=torch.bool)
-    assert tile_merge._split_distinct_whole({"boxes": boxes}, boxes, [[0, 1]], whole, set()) == [[0], [1]]
+    assert _split(boxes, [[0, 1]], whole, tile_merge._NO_PAIRS) == [[0], [1]]
 
 
-def _joined(n, pairs):
-    """The symmetric set of joined index pairs that _split_distinct_whole takes."""
-    return {(a, b) for a, b in pairs} | {(b, a) for a, b in pairs}
+def _joined(pairs):
+    """The (L, 2) join list that _split_distinct_whole takes."""
+    return torch.tensor(pairs, dtype=torch.long)
 
 
 def test_split_distinct_whole_gives_each_fragment_to_the_object_it_joined():
     # fragment 3 reaches object 1 only through fragment 2
     boxes = torch.tensor([[0.0, 0, 10, 10], [100.0, 0, 110, 10], [95.0, 0, 105, 10], [90.0, 0, 100, 10]])
     whole = torch.tensor([True, True, False, False])
-    joined = _joined(4, [(0, 1), (1, 2), (2, 3)])
-    assert tile_merge._split_distinct_whole({"boxes": boxes}, boxes, [[0, 1, 2, 3]], whole, joined) == [[0], [1, 2, 3]]
+    joined = _joined([(0, 1), (1, 2), (2, 3)])
+    assert _split(boxes, [[0, 1, 2, 3]], whole, joined) == [[0], [1, 2, 3]]
 
 
 def test_split_distinct_whole_gives_a_fragment_joined_to_both_objects_to_the_first():
     boxes = torch.tensor([[0.0, 0, 10, 10], [100.0, 0, 110, 10], [5.0, 0, 105, 10]])
     whole = torch.tensor([True, True, False])
-    joined = _joined(3, [(0, 2), (1, 2)])
-    assert tile_merge._split_distinct_whole({"boxes": boxes}, boxes, [[0, 1, 2]], whole, joined) == [[0, 2], [1]]
+    joined = _joined([(0, 2), (1, 2)])
+    assert _split(boxes, [[0, 1, 2]], whole, joined) == [[0, 2], [1]]
 
 
 def test_merge_origin_marks_the_second_object_that_absorbed_a_fragment():
@@ -448,3 +453,102 @@ def test_merge_origin_marks_the_second_object_that_absorbed_a_fragment():
     out = _merge([w0, w1, c, c2], [0.9, 0.8, 0.7, 0.7], [1, 1, 0, 0], report_origin=True)
     assert out["boxes"].tolist() == [list(map(float, w0)), list(map(float, w1))]
     assert out["merge_origin"].tolist() == [tile_merge.ORIGIN_WHOLE_GROUPED, tile_merge.ORIGIN_WHOLE_GROUPED]
+
+
+# Two tiles side by side with no overlap at all: T0 spans x [0, 100), T1 spans x [100, 200).
+# Their shared area is the line x=100, so the agreement test runs in a band straddling it.
+_NO_OVERLAP_ORIGINS = np.array([[0, 0], [0, 100]])
+_NO_OVERLAP_IM_SIZE = (100, 200)
+
+
+def _no_overlap(boxes, scores, tile_idx, classes=None, containment=0.8, **kwargs):
+    return merge_tile_fragments(
+        _result(boxes, scores, classes),
+        torch.tensor(tile_idx, dtype=torch.long),
+        _NO_OVERLAP_ORIGINS,
+        _TILE_SIZE,
+        _NO_OVERLAP_IM_SIZE,
+        containment,
+        **kwargs,
+    )
+
+
+def test_no_overlap_tiles_union_a_cut_object():
+    out = _no_overlap([[40, 20, 100, 50], [100, 21, 160, 50]], [0.4, 0.9], [0, 1])
+    assert out["boxes"].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([40.0, 20.0, 160.0, 50.0]))
+
+
+def test_no_overlap_tiles_keep_pieces_that_do_not_line_up_along_the_seam():
+    out = _no_overlap([[40, 20, 100, 50], [100, 60, 160, 90]], [0.4, 0.9], [0, 1])
+    assert out["boxes"].shape == (2, 4)
+
+
+def test_no_overlap_tiles_leave_a_piece_that_stops_short_of_the_seam():
+    # 10px short is well outside the band, so nothing pairs with it.
+    out = _no_overlap([[40, 20, 90, 50], [100, 20, 160, 50]], [0.4, 0.9], [0, 1])
+    assert out["boxes"].shape == (2, 4)
+
+
+def test_no_overlap_tiles_pair_within_the_edge_tolerance():
+    out = _no_overlap([[40, 20, 99, 50], [100, 20, 160, 50]], [0.4, 0.9], [0, 1])
+    assert out["boxes"].shape == (1, 4)
+
+
+def test_no_overlap_tiles_do_not_pair_different_classes():
+    out = _no_overlap([[40, 20, 100, 50], [100, 20, 160, 50]], [0.4, 0.9], [0, 1], classes=[0, 1])
+    assert out["boxes"].shape == (2, 4)
+
+
+def test_no_overlap_tiles_mark_the_union_and_keep_a_lone_fragment():
+    out = _no_overlap([[40, 20, 100, 50], [100, 20, 160, 50], [100, 70, 140, 90]], [0.4, 0.9, 0.5], [0, 1, 1], report_origin=True)
+    assert out["merge_origin"].tolist() == [tile_merge.ORIGIN_UNION, tile_merge.ORIGIN_FRAGMENT]
+
+
+def test_no_overlap_tiles_close_a_2x2_block():
+    # One object through the corner of four 100px tiles with no overlap, over a 200x200 image.
+    out = merge_tile_fragments(
+        _result([[60, 60, 100, 100], [100, 60, 140, 100], [60, 100, 100, 140], [100, 100, 140, 140]], [0.5] * 4),
+        torch.tensor([0, 1, 2, 3]),
+        np.array([[0, 0], [0, 100], [100, 0], [100, 100]]),
+        _TILE_SIZE,
+        (200, 200),
+        0.8,
+    )
+    assert out["boxes"].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([60.0, 60.0, 140.0, 140.0]))
+
+
+def _slanted_masks(gap):
+    """A bar crossing the seam at an angle, as two mask halves. Their boxes barely overlap in y; their
+    crossings at x=100 line up exactly. ``gap`` shifts the right half away from the shared rows."""
+    left, right = torch.zeros(100, 200, dtype=torch.bool), torch.zeros(100, 200, dtype=torch.bool)
+    for x in range(40, 100):
+        y = 20 + (x - 40) // 2
+        left[y : y + 8, x] = True
+    for x in range(100, 160):
+        y = 50 + gap + (x - 100) // 2
+        right[y : y + 8, x] = True
+    return torch.stack([left, right])
+
+
+def test_no_overlap_tiles_join_a_slanted_object_by_its_mask():
+    # Box y extents are 20..57 and 50..87 - a 1D IoU of 0.1, far under AGREEMENT_IOU. Only the masks
+    # meeting at the seam show they are one object.
+    res = {"masks": _slanted_masks(0), "scores": torch.tensor([0.4, 0.9]), "classes": np.array([0, 0], np.int32)}
+    out = merge_tile_fragments(res, torch.tensor([0, 1]), _NO_OVERLAP_ORIGINS, _TILE_SIZE, _NO_OVERLAP_IM_SIZE, 0.8)
+    assert len(out["masks"]) == 1
+
+
+def test_no_overlap_tiles_keep_slanted_pieces_that_miss_each_other_at_the_seam():
+    res = {"masks": _slanted_masks(20), "scores": torch.tensor([0.4, 0.9]), "classes": np.array([0, 0], np.int32)}
+    out = merge_tile_fragments(res, torch.tensor([0, 1]), _NO_OVERLAP_ORIGINS, _TILE_SIZE, _NO_OVERLAP_IM_SIZE, 0.8)
+    assert len(out["masks"]) == 2
+
+
+def test_a_mask_that_stops_short_of_the_seam_still_does_not_pair():
+    masks = _slanted_masks(0)
+    masks[0, :, 90:] = False  # the left half now ends 10px before the seam
+    res = {"masks": masks, "scores": torch.tensor([0.4, 0.9]), "classes": np.array([0, 0], np.int32)}
+    out = merge_tile_fragments(res, torch.tensor([0, 1]), _NO_OVERLAP_ORIGINS, _TILE_SIZE, _NO_OVERLAP_IM_SIZE, 0.8)
+    assert len(out["masks"]) == 2

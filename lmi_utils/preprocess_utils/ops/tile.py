@@ -7,7 +7,7 @@ import torch
 
 from lmi_utils.image_utils.tiler import Tiler
 from lmi_utils.postprocess_utils.mask_crops import MaskCrops
-from lmi_utils.postprocess_utils.nms import class_aware_nms, filter_instances
+from lmi_utils.postprocess_utils.nms import class_aware_nms, filter_instances, result_device
 from lmi_utils.postprocess_utils.tile_merge import DEFAULT_EDGE_TOLERANCE, instance_boxes, merge_tile_fragments
 
 from .._coords import apply_coord_transform
@@ -29,11 +29,13 @@ class TileConfig(Config):
 
     The rest configure ``revert_coords``, which rebuilds per-tile predictions in image space:
 
-    merge_fragments: union predictions of one object that adjacent tiles each saw only part of.
-        Needs ``scale_mode="padding"`` and more than ``2 * edge_tolerance`` px of overlap on both
-        axes. None (default) merges wherever the grid allows it and quietly skips where it does not.
-        True demands it and raises when the grid cannot support it. False turns it off, leaving
-        seam-split objects split.
+    merge_fragments: union predictions of one object that adjacent tiles each saw only part of. Needs
+        ``scale_mode="padding"``. Works without tile overlap, though overlap scores better: two pieces
+        that only meet at a seam can be compared along it but not across it. Three settings:
+
+        1. None (default): merge wherever the grid allows it, and quietly skip where it does not.
+        2. True: demand it, and raise when the grid cannot support it.
+        3. False: off, leaving seam-split objects split.
     score_threshold: predictions below this are dropped before merging, so a low-scoring piece cannot
         become its group's representative and take the whole group down with it.
     nms_iou: class-aware NMS IoU threshold across tiles. None disables both NMS rules.
@@ -43,8 +45,9 @@ class TileConfig(Config):
 
     edge_tolerance: px from a tile edge that still counts as touching it. Absolute, not a fraction of
         the tile: it tracks the detector's box-regression error at a crop boundary, which the detection
-        head's feature stride fixes. It decides which leftover fragments may be dropped; linking reaches
-        further, to ``tile_merge.LINK_MARGIN``. Results change little between 0.5 and 4.
+        head's feature stride fixes. It decides which leftover fragments may be dropped; joining reaches
+        further, to ``tile_merge.JOIN_MARGIN``, and with no tile overlap it also sets how wide a band
+        either side of a seam two pieces are compared in. Results change little between 0.5 and 4.
     min_label_size: on ``apply_coords``, drop a clipped label thinner than this many pixels on
         either axis. Slivers only — an interior fragment showing none of the object's edges must
         survive, or the model never learns to fire on the middle of an object wider than a tile.
@@ -68,10 +71,8 @@ class TileConfig(Config):
     def __post_init__(self):
         if self.tile_size is None or self.stride is None:
             raise ValueError("TileConfig: 'tile_size' and 'stride' are required")
-        if self.merge_fragments is True:
-            if self.scale_mode != "padding":
-                raise ValueError("TileConfig: merge_fragments needs scale_mode='padding'; interpolation rescales tile origins")
-            _validate_merge_overlap(_as_pair(self.tile_size), _as_pair(self.stride), self.edge_tolerance)
+        if self.merge_fragments is True and self.scale_mode != "padding":
+            raise ValueError("TileConfig: merge_fragments needs scale_mode='padding'; interpolation rescales tile origins")
 
     def coord_options(self) -> Dict[str, Any]:
         return {
@@ -87,22 +88,6 @@ class TileConfig(Config):
 
 def _as_pair(v: Union[int, List[int]]) -> List[int]:
     return [int(v), int(v)] if isinstance(v, int) else [int(v[0]), int(v[1])]
-
-
-def _validate_merge_overlap(tile_size: List[int], stride: List[int], edge_tolerance: float) -> None:
-    """Fragment merging needs real overlap on both axes.
-
-    At or below twice the edge tolerance the facing tile edges are effectively the same line, and
-    two same-class objects that merely touch at a seam become indistinguishable from one cut
-    object — they pair, merge, and containment NMS then drops both true detections.
-    """
-    minimum = 2 * edge_tolerance
-    overlap = [tile_size[i] - stride[i] for i in (0, 1)]
-    if min(overlap) <= minimum:
-        raise ValueError(
-            f"TileConfig: merge_fragments needs overlap > {minimum} px on both axes "
-            f"(2 x edge_tolerance {edge_tolerance}); tile_size {tile_size} and stride {stride} give {overlap}"
-        )
 
 
 @dataclass
@@ -353,7 +338,7 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     if requested is not False:
         tolerance = tiler_meta.get("edge_tolerance")
         tolerance = DEFAULT_EDGE_TOLERANCE if tolerance is None else float(tolerance)
-        skip = None if requested is True else _auto_merge_skip_reason((tile_h, tile_w), (stride_h, stride_w), is_interp, tolerance)
+        skip = None if requested is True else _auto_merge_skip_reason(is_interp)
         if skip is not None:
             logger.debug("tile: skipping fragment merging - %s", skip)
         else:
@@ -387,24 +372,12 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     return _clip_to_image(merged, im_h, im_w)
 
 
-def _auto_merge_skip_reason(
-    tile_size: Tuple[int, int],
-    stride: Tuple[int, int],
-    is_interp: bool,
-    tolerance: float,
-) -> Optional[str]:
+def _auto_merge_skip_reason(is_interp: bool) -> Optional[str]:
     """Why a grid cannot support automatic merging; None when it can.
 
     Only grid geometry — an unsupported model type raises instead, see ``_reject_unsupported``.
     """
-    if is_interp:
-        return "scale_mode='interpolation' rescales tile origins"
-    overlap = [tile_size[i] - stride[i] for i in (0, 1)]
-    if min(overlap) <= 2 * tolerance:
-        # Below this the facing tile edges are one line, so two objects touching at a seam are
-        # indistinguishable from one cut object and would be fused.
-        return f"overlap {overlap} is not more than 2 x edge_tolerance ({2 * tolerance})"
-    return None
+    return "scale_mode='interpolation' rescales tile origins" if is_interp else None
 
 
 def _reject_unsupported(result: Dict[str, Any]) -> None:
@@ -559,7 +532,7 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
     if n == 0:
         return out
 
-    device = _result_device(result)
+    device = result_device(result)
     kept = torch.zeros(n, dtype=torch.bool, device=device)
     boxes_out = points_out = masks_out = None
     segments_out: Optional[List[torch.Tensor]] = None
@@ -692,20 +665,6 @@ def _drop_slivers(result: Dict[str, Any], min_size: float) -> Dict[str, Any]:
     if len(keep) == len(boxes):
         return result
     return filter_instances(result, keep)
-
-
-def _result_device(result: Dict[str, Any]) -> torch.device:
-    """Device of the result's coord tensors (defaults to CPU when none are present)."""
-    for key in ("boxes", "points", "masks", "scores"):
-        v = result.get(key)
-        if isinstance(v, torch.Tensor) and len(v):
-            return v.device
-    segments = result.get("segments")
-    if segments is not None:
-        for s in segments:
-            if isinstance(s, torch.Tensor) and len(s):
-                return s.device
-    return torch.device("cpu")
 
 
 def _instance_count(result: Dict[str, Any]) -> int:

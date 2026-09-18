@@ -464,9 +464,8 @@ def test_tile_merge_fragments_spans_three_tiles():
     assert out["scores"][0].item() == pytest.approx(0.5)
 
 
-def test_tile_merge_fragments_rejects_zero_overlap():
-    with pytest.raises(ValueError, match="needs overlap"):
-        steps.tile(tile_size=100, stride=100, merge_fragments=True)
+def test_tile_merge_fragments_accepts_zero_overlap():
+    steps.tile(tile_size=100, stride=100, merge_fragments=True)
 
 
 def test_tile_revert_coords_rejects_keypoints():
@@ -670,10 +669,15 @@ def test_tile_two_whole_objects_in_the_overlap_band_survive_as_two():
     assert sorted(out["scores"][0].tolist()) == [pytest.approx(0.8), pytest.approx(0.9)]
 
 
-def test_tile_merge_overlap_is_validated_per_axis():
-    # 40px of overlap on one axis does not excuse 2px on the other.
-    with pytest.raises(ValueError, match="needs overlap"):
-        steps.tile(tile_size=[100, 100], stride=[60, 98], merge_fragments=True)
+def test_tile_merge_runs_with_overlap_on_one_axis_only():
+    # 40px of overlap on one axis, 2px on the other: both are compared in a band, so both merge.
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 198, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=[100, 100], stride=[60, 98], merge_fragments=True)])
+    results = _two_tile_results(boxes=[[[40, 20, 100, 50]], [[0, 20, 42, 50]]], scores=[[0.4], [0.9]])
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[40.0, 20.0, 140.0, 50.0]]))
 
 
 def test_tile_merge_fragments_with_non_square_tiles():
@@ -704,11 +708,10 @@ def test_tile_merge_with_no_predictions_at_all():
     assert out["boxes"][0].shape == (0, 4)
 
 
-def test_tile_min_overlap_follows_the_edge_tolerance():
-    # tile 100 / stride 60 leaves 40px of overlap: fine by default, not enough at a tolerance of 20.
+def test_tile_merge_accepts_any_edge_tolerance():
+    # No overlap requirement to trip over, whatever the tolerance.
     steps.tile(tile_size=100, stride=60, merge_fragments=True)
-    with pytest.raises(ValueError, match="2 x edge_tolerance 20"):
-        steps.tile(tile_size=100, stride=60, merge_fragments=True, edge_tolerance=20)
+    steps.tile(tile_size=100, stride=60, merge_fragments=True, edge_tolerance=20)
 
 
 def test_tile_edge_tolerance_reaches_the_merge_step():
@@ -740,9 +743,28 @@ def _two_dogs_either_side_of_a_seam(stride):
     return rec.reconstruct_coordinates(results, history)
 
 
-def test_tile_merge_defaults_to_auto_and_skips_without_overlap():
-    """Zero overlap puts both tile edges on one line, so two touching objects would fuse. Skip instead."""
+def test_tile_merge_without_overlap_fuses_two_objects_meeting_at_the_seam():
+    """The cost of merging with no overlap: neither tile can see across the seam, and these two agree along it.
+
+    Measured as a good trade on real data - the seam objects it rejoins far outnumber the neighbours it fuses.
+    """
     out = _two_dogs_either_side_of_a_seam(stride=320)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[200.0, 100.0, 440.0, 200.0]]))
+
+
+def test_tile_merge_without_overlap_keeps_objects_that_differ_along_the_seam():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(320, 576, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=320, stride=320)])
+    results = _empty_results(
+        n=2,
+        boxes=[torch.tensor([[200.0, 100.0, 320.0, 200.0]]), torch.tensor([[0.0, 240.0, 120.0, 300.0]])],
+        scores=[torch.tensor([0.9]), torch.tensor([0.8])],
+        classes=[np.array([0], np.int32) for _ in range(2)],
+        points=[torch.zeros((0, 1, 3)) for _ in range(2)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
     assert out["boxes"][0].shape == (2, 4)
 
 
@@ -850,8 +872,8 @@ def test_merge_origin_is_absent_by_default():
 def _weak_whole_and_strong_fragment(fragment_x0=0.0, **cfg):
     """A low-scoring whole detection in tile 0, and a high-scoring fragment of the same object in tile 1.
 
-    The fragment lies 0.83 inside the whole detection, so it links at 0.8 but not at 0.9. The whole detection ends
-    6px short of its tile edge, just outside the 5px link margin of this 40px overlap. ``fragment_x0`` moves the
+    The fragment lies 0.83 inside the whole detection, so it joins at 0.8 but not at 0.9. The whole detection ends
+    6px short of its tile edge, just outside the 5px join margin of this 40px overlap. ``fragment_x0`` moves the
     fragment's left side off tile 1's edge."""
     pre, rec = Preprocessor(), Reconstructor()
     _, history = pre.preprocess([torch.zeros(100, 150, 3)], [steps.tile(tile_size=100, stride=60, **cfg)])

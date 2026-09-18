@@ -124,27 +124,45 @@ def _row_blocks(counts: torch.Tensor, budget: int):
         lo = hi
 
 
+def box_intersections(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """(K,) area shared by the paired xyxy boxes a[k] and b[k]; zero where they miss."""
+    return (torch.minimum(a[:, 2:], b[:, 2:]) - torch.maximum(a[:, :2], b[:, :2])).clamp(min=0).prod(dim=1)
+
+
+def result_device(merged: Dict[str, Any]) -> torch.device:
+    """Device the result's per-instance tensors are on; CPU when it has none."""
+    masks = merged.get("masks")
+    if isinstance(masks, MaskCrops):
+        return masks.device
+    for key in ("boxes", "points", "masks", "scores"):
+        v = merged.get(key)
+        if isinstance(v, torch.Tensor) and len(v):
+            return v.device
+    segments = merged.get("segments")
+    if segments is not None:
+        for s in segments:
+            if isinstance(s, torch.Tensor) and len(s):
+                return s.device
+    return torch.device("cpu")
+
+
 def _box_overlap(boxes: torch.Tensor) -> Overlap:
     """Intersecting pairs, their intersection area, and areas, for xyxy boxes (N, 4)."""
     area = (boxes[:, 2] - boxes[:, 0]).clamp(min=0) * (boxes[:, 3] - boxes[:, 1]).clamp(min=0)
     pairs = intersecting_pairs(boxes)
-    a, b = boxes[pairs[:, 0]], boxes[pairs[:, 1]]
-    w = (torch.minimum(a[:, 2], b[:, 2]) - torch.maximum(a[:, 0], b[:, 0])).clamp(min=0)
-    h = (torch.minimum(a[:, 3], b[:, 3]) - torch.maximum(a[:, 1], b[:, 1])).clamp(min=0)
-    return pairs, w * h, area
+    return pairs, box_intersections(boxes[pairs[:, 0]], boxes[pairs[:, 1]]), area
 
 
 def _mask_overlap(masks: Union[torch.Tensor, MaskCrops]) -> Overlap:
     """Intersecting pairs, their intersection area, and areas, for binary instance masks, (N, H, W) or
-    ``MaskCrops``, on the CPU.
+    ``MaskCrops``, on the masks' own device.
 
     Only pairs whose mask boxes overlap are measured, and only where the boxes overlap: most pairs in a
     full-size image never touch, and comparing every pixel of every pair is what made tiled NMS slow.
     """
     crops = masks if isinstance(masks, MaskCrops) else MaskCrops.from_masks(masks, tuple(masks.shape[1:]))
     pairs = intersecting_pairs(crops.boxes.float())
-    inter = torch.tensor([crops.intersection(i, j) for i, j in pairs.tolist()], dtype=torch.float32)
-    return pairs, inter, crops.areas().clone()
+    return pairs, crops.intersections(pairs[:, 0], pairs[:, 1]), crops.areas().clone()
 
 
 def _polygon_overlap(polys: List[np.ndarray]) -> Overlap:
