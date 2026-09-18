@@ -264,7 +264,8 @@ def test_folder_dataset_non_empty():
         assert label_col in samples.columns, f"Expected label column not found; columns: {list(samples.columns)}"
 
         if "label" in samples.columns:
-            bad = [v for v in samples["label"].unique() if "DirType" in str(v)]
+            # Use .value if the stored object is an enum, else fall back to str().
+            bad = [v for v in samples["label"].unique() if "DirType" in str(getattr(v, "value", v))]
             assert not bad, (
                 f"Labels contain raw StrEnum repr: {bad}. Ensure pandas<3 is installed to fix DirType.NORMAL label serialization."
             )
