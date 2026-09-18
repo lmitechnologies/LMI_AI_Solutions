@@ -7,6 +7,7 @@ import json
 import logging
 import math
 import os
+import warnings
 from pathlib import Path
 from typing import Any, Literal
 
@@ -30,6 +31,117 @@ from .torch_model import TolerantAnomalyDINOModel
 logger = logging.getLogger(__name__)
 
 
+class TADPostProcessor(PostProcessor):
+    """Anomalib-compatible post-processor with LMI-compatible raw outputs.
+
+    LMI_AI_Solutions consumes Anomalib model outputs directly. PatchCore/PaDiM
+    therefore use their native score/map domains in that path. TAD defaults to
+    the same contract: raw ``pred_score`` and raw ``anomaly_map``. Either domain
+    can still opt back into Anomalib normalization independently.
+    """
+
+    def __init__(
+        self,
+        *,
+        return_raw_pred_score: bool = True,
+        return_raw_anomaly_map: bool = True,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.return_raw_pred_score = bool(return_raw_pred_score)
+        self.return_raw_anomaly_map = bool(return_raw_anomaly_map)
+
+    def forward(self, predictions: InferenceBatch) -> InferenceBatch:
+        """Post-process predictions while preserving configured raw domains."""
+        if predictions.pred_score is None and predictions.anomaly_map is None:
+            raise ValueError("At least one of pred_score or anomaly_map must be provided.")
+
+        raw_map = predictions.anomaly_map
+        raw_score = predictions.pred_score
+        if raw_score is None:
+            assert raw_map is not None
+            raw_score = torch.amax(raw_map, dim=(-2, -1))
+
+        return_raw_pred_score = bool(getattr(self, "return_raw_pred_score", True))
+        # Older TAD .pt artifacts predate this flag and normalized anomaly_map.
+        # Preserve that behavior unless an exporter explicitly opts them into raw map output.
+        return_raw_anomaly_map = bool(getattr(self, "return_raw_anomaly_map", False))
+
+        pred_score = raw_score
+        anomaly_map = raw_map
+        if self.enable_normalization:
+            if not return_raw_pred_score:
+                pred_score = self._normalize(
+                    raw_score, self.image_min, self.image_max, self.image_threshold
+                )
+            if not return_raw_anomaly_map:
+                anomaly_map = self._normalize(
+                    raw_map, self.pixel_min, self.pixel_max, self.pixel_threshold
+                )
+
+        if self.enable_thresholding:
+            score_threshold = (
+                self.image_threshold
+                if return_raw_pred_score or not self.enable_normalization
+                else self.normalized_image_threshold
+            )
+            map_threshold = (
+                self.pixel_threshold
+                if return_raw_anomaly_map or not self.enable_normalization
+                else self.normalized_pixel_threshold
+            )
+            pred_label = self._apply_threshold(pred_score, score_threshold)
+            pred_mask = self._apply_threshold(anomaly_map, map_threshold)
+        else:
+            pred_label = None
+            pred_mask = None
+
+        return InferenceBatch(
+            pred_label=pred_label,
+            pred_score=pred_score,
+            pred_mask=pred_mask,
+            anomaly_map=anomaly_map,
+        )
+
+    def normalize_batch(self, batch: Batch) -> None:
+        """Normalize only output domains explicitly configured as normalized."""
+        return_raw_pred_score = bool(getattr(self, "return_raw_pred_score", True))
+        return_raw_anomaly_map = bool(getattr(self, "return_raw_anomaly_map", False))
+        if not return_raw_anomaly_map:
+            batch.anomaly_map = self._normalize(
+                batch.anomaly_map, self.pixel_min, self.pixel_max, self.pixel_threshold
+            )
+        if not return_raw_pred_score:
+            batch.pred_score = self._normalize(
+                batch.pred_score, self.image_min, self.image_max, self.image_threshold
+            )
+
+    def threshold_batch(self, batch: Batch) -> None:
+        """Threshold each output in the numerical domain actually returned."""
+        return_raw_pred_score = bool(getattr(self, "return_raw_pred_score", True))
+        return_raw_anomaly_map = bool(getattr(self, "return_raw_anomaly_map", False))
+        score_threshold = (
+            self.image_threshold
+            if return_raw_pred_score or not self.enable_normalization
+            else self.normalized_image_threshold
+        )
+        map_threshold = (
+            self.pixel_threshold
+            if return_raw_anomaly_map or not self.enable_normalization
+            else self.normalized_pixel_threshold
+        )
+        batch.pred_label = (
+            batch.pred_label
+            if batch.pred_label is not None
+            else self._apply_threshold(batch.pred_score, score_threshold)
+        )
+        batch.pred_mask = (
+            batch.pred_mask
+            if batch.pred_mask is not None
+            else self._apply_threshold(batch.anomaly_map, map_threshold)
+        )
+
+
 class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
     """Stock AnomalyDINO plus conservative acceptable/reject residual references.
 
@@ -47,8 +159,23 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         pca_components: int = 32,
         coreset_subsampling: bool = False,
         sampling_ratio: float = 0.1,
+        # Fast TAD normal-bank guard. Default keeps at most 65,536 normal patch
+        # embeddings (and the exactly aligned rows from every intermediate bank).
+        # Set None/0 to disable. Explicit coreset_subsampling=True retains the
+        # stock KCenterGreedy sampling_ratio path instead.
+        normal_bank_max_size: int | None = 65536,
+        normal_bank_cap_seed: int = 1337,
         residual_creation_threshold: float = 0.1,
         residual_topk_per_image: int = 10,
+        # High-level production precision alias. The model-owned training adapter
+        # normally consumes this key and expands it into diagnostic/deployment
+        # target lists; accepting it here also makes direct/legacy construction safe.
+        target_precision: float | None = None,
+        # Remove REJECT residuals already supported by ACCEPT before projection.
+        shared_residual_decontamination_enable: bool = True,
+        shared_residual_decontamination_percentile: float = 95.0,
+        shared_residual_decontamination_use_magnitude: bool = True,
+        shared_residual_decontamination_min_accept_samples: int = 8,
         t_normal: float = 0.1,
         t_known: float = 0.5,
         t_accept_known: float | None = None,
@@ -171,8 +298,8 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         diagnostic_reject_class_depth: int = 1,
         # Deployment threshold calibration. Enabled by default and derived from
         # image_calibration_{good,acceptable,reject}_dir after all tolerance rules
-        # are frozen. Export-domain conversion is finalized after anomalib's
-        # validation PostProcessor has learned its normalization state.
+        # are frozen. TAD returns raw score + raw anomaly map by default to match
+        # the direct-model inference contract used by LMI_AI_Solutions.
         deployment_thresholds_enable: bool = True,
         deployment_target_precisions: tuple[float, ...] | list[float] = (0.95, 0.99, 0.999),
         deployment_thresholds_output_dir: str | Path | None = None,
@@ -181,11 +308,24 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         training_workspace: str | Path | None = None,
         training_original_config_path: str | Path | None = None,
         precision: str | PrecisionType = PrecisionType.FLOAT32,
+        # Export/inference contract. Defaults match LMI_AI_Solutions' direct
+        # Anomalib model path. Set either flag False to opt that output back into
+        # Anomalib's validation-fitted normalization.
+        return_raw_score: bool = True,
+        return_raw_anomaly_map: bool = True,
         pre_processor: nn.Module | bool = True,
         post_processor: nn.Module | bool = True,
         evaluator: Evaluator | bool = True,
         visualizer: Visualizer | bool = True,
     ) -> None:
+        self.return_raw_score = bool(return_raw_score)
+        self.return_raw_anomaly_map = bool(return_raw_anomaly_map)
+        if post_processor is True:
+            post_processor = TADPostProcessor(
+                return_raw_pred_score=self.return_raw_score,
+                return_raw_anomaly_map=self.return_raw_anomaly_map,
+            )
+
         super().__init__(
             pre_processor=pre_processor,
             post_processor=post_processor,
@@ -296,6 +436,13 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         self.diagnostic_batch_size = int(diagnostic_batch_size)
         self.diagnostic_num_workers = int(diagnostic_num_workers)
         self.diagnostic_target_precisions = tuple(float(v) for v in diagnostic_target_precisions)
+        if target_precision is not None:
+            target_precision = float(target_precision)
+            if not 0.0 < target_precision <= 1.0:
+                raise ValueError("target_precision must be in (0, 1]")
+            self.diagnostic_target_precisions = tuple(
+                sorted(set(self.diagnostic_target_precisions) | {target_precision})
+            )
         self.diagnostic_report_threshold = (
             None if diagnostic_report_threshold is None else float(diagnostic_report_threshold)
         )
@@ -309,10 +456,19 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             else tuple(float(v) for v in deployment_target_precisions)
         )
         self.deployment_target_precisions = tuple(float(v) for v in targets)
+        if target_precision is not None:
+            self.deployment_target_precisions = tuple(
+                sorted(set(self.deployment_target_precisions) | {float(target_precision)})
+            )
         if not self.deployment_target_precisions:
             raise ValueError("deployment_target_precisions must not be empty")
         if any(not 0.0 < v <= 1.0 for v in self.deployment_target_precisions):
             raise ValueError("deployment_target_precisions values must be in (0, 1]")
+        self.target_precision = (
+            float(target_precision)
+            if target_precision is not None
+            else float(max(self.deployment_target_precisions))
+        )
         self.deployment_thresholds_output_dir = (
             Path(deployment_thresholds_output_dir) if deployment_thresholds_output_dir else None
         )
@@ -328,8 +484,14 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             pca_components=pca_components,
             coreset_subsampling=coreset_subsampling,
             sampling_ratio=sampling_ratio,
+            normal_bank_max_size=normal_bank_max_size,
+            normal_bank_cap_seed=normal_bank_cap_seed,
             residual_creation_threshold=residual_creation_threshold,
             residual_topk_per_image=residual_topk_per_image,
+            shared_residual_decontamination_enable=shared_residual_decontamination_enable,
+            shared_residual_decontamination_percentile=shared_residual_decontamination_percentile,
+            shared_residual_decontamination_use_magnitude=shared_residual_decontamination_use_magnitude,
+            shared_residual_decontamination_min_accept_samples=shared_residual_decontamination_min_accept_samples,
             t_normal=t_normal,
             t_known=t_known,
             t_accept_known=t_accept_known,
@@ -388,11 +550,12 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             precision = PrecisionType(precision.lower())
         if precision == PrecisionType.FLOAT16:
             self.model = self.model.half()
-            # Anomalib's PatchCore AnomalyMapGenerator applies Gaussian blur via
-            # reflection padding. CPU reflection_pad2d does not support FP16 on
-            # the PyTorch build used by the ONNX export preflight. Keep only the
-            # anomaly-map generator in FP32; the detector/features/banks remain
-            # FP16. torch_model.py casts the map into/out of this FP32 island.
+            # Keep the stock PatchCore/AnomalyDINO anomaly-map generator in FP32.
+            # torch_model.py deliberately casts only the spatial anomaly map to FP32
+            # before resize/blur and casts the result back afterward.  Without this
+            # paired FP32 module cast, self.model.half() converts GaussianBlur2d.kernel
+            # to FP16 and CUDA sees Float input vs Half weight during diagnostics/export.
+            # This also avoids unsupported CPU FP16 reflection padding in ONNX preflight.
             self.model.anomaly_map_generator.float()
         elif precision == PrecisionType.FLOAT32:
             self.model = self.model.float()
@@ -408,6 +571,154 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         from .training_config import prepare_training_config
 
         return prepare_training_config(cls, cfg, config_path=config_path)
+
+    def to_onnx(
+        self,
+        export_root: Path | str,
+        model_file_name: str = "model",
+        input_size: tuple[int, int] | None = None,
+        **kwargs: Any,
+    ) -> Path:
+        """Export an LMI-compatible ONNX model with dynamic batch only.
+
+        Two Anomalib/PyTorch export quirks are handled here:
+
+        1. Anomalib 2.3.x defaults ``dynamic_axes`` to a generic ``output`` key,
+           while the real outputs are named ``anomaly_map``, ``pred_score``, etc.
+        2. Even with fixed input H/W and correct named dynamic axes, PyTorch can
+           leave TAD's map/mask output ValueInfo spatial dimensions symbolic
+           (``Castanomaly_map_dim_*``). LMI ONNXEngine intentionally rejects
+           symbolic non-batch output dimensions because it pre-allocates buffers.
+
+        We therefore trace one fixed-size PyTorch batch, use the real output names
+        for dynamic axes, export normally, and then harden only the ONNX *output
+        metadata*: axis 0 remains dynamic while axes 1+ are set to the concrete
+        shapes observed from that same fixed-size PyTorch forward pass.
+        """
+        traced_output_shapes: dict[str, tuple[int, ...]] | None = None
+
+        if input_size is not None:
+            if isinstance(input_size, int):
+                input_size = (input_size, input_size)
+            else:
+                input_size = tuple(int(x) for x in input_size)
+
+            dummy = torch.zeros((1, 3, *input_size), device=self.device)
+            with torch.inference_mode():
+                output = self.eval()(dummy)
+
+            # TAD normally returns InferenceBatch, but some serialized LMI/TAD
+            # artifacts expose a public forward() that returns only anomaly_map.
+            # In that case recover the complete Anomalib output explicitly from
+            # pre_processor -> inner model -> post_processor instead of failing.
+            inference_output = output[0] if isinstance(output, tuple) else output
+            if not hasattr(inference_output, "_asdict"):
+                value: Any = dummy
+                pre = getattr(self, "pre_processor", None)
+                if callable(pre):
+                    value = pre(value)
+
+                inner = getattr(self, "model", None)
+                if not callable(inner):
+                    raise TypeError(
+                        "TAD ONNX export could not recover named outputs: public "
+                        f"forward returned {type(inference_output)!r} and self.model "
+                        "is not callable."
+                    )
+                value = inner(value)
+
+                post = getattr(self, "post_processor", None)
+                if callable(post):
+                    value = post(value)
+
+                inference_output = value[0] if isinstance(value, tuple) else value
+
+            if not hasattr(inference_output, "_asdict"):
+                raise TypeError(
+                    "TAD ONNX export expected an InferenceBatch-like explicit pipeline "
+                    f"output with _asdict(), got {type(inference_output)!r}."
+                )
+
+            output_items = [
+                (name, value)
+                for name, value in inference_output._asdict().items()
+                if value is not None and torch.is_tensor(value)
+            ]
+            traced_output_shapes = {
+                name: tuple(int(dim) for dim in value.shape)
+                for name, value in output_items
+            }
+
+            if "dynamic_axes" not in kwargs:
+                dynamic_axes: dict[str, dict[int, str]] = {"input": {0: "batch_size"}}
+                for name, value in output_items:
+                    if value.ndim > 0:
+                        dynamic_axes[name] = {0: "batch_size"}
+                kwargs["dynamic_axes"] = dynamic_axes
+
+        onnx_path = Path(
+            super().to_onnx(
+                export_root,
+                model_file_name=model_file_name,
+                input_size=input_size,
+                **kwargs,
+            )
+        )
+
+        if traced_output_shapes is not None:
+            self._freeze_onnx_nonbatch_output_shapes(onnx_path, traced_output_shapes)
+
+        return onnx_path
+
+    @staticmethod
+    def _freeze_onnx_nonbatch_output_shapes(
+        onnx_path: Path,
+        traced_output_shapes: dict[str, tuple[int, ...]],
+    ) -> None:
+        """Rewrite ONNX output ValueInfo to dynamic batch + static axes 1+.
+
+        This changes shape metadata only; the computational graph is untouched.
+        The concrete dimensions come from the fixed-size PyTorch forward used for
+        the same export, so no H/W/C values are guessed or hard-coded.
+        """
+        try:
+            import onnx
+        except ModuleNotFoundError as exc:
+            raise RuntimeError(
+                "The 'onnx' package is required to finalize LMI-compatible TAD "
+                "output shapes. Install the same ONNX dependency used for export."
+            ) from exc
+
+        model = onnx.load(str(onnx_path))
+        graph_outputs = {output.name: output for output in model.graph.output}
+
+        missing = sorted(set(traced_output_shapes) - set(graph_outputs))
+        if missing:
+            raise RuntimeError(
+                "Expected TAD outputs were not present in the exported ONNX graph: "
+                f"{missing}. Available outputs: {sorted(graph_outputs)}"
+            )
+
+        for name, expected_shape in traced_output_shapes.items():
+            output = graph_outputs[name]
+            dims = output.type.tensor_type.shape.dim
+            if len(dims) != len(expected_shape):
+                raise RuntimeError(
+                    f"ONNX output {name!r} rank differs from the traced PyTorch "
+                    f"output: ONNX rank={len(dims)}, traced rank={len(expected_shape)}."
+                )
+
+            for axis, size in enumerate(expected_shape):
+                dim = dims[axis]
+                dim.ClearField("dim_param")
+                dim.ClearField("dim_value")
+                if axis == 0:
+                    dim.dim_param = "batch_size"
+                else:
+                    dim.dim_value = int(size)
+
+        onnx.checker.check_model(model)
+        onnx.save(model, str(onnx_path))
 
     def on_training_exported(self, cfg: dict) -> None:
         """Publish TAD-owned split/calibration artifacts after PT+ONNX export."""
@@ -447,16 +758,50 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
 
     @staticmethod
     def configure_post_processor() -> PostProcessor:
-        return PostProcessor()
+        """Return TAD's LMI-compatible raw-score/raw-map post-processor by default."""
+        return TADPostProcessor(return_raw_pred_score=True, return_raw_anomaly_map=True)
+
+    def on_fit_start(self) -> None:
+        """Narrowly suppress Lightning's intentional frozen-backbone eval warning.
+
+        Stock AnomalyDINO keeps its pretrained DINO feature extractor in eval mode
+        while the outer memory-bank model is in training mode. Lightning 2.6+
+        emits a generic warning whenever *any* nested module starts fit in eval
+        mode, even when that state is deliberate. Do not flip the frozen encoder
+        into train mode just to satisfy the warning: that can activate stochastic
+        training behavior and change the reference features. Instead, suppress only
+        this one Lightning warning during the short window in which it is emitted.
+        The filter is removed immediately in ``on_train_start``.
+        """
+        super_hook = getattr(super(), "on_fit_start", None)
+        if callable(super_hook):
+            super_hook()
+
+        context = warnings.catch_warnings()
+        context.__enter__()
+        warnings.filterwarnings(
+            "ignore",
+            message=r"Found \d+ module\(s\) in eval mode at the start of training\..*",
+        )
+        self._tad_eval_mode_warning_context = context
+
+    def on_train_start(self) -> None:
+        """Restore the process warning filters before the first train batch."""
+        context = getattr(self, "_tad_eval_mode_warning_context", None)
+        if context is not None:
+            context.__exit__(None, None, None)
+            self._tad_eval_mode_warning_context = None
+
+        super_hook = getattr(super(), "on_train_start", None)
+        if callable(super_hook):
+            super_hook()
 
     def on_train_end(self) -> None:
         """Finalize recommended thresholds in the exact exported score domain.
 
-        The raw target-precision thresholds are selected earlier from the held-out
-        image calibration directories.  This hook runs after Lightning validation,
-        when anomalib's PostProcessor has finalized image/pixel min/max + adaptive
-        thresholds.  Converting here guarantees that the saved threshold is in the
-        same score domain emitted by exported PT and ONNX artifacts.
+        Raw TAD ``pred_score`` is the default export contract, so finalization is a
+        no-op score-domain conversion in the default mode. Legacy normalized-score
+        mode still converts thresholds through the frozen Anomalib PostProcessor.
         """
         super_hook = getattr(super(), "on_train_end", None)
         if callable(super_hook):
@@ -1589,8 +1934,8 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             raw_quantiles[key] = self._nonreject_quantile_operating_point(nonreject_scores, q)
 
         payload: dict[str, Any] = {
-            "schema_version": 2,
-            "status": "raw_thresholds_ready_postprocessor_pending",
+            "schema_version": 3,
+            "status": "raw_thresholds_ready_export_contract_pending",
             "calibration_source": "image_calibration_dirs",
             "uses_final_test_for_threshold_selection": False,
             "score_source_raw": "inner_model_final_pred_score",
@@ -1680,6 +2025,8 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         post = getattr(self, "post_processor", None)
         if post is None or post is False:
             return values_np.copy(), "raw_postprocessor_disabled"
+        if bool(getattr(post, "return_raw_pred_score", False)):
+            return values_np.copy(), "raw_export_pred_score"
         if not bool(getattr(post, "enable_normalization", False)):
             return values_np.copy(), "raw_normalization_disabled"
 
@@ -1724,11 +2071,25 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         if post is None or post is False:
             return {"enabled": False}
 
+        raw_score = bool(getattr(post, "return_raw_pred_score", False))
+        raw_map = bool(getattr(post, "return_raw_anomaly_map", False))
         fields: dict[str, Any] = {
             "enabled": True,
             "class": type(post).__name__,
             "enable_normalization": bool(getattr(post, "enable_normalization", False)),
             "enable_thresholding": bool(getattr(post, "enable_thresholding", False)),
+            "return_raw_pred_score": raw_score,
+            "return_raw_anomaly_map": raw_map,
+            "pred_score_domain": (
+                "raw_inner_model"
+                if raw_score or not bool(getattr(post, "enable_normalization", False))
+                else "postprocessed_normalized"
+            ),
+            "anomaly_map_domain": (
+                "raw_inner_model"
+                if raw_map or not bool(getattr(post, "enable_normalization", False))
+                else "postprocessed_normalized"
+            ),
         }
         for name in (
             "image_min", "image_max", "image_threshold",
@@ -1739,7 +2100,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         return fields
 
     def _finalize_deployment_thresholds(self) -> None:
-        """Convert and save recommended thresholds in exported PT/ONNX score space."""
+        """Finalize recommended thresholds in exported PT/ONNX score space."""
         payload = self._pending_deployment_threshold_payload
         if not payload:
             return
@@ -1785,7 +2146,10 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             export_quantiles[key] = op
 
         post_meta = self._postprocessor_metadata()
-        if bool(post_meta.get("enable_normalization", False)):
+        if (
+            bool(post_meta.get("enable_normalization", False))
+            and not bool(post_meta.get("return_raw_anomaly_map", False))
+        ):
             annotation_min = post_meta.get("normalized_pixel_threshold")
         else:
             annotation_min = post_meta.get("pixel_threshold")
@@ -1841,6 +2205,9 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             **payload,
             "status": "ok" if has_reject else "ok_nonreject_quantile_fallback",
             "score_source_export": "exported_pt_onnx_pred_score",
+            "export_pred_score_domain": domain,
+            "return_raw_score": bool(post_meta.get("return_raw_pred_score", False)),
+            "return_raw_anomaly_map": bool(post_meta.get("return_raw_anomaly_map", False)),
             "pt_onnx_same_threshold": True,
             "post_processor": post_meta,
             "export_operating_points": export_ops,
@@ -1856,9 +2223,12 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 "ad_max_by_nonreject_quantile": {
                     key: op.get("threshold") for key, op in export_quantiles.items()
                 },
+                "anomaly_map_domain": post_meta.get("anomaly_map_domain"),
                 "note": (
-                    "For LMI ad_base.annotate, ad_threshold is the post-processor pixel decision "
-                    "boundary and ad_max may use the selected deployment fail threshold."
+                    "For LMI ADBase.annotate, ad_threshold is the pixel-map display floor. "
+                    "ad_max follows the exported image-score operating threshold so the reject "
+                    "boundary maps to full heatmap intensity. TAD pred_score and anomaly_map are "
+                    "derived from the same effective patch-score field."
                 ),
             },
         }
@@ -2044,6 +2414,21 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 "magnitude_projection_input_dim": int(self.model.residual_projection_magnitude_weight.shape[1]) if self.model.residual_projection_magnitude_weight.ndim == 2 else 0,
                 "residual_projection_dim": int(self.model.residual_projection_weight.shape[0]) if self.model.residual_projection_weight.ndim == 2 else 0,
                 "residual_projection_input_dim": int(self.model.residual_projection_weight.shape[1]) if self.model.residual_projection_weight.ndim == 2 else 0,
+                "shared_residual_decontamination_enable": bool(
+                    self.model.shared_residual_decontamination_enable
+                ),
+                "shared_residual_decontamination_percentile": float(
+                    self.model.shared_residual_decontamination_percentile
+                ),
+                "shared_residual_decontamination_use_magnitude": bool(
+                    self.model.shared_residual_decontamination_use_magnitude
+                ),
+                "shared_residual_decontamination_min_accept_samples": int(
+                    self.model.shared_residual_decontamination_min_accept_samples
+                ),
+                "shared_residual_decontamination_summary": dict(
+                    self.model.shared_residual_decontamination_last_summary
+                ),
                 "residual_projection_use_magnitude": bool(self.model.residual_projection_use_magnitude),
                 "residual_projection_use_relative_xy": bool(self.model.residual_projection_use_relative_xy),
                 "residual_projection_xy_scale": float(self.model.residual_projection_xy_scale),

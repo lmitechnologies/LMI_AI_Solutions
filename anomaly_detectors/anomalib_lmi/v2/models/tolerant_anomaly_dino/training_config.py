@@ -1,18 +1,8 @@
 """Training-config adapter for TolerantAnomalyDINO.
 
-This module owns TAD-specific training convenience behavior:
-
-* concise user-facing YAML -> internal reference/calibration/test paths
-* deterministic, leakage-safe auto splitting
-* ACCEPT-only / REJECT-only / full capability selection
-* deployment/diagnostic target-precision expansion
-* publishing TAD-owned artifacts beside exported weights
-
-It intentionally does *not* hide model/scoring hyperparameters.  Parameters such
-as ``residual_topk_per_image``, projection layers, reject-boost search grids,
-projection fit device, and per-defect weights come from the model constructor or
-from the YAML.  This keeps experimentally selected behavior visible and prevents
-silent drift when constructor defaults change.
+All model-specific dataset discovery, deterministic autosplitting, concise-YAML
+expansion, capability selection, and artifact publication lives here.  The shared
+``anomalib_lmi.v2.train`` entry point only calls generic optional model hooks.
 """
 
 from __future__ import annotations
@@ -32,8 +22,99 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff")
 
-# Friendly TAD-only keys accepted in the ordinary Anomalib-style data block.
-# They are consumed here and never reach anomalib.data.Folder.
+# Proven v8.4 defaults.  The user-facing YAML only needs normal model settings,
+# target_precision, and data group names. Explicit model.params always win.
+STANDARD_DEFAULTS: dict[str, Any] = {
+    "num_neighbours": 1,
+    "masking": False,
+    "scoring_mode": "cosine",
+    "pca_components": 32,
+    # Bound the normal reference bank by default. This is independent of legacy
+    # KCenterGreedy ratio mode and scales well to multi-million-patch datasets.
+    "coreset_subsampling": False,
+    "sampling_ratio": 0.1,
+    "normal_bank_max_size": 65536,
+    "normal_bank_cap_seed": 1337,
+    "residual_creation_threshold": 0.10,
+    "residual_topk_per_image": 20,
+    "shared_residual_decontamination_enable": True,
+    "shared_residual_decontamination_percentile": 95.0,
+    "shared_residual_decontamination_use_magnitude": True,
+    "shared_residual_decontamination_min_accept_samples": 8,
+    "accept_damping": 0.0,
+    "strict_stock_when_damping_one": True,
+    "emit_patch_class": False,
+    "image_accept_enable": True,
+    "image_accept_threshold": 999.0,
+    "image_accept_damping": 0.0,
+    "image_reject_veto_enable": True,
+    "image_reject_veto_threshold": 0.0,
+    "image_accept_calibrate": True,
+    "image_accept_max_reject_false_accept_rate": 0.05,
+    "image_accept_safety_margin": 0.01,
+    "image_accept_min_threshold": 0.0,
+    "projected_image_accept_enable": True,
+    "projected_image_accept_threshold": 999.0,
+    "projected_image_accept_damping": 0.0,
+    "projected_image_accept_calibrate": True,
+    "projected_image_accept_max_reject_false_accept_rate": 0.05,
+    "projected_image_accept_safety_margin": 0.01,
+    "projected_image_accept_min_threshold": 0.0,
+    "joint_image_accept_calibrate": True,
+    "image_reject_boost_enable": True,
+    "image_reject_boost_advantage_threshold": 0.0,
+    "image_reject_boost_lambda": 0.0,
+    "image_reject_boost_max": 0.75,
+    "image_reject_boost_calibrate": True,
+    "image_reject_boost_target_precision": 0.99,
+    "residual_projection_enable": True,
+    "residual_projection_dim": 32,
+    "residual_projection_margin": 0.10,
+    "residual_projection_epochs": 40,
+    "residual_projection_steps_per_epoch": 64,
+    "residual_projection_batch_size": 128,
+    "residual_projection_lr": 2.0e-3,
+    "residual_projection_weight_decay": 1.0e-4,
+    "residual_projection_orthogonality_weight": 1.0e-3,
+    "residual_projection_use_magnitude": True,
+    "residual_projection_magnitude_transform": "log",
+    "residual_projection_magnitude_scale": 1.0,
+    "residual_projection_magnitude_clip": 5.0,
+    "residual_projection_magnitude_eps": 1.0e-6,
+    "residual_projection_seed": 1337,
+    "residual_projection_fit_device": "cpu",
+    "residual_projection_mode": "dual",
+    "dual_projection_enable": True,
+    "residual_projection_use_relative_xy": False,
+    "residual_projection_xy_scale": 1.0,
+    "residual_projection_intermediate_layers": (8,),
+    "residual_projection_intermediate_scale": 1.0,
+    "projected_reject_boost_enable": True,
+    "projected_reject_boost_advantage_threshold": 0.0,
+    "projected_reject_boost_lambda": 0.0,
+    "projected_reject_boost_max": 0.75,
+    "projected_reject_boost_calibrate": True,
+    "projected_reject_boost_target_precision": 0.999,
+    "projected_reject_boost_require_non_decreasing_overall_recall": True,
+    "calibrate": True,
+    "calibrate_t_normal_percentile": 95.0,
+    "calibrate_t_known_percentile": 95.0,
+    "calibration_normal_samples": 4096,
+    "calibration_seed": 1337,
+    "calibration_query_chunk_size": 256,
+    "normal_bank_chunk_size": 65536,
+    "residual_bank_chunk_size": 65536,
+    "diagnostic_fail_on_overlap": True,
+    "diagnostic_reject_class_depth": 1,
+    "deployment_thresholds_enable": True,
+    # Match LMI_AI_Solutions' direct-model PatchCore/PaDiM inference contract:
+    # preserve both image score and pixel anomaly map in their native raw domains.
+    "return_raw_score": True,
+    "return_raw_anomaly_map": True,
+}
+
+# Friendly TAD-only keys accepted in the standard-looking data block.  They are
+# consumed here and never reach anomalib.data.Folder.
 DATA_KEYS = {
     "acceptable_dir",
     "reject_dir",
@@ -44,11 +125,12 @@ DATA_KEYS = {
     "stratify_reject",
 }
 
-# Explicit path parameters mean the caller prepared the split manually and wants
-# the advanced/legacy interface.  In that case autosplitting must stay out of the
-# way, but target_precision is still translated below.
+# If these are already supplied in model.params the caller is intentionally using
+# the legacy/advanced explicit split interface; autosplitting stays out of the way.
 EXPLICIT_PATH_KEYS = {
     "normal_reference_dir",
+    "acceptable_dir",
+    "reject_dir",
     "image_calibration_good_dir",
     "image_calibration_acceptable_dir",
     "image_calibration_reject_dir",
@@ -58,38 +140,8 @@ EXPLICIT_PATH_KEYS = {
 }
 
 
-def _supported_init_params(model_class) -> set[str]:
-    """Return explicitly named constructor parameters for compatibility checks."""
-    try:
-        signature = inspect.signature(model_class.__init__)
-    except (TypeError, ValueError):
-        return set()
-    return {
-        name
-        for name, parameter in signature.parameters.items()
-        if name != "self"
-        and parameter.kind
-        not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-    }
-
-
-def _set_if_supported(
-    params: dict[str, Any],
-    supported: set[str],
-    key: str,
-    value: Any,
-    *,
-    overwrite: bool = True,
-) -> None:
-    """Set an internally generated constructor argument only when supported."""
-    if supported and key not in supported:
-        return
-    if overwrite or key not in params:
-        params[key] = value
-
-
 def _flatten_legacy_params(params: dict[str, Any]) -> dict[str, Any]:
-    """Accept the older nested TAD YAML schema without changing its semantics."""
+    """Accept the older nested TAD YAML schema for backward compatibility."""
     params = dict(params)
 
     thresholds = params.pop("thresholds", None)
@@ -101,13 +153,9 @@ def _flatten_legacy_params(params: dict[str, Any]) -> dict[str, Any]:
     if isinstance(calibrate, dict):
         params["calibrate"] = bool(calibrate.get("enable", True))
         if "t_normal_percentile" in calibrate:
-            params.setdefault(
-                "calibrate_t_normal_percentile", calibrate["t_normal_percentile"]
-            )
+            params.setdefault("calibrate_t_normal_percentile", calibrate["t_normal_percentile"])
         if "t_known_percentile" in calibrate:
-            params.setdefault(
-                "calibrate_t_known_percentile", calibrate["t_known_percentile"]
-            )
+            params.setdefault("calibrate_t_known_percentile", calibrate["t_known_percentile"])
 
     defect_data = params.pop("defect_data", None)
     if isinstance(defect_data, dict):
@@ -121,46 +169,33 @@ def _flatten_legacy_params(params: dict[str, Any]) -> dict[str, Any]:
     return params
 
 
-def _prepare_user_model_params(
-    model_class,
-    params: dict[str, Any],
-) -> tuple[dict[str, Any], set[str]]:
-    """Consume friendly meta-parameters while leaving model behavior explicit.
+def _supported_init_params(model_class) -> set[str]:
+    try:
+        signature = inspect.signature(model_class.__init__)
+    except (TypeError, ValueError):
+        return set()
+    return {name for name in signature.parameters if name != "self"}
 
-    ``target_precision`` is not a model-forward hyperparameter.  It describes the
-    exported deployment operating points we want training to report.  Translate
-    it into the model's diagnostic/deployment precision lists, then remove it so
-    it can never leak into ``TolerantAnomalyDINO.__init__``.
 
-    No scoring/projection/calibration hyperparameters are filled here.  Missing
-    values use the model's real constructor defaults.
-    """
+def _expand_defaults(model_class, params: dict[str, Any]) -> dict[str, Any]:
     params = _flatten_legacy_params(params)
+    target_precision = float(params.pop("target_precision", 0.999))
+    if not 0.0 < target_precision <= 1.0:
+        raise ValueError("model.params.target_precision must be in (0, 1]")
+
     supported = _supported_init_params(model_class)
+    merged: dict[str, Any] = {}
+    for key, value in STANDARD_DEFAULTS.items():
+        if not supported or key in supported:
+            merged[key] = value
+    merged.update(params)
 
-    target_precision = params.pop("target_precision", None)
-    if target_precision is not None:
-        target_precision = float(target_precision)
-        if not 0.0 < target_precision <= 1.0:
-            raise ValueError("model.params.target_precision must be in (0, 1]")
-
-        targets = tuple(sorted({0.95, 0.99, target_precision}))
-        _set_if_supported(
-            params,
-            supported,
-            "diagnostic_target_precisions",
-            targets,
-            overwrite=False,
-        )
-        _set_if_supported(
-            params,
-            supported,
-            "deployment_target_precisions",
-            targets,
-            overwrite=False,
-        )
-
-    return params, supported
+    targets = tuple(sorted({0.95, 0.99, target_precision}))
+    if not supported or "diagnostic_target_precisions" in supported:
+        merged.setdefault("diagnostic_target_precisions", targets)
+    if not supported or "deployment_target_precisions" in supported:
+        merged.setdefault("deployment_target_precisions", targets)
+    return merged
 
 
 def _normalize_extensions(values: Iterable[str] | None) -> tuple[str, ...]:
@@ -175,31 +210,16 @@ def _normalize_extensions(values: Iterable[str] | None) -> tuple[str, ...]:
     return tuple(sorted(set(result)))
 
 
-def _resolve_source(root: Path, value: str | Path) -> Path:
-    path = Path(value).expanduser()
-    return path if path.is_absolute() else root / path
-
-
 def _iter_images(root: Path, extensions: tuple[str, ...]) -> list[Path]:
     if not root.exists() or not root.is_dir():
         return []
     return sorted(
-        (
-            path
-            for path in root.rglob("*")
-            if path.is_file() and path.suffix.lower() in extensions
-        ),
+        (path for path in root.rglob("*") if path.is_file() and path.suffix.lower() in extensions),
         key=lambda path: path.as_posix(),
     )
 
 
-def _stable_order(
-    paths: Iterable[Path],
-    *,
-    root: Path,
-    seed: int,
-    salt: str,
-) -> list[Path]:
+def _stable_order(paths: Iterable[Path], *, root: Path, seed: int, salt: str) -> list[Path]:
     def key(path: Path) -> tuple[str, str]:
         rel = path.relative_to(root).as_posix()
         digest = hashlib.sha256(f"{seed}|{salt}|{rel}".encode("utf-8")).hexdigest()
@@ -217,15 +237,7 @@ def _split_one_stratum(
     test_ratio: float,
     calibration_fraction_of_holdout: float,
 ) -> dict[str, list[Path]]:
-    """Split one class/stratum deterministically into reference/calibration/test.
-
-    With the standard Anomalib-style settings:
-
-        test_split_ratio = 0.20
-        val_split_ratio  = 0.50
-
-    this gives approximately 80% reference / 10% calibration / 10% final test.
-    """
+    """Split one class/stratum deterministically into reference/calibration/test."""
     ordered = _stable_order(paths, root=root, seed=seed, salt=salt)
     n = len(ordered)
     if n == 0:
@@ -239,7 +251,8 @@ def _split_one_stratum(
     if calibration_fraction_of_holdout <= 0.0:
         n_cal = 0
     elif holdout == 1:
-        # Prefer calibration over a statistically meaningless one-image final test.
+        # Prefer calibration to a one-image final test set; deployment calibration
+        # is more useful and final metrics on one image are not meaningful.
         n_cal = 1
     else:
         n_cal = int(round(holdout * calibration_fraction_of_holdout))
@@ -272,8 +285,6 @@ def _split_group(
             calibration_fraction_of_holdout=calibration_fraction_of_holdout,
         )
 
-    # First directory below acceptable/ or reject/ is the diagnostic subtype.
-    # Root-level images remain a valid stratum.
     strata: dict[str, list[Path]] = {}
     for path in paths:
         rel = path.relative_to(root)
@@ -309,7 +320,6 @@ def _materialize_split_tree(
 ) -> None:
     if split_root.exists():
         shutil.rmtree(split_root)
-
     for partition in ("reference", "calibration", "test"):
         for group, source_root in source_roots.items():
             group_out = split_root / partition / group
@@ -319,108 +329,34 @@ def _materialize_split_tree(
                 _safe_symlink(source, group_out / rel)
 
 
-def _count(
-    splits: dict[str, dict[str, list[Path]]],
-    group: str,
-    partition: str,
-) -> int:
-    return len(splits.get(group, {}).get(partition, []))
-
-
 def _path_or_none(path: Path, count: int) -> str | None:
     return str(path) if count > 0 else None
 
 
-def _has_explicit_split_paths(params: dict[str, Any]) -> bool:
+def _count(splits: dict[str, dict[str, list[Path]]], group: str, partition: str) -> int:
+    return len(splits.get(group, {}).get(partition, []))
+
+
+def _has_explicit_paths(params: dict[str, Any]) -> bool:
     return any(params.get(key) not in (None, "") for key in EXPLICIT_PATH_KEYS)
 
 
-def _apply_tolerance_mode(
-    params: dict[str, Any],
-    supported: set[str],
-    *,
-    tolerance_mode: str,
-    split_root: Path,
-) -> None:
-    """Inject only availability-dependent capability changes.
-
-    This function deliberately does not choose two-sided model hyperparameters.
-    Full mode therefore uses exactly the YAML/constructor settings.  One-sided
-    modes disable components that mathematically require the missing class and
-    set only the natural one-sided decision boundary/fallback needed to function.
-    """
-
-    def setp(key: str, value: Any) -> None:
-        _set_if_supported(params, supported, key, value, overwrite=True)
-
-    if tolerance_mode == "full":
-        setp("acceptable_dir", str(split_root / "reference" / "acceptable"))
-        setp("reject_dir", str(split_root / "reference" / "reject"))
-        logger.info("TAD data mode: full ACCEPT+REJECT tolerance model.")
-        return
-
-    if tolerance_mode == "accept_only":
-        setp("acceptable_dir", str(split_root / "reference" / "acceptable"))
-        setp("reject_dir", None)
-        setp("image_accept_enable", True)
-        # One-sided ACCEPT evidence is t_accept_known - d_accept, so zero is the
-        # calibrated known-class boundary.
-        setp("image_accept_threshold", 0.0)
-        setp("image_reject_boost_enable", False)
-        setp("projected_reject_boost_enable", False)
-        setp("projected_image_accept_enable", False)
-        setp("residual_projection_enable", False)
-        logger.info("TAD data mode: ACCEPT-only; standalone suppression enabled.")
-        return
-
-    if tolerance_mode == "reject_only":
-        setp("acceptable_dir", None)
-        setp("reject_dir", str(split_root / "reference" / "reject"))
-        setp("image_accept_enable", False)
-        setp("projected_image_accept_enable", False)
-        setp("image_reject_boost_enable", True)
-        # One-sided REJECT evidence is d_reject - t_reject_known.  A0=0 is its
-        # natural known-class boundary; lambda=1 is used only as a fallback if
-        # held-out calibration cannot tune the boost.
-        setp("image_reject_boost_advantage_threshold", 0.0)
-        setp("image_reject_boost_lambda", 1.0)
-        setp("projected_reject_boost_enable", False)
-        setp("residual_projection_enable", False)
-        logger.info("TAD data mode: REJECT-only; standalone boost enabled.")
-        return
-
-    if tolerance_mode != "normal_only":
-        raise ValueError(f"Unknown TAD tolerance mode: {tolerance_mode}")
-
-    setp("acceptable_dir", None)
-    setp("reject_dir", None)
-    setp("image_accept_enable", False)
-    setp("projected_image_accept_enable", False)
-    setp("image_reject_boost_enable", False)
-    setp("projected_reject_boost_enable", False)
-    setp("residual_projection_enable", False)
-    logger.info("TAD data mode: normal-only; tolerance modifications disabled.")
-
-
 def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dict:
-    """Resolve concise TAD YAML into the internal leakage-safe training config."""
+    """Resolve concise TAD YAML into a leakage-safe internal training config."""
     cfg = copy.deepcopy(cfg)
     model_cfg = cfg.setdefault("model", {})
-    params, supported = _prepare_user_model_params(
-        model_class, dict(model_cfg.get("params", {}) or {})
-    )
+    params = _expand_defaults(model_class, dict(model_cfg.get("params", {}) or {}))
     model_cfg["params"] = params
 
-    data_cfg = cfg.setdefault("data", {})
-
-    # Advanced explicit-split configurations remain fully supported.  Only the
-    # friendly target_precision translation above is applied in this path.
-    if _has_explicit_split_paths(params):
+    # Advanced/legacy explicit split paths remain supported and bypass autosplit.
+    if _has_explicit_paths(params):
         logger.info("TAD explicit split paths detected; automatic splitting disabled.")
+        data_cfg = cfg.setdefault("data", {})
         for key in DATA_KEYS:
             data_cfg.pop(key, None)
         return cfg
 
+    data_cfg = cfg.setdefault("data", {})
     if not bool(data_cfg.get("tad_auto_split", True)):
         logger.info("TAD automatic splitting disabled by data.tad_auto_split=false.")
         for key in DATA_KEYS:
@@ -428,32 +364,23 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
         return cfg
 
     root = Path(data_cfg.get("root", "/app/data/")).expanduser()
-    normal_name = data_cfg.get("normal_dir", "train")
-    acceptable_name = data_cfg.get("acceptable_dir", "acceptable")
-    reject_name = data_cfg.get("reject_dir", "reject")
-
-    source_roots = {
-        "good": _resolve_source(root, normal_name),
-        "acceptable": _resolve_source(root, acceptable_name),
-        "reject": _resolve_source(root, reject_name),
+    names = {
+        "good": str(data_cfg.get("normal_dir", "train")),
+        "acceptable": str(data_cfg.get("acceptable_dir", "acceptable")),
+        "reject": str(data_cfg.get("reject_dir", "reject")),
     }
+    source_roots = {group: root / name for group, name in names.items()}
 
     extensions = _normalize_extensions(data_cfg.get("extensions"))
-    source_images = {
-        group: _iter_images(path, extensions) for group, path in source_roots.items()
-    }
+    source_images = {group: _iter_images(path, extensions) for group, path in source_roots.items()}
     if not source_images["good"]:
         raise RuntimeError(
-            "TolerantAnomalyDINO requires normal images; "
-            f"none found in {source_roots['good']}"
+            f"TolerantAnomalyDINO requires normal images; none found in {source_roots['good']}"
         )
 
     seed = int(data_cfg.get("split_seed", data_cfg.get("seed", 1337)))
-
     test_mode = str(data_cfg.get("test_split_mode", "synthetic")).lower()
-    test_ratio = (
-        0.0 if test_mode == "none" else float(data_cfg.get("test_split_ratio", 0.2))
-    )
+    test_ratio = 0.0 if test_mode == "none" else float(data_cfg.get("test_split_ratio", 0.2))
     if not 0.0 <= test_ratio < 1.0:
         raise ValueError("data.test_split_ratio must be in [0, 1)")
 
@@ -465,30 +392,18 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
 
     splits = {
         "good": _split_group(
-            source_roots["good"],
-            source_images["good"],
-            group="good",
-            seed=seed,
-            test_ratio=test_ratio,
-            calibration_fraction_of_holdout=calibration_fraction,
+            source_roots["good"], source_images["good"], group="good", seed=seed,
+            test_ratio=test_ratio, calibration_fraction_of_holdout=calibration_fraction,
             stratify=False,
         ),
         "acceptable": _split_group(
-            source_roots["acceptable"],
-            source_images["acceptable"],
-            group="acceptable",
-            seed=seed,
-            test_ratio=test_ratio,
-            calibration_fraction_of_holdout=calibration_fraction,
+            source_roots["acceptable"], source_images["acceptable"], group="acceptable", seed=seed,
+            test_ratio=test_ratio, calibration_fraction_of_holdout=calibration_fraction,
             stratify=bool(data_cfg.get("stratify_acceptable", True)),
         ),
         "reject": _split_group(
-            source_roots["reject"],
-            source_images["reject"],
-            group="reject",
-            seed=seed,
-            test_ratio=test_ratio,
-            calibration_fraction_of_holdout=calibration_fraction,
+            source_roots["reject"], source_images["reject"], group="reject", seed=seed,
+            test_ratio=test_ratio, calibration_fraction_of_holdout=calibration_fraction,
             stratify=bool(data_cfg.get("stratify_reject", True)),
         ),
     }
@@ -511,108 +426,99 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
     else:
         tolerance_mode = "normal_only"
 
-    _apply_tolerance_mode(
-        params,
-        supported,
-        tolerance_mode=tolerance_mode,
-        split_root=split_root,
-    )
+    # Enable only capabilities supported by the available reference groups.
+    if tolerance_mode == "full":
+        params["acceptable_dir"] = str(split_root / "reference" / "acceptable")
+        params["reject_dir"] = str(split_root / "reference" / "reject")
+        logger.info("TAD data mode: full ACCEPT+REJECT tolerance model.")
+    elif tolerance_mode == "accept_only":
+        params.update({
+            "acceptable_dir": str(split_root / "reference" / "acceptable"),
+            "reject_dir": None,
+            "image_accept_enable": True,
+            "image_accept_threshold": 0.0,
+            "projected_image_accept_enable": False,
+            "image_reject_boost_enable": False,
+            "projected_reject_boost_enable": False,
+            "residual_projection_enable": False,
+        })
+        logger.warning(
+            "TAD data mode: ACCEPT-only (%d acceptable, 0 reject). "
+            "Standalone acceptable suppression enabled; reject precision/recall unavailable.",
+            len(source_images["acceptable"]),
+        )
+    elif tolerance_mode == "reject_only":
+        params.update({
+            "acceptable_dir": None,
+            "reject_dir": str(split_root / "reference" / "reject"),
+            "image_accept_enable": False,
+            "projected_image_accept_enable": False,
+            "image_reject_boost_enable": True,
+            "image_reject_boost_advantage_threshold": 0.0,
+            "image_reject_boost_lambda": 1.0,
+            "projected_reject_boost_enable": False,
+            "residual_projection_enable": False,
+        })
+        logger.warning(
+            "TAD data mode: REJECT-only (0 acceptable, %d reject). "
+            "Standalone reject boosting and good-vs-reject threshold calibration enabled.",
+            len(source_images["reject"]),
+        )
+    else:
+        params.update({
+            "acceptable_dir": None,
+            "reject_dir": None,
+            "image_accept_enable": False,
+            "projected_image_accept_enable": False,
+            "image_reject_boost_enable": False,
+            "projected_reject_boost_enable": False,
+            "residual_projection_enable": False,
+        })
+        logger.warning(
+            "TAD data mode: normal-only. Base AnomalyDINO scoring with normal/FPR threshold fallback."
+        )
 
-    _set_if_supported(
-        params,
-        supported,
-        "normal_reference_dir",
-        str(split_root / "reference" / "good"),
-    )
+    params["normal_reference_dir"] = str(split_root / "reference" / "good")
 
     for group, param_name in (
         ("good", "image_calibration_good_dir"),
         ("acceptable", "image_calibration_acceptable_dir"),
         ("reject", "image_calibration_reject_dir"),
     ):
-        _set_if_supported(
-            params,
-            supported,
-            param_name,
-            _path_or_none(
-                split_root / "calibration" / group,
-                _count(splits, group, "calibration"),
-            ),
+        params[param_name] = _path_or_none(
+            split_root / "calibration" / group,
+            _count(splits, group, "calibration"),
         )
 
-    _set_if_supported(
-        params,
-        supported,
-        "image_calibration_output_dir",
-        str(artifact_root),
-    )
-    _set_if_supported(
-        params,
-        supported,
-        "deployment_thresholds_output_dir",
-        str(artifact_root),
-    )
+    params["image_calibration_output_dir"] = str(artifact_root)
+    params["deployment_thresholds_output_dir"] = str(artifact_root)
 
     n_test_reject = _count(splits, "reject", "test")
-    n_test_nonreject = _count(splits, "good", "test") + _count(
-        splits, "acceptable", "test"
-    )
+    n_test_nonreject = _count(splits, "good", "test") + _count(splits, "acceptable", "test")
     diagnostics_available = n_test_reject > 0 and n_test_nonreject > 0
+    params["diagnostic_enable"] = diagnostics_available
+    params["diagnostic_good_dir"] = _path_or_none(
+        split_root / "test" / "good", _count(splits, "good", "test")
+    )
+    params["diagnostic_acceptable_dir"] = _path_or_none(
+        split_root / "test" / "acceptable", _count(splits, "acceptable", "test")
+    )
+    params["diagnostic_reject_dir"] = _path_or_none(
+        split_root / "test" / "reject", _count(splits, "reject", "test")
+    )
+    params["diagnostic_output_dir"] = str(artifact_root)
 
-    _set_if_supported(
-        params, supported, "diagnostic_enable", diagnostics_available
-    )
-    _set_if_supported(
-        params,
-        supported,
-        "diagnostic_good_dir",
-        _path_or_none(
-            split_root / "test" / "good", _count(splits, "good", "test")
-        ),
-    )
-    _set_if_supported(
-        params,
-        supported,
-        "diagnostic_acceptable_dir",
-        _path_or_none(
-            split_root / "test" / "acceptable",
-            _count(splits, "acceptable", "test"),
-        ),
-    )
-    _set_if_supported(
-        params,
-        supported,
-        "diagnostic_reject_dir",
-        _path_or_none(
-            split_root / "test" / "reject", _count(splits, "reject", "test")
-        ),
-    )
-    _set_if_supported(
-        params, supported, "diagnostic_output_dir", str(artifact_root)
-    )
+    # Internal bookkeeping for the model-owned post-export publication hook.
+    params["training_workspace"] = str(workspace)
+    params["training_original_config_path"] = str(config_path)
 
-    # Optional bookkeeping fields supported by the model-owned artifact hook in
-    # newer revisions. Older wrappers simply do not receive them.
-    _set_if_supported(
-        params, supported, "training_workspace", str(workspace)
-    )
-    _set_if_supported(
-        params,
-        supported,
-        "training_original_config_path",
-        str(config_path),
-    )
-
-    # Convert the friendly data block back into an ordinary Folder datamodule
-    # containing only normal reference images. TAD calibration/test groups are
-    # consumed through the model-owned paths above.
+    # The ordinary Folder datamodule is only used for the normal reference bank
+    # and Anomalib postprocessor lifecycle. TAD-specific groups were consumed above.
     postprocessor_val_ratio = float(data_cfg.get("postprocessor_val_ratio", 0.05))
     if not 0.0 < postprocessor_val_ratio < 1.0:
         raise ValueError("data.postprocessor_val_ratio must be in (0, 1)")
-
     for key in DATA_KEYS:
         data_cfg.pop(key, None)
-
     data_cfg["root"] = str(split_root / "reference")
     data_cfg["normal_dir"] = "good"
     data_cfg["test_split_mode"] = "none"
@@ -622,17 +528,14 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
     data_cfg.setdefault("seed", seed)
 
     manifest: dict[str, Any] = {
-        "schema_version": 3,
+        "schema_version": 2,
         "mode": "tad_auto_split",
         "seed": seed,
         "input": {
             "root": str(root),
-            "normal_dir": str(normal_name),
-            "acceptable_dir": str(acceptable_name),
-            "reject_dir": str(reject_name),
-            "resolved_normal_dir": str(source_roots["good"]),
-            "resolved_acceptable_dir": str(source_roots["acceptable"]),
-            "resolved_reject_dir": str(source_roots["reject"]),
+            "normal_dir": names["good"],
+            "acceptable_dir": names["acceptable"],
+            "reject_dir": names["reject"],
             "extensions": list(extensions),
         },
         "requested_split": {
@@ -658,11 +561,10 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
             "comparative_projection": tolerance_mode == "full",
             "precision_calibration": has_reject,
         },
+        "diagnostics_available": diagnostics_available,
         "partitions": {
             partition: {
-                group: [
-                    str(path.resolve()) for path in splits[group][partition]
-                ]
+                group: [str(path.resolve()) for path in splits[group][partition]]
                 for group in ("good", "acceptable", "reject")
             }
             for partition in ("reference", "calibration", "test")
@@ -678,8 +580,7 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
     )
 
     logger.info(
-        "TAD auto split: mode=%s good=%s acceptable=%s reject=%s",
-        tolerance_mode,
+        "TAD auto split: good=%s acceptable=%s reject=%s",
         manifest["counts"]["good"],
         manifest["counts"]["acceptable"],
         manifest["counts"]["reject"],
@@ -688,15 +589,10 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
     return cfg
 
 
-def _latest_version_dir(
-    default_root: Path,
-    model_name: str,
-    data_name: str,
-) -> Path | None:
+def _latest_version_dir(default_root: Path, model_name: str, data_name: str) -> Path | None:
     root = default_root / model_name / data_name
     if not root.exists():
         return None
-
     candidates: list[tuple[int, Path]] = []
     for item in root.iterdir():
         if item.is_dir() and item.name.startswith("v") and item.name[1:].isdigit():
@@ -711,7 +607,6 @@ def publish_training_artifacts(model, cfg: dict) -> None:
     workspace_value = getattr(model, "training_workspace", None)
     if not workspace_value:
         return
-
     workspace = Path(workspace_value)
     if not workspace.exists():
         logger.warning("TAD training workspace no longer exists: %s", workspace)
