@@ -552,3 +552,14 @@ def test_a_mask_that_stops_short_of_the_seam_still_does_not_pair():
     res = {"masks": masks, "scores": torch.tensor([0.4, 0.9]), "classes": np.array([0, 0], np.int32)}
     out = merge_tile_fragments(res, torch.tensor([0, 1]), _NO_OVERLAP_ORIGINS, _TILE_SIZE, _NO_OVERLAP_IM_SIZE, 0.8)
     assert len(out["masks"]) == 2
+
+
+def test_no_overlap_tiles_compare_a_mask_that_ends_at_the_band_edge():
+    # The left mask is whole (it stops 3px short of the seam) but still reaches the right piece's
+    # grown box, so the band slice of it has no width at all.
+    masks = torch.zeros(2, 100, 200, dtype=torch.bool)
+    masks[0, 20:50, 40:97] = True
+    masks[1, 20:50, 100:160] = True
+    res = {"masks": masks, "scores": torch.tensor([0.4, 0.9]), "classes": np.array([0, 0], np.int32)}
+    out = merge_tile_fragments(res, torch.tensor([0, 1]), _NO_OVERLAP_ORIGINS, _TILE_SIZE, _NO_OVERLAP_IM_SIZE, 0.8)
+    assert len(out["masks"]) == 2

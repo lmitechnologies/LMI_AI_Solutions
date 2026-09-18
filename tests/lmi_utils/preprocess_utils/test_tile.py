@@ -165,6 +165,14 @@ def test_tile_forward_missing_required_keys_raises():
         TileConfig(stride=16)
 
 
+def test_tile_stride_wider_than_the_tile_raises():
+    # the gap between tiles would never be seen by any tile
+    with pytest.raises(ValueError, match="Stride size must be smaller or equal to tile size"):
+        TileConfig(tile_size=16, stride=24)
+    with pytest.raises(ValueError, match="Stride size must be smaller or equal to tile size"):
+        TileConfig(tile_size=[16, 16], stride=[8, 17])
+
+
 def test_tile_segments_variable_length_concat_across_tiles():
     pre, rec = Preprocessor(), Reconstructor()
     img = torch.zeros((100, 100, 3))

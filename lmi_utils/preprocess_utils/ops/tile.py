@@ -23,7 +23,7 @@ class TileConfig(Config):
     Keypoints and oriented boxes are not supported and raise; only boxes, segments and masks tile.
 
     tile_size: int or [h, w] — patch size.
-    stride: int or [h, w] — step between tile origins. Overlap is ``tile_size - stride``.
+    stride: int or [h, w] — step between tile origins, never more than ``tile_size``. Overlap is ``tile_size - stride``.
     scale_mode: how the image is fit to the tile grid before slicing ("padding" or "interpolation").
     overlap_mode: how overlapping regions are merged on untile ("average", "max", ...).
 
@@ -71,6 +71,10 @@ class TileConfig(Config):
     def __post_init__(self):
         if self.tile_size is None or self.stride is None:
             raise ValueError("TileConfig: 'tile_size' and 'stride' are required")
+        try:  # the same rule ``Tiler`` enforces, raised here so a bad config fails before the first image
+            Tiler.validate_tile_and_stride(_as_pair(self.tile_size), _as_pair(self.stride))
+        except ValueError as e:
+            raise ValueError(f"TileConfig: {e}; got tile_size {self.tile_size}, stride {self.stride}") from e
         if self.merge_fragments is True and self.scale_mode != "padding":
             raise ValueError("TileConfig: merge_fragments needs scale_mode='padding'; interpolation rescales tile origins")
 

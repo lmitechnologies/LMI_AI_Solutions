@@ -196,7 +196,7 @@ class MaskCrops:
         c0, r0, w, h = self._clip(idx, lo[:, :2].long(), hi[:, 2:].ceil().long())
 
         k, far = len(idx), max(self.size) + 1
-        if not k or not int(h.sum()):
+        if not k or not int((w * h).sum()):  # no region has area; the column reductions below need a non-empty axis
             return empty
         item, row, col, valid = _rows(w, h)
         px = self._window(idx, item, row, col, c0, r0) & valid

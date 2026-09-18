@@ -84,3 +84,26 @@ def test_cat_and_empty():
     assert torch.equal(MaskCrops.cat(parts).paste(), masks)
     none = MaskCrops.from_masks(masks, (24, 30))[torch.zeros(0, dtype=torch.long)]
     assert none.paste().shape == (0, 24, 30)
+
+
+def test_boxes_in_regions_finds_the_pixels_inside_the_region():
+    masks = torch.zeros(2, 24, 30, dtype=torch.bool)
+    masks[0, 4:12, 5:20] = True
+    masks[1, 2:6, 25:29] = True
+    crops = MaskCrops.from_masks(masks, (24, 30))
+    lo = torch.tensor([[10.0, 0, 10, 0], [0.0, 0, 0, 0]])
+    hi = torch.tensor([[30.0, 24, 30, 24], [10.0, 24, 10, 24]])
+    empty = torch.full((2, 4), -1.0)
+    got = crops.boxes_in_regions(torch.tensor([0, 1]), lo, hi, empty)
+    assert got[0].tolist() == [10, 4, 20, 12]  # the slice of mask 0 right of x=10
+    assert got[1].tolist() == [-1, -1, -1, -1]  # mask 1 has no pixel left of x=10
+
+
+def test_boxes_in_regions_with_no_region_of_any_width():
+    # every region misses its mask on the x axis while still overlapping it on the y axis
+    masks = torch.zeros(1, 24, 30, dtype=torch.bool)
+    masks[0, 4:12, 5:20] = True
+    crops = MaskCrops.from_masks(masks, (24, 30))
+    empty = torch.full((1, 4), -1.0)
+    got = crops.boxes_in_regions(torch.tensor([0]), torch.tensor([[22.0, 0, 22, 0]]), torch.tensor([[26.0, 24, 26, 24]]), empty)
+    assert got.tolist() == empty.tolist()
