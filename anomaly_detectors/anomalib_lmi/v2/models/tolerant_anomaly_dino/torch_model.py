@@ -17,6 +17,7 @@ import torch
 import torch.nn.functional as F
 
 from anomalib.data import InferenceBatch
+from anomalib.models.components import KCenterGreedy
 from anomalib.models.image.anomaly_dino.torch_model import AnomalyDINOModel
 
 logger = logging.getLogger(__name__)
@@ -44,8 +45,6 @@ V8_DEFAULT_RESIDUAL_ANCHOR_K = 32
 V81_RESIDUAL_ANCHOR_TEMPERATURE = 1.0e-2
 V82_DEFAULT_RESIDUAL_ANCHOR_SEARCH_K = 128
 V82_RESIDUAL_RERANK_CANDIDATE_CHUNK = 8
-
-
 
 
 def _block_index_from_layer_name(layer_name: str) -> int:
@@ -219,6 +218,20 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         projected_image_accept_enable: bool = False,
         projected_image_accept_threshold: float = float("inf"),
         projected_image_accept_damping: float = 0.0,
+        # Optional REJECT-bank decontamination. Appended to preserve all existing
+        # positional-call meanings. When both tolerance banks exist, remove REJECT
+        # residuals already supported by ACCEPT before PCA/projection fitting.
+        shared_residual_decontamination_enable: bool = True,
+        shared_residual_decontamination_percentile: float = 95.0,
+        shared_residual_decontamination_use_magnitude: bool = True,
+        shared_residual_decontamination_min_accept_samples: int = 8,
+        # TAD normal-bank size guard.  Unlike legacy KCenter ratio mode this is a
+        # fast streaming uniform cap and therefore scales to multi-million-patch
+        # reference sets.  Set to None/0 to keep the full bank.  Explicit
+        # coreset_subsampling=True retains Anomalib's KCenterGreedy ratio behavior
+        # and takes precedence over this cap.
+        normal_bank_max_size: int | None = 65536,
+        normal_bank_cap_seed: int = 1337,
     ) -> None:
         super().__init__(
             num_neighbours=num_neighbours,
@@ -245,6 +258,20 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         self.pca_components = pca_components
         self.residual_creation_threshold = residual_creation_threshold
         self.residual_topk_per_image = max(0, int(residual_topk_per_image))
+        self.shared_residual_decontamination_enable = bool(shared_residual_decontamination_enable)
+        self.shared_residual_decontamination_percentile = float(shared_residual_decontamination_percentile)
+        if not 0.0 < self.shared_residual_decontamination_percentile <= 100.0:
+            raise ValueError("shared_residual_decontamination_percentile must be in (0, 100]")
+        self.shared_residual_decontamination_use_magnitude = bool(
+            shared_residual_decontamination_use_magnitude
+        )
+        self.shared_residual_decontamination_min_accept_samples = max(
+            2, int(shared_residual_decontamination_min_accept_samples)
+        )
+        self.shared_residual_decontamination_last_summary: dict[str, object] = {
+            "status": "not_run",
+            "enabled": self.shared_residual_decontamination_enable,
+        }
         self.detector_only = detector_only
         self.strict_stock_when_damping_one = strict_stock_when_damping_one
         self.emit_patch_class = emit_patch_class
@@ -262,6 +289,49 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         self.residual_anchor_rerank_candidate_chunk = int(V82_RESIDUAL_RERANK_CANDIDATE_CHUNK)
         self.calibration_query_chunk_size = max(1, int(calibration_query_chunk_size))
         self.calibration_seed = int(calibration_seed)
+
+        # Normal-bank retention policy.
+        #
+        # Default TAD behavior uses a fast streaming priority sample capped at
+        # ``normal_bank_max_size``. This avoids ever materializing a multi-million
+        # row final+intermediate bank at fit time. Setting coreset_subsampling=True
+        # intentionally selects the original Anomalib KCenterGreedy ratio path
+        # instead; the cap is then ignored so ``sampling_ratio`` keeps its stock
+        # meaning.
+        if normal_bank_max_size is None:
+            self.normal_bank_max_size: int | None = None
+        else:
+            parsed_max = int(normal_bank_max_size)
+            self.normal_bank_max_size = parsed_max if parsed_max > 0 else None
+        self.normal_bank_cap_seed = int(normal_bank_cap_seed)
+        self._normal_bank_rows_seen = 0
+        self._normal_bank_reservoir_keys = torch.empty(0, dtype=torch.float64)
+
+        # Do NOT store a torch.Generator on the model. ExportType.TORCH serializes
+        # the whole module object, and Generator.__setstate__ expects a CPU
+        # ByteTensor. Loading such an artifact directly onto CUDA can relocate the
+        # pickled RNG-state tensor and fail with:
+        #   TypeError: RNG state must be a torch.ByteTensor
+        # Keep only the generator state as a plain CPU uint8 tensor and recreate a
+        # short-lived Generator while collecting normal embeddings. This preserves
+        # the exact deterministic random stream without putting a Generator object
+        # into model.pt.
+        _cap_generator = torch.Generator(device="cpu")
+        _cap_generator.manual_seed(self.normal_bank_cap_seed)
+        self._normal_bank_cap_rng_state = _cap_generator.get_state().clone().cpu()
+        del _cap_generator
+
+        self._normal_bank_ratio_mode = bool(coreset_subsampling)
+        self._normal_bank_stream_cap_enabled = bool(
+            (not self._normal_bank_ratio_mode) and self.normal_bank_max_size is not None
+        )
+        if self._normal_bank_ratio_mode and self.normal_bank_max_size is not None:
+            logger.info(
+                "coreset_subsampling=True: using legacy KCenterGreedy sampling_ratio=%.6f; "
+                "normal_bank_max_size=%d is ignored. Set coreset_subsampling=false to use the fast cap.",
+                float(self.sampling_ratio),
+                self.normal_bank_max_size,
+            )
 
         # Residual direction + severity banks.
         self.register_buffer("accept_dir_bank", torch.empty(0))
@@ -408,12 +478,6 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         self.residual_projection_intermediate_enabled = bool(
             self.residual_projection_enable and self.residual_projection_intermediate_layer_names
         )
-        if self.residual_projection_intermediate_enabled and coreset_subsampling:
-            raise ValueError(
-                "Intermediate residual features require coreset_subsampling=false so the "
-                "parallel intermediate normal bank remains index-aligned with the stock normal bank."
-            )
-
         # Anomalib 2.3.3 compatibility:
         # --------------------------------
         # AnomalyDINO 2.3.3 uses the custom DinoVisionTransformer returned by
@@ -632,34 +696,232 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         selected = F.normalize(selected, p=2, dim=-1)
         self.intermediate_embedding_store.append(selected.detach())
 
+    def _apply_streaming_normal_bank_cap(self) -> None:
+        """Keep a deterministic uniform reservoir of aligned normal embeddings.
+
+        This path is used only for the default ``normal_bank_max_size`` policy.
+        Every incoming normal patch receives an independent deterministic random
+        priority and the highest-priority rows are retained. Keeping the same row
+        indices for final and intermediate features preserves exact alignment.
+
+        The method intentionally does *not* run when ``coreset_subsampling=True``;
+        that flag retains Anomalib's legacy KCenterGreedy ratio semantics.
+        """
+        if not self._normal_bank_stream_cap_enabled or not self.embedding_store:
+            return
+
+        # Stock AnomalyDINO appended the current batch as the newest chunk. The
+        # existing store, if present, is the reservoir produced after the previous
+        # batch.
+        new_final = self.embedding_store.pop()
+        new_rows = int(new_final.shape[0])
+        if new_rows == 0:
+            return
+
+        new_intermediate: torch.Tensor | None = None
+        if self.residual_projection_intermediate_enabled:
+            if not self.intermediate_embedding_store:
+                raise RuntimeError(
+                    "Intermediate normal feature store missing while applying normal-bank cap"
+                )
+            new_intermediate = self.intermediate_embedding_store.pop()
+            if int(new_intermediate.shape[0]) != new_rows:
+                raise RuntimeError(
+                    "Normal-bank cap alignment failure for current batch: "
+                    f"final={new_rows} intermediate={new_intermediate.shape[0]}"
+                )
+
+        if len(self.embedding_store) > 1:
+            raise RuntimeError(
+                "Streaming normal-bank cap expected at most one existing reservoir chunk; "
+                f"found {len(self.embedding_store)}"
+            )
+        if self.residual_projection_intermediate_enabled and len(self.intermediate_embedding_store) > 1:
+            raise RuntimeError(
+                "Streaming normal-bank cap expected at most one intermediate reservoir chunk; "
+                f"found {len(self.intermediate_embedding_store)}"
+            )
+
+        existing_final = self.embedding_store[0] if self.embedding_store else None
+        existing_intermediate = (
+            self.intermediate_embedding_store[0]
+            if self.residual_projection_intermediate_enabled and self.intermediate_embedding_store
+            else None
+        )
+        existing_rows = 0 if existing_final is None else int(existing_final.shape[0])
+        if int(self._normal_bank_reservoir_keys.numel()) != existing_rows:
+            raise RuntimeError(
+                "Normal-bank reservoir key alignment failure: "
+                f"keys={self._normal_bank_reservoir_keys.numel()} rows={existing_rows}"
+            )
+
+        # Recreate the CPU generator from a plain uint8 state tensor. The state is
+        # advanced after each batch, preserving the same streaming priority sample
+        # semantics while remaining safe to serialize as part of the model object.
+        cap_generator = torch.Generator(device="cpu")
+        rng_state = self._normal_bank_cap_rng_state
+        if rng_state.dtype != torch.uint8 or rng_state.device.type != "cpu":
+            rng_state = rng_state.to(device="cpu", dtype=torch.uint8)
+        cap_generator.set_state(rng_state)
+        new_keys = torch.rand(
+            new_rows,
+            generator=cap_generator,
+            device="cpu",
+            dtype=torch.float64,
+        )
+        self._normal_bank_cap_rng_state = cap_generator.get_state().clone().cpu()
+        combined_keys = torch.cat((self._normal_bank_reservoir_keys, new_keys), dim=0)
+        combined_final = (
+            new_final if existing_final is None else torch.cat((existing_final, new_final), dim=0)
+        )
+        combined_intermediate: torch.Tensor | None = None
+        if self.residual_projection_intermediate_enabled:
+            assert new_intermediate is not None
+            combined_intermediate = (
+                new_intermediate
+                if existing_intermediate is None
+                else torch.cat((existing_intermediate, new_intermediate), dim=0)
+            )
+
+        self._normal_bank_rows_seen += new_rows
+        cap = int(self.normal_bank_max_size or combined_final.shape[0])
+        keep_count = min(cap, int(combined_final.shape[0]))
+        if int(combined_final.shape[0]) > keep_count:
+            # Priority sampling is equivalent to a uniform sample without replacement
+            # across all rows observed so far. Sorting the retained row indices makes
+            # the resulting bank order deterministic and keeps memory access coherent.
+            keep_cpu = torch.topk(
+                combined_keys,
+                k=keep_count,
+                largest=True,
+                sorted=False,
+            ).indices
+            keep_cpu = torch.sort(keep_cpu).values
+            keep_final = keep_cpu.to(device=combined_final.device)
+            combined_final = combined_final.index_select(0, keep_final)
+            combined_keys = combined_keys.index_select(0, keep_cpu)
+            if combined_intermediate is not None:
+                keep_intermediate = keep_cpu.to(device=combined_intermediate.device)
+                combined_intermediate = combined_intermediate.index_select(0, keep_intermediate)
+
+        self.embedding_store[:] = [combined_final.detach()]
+        if self.residual_projection_intermediate_enabled:
+            assert combined_intermediate is not None
+            self.intermediate_embedding_store[:] = [combined_intermediate.detach()]
+        self._normal_bank_reservoir_keys = combined_keys
+
     def fit(self) -> None:
-        """Finalize stock normal bank and its optional aligned intermediate bank."""
-        super().fit()
-        if not self.residual_projection_intermediate_enabled:
+        """Finalize the normal bank while preserving final/intermediate alignment.
+
+        Default TAD mode applies ``normal_bank_max_size`` during collection using
+        a deterministic streaming uniform reservoir. This scales to millions of
+        patch embeddings and bounds both the final and every intermediate bank.
+
+        Setting ``coreset_subsampling=True`` switches to the original Anomalib
+        KCenterGreedy ``sampling_ratio`` behavior. TAD obtains the selected row
+        indices and applies those exact indices to the intermediate bank as well,
+        so intermediate projection features are now compatible with legacy coreset
+        sampling.
+        """
+        if not self.embedding_store:
+            raise ValueError("No embeddings collected. Run model in training mode first.")
+
+        full_bank = torch.vstack(self.embedding_store)
+        self.embedding_store.clear()
+        rows_before_selection = int(full_bank.shape[0])
+
+        intermediate_bank: torch.Tensor | None = None
+        if self.residual_projection_intermediate_enabled:
+            if not self.intermediate_embedding_store:
+                raise RuntimeError(
+                    "Intermediate projection layers are enabled but no normal intermediate embeddings were collected"
+                )
+            intermediate_bank = torch.cat(self.intermediate_embedding_store, dim=0).to(
+                device=full_bank.device, dtype=full_bank.dtype
+            )
+            self.intermediate_embedding_store.clear()
+            if int(intermediate_bank.shape[0]) != rows_before_selection:
+                raise RuntimeError(
+                    "Normal/intermediate memory-bank alignment failure before selection: "
+                    f"final={rows_before_selection} intermediate={intermediate_bank.shape[0]}"
+                )
+
+        selection_mode = "full"
+        original_rows_seen = int(self._normal_bank_rows_seen or rows_before_selection)
+
+        if self.coreset_subsampling:
+            if not 0.0 < float(self.sampling_ratio) <= 1.0:
+                raise ValueError("sampling_ratio must be in (0, 1] when coreset_subsampling=True")
+            target_size = max(1, min(rows_before_selection, int(rows_before_selection * float(self.sampling_ratio))))
+            if target_size < rows_before_selection:
+                sampler = KCenterGreedy(embedding=full_bank, sampling_ratio=float(self.sampling_ratio))
+                # Avoid floating-point truncation surprises while retaining the
+                # stock KCenterGreedy algorithm and sampling-ratio target.
+                sampler.coreset_size = target_size
+                selected = sampler.select_coreset_idxs()
+                selected_idx = torch.as_tensor(selected, device=full_bank.device, dtype=torch.long)
+                full_bank = full_bank.index_select(0, selected_idx)
+                if intermediate_bank is not None:
+                    intermediate_bank = intermediate_bank.index_select(
+                        0, selected_idx.to(intermediate_bank.device)
+                    )
+                selection_mode = "kcenter_ratio"
+            else:
+                selection_mode = "kcenter_ratio_noop"
+        elif self.normal_bank_max_size is not None:
+            # The streaming cap has already been applied batch-by-batch. This
+            # guard also handles direct/nonstandard training loops that call fit
+            # without passing through the TAD forward wrapper.
+            cap = int(self.normal_bank_max_size)
+            if rows_before_selection > cap:
+                generator = torch.Generator(device="cpu")
+                generator.manual_seed(self.normal_bank_cap_seed)
+                selected_cpu = torch.randperm(rows_before_selection, generator=generator)[:cap]
+                selected_cpu = torch.sort(selected_cpu).values
+                selected_idx = selected_cpu.to(device=full_bank.device)
+                full_bank = full_bank.index_select(0, selected_idx)
+                if intermediate_bank is not None:
+                    intermediate_bank = intermediate_bank.index_select(
+                        0, selected_cpu.to(device=intermediate_bank.device)
+                    )
+            selection_mode = "stream_cap"
+
+        self.memory_bank = full_bank
+        if intermediate_bank is None:
             self.intermediate_memory_bank = torch.empty(
                 0, device=self.memory_bank.device, dtype=self.memory_bank.dtype
             )
-            return
-        if not self.intermediate_embedding_store:
-            raise RuntimeError(
-                "Intermediate projection layers are enabled but no normal intermediate embeddings were collected"
-            )
-        bank = torch.cat(self.intermediate_embedding_store, dim=0).to(
-            device=self.memory_bank.device, dtype=self.memory_bank.dtype
-        )
-        self.intermediate_embedding_store.clear()
-        if bank.shape[0] != self.memory_bank.shape[0]:
-            raise RuntimeError(
-                "Normal/intermediate memory-bank alignment failure: "
-                f"final={self.memory_bank.shape[0]} intermediate={bank.shape[0]}"
-            )
-        self.intermediate_memory_bank = bank
+        else:
+            if int(intermediate_bank.shape[0]) != int(self.memory_bank.shape[0]):
+                raise RuntimeError(
+                    "Normal/intermediate memory-bank alignment failure after selection: "
+                    f"final={self.memory_bank.shape[0]} intermediate={intermediate_bank.shape[0]}"
+                )
+            self.intermediate_memory_bank = intermediate_bank
+
+        kept = int(self.memory_bank.shape[0])
         logger.info(
-            "Intermediate normal bank: layers=%s shape=%s dtype=%s",
-            self.residual_projection_intermediate_layers,
-            tuple(bank.shape),
-            bank.dtype,
+            "Normal bank retention: mode=%s seen=%d prefit=%d kept=%d ratio=%.6f max_size=%s seed=%d",
+            selection_mode,
+            original_rows_seen,
+            rows_before_selection,
+            kept,
+            (float(kept) / float(original_rows_seen)) if original_rows_seen else 0.0,
+            "disabled" if self.normal_bank_max_size is None else str(self.normal_bank_max_size),
+            self.normal_bank_cap_seed,
         )
+        if self.residual_projection_intermediate_enabled:
+            logger.info(
+                "Intermediate normal bank: layers=%s shape=%s dtype=%s",
+                self.residual_projection_intermediate_layers,
+                tuple(self.intermediate_memory_bank.shape),
+                self.intermediate_memory_bank.dtype,
+            )
+
+        # Training-only sampling state is no longer needed after the bank is frozen.
+        self._normal_bank_reservoir_keys = torch.empty(0, dtype=torch.float64)
+        self._normal_bank_cap_rng_state = torch.empty(0, dtype=torch.uint8)
+
 
     def _normal_knn(
         self,
@@ -970,6 +1232,380 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                         selected_intermediate.detach()
                     )
 
+    def _nearest_accept_support_match(
+        self,
+        query_dirs: torch.Tensor,
+        accept_dirs: torch.Tensor,
+        *,
+        exclude_aligned_self: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return nearest ACCEPT cosine distance/index using bounded FP32 chunks.
+
+        ``exclude_aligned_self`` is used only for ACCEPT leave-one-out support
+        estimation where query row ``i`` is the same residual as bank row ``i``.
+        The result is deterministic on ties by preferring the smaller bank index.
+        """
+        query = F.normalize(query_dirs.float(), p=2, dim=1)
+        bank = F.normalize(accept_dirs.float(), p=2, dim=1)
+        if query.numel() == 0 or bank.numel() == 0:
+            return (
+                torch.full((query.shape[0],), float("inf"), device=query.device, dtype=torch.float32),
+                torch.full((query.shape[0],), -1, device=query.device, dtype=torch.long),
+            )
+
+        query_chunk_size = max(1, int(self.calibration_query_chunk_size))
+        # The normal residual-bank chunk size can be very large. Capping only the
+        # temporary decontamination matrix bounds memory without changing results.
+        bank_chunk_size = min(max(1, int(self.residual_bank_chunk_size)), 8192)
+        out_dist: list[torch.Tensor] = []
+        out_idx: list[torch.Tensor] = []
+
+        for q_start in range(0, query.shape[0], query_chunk_size):
+            q_end = min(q_start + query_chunk_size, query.shape[0])
+            q = query[q_start:q_end]
+            best_sim = torch.full((q.shape[0],), -float("inf"), device=q.device, dtype=torch.float32)
+            best_idx = torch.full((q.shape[0],), -1, device=q.device, dtype=torch.long)
+
+            for b_start in range(0, bank.shape[0], bank_chunk_size):
+                b_end = min(b_start + bank_chunk_size, bank.shape[0])
+                b = bank[b_start:b_end].to(device=q.device, dtype=torch.float32)
+                sim = q @ b.T
+
+                if exclude_aligned_self:
+                    global_q = torch.arange(q_start, q_end, device=q.device, dtype=torch.long)
+                    overlap = (global_q >= b_start) & (global_q < b_end)
+                    if overlap.any():
+                        rows = torch.nonzero(overlap, as_tuple=False).squeeze(1)
+                        cols = global_q[rows] - b_start
+                        sim[rows, cols] = -float("inf")
+
+                local_sim, local_pos = sim.max(dim=1)
+                local_idx = local_pos.to(torch.long) + b_start
+                better = local_sim > best_sim
+                tied = (local_sim == best_sim) & ((best_idx < 0) | (local_idx < best_idx))
+                update = better | tied
+                best_sim = torch.where(update, local_sim, best_sim)
+                best_idx = torch.where(update, local_idx, best_idx)
+
+            out_dist.append((1.0 - best_sim).clamp(0.0, 2.0))
+            out_idx.append(best_idx)
+
+        return torch.cat(out_dist, dim=0), torch.cat(out_idx, dim=0)
+
+    def _shared_residual_decontamination_thresholds(
+        self,
+    ) -> tuple[float, float | None] | None:
+        """Estimate conservative ACCEPT-support radii from ACCEPT residuals only.
+
+        Direction support is the configured percentile of leave-one-out nearest
+        ACCEPT cosine distances. If magnitude-aware decontamination is enabled,
+        a second support radius is estimated from the transformed residual
+        magnitude difference to that same nearest ACCEPT neighbour. No REJECT
+        examples participate in threshold estimation.
+        """
+        n_accept = int(self.accept_dir_bank.shape[0]) if self.accept_dir_bank.ndim == 2 else 0
+        if n_accept < self.shared_residual_decontamination_min_accept_samples:
+            return None
+        if self.accept_mag_bank.numel() == 0 or int(self.accept_mag_bank.shape[0]) != n_accept:
+            logger.warning(
+                "Shared-residual decontamination skipped: ACCEPT direction/magnitude banks are misaligned (%d vs %d).",
+                n_accept,
+                int(self.accept_mag_bank.shape[0]) if self.accept_mag_bank.ndim > 0 else 0,
+            )
+            return None
+
+        loo_dist, loo_idx = self._nearest_accept_support_match(
+            self.accept_dir_bank,
+            self.accept_dir_bank,
+            exclude_aligned_self=True,
+        )
+        valid = torch.isfinite(loo_dist) & (loo_idx >= 0)
+        if int(valid.sum().item()) < self.shared_residual_decontamination_min_accept_samples:
+            return None
+
+        q = self.shared_residual_decontamination_percentile / 100.0
+        direction_cutoff = float(torch.quantile(loo_dist[valid].float(), q).item())
+
+        magnitude_cutoff: float | None = None
+        if self.shared_residual_decontamination_use_magnitude:
+            accept_mag = self._transform_projection_magnitude(self.accept_mag_bank).to(
+                device=loo_idx.device, dtype=torch.float32
+            )
+            rows = torch.nonzero(valid, as_tuple=False).squeeze(1)
+            neighbors = loo_idx.index_select(0, rows)
+            mag_delta = (
+                accept_mag.index_select(0, rows) - accept_mag.index_select(0, neighbors)
+            ).abs()
+            magnitude_cutoff = float(torch.quantile(mag_delta.float(), q).item())
+
+        return direction_cutoff, magnitude_cutoff
+
+    def _shared_reject_residual_mask(
+        self,
+        reject_dirs: torch.Tensor,
+        reject_mags: torch.Tensor,
+        *,
+        direction_cutoff: float,
+        magnitude_cutoff: float | None,
+    ) -> torch.Tensor:
+        """Return mask of REJECT residuals that are already supported by ACCEPT.
+
+        A residual is considered shared when its direction lies within the learned
+        ACCEPT support radius. With the default magnitude-aware policy, severity
+        must also be compatible with ACCEPT; this preserves same-direction but
+        materially stronger/weaker residuals as potentially reject-specific.
+        """
+        if reject_dirs.numel() == 0:
+            return torch.zeros((0,), device=reject_dirs.device, dtype=torch.bool)
+
+        distance, accept_idx = self._nearest_accept_support_match(
+            reject_dirs,
+            self.accept_dir_bank,
+            exclude_aligned_self=False,
+        )
+        # Tiny numerical slack only; the behavior-defining radius comes entirely
+        # from the ACCEPT leave-one-out distribution above.
+        shared = torch.isfinite(distance) & (accept_idx >= 0) & (
+            distance <= float(direction_cutoff) + 1.0e-7
+        )
+
+        if magnitude_cutoff is not None:
+            if reject_mags.numel() == 0 or reject_mags.shape[0] != reject_dirs.shape[0]:
+                raise RuntimeError(
+                    "Shared-residual decontamination requires aligned REJECT magnitude values"
+                )
+            accept_mag = self._transform_projection_magnitude(self.accept_mag_bank).to(
+                device=reject_dirs.device, dtype=torch.float32
+            )
+            reject_mag = self._transform_projection_magnitude(reject_mags).to(
+                device=reject_dirs.device, dtype=torch.float32
+            )
+            nearest_mag = accept_mag.index_select(0, accept_idx.clamp_min(0))
+            magnitude_close = (reject_mag - nearest_mag).abs() <= float(magnitude_cutoff) + 1.0e-7
+            shared = shared & magnitude_close
+
+        return shared
+
+    @staticmethod
+    def _apply_keep_mask(bank: torch.Tensor, keep: torch.Tensor) -> torch.Tensor:
+        """Filter an aligned bank while preserving device/dtype and empty shapes."""
+        if bank.numel() == 0:
+            return bank
+        if bank.shape[0] != keep.shape[0]:
+            raise RuntimeError(
+                f"Shared-residual decontamination row mismatch: bank={bank.shape[0]} mask={keep.shape[0]}"
+            )
+        idx = torch.nonzero(keep.to(device=bank.device), as_tuple=False).squeeze(1)
+        return bank.index_select(0, idx)
+
+    def _decontaminate_reject_projection_stores(
+        self,
+        *,
+        direction_cutoff: float,
+        magnitude_cutoff: float | None,
+    ) -> tuple[int, int]:
+        """Apply the same shared-residual filter to reject-type projection stores."""
+        if not self.residual_projection_enable or not self.reject_projection_store:
+            return 0, 0
+
+        before_total = 0
+        after_total = 0
+        for name in list(self.reject_projection_store):
+            dir_chunks = self.reject_projection_store.get(name, [])
+            mag_chunks = self.reject_projection_magnitude_store.get(name, [])
+            if not dir_chunks or not mag_chunks:
+                continue
+            dirs = torch.cat(dir_chunks, dim=0)
+            mags = torch.cat(mag_chunks, dim=0)
+            if dirs.shape[0] != mags.shape[0]:
+                raise RuntimeError(
+                    f"Projection direction/magnitude count mismatch during decontamination for {name!r}: "
+                    f"{dirs.shape[0]} vs {mags.shape[0]}"
+                )
+            before_total += int(dirs.shape[0])
+
+            # The deployed raw residual banks are stored in the model dtype
+            # (typically FP16), while projection stores intentionally retain FP32
+            # reference vectors for fitting. Decontamination must make its keep/drop
+            # decision in the *same numerical domain* as the raw reject bank;
+            # otherwise a residual exactly near the ACCEPT support boundary can
+            # quantize to opposite sides and the two stores become off by one (or
+            # more). Quantize only temporary comparison copies. Keep the original
+            # FP32 projection vectors for projection fitting.
+            compare_dirs = dirs.to(
+                device=self.accept_dir_bank.device,
+                dtype=self.reject_dir_bank.dtype,
+            )
+            compare_mags = mags.to(
+                device=self.accept_mag_bank.device,
+                dtype=self.reject_mag_bank.dtype,
+            )
+            shared = self._shared_reject_residual_mask(
+                compare_dirs,
+                compare_mags,
+                direction_cutoff=direction_cutoff,
+                magnitude_cutoff=magnitude_cutoff,
+            )
+            # Index the original projection-store tensors, not the quantized
+            # comparison copies.
+            keep = (~shared).to(device=dirs.device)
+            after_total += int(keep.sum().item())
+
+            if keep.any():
+                idx = torch.nonzero(keep, as_tuple=False).squeeze(1)
+                self.reject_projection_store[name] = [dirs.index_select(0, idx).detach()]
+                self.reject_projection_magnitude_store[name] = [mags.index_select(0, idx).detach()]
+
+                if self.residual_projection_use_relative_xy:
+                    xy_chunks = self.reject_projection_xy_store.get(name, [])
+                    if not xy_chunks:
+                        raise RuntimeError(f"Missing XY context during decontamination for reject type {name!r}")
+                    xy = torch.cat(xy_chunks, dim=0)
+                    if xy.shape[0] != dirs.shape[0]:
+                        raise RuntimeError(
+                            f"Projection direction/XY count mismatch during decontamination for {name!r}: "
+                            f"{dirs.shape[0]} vs {xy.shape[0]}"
+                        )
+                    self.reject_projection_xy_store[name] = [xy.index_select(0, idx).detach()]
+
+                if self.residual_projection_intermediate_enabled:
+                    inter_chunks = self.reject_projection_intermediate_store.get(name, [])
+                    if not inter_chunks:
+                        raise RuntimeError(
+                            f"Missing intermediate context during decontamination for reject type {name!r}"
+                        )
+                    intermediate = torch.cat(inter_chunks, dim=0)
+                    if intermediate.shape[0] != dirs.shape[0]:
+                        raise RuntimeError(
+                            f"Projection direction/intermediate count mismatch during decontamination for {name!r}: "
+                            f"{dirs.shape[0]} vs {intermediate.shape[0]}"
+                        )
+                    self.reject_projection_intermediate_store[name] = [
+                        intermediate.index_select(0, idx).detach()
+                    ]
+            else:
+                self.reject_projection_store.pop(name, None)
+                self.reject_projection_magnitude_store.pop(name, None)
+                self.reject_projection_xy_store.pop(name, None)
+                self.reject_projection_intermediate_store.pop(name, None)
+
+        return before_total, after_total
+
+    def _decontaminate_shared_reject_residuals(self) -> dict[str, object]:
+        """Remove ACCEPT-supported residuals from the REJECT reference bank.
+
+        This is a reference-only operation executed after ACCEPT and REJECT banks
+        have both been collected and before PCA/projection fitting or threshold
+        calibration. It specifically addresses image-level label contamination:
+        an acceptable local feature can coexist with a true reject feature in a
+        REJECT image and should not become a reject prototype merely because of
+        the image label.
+        """
+        summary: dict[str, object] = {
+            "enabled": bool(self.shared_residual_decontamination_enable),
+            "percentile": float(self.shared_residual_decontamination_percentile),
+            "use_magnitude": bool(self.shared_residual_decontamination_use_magnitude),
+            "min_accept_samples": int(self.shared_residual_decontamination_min_accept_samples),
+            "accept_count": int(self.accept_dir_bank.shape[0]) if self.accept_dir_bank.ndim == 2 else 0,
+            "reject_count_before": int(self.reject_dir_bank.shape[0]) if self.reject_dir_bank.ndim == 2 else 0,
+        }
+
+        if not self.shared_residual_decontamination_enable:
+            summary.update(status="disabled", reject_count_after=summary["reject_count_before"], removed=0)
+            self.shared_residual_decontamination_last_summary = summary
+            return summary
+        if self.accept_dir_bank.numel() == 0 or self.reject_dir_bank.numel() == 0:
+            summary.update(status="missing_bank", reject_count_after=summary["reject_count_before"], removed=0)
+            self.shared_residual_decontamination_last_summary = summary
+            return summary
+
+        thresholds = self._shared_residual_decontamination_thresholds()
+        if thresholds is None:
+            summary.update(
+                status="insufficient_accept_support",
+                reject_count_after=summary["reject_count_before"],
+                removed=0,
+            )
+            self.shared_residual_decontamination_last_summary = summary
+            logger.warning(
+                "Shared-residual decontamination skipped: ACCEPT bank has insufficient stable support (%d rows; minimum=%d).",
+                summary["accept_count"],
+                self.shared_residual_decontamination_min_accept_samples,
+            )
+            return summary
+
+        direction_cutoff, magnitude_cutoff = thresholds
+        shared = self._shared_reject_residual_mask(
+            self.reject_dir_bank,
+            self.reject_mag_bank,
+            direction_cutoff=direction_cutoff,
+            magnitude_cutoff=magnitude_cutoff,
+        )
+        keep = ~shared
+        before = int(self.reject_dir_bank.shape[0])
+        removed = int(shared.sum().item())
+
+        self.reject_dir_bank = self._apply_keep_mask(self.reject_dir_bank, keep)
+        self.reject_mag_bank = self._apply_keep_mask(self.reject_mag_bank, keep)
+        if self.reject_xy_bank.numel() > 0:
+            self.reject_xy_bank = self._apply_keep_mask(self.reject_xy_bank, keep)
+        if self.reject_intermediate_dir_bank.numel() > 0:
+            self.reject_intermediate_dir_bank = self._apply_keep_mask(
+                self.reject_intermediate_dir_bank, keep
+            )
+
+        projection_before, projection_after = self._decontaminate_reject_projection_stores(
+            direction_cutoff=direction_cutoff,
+            magnitude_cutoff=magnitude_cutoff,
+        )
+        after = int(self.reject_dir_bank.shape[0])
+        summary.update(
+            status="ok",
+            direction_cutoff=float(direction_cutoff),
+            magnitude_cutoff=None if magnitude_cutoff is None else float(magnitude_cutoff),
+            reject_count_after=after,
+            removed=removed,
+            removed_fraction=(float(removed) / float(before)) if before > 0 else 0.0,
+            projection_store_count_before=int(projection_before),
+            projection_store_count_after=int(projection_after),
+        )
+        self.shared_residual_decontamination_last_summary = summary
+
+        logger.info(
+            "Shared-residual decontamination: accept=%d reject=%d->%d removed=%d (%.2f%%) "
+            "direction_cutoff=%.6f magnitude_cutoff=%s percentile=%.1f",
+            summary["accept_count"],
+            before,
+            after,
+            removed,
+            100.0 * float(summary["removed_fraction"]),
+            direction_cutoff,
+            "disabled" if magnitude_cutoff is None else f"{magnitude_cutoff:.6f}",
+            self.shared_residual_decontamination_percentile,
+        )
+        if after == 0 and before > 0:
+            logger.warning(
+                "Shared-residual decontamination removed every REJECT residual. "
+                "REJECT-specific tolerance/projection evidence will be unavailable; "
+                "the stock anomaly score remains active."
+            )
+        if projection_before:
+            # With projection enabled every raw REJECT residual has a matching
+            # projection-store row. A mismatch is an alignment error, not a benign
+            # condition: continuing would train the projection on a different
+            # reference population than runtime raw-bank scoring.
+            if projection_before != before:
+                raise RuntimeError(
+                    "Shared-residual projection-store count before filtering "
+                    f"({projection_before}) differs from raw reject bank ({before})."
+                )
+            if projection_after != after:
+                raise RuntimeError(
+                    "Shared-residual projection-store count after filtering "
+                    f"({projection_after}) differs from filtered reject bank ({after})."
+                )
+        return summary
+
     def finalize_residual_banks(self) -> None:
         """Finalize residual banks and PCA parameters."""
         target_device = self.memory_bank.device
@@ -1040,6 +1676,10 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             self.reject_intermediate_store.clear()
             self.accept_intermediate_dir_bank = torch.empty((0, 0), device=target_device, dtype=torch.float32)
             self.reject_intermediate_dir_bank = torch.empty((0, 0), device=target_device, dtype=torch.float32)
+
+        # Both banks are now materialized and aligned. Remove REJECT residuals that
+        # are already well represented by ACCEPT before fitting PCA/projection heads.
+        self._decontaminate_shared_reject_residuals()
 
         if self.scoring_mode == "pca":
             self.accept_pca_basis, self.accept_pca_mean = self._fit_pca(
@@ -2469,10 +3109,10 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
 
         image_score = self.mean_top1p(effective_full).reshape(b)
         anomaly_map = effective_full.view(b, 1, *grid_size)
-        # Anomalib 2.3.x keeps GaussianBlur2d.kernel in FP32. Passing an FP16
-        # map directly therefore fails on CUDA (Half input vs Float weight), while
-        # CPU reflection padding does not support FP16. Keep the stock module and
-        # evaluate only this inexpensive spatial map-generation step in FP32.
+        # Anomalib 2.3.x keeps the Gaussian blur kernel in FP32. Evaluate only
+        # this inexpensive spatial map-generation step in FP32 so CUDA does not
+        # see Half-input/Float-kernel conv2d and CPU ONNX preflight does not hit
+        # unsupported Half reflection padding. Restore the incoming map dtype.
         anomaly_map_dtype = anomaly_map.dtype
         anomaly_map = self.anomaly_map_generator(
             anomaly_map.float(),
@@ -2663,6 +3303,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             result = super().forward(input_tensor)
             if self.residual_projection_intermediate_enabled:
                 self._collect_training_intermediate(input_tensor)
+            self._apply_streaming_normal_bank_cap()
             return result
 
         if self.detector_only or (
