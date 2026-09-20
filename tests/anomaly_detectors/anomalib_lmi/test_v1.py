@@ -331,6 +331,9 @@ def test_trt_model(trt_model):
 
 def test_compare_trt_onnx(trt_model):
     """Compare TRT and ONNX predictions on resized images; tolerates FP16 vs FP32 precision."""
+    import onnxruntime as ort
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
     onnx_model = AnomalyModelV1(ONNX_PATH, device="cuda")
     paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
     for p in paths:
