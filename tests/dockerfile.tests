@@ -31,10 +31,12 @@ RUN pip install --no-build-isolation ./detectron2
 # ad groups export alongside gpu: alone they resolve torch without +cu124, downgrading the base install.
 
 # --- anomalib v1 suite (test_v1.py) ---
+# ad-v1 conflicts with gpu (torch 2.5.1 vs 2.6.0), so export and install separately.
+# ad-v1 is installed last so its torch==2.5.1 pin overwrites the base torch==2.6.0.
 FROM base AS v1
 ARG TRT_EXCLUDES
 RUN --mount=type=cache,target=/root/.cache/pip \
-    uv export --frozen --no-hashes --no-emit-project --only-group gpu --only-group ad-v1 ${TRT_EXCLUDES} \
+    uv export --frozen --no-hashes --no-emit-project --only-group ad-v1 ${TRT_EXCLUDES} \
       -o requirements-ad.txt && \
     pip install -r requirements-ad.txt --extra-index-url https://download.pytorch.org/whl/cu124
 

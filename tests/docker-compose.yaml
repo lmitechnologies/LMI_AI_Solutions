@@ -12,10 +12,20 @@ services:
     command: >
       bash -c "bash tests/run_tests.sh all-v1"
 
+  test_ais_ad_v1:
+    build:
+      context: ..
+      dockerfile: ./tests/dockerfile.tests
+      target: v1
+    volumes:
+      - ../:/repo
+    runtime: nvidia
+    ipc: host
+    working_dir: /repo
+    command: >
+      bash -c "bash tests/run_tests.sh ad-v1"
+
   test_ais_ad_v2:
-    depends_on:
-      test_ais_v1_all:
-        condition: service_completed_successfully
     build:
       context: ..
       dockerfile: ./tests/dockerfile.tests

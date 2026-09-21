@@ -14,11 +14,16 @@ RUN apt-get update && \
     git lfs install && \
     rm -rf /var/lib/apt/lists/*
 
-# Install the CI (CPU) deps plus the selected anomalib group from the uv lock. torch==2.5.1+cpu comes from the CPU index.
+# Install the CI (CPU) deps plus the selected anomalib group from the uv lock.
+# ad-v1 conflicts with ci (torch 2.5.1 vs 2.6.0), so they are exported and installed separately.
+# When AD_GROUP=ad-v1, its torch==2.5.1 is installed last to overwrite ci's torch==2.6.0.
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 COPY pyproject.toml uv.lock ./
-RUN uv export --frozen --no-hashes --no-emit-project --only-group ci --only-group ${AD_GROUP} -o requirements-ci.txt && \
+RUN uv export --frozen --no-hashes --no-emit-project --only-group ci -o requirements-ci.txt && \
     pip install --no-cache-dir -r requirements-ci.txt \
+        --extra-index-url https://download.pytorch.org/whl/cpu && \
+    uv export --frozen --no-hashes --no-emit-project --only-group ${AD_GROUP} -o requirements-ad.txt && \
+    pip install --no-cache-dir -r requirements-ad.txt \
         --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Install detectron2 (shallow clone, remove source after install)
