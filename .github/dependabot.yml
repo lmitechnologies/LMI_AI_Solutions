@@ -14,9 +14,6 @@ updates:
     schedule:
       interval: "weekly"
       time: "04:00"
-    # Mirrors [tool.uv] exclude-newer; without it uv refuses to lock what Dependabot proposes.
-    cooldown:
-      default-days: 30
     open-pull-requests-limit: 5
     labels:
       - "dependencies"

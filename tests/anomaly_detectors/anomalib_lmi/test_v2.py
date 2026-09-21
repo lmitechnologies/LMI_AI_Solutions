@@ -224,9 +224,8 @@ def test_compare_trt_onnx(trt_model):
 def test_folder_dataset_non_empty():
     """Ensure build_data produces a non-empty samples frame with correct label values.
 
-    Regression guard: pandas 3.x stores StrEnum labels as their str() representation
-    (e.g. "DirType.NORMAL") instead of the enum value ("normal"), which causes
-    make_folder_dataset to produce an empty samples frame and training to fail.
+    Regression guard: under pandas 3 StringDtype, anomalib < 2.3 compared labels against
+    DirType members rather than their .value, yielding an empty samples frame.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a minimal normal_dir structure: tmpdir/normal/img.png
@@ -256,9 +255,7 @@ def test_folder_dataset_non_empty():
         datamodule.setup()
         samples = datamodule.train_data.samples
 
-        assert len(samples) > 0, (
-            "Dataset is empty — pandas may be storing StrEnum labels as 'DirType.NORMAL' instead of 'normal'. Ensure pandas<3 is installed."
-        )
+        assert len(samples) > 0, "Dataset is empty — labels may be stored as 'DirType.NORMAL' instead of 'normal'."
 
         label_col = "label_index" if "label_index" in samples.columns else "label"
         assert label_col in samples.columns, f"Expected label column not found; columns: {list(samples.columns)}"
@@ -266,9 +263,7 @@ def test_folder_dataset_non_empty():
         if "label" in samples.columns:
             # Use .value if the stored object is an enum, else fall back to str().
             bad = [v for v in samples["label"].unique() if "DirType" in str(getattr(v, "value", v))]
-            assert not bad, (
-                f"Labels contain raw StrEnum repr: {bad}. Ensure pandas<3 is installed to fix DirType.NORMAL label serialization."
-            )
+            assert not bad, f"Labels contain raw StrEnum repr: {bad}."
 
 
 def test_build_preprocessor():

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=83.0.0"]
+requires = ["setuptools>=84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -15,7 +15,7 @@ dependencies = []
 test = [
     "scikit-learn==1.7.2",
     "tensorboard==2.21.0",
-    "numba==0.66.0",
+    "numba==0.67.0",
     "numpy<2.0",
     "ultralytics==8.4.127",
     "onnx==1.22.0",
@@ -42,8 +42,7 @@ ad-v1 = [
     "jsonargparse==4.27.7",
 ]
 ad-v2 = [
-    "anomalib==2.2.0",
-    "pandas<3",
+    "anomalib==2.4.1",
 ]
 # GPU / TensorRT env (local + compose): cu124 torch, onnxruntime-gpu, and the
 # TensorRT engine-build stack. tensorrt is pinned to the nvcr:25.04 image's
