@@ -37,9 +37,12 @@ ci = [
     "torchvision==0.21.0",
 ]
 # Resolving [core] replaces `anomalib install --option core`, which pip-installed numpy>=2 behind the lock's back.
+# torch is pinned to 2.5.1: anomalib 1.1.1 calls torch.load without weights_only=False, which raises on torch>=2.6.
 ad-v1 = [
     "anomalib[core]==1.1.1",
     "jsonargparse==4.27.7",
+    "torch==2.5.1",
+    "torchvision==0.20.1",
 ]
 ad-v2 = [
     "anomalib==2.6.0",
@@ -61,9 +64,12 @@ gpu = [
 # Scoped to the test images' Pythons (3.10 CI, 3.12 nvcr) rather than requires-python; numpy<2.0 breaks onnx on 3.13+.
 environments = ["python_full_version >= '3.10' and python_full_version < '3.13'"]
 # ci/gpu are incompatible torch builds (+cpu vs +cu124); ad-v1/ad-v2 are incompatible anomalib majors.
+# ad-v1 pins torch==2.5.1 while ci/gpu pin 2.6.0, so they are incompatible with each other.
 conflicts = [
     [{ group = "ci" }, { group = "gpu" }],
     [{ group = "ad-v1" }, { group = "ad-v2" }],
+    [{ group = "ad-v1" }, { group = "ci" }],
+    [{ group = "ad-v1" }, { group = "gpu" }],
 ]
 
 [[tool.uv.index]]
@@ -80,10 +86,12 @@ explicit = true
 torch = [
     { index = "pytorch-cpu", group = "ci" },
     { index = "pytorch-cu124", group = "gpu" },
+    { index = "pytorch-cu124", group = "ad-v1" },
 ]
 torchvision = [
     { index = "pytorch-cpu", group = "ci" },
     { index = "pytorch-cu124", group = "gpu" },
+    { index = "pytorch-cu124", group = "ad-v1" },
 ]
 
 [project.scripts]
