@@ -1,14 +1,17 @@
 import glob
+import hashlib
 import logging
 import os
 import platform
 import tempfile
+from functools import cache
 from typing import List
 
 import cv2
 import numpy as np
 import pytest
 import torch
+from anomalib import __version__ as anomalib_version
 from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
 
@@ -83,6 +86,21 @@ def test_model_class_comparison(ad_models):
     assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
 
 
+@cache
+def _fixture_digest(path: str) -> str:
+    """Short sha256 of a model fixture, so a stale or partial LFS checkout is visible in failures."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return f"{h.hexdigest()[:12]}/{os.path.getsize(path)}B"
+
+
+def _model_id(model) -> str:
+    path = getattr(model, "model_path", None)
+    return f"{type(model).__name__}({os.path.basename(path)})" if path else type(model).__name__
+
+
 def test_compare_with_anomalib(cpu_models):
     """
     compare prediction results between current implementation and anomalib
@@ -102,7 +120,16 @@ def test_compare_with_anomalib(cpu_models):
         for model in cpu_models:
             pred2 = model.predict(rgb)
             atol = 1e-2 if IS_ARM else 1e-5
-            assert np.allclose(pred, pred2, atol=atol, rtol=0.05), f"mismatch for {type(model).__name__}"
+            if not np.allclose(pred, pred2, atol=atol, rtol=0.05):
+                diff = np.abs(pred - np.squeeze(pred2))
+                over = int((diff > atol + 0.05 * np.abs(np.squeeze(pred2))).sum())
+                raise AssertionError(
+                    f"mismatch for {_model_id(model)} on {os.path.basename(p)}: "
+                    f"max|diff|={diff.max():.3e} mean={diff.mean():.3e}, {over}/{diff.size} px over tol "
+                    f"(atol={atol}, rtol=0.05) | machine={platform.machine()} IS_ARM={IS_ARM} "
+                    f"torch={torch.__version__} anomalib={anomalib_version} gpu={USE_GPU} | fixtures "
+                    f"pt={_fixture_digest(MODEL_PATH)} ts={_fixture_digest(TS_PATH)} onnx={_fixture_digest(ONNX_PATH)}"
+                )
 
 
 @pytest.mark.parametrize("warmup_size", [[672, 640], [256, 224]])
