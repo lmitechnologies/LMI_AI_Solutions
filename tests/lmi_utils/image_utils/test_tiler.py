@@ -194,6 +194,7 @@ def test_interpolation_upscale_keeps_a_bool_image_binary():
     assert out[0, 0, 5:11, 5:11].all()
     assert not out[0, 0, 0, :].any()
 
+
 def test_untile_non_integral_feature_scale_covers_output():
     image = torch.ones(1, 1, 640, 640)
     tiler = Tiler([224, 224], [112, 112])
@@ -204,6 +205,7 @@ def test_untile_non_integral_feature_scale_covers_output():
     assert reconstructed.shape == (1, 1, 157, 157)
     assert torch.isfinite(reconstructed).all()
     assert torch.equal(reconstructed, torch.ones_like(reconstructed))
+
 
 @pytest.mark.parametrize("overlap_mode", ["linear", "cosine", "gaussian", "average", "max"])
 def test_feature_map_untile_blends_at_the_downscaled_size(overlap_mode):
