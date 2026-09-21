@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 import anomalib.models as ad_models
 import torch
 import yaml
+from anomalib import PrecisionType
 from anomalib.data import Folder
 from anomalib.deploy import ExportType
 from anomalib.engine import Engine
@@ -121,9 +122,9 @@ def build_model(model_config: Dict[str, Any]):
 def build_data(data_config: Dict[str, Any]) -> Folder:
     if data_config.get("train_augmentations", None) is not None:
         data_config["train_augmentations"] = build_augmentations(data_config["train_augmentations"])
-    elif data_config.get("val_augmentations", None) is not None:
+    if data_config.get("val_augmentations", None) is not None:
         data_config["val_augmentations"] = build_augmentations(data_config["val_augmentations"])
-    elif data_config.get("augmentations", None) is not None:
+    if data_config.get("augmentations", None) is not None:
         data_config["augmentations"] = build_augmentations(data_config["augmentations"])
     return Folder(**data_config)
 
@@ -190,7 +191,14 @@ def main():
     # --- Build Model Dynamically ---
     model_params = cfg["model"]["params"]
     tiler_cls_name = model_params.pop("tiler_type", None)
-    tiler_callbacks = build_tiler(model_params.pop("tile_size", None), model_params.pop("stride", None), tiler_cls_name=tiler_cls_name)
+    precision = model_params.get(
+        "precision", PrecisionType.FLOAT32
+    .lower()
+    tiler_callbacks = build_tiler(
+        model_params.pop("tile_size", None),
+        model_params.pop("stride", None),
+        precision=precision
+    )
     model = build_model(cfg["model"])
 
     # --- Data Module Setup ---
@@ -262,6 +270,8 @@ def main():
             # Retry export with external data
             logger.info("2GiB onnx export limit exceeded, export will include additional files.")
             export_engine(external_data=True)
+        else:
+            raise e
 
 
 if __name__ == "__main__":

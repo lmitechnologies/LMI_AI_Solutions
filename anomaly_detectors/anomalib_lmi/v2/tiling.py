@@ -1,4 +1,4 @@
-"""Tiler configuration callback. from anomalib v2.3.3"""
+"""Tiler configuration callback."""
 
 import inspect
 import logging
