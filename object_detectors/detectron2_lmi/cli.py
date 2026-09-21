@@ -2,6 +2,9 @@ import argparse
 import logging
 import os
 
+from object_detectors.detectron2_lmi.infer import add_args as add_infer_args
+from object_detectors.od_core.infer_cli import check_infer_args
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,11 +39,7 @@ def main():
     train_ap.add_argument("--output", type=str, default=DET2_DEFAULT_DIR, help="Path to the output directory")
 
     test = subs.add_parser("test", help="test model")
-    test.add_argument("-w", "--weights", type=str, default=wpath(DET2_PT_EXPORT), help="The path to the model")
-    test.add_argument("-i", "--input", type=str, default=DET2_INPUT_DIR, help="The path to the images")
-    test.add_argument("-o", "--output", type=str, default=DET2_OUTPUT_DIR, help="The path to the outputs")
-    test.add_argument("--class_map", type=str, default=DET2_CLASS_MAP, help="The path to the class map")
-    test.add_argument("--confidence", type=float, default=0.5, help="The confidence threshold")
+    add_infer_args(test, weights=wpath(DET2_PT_EXPORT), input=DET2_INPUT_DIR, output=DET2_OUTPUT_DIR, class_map=DET2_CLASS_MAP)
 
     convert_ap = subs.add_parser("convert", help="convert model")
     convert_ap.add_argument("-c", "--config-file", metavar="FILE", default=wpath(DET2_CONFIG_FILE), help="path to config file")
@@ -57,7 +56,10 @@ def main():
     convert_ap.add_argument("--onnx", action="store_true", help="Convert to onnx")
     convert_ap.add_argument("--trt", action="store_true", help="Convert to TensorRT")
 
-    args = vars(ap.parse_args())
+    namespace = ap.parse_args()
+    if namespace.action == "test":
+        check_infer_args(test, namespace)
+    args = vars(namespace)
     action = args["action"]
 
     if action == "train":

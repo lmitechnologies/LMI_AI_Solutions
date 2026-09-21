@@ -1,0 +1,956 @@
+"""Focused tests for TileOperation."""
+
+import numpy as np
+import pytest
+import torch
+
+from lmi_utils.postprocess_utils import tile_merge
+from lmi_utils.preprocess_utils import steps
+from lmi_utils.preprocess_utils.ops.tile import TileConfig
+from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+from lmi_utils.preprocess_utils.reconstructor import Reconstructor
+
+
+def _empty_results(n=1, **overrides):
+    results = {
+        "boxes": [torch.zeros((0, 4)) for _ in range(n)],
+        "scores": [torch.zeros((0,)) for _ in range(n)],
+        "classes": [np.zeros((0,), dtype=np.int32) for _ in range(n)],
+        "segments": [[] for _ in range(n)],
+        "points": [torch.zeros((0, 1, 3)) for _ in range(n)],
+    }
+    results.update(overrides)
+    return results
+
+
+def _tile_pipeline(im_size=200, tile=100, stride=100, scale_mode="padding"):
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(im_size, im_size, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=tile, stride=stride, scale_mode=scale_mode)])
+    return pre, rec, history
+
+
+def test_tile_apply_coords_xyxy_clips_and_drops_per_tile():
+    pre, rec, history = _tile_pipeline()
+    results = {
+        "boxes": [torch.tensor([[80.0, 50.0, 140.0, 90.0]])],
+        "scores": [torch.tensor([0.9])],
+        "classes": [np.array([5], dtype=np.int32)],
+        "segments": [[]],
+        "points": [torch.zeros((0, 1, 3))],
+    }
+    out = rec.apply_coordinates(results, history)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[80.0, 50.0, 100.0, 90.0]]))
+    assert out["scores"][0].tolist() == [pytest.approx(0.9)]
+    assert out["classes"][0].tolist() == [5]
+    assert torch.allclose(out["boxes"][1], torch.tensor([[0.0, 50.0, 40.0, 90.0]]))
+    assert out["classes"][1].tolist() == [5]
+    assert out["boxes"][2].shape == (0, 4)
+    assert out["boxes"][3].shape == (0, 4)
+    assert len(out["scores"][2]) == 0 and len(out["classes"][3]) == 0
+
+
+def test_tile_apply_coords_rejects_obb():
+    _, rec, history = _tile_pipeline()
+    obb = torch.tensor([[[70.0, 40.0], [130.0, 40.0], [130.0, 80.0], [70.0, 80.0]]])
+    results = {
+        "boxes": [obb],
+        "scores": [torch.tensor([0.5])],
+        "classes": [np.array([0], dtype=np.int32)],
+        "segments": [[]],
+        "points": [torch.zeros((0, 1, 3))],
+    }
+    with pytest.raises(ValueError, match="does not support oriented boxes"):
+        rec.apply_coordinates(results, history)
+
+
+def test_tile_apply_coords_rejects_keypoints():
+    _, rec, history = _tile_pipeline()
+    pts = torch.tensor([[[30.0, 30.0, 2.0], [150.0, 30.0, 2.0], [30.0, 150.0, 2.0]]])
+    results = {
+        "boxes": [torch.zeros((0, 4))],
+        "scores": [torch.zeros((0,))],
+        "classes": [np.zeros((0,), dtype=np.int32)],
+        "segments": [[]],
+        "points": [pts],
+    }
+    with pytest.raises(ValueError, match="does not support keypoints"):
+        rec.apply_coordinates(results, history)
+
+
+def test_tile_apply_coords_segments_clipped_to_tile_rect():
+    _, rec, history = _tile_pipeline()
+    poly = torch.tensor([[80.0, 40.0], [140.0, 40.0], [140.0, 80.0], [80.0, 80.0]])
+    results = {
+        "boxes": [torch.zeros((0, 4))],
+        "scores": [torch.zeros((0,))],
+        "classes": [np.zeros((0,), dtype=np.int32)],
+        "segments": [[poly]],
+        "points": [torch.zeros((0, 1, 3))],
+    }
+    out = rec.apply_coordinates(results, history)
+    seg00 = out["segments"][0][0]
+    assert seg00.shape[0] == 4
+    xs, ys = seg00[:, 0], seg00[:, 1]
+    assert xs.min().item() >= 80.0 - 1e-4 and xs.max().item() <= 100.0 + 1e-4
+    assert ys.min().item() >= 40.0 - 1e-4 and ys.max().item() <= 80.0 + 1e-4
+    seg01 = out["segments"][1][0]
+    assert seg01[:, 0].max().item() <= 40.0 + 1e-4
+    assert seg01[:, 0].min().item() >= 0.0 - 1e-4
+    assert out["segments"][2] == []
+    assert out["segments"][3] == []
+
+
+def test_tile_apply_coords_masks_sliced_per_tile_and_drop_when_empty():
+    _, rec, history = _tile_pipeline()
+    mask = torch.zeros((1, 200, 200), dtype=torch.uint8)
+    mask[0, 30:80, 30:80] = 1
+    results = {
+        "boxes": [torch.zeros((0, 4))],
+        "scores": [torch.zeros((0,))],
+        "classes": [np.zeros((0,), dtype=np.int32)],
+        "segments": [[]],
+        "points": [torch.zeros((0, 1, 3))],
+        "masks": [mask],
+    }
+    out = rec.apply_coordinates(results, history)
+    assert out["masks"][0].shape == (1, 100, 100)
+    assert out["masks"][0][0, 30:80, 30:80].all() and out["masks"][0].sum() == 50 * 50
+    for i in (1, 2, 3):
+        assert out["masks"][i].shape == (0, 100, 100)
+
+
+def test_tile_apply_coords_interpolation_mode_scales_coords():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(150, 150, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=100, scale_mode="interpolation")])
+    results = {
+        "boxes": [torch.tensor([[60.0, 60.0, 90.0, 90.0]])],
+        "scores": [torch.tensor([1.0])],
+        "classes": [np.array([0], dtype=np.int32)],
+        "segments": [[]],
+        "points": [torch.zeros((0, 1, 3))],
+    }
+    out = rec.apply_coordinates(results, history)
+    expected = {
+        0: [[80.0, 80.0, 100.0, 100.0]],
+        1: [[0.0, 80.0, 20.0, 100.0]],
+        2: [[80.0, 0.0, 100.0, 20.0]],
+        3: [[0.0, 0.0, 20.0, 20.0]],
+    }
+    for i, exp in expected.items():
+        assert torch.allclose(out["boxes"][i], torch.tensor(exp), atol=1e-4), f"tile {i} got {out['boxes'][i]}"
+
+
+def test_tile_2d_grayscale_round_trip_preserves_shape_and_values():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.arange(100 * 100, dtype=torch.float32).reshape(100, 100)
+    tiles, history = pre.preprocess([img], [steps.tile(tile_size=50, stride=50)])
+
+    assert len(tiles) == 4
+    for t in tiles:
+        assert t.dim() == 2
+        assert t.shape == (50, 50)
+
+    restored = rec.reconstruct_images(tiles, history)
+    assert restored[0].dim() == 2
+    assert restored[0].shape == (100, 100)
+    assert torch.equal(restored[0], img)
+
+
+def test_tile_forward_missing_required_keys_raises():
+    with pytest.raises(ValueError, match="'tile_size' and 'stride' are required"):
+        TileConfig(tile_size=16)
+    with pytest.raises(ValueError, match="'tile_size' and 'stride' are required"):
+        TileConfig(stride=16)
+
+
+def test_tile_stride_wider_than_the_tile_raises():
+    # the gap between tiles would never be seen by any tile
+    with pytest.raises(ValueError, match="Stride size must be smaller or equal to tile size"):
+        TileConfig(tile_size=16, stride=24)
+    with pytest.raises(ValueError, match="Stride size must be smaller or equal to tile size"):
+        TileConfig(tile_size=[16, 16], stride=[8, 17])
+
+
+def test_tile_segments_variable_length_concat_across_tiles():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros((100, 100, 3))
+    _tiles, history = pre.preprocess([img], [steps.tile(tile_size=50, stride=50)])
+
+    seg_short = torch.tensor([[3.0, 4.0]])
+    seg_long = torch.tensor([[1.0, 2.0], [10.0, 12.0], [25.0, 30.0], [40.0, 45.0], [49.0, 48.0]])
+    results = _empty_results(n=4, segments=[[], [seg_short], [], [seg_long]])
+    reverted = rec.reconstruct_coordinates(results, history)
+
+    out_segs = reverted["segments"][0]
+    assert len(out_segs) == 2
+    assert torch.allclose(out_segs[0], torch.tensor([[53.0, 4.0]]))
+    assert torch.allclose(
+        out_segs[1],
+        torch.tensor([[51.0, 52.0], [60.0, 62.0], [75.0, 80.0], [90.0, 95.0], [99.0, 98.0]]),
+    )
+
+
+def test_tile_masks_under_interpolation_mode():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros((90, 90, 3))
+    _tiles, history = pre.preprocess([img], [steps.tile(tile_size=60, stride=60, scale_mode="interpolation")])
+
+    tile3_mask = torch.ones((1, 60, 60), dtype=torch.float32)
+    empty_mask = torch.zeros((0, 60, 60), dtype=torch.float32)
+    results = _empty_results(n=4, masks=[empty_mask, empty_mask, empty_mask, tile3_mask])
+    reverted = rec.reconstruct_coordinates(results, history)
+
+    out = reverted["masks"][0]
+    assert out.shape == (1, 90, 90)
+    assert out[0, 45:90, 45:90].eq(1).all()
+    assert out[0, :45, :].eq(0).all()
+    assert out[0, :, :45].eq(0).all()
+
+
+def test_tile_masks_under_padding_mode_cropped_to_im_size():
+    # im_size 90 pads to scale_size 120 (tile 60, stride 60). Reverted masks must come
+    # back at im_size to match the reverted image, not the padded scale_size.
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros((90, 90, 3))
+    _tiles, history = pre.preprocess([img], [steps.tile(tile_size=60, stride=60, scale_mode="padding")])
+    assert history[0].scale_sizes[0] == [120, 120]
+
+    tile0_mask = torch.ones((1, 60, 60), dtype=torch.float32)
+    empty_mask = torch.zeros((0, 60, 60), dtype=torch.float32)
+    results = _empty_results(n=4, masks=[tile0_mask, empty_mask, empty_mask, empty_mask])
+    reverted = rec.reconstruct_coordinates(results, history)
+
+    out = reverted["masks"][0]
+    assert out.shape == (1, 90, 90)
+    assert out[0, :60, :60].eq(1).all()
+    assert out[0, 60:, :].eq(0).all()
+    assert out[0, :, 60:].eq(0).all()
+
+
+def test_tile_masks_wholly_in_the_padding_are_dropped():
+    # a mask keeps only its in-image pixels, so one that sat entirely in the padding pastes as an empty box
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros((90, 90, 3))
+    _tiles, history = pre.preprocess([img], [steps.tile(tile_size=60, stride=60, scale_mode="padding")])
+
+    tile3_mask = torch.zeros((1, 60, 60), dtype=torch.float32)
+    tile3_mask[0, 40:50, 40:50] = 1  # tile (1, 1) starts at (60, 60), so this lands past im_size 90
+    empty_mask = torch.zeros((0, 60, 60), dtype=torch.float32)
+    results = _empty_results(n=4, masks=[empty_mask, empty_mask, empty_mask, tile3_mask])
+    reverted = rec.reconstruct_coordinates(results, history)
+
+    assert reverted["masks"][0].shape == (0, 90, 90)
+
+
+def test_tile_masks_come_back_at_im_size_when_no_tile_detected_anything():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros((90, 90, 3))
+    _tiles, history = pre.preprocess([img], [steps.tile(tile_size=60, stride=60, scale_mode="padding")])
+
+    empty_mask = torch.zeros((0, 60, 60), dtype=torch.float32)
+    reverted = rec.reconstruct_coordinates(_empty_results(n=4, masks=[empty_mask] * 4), history)
+
+    assert reverted["masks"][0].shape == (0, 90, 90)
+
+
+def test_shift_keeps_mask_crops_that_paste_like_the_image_canvas():
+    from lmi_utils.preprocess_utils.ops.tile import _shift_tile_coords
+
+    masks = torch.zeros((3, 60, 60), dtype=torch.uint8)
+    masks[0, 10:20, 40:60] = 1  # runs past the image's right edge
+    masks[1, 5:50, 5:15] = 1
+    masks[2, 30:40, 55:60] = 1  # lies wholly past the right edge
+    shifted = _shift_tile_coords({"masks": masks}, 50, 20, (90, 100), torch.uint8)
+
+    src, x, y = masks.bool(), 50, 20
+    want = torch.zeros((3, 90, 100), dtype=torch.uint8)
+    want[:, y : min(y + src.shape[1], 90), x : min(x + src.shape[2], 100)] = src[:, : 90 - y, : 100 - x]
+    assert torch.equal(shifted["masks"].paste(), want)
+
+
+def test_rescale_to_image_scales_each_axis_independently():
+    from lmi_utils.preprocess_utils.ops.tile import _rescale_to_image
+
+    out = _rescale_to_image(
+        {"boxes": torch.tensor([[10.0, 20.0, 50.0, 40.0]]), "segments": [torch.tensor([[10.0, 20.0], [50.0, 40.0]])]},
+        0.5,
+        2.0,
+        200,
+        50,
+        torch.uint8,
+    )
+    assert out["boxes"].tolist() == [[5.0, 40.0, 25.0, 80.0]]
+    assert out["segments"][0].tolist() == [[5.0, 40.0], [25.0, 80.0]]
+
+
+def test_tile_apply_coords_image_level_label_propagates_to_all_tiles():
+    # Classification-style result: only scores/classes, no geometry. With nothing to clip
+    # against, the label should propagate to every tile rather than being dropped.
+    _, rec, history = _tile_pipeline()
+    results = {
+        "scores": [torch.tensor([0.7])],
+        "classes": [np.array([3], dtype=np.int32)],
+    }
+    out = rec.apply_coordinates(results, history)
+    for i in range(4):
+        assert out["scores"][i].tolist() == [pytest.approx(0.7)]
+        assert out["classes"][i].tolist() == [3]
+
+
+def test_tile_revert_coords_cursor_mismatch_raises():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros((100, 100, 3))
+    _tiles, history = pre.preprocess([img], [steps.tile(tile_size=50, stride=50)])
+
+    results = _empty_results(n=5)
+    with pytest.raises(RuntimeError, match="Tile coord reconstruction mismatch"):
+        rec.reconstruct_coordinates(results, history)
+
+
+def test_tile_list_form_tile_size_and_stride_non_square():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.arange(80 * 120 * 3, dtype=torch.float32).reshape(80, 120, 3)
+    tiles, history = pre.preprocess([img], [steps.tile(tile_size=[40, 60], stride=[40, 60])])
+
+    assert len(tiles) == 4
+    for t in tiles:
+        assert t.shape == (40, 60, 3)
+
+    restored = rec.reconstruct_images(tiles, history)
+    assert restored[0].shape == (80, 120, 3)
+    assert torch.equal(restored[0], img)
+
+    det = torch.tensor([[5.0, 7.0, 25.0, 30.0]])
+    results = _empty_results(n=4, boxes=[torch.zeros((0, 4)), torch.zeros((0, 4)), torch.zeros((0, 4)), det])
+    reverted = rec.reconstruct_coordinates(results, history)
+    assert torch.allclose(reverted["boxes"][0], torch.tensor([[65.0, 47.0, 85.0, 70.0]]))
+
+
+def test_tile_overlap_mode_max_differs_from_average():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.ones((80, 80, 3))
+
+    def run(mode):
+        tiles, history = pre.preprocess([img], [steps.tile(tile_size=50, stride=30, overlap_mode=mode)])
+        assert history[0].overlap_modes[0] == mode
+        tiles[0] = torch.zeros_like(tiles[0])
+        return rec.reconstruct_images(tiles, history)[0]
+
+    restored_max = run("max")
+    restored_avg = run("average")
+
+    px = (40, 40, 0)
+    assert restored_max[px].item() == pytest.approx(1.0)
+    assert restored_avg[px].item() == pytest.approx(0.75)
+
+
+def test_tile_revert_images_cursor_mismatch_raises():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros((100, 100, 3))
+    tiles, history = pre.preprocess([img], [steps.tile(tile_size=50, stride=50)])
+
+    extra = tiles + [tiles[0].clone()]
+    with pytest.raises(RuntimeError, match="Tile reconstruction mismatch"):
+        rec.reconstruct_images(extra, history)
+
+
+def _overlap_history(nms_iou=0.5, containment=None, merge_fragments=False):
+    # 150x150 with tile 100 / stride 50 -> 2x2 overlapping tiles; box [55,55,95,95] lands in all 4.
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(150, 150, 3)
+    _, history = pre.preprocess(
+        [img],
+        [steps.tile(tile_size=100, stride=50, nms_iou=nms_iou, containment=containment, merge_fragments=merge_fragments)],
+    )
+    return rec, history
+
+
+# Per-tile boxes that all map back to the same [55,55,95,95] object after un-shifting.
+_DUP_TILE_BOXES = [
+    torch.tensor([[55.0, 55.0, 95.0, 95.0]]),
+    torch.tensor([[5.0, 55.0, 45.0, 95.0]]),
+    torch.tensor([[55.0, 5.0, 95.0, 45.0]]),
+    torch.tensor([[5.0, 5.0, 45.0, 45.0]]),
+]
+
+
+def test_tile_revert_coords_dedupe_suppresses_duplicate_boxes():
+    rec, history = _overlap_history()
+    results = _empty_results(
+        n=4,
+        boxes=_DUP_TILE_BOXES,
+        scores=[torch.tensor([s]) for s in (0.9, 0.6, 0.7, 0.8)],
+        classes=[np.array([0], np.int32) for _ in range(4)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[55.0, 55.0, 95.0, 95.0]]))
+    assert out["scores"][0].item() == pytest.approx(0.9)  # highest-scoring duplicate kept
+    assert out["classes"][0].tolist() == [0]
+
+
+def test_tile_revert_coords_dedupe_disabled_keeps_all_duplicates():
+    rec, history = _overlap_history(nms_iou=None)
+    results = _empty_results(
+        n=4,
+        boxes=_DUP_TILE_BOXES,
+        scores=[torch.tensor([s]) for s in (0.9, 0.6, 0.7, 0.8)],
+        classes=[np.array([0], np.int32) for _ in range(4)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (4, 4)
+
+
+def test_tile_revert_coords_dedupe_is_class_aware():
+    rec, history = _overlap_history()
+    results = _empty_results(
+        n=4,
+        boxes=_DUP_TILE_BOXES,
+        scores=[torch.tensor([s]) for s in (0.9, 0.8, 0.7, 0.6)],
+        classes=[np.array([c], np.int32) for c in (0, 1, 0, 1)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    # one survivor per class: class 0 -> 0.9, class 1 -> 0.8
+    assert out["boxes"][0].shape == (2, 4)
+    assert sorted(out["scores"][0].tolist()) == [pytest.approx(0.8), pytest.approx(0.9)]
+    assert sorted(out["classes"][0].tolist()) == [0, 1]
+
+
+def test_tile_revert_coords_dedupe_masks_by_iou():
+    rec, history = _overlap_history()
+    # Same global region [55:95, 55:95] expressed in two overlapping top tiles' local coords.
+    m0 = torch.zeros((1, 100, 100), dtype=torch.uint8)
+    m0[0, 55:95, 55:95] = 1
+    m1 = torch.zeros((1, 100, 100), dtype=torch.uint8)
+    m1[0, 55:95, 5:45] = 1  # col offset 50 -> same global cols 55:95
+    empty = torch.zeros((0, 100, 100), dtype=torch.uint8)
+    results = _empty_results(
+        n=4,
+        scores=[torch.tensor([0.9]), torch.tensor([0.7]), torch.zeros((0,)), torch.zeros((0,))],
+        masks=[m0, m1, empty, empty],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["masks"][0].shape == (1, 150, 150)
+    assert out["masks"][0].dtype == torch.uint8  # the merge works in bool; the caller's dtype comes back
+    assert out["masks"][0][0, 55:95, 55:95].all() and int(out["masks"][0].sum()) == 40 * 40
+    assert out["scores"][0].item() == pytest.approx(0.9)
+
+    numpy_out = rec.reconstruct_coordinates({k: [x.numpy() for x in v] for k, v in results.items() if k in ("masks", "scores")}, history)
+    assert numpy_out["masks"][0].dtype == np.uint8
+
+
+def test_tile_revert_coords_dedupe_segments_via_polygon_iou():
+    rec, history = _overlap_history()
+    # identical global square polygon seen in two overlapping top tiles
+    seg0 = torch.tensor([[55.0, 55.0], [95.0, 55.0], [95.0, 95.0], [55.0, 95.0]])
+    seg1 = torch.tensor([[5.0, 55.0], [45.0, 55.0], [45.0, 95.0], [5.0, 95.0]])  # +50 in x -> same square
+    results = _empty_results(
+        n=4,
+        scores=[torch.tensor([0.9]), torch.tensor([0.7]), torch.zeros((0,)), torch.zeros((0,))],
+        segments=[[seg0], [seg1], [], []],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert len(out["segments"][0]) == 1
+    assert torch.allclose(out["segments"][0][0], torch.tensor([[55.0, 55.0], [95.0, 55.0], [95.0, 95.0], [55.0, 95.0]]))
+    assert out["scores"][0].item() == pytest.approx(0.9)
+
+
+def test_tile_merge_fragments_spans_three_tiles():
+    # 250x100 with tile 100 / stride 80 -> 3 tiles at x = 0, 80, 160; the object covers all three
+    # and the middle tile sees only its interior, with no edge of the object visible.
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 250, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=80, merge_fragments=True)])
+    results = _empty_results(
+        n=3,
+        boxes=[
+            torch.tensor([[40.0, 20.0, 100.0, 50.0]]),
+            torch.tensor([[0.0, 20.0, 100.0, 50.0]]),
+            torch.tensor([[0.0, 20.0, 80.0, 50.0]]),
+        ],
+        scores=[torch.tensor([s]) for s in (0.4, 0.3, 0.5)],
+        classes=[np.array([0], np.int32) for _ in range(3)],
+        points=[torch.zeros((0, 1, 3)) for _ in range(3)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[40.0, 20.0, 240.0, 50.0]]))
+    assert out["scores"][0].item() == pytest.approx(0.5)
+
+
+def test_tile_merge_fragments_accepts_zero_overlap():
+    steps.tile(tile_size=100, stride=100, merge_fragments=True)
+
+
+def test_tile_revert_coords_rejects_keypoints():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 250, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=80)])
+    results = _empty_results(n=3, points=[torch.zeros((1, 2, 3)) for _ in range(3)])
+    with pytest.raises(ValueError, match="does not support keypoints"):
+        rec.reconstruct_coordinates(results, history)
+
+
+def test_tile_containment_nms_drops_a_fragment_nested_in_a_whole_detection():
+    # Merging off, so NMS is the only containment check.
+    rec, history = _overlap_history(containment=0.8)
+    results = _empty_results(
+        n=4,
+        boxes=[
+            torch.tensor([[10.0, 10.0, 90.0, 90.0]]),  # whole object, tile (0, 0)
+            torch.tensor([[10.0, 10.0, 30.0, 30.0]]),  # -> global [60, 10, 80, 30], nested in it
+            torch.zeros((0, 4)),
+            torch.zeros((0, 4)),
+        ],
+        scores=[torch.tensor([0.9]), torch.tensor([0.6]), torch.zeros((0,)), torch.zeros((0,))],
+        classes=[np.array([0], np.int32), np.array([0], np.int32), np.zeros((0,), np.int32), np.zeros((0,), np.int32)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[10.0, 10.0, 90.0, 90.0]]))
+
+
+def test_tile_containment_nms_is_skipped_once_merging_has_run():
+    """Merging already folds fragments in by containment; re-testing it would delete widened neighbours.
+
+    The nested box here is not cut at a seam, so merging leaves it and it now survives. That is the
+    cost of running containment once, and it measured far cheaper than over-deleting real objects.
+    """
+    rec, history = _overlap_history(containment=0.8, merge_fragments=True)
+    results = _empty_results(
+        n=4,
+        boxes=[
+            torch.tensor([[10.0, 10.0, 90.0, 90.0]]),
+            torch.tensor([[10.0, 10.0, 30.0, 30.0]]),
+            torch.zeros((0, 4)),
+            torch.zeros((0, 4)),
+        ],
+        scores=[torch.tensor([0.9]), torch.tensor([0.6]), torch.zeros((0,)), torch.zeros((0,))],
+        classes=[np.array([0], np.int32), np.array([0], np.int32), np.zeros((0,), np.int32), np.zeros((0,), np.int32)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (2, 4)
+
+
+def test_tile_containment_disabled_keeps_the_nested_detection():
+    rec, history = _overlap_history(containment=None)
+    results = _empty_results(
+        n=4,
+        boxes=[
+            torch.tensor([[10.0, 10.0, 90.0, 90.0]]),
+            torch.tensor([[10.0, 10.0, 30.0, 30.0]]),
+            torch.zeros((0, 4)),
+            torch.zeros((0, 4)),
+        ],
+        scores=[torch.tensor([0.9]), torch.tensor([0.6]), torch.zeros((0,)), torch.zeros((0,))],
+        classes=[np.array([0], np.int32), np.array([0], np.int32), np.zeros((0,), np.int32), np.zeros((0,), np.int32)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (2, 4)
+
+
+def _padded_history():
+    # 120x120 with tile 100 / stride 50 pads out to 150x150, so x/y 120..150 is padding.
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(120, 120, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=50, nms_iou=None, containment=None)])
+    return rec, history
+
+
+def test_tile_drops_predictions_that_land_in_the_padding():
+    rec, history = _padded_history()
+    # tile 1 starts at x = 50; local [80, 10, 95, 30] -> global [130, 10, 145, 30], all padding.
+    results = _empty_results(
+        n=4,
+        boxes=[torch.zeros((0, 4)), torch.tensor([[80.0, 10.0, 95.0, 30.0]]), torch.zeros((0, 4)), torch.zeros((0, 4))],
+        scores=[torch.zeros((0,)), torch.tensor([0.9]), torch.zeros((0,)), torch.zeros((0,))],
+        classes=[np.zeros((0,), np.int32), np.array([0], np.int32), np.zeros((0,), np.int32), np.zeros((0,), np.int32)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (0, 4)
+
+
+def test_tile_clips_predictions_that_straddle_the_image_edge():
+    rec, history = _padded_history()
+    # global [110, 10, 140, 30] -> clipped to the 120-wide image.
+    results = _empty_results(
+        n=4,
+        boxes=[torch.zeros((0, 4)), torch.tensor([[60.0, 10.0, 90.0, 30.0]]), torch.zeros((0, 4)), torch.zeros((0, 4))],
+        scores=[torch.zeros((0,)), torch.tensor([0.9]), torch.zeros((0,)), torch.zeros((0,))],
+        classes=[np.zeros((0,), np.int32), np.array([0], np.int32), np.zeros((0,), np.int32), np.zeros((0,), np.int32)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[110.0, 10.0, 120.0, 30.0]]))
+
+
+def test_tile_score_threshold_drops_weak_fragments_before_merging():
+    # three views of one object spanning the image; thresholding runs first, so the two weak ones are gone
+    # before merging can union them and only tile 2's own detection is left
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 250, 3)
+    results = _empty_results(
+        n=3,
+        boxes=[
+            torch.tensor([[40.0, 20.0, 100.0, 50.0]]),
+            torch.tensor([[0.0, 20.0, 100.0, 50.0]]),
+            torch.tensor([[0.0, 20.0, 80.0, 50.0]]),
+        ],
+        scores=[torch.tensor([s]) for s in (0.4, 0.3, 0.7)],
+        classes=[np.array([0], np.int32) for _ in range(3)],
+        points=[torch.zeros((0, 1, 3)) for _ in range(3)],
+    )
+
+    def revert(score_threshold):
+        step = steps.tile(tile_size=100, stride=80, merge_fragments=True, score_threshold=score_threshold)
+        _, history = pre.preprocess([img], [step])
+        return rec.reconstruct_coordinates(results, history)
+
+    filtered = revert(0.6)
+    assert filtered["boxes"][0].tolist() == [[160.0, 20.0, 240.0, 50.0]]
+    assert filtered["scores"][0].item() == pytest.approx(0.7)
+
+    # the same three views with no extra threshold union into the whole object
+    merged = revert(0.0)
+    assert merged["boxes"][0].tolist() == [[40.0, 20.0, 240.0, 50.0]]
+    assert merged["scores"][0].item() == pytest.approx(0.7)
+
+
+def test_tile_apply_coords_drops_sliver_labels_but_keeps_interior_fragments():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(200, 200, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=100, min_label_size=5)])
+    results = {
+        # 1) a wide label leaving a 2px sliver in tile 1; 2) a label wholly inside tile 0.
+        "boxes": [torch.tensor([[50.0, 50.0, 102.0, 90.0], [10.0, 10.0, 40.0, 40.0]])],
+        "scores": [torch.tensor([0.9, 0.8])],
+        "classes": [np.array([0, 1], dtype=np.int32)],
+        "segments": [[]],
+        "points": [torch.zeros((0, 1, 3))],
+    }
+    out = rec.apply_coordinates(results, history)
+    assert out["boxes"][0].shape == (2, 4)  # tile 0 keeps both
+    assert out["boxes"][1].shape == (0, 4)  # tile 1's 2px sliver is dropped
+
+
+def test_tile_merge_fragments_accepts_interpolation():
+    steps.tile(tile_size=100, stride=80, merge_fragments=True, scale_mode="interpolation")
+
+
+def _merge_history(**kwargs):
+    # 150x100 with tile 100 / stride 60 -> 2 tiles at x = 0 and x = 60, overlapping by 40.
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 150, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=60, merge_fragments=True, **kwargs)])
+    return rec, history
+
+
+def _two_tile_results(boxes, scores):
+    return _empty_results(
+        n=2,
+        boxes=[torch.tensor(b, dtype=torch.float32) for b in boxes],
+        scores=[torch.tensor(s, dtype=torch.float32) for s in scores],
+        classes=[np.zeros(len(s), np.int32) for s in scores],
+        points=[torch.zeros((0, 1, 3)) for _ in range(2)],
+    )
+
+
+def test_tile_two_objects_abutting_at_a_seam_survive_as_two():
+    # A is x 20..80, B is x 80..140. Each tile sees one whole and clips the other at the seam;
+    # the fragments must neither merge the two objects nor survive NMS.
+    results = _two_tile_results(
+        boxes=[[[20, 20, 80, 50], [80, 20, 100, 50]], [[0, 20, 20, 50], [20, 20, 80, 50]]],
+        scores=[[0.9, 0.5], [0.5, 0.9]],
+    )
+    rec, history = _merge_history()
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (2, 4)
+    assert sorted(out["boxes"][0][:, 0].tolist()) == [pytest.approx(20.0), pytest.approx(80.0)]
+    assert sorted(out["boxes"][0][:, 2].tolist()) == [pytest.approx(80.0), pytest.approx(140.0)]
+
+
+def test_tile_two_whole_objects_in_the_overlap_band_survive_as_two():
+    # Both objects sit inside the overlap, so both tiles see both whole. Nothing is truncated;
+    # NMS must collapse each pair of duplicates without merging the two objects together.
+    results = _two_tile_results(
+        boxes=[[[68, 20, 78, 50], [82, 20, 92, 50]], [[8, 20, 18, 50], [22, 20, 32, 50]]],
+        scores=[[0.9, 0.8], [0.7, 0.6]],
+    )
+    rec, history = _merge_history()
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (2, 4)
+    assert sorted(out["boxes"][0][:, 0].tolist()) == [pytest.approx(68.0), pytest.approx(82.0)]
+    assert sorted(out["scores"][0].tolist()) == [pytest.approx(0.8), pytest.approx(0.9)]
+
+
+def test_tile_merge_runs_with_overlap_on_one_axis_only():
+    # 40px of overlap on one axis, 2px on the other: both are compared in a band, so both merge.
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 198, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=[100, 100], stride=[60, 98], merge_fragments=True)])
+    results = _two_tile_results(boxes=[[[40, 20, 100, 50]], [[0, 20, 42, 50]]], scores=[[0.4], [0.9]])
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[40.0, 20.0, 140.0, 50.0]]))
+
+
+def test_tile_merge_fragments_with_non_square_tiles():
+    # tile [80, 100] / stride [50, 60] over a 130x150 image -> 2x2 grid at y = 0, 50 and x = 0, 60.
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(130, 150, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=[80, 100], stride=[50, 60], merge_fragments=True)])
+    results = _empty_results(
+        n=4,
+        boxes=[
+            torch.tensor([[40.0, 30.0, 100.0, 80.0]]),  # tile (0, 0)
+            torch.tensor([[0.0, 30.0, 60.0, 80.0]]),  # tile (0, 1) -> global x 60..120
+            torch.tensor([[40.0, 0.0, 100.0, 60.0]]),  # tile (1, 0) -> global y 50..110
+            torch.tensor([[0.0, 0.0, 60.0, 60.0]]),  # tile (1, 1)
+        ],
+        scores=[torch.tensor([s]) for s in (0.3, 0.4, 0.5, 0.6)],
+        classes=[np.array([0], np.int32) for _ in range(4)],
+        points=[torch.zeros((0, 1, 3)) for _ in range(4)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[40.0, 30.0, 120.0, 110.0]]))
+
+
+def test_tile_merge_with_no_predictions_at_all():
+    rec, history = _merge_history()
+    out = rec.reconstruct_coordinates(_empty_results(n=2), history)
+    assert out["boxes"][0].shape == (0, 4)
+
+
+def test_tile_merge_accepts_any_edge_tolerance():
+    # No overlap requirement to trip over, whatever the tolerance.
+    steps.tile(tile_size=100, stride=60, merge_fragments=True)
+    steps.tile(tile_size=100, stride=60, merge_fragments=True, edge_tolerance=20)
+
+
+def test_tile_edge_tolerance_reaches_the_merge_step():
+    # Both halves stop 8px short of the seam, so only the wider tolerance pairs them.
+    boxes = [[[40, 20, 92, 50]], [[0, 20, 60, 50]]]
+    scores = [[0.4], [0.9]]
+    rec, history = _merge_history()
+    assert rec.reconstruct_coordinates(_two_tile_results(boxes, scores), history)["boxes"][0].shape == (2, 4)
+    rec, history = _merge_history(edge_tolerance=10)
+    out = rec.reconstruct_coordinates(_two_tile_results(boxes, scores), history)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[40.0, 20.0, 120.0, 50.0]]))
+
+
+def _two_dogs_either_side_of_a_seam(stride):
+    """Two separate same-class objects meeting at x=320: one ends at the seam, the other starts there."""
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(320, 576, 3)  # 2 tiles wide at either stride
+    _, history = pre.preprocess([img], [steps.tile(tile_size=320, stride=[320, stride])])
+    left_local = torch.tensor([[200.0, 100.0, 320.0, 200.0]])  # tile 0, ends on its right edge
+    right_local = torch.tensor([[float(320 - stride), 100.0, float(440 - stride), 200.0]])  # tile 1, global 320..440
+    results = _empty_results(
+        n=2,
+        boxes=[left_local, right_local],
+        scores=[torch.tensor([0.9]), torch.tensor([0.8])],
+        classes=[np.array([0], np.int32) for _ in range(2)],
+        points=[torch.zeros((0, 1, 3)) for _ in range(2)],
+    )
+    return rec.reconstruct_coordinates(results, history)
+
+
+def test_tile_merge_without_overlap_fuses_two_objects_meeting_at_the_seam():
+    """The cost of merging with no overlap: neither tile can see across the seam, and these two agree along it.
+
+    Measured as a good trade on real data - the seam objects it rejoins far outnumber the neighbours it fuses.
+    """
+    out = _two_dogs_either_side_of_a_seam(stride=320)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[200.0, 100.0, 440.0, 200.0]]))
+
+
+def test_tile_merge_without_overlap_keeps_objects_that_differ_along_the_seam():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(320, 576, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=320, stride=320)])
+    results = _empty_results(
+        n=2,
+        boxes=[torch.tensor([[200.0, 100.0, 320.0, 200.0]]), torch.tensor([[0.0, 240.0, 120.0, 300.0]])],
+        scores=[torch.tensor([0.9]), torch.tensor([0.8])],
+        classes=[np.array([0], np.int32) for _ in range(2)],
+        points=[torch.zeros((0, 1, 3)) for _ in range(2)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (2, 4)
+
+
+def test_tile_merge_auto_runs_once_there_is_overlap():
+    """With overlap the neighbour sees the right-hand object whole, so the two stay separate..."""
+    out = _two_dogs_either_side_of_a_seam(stride=256)
+    assert out["boxes"][0].shape == (2, 4)
+
+
+def test_tile_merge_auto_unions_a_genuinely_cut_object():
+    """...while one object actually cut by the seam is rejoined, with no merge_fragments passed."""
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 150, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=60)])  # 40px overlap, auto
+    results = _empty_results(
+        n=2,
+        boxes=[torch.tensor([[40.0, 20.0, 100.0, 50.0]]), torch.tensor([[0.0, 20.0, 60.0, 50.0]])],
+        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        classes=[np.array([0], np.int32) for _ in range(2)],
+        points=[torch.zeros((0, 1, 3)) for _ in range(2)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (1, 4)
+    assert torch.allclose(out["boxes"][0], torch.tensor([[40.0, 20.0, 120.0, 50.0]]))
+
+
+def test_tile_revert_coords_rejects_oriented_boxes():
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 250, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=80)])
+    obb = torch.tensor([[[10.0, 10.0], [40.0, 10.0], [40.0, 40.0], [10.0, 40.0]]])
+    results = _empty_results(
+        n=3,
+        boxes=[obb, torch.zeros((0, 4, 2)), torch.zeros((0, 4, 2))],
+        scores=[torch.tensor([0.9]), torch.zeros((0,)), torch.zeros((0,))],
+        classes=[np.array([0], np.int32), np.zeros((0,), np.int32), np.zeros((0,), np.int32)],
+    )
+    with pytest.raises(ValueError, match="does not support oriented boxes"):
+        rec.reconstruct_coordinates(results, history)
+
+
+def test_tile_rejects_keypoints_even_with_merging_off():
+    """Turning merging off is not a way in: tiling itself has no rule for keypoints."""
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 250, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=80, merge_fragments=False)])
+    results = _empty_results(n=3, points=[torch.zeros((1, 2, 3)) for _ in range(3)])
+    with pytest.raises(ValueError, match="does not support keypoints"):
+        rec.reconstruct_coordinates(results, history)
+
+
+def test_tile_merge_false_stays_off_with_overlap():
+    """Explicitly off must not merge a cut object, even where auto would."""
+    pre, rec = Preprocessor(), Reconstructor()
+    img = torch.zeros(100, 150, 3)
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=60, merge_fragments=False)])
+    results = _empty_results(
+        n=2,
+        boxes=[torch.tensor([[40.0, 20.0, 100.0, 50.0]]), torch.tensor([[0.0, 20.0, 60.0, 50.0]])],
+        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        classes=[np.array([0], np.int32) for _ in range(2)],
+        points=[torch.zeros((0, 1, 3)) for _ in range(2)],
+    )
+    out = rec.reconstruct_coordinates(results, history)
+    assert out["boxes"][0].shape == (2, 4)
+
+
+def test_tile_merge_does_not_validate_the_grid_at_construction():
+    """Any grid is accepted; merging adapts to it rather than being refused up front."""
+    steps.tile(tile_size=100, stride=100)
+    steps.tile(tile_size=100, stride=80, scale_mode="interpolation")
+
+
+def _seam_pair_reverted(**cfg):
+    """One object split across two overlapping tiles, reverted to image space. Tile 0 spans x [0, 100),
+    tile 1 spans x [60, 160)."""
+    pre, rec = Preprocessor(), Reconstructor()
+    _, history = pre.preprocess([torch.zeros(100, 150, 3)], [steps.tile(tile_size=100, stride=60, **cfg)])
+    results = _empty_results(
+        n=2,
+        boxes=[torch.tensor([[40.0, 20.0, 100.0, 50.0]]), torch.tensor([[0.0, 20.0, 60.0, 50.0]])],
+        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        classes=[np.array([0], dtype=np.int32), np.array([0], dtype=np.int32)],
+    )
+    return rec.reconstruct_coordinates(results, history)
+
+
+def test_report_merge_origin_labels_a_merged_union():
+    reverted = _seam_pair_reverted(merge_fragments=True, report_merge_origin=True)
+    assert reverted["boxes"][0].shape == (1, 4)
+    assert reverted["merge_origin"][0].tolist() == [tile_merge.ORIGIN_UNION]
+
+
+def test_report_merge_origin_still_reports_when_merging_is_off():
+    reverted = _seam_pair_reverted(merge_fragments=False, nms_iou=None, containment=None, report_merge_origin=True)
+    assert reverted["boxes"][0].shape == (2, 4)
+    assert reverted["merge_origin"][0].tolist() == [tile_merge.ORIGIN_WHOLE, tile_merge.ORIGIN_WHOLE]
+
+
+def test_merge_origin_is_absent_by_default():
+    reverted = _seam_pair_reverted(merge_fragments=True)
+    assert "merge_origin" not in reverted
+
+
+def test_merge_joins_the_same_seam_pair_under_interpolation():
+    # 150 wide tiles to a scaled width of 160, so the union found in scaled space maps back by 150/160
+    reverted = _seam_pair_reverted(scale_mode="interpolation")
+    assert reverted["boxes"][0].shape == (1, 4)
+    assert reverted["boxes"][0][0].tolist() == pytest.approx([40 * 0.9375, 20.0, 120 * 0.9375, 50.0])
+
+
+def test_merge_under_interpolation_scales_each_axis_on_its_own():
+    # 90x150 tiles to a scaled 100x160, so x maps by 150/160 and y by 90/100
+    pre, rec = Preprocessor(), Reconstructor()
+    _, history = pre.preprocess([torch.zeros(90, 150, 3)], [steps.tile(tile_size=100, stride=60, scale_mode="interpolation")])
+    results = _empty_results(
+        n=2,
+        boxes=[torch.tensor([[40.0, 20.0, 100.0, 50.0]]), torch.tensor([[0.0, 20.0, 60.0, 50.0]])],
+        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        classes=[np.array([0], dtype=np.int32), np.array([0], dtype=np.int32)],
+    )
+    reverted = rec.reconstruct_coordinates(results, history)
+    assert reverted["boxes"][0].shape == (1, 4)
+    assert reverted["boxes"][0][0].tolist() == pytest.approx([40 * 0.9375, 20 * 0.9, 120 * 0.9375, 50 * 0.9])
+
+
+def test_merge_unions_masks_under_interpolation():
+    # two tiles each holding half of one object; the union must come back as one mask at im_size
+    pre, rec = Preprocessor(), Reconstructor()
+    _, history = pre.preprocess([torch.zeros(100, 150, 3)], [steps.tile(tile_size=100, stride=60, scale_mode="interpolation")])
+    left, right = torch.zeros((1, 100, 100)), torch.zeros((1, 100, 100))
+    left[0, 20:50, 40:100] = 1  # reaches tile 0's right edge
+    right[0, 20:50, 0:60] = 1  # reaches tile 1's left edge
+    results = _empty_results(
+        n=2,
+        masks=[left, right],
+        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        classes=[np.array([0], dtype=np.int32), np.array([0], dtype=np.int32)],
+    )
+    reverted = rec.reconstruct_coordinates(results, history)
+    assert reverted["masks"][0].shape == (1, 100, 150)
+    assert reverted["masks"][0][0, 25:45, 45:110].eq(1).all()
+
+
+def _weak_whole_and_strong_fragment(fragment_x0=0.0, **cfg):
+    """A low-scoring whole detection in tile 0, and a high-scoring fragment of the same object in tile 1.
+
+    The fragment lies 0.83 inside the whole detection, so it joins at 0.8 but not at 0.9. The whole detection ends
+    6px short of its tile edge, just outside the 5px join margin of this 40px overlap. ``fragment_x0`` moves the
+    fragment's left side off tile 1's edge."""
+    pre, rec = Preprocessor(), Reconstructor()
+    _, history = pre.preprocess([torch.zeros(100, 150, 3)], [steps.tile(tile_size=100, stride=60, **cfg)])
+    results = _empty_results(
+        n=2,
+        boxes=[torch.tensor([[65.0, 20.0, 94.0, 50.0]]), torch.tensor([[fragment_x0, 20.0, 35.0, 50.0]])],
+        scores=[torch.tensor([0.05]), torch.tensor([0.9])],
+        classes=[np.zeros(1, dtype=np.int32), np.zeros(1, dtype=np.int32)],
+    )
+    return rec.reconstruct_coordinates(results, history)
+
+
+def test_score_threshold_drops_a_weak_view_before_it_can_represent_its_group():
+    # thresholding after merging lost the object entirely: the weak whole view won the group, then failed the threshold.
+    # 3px off the edge keeps the lone fragment out of the drop rule, which would delete it since tile 0 covered its area.
+    reverted = _weak_whole_and_strong_fragment(3.0, merge_fragments=True, score_threshold=0.25, nms_iou=None, containment=0.8)
+    assert reverted["scores"][0].tolist() == pytest.approx([0.9])
+    assert reverted["boxes"][0].tolist() == [[63.0, 20.0, 95.0, 50.0]]
+
+
+def test_containment_zero_asks_for_no_containment_at_all():
+    loose = _weak_whole_and_strong_fragment(merge_fragments=True, nms_iou=None, containment=0.0, report_merge_origin=True)
+    strict = _weak_whole_and_strong_fragment(merge_fragments=True, nms_iou=None, containment=0.9, report_merge_origin=True)
+    assert loose["merge_origin"][0].tolist() == [tile_merge.ORIGIN_WHOLE_GROUPED]
+    assert strict["merge_origin"][0].tolist() == [tile_merge.ORIGIN_WHOLE]
