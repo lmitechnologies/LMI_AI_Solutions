@@ -33,8 +33,8 @@ test = [
 ci = [
     { include-group = "test" },
     "onnxruntime==1.21.0",
-    "torch==2.5.1",
-    "torchvision==0.20.1",
+    "torch==2.6.0",
+    "torchvision==0.21.0",
 ]
 # Resolving [core] replaces `anomalib install --option core`, which pip-installed numpy>=2 behind the lock's back.
 ad-v1 = [
@@ -42,7 +42,7 @@ ad-v1 = [
     "jsonargparse==4.27.7",
 ]
 ad-v2 = [
-    "anomalib==2.4.1",
+    "anomalib==2.6.0",
 ]
 # GPU / TensorRT env (local + compose): cu124 torch, onnxruntime-gpu, and the
 # TensorRT engine-build stack. tensorrt is pinned to the nvcr:25.04 image's
@@ -50,8 +50,8 @@ ad-v2 = [
 gpu = [
     { include-group = "test" },
     "onnxruntime-gpu==1.21.0",
-    "torch==2.5.1",  # torch>=2.6 raises a weights_only error loading anomalib models
-    "torchvision==0.20.1",
+    "torch==2.6.0",
+    "torchvision==0.21.0",
     "tensorrt==10.9.0.34",
     "onnx-graphsurgeon>=0.5.0",
     "pytest-html>=4.1.1",

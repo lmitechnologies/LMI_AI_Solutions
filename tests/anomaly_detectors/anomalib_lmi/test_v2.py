@@ -254,8 +254,8 @@ def test_compare_trt_onnx(trt_model):
 def test_folder_dataset_non_empty():
     """Ensure build_data produces a non-empty samples frame with correct label values.
 
-    Regression guard: under pandas 3 StringDtype, anomalib < 2.3 compared labels against
-    DirType members rather than their .value, yielding an empty samples frame.
+    Regression guard: anomalib < 2.3 compared labels against DirType members rather than their .value,
+    yielding an empty samples frame. Fixed in anomalib >= 2.3 via DirType(str, Enum); pandas<3 pin no longer needed.
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a minimal normal_dir structure: tmpdir/normal/img.png
