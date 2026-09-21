@@ -151,3 +151,31 @@ def test_blended_untile_round_trips_a_random_batch(overlap_mode):
     im = torch.rand(2, 3, 101, 77)
     out = t.untile(t.tile(im), overlap_mode=overlap_mode)
     assert torch.allclose(out, im, atol=1e-5)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.uint8, torch.int16])
+def test_interpolation_upscale_is_bilinear_not_nearest(dtype):
+    # nearest duplicates whole source pixels, so a smooth ramp comes back with flat steps and the
+    # detector sees an aliased image; it was the silent default before a mode was passed
+    from lmi_utils.image_utils.tiler import upscale_image
+
+    ramp = torch.linspace(0, 200, 16).view(1, 1, 1, 16).expand(1, 1, 16, 16).contiguous().to(dtype)
+    out = upscale_image(ramp, (16, 37), ScaleMode.INTERPOLATION)
+
+    assert out.dtype == dtype
+    assert out.shape == (1, 1, 16, 37)
+    row = out[0, 0, 0].float()
+    assert len(row.unique()) > 16  # bilinear invents in-between values; nearest can only repeat the 16 it had
+
+
+def test_interpolation_upscale_keeps_a_bool_image_binary():
+    # torch resamples floats only, and a bool image is a mask: it must come back as a clean 0/1, not rounded ints
+    from lmi_utils.image_utils.tiler import upscale_image
+
+    mask = torch.zeros(1, 1, 8, 8, dtype=torch.bool)
+    mask[0, 0, 2:6, 2:6] = True
+    out = upscale_image(mask, (16, 16), ScaleMode.INTERPOLATION)
+
+    assert out.dtype == torch.bool
+    assert out[0, 0, 5:11, 5:11].all()
+    assert not out[0, 0, 0, :].any()

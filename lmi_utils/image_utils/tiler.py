@@ -132,6 +132,17 @@ def create_blend_mask(
     return mask
 
 
+def _resample(image: torch.Tensor, size: tuple) -> torch.Tensor:
+    """Bilinear resize; torch resamples floats only, so anything else goes via float and back."""
+    dtype = image.dtype
+    if image.is_floating_point():
+        return F.interpolate(image, size=size, mode="bilinear", align_corners=False)
+    out = F.interpolate(image.float(), size=size, mode="bilinear", align_corners=False)
+    if dtype == torch.bool:  # a bool image is a mask, so cut it rather than rounding
+        return out > 0.5
+    return out.round().clamp(torch.iinfo(dtype).min, torch.iinfo(dtype).max).to(dtype)
+
+
 @torch.inference_mode()
 def upscale_image(image: torch.Tensor, size: tuple, mode: ScaleMode = ScaleMode.PADDING) -> torch.Tensor:
     """Upscale image to the desired size via either padding or interpolation.
@@ -152,7 +163,7 @@ def upscale_image(image: torch.Tensor, size: tuple, mode: ScaleMode = ScaleMode.
         pad_w = resize_w - image_w
         image = F.pad(image, [0, pad_w, 0, pad_h])
     elif mode == ScaleMode.INTERPOLATION:
-        image = F.interpolate(input=image, size=(resize_h, resize_w))
+        image = _resample(image, (resize_h, resize_w))
     else:
         msg = f"Unknown mode {mode}. Only padding and interpolation is available."
         raise ValueError(msg)

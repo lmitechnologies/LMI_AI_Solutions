@@ -15,6 +15,8 @@ from ..operation import Config, Meta, Operation
 
 logger = logging.getLogger(__name__)
 
+_MASK_RESIZE_BUDGET = 64 * 1024 * 1024  # bytes one mask resize may hold; a single mask bigger than this cannot be split
+
 
 @dataclass
 class TileConfig(Config):
@@ -29,13 +31,9 @@ class TileConfig(Config):
 
     The rest configure ``revert_coords``, which rebuilds per-tile predictions in image space:
 
-    merge_fragments: union predictions of one object that adjacent tiles each saw only part of. Needs
-        ``scale_mode="padding"``. Works without tile overlap, though overlap scores better: two pieces
-        that only meet at a seam can be compared along it but not across it. Three settings:
-
-        1. None (default): merge wherever the grid allows it, and quietly skip where it does not.
-        2. True: demand it, and raise when the grid cannot support it.
-        3. False: off, leaving seam-split objects split.
+    merge_fragments: union predictions of one object that adjacent tiles each saw only part of. On by
+        default; False leaves seam-split objects split. Works without tile overlap, though overlap scores
+        better: two pieces that only meet at a seam can be compared along it but not across it.
     score_threshold: predictions below this are dropped before merging, so a low-scoring piece cannot
         become its group's representative and take the whole group down with it.
     nms_iou: class-aware NMS IoU threshold across tiles. None disables both NMS rules.
@@ -60,7 +58,7 @@ class TileConfig(Config):
     stride: Union[int, List[int], None] = None
     scale_mode: str = "padding"
     overlap_mode: str = "average"
-    merge_fragments: Optional[bool] = None
+    merge_fragments: bool = True
     score_threshold: float = 0.0
     nms_iou: Optional[float] = 0.5
     containment: Optional[float] = 0.8
@@ -75,8 +73,6 @@ class TileConfig(Config):
             Tiler.validate_tile_and_stride(_as_pair(self.tile_size), _as_pair(self.stride))
         except ValueError as e:
             raise ValueError(f"TileConfig: {e}; got tile_size {self.tile_size}, stride {self.stride}") from e
-        if self.merge_fragments is True and self.scale_mode != "padding":
-            raise ValueError("TileConfig: merge_fragments needs scale_mode='padding'; interpolation rescales tile origins")
 
     def coord_options(self) -> Dict[str, Any]:
         return {
@@ -305,6 +301,9 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     Offset -> drop what landed in the padded region -> score threshold -> merge seam fragments ->
     class-aware NMS -> clip to the image. Thresholding runs before merging so a weak view cannot
     represent its group, and NMS runs last so it cannot delete fragments their partners still need.
+
+    Under interpolation every step runs in the scaled image's coordinates, where the tile grid is exact and
+    ``edge_tolerance`` still measures the detector's error; the survivors are rescaled to image space at the end.
     """
     n_tiles_h, n_tiles_w = tiler_meta["n_tiles"]
     tile_h, tile_w = tiler_meta["tile_size"]
@@ -312,11 +311,10 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     im_h, im_w = tiler_meta["im_size"]
     scale_h, scale_w = tiler_meta["scale_size"]
     is_interp = tiler_meta.get("scale_mode", "padding") == "interpolation" and (scale_h != im_h or scale_w != im_w)
-    sx = im_w / scale_w if is_interp else 1.0
-    sy = im_h / scale_h if is_interp else 1.0
+    work_h, work_w = (scale_h, scale_w) if is_interp else (im_h, im_w)
 
     # masks stay as box crops until the survivors are pasted: a full-image mask per detection runs out of memory on large images
-    target_size = (im_h, im_w)
+    target_size = (work_h, work_w)
     mask_dtype = _output_mask_dtype(tile_results)
 
     shifted = []
@@ -324,7 +322,7 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     for idx, r in enumerate(tile_results):
         row = idx // n_tiles_w
         col = idx % n_tiles_w
-        s = _shift_tile_coords(r, col * stride_w, row * stride_h, sx, sy, target_size, mask_dtype)
+        s = _shift_tile_coords(r, col * stride_w, row * stride_h, target_size, mask_dtype)
         shifted.append(s)
         tile_idx_parts.append(torch.full((_instance_count(s),), idx, dtype=torch.long))
 
@@ -337,28 +335,22 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     merged, tile_idx = _apply_score_threshold(merged, float(tiler_meta.get("score_threshold") or 0.0), tile_idx)
 
     report_origin = bool(tiler_meta.get("report_merge_origin"))
-    requested = tiler_meta.get("merge_fragments", False)  # absent means a hand-built meta: off
-    did_merge = False
-    if requested is not False:
+    did_merge = bool(tiler_meta.get("merge_fragments", False))  # absent means a hand-built meta: off
+    if did_merge:
         tolerance = tiler_meta.get("edge_tolerance")
         tolerance = DEFAULT_EDGE_TOLERANCE if tolerance is None else float(tolerance)
-        skip = None if requested is True else _auto_merge_skip_reason(is_interp)
-        if skip is not None:
-            logger.debug("tile: skipping fragment merging - %s", skip)
-        else:
-            did_merge = True
-            rc = np.array([[i // n_tiles_w, i % n_tiles_w] for i in range(n_tiles_h * n_tiles_w)])
-            origins = rc * np.array([stride_h, stride_w])
-            merged = merge_tile_fragments(
-                merged,
-                tile_idx,
-                origins,
-                (tile_h, tile_w),
-                (im_h, im_w),
-                containment=_containment_or_strict(tiler_meta.get("containment")),
-                edge_tolerance=tolerance,
-                report_origin=report_origin,
-            )
+        rc = np.array([[i // n_tiles_w, i % n_tiles_w] for i in range(n_tiles_h * n_tiles_w)])
+        origins = rc * np.array([stride_h, stride_w])
+        merged = merge_tile_fragments(
+            merged,
+            tile_idx,
+            origins,
+            (tile_h, tile_w),
+            (work_h, work_w),
+            containment=_containment_or_strict(tiler_meta.get("containment")),
+            edge_tolerance=tolerance,
+            report_origin=report_origin,
+        )
 
     # merging replaces containment suppression: it widens a box to its group's union, so a containment test
     # would delete the neighbours that union now encloses.
@@ -373,15 +365,9 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
         merged["masks"] = masks.new_zeros((0, im_h, im_w))
     if report_origin and "merge_origin" not in merged:
         merged["merge_origin"] = torch.zeros(_instance_count(merged), dtype=torch.uint8)  # no merging ran: every row stands alone
+    if is_interp:
+        merged = _rescale_to_image(merged, im_w / work_w, im_h / work_h, im_h, im_w, mask_dtype)
     return _clip_to_image(merged, im_h, im_w)
-
-
-def _auto_merge_skip_reason(is_interp: bool) -> Optional[str]:
-    """Why a grid cannot support automatic merging; None when it can.
-
-    Only grid geometry — an unsupported model type raises instead, see ``_reject_unsupported``.
-    """
-    return "scale_mode='interpolation' rescales tile origins" if is_interp else None
 
 
 def _reject_unsupported(result: Dict[str, Any]) -> None:
@@ -445,37 +431,41 @@ def _shift_tile_coords(
     result: Dict[str, Any],
     offset_x: int,
     offset_y: int,
-    sx: float,
-    sy: float,
     target_size: Tuple[int, int],
     mask_dtype: torch.dtype = torch.bool,
 ) -> Dict[str, Any]:
-    """Offset one tile's predictions into image space. Masks become ``MaskCrops`` that paste as ``mask_dtype``."""
-    scaled = sx != 1.0 or sy != 1.0
+    """Offset one tile's predictions into the tiled image's space. Masks become ``MaskCrops`` that paste as ``mask_dtype``."""
 
     def xy_fn(xy: torch.Tensor) -> torch.Tensor:
         off = torch.tensor([offset_x, offset_y], dtype=torch.float32, device=xy.device)
-        shifted = xy.float() + off
-        if scaled:
-            scale = torch.tensor([sx, sy], dtype=torch.float32, device=xy.device)
-            shifted = shifted * scale
-        return shifted
+        return xy.float() + off
 
     def mask_fn(masks: torch.Tensor) -> MaskCrops:
-        paste_x, paste_y = offset_x, offset_y
-        if scaled:
-            new_h = max(1, round(masks.shape[1] * sy))
-            new_w = max(1, round(masks.shape[2] * sx))
-            masks = (
-                torch.nn.functional.interpolate(
-                    masks.float().unsqueeze(1), size=(new_h, new_w), mode="bilinear", align_corners=False
-                ).squeeze(1)
-                > 0.5
-            )
-            paste_x, paste_y = round(offset_x * sx), round(offset_y * sy)
-        return MaskCrops.from_masks(masks, target_size, (paste_x, paste_y), mask_dtype)
+        return MaskCrops.from_masks(masks, target_size, (offset_x, offset_y), mask_dtype)
 
     return apply_coord_transform(result, xy_fn=xy_fn, mask_fn=mask_fn)
+
+
+def _rescale_to_image(merged: Dict[str, Any], sx: float, sy: float, im_h: int, im_w: int, mask_dtype: torch.dtype) -> Dict[str, Any]:
+    """Map results from the interpolated image's space back to the original image's."""
+
+    def xy_fn(xy: torch.Tensor) -> torch.Tensor:
+        scale = torch.tensor([sx, sy], dtype=torch.float32, device=xy.device)
+        return xy.float() * scale
+
+    def mask_fn(masks: torch.Tensor) -> torch.Tensor:
+        # resampling holds a float copy of both sides at once, so go in chunks: a crowded image carries hundreds
+        # of full-image masks and converting them all at once costs more than the rest of the pipeline
+        per_mask = 2 * (masks.shape[1] * masks.shape[2] + im_h * im_w)  # fp16: 2.4e-4 error against a 0.5 cut
+        chunk = max(1, _MASK_RESIZE_BUDGET // per_mask)
+        out = masks.new_empty((len(masks), im_h, im_w), dtype=mask_dtype)
+        for start in range(0, len(masks), chunk):
+            block = masks[start : start + chunk].to(torch.float16).unsqueeze(1)
+            resized = torch.nn.functional.interpolate(block, size=(im_h, im_w), mode="bilinear", align_corners=False)
+            out[start : start + chunk] = (resized.squeeze(1) > 0.5).to(mask_dtype)
+        return out
+
+    return apply_coord_transform(merged, xy_fn=xy_fn, mask_fn=mask_fn)
 
 
 def _output_mask_dtype(tile_results: List[Dict[str, Any]]) -> torch.dtype:

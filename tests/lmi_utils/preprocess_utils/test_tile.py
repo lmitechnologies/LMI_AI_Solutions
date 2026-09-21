@@ -255,26 +255,34 @@ def test_tile_masks_come_back_at_im_size_when_no_tile_detected_anything():
     assert reverted["masks"][0].shape == (0, 90, 90)
 
 
-@pytest.mark.parametrize("sx", [1.0, 0.9])
-def test_shift_keeps_mask_crops_that_paste_like_the_image_canvas(sx):
-    import torch.nn.functional as F
-
+def test_shift_keeps_mask_crops_that_paste_like_the_image_canvas():
     from lmi_utils.preprocess_utils.ops.tile import _shift_tile_coords
 
     masks = torch.zeros((3, 60, 60), dtype=torch.uint8)
     masks[0, 10:20, 40:60] = 1  # runs past the image's right edge
     masks[1, 5:50, 5:15] = 1
-    masks[2, 30:40, 55:60] = 1  # unscaled, lies wholly past the right edge
-    shifted = _shift_tile_coords({"masks": masks}, 50, 20, sx, sx, (90, 100), torch.uint8)
+    masks[2, 30:40, 55:60] = 1  # lies wholly past the right edge
+    shifted = _shift_tile_coords({"masks": masks}, 50, 20, (90, 100), torch.uint8)
 
     src, x, y = masks.bool(), 50, 20
-    if sx != 1.0:
-        size = round(60 * sx)
-        src = F.interpolate(masks.float().unsqueeze(1), size=(size, size), mode="bilinear", align_corners=False).squeeze(1) > 0.5
-        x, y = round(50 * sx), round(20 * sx)
     want = torch.zeros((3, 90, 100), dtype=torch.uint8)
     want[:, y : min(y + src.shape[1], 90), x : min(x + src.shape[2], 100)] = src[:, : 90 - y, : 100 - x]
     assert torch.equal(shifted["masks"].paste(), want)
+
+
+def test_rescale_to_image_scales_each_axis_independently():
+    from lmi_utils.preprocess_utils.ops.tile import _rescale_to_image
+
+    out = _rescale_to_image(
+        {"boxes": torch.tensor([[10.0, 20.0, 50.0, 40.0]]), "segments": [torch.tensor([[10.0, 20.0], [50.0, 40.0]])]},
+        0.5,
+        2.0,
+        200,
+        50,
+        torch.uint8,
+    )
+    assert out["boxes"].tolist() == [[5.0, 40.0, 25.0, 80.0]]
+    assert out["segments"][0].tolist() == [[5.0, 40.0], [25.0, 80.0]]
 
 
 def test_tile_apply_coords_image_level_label_propagates_to_all_tiles():
@@ -626,9 +634,8 @@ def test_tile_apply_coords_drops_sliver_labels_but_keeps_interior_fragments():
     assert out["boxes"][1].shape == (0, 4)  # tile 1's 2px sliver is dropped
 
 
-def test_tile_merge_fragments_rejects_interpolation():
-    with pytest.raises(ValueError, match="scale_mode='padding'"):
-        steps.tile(tile_size=100, stride=80, merge_fragments=True, scale_mode="interpolation")
+def test_tile_merge_fragments_accepts_interpolation():
+    steps.tile(tile_size=100, stride=80, merge_fragments=True, scale_mode="interpolation")
 
 
 def _merge_history(**kwargs):
@@ -840,8 +847,8 @@ def test_tile_merge_false_stays_off_with_overlap():
     assert out["boxes"][0].shape == (2, 4)
 
 
-def test_tile_merge_auto_does_not_validate_overlap_at_construction():
-    """Only an explicit True demands enough overlap; the default accepts any grid."""
+def test_tile_merge_does_not_validate_the_grid_at_construction():
+    """Any grid is accepted; merging adapts to it rather than being refused up front."""
     steps.tile(tile_size=100, stride=100)
     steps.tile(tile_size=100, stride=80, scale_mode="interpolation")
 
@@ -875,6 +882,46 @@ def test_report_merge_origin_still_reports_when_merging_is_off():
 def test_merge_origin_is_absent_by_default():
     reverted = _seam_pair_reverted(merge_fragments=True)
     assert "merge_origin" not in reverted
+
+
+def test_merge_joins_the_same_seam_pair_under_interpolation():
+    # 150 wide tiles to a scaled width of 160, so the union found in scaled space maps back by 150/160
+    reverted = _seam_pair_reverted(scale_mode="interpolation")
+    assert reverted["boxes"][0].shape == (1, 4)
+    assert reverted["boxes"][0][0].tolist() == pytest.approx([40 * 0.9375, 20.0, 120 * 0.9375, 50.0])
+
+
+def test_merge_under_interpolation_scales_each_axis_on_its_own():
+    # 90x150 tiles to a scaled 100x160, so x maps by 150/160 and y by 90/100
+    pre, rec = Preprocessor(), Reconstructor()
+    _, history = pre.preprocess([torch.zeros(90, 150, 3)], [steps.tile(tile_size=100, stride=60, scale_mode="interpolation")])
+    results = _empty_results(
+        n=2,
+        boxes=[torch.tensor([[40.0, 20.0, 100.0, 50.0]]), torch.tensor([[0.0, 20.0, 60.0, 50.0]])],
+        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        classes=[np.array([0], dtype=np.int32), np.array([0], dtype=np.int32)],
+    )
+    reverted = rec.reconstruct_coordinates(results, history)
+    assert reverted["boxes"][0].shape == (1, 4)
+    assert reverted["boxes"][0][0].tolist() == pytest.approx([40 * 0.9375, 20 * 0.9, 120 * 0.9375, 50 * 0.9])
+
+
+def test_merge_unions_masks_under_interpolation():
+    # two tiles each holding half of one object; the union must come back as one mask at im_size
+    pre, rec = Preprocessor(), Reconstructor()
+    _, history = pre.preprocess([torch.zeros(100, 150, 3)], [steps.tile(tile_size=100, stride=60, scale_mode="interpolation")])
+    left, right = torch.zeros((1, 100, 100)), torch.zeros((1, 100, 100))
+    left[0, 20:50, 40:100] = 1  # reaches tile 0's right edge
+    right[0, 20:50, 0:60] = 1  # reaches tile 1's left edge
+    results = _empty_results(
+        n=2,
+        masks=[left, right],
+        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        classes=[np.array([0], dtype=np.int32), np.array([0], dtype=np.int32)],
+    )
+    reverted = rec.reconstruct_coordinates(results, history)
+    assert reverted["masks"][0].shape == (1, 100, 150)
+    assert reverted["masks"][0][0, 25:45, 45:110].eq(1).all()
 
 
 def _weak_whole_and_strong_fragment(fragment_x0=0.0, **cfg):
