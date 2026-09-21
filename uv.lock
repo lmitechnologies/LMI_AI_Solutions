@@ -2263,6 +2263,7 @@ ci = [
     { name = "rfdetr" },
     { name = "scikit-learn" },
     { name = "shapely" },
+    { name = "tabulate" },
     { name = "tensorboard" },
     { name = "torch", version = "2.5.1", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci') or (platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci') or (platform_machine != 'aarch64' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (platform_python_implementation != 'CPython' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (sys_platform != 'linux' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (sys_platform == 'darwin' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci') or (sys_platform == 'darwin' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci') or (extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2')" },
     { name = "torch", version = "2.5.1+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci') or (platform_machine != 'aarch64' and sys_platform == 'linux' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci') or (platform_python_implementation != 'CPython' and sys_platform == 'linux' and extra == 'group-16-lmi-ai-solutions-ci') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci') or (sys_platform != 'darwin' and sys_platform != 'linux' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci') or (sys_platform == 'linux' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (sys_platform == 'darwin' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (sys_platform == 'darwin' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2')" },
@@ -2285,6 +2286,7 @@ gpu = [
     { name = "rfdetr" },
     { name = "scikit-learn" },
     { name = "shapely" },
+    { name = "tabulate" },
     { name = "tensorboard" },
     { name = "tensorrt" },
     { name = "torch", version = "2.5.1", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-gpu') or (platform_machine == 'aarch64' and platform_python_implementation == 'CPython' and sys_platform == 'linux' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-gpu') or (platform_machine != 'aarch64' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (platform_python_implementation != 'CPython' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (sys_platform != 'linux' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (sys_platform != 'linux' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2')" },
@@ -2305,6 +2307,7 @@ test = [
     { name = "rfdetr" },
     { name = "scikit-learn" },
     { name = "shapely" },
+    { name = "tabulate" },
     { name = "tensorboard" },
     { name = "transformers" },
     { name = "ultralytics" },
@@ -2330,6 +2333,7 @@ ci = [
     { name = "rfdetr", specifier = "==1.10.0" },
     { name = "scikit-learn", specifier = "==1.7.2" },
     { name = "shapely", specifier = "==2.1.2" },
+    { name = "tabulate", specifier = ">=0.9.0" },
     { name = "tensorboard", specifier = "==2.21.0" },
     { name = "torch", specifier = "==2.5.1", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "lmi-ai-solutions", group = "ci" } },
     { name = "torchvision", specifier = "==0.20.1", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "lmi-ai-solutions", group = "ci" } },
@@ -2350,6 +2354,7 @@ gpu = [
     { name = "rfdetr", specifier = "==1.10.0" },
     { name = "scikit-learn", specifier = "==1.7.2" },
     { name = "shapely", specifier = "==2.1.2" },
+    { name = "tabulate", specifier = ">=0.9.0" },
     { name = "tensorboard", specifier = "==2.21.0" },
     { name = "tensorrt", specifier = "==10.9.0.34" },
     { name = "torch", specifier = "==2.5.1", index = "https://download.pytorch.org/whl/cu124", conflict = { package = "lmi-ai-solutions", group = "gpu" } },
@@ -2368,6 +2373,7 @@ test = [
     { name = "rfdetr", specifier = "==1.10.0" },
     { name = "scikit-learn", specifier = "==1.7.2" },
     { name = "shapely", specifier = "==2.1.2" },
+    { name = "tabulate", specifier = ">=0.9.0" },
     { name = "tensorboard", specifier = "==2.21.0" },
     { name = "transformers", specifier = "==5.16.1" },
     { name = "ultralytics", specifier = "==8.4.127" },
@@ -5580,6 +5586,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ca/99/5a5b6f19ff9f083671ddf7b9632028436167cd3d33e11015754e41b249a4/sympy-1.13.1.tar.gz", hash = "sha256:9cebf7e04ff162015ce31c9c6c9144daa34a93bd082f54fd8f12deca4f47515f", size = 7533040, upload-time = "2024-07-19T09:26:51.238Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b2/fe/81695a1aa331a842b582453b605175f419fe8540355886031328089d840a/sympy-1.13.1-py3-none-any.whl", hash = "sha256:db36cdc64bf61b9b24578b6f7bab1ecdd2452cf008f34faa33776680c26d66f8", size = 6189177, upload-time = "2024-07-19T09:26:48.863Z" },
+]
+
+[[package]]
+name = "tabulate"
+version = "0.10.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/46/58/8c37dea7bbf769b20d58e7ace7e5edfe65b849442b00ffcdd56be88697c6/tabulate-0.10.0.tar.gz", hash = "sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d", size = 91754, upload-time = "2026-03-04T18:55:34.402Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl", hash = "sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3", size = 39814, upload-time = "2026-03-04T18:55:31.284Z" },
 ]
 
 [[package]]

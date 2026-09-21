@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 
 from anomaly_detectors.anomalib_lmi.v1.model import AnomalyModel as AnomalyModelV1
+from anomaly_detectors.anomalib_lmi.v2.model import AnomalyModel as AnomalyModelV2
 
 MAX_UINT16 = 65535
 IMG_FORMATS = [".png", ".jpg"]
@@ -27,6 +28,7 @@ def predict(
     resize=False,
     overlap_mode="average",
     annotate=False,
+    version=1,
 ):
     """generating anomaly maps for a set of images
 
@@ -36,6 +38,7 @@ def predict(
         image_size (list): the size of the input images (h,w)
         out_path (str): the output path to save the anomaly maps and summary.json
         recursive (bool, optional): whether to search images recursively. Defaults to True.
+        version (int): Anomalib major version, either 1 or 2. Defaults to 1.
     """
 
     directory_path = Path(images_path)
@@ -49,8 +52,9 @@ def predict(
     if not images:
         return
 
-    logger.info(f"Loading model: {model_path}.")
-    model = AnomalyModelV1(
+    model_class = AnomalyModelV1 if version == 1 else AnomalyModelV2
+    logger.info(f"Loading Anomalib v{version} model: {model_path}.")
+    model = model_class(
         model_path,
         image_size=image_size,
         tile=tile,
@@ -72,14 +76,7 @@ def predict(
         t0 = time.time()
         # predict() returns a list of per-image anomaly maps; this loop runs one
         # image at a time, so take the single result.
-        anom_map = model.predict(
-            img,
-            **{
-                "tiling_settings": {
-                    "overlap_mode": overlap_mode,
-                }
-            },
-        )[0].astype(np.float32)
+        anom_map = model.predict(img)[0].astype(np.float32)
         logger.debug(f"anom_map shape {anom_map.shape}")
 
         proctime.append(time.time() - t0)
@@ -170,6 +167,7 @@ if __name__ == "__main__":
     ap.add_argument("-o", "--output", type=str, required=True, help="path to the output folder")
     ap.add_argument("--height", type=int, required=False, help="input height", default=224)
     ap.add_argument("--width", type=int, required=False, help="image width", default=224)
+    ap.add_argument("--version", type=int, choices=[1, 2], default=1, help="Anomalib model version (default: 1)")
     ap.add_argument("--recursive", action="store_true", help="search images recursively")
     ap.add_argument(
         "--tile",
@@ -223,4 +221,5 @@ if __name__ == "__main__":
         args.resize,
         args.overlap_mode,
         args.annotate,
+        args.version,
     )

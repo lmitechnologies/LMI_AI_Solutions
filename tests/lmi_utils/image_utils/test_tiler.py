@@ -145,6 +145,20 @@ def test_untile_rebuilds_a_flat_image_at_any_overlap(tile, stride, overlap_mode)
     assert torch.allclose(out, im, atol=1e-3)
 
 
+@pytest.mark.parametrize("overlap_mode", ["linear", "cosine", "gaussian", "average", "max"])
+def test_feature_map_untile_blends_at_the_downscaled_size(overlap_mode):
+    # untile a model's feature maps: tiles come back smaller than the image tiles, so positions, stride and
+    # canvas rescale by tile_h/tile_size. The neighbour-aware blend must size its mask to the feature tile,
+    # not the image tile, or the broadcast would mismatch and border tiles would be tapered to no weight.
+    t = Tiler([8, 8], [4, 4])
+    t.tile(torch.zeros(1, 1, 16, 16))  # sets the grid; 3x3 tiles over a 16x16 scaled image
+    feat = torch.full((t.n_tiles[0] * t.n_tiles[1], 1, 4, 4), 7.0)  # 4x4 feature tiles at half scale
+    out = t.untile(feat, overlap_mode=overlap_mode)
+    assert out.shape == (1, 1, 8, 8)  # im_size halved with the feature maps
+    assert not torch.isnan(out).any()
+    assert torch.allclose(out, torch.full_like(out, 7.0), atol=1e-3)
+
+
 @pytest.mark.parametrize("overlap_mode", ["linear", "cosine", "gaussian"])
 def test_blended_untile_round_trips_a_random_batch(overlap_mode):
     t = Tiler([32, 32], [24, 24])
@@ -179,3 +193,15 @@ def test_interpolation_upscale_keeps_a_bool_image_binary():
     assert out.dtype == torch.bool
     assert out[0, 0, 5:11, 5:11].all()
     assert not out[0, 0, 0, :].any()
+
+
+def test_untile_non_integral_feature_scale_covers_output():
+    image = torch.ones(1, 1, 640, 640)
+    tiler = Tiler([224, 224], [112, 112])
+    features = torch.nn.functional.interpolate(tiler.tile(image), size=(55, 55), mode="nearest")
+
+    reconstructed = tiler.untile(features)
+
+    assert reconstructed.shape == (1, 1, 157, 157)
+    assert torch.isfinite(reconstructed).all()
+    assert torch.equal(reconstructed, torch.ones_like(reconstructed))

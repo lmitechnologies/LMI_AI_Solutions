@@ -25,3 +25,4 @@ RUN uv export --frozen --no-hashes --no-emit-project --only-group ci --only-grou
 RUN git clone --depth 1 https://github.com/facebookresearch/detectron2 detectron2 && \
     pip install --no-cache-dir --no-build-isolation ./detectron2 && \
     rm -rf detectron2
+

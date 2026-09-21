@@ -1,20 +1,24 @@
 import glob
+import hashlib
 import logging
 import os
 import platform
 import tempfile
+from functools import cache
 from typing import List
 
 import cv2
 import numpy as np
 import pytest
 import torch
+from anomalib import __version__ as anomalib_version
 from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
 
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v2_torchscript
 from anomaly_detectors.anomalib_lmi.v2.model import AnomalyModel as AnomalyModelV2
+from anomaly_detectors.anomalib_lmi.v2.train import build_data, build_preprocessor
 
 os.environ["TRUST_REMOTE_CODE"] = "1"
 
@@ -82,6 +86,21 @@ def test_model_class_comparison(ad_models):
     assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
 
 
+@cache
+def _fixture_digest(path: str) -> str:
+    """Short sha256 of a model fixture, so a stale or partial LFS checkout is visible in failures."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return f"{h.hexdigest()[:12]}/{os.path.getsize(path)}B"
+
+
+def _model_id(model) -> str:
+    path = getattr(model, "model_path", None)
+    return f"{type(model).__name__}({os.path.basename(path)})" if path else type(model).__name__
+
+
 def test_compare_with_anomalib(cpu_models):
     """
     compare prediction results between current implementation and anomalib
@@ -101,7 +120,16 @@ def test_compare_with_anomalib(cpu_models):
         for model in cpu_models:
             pred2 = model.predict(rgb)
             atol = 1e-2 if IS_ARM else 1e-5
-            assert np.allclose(pred, pred2, atol=atol, rtol=0.05), f"mismatch for {type(model).__name__}"
+            if not np.allclose(pred, pred2, atol=atol, rtol=0.05):
+                diff = np.abs(pred - np.squeeze(pred2))
+                over = int((diff > atol + 0.05 * np.abs(np.squeeze(pred2))).sum())
+                raise AssertionError(
+                    f"mismatch for {_model_id(model)} on {os.path.basename(p)}: "
+                    f"max|diff|={diff.max():.3e} mean={diff.mean():.3e}, {over}/{diff.size} px over tol "
+                    f"(atol={atol}, rtol=0.05) | machine={platform.machine()} IS_ARM={IS_ARM} "
+                    f"torch={torch.__version__} anomalib={anomalib_version} gpu={USE_GPU} | fixtures "
+                    f"pt={_fixture_digest(MODEL_PATH)} ts={_fixture_digest(TS_PATH)} onnx={_fixture_digest(ONNX_PATH)}"
+                )
 
 
 @pytest.mark.parametrize("warmup_size", [[672, 640], [256, 224]])
@@ -218,3 +246,60 @@ def test_compare_trt_onnx(trt_model):
         pred_trt = trt_model.predict(rgb)[0]
         pred_onnx = onnx_model.predict(rgb)[0]
         assert np.allclose(pred_trt, pred_onnx, atol=0.01, rtol=0.05), f"TRT vs ONNX mismatch for {os.path.basename(p)}"
+
+
+def test_folder_dataset_non_empty():
+    """Ensure build_data produces a non-empty samples frame with correct label values.
+
+    Regression guard: under pandas 3 StringDtype, anomalib < 2.3 compared labels against
+    DirType members rather than their .value, yielding an empty samples frame.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a minimal normal_dir structure: tmpdir/normal/img.png
+        normal_dir = os.path.join(tmpdir, "normal")
+        os.makedirs(normal_dir)
+        dummy = np.zeros((32, 32, 3), dtype=np.uint8)
+        # Two images so the 0.5 synthetic split yields at least 1 image per subset (floor(2*0.5)=1).
+        cv2.imwrite(os.path.join(normal_dir, "img0.png"), dummy)
+        cv2.imwrite(os.path.join(normal_dir, "img1.png"), dummy)
+
+        datamodule = build_data(
+            {
+                "name": "test_dataset",
+                "root": tmpdir,
+                "normal_dir": "normal",
+                "extensions": [".png"],
+                "train_batch_size": 1,
+                "eval_batch_size": 1,
+                "num_workers": 0,
+                "test_split_mode": "synthetic",
+                "test_split_ratio": 0.5,
+                "val_split_mode": "same_as_test",
+                "val_split_ratio": 0.5,
+            }
+        )
+
+        datamodule.setup()
+        samples = datamodule.train_data.samples
+
+        assert len(samples) > 0, "Dataset is empty — labels may be stored as 'DirType.NORMAL' instead of 'normal'."
+
+        label_col = "label_index" if "label_index" in samples.columns else "label"
+        assert label_col in samples.columns, f"Expected label column not found; columns: {list(samples.columns)}"
+
+        if "label" in samples.columns:
+            # Use .value if the stored object is an enum, else fall back to str().
+            bad = [v for v in samples["label"].unique() if "DirType" in str(getattr(v, "value", v))]
+            assert not bad, f"Labels contain raw StrEnum repr: {bad}."
+
+
+def test_build_preprocessor():
+    pre_processor = build_preprocessor(
+        [
+            {"class_name": "Resize", "params": {"size": [64, 32]}},
+            {"class_name": "Normalize", "params": {"mean": [0.5, 0.5, 0.5], "std": [0.5, 0.5, 0.5]}},
+        ]
+    )
+
+    assert pre_processor.transform is not None
+    assert [type(transform).__name__ for transform in pre_processor.transform.transforms] == ["Resize", "Normalize"]
