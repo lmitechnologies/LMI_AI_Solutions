@@ -434,19 +434,12 @@ class Tiler:
             ]
 
         out_tile_size = [tile_h, tile_w]
-        out_im_size = scale_2d(self.im_size, scale_h, scale_w)
-        # Scale each tile index position independently to avoid rounding stride once and accumulating error.
-        positions_h = [int(round(k * as_int(self.stride[0]) * scale_h)) for k in range(self.n_tiles[0])]
-        positions_w = [int(round(k * as_int(self.stride[1]) * scale_w)) for k in range(self.n_tiles[1])]
+        out_stride = [max(1, d) for d in scale_2d(self.stride, scale_h, scale_w)]
         out_scale_size = [
-            positions_h[-1] + out_tile_size[0] if self.n_tiles[0] > 1 else out_tile_size[0],
-            positions_w[-1] + out_tile_size[1] if self.n_tiles[1] > 1 else out_tile_size[1],
+            out_tile_size[0] + (self.n_tiles[0] - 1) * out_stride[0],
+            out_tile_size[1] + (self.n_tiles[1] - 1) * out_stride[1],
         ]
-        # out_stride is only used as blend_mask cache key; approximate from actual positions.
-        out_stride = [
-            (positions_h[-1] // (self.n_tiles[0] - 1)) if self.n_tiles[0] > 1 else out_tile_size[0],
-            (positions_w[-1] // (self.n_tiles[1] - 1)) if self.n_tiles[1] > 1 else out_tile_size[1],
-        ]
+        out_im_size = scale_2d(self.im_size, scale_h, scale_w)
         # ----------------------------------------
 
         tiles = tiles.contiguous().view(-1, self.batch_size, num_channel, tile_h, tile_w)
@@ -455,7 +448,13 @@ class Tiler:
         im = torch.zeros(self.batch_size, num_channel, *out_scale_size, device=device)
 
         if overlap_mode == OverlapMode.MAX:
-            for tile, (i, j) in zip(tiles, product(positions_h, positions_w)):
+            for tile, (i, j) in zip(
+                tiles,
+                product(
+                    range(0, out_scale_size[0] - out_tile_size[0] + 1, out_stride[0]),
+                    range(0, out_scale_size[1] - out_tile_size[1] + 1, out_stride[1]),
+                ),
+            ):
                 # Take maximum between existing values and new tile
                 im[:, :, i : i + out_tile_size[0], j : j + out_tile_size[1]] = torch.maximum(
                     im[:, :, i : i + out_tile_size[0], j : j + out_tile_size[1]],
@@ -464,8 +463,13 @@ class Tiler:
         else:
             weight_sum = torch.zeros(self.batch_size, num_channel, *out_scale_size, device=device)
 
-            # positions_h/w are the exact rounded tile origins; a range on out_stride can leave gaps at non-integral scales
-            for tile, (i, j) in zip(tiles, product(positions_h, positions_w)):
+            for tile, (i, j) in zip(
+                tiles,
+                product(
+                    range(0, out_scale_size[0] - out_tile_size[0] + 1, out_stride[0]),
+                    range(0, out_scale_size[1] - out_tile_size[1] + 1, out_stride[1]),
+                ),
+            ):
                 blend_mask = self._blend_mask(overlap_mode, device, i, j, out_tile_size, out_stride, out_scale_size)
                 blend_mask_broadcast = blend_mask.unsqueeze(0).unsqueeze(0).expand(self.batch_size, num_channel, -1, -1)
                 weighted_tile = tile * blend_mask_broadcast
