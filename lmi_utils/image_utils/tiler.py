@@ -4,7 +4,7 @@ from enum import Enum
 from itertools import product
 from math import ceil, floor
 from pathlib import Path
-from typing import NamedTuple, Tuple, Union
+from typing import NamedTuple, Tuple
 
 import torch
 from torch.nn import functional as F
@@ -246,13 +246,13 @@ class Tiler:
         self.tile_size = tile_size
         self.stride = stride
         self.im_size: list = None
-        self.scale_size: Union[list, tuple] = None
+        self.scale_size: list = None
         self.batch_size: int = None
         self.num_channel: int = None
         self.n_tiles: list = None
         self._blend_mask_cache = {}  # Cache for blend masks by overlap mode
-        self.scale_mode: Union[str, ScaleMode] = scale_mode
-        self.overlap_mode: Union[str, OverlapMode] = overlap_mode
+        self.scale_mode = ScaleMode(scale_mode)
+        self.overlap_mode = OverlapMode(overlap_mode)
 
     @classmethod
     def validate_tile_and_stride(cls, tile_size, stride):
@@ -263,6 +263,11 @@ class Tiler:
             raise ValueError(f"tile size must be a list of two elements. Got: {tile_size}")
         if not isinstance(stride, list) or len(stride) != 2:
             raise ValueError(f"stride must be a list of two elements. Got: {stride}")
+        for name, values in (("tile size", tile_size), ("stride", stride)):
+            for v in values:
+                v = float(v.item()) if isinstance(v, torch.Tensor) else float(v)
+                if v < 1 or v != int(v):
+                    raise ValueError(f"{name} must be whole numbers of at least 1. Got: {values}")
         if stride[0] > tile_size[0] or stride[1] > tile_size[1]:
             raise ValueError("Stride size must be smaller or equal to tile size")
 
@@ -284,6 +289,8 @@ class Tiler:
         for k, v in metadata.items():
             if k in cls.EXPECTED_FIELDS and getattr(obj, k, None) is None:
                 setattr(obj, k, v)
+        if metadata.get("scale_mode") is not None:
+            obj.scale_mode = ScaleMode(metadata["scale_mode"])
         return obj
 
     @classmethod
@@ -305,6 +312,8 @@ class Tiler:
         for k, v in metadata.items():
             if k in cls.EXPECTED_FIELDS and getattr(obj, k, None) is None:
                 setattr(obj, k, v)
+        if metadata.get("scale_mode") is not None:
+            obj.scale_mode = ScaleMode(metadata["scale_mode"])
         return obj
 
     def to_dict(self):
@@ -319,6 +328,8 @@ class Tiler:
             if value is None:
                 raise RuntimeError(f"Tiler metadata incomplete. Missing field: {field}")
             metadata[field] = value
+        # not in EXPECTED_FIELDS: metadata written before this existed must still load
+        metadata["scale_mode"] = self.scale_mode.value
         return metadata
 
     def write_metadata(self, out_path):
@@ -365,13 +376,14 @@ class Tiler:
         # Convert string to enum if needed
         if not isinstance(mode, ScaleMode):
             mode = ScaleMode(mode)
+        self.scale_mode = mode  # untile has to undo exactly what was done here
 
         self.batch_size, self.num_channel, im_h, im_w = im.shape
         self.im_size = [im_h, im_w]
         device = im.device
 
         # scale image
-        self.scale_size = compute_new_edges([im_h, im_w], self.tile_size, self.stride)
+        self.scale_size = list(compute_new_edges([im_h, im_w], self.tile_size, self.stride))
         resized_im = upscale_image(im, self.scale_size, mode)
 
         if self.scale_size[0] != im_h or self.scale_size[1] != im_w:
@@ -442,6 +454,7 @@ class Tiler:
             Tensor: the reconstructed image with smooth blending
         """
         self._validate_state()
+        requested = scale_mode
         scale_mode = scale_mode or self.scale_mode
         overlap_mode = overlap_mode or self.overlap_mode
         if not isinstance(scale_mode, (str, ScaleMode)):
@@ -454,6 +467,10 @@ class Tiler:
             scale_mode = ScaleMode(scale_mode)
         if not isinstance(overlap_mode, OverlapMode):
             overlap_mode = OverlapMode(overlap_mode)
+        # padding crops and interpolation resizes, so undoing with the other mode returns the right shape
+        # full of wrong pixels; tile() records what it did, and metadata carries it between runs
+        if requested is not None and scale_mode != self.scale_mode:
+            raise ValueError(f"tiles were built with scale mode {ScaleMode(self.scale_mode).value}, cannot untile as {scale_mode.value}")
 
         # anomalib traces this for export, and a traced shape is 0-dim tensors rather than ints
         n_tiles_total, num_channel, tile_h, tile_w = (as_int(d) for d in tiles.shape)
@@ -507,6 +524,8 @@ class Tiler:
                 raise ValueError(f"Expected tile size {want} at scale {expected_scale}, got [{tile_h}, {tile_w}]")
 
         scale_h, scale_w = tile_h / tile_size[0], tile_w / tile_size[1]
+        if scale_h > 1 or scale_w > 1:  # a feature map is never larger than the tile it came from
+            raise ValueError(f"Tiles [{tile_h}, {tile_w}] are larger than tile_size {tile_size}; untile does not upscale")
 
         rows, cols = self._checked_grid()
 

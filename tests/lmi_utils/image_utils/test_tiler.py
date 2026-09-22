@@ -353,3 +353,61 @@ def test_tile_boxes_rejects_metadata_that_contradicts_the_grid():
 
     with pytest.raises(ValueError, match="does not match"):
         Tiler.from_dict(meta).tile_boxes()
+
+
+def test_untile_refuses_a_scale_mode_the_tiles_were_not_built_with():
+    # padding crops and interpolation resizes, so the wrong one returns the right shape full of wrong pixels
+    t = Tiler([32, 32], [16, 16])
+    im = torch.rand(1, 1, 50, 50)
+    tiles = t.tile(im, ScaleMode.PADDING)
+
+    with pytest.raises(ValueError, match="cannot untile as interpolation"):
+        t.untile(tiles, scale_mode=ScaleMode.INTERPOLATION)
+
+    assert torch.allclose(t.untile(tiles, scale_mode=ScaleMode.PADDING), im, atol=1e-5)
+
+
+def test_scale_mode_survives_a_metadata_round_trip(tmp_path):
+    # the mode lives outside EXPECTED_FIELDS, so a second process untiling from json still undoes the right thing
+    t = Tiler([32, 32], [16, 16])
+    t.tile(torch.rand(1, 1, 50, 50), ScaleMode.INTERPOLATION)
+    t.write_metadata(tmp_path)
+
+    restored = Tiler.from_json(tmp_path / "metadata.json")
+
+    assert restored.scale_mode == ScaleMode.INTERPOLATION
+    with pytest.raises(ValueError, match="cannot untile as padding"):
+        restored.untile(torch.rand(9, 1, 32, 32), scale_mode=ScaleMode.PADDING)
+
+
+def test_metadata_without_a_scale_mode_still_loads():
+    # json written before scale_mode was recorded must keep working
+    t = Tiler([32, 32], [16, 16])
+    t.tile(torch.rand(1, 1, 64, 64))
+    meta = t.to_dict()
+    del meta["scale_mode"]
+
+    assert Tiler.from_dict(meta).untile(torch.rand(9, 1, 32, 32)).shape == (1, 1, 64, 64)
+
+
+@pytest.mark.parametrize(["tile", "stride"], [([32, 32], [0, 0]), ([32, 32], [-16, -16]), ([0, 0], [0, 0]), ([32.5, 32.5], [16, 16])])
+def test_tiler_rejects_sizes_that_cannot_make_a_grid(tile, stride):
+    # a negative stride used to build an empty grid with no error at all
+    with pytest.raises(ValueError, match="whole numbers of at least 1"):
+        Tiler(tile, stride)
+
+
+def test_untile_refuses_tiles_larger_than_the_tile_size():
+    t = Tiler([32, 32], [16, 16])
+    t.tile(torch.rand(1, 1, 64, 64))
+
+    with pytest.raises(ValueError, match="untile does not upscale"):
+        t.untile(torch.rand(9, 1, 64, 64))
+
+
+def test_scale_size_is_a_list_before_and_after_a_round_trip():
+    t = Tiler([32, 32], [16, 16])
+    t.tile(torch.rand(1, 1, 64, 64))
+
+    assert isinstance(t.scale_size, list)
+    assert Tiler.from_dict(t.to_dict()).to_dict() == t.to_dict()
