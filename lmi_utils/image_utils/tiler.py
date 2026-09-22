@@ -401,6 +401,8 @@ class Tiler:
         Args:
             tiles (Torch): the tiles tensor in the format: [n_tiles*batch, c, tile_h, tile_w]
             overlap_mode (str | OverlapMode, optional): overlap handling mode. Defaults to self.overlap_mode.
+            expected_scale (float, optional): require the tiles to be this multiple of ``tile_size``. Pass 1 for image
+                tiles, so a wrong tile size raises instead of reconstructing at the wrong scale.
 
         Returns:
             Tensor: the reconstructed image with smooth blending
