@@ -205,3 +205,90 @@ def test_untile_non_integral_feature_scale_covers_output():
     assert reconstructed.shape == (1, 1, 157, 157)
     assert torch.isfinite(reconstructed).all()
     assert torch.equal(reconstructed, torch.ones_like(reconstructed))
+
+
+def test_untile_returns_the_size_it_asked_for():
+    # 752 px at 1/32 is 23.5 feature columns, and rounding asked for 24 from a 23 column canvas; the crop
+    # in downscale_image then quietly handed back 23, so the returned shape did not match the computed one
+    tiler = Tiler([32, 32], [16, 16])
+    flat = torch.full((1, 1, 480, 752), 100.0)
+    features = torch.nn.functional.interpolate(tiler.tile(flat), size=(1, 1), mode="nearest")
+
+    out = tiler.untile(features)
+
+    assert out.shape == (1, 1, 15, 23)  # floor(480/32), floor(752/32)
+    assert torch.equal(out, torch.full_like(out, 100.0))
+
+
+def test_untile_never_returns_an_empty_image():
+    # 97 px at 1/224 floors to 0 rows, and an anomaly map with no rows is not something a caller can use
+    tiler = Tiler([224, 224], [112, 112])
+    features = torch.nn.functional.interpolate(tiler.tile(torch.ones(1, 1, 97, 131)), size=(1, 1), mode="nearest")
+
+    out = tiler.untile(features)
+
+    assert out.shape == (1, 1, 1, 1)
+
+
+@pytest.mark.parametrize("feature_hw, expected", [((7, 7), (14, 14)), ((28, 7), (56, 14)), ((55, 55), (110, 110))])
+def test_untile_scales_each_axis_on_its_own(feature_hw, expected):
+    # a feature map need not keep the tile's aspect ratio; every axis of the output grid is derived separately
+    tiler = Tiler([224, 112], [112, 56])
+    image = torch.ones(1, 1, 448, 224)
+    features = torch.nn.functional.interpolate(tiler.tile(image), size=feature_hw, mode="nearest")
+
+    out = tiler.untile(features)
+
+    assert out.shape == (1, 1, *expected)
+    assert torch.equal(out, torch.ones_like(out))
+
+
+def test_tiler_state_may_hold_tensors():
+    # metadata round-trips through torch tensors, and untile rounds with them
+    src = Tiler([32, 32], [16, 16])
+    src.tile(torch.rand(1, 1, 64, 64))
+    as_tensors = {k: ([torch.tensor(x) for x in v] if isinstance(v, (list, tuple)) else v) for k, v in src.to_dict().items()}
+
+    tiler = Tiler.from_dict(as_tensors)
+
+    assert tiler.untile(torch.rand(9, 1, 32, 32)).shape == (1, 1, 64, 64)
+    assert tiler.tile_boxes().shape == (9, 4)
+
+
+def test_untile_survives_tracing():
+    # anomalib traces the model to export it, and under tracing a derived tensor's shape is 0-dim tensors,
+    # so every dimension untile reads has to be pulled back to an int before any arithmetic
+
+    class Tiled(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.tiler = Tiler([64, 64], [32, 32])
+
+        def forward(self, x):
+            features = torch.nn.functional.avg_pool2d(self.tiler.tile(x), 4)
+            return self.tiler.untile(features)
+
+    image = torch.rand(1, 3, 224, 224)
+    assert Tiled()(image).shape == (1, 3, 56, 56)
+    torch.jit.trace(Tiled(), image, check_trace=False)
+
+
+def test_expected_scale_rejects_tiles_that_are_not_image_tiles():
+    # callers that untile image tiles pass expected_scale=1, so a wrong tile size raises instead of
+    # being read as a feature map and rebuilt at that scale
+    tiler = Tiler([32, 32], [16, 16])
+    tiler.tile(torch.rand(1, 1, 64, 64))
+
+    with pytest.raises(ValueError, match=r"Expected tile size \[32, 32\]"):
+        tiler.untile(torch.rand(9, 1, 16, 16), expected_scale=1)
+
+    assert tiler.untile(torch.rand(9, 1, 32, 32), expected_scale=1).shape == (1, 1, 64, 64)
+
+
+def test_expected_scale_admits_a_known_feature_scale():
+    tiler = Tiler([32, 32], [16, 16])
+    tiler.tile(torch.rand(1, 1, 64, 64))
+
+    assert tiler.untile(torch.rand(9, 1, 8, 8), expected_scale=0.25).shape == (1, 1, 16, 16)
+    with pytest.raises(ValueError, match="at scale 0.25"):
+        tiler.untile(torch.rand(9, 1, 4, 4), expected_scale=0.25)

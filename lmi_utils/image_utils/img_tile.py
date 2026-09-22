@@ -103,7 +103,7 @@ def to_images(source, dest, mode=ScaleMode.PADDING):
             tiles[i] = im
 
         # save image
-        im = tiler.untile(tiles, mode).squeeze()
+        im = tiler.untile(tiles, mode, expected_scale=1).squeeze()
         torchvision.io.write_png(im, str(dest_path / (fname + ".png")))
 
 

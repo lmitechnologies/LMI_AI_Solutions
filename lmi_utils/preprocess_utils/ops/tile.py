@@ -233,7 +233,7 @@ class TileOperation(Operation[TileConfig, TileMeta]):
                 batch_hwc = batch_hwc.unsqueeze(-1)
             batch_chw = batch_hwc.permute(0, 3, 1, 2)  # [N, C, H, W]
 
-            restored_batch = tiler.untile(batch_chw, scale_mode=meta.scale_modes[i], overlap_mode=meta.overlap_modes[i])
+            restored_batch = tiler.untile(batch_chw, scale_mode=meta.scale_modes[i], overlap_mode=meta.overlap_modes[i], expected_scale=1)
             restored_img = restored_batch.squeeze(0).permute(1, 2, 0)
             if add_channel:
                 restored_img = restored_img.squeeze(-1)
