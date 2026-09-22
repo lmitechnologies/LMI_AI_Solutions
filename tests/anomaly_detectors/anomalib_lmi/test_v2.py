@@ -3,6 +3,8 @@ import hashlib
 import logging
 import os
 import platform
+import subprocess
+import sys
 import tempfile
 from functools import cache
 from typing import List
@@ -11,6 +13,7 @@ import cv2
 import numpy as np
 import pytest
 import torch
+import yaml
 from anomalib import __version__ as anomalib_version
 from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
@@ -330,3 +333,79 @@ def test_unknown_tiler_type_is_rejected_at_config_time(tiler_type):
 
     with pytest.raises(ValueError, match="Unknown tiler_type"):
         TilerConfigCallback(enable=True, tile_size=224, stride=112, tiler_class=tiler_type)
+
+
+def _write_padim_config(root, tile_size, stride, image_size=(448, 448)):
+    """A config for the training CLI, with the shipped assets copied into the normal_dir layout Folder expects."""
+    normal = root / "data" / "train"
+    normal.mkdir(parents=True)
+    for p in sorted(glob.glob(os.path.join(DATA_PATH, "*good*.png"))):
+        cv2.imwrite(str(normal / os.path.basename(p)), cv2.imread(p))
+    assert list(normal.iterdir()), f"no training images under {DATA_PATH}"
+
+    params = {"backbone": "resnet18", "layers": ["layer1", "layer2", "layer3"], "pre_trained": False, "image_size": list(image_size)}
+    if tile_size is not None:
+        params |= {"tile_size": tile_size, "stride": stride}
+    config = {
+        "model": {"class_name": "Padim", "params": params},
+        "data": {
+            "name": "padim_tiling",
+            "root": str(root / "data"),
+            "normal_dir": "train",
+            "extensions": [".png"],
+            "train_batch_size": 2,
+            "eval_batch_size": 2,
+            "num_workers": 0,
+            "test_split_mode": "synthetic",
+            "test_split_ratio": 0.5,
+            "val_split_mode": "same_as_test",
+            "val_split_ratio": 0.5,
+        },
+        "engine": {"max_epochs": 1, "accelerator": "gpu", "devices": 1, "default_root_dir": str(root / "out")},
+    }
+    config_path = root / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    return config_path
+
+
+def _train_via_cli(config_path):
+    """Run the training entry point the way a user does, and return the checkpoint it writes."""
+    result = subprocess.run(
+        [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v2.train", "--config", str(config_path), "--skip-mem-estimate"],
+        capture_output=True,
+        text=True,
+        cwd=os.getcwd(),
+    )
+    assert result.returncode == 0, f"training CLI failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+    return result
+
+
+@pytest.mark.skipif(not USE_GPU, reason="the training CLI calls torch.cuda.reset_peak_memory_stats unconditionally")
+def test_padim_trains_through_the_cli_with_224_tiles_and_112_stride(tmp_path):
+    """A 448 image at tile 224 / stride 112 is a 3x3 grid; resnet18 layer1 puts the embedding at 1/4 scale."""
+    config_path = _write_padim_config(tmp_path, tile_size=224, stride=112)
+
+    result = _train_via_cli(config_path)
+    assert "Tiling enabled: tile_size=224, stride=112, tiler=CallbackTiler" in result.stdout + result.stderr
+
+    ckpt = torch.load(tmp_path / "out" / "model.ckpt", map_location="cpu", weights_only=False)
+    state = ckpt["state_dict"]
+    # the gaussian is fit over the untiled embedding grid, so tiling must have round-tripped at feature scale
+    assert state["model.gaussian.mean"].shape[-1] == (448 // 4) ** 2
+    assert torch.isfinite(state["model.gaussian.mean"]).all()
+    assert torch.isfinite(state["model.gaussian.inv_covariance"]).all()
+
+
+@pytest.mark.skipif(not USE_GPU, reason="the training CLI calls torch.cuda.reset_peak_memory_stats unconditionally")
+def test_padim_cli_tiled_and_untiled_agree_on_the_embedding_grid(tmp_path):
+    # tiling changes what the backbone sees, not the shape contract downstream
+    tiled = _train_via_cli(_write_padim_config(tmp_path / "tiled", tile_size=224, stride=112))
+    untiled = _train_via_cli(_write_padim_config(tmp_path / "plain", tile_size=None, stride=None))
+    assert "Tiling enabled" in tiled.stdout + tiled.stderr
+    assert "Tiling enabled" not in untiled.stdout + untiled.stderr
+
+    def mean_shape(name):
+        ckpt = torch.load(tmp_path / name / "out" / "model.ckpt", map_location="cpu", weights_only=False)
+        return ckpt["state_dict"]["model.gaussian.mean"].shape
+
+    assert mean_shape("tiled") == mean_shape("plain")

@@ -139,6 +139,7 @@ def get_image_size(model) -> Optional[tuple]:
 def build_tiler(tile_size, stride, tiler_cls_name=None):
     if tile_size is None:
         return []
+    logger.info(f"Tiling enabled: tile_size={tile_size}, stride={stride}, tiler={tiler_cls_name or 'CallbackTiler'}")
     return [TilerConfigCallback(enable=True, tile_size=tile_size, stride=stride, tiler_class=tiler_cls_name)]
 
 
