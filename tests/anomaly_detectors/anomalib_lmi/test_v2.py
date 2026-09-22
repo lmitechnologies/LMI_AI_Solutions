@@ -361,7 +361,7 @@ def _write_padim_config(root, tile_size, stride, image_size=(448, 448)):
             "val_split_mode": "same_as_test",
             "val_split_ratio": 0.5,
         },
-        "engine": {"max_epochs": 1, "accelerator": "gpu", "devices": 1, "default_root_dir": str(root / "out")},
+        "engine": {"max_epochs": 1, "accelerator": "auto", "devices": 1, "default_root_dir": str(root / "out")},
     }
     config_path = root / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))
@@ -380,7 +380,6 @@ def _train_via_cli(config_path):
     return result
 
 
-@pytest.mark.skipif(not USE_GPU, reason="the training CLI calls torch.cuda.reset_peak_memory_stats unconditionally")
 def test_padim_trains_through_the_cli_with_224_tiles_and_112_stride(tmp_path):
     """A 448 image at tile 224 / stride 112 is a 3x3 grid; resnet18 layer1 puts the embedding at 1/4 scale."""
     config_path = _write_padim_config(tmp_path, tile_size=224, stride=112)
@@ -396,7 +395,6 @@ def test_padim_trains_through_the_cli_with_224_tiles_and_112_stride(tmp_path):
     assert torch.isfinite(state["model.gaussian.inv_covariance"]).all()
 
 
-@pytest.mark.skipif(not USE_GPU, reason="the training CLI calls torch.cuda.reset_peak_memory_stats unconditionally")
 def test_padim_cli_tiled_and_untiled_agree_on_the_embedding_grid(tmp_path):
     # tiling changes what the backbone sees, not the shape contract downstream
     tiled = _train_via_cli(_write_padim_config(tmp_path / "tiled", tile_size=224, stride=112))
