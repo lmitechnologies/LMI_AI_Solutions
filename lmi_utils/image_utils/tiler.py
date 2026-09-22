@@ -430,6 +430,7 @@ class Tiler:
             im = torch.full(canvas, float("-inf"), dtype=work_dtype, device=device)
             for tile, (i, j) in zip(tiles, positions):
                 im[:, :, i : i + tile_h, j : j + tile_w] = torch.maximum(im[:, :, i : i + tile_h, j : j + tile_w], tile)
+            im = torch.where(im.isneginf(), torch.zeros_like(im), im)
         else:
             im = torch.zeros(canvas, dtype=work_dtype, device=device)
             weight_sum = torch.zeros(grid.scale_size, dtype=work_dtype, device=device)
