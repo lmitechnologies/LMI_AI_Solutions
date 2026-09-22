@@ -193,7 +193,7 @@ def main():
     tiler_cls_name = model_params.pop("tiler_type", None)
     precision = model_params.get(
         "precision", PrecisionType.FLOAT32
-    .lower()
+    ).lower()
     tiler_callbacks = build_tiler(
         model_params.pop("tile_size", None),
         model_params.pop("stride", None),
