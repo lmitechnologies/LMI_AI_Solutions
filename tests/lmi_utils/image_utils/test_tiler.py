@@ -292,3 +292,64 @@ def test_expected_scale_admits_a_known_feature_scale():
     assert tiler.untile(torch.rand(9, 1, 8, 8), expected_scale=0.25).shape == (1, 1, 16, 16)
     with pytest.raises(ValueError, match="at scale 0.25"):
         tiler.untile(torch.rand(9, 1, 4, 4), expected_scale=0.25)
+
+
+def test_untile_rounds_integer_seams_instead_of_truncating():
+    # the blend canvas is float, and a plain .to(uint8) always cut downward, biasing every seam
+    t = Tiler([32, 32], [16, 16])
+    tiles = t.tile(torch.zeros(1, 1, 64, 64, dtype=torch.uint8)).clone()
+    tiles[0], tiles[1] = 201, 202  # the seam they share averages 201.5
+
+    out = t.untile(tiles, overlap_mode="average")
+
+    assert out.dtype == torch.uint8
+    assert out[0, 0, 0, 16:32].unique().tolist() == [202]
+
+
+def test_untile_thresholds_a_bool_mask_at_half():
+    # .to(bool) made any non-zero True, so a seam only one tile claimed still came back set
+    t = Tiler([32, 32], [16, 16])
+    clean = torch.zeros(1, 1, 64, 64, dtype=torch.bool)
+    clean[0, 0, 8:40, 8:40] = True
+    assert torch.equal(t.untile(t.tile(clean)), clean)
+
+    tiles = t.tile(torch.zeros(1, 1, 64, 64, dtype=torch.bool)).clone()
+    tiles[0] = True  # one of the two tiles covering the seam
+
+    assert t.untile(tiles, overlap_mode="average")[0, 0, 0, 16:32].unique().tolist() == [False]
+
+
+def test_untile_max_mode_keeps_negative_values():
+    # the canvas was zeroed, so torch.maximum floored every negative value at 0
+    t = Tiler([64, 64], [32, 32])
+    im = torch.full((1, 1, 128, 128), -5.0)
+
+    out = t.untile(t.tile(im), overlap_mode="max")
+
+    assert torch.equal(out, im)
+
+
+@pytest.mark.parametrize(["im", "tile", "stride"], [(torch.rand(1, 3, 400, 400), 224, 112), (torch.rand(1, 1, 300, 300), 128, 64)])
+def test_interpolation_round_trip_resamples_both_ways(im, tile, stride):
+    # upscale went bilinear while downscale kept torch's nearest default, so the reverse dropped whole columns;
+    # the existing interpolation tests all use sizes that divide evenly, where neither direction resamples at all
+    t = Tiler([tile, tile], [stride, stride])
+    assert tuple(t.tile(im, ScaleMode.INTERPOLATION).shape[2:]) == (tile, tile)
+    assert tuple(t.scale_size) != tuple(im.shape[2:])  # this case really does resize
+
+    out = t.untile(t.tile(im, ScaleMode.INTERPOLATION), ScaleMode.INTERPOLATION)
+
+    assert out.shape == im.shape
+    smooth = torch.linspace(0, 1, im.shape[-1]).expand(im.shape[0], im.shape[1], im.shape[-2], im.shape[-1]).contiguous()
+    back = t.untile(t.tile(smooth, ScaleMode.INTERPOLATION), ScaleMode.INTERPOLATION)
+    assert torch.allclose(back, smooth, atol=5e-4)  # a nearest reverse lands around 3e-3 on this ramp
+
+
+def test_tile_boxes_rejects_metadata_that_contradicts_the_grid():
+    src = Tiler([32, 32], [16, 16])
+    src.tile(torch.rand(1, 1, 64, 64))
+    meta = src.to_dict()
+    meta["n_tiles"] = [99, 99]
+
+    with pytest.raises(ValueError, match="does not match"):
+        Tiler.from_dict(meta).tile_boxes()

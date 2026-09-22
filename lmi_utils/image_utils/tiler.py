@@ -132,15 +132,27 @@ def create_blend_mask(
     return mask
 
 
+def restore_dtype(image: torch.Tensor, dtype: torch.dtype) -> torch.Tensor:
+    """Cast a float working tensor back to ``dtype``.
+
+    A plain ``.to()`` truncates integers and turns any non-zero into ``True``, so a seam averaging 200.5 comes
+    back 200 and a mask seam averaging 0.5 comes back set.
+    """
+    if image.dtype == dtype:
+        return image
+    if dtype == torch.bool:  # a bool image is a mask, so cut it rather than rounding
+        return image > 0.5
+    if not dtype.is_floating_point:
+        return image.round().clamp(torch.iinfo(dtype).min, torch.iinfo(dtype).max).to(dtype)
+    return image.to(dtype)
+
+
 def _resample(image: torch.Tensor, size: tuple) -> torch.Tensor:
     """Bilinear resize; torch resamples floats only, so anything else goes via float and back."""
-    dtype = image.dtype
     if image.is_floating_point():
         return F.interpolate(image, size=size, mode="bilinear", align_corners=False)
     out = F.interpolate(image.float(), size=size, mode="bilinear", align_corners=False)
-    if dtype == torch.bool:  # a bool image is a mask, so cut it rather than rounding
-        return out > 0.5
-    return out.round().clamp(torch.iinfo(dtype).min, torch.iinfo(dtype).max).to(dtype)
+    return restore_dtype(out, image.dtype)
 
 
 @torch.inference_mode()
@@ -187,7 +199,7 @@ def downscale_image(image: torch.Tensor, size: tuple, mode: ScaleMode = ScaleMod
     if mode == ScaleMode.PADDING:
         image = image[:, :, :input_h, :input_w]
     elif mode == ScaleMode.INTERPOLATION:
-        image = F.interpolate(input=image, size=(input_h, input_w))
+        image = _resample(image, (input_h, input_w))  # bilinear, to match upscale_image
     else:
         msg = f"Unknown mode {mode}. Only padding and interpolation is available."
         raise ValueError(msg)
@@ -392,6 +404,13 @@ class Tiler:
         cols = list(range(0, as_int(self.scale_size[1]) - tile_w + 1, stride_w))
         return rows, cols
 
+    def _checked_grid(self) -> Tuple[list, list]:
+        """Grid positions, cross-checked against the recorded n_tiles, which restored metadata can contradict."""
+        rows, cols = self._grid_positions()
+        if [len(rows), len(cols)] != [as_int(n) for n in self.n_tiles]:
+            raise ValueError(f"Metadata grid {self.n_tiles} does not match tile_size/stride/scale_size")
+        return rows, cols
+
     def tile_boxes(self) -> torch.Tensor:
         """(n, 4) xyxy box per tile, one row per tile in the row-major order ``tile`` emits them.
 
@@ -399,7 +418,7 @@ class Tiler:
         """
         self._validate_state()
         tile_h, tile_w = as_int(self.tile_size[0]), as_int(self.tile_size[1])
-        rows, cols = self._grid_positions()
+        rows, cols = self._checked_grid()
         return torch.tensor([[j, i, j + tile_w, i + tile_h] for i, j in product(rows, cols)], dtype=torch.float32)
 
     @torch.inference_mode()
@@ -449,14 +468,20 @@ class Tiler:
         tiles = tiles.contiguous().view(-1, batch_size, num_channel, tile_h, tile_w)
         device = tiles.device
 
-        im = torch.zeros(batch_size, num_channel, *grid.scale_size, device=device)
+        # blending needs fractional weights, so the canvas is float whatever the tiles are
+        work_dtype = torch.float64 if tiles.dtype == torch.float64 else torch.float32
+        canvas = (batch_size, num_channel, *grid.scale_size)
 
         if overlap_mode == OverlapMode.MAX:
+            # a zeroed canvas would floor the result, so start below every value a tile can hold
+            im = torch.full(canvas, float("-inf"), dtype=work_dtype, device=device)
             for tile, (i, j) in zip(tiles, positions):
                 # Take maximum between existing values and new tile
                 im[:, :, i : i + tile_h, j : j + tile_w] = torch.maximum(im[:, :, i : i + tile_h, j : j + tile_w], tile)
+            im = torch.where(im.isneginf(), torch.zeros_like(im), im)
         else:
-            weight_sum = torch.zeros(batch_size, num_channel, *grid.scale_size, device=device)
+            im = torch.zeros(canvas, dtype=work_dtype, device=device)
+            weight_sum = torch.zeros(canvas, dtype=work_dtype, device=device)
 
             for tile, (i, j) in zip(tiles, positions):
                 blend_mask = self._blend_mask(overlap_mode, device, i, j, grid)
@@ -465,10 +490,10 @@ class Tiler:
                 im[:, :, i : i + tile_h, j : j + tile_w] += tile * blend_mask_broadcast
                 weight_sum[:, :, i : i + tile_h, j : j + tile_w] += blend_mask_broadcast
 
-            eps = 1e-8
-            im = torch.div(im, weight_sum + eps)
+            # clamp rather than add: a covered pixel must divide by its exact weight, not weight + eps
+            im = torch.div(im, weight_sum.clamp(min=1e-8))
 
-        return downscale_image(im, grid.im_size, scale_mode).to(tiles.dtype)
+        return restore_dtype(downscale_image(im, grid.im_size, scale_mode), tiles.dtype)
 
     def _out_grid(self, tile_h: int, tile_w: int, expected_scale=None) -> "_OutGrid":
         """The grid ``untile`` writes into, at the scale of the tiles handed back.
@@ -483,9 +508,7 @@ class Tiler:
 
         scale_h, scale_w = tile_h / tile_size[0], tile_w / tile_size[1]
 
-        rows, cols = self._grid_positions()
-        if [len(rows), len(cols)] != [as_int(n) for n in self.n_tiles]:
-            raise ValueError(f"Metadata grid {self.n_tiles} does not match tile_size/stride/scale_size")
+        rows, cols = self._checked_grid()
 
         # scale each position off its own row/column, so a non-integral scale cannot accumulate rounding error
         positions_h = [int(round(r * scale_h)) for r in rows]
