@@ -191,13 +191,11 @@ def main():
     # --- Build Model Dynamically ---
     model_params = cfg["model"]["params"]
     tiler_cls_name = model_params.pop("tiler_type", None)
-    precision = model_params.get(
-        "precision", PrecisionType.FLOAT32
-    ).lower()
+    precision = model_params.get("precision", PrecisionType.FLOAT32).lower()
     tiler_callbacks = build_tiler(
         model_params.pop("tile_size", None),
         model_params.pop("stride", None),
-        precision=precision
+        tiler_cls_name=tiler_cls_name,
     )
     model = build_model(cfg["model"])
 
@@ -213,6 +211,7 @@ def main():
         accelerator=eng_cfg.get("accelerator", "gpu"),
         devices=eng_cfg["devices"],
         default_root_dir=Path(eng_cfg["default_root_dir"]),
+        precision=precision,
         callbacks=tiler_callbacks,
     )
 
@@ -259,17 +258,17 @@ def main():
     # Avoid unsupported data type (half precision) issues (ex. reflection_pad2d)
     model = model.float()
 
-    def export_engine(external_data=False):
+    def export_onnx(external_data=False):
         onnx_kwargs = {"external_data": external_data}
         engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model), onnx_kwargs=onnx_kwargs)
 
     try:
-        export_engine()
+        export_onnx()
     except RuntimeError as e:
         if "larger than 2GiB limit" in str(e):
             # Retry export with external data
             logger.info("2GiB onnx export limit exceeded, export will include additional files.")
-            export_engine(external_data=True)
+            export_onnx(external_data=True)
         else:
             raise e
 
