@@ -303,3 +303,30 @@ def test_build_preprocessor():
 
     assert pre_processor.transform is not None
     assert [type(transform).__name__ for transform in pre_processor.transform.transforms] == ["Resize", "Normalize"]
+
+
+@pytest.mark.parametrize(
+    ["tiler_type", "expected"],
+    [(None, "CallbackTiler"), ("CallbackTiler", "CallbackTiler"), ("AnomalibTiler", "Tiler")],
+)
+def test_tiler_type_selects_the_tiler(tiler_type, expected):
+    from anomaly_detectors.anomalib_lmi.v2.tiling import TilerConfigCallback
+
+    callback = TilerConfigCallback(enable=True, tile_size=224, stride=112, tiler_class=tiler_type)
+    tiler = callback.tiler_class(tile_size=224, stride=112, mode=callback.mode)
+
+    assert type(tiler).__name__ == expected
+    tiles = tiler.tile(torch.rand(1, 3, 448, 448))
+    assert tuple(tiles.shape) == (9, 3, 224, 224)
+    # both tilers untile a feature map back to the feature scale, not the image scale
+    assert tuple(tiler.untile(torch.nn.functional.interpolate(tiles, size=(28, 28), mode="nearest")).shape) == (1, 3, 56, 56)
+
+
+@pytest.mark.parametrize("tiler_type", ["Tiler", "logging", "NotATiler"])
+def test_unknown_tiler_type_is_rejected_at_config_time(tiler_type):
+    # a globals() lookup also reached imports and the raw Tiler, which has no mode argument and only
+    # failed once setup ran, well after the config was accepted
+    from anomaly_detectors.anomalib_lmi.v2.tiling import TilerConfigCallback
+
+    with pytest.raises(ValueError, match="Unknown tiler_type"):
+        TilerConfigCallback(enable=True, tile_size=224, stride=112, tiler_class=tiler_type)

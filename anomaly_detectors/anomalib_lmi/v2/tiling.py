@@ -37,6 +37,10 @@ class CallbackTiler(Tiler):
         return self.scale_mode
 
 
+# the allowed tiler classes
+TILERS = {"CallbackTiler": CallbackTiler, "AnomalibTiler": AnomalibTiler}
+
+
 class TilerConfigCallback(TilerConfigurationCallback):
     """Callback for configuring image tiling operations"""
 
@@ -56,7 +60,10 @@ class TilerConfigCallback(TilerConfigurationCallback):
         self.stride = stride
         self.remove_border_count = remove_border_count
         self.mode = mode
-        tiler_class = globals()[tiler_class] if isinstance(tiler_class, str) else tiler_class
+        if isinstance(tiler_class, str):
+            if tiler_class not in TILERS:
+                raise ValueError(f"Unknown tiler_type {tiler_class!r}. Available: {sorted(TILERS)}")
+            tiler_class = TILERS[tiler_class]
         self.tiler_class = tiler_class or CallbackTiler
         self.tiler_kwargs = tiler_kwargs
 
