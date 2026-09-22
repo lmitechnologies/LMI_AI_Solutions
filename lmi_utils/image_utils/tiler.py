@@ -292,6 +292,8 @@ class Tiler:
         for k, v in metadata.items():
             if k in cls.EXPECTED_FIELDS and getattr(obj, k, None) is None:
                 setattr(obj, k, v)
+        if metadata.get("scale_mode") is not None:
+            obj.scale_mode = ScaleMode(metadata["scale_mode"])
         return obj
 
     def to_dict(self):
