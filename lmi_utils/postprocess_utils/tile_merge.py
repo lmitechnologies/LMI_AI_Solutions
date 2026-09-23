@@ -119,7 +119,7 @@ def instance_boxes(merged: Dict[str, Any]) -> Optional[torch.Tensor]:
 
     masks = merged.get("masks")
     if isinstance(masks, MaskCrops) and len(masks):
-        return masks.boxes.float()
+        return masks.boxes.float().cpu()
     if isinstance(masks, torch.Tensor) and len(masks):
         return boxes_from_masks(masks).cpu()
 
@@ -327,7 +327,7 @@ def _trimmed(
     masks = _mask_crops(merged, boxes)
     if masks is not None:
         clipped = (inside != boxes[idx]).any(dim=1)
-        inside[clipped] = masks.boxes_in_regions(idx[clipped], lo[clipped], hi[clipped], inside[clipped]).cpu()
+        inside[clipped] = masks.boxes_in_regions(idx[clipped], lo[clipped], hi[clipped], lo[clipped]).cpu()
     empty = ((inside[:, 2:] - inside[:, :2]) <= 0).any(dim=1)
     out = torch.minimum(torch.maximum(_grow(inside, grid.pad), lo), hi)
     out[empty] = lo[empty]

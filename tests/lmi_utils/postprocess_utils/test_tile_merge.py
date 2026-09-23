@@ -647,3 +647,26 @@ def test_trace_keeps_the_largest_of_pieces_that_do_not_touch():
     ring = tile_merge._trace(crop, 100, 50)
     assert ring[:, 0].min() == pytest.approx(120.0) and ring[:, 0].max() == pytest.approx(129.0)
     assert ring[:, 1].min() == pytest.approx(52.0) and ring[:, 1].max() == pytest.approx(57.0)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")
+def test_masks_without_boxes_merge_on_cuda():
+    # the boxes then come from the mask crops, which live on the masks' device
+    masks = torch.zeros((2, 100, 150), dtype=torch.uint8)
+    masks[0, 20:50, 40:100] = 1
+    masks[1, 20:50, 60:120] = 1
+    merged = {"masks": masks.cuda(), "scores": torch.tensor([0.4, 0.9]).cuda(), "classes": np.array([0, 0], dtype=np.int32)}
+    out = merge_tile_fragments(merged, torch.tensor([0, 1]), _ORIGINS, _TILE_SIZE, _IM_SIZE, 0.8)
+    assert out["masks"].shape == (1, 100, 150) and out["masks"].is_cuda
+    assert int(out["masks"].sum()) == 30 * 80
+
+
+def test_a_mask_that_misses_the_seam_does_not_join_through_its_box():
+    # A's box reaches the seam at x 100 but its mask stops at 90, so nothing of it crosses there
+    merged = _result([[40, 20, 100, 50], [100, 20, 160, 50]], [0.4, 0.9])
+    masks = torch.zeros((2, 100, 200), dtype=torch.uint8)
+    masks[0, 20:50, 40:90] = 1
+    masks[1, 20:50, 100:160] = 1
+    merged["masks"] = masks
+    out = merge_tile_fragments(merged, torch.tensor([0, 1]), _NO_OVERLAP_ORIGINS, _TILE_SIZE, _NO_OVERLAP_IM_SIZE, 0.8)
+    assert out["boxes"].shape == (2, 4)
