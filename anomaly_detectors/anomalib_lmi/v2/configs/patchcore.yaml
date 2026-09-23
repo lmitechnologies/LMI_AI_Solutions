@@ -28,7 +28,6 @@ data:
 
 engine:
   max_epochs: 1
-  # float16 precision requires CUDA; change to "auto" when using float32
   accelerator: "auto"
   devices: 1
   default_root_dir: "/app/out/"
