@@ -19,6 +19,9 @@ from torchvision.transforms import v2
 
 from .tiling import TilerConfigCallback
 
+# supported anomalib models that accept the precision config parameter
+PRECISION_CAPABLE_MODELS = ["Patchcore"]
+
 logger = logging.getLogger(__name__)
 
 
@@ -84,8 +87,24 @@ def build_model(model_config: Dict[str, Any]):
     """
     class_name = model_config.get("class_name")
     params = model_config.get("params", {}) or {}
-    for rm in ["tiler_type", "tile_size", "stride", "precision"]:
+    for rm in ["tiler_type", "tile_size", "stride"]:
         params.pop(rm, None)
+
+    # precision is a per-model dtype selector; only some anomalib models accept it
+    precision = params.pop("precision", None)
+    if precision is not None:
+        try:
+            precision = PrecisionType(str(precision).lower())
+        except ValueError:
+            valid = ", ".join(p.value for p in PrecisionType)
+            raise ValueError(f"Invalid precision '{precision}'. Valid values: {valid}.") from None
+        if class_name in PRECISION_CAPABLE_MODELS:
+            params["precision"] = precision
+        else:
+            logger.warning(
+                f"Model '{class_name}' does not support the precision parameter; training in float32."
+                f"Models supporting precision: {', '.join(PRECISION_CAPABLE_MODELS)}."
+            )
 
     # Clean params (convert lists to tuples)
     params = clean_params(params)
@@ -191,7 +210,6 @@ def main():
     # --- Build Model Dynamically ---
     model_params = cfg["model"]["params"]
     tiler_cls_name = model_params.pop("tiler_type", None)
-    precision = model_params.get("precision", PrecisionType.FLOAT32).lower()
     tiler_callbacks = build_tiler(
         model_params.pop("tile_size", None),
         model_params.pop("stride", None),
@@ -211,7 +229,6 @@ def main():
         accelerator=eng_cfg.get("accelerator", "gpu"),
         devices=eng_cfg["devices"],
         default_root_dir=Path(eng_cfg["default_root_dir"]),
-        precision=precision,
         callbacks=tiler_callbacks,
     )
 

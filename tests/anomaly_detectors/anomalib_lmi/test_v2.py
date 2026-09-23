@@ -21,7 +21,7 @@ from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v2_torchscript
 from anomaly_detectors.anomalib_lmi.v2.model import AnomalyModel as AnomalyModelV2
-from anomaly_detectors.anomalib_lmi.v2.train import build_data, build_preprocessor
+from anomaly_detectors.anomalib_lmi.v2.train import build_data, build_model, build_preprocessor
 
 os.environ["TRUST_REMOTE_CODE"] = "1"
 
@@ -423,3 +423,140 @@ def test_padim_cli_tiled_and_untiled_agree_on_the_embedding_grid(tmp_path):
         return ckpt["state_dict"]["model.gaussian.mean"].shape
 
     assert mean_shape("tiled") == mean_shape("plain")
+
+
+def _write_patchcore_config(root, precision=None, image_size=(64, 64), n_images=4):
+    """A Patchcore config for the training CLI over dummy normal images.
+
+    fp16 training only runs on CUDA (several CPU kernels, e.g. reflection_pad2d, are not implemented for Half),
+    so a float16 config pins accelerator=cuda. float32 keeps accelerator=auto.
+    """
+    normal = root / "data" / "train"
+    normal.mkdir(parents=True)
+    # a fixed seed so both precision runs (and any rerun) see the exact same images
+    rng = np.random.default_rng(42)
+    for i in range(n_images):
+        dummy = rng.integers(0, 256, (*image_size, 3), dtype=np.uint8)
+        assert cv2.imwrite(str(normal / f"n{i}.png"), dummy), f"failed to write training image n{i}.png"
+
+    params = {"backbone": "resnet18", "layers": ["layer2", "layer3"], "pre_trained": False, "image_size": list(image_size)}
+    if precision is not None:
+        params["precision"] = precision
+    accelerator = "cuda" if precision == "float16" else "auto"
+    config = {
+        "model": {"class_name": "Patchcore", "params": params},
+        "data": {
+            "name": "patchcore_precision",
+            "root": str(root / "data"),
+            "normal_dir": "train",
+            "extensions": [".png"],
+            "train_batch_size": 2,
+            "eval_batch_size": 2,
+            "num_workers": 0,
+            "test_split_mode": "synthetic",
+            "test_split_ratio": 0.5,
+            "val_split_mode": "same_as_test",
+            "val_split_ratio": 0.5,
+        },
+        "engine": {"max_epochs": 1, "accelerator": accelerator, "devices": 1, "default_root_dir": str(root / "out")},
+    }
+    config_path = root / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    return config_path
+
+
+def _bank(state):
+    """The trained Patchcore memory bank from a checkpoint state dict."""
+    return state["state_dict"]["model.memory_bank"]
+
+
+@pytest.mark.parametrize("precision,expected", [("float16", torch.float16), ("float32", torch.float32)])
+def test_patchcore_build_model_precision_sets_weight_dtype(precision, expected):
+    model = build_model(
+        {
+            "class_name": "Patchcore",
+            "params": {"backbone": "resnet18", "layers": ["layer1"], "pre_trained": False, "precision": precision},
+        }
+    )
+    assert next(model.parameters()).dtype == expected
+
+
+def test_unsupported_model_warns_and_falls_back_to_float32(caplog):
+    """Padim has no precision arg: build_model warns and falls back to its fp32 default."""
+    with caplog.at_level(logging.WARNING):
+        model = build_model(
+            {
+                "class_name": "Padim",
+                "params": {
+                    "backbone": "resnet18",
+                    "layers": ["layer1"],
+                    "pre_trained": False,
+                    "n_features": 64,
+                    "image_size": [64, 64],
+                    "precision": "float16",
+                },
+            }
+        )
+
+    assert next(model.parameters()).dtype == torch.float32
+    assert any(
+        "precision" in record.getMessage() and "Padim" in record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    )
+
+
+def test_invalid_precision_raises():
+    with pytest.raises(ValueError, match="Invalid precision"):
+        build_model({"class_name": "Patchcore", "params": {"backbone": "resnet18", "layers": ["layer1"], "precision": "float8"}})
+
+
+# PatchCore fp16 is not supported on CPU: its anomaly-map blur uses
+# reflection_pad2d, which has no CPU Half implementation.
+_float16_cli = pytest.mark.skipif(not USE_GPU, reason="fp16 CLI training requires CUDA")
+
+
+def test_patchcore_cli_trains_with_precision(tmp_path):
+    config_path = _write_patchcore_config(tmp_path, precision="float32")
+    _train_via_cli(config_path)
+
+    ckpt = torch.load(tmp_path / "out" / "model.ckpt", map_location="cpu", weights_only=False)
+    bank = _bank(ckpt)
+    assert bank.dtype == torch.float32
+    assert bank.shape[0] > 0, "memory bank is empty; training produced no embeddings"
+
+
+@_float16_cli
+def test_patchcore_cli_trains_with_float16_precision(tmp_path):
+    config_path = _write_patchcore_config(tmp_path, precision="float16")
+    _train_via_cli(config_path)
+
+    ckpt = torch.load(tmp_path / "out" / "model.ckpt", map_location="cpu", weights_only=False)
+    bank = _bank(ckpt)
+    assert bank.dtype == torch.float16
+    assert bank.shape[0] > 0, "memory bank is empty; training produced no embeddings"
+
+
+@_float16_cli
+def test_patchcore_cli_float16_bank_is_half_float32(tmp_path):
+    """Same dataset and layers: the fp16 bank holds the same vectors at half the bytes.
+
+    Byte count (numel x itemsize) is deterministic and needs no peak-RAM measurement.
+    Coreset sampling is seeded (anomalib fixes manual_seed 42 via seed_everything), so both
+    runs select the same number of patches; a small tolerance covers rounding.
+    """
+    results = {}
+    for precision in ["float32", "float16"]:
+        config_path = _write_patchcore_config(tmp_path / precision, precision=precision, n_images=4)
+        _train_via_cli(config_path)
+        ckpt = torch.load(tmp_path / precision / "out" / "model.ckpt", map_location="cpu", weights_only=False)
+        bank = _bank(ckpt)
+        results[precision] = bank
+
+    f32, f16 = results["float32"], results["float16"]
+    # the coreset samples a fixed ratio of features, so element counts can differ slightly due to rounding
+    assert f16.numel() == pytest.approx(f32.numel(), rel=0.05), f"bank sizes differ: {f32.numel()} vs {f16.numel()}"
+    f32_bytes = f32.numel() * f32.element_size()
+    f16_bytes = f16.numel() * f16.element_size()
+    ratio = f16_bytes / f32_bytes
+    assert ratio == pytest.approx(0.5, rel=0.1), f"fp16 bank bytes are not ~half of fp32: {f16_bytes=} {f32_bytes=} ratio={ratio:.3f}"
