@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import subprocess
@@ -49,7 +50,7 @@ def test_interpolation(tile, stride):
     with tempfile.TemporaryDirectory() as tmp1:
         with tempfile.TemporaryDirectory() as tmp2:
             to_tiles(PATH_IMG, tmp1, tile, stride, mode=ScaleMode.INTERPOLATION)
-            to_images(tmp1, tmp2, mode=ScaleMode.INTERPOLATION)
+            to_images(tmp1, tmp2)  # the metadata carries the mode
 
             imgs = load_imgs(tmp1)
             for im in imgs:
@@ -76,3 +77,28 @@ def test_cmds():
             imgs2 = load_imgs(tmpdir2)
             for im1, im2 in zip(imgs, imgs2):
                 assert torch.equal(im1, im2)
+
+
+def test_untile_falls_back_to_the_given_mode_for_metadata_without_one(tmp_path):
+    # metadata written before scale_mode was recorded; --resize is the only record of interpolation
+    tiles_dir, current, legacy = tmp_path / "tiles", tmp_path / "current", tmp_path / "legacy"
+    to_tiles(PATH_IMG, tiles_dir, 224, 112, mode=ScaleMode.INTERPOLATION)
+    to_images(tiles_dir, current)
+    for p in tiles_dir.glob("*metadata.json"):
+        meta = json.loads(p.read_text())
+        del meta["scale_mode"]
+        p.write_text(json.dumps(meta))
+
+    to_images(tiles_dir, legacy, mode=ScaleMode.INTERPOLATION)
+
+    for im1, im2 in zip(load_imgs(current), load_imgs(legacy), strict=True):
+        assert torch.equal(im1, im2)
+
+
+def test_untile_warns_when_the_requested_mode_disagrees_with_the_metadata(tmp_path, caplog):
+    to_tiles(PATH_IMG, tmp_path / "tiles", 224, 112)
+
+    with caplog.at_level(logging.WARNING):
+        to_images(tmp_path / "tiles", tmp_path / "out", mode=ScaleMode.INTERPOLATION)
+
+    assert "tiles were built with padding, ignoring requested interpolation" in caplog.text

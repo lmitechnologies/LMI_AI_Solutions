@@ -139,12 +139,12 @@ def get_image_size(model) -> Optional[tuple]:
 def build_tiler(tile_size, stride, tiler_cls_name=None):
     if tile_size is None:
         return []
+    logger.info(f"Tiling enabled: tile_size={tile_size}, stride={stride}, tiler={tiler_cls_name or 'CallbackTiler'}")
     return [TilerConfigCallback(enable=True, tile_size=tile_size, stride=stride, tiler_class=tiler_cls_name)]
 
 
 def estimate_max_samples(config_path, num_samples=None):
-    # Run in a subprocess so the model/CUDA context built for profiling is fully
-    # released on process exit, leaving no lingering VRAM before engine.fit().
+    # a subprocess frees the profiling model's CUDA memory before engine.fit()
     cmd = [
         sys.executable,
         "-m",
@@ -218,19 +218,23 @@ def main():
 
     # --- Train ---
     logger.info("Starting training...")
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
+    # reset_peak_memory_stats raises on a host without CUDA, before lightning can report the real problem
+    on_cuda = torch.cuda.is_available()
+    if on_cuda:
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
     engine.fit(model=model, datamodule=datamodule, ckpt_path=args.ckpt_path)
     checkpoint_path = Path(eng_cfg["default_root_dir"]) / "model.ckpt"
     engine.trainer.save_checkpoint(checkpoint_path)
-    logger.info(
-        "cuda max allocated MiB: %.2f",
-        torch.cuda.max_memory_allocated() / 1024**2,
-    )
-    logger.info(
-        "cuda max reserved MiB: %.2f",
-        torch.cuda.max_memory_reserved() / 1024**2,
-    )
+    if on_cuda:
+        logger.info(
+            "cuda max allocated MiB: %.2f",
+            torch.cuda.max_memory_allocated() / 1024**2,
+        )
+        logger.info(
+            "cuda max reserved MiB: %.2f",
+            torch.cuda.max_memory_reserved() / 1024**2,
+        )
 
     inner = getattr(model, "model", model)
 
