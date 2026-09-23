@@ -27,6 +27,7 @@ from .nms import box_intersections, class_codes, filter_instances, intersecting_
 # Not user settings: they depend on the detector and the tile layout, not on the dataset.
 DEFAULT_EDGE_TOLERANCE = 2.0  # a box this many px from an inner tile edge counts as reaching it
 JOIN_MARGIN = 16.0  # a box this many px from an inner tile edge may be cut and may be joined; limited by the tile overlap
+CONTAINMENT = 0.8  # a cut detection joins a whole one when this share of it lies inside; F1 barely moves over 0.5-0.95
 SAME_OBJECT_CONTAINMENT = 0.95  # two whole detections are one object when this share of one lies inside the other
 AGREEMENT_IOU = 0.5  # to join, two boxes must reach this IoU within the area both tiles cover
 SIMPLIFY_TOLERANCE = 1.0  # px a combined polygon's outline may move when it is simplified
@@ -46,7 +47,7 @@ def merge_tile_fragments(
     tile_origins: np.ndarray,
     tile_size: Tuple[int, int],
     im_size: Tuple[int, int],
-    containment: float,
+    containment: float = CONTAINMENT,
     edge_tolerance: float = DEFAULT_EDGE_TOLERANCE,
     report_origin: bool = False,
 ) -> Dict[str, Any]:

@@ -8,7 +8,7 @@ import torch
 from lmi_utils.image_utils.tiler import Tiler
 from lmi_utils.postprocess_utils.mask_crops import MaskCrops
 from lmi_utils.postprocess_utils.nms import class_aware_nms, filter_instances, result_device
-from lmi_utils.postprocess_utils.tile_merge import DEFAULT_EDGE_TOLERANCE, instance_boxes, merge_tile_fragments
+from lmi_utils.postprocess_utils.tile_merge import CONTAINMENT, DEFAULT_EDGE_TOLERANCE, instance_boxes, merge_tile_fragments
 
 from .._coords import apply_coord_transform
 from ..operation import Config, Meta, Operation
@@ -36,16 +36,14 @@ class TileConfig(Config):
         better: two pieces that only meet at a seam can be compared along it but not across it.
     score_threshold: predictions below this are dropped before merging, so a low-scoring piece cannot
         become its group's representative and take the whole group down with it.
-    nms_iou: class-aware NMS IoU threshold across tiles. None disables both NMS rules.
-    containment: fraction of one prediction that must lie inside another to count as contained.
-        Used to suppress a fragment nested in a whole detection, and to fold a fragment into the
-        overlapping tile's prediction that covers it. None disables the containment rule.
+    nms_iou: class-aware NMS IoU threshold across tiles. None disables NMS. With merging off, NMS also
+        drops a prediction that lies ``tile_merge.CONTAINMENT`` inside a higher-scoring one.
 
     edge_tolerance: px from a tile edge that still counts as touching it. Absolute, not a fraction of
         the tile: it tracks the detector's box-regression error at a crop boundary, which the detection
         head's feature stride fixes. It decides which leftover fragments may be dropped; joining reaches
         further, to ``tile_merge.JOIN_MARGIN``, and with no tile overlap it also sets how wide a band
-        either side of a seam two pieces are compared in. Results change little between 0.5 and 4.
+        either side of a seam two pieces are compared in. Below 2, tiles without overlap stop joining.
     min_label_size: on ``apply_coords``, drop a clipped label thinner than this many pixels on
         either axis. Slivers only — an interior fragment showing none of the object's edges must
         survive, or the model never learns to fire on the middle of an object wider than a tile.
@@ -61,7 +59,6 @@ class TileConfig(Config):
     merge_fragments: bool = True
     score_threshold: float = 0.0
     nms_iou: Optional[float] = 0.5
-    containment: Optional[float] = 0.8
     edge_tolerance: float = DEFAULT_EDGE_TOLERANCE
     min_label_size: float = 0.0
     report_merge_origin: bool = False
@@ -79,7 +76,6 @@ class TileConfig(Config):
             "merge_fragments": self.merge_fragments,
             "score_threshold": self.score_threshold,
             "nms_iou": self.nms_iou,
-            "containment": self.containment,
             "edge_tolerance": self.edge_tolerance,
             "min_label_size": self.min_label_size,
             "report_merge_origin": self.report_merge_origin,
@@ -349,16 +345,14 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
             origins,
             (tile_h, tile_w),
             (work_h, work_w),
-            containment=_containment_or_strict(tiler_meta.get("containment")),
             edge_tolerance=tolerance,
             report_origin=report_origin,
         )
 
-    # merging replaces containment, which would delete the neighbours a merged union encloses
     iou_thr = tiler_meta.get("nms_iou")
-    containment = None if did_merge else tiler_meta.get("containment")
-    if iou_thr is not None or containment is not None:
-        merged = class_aware_nms(merged, iou_thr, containment)
+    if iou_thr is not None:
+        # merging replaces containment, which would delete the neighbours a merged union encloses
+        merged = class_aware_nms(merged, iou_thr, None if did_merge else CONTAINMENT)
     masks = merged.get("masks")
     if isinstance(masks, MaskCrops):
         merged["masks"] = masks.paste()
@@ -397,11 +391,6 @@ def _above_score(merged: Dict[str, Any], threshold: float, n: int) -> torch.Tens
     if threshold <= 0 or not isinstance(scores, torch.Tensor) or len(scores) != n:
         return torch.ones(n, dtype=torch.bool)
     return scores.detach().cpu().float() >= threshold
-
-
-def _containment_or_strict(value: Optional[float]) -> float:
-    """A missing containment demands a whole object; 0.0 means no containment requirement at all."""
-    return 1.0 if value is None else float(value)
 
 
 def _clip_to_image(merged: Dict[str, Any], im_h: int, im_w: int) -> Dict[str, Any]:
@@ -560,7 +549,8 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
     if masks is not None and len(masks):
         has_spatial = True
         if is_interp:
-            full = F.interpolate(masks.float().unsqueeze(1), size=(scale_h, scale_w), mode="nearest").squeeze(1)
+            # nearest-exact keeps integer labels; plain nearest shifts the mask half a pixel from its box
+            full = F.interpolate(masks.float().unsqueeze(1), size=(scale_h, scale_w), mode="nearest-exact").squeeze(1)
         else:
             mh, mw = masks.shape[1], masks.shape[2]
             if (mh, mw) != (scale_h, scale_w):
