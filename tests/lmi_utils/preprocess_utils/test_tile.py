@@ -184,23 +184,12 @@ def test_tile_stride_wider_than_the_tile_raises():
         TileConfig(tile_size=[16, 16], stride=[8, 17])
 
 
-def test_tile_segments_variable_length_concat_across_tiles():
+def test_tile_revert_coords_rejects_segments_without_masks():
     pre, rec = Preprocessor(), Reconstructor()
-    img = torch.zeros((100, 100, 3))
-    _tiles, history = pre.preprocess([img], [steps.tile(tile_size=50, stride=50)])
-
-    seg_short = torch.tensor([[3.0, 4.0]])
-    seg_long = torch.tensor([[1.0, 2.0], [10.0, 12.0], [25.0, 30.0], [40.0, 45.0], [49.0, 48.0]])
-    results = _empty_results(n=4, segments=[[], [seg_short], [], [seg_long]])
-    reverted = rec.reconstruct_coordinates(results, history)
-
-    out_segs = reverted["segments"][0]
-    assert len(out_segs) == 2
-    assert torch.allclose(out_segs[0], torch.tensor([[53.0, 4.0]]))
-    assert torch.allclose(
-        out_segs[1],
-        torch.tensor([[51.0, 52.0], [60.0, 62.0], [75.0, 80.0], [90.0, 95.0], [99.0, 98.0]]),
-    )
+    _tiles, history = pre.preprocess([torch.zeros((100, 100, 3))], [steps.tile(tile_size=50, stride=50)])
+    results = _empty_results(n=4, segments=[[], [torch.tensor([[3.0, 4.0], [9.0, 4.0], [9.0, 9.0]])], [], []])
+    with pytest.raises(ValueError, match="needs their masks"):
+        rec.reconstruct_coordinates(results, history)
 
 
 def test_tile_masks_under_interpolation_mode():
@@ -470,20 +459,44 @@ def test_tile_revert_coords_dedupe_masks_by_iou():
     assert numpy_out["masks"][0].dtype == np.uint8
 
 
-def test_tile_revert_coords_dedupe_segments_via_polygon_iou():
+def test_tile_revert_coords_traces_segments_from_the_merged_masks():
     rec, history = _overlap_history()
-    # identical global square polygon seen in two overlapping top tiles
-    seg0 = torch.tensor([[55.0, 55.0], [95.0, 55.0], [95.0, 95.0], [55.0, 95.0]])
-    seg1 = torch.tensor([[5.0, 55.0], [45.0, 55.0], [45.0, 95.0], [5.0, 95.0]])  # +50 in x -> same square
+    # the same [55:95, 55:95] square seen by two overlapping top tiles; their own polygons are ignored
+    m0 = torch.zeros((1, 100, 100), dtype=torch.uint8)
+    m0[0, 55:95, 55:95] = 1
+    m1 = torch.zeros((1, 100, 100), dtype=torch.uint8)
+    m1[0, 55:95, 5:45] = 1
+    empty = torch.zeros((0, 100, 100), dtype=torch.uint8)
+    stray = torch.tensor([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])
     results = _empty_results(
         n=4,
         scores=[torch.tensor([0.9]), torch.tensor([0.7]), torch.zeros((0,)), torch.zeros((0,))],
-        segments=[[seg0], [seg1], [], []],
+        masks=[m0, m1, empty, empty],
+        segments=[[stray], [stray], [], []],
     )
     out = rec.reconstruct_coordinates(results, history)
     assert len(out["segments"][0]) == 1
-    assert torch.allclose(out["segments"][0][0], torch.tensor([[55.0, 55.0], [95.0, 55.0], [95.0, 95.0], [55.0, 95.0]]))
+    # outline through pixel centres, as cv2.findContours gives it
+    assert out["segments"][0][0].tolist() == [[55.0, 55.0], [55.0, 94.0], [94.0, 94.0], [94.0, 55.0]]
     assert out["scores"][0].item() == pytest.approx(0.9)
+
+
+def test_tile_revert_coords_traces_the_largest_piece_of_a_merged_mask():
+    rec, history = _overlap_history()
+    # one detection in pieces that do not touch: a small one at x 10 and a large one at x 60
+    m0 = torch.zeros((1, 100, 100), dtype=torch.uint8)
+    m0[0, 10:20, 10:20] = 1
+    m0[0, 10:40, 60:90] = 1
+    empty = torch.zeros((0, 100, 100), dtype=torch.uint8)
+    stray = torch.tensor([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])
+    results = _empty_results(
+        n=4,
+        scores=[torch.tensor([0.9]), torch.zeros((0,)), torch.zeros((0,)), torch.zeros((0,))],
+        masks=[m0, empty, empty, empty],
+        segments=[[stray], [], [], []],
+    )
+    (segment,) = rec.reconstruct_coordinates(results, history)["segments"][0]
+    assert segment[:, 0].min().item() == 60 and segment[:, 0].max().item() == 89
 
 
 def test_tile_merge_fragments_spans_three_tiles():

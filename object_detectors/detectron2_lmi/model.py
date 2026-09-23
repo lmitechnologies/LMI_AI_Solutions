@@ -8,7 +8,8 @@ import torchvision  # noqa: F401
 from lmi_common.model_factory import ModelFactory
 from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
-from lmi_utils.postprocess_utils.mask_utils import mask_to_polygon_cv2, rescale_masks
+from lmi_utils.postprocess_utils.mask_segments import masks_to_segments
+from lmi_utils.postprocess_utils.mask_utils import rescale_masks
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 
@@ -50,15 +51,12 @@ class Detectron2Base(ODBase):
         if len(raw_masks) == 0:
             return raw_masks, batch_segments
 
-        def _to_np(m):
-            return m.cpu().numpy() if isinstance(m, torch.Tensor) else m
-
         if raw_masks.dim() == 4:
             raw_masks = raw_masks.squeeze(1)
         batch_masks = rescale_masks(raw_masks, boxes, image_size, mask_threshold)
 
         if kwargs.get("return_segments", True):
-            batch_segments = [mask_to_polygon_cv2(_to_np(m)) for m in batch_masks]
+            batch_segments = masks_to_segments(batch_masks)
 
         return batch_masks, batch_segments
 

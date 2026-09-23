@@ -40,7 +40,7 @@ class ODBase(abc.ABC):
     # Letterbox pad fill for auto-injected resize; match training (e.g. 114 for YOLO). Ignored when stretching.
     RESIZE_PAD_VALUE: int = 0
 
-    # Low-pass before shrinking in the default and auto-injected resize; True when training resizes with PIL or torchvision.
+    # Antialias in the default and auto-injected resize; match the trainer. Pipeline resize steps set their own.
     RESIZE_ANTIALIAS: bool = False
 
     def __init_subclass__(cls, **kwargs):
@@ -92,7 +92,9 @@ class ODBase(abc.ABC):
         kwargs:
             batch_size (int): chunk size for dynamic mini-batch inference (default: None = all at once).
                 Ignored when self.fixed_batch_size is set.
-            return_segments (bool): Whether to return 'segments' in the output dict when available.
+            return_segments (bool): Whether to return 'segments' in the output dict when available. A segment is the
+                mask's outer outline, traced by the backend's own rule. With a tile step, segments are traced again from
+                the merged masks, largest piece only (``mask_segments.masks_to_segments``).
 
         Returns:
             (results, time_info)

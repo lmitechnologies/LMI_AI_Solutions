@@ -64,14 +64,13 @@ def test_offset_drops_pixels_outside_the_image():
 def test_intersection_union_and_indexing_match_full_masks():
     masks = _scattered_masks(15)
     crops = MaskCrops.from_masks(masks, (24, 30))
-    for a in range(15):
-        for b in range(15):
-            assert crops.intersection(a, b) == float((masks[a] & masks[b]).sum())
+    a, b = torch.cartesian_prod(torch.arange(15), torch.arange(15)).unbind(1)
+    assert crops.intersections(a, b).tolist() == (masks[a] & masks[b]).flatten(1).sum(dim=1).float().tolist()
 
     members = [0, 2, 3, 7]
-    crop, box = crops.union(members)
+    data, boxes = crops.unions(torch.tensor(members), torch.zeros(len(members), dtype=torch.long), 1)
     picked = crops[torch.tensor([1, 3])]
-    picked.set_runs(torch.tensor([0]), crop.reshape(-1), box.reshape(1, 4))
+    picked.set_runs(torch.tensor([0]), data, boxes)
     want = torch.stack([masks[members].any(dim=0), masks[3]])
     assert torch.equal(picked.paste(), want)
     assert torch.equal(crops.paste(), masks)  # editing the indexed copy leaves the source alone
