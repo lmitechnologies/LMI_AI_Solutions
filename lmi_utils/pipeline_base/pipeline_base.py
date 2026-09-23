@@ -283,7 +283,15 @@ class PipelineBase(metaclass=ABCMeta):
             f"[{model_role}] preprocessed size(s) {mismatched} != model input {(th, tw)}; injecting a resize. "
             "Configure a matching resize step in global preprocessing to remove this."
         )
-        resize_step = [steps.resize(width=tw, height=th, preserve_aspect=model.RESIZE_PRESERVE_ASPECT, pad_value=model.RESIZE_PAD_VALUE)]
+        resize_step = [
+            steps.resize(
+                width=tw,
+                height=th,
+                preserve_aspect=model.RESIZE_PRESERVE_ASPECT,
+                pad_value=model.RESIZE_PAD_VALUE,
+                antialias=model.RESIZE_ANTIALIAS,
+            )
+        ]
         processed, extra = self.preprocessor.preprocess(processed, resize_step)
         return processed, history + extra
 

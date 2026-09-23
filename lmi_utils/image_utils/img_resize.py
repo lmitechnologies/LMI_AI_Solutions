@@ -34,6 +34,7 @@ def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwar
 
     kwargs:
         mode (str): interpolation mode. Default "bilinear".
+        antialias (bool): low-pass before shrinking. Default False.
         return_operators (bool): if True, also return a history list of typed ``Meta`` records.
         operators (list): history list.
 
@@ -45,6 +46,7 @@ def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwar
     th = height if height is not None else h0
     operators = list(kwargs.get("operators", []))
     mode = kwargs.get("mode", "bilinear")
+    antialias = kwargs.get("antialias", False)
 
     if tw == w0 and th == h0:
         im_out = image
@@ -53,14 +55,14 @@ def resize_and_pad(image, width=None, height=None, preserve_aspect=False, **kwar
             scale = min(th / h0, tw / w0)
             w1 = int(scale * w0)
             h1 = int(scale * h0)
-            im_out = resize_image(image, W=w1, H=h1, mode=mode)
+            im_out = resize_image(image, W=w1, H=h1, mode=mode, antialias=antialias)
             pad = [0, 0, 0, 0]
             if w1 != tw or h1 != th:
                 im_out, pad_l, pad_r, pad_t, pad_b = fit_im_to_size(im_out, tw, th)
                 pad = [pad_l, pad_r, pad_t, pad_b]
             operators.append(steps.revert_resize(src_sizes=[[w0, h0]], dst_sizes=[[w1, h1]], pads=[pad]))
         else:
-            im_out = resize_image(image, W=tw, H=th, mode=mode)
+            im_out = resize_image(image, W=tw, H=th, mode=mode, antialias=antialias)
             operators.append(steps.revert_resize(src_sizes=[[w0, h0]], dst_sizes=[[tw, th]], pads=[[0, 0, 0, 0]]))
 
     if kwargs.get("return_operators", False) is True:

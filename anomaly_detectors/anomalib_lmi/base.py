@@ -92,7 +92,7 @@ class Anomalib_Base(ADBase):
             raise ValueError(f"Batch size {batch} exceeds {type(self).__name__} engine max batch size {self.batch_size}")
 
         if is_engine and (img.shape[2] != self.image_size[0] or img.shape[3] != self.image_size[1]):
-            img = v2.Resize(self.image_size, antialias=False)(img)
+            img = v2.Resize(self.image_size, antialias=self.RESIZE_ANTIALIAS)(img)
 
         img = img.contiguous()
         return img.half() if self.fp16 else img
@@ -196,6 +196,7 @@ class _AnomalibEngine(Anomalib_Base):
     """
 
     _engine_cls = None  # subclass sets
+    RESIZE_ANTIALIAS = False  # match the .pt backend's resize; a version that antialiases overrides it (v1)
 
     def __init__(self, model_path: str, **kwargs: Any) -> None:
         self._init_common(model_path, **kwargs)
@@ -278,13 +279,13 @@ class AnomalibPT(Anomalib_Base):
         return self._extract_pt_output(self.pt_model(input_batch))
 
 
-def register_backends(factory_cls, pt_cls) -> None:
+def register_backends(factory_cls, pt_cls, trt_cls=AnomalibTRT, onnx_cls=AnomalibONNX) -> None:
     """Register the standard set of file-extension backends on a factory.
 
-    `pt_cls` is the per-version PT backend (e.g. AnomalibPTv1); TRT and ONNX
-    backends are version-agnostic and shared across factories.
+    `pt_cls` is the per-version PT backend (e.g. AnomalibPTv1); a version whose engines resize differently passes its own
+    `trt_cls` and `onnx_cls`.
     """
-    factory_cls.register("engine")(AnomalibTRT)
-    factory_cls.register("onnx")(AnomalibONNX)
+    factory_cls.register("engine")(trt_cls)
+    factory_cls.register("onnx")(onnx_cls)
     for ext in ("pt", "ts", "torchscript"):
         factory_cls.register(ext)(pt_cls)

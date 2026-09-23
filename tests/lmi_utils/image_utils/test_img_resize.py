@@ -83,3 +83,16 @@ def test_resize_and_pad_polymorphism(input_type):
     assert meta.dst_sizes[0] == [100, 100]
     # 50x50 → 100x100 preserve aspect: no padding (already square).
     assert meta.pads[0] == [0, 0, 0, 0]
+
+
+def test_antialias_matches_pil_bilinear_when_shrinking():
+    # Detectron2 trains and predicts with PIL bilinear, which low-passes before shrinking
+    from PIL import Image
+
+    rng = np.random.default_rng(0)
+    image = rng.integers(0, 256, (240, 320, 3), dtype=np.uint8)
+    pil = np.asarray(Image.fromarray(image).resize((80, 60), Image.BILINEAR)).astype(int)
+    ours = resize_and_pad(image, width=80, height=60, antialias=True).astype(int)
+    plain = resize_and_pad(image, width=80, height=60).astype(int)
+    assert np.abs(ours - pil).max() <= 1
+    assert np.abs(plain - pil).max() > 10
