@@ -601,7 +601,7 @@ def test_tiled_predict_merge_fragments_rejoins_seam_splits(yolo_models, imgs_coc
     """Overlapping tiles plus merge_fragments must not leave more detections than the split run."""
     model = yolo_models["det"][0]
     images = imgs_coco[0][:1]
-    overlapping = {"stride": [256, 256], "nms_iou": 0.45, "containment": 0.8}
+    overlapping = {"stride": [256, 256], "nms_iou": 0.45}
 
     _, split = _tile_and_predict(model, images, 0.25, merge_fragments=False, **overlapping)
     _, merged = _tile_and_predict(model, images, 0.25, merge_fragments=True, **overlapping)

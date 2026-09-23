@@ -518,9 +518,8 @@ The detector scripts do this for you behind `--tile`/`--stride` (see breaking ch
 |---|---|---|
 | `merge_fragments` | `True` | On for every grid, including `scale_mode="interpolation"`, where merging runs in the scaled image's coordinates and the result is mapped back; `False` leaves seam-split objects split |
 | `score_threshold` | `0.0` | An extra threshold on top of the per-class `configs` confidence the model already applied, dropping detections *before* merging so a weak piece cannot represent its group and take the whole group down with it. Off by default |
-| `nms_iou` | `0.5` | Class-aware NMS IoU across tiles; `None` disables both NMS rules |
-| `containment` | `0.8` | Share of one detection that must lie inside another to count as contained; `None` disables the containment rule |
-| `edge_tolerance` | `2.0` | Px from a tile edge that still counts as touching it. Absolute, not a fraction of the tile: it tracks the detector's box-regression error at a crop boundary. Results change little between `0.5` and `4` |
+| `nms_iou` | `0.5` | Class-aware NMS IoU across tiles; `None` disables NMS. With merging off, NMS also drops a detection that lies 80% inside a higher-scoring one |
+| `edge_tolerance` | `2.0` | Px from a tile edge that still counts as touching it. Absolute, not a fraction of the tile: it tracks the detector's box-regression error at a crop boundary. Below `2`, tiles without overlap stop joining |
 | `min_label_size` | `0.0` | Forward direction only: drop a clipped *label* thinner than this many px on either axis when projecting ground truth into tiles |
 | `report_merge_origin` | `False` | Add a `merge_origin` code per detection saying how it was built |
 

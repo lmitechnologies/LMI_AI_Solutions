@@ -16,7 +16,7 @@ detections an image carries, a kernel launch costs more than the arithmetic. The
 is sent back, being the one step whose size pays for the launch. Only result vectors cross back.
 """
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -27,11 +27,11 @@ from .nms import box_intersections, class_codes, filter_instances, intersecting_
 # Not user settings: they depend on the detector and the tile layout, not on the dataset.
 DEFAULT_EDGE_TOLERANCE = 2.0  # a box this many px from an inner tile edge counts as reaching it
 JOIN_MARGIN = 16.0  # a box this many px from an inner tile edge may be cut and may be joined; limited by the tile overlap
+CONTAINMENT = 0.8  # a cut detection joins a whole one when this share of it lies inside; F1 barely moves over 0.5-0.95
 SAME_OBJECT_CONTAINMENT = 0.95  # two whole detections are one object when this share of one lies inside the other
 AGREEMENT_IOU = 0.5  # to join, two boxes must reach this IoU within the area both tiles cover
 SIMPLIFY_TOLERANCE = 1.0  # px a combined polygon's outline may move when it is simplified
 _NO_PAIRS = torch.zeros(0, 2, dtype=torch.long)  # an (L, 2) index-pair list with nothing in it
-_TILE_TEST_BUDGET = 1_000_000  # (fragment, tile) rows tested at once when looking for a tile that saw a fragment whole
 
 
 # merge_origin codes: how each output detection was built
@@ -47,7 +47,7 @@ def merge_tile_fragments(
     tile_origins: np.ndarray,
     tile_size: Tuple[int, int],
     im_size: Tuple[int, int],
-    containment: float,
+    containment: float = CONTAINMENT,
     edge_tolerance: float = DEFAULT_EDGE_TOLERANCE,
     report_origin: bool = False,
 ) -> Dict[str, Any]:
@@ -56,7 +56,7 @@ def merge_tile_fragments(
     Args:
         merged: one image's result dict, in image coordinates.
         tile_idx: (N,) tile index of each detection.
-        tile_origins: (T, 2) top-left (y, x) of each tile in the image.
+        tile_origins: (T, 2) top-left (y, x) of each tile in the image; a full grid, every row start with every column start.
         tile_size: (tile_h, tile_w).
         im_size: (im_h, im_w) of the original image, without padding.
         containment: to join a cut detection with a whole one, at least this share of the cut one must lie inside
@@ -99,27 +99,30 @@ def merge_tile_fragments(
     joins = _joins(merged, boxes, cut, tile_idx, grid, containment, touching)
     groups = _split_distinct_whole(merged, boxes, _connected_groups(joins, len(tile_idx)), whole, joins, touching)
 
-    united = any(len(g) > 1 for g in groups)
-    out, groups = _union_groups(merged, groups, whole) if united else (merged, groups)
-    rows = _Rows(groups) if united else _Rows(groups, len(tile_idx))
+    if any(len(g) > 1 for g in groups):
+        out, groups = _union_groups(merged, groups, whole, grid)
+        rows = _Rows(groups)
+        origin = _origin_codes(rows, whole)
+        # only groups whose detections all reach the edge may be deleted; a whole object that just sits near an edge must stay
+        droppable = rows.every(at_edge)
+    else:  # nothing joined: every group is one detection, in input order
+        out = merged
+        origin = torch.where(whole, ORIGIN_WHOLE, ORIGIN_FRAGMENT).to(torch.uint8)
+        droppable = at_edge
     if report_origin:
-        out = {**out, "merge_origin": rows.scatter(_origin_codes(rows, whole))}
-    # only groups whose detections all reach the edge may be deleted; a whole object that just sits near an edge must stay
-    return _drop_fragments_seen_whole(out, rows.scatter(rows.every(at_edge)), grid)
+        out = {**out, "merge_origin": origin}
+    return _drop_fragments_seen_whole(out, droppable, grid)
 
 
 def instance_boxes(merged: Dict[str, Any]) -> Optional[torch.Tensor]:
     """(N, 4) xyxy box of each detection, taken from boxes, else masks, else segments."""
     boxes = merged.get("boxes")
     if isinstance(boxes, torch.Tensor) and len(boxes):
-        b = boxes.detach().cpu().float()
-        if b.ndim == 3:  # oriented box (N, 4, 2): use the upright box around it
-            return torch.cat([b.amin(dim=1), b.amax(dim=1)], dim=1)
-        return b
+        return boxes.detach().cpu().float()
 
     masks = merged.get("masks")
     if isinstance(masks, MaskCrops) and len(masks):
-        return masks.boxes.float()
+        return masks.boxes.float().cpu()
     if isinstance(masks, torch.Tensor) and len(masks):
         return boxes_from_masks(masks).cpu()
 
@@ -173,21 +176,23 @@ class _Grid:
         """(N, 2) top-left (x, y) of the tile each detection came from."""
         return torch.as_tensor(self.origins, dtype=torch.float32, device=tile_idx.device)[tile_idx].flip(1)
 
+    def seams(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Inner tile edges in image px: x of the vertical ones, y of the horizontal ones. The image border is not a seam."""
+        out = []
+        for axis in (1, 0):
+            starts = np.unique(self.origins[:, axis])
+            edges = np.unique(np.concatenate([starts, starts + self.size[axis]]))
+            out.append(edges[(edges > 0) & (edges < self.im_size[axis])])
+        return out[0], out[1]
+
 
 class _Rows:
-    """Every group's members in one flat run, and the output row each group's summary belongs on.
+    """Every group's members in one flat run, so a per-group summary is one scatter over that run, not a pass per group."""
 
-    The summaries are then scatters over that run, not a pass per group. ``out`` has one row per group only when
-    a union ran; otherwise it keeps the input rows, and a group's summary lands on its first member's row.
-    """
-
-    def __init__(self, groups: List[List[int]], n_rows: Optional[int] = None):
-        """``n_rows`` is the input row count when no union ran; leave it out for one output row per group."""
+    def __init__(self, groups: List[List[int]]):
         self.sizes = torch.tensor([len(g) for g in groups])
         self.members = torch.tensor([m for g in groups for m in g], dtype=torch.long)
         self.gid = torch.repeat_interleave(torch.arange(len(groups)), self.sizes)
-        self.n_rows = len(groups) if n_rows is None else n_rows
-        self.at = torch.arange(len(groups)) if n_rows is None else torch.tensor([g[0] for g in groups], dtype=torch.long)
 
     def any(self, flags: torch.Tensor) -> torch.Tensor:
         """(G,) bool: ``flags`` is set on at least one member of the group."""
@@ -200,12 +205,6 @@ class _Rows:
     def _fold(self, flags: torch.Tensor, reduce: str) -> torch.Tensor:
         n = len(self.sizes)
         return torch.zeros(n, dtype=torch.bool).scatter_reduce_(0, self.gid, flags[self.members], reduce=reduce, include_self=False)
-
-    def scatter(self, values: torch.Tensor) -> torch.Tensor:
-        """(n_rows,) with each group's value on its own output row, zero elsewhere."""
-        out = torch.zeros(self.n_rows, dtype=values.dtype)
-        out[self.at] = values
-        return out
 
 
 def _origin_codes(rows: _Rows, whole: torch.Tensor) -> torch.Tensor:
@@ -318,7 +317,7 @@ def _trimmed(
     masks = _mask_crops(merged, boxes)
     if masks is not None:
         clipped = (inside != boxes[idx]).any(dim=1)
-        inside[clipped] = masks.boxes_in_regions(idx[clipped], lo[clipped], hi[clipped], inside[clipped]).cpu()
+        inside[clipped] = masks.boxes_in_regions(idx[clipped], lo[clipped], hi[clipped], lo[clipped]).cpu()
     empty = ((inside[:, 2:] - inside[:, :2]) <= 0).any(dim=1)
     out = torch.minimum(torch.maximum(_grow(inside, grid.pad), lo), hi)
     out[empty] = lo[empty]
@@ -483,12 +482,20 @@ def _connected_groups(edges: torch.Tensor, n: int) -> List[List[int]]:
     return list(buckets.values())
 
 
-def _union_groups(merged: Dict[str, Any], groups: List[List[int]], whole: torch.Tensor) -> Tuple[Dict[str, Any], List[List[int]]]:
+def _union_groups(
+    merged: Dict[str, Any], groups: List[List[int]], whole: torch.Tensor, grid: "_Grid"
+) -> Tuple[Dict[str, Any], List[List[int]]]:
     """Turn each group into one output detection, keeping input order.
 
     A group with whole detections outputs its best-scoring whole detection. A group of only cut detections outputs
     their shapes combined (box, mask or polygon). Also returns the groups in output order.
+
+    A combined shape is closed across the grid's seams by its pad, (x, y) px and zero wherever tiles overlap, to bridge
+    pieces that stop short of a seam. The rest of the shape is left as the model drew it. With masks, the polygon is
+    traced from the closed mask.
     """
+    gap_xy = [int(np.ceil(v)) for v in grid.pad.tolist()]
+    seams = grid.seams()
     scores = merged.get("scores")
     g = _Rows(groups)
     members, gid = g.members, g.gid
@@ -513,6 +520,10 @@ def _union_groups(merged: Dict[str, Any], groups: List[List[int]], whole: torch.
     # filtering copies boxes and masks, so editing them below leaves ``merged`` unchanged
     out = filter_instances(merged, reps)
 
+    segments = merged.get("segments")
+    has_segments = segments is not None and len(segments) > 0
+    traced: Dict[int, Any] = {}  # output row -> polygon traced from its combined mask
+
     rows = widen.nonzero(as_tuple=True)[0].tolist()
     if rows:
         # one pass over every widened group's members: a round trip per group costs more than the union itself
@@ -528,37 +539,93 @@ def _union_groups(merged: Dict[str, Any], groups: List[List[int]], whole: torch.
             out["boxes"][at_rows, :2] = blank.scatter_reduce(0, at, src[:, :2], "amin", include_self=False)
             out["boxes"][at_rows, 2:] = blank.scatter_reduce(0, at, src[:, 2:], "amax", include_self=False)
         if isinstance(masks, MaskCrops) and len(masks):
-            out["masks"].set_runs(torch.tensor(rows, dtype=torch.long), *masks.unions(flat, row, len(rows)))
+            data, crop_boxes = masks.unions(flat, row, len(rows))
+            if any(gap_xy) or has_segments:
+                crops = _closed_crops(data, crop_boxes, gap_xy, seams)
+                if any(gap_xy):
+                    data = torch.from_numpy(np.concatenate([c.reshape(-1) for c in crops])).to(data.device, torch.bool)
+                if has_segments:
+                    ref = segments[int(reps[rows[0]])]
+                    for k, crop, box in zip(rows, crops, crop_boxes.tolist()):
+                        ring = _trace(crop, box[0], box[1])
+                        if ring is not None:
+                            traced[k] = torch.as_tensor(ring, dtype=ref.dtype, device=ref.device) if isinstance(ref, torch.Tensor) else ring
+            out["masks"].set_runs(torch.tensor(rows, dtype=torch.long), data, crop_boxes)
 
-    segments = merged.get("segments")
-    if segments is not None and len(segments):
+    if has_segments:
         rep_l, widen_l = reps.tolist(), widen.tolist()
-        out["segments"] = [_union_polygons([segments[i] for i in g]) if widen_l[k] else segments[rep_l[k]] for k, g in enumerate(groups)]
+        out["segments"] = [
+            (traced[k] if k in traced else _union_polygons([segments[i] for i in g], gap_xy, seams)) if widen_l[k] else segments[rep_l[k]]
+            for k, g in enumerate(groups)
+        ]
 
     return out, groups
+
+
+def _closed_crops(data: torch.Tensor, boxes: torch.Tensor, gap: List[int], seams: Tuple[np.ndarray, np.ndarray]) -> List[np.ndarray]:
+    """Packed mask crops as (h, w) uint8 arrays, each closed with a rectangle reaching ``gap`` (x, y) px from its centre,
+    keeping the fill only within ``gap`` of a seam.
+
+    A closing never reaches past the crop's box, so the boxes and the packed layout stay valid.
+    """
+    import cv2
+
+    host = data.cpu().numpy().astype(np.uint8)  # one transfer for every crop
+    gx, gy = gap
+    # a rectangle, not an ellipse: seams are axis-aligned, and cv2 shrinks an ellipse one pixel thick to a point
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2 * gx + 1, 2 * gy + 1)) if gx or gy else None
+    out, at = [], 0
+    for x0, y0, x1, y1 in boxes.tolist():
+        w, h = x1 - x0, y1 - y0
+        crop = host[at : at + w * h].reshape(h, w)
+        at += w * h
+        if kernel is not None and crop.size:
+            # zero padding so the dilation is not cut at the crop edge
+            closed = cv2.morphologyEx(np.pad(crop, ((gy, gy), (gx, gx))), cv2.MORPH_CLOSE, kernel)[gy : gy + h, gx : gx + w]
+            # the pieces' gaps are at the seams; elsewhere a narrow dent or hole is the model's to keep
+            band = _near_seam(x0 + np.arange(w), seams[0], gx)[None, :] | _near_seam(y0 + np.arange(h), seams[1], gy)[:, None]
+            crop = crop | (closed & band)
+        out.append(np.ascontiguousarray(crop))
+    return out
+
+
+def _near_seam(px: np.ndarray, seams: np.ndarray, gap: int) -> np.ndarray:
+    """(P,) bool: pixel index within ``gap`` of a seam, on the side either piece may stop short of it."""
+    if not gap or not len(seams):
+        return np.zeros(len(px), dtype=bool)
+    return ((px[:, None] >= seams - gap) & (px[:, None] < seams + gap)).any(axis=1)
+
+
+def _trace(crop: np.ndarray, x0: int, y0: int) -> Optional[np.ndarray]:
+    """Outline of a mask crop placed at (x0, y0), traced as the detectors trace theirs; None when the crop is empty.
+
+    Pieces that still do not touch keep the largest: they are stray pixels or a second object, and a hull over them
+    covers the background between.
+    """
+    import cv2
+
+    if not crop.size:  # a group whose masks are all empty has a zero box
+        return None
+    contours = cv2.findContours(crop, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+    if not contours:
+        return None
+    points = max(contours, key=cv2.contourArea)
+    return points.reshape(-1, 2).astype(np.float32) + np.array([x0, y0], dtype=np.float32)
 
 
 def _seen_whole_by_a_tile(boxes: torch.Tensor, grid: "_Grid") -> torch.Tensor:
     """(F,) bool: some tile holds the box with more than the grid's tolerance px to each of that tile's inner edges.
 
-    Blocked by ``_TILE_TEST_BUDGET``: a crowded image carries a hundred thousand fragments over a grid of several
-    hundred tiles, and testing that product in one go runs to tens of gigabytes.
+    Each condition concerns one axis and the tiles form a full grid, so some tile fits exactly when some tile column
+    fits the box's x span and some tile row its y span.
     """
-    n_tiles = len(grid.origins)
-    tiles = torch.arange(n_tiles)
-    origins = grid.corners(tiles)
-    extent = torch.tensor([grid.size[1], grid.size[0]], dtype=torch.float32)
-    out = torch.zeros(len(boxes), dtype=torch.bool)
-    block = max(1, _TILE_TEST_BUDGET // max(1, n_tiles))
-    for start in range(0, len(boxes), block):
-        chunk = boxes[start : start + block]
-        b = chunk.repeat_interleave(n_tiles, dim=0)
-        t = tiles.repeat(len(chunk))
-        lo = origins[t]
-        hi = lo + extent
-        inside = (b[:, :2] >= lo).all(dim=1) & (b[:, 2:] <= hi).all(dim=1)
-        fits = inside & ~_cut_flags(b, t, grid, grid.tolerance)
-        out[start : start + len(chunk)] = fits.view(len(chunk), n_tiles).any(dim=1)
+    out = torch.ones(len(boxes), dtype=torch.bool)
+    for axis, lo, hi in ((1, 0, 2), (0, 1, 3)):  # tile axis (y, x) -> box columns
+        starts = torch.as_tensor(np.unique(grid.origins[:, axis]), dtype=torch.float32)[None, :]
+        ends = starts + grid.size[axis]
+        a, b = boxes[:, lo, None], boxes[:, hi, None]
+        cut = ((starts > 0) & (a <= starts + grid.tolerance)) | ((ends < grid.im_size[axis]) & (b >= ends - grid.tolerance))
+        out &= ((a >= starts) & (b <= ends) & ~cut).any(dim=1)
     return out
 
 
@@ -586,9 +653,14 @@ def _drop_fragments_seen_whole(out: Dict[str, Any], droppable: torch.Tensor, gri
     return filter_instances(out, (~drop).nonzero(as_tuple=True)[0])
 
 
-def _union_polygons(polys: List[Any]) -> torch.Tensor:
-    """Outline of the polygons combined into one shape. Holes are lost, because a segment stores a single outline."""
-    from shapely.geometry import MultiPolygon, Polygon
+def _union_polygons(polys: List[Any], gap: Sequence[int] = (0, 0), seams: Optional[Tuple[np.ndarray, np.ndarray]] = None) -> torch.Tensor:
+    """Outline of the polygons combined into one shape. Holes are lost, because a segment stores a single outline.
+
+    ``gap`` (x, y) closes the shape across ``seams``, the vertical then horizontal seam lines, bridging pieces that stop
+    short of one; the rest of the outline is left as it was. Of pieces that still do not touch, the largest is kept.
+    """
+    from shapely import BufferJoinStyle
+    from shapely.geometry import MultiPolygon, Polygon, box
     from shapely.ops import unary_union
 
     geoms = []
@@ -605,7 +677,18 @@ def _union_polygons(polys: List[Any]) -> torch.Tensor:
         return polys[0]
 
     union = unary_union(geoms)
-    if isinstance(union, MultiPolygon):  # the polygons do not all touch: keep the largest piece
+    d = max(gap)
+    if d > 0 and seams is not None:
+        # mitre corners add one vertex each, round ones a whole arc
+        mitre = BufferJoinStyle.mitre
+        closed = unary_union([g.buffer(d, join_style=mitre) for g in geoms]).buffer(-d, join_style=mitre)
+        far = 1e9
+        # outlines run through pixel centres, so a piece's last column sits one px before the band a mask would use
+        strips = [box(s - gap[0] - 1, -far, s + gap[0], far) for s in seams[0] if gap[0]]
+        strips += [box(-far, s - gap[1] - 1, far, s + gap[1]) for s in seams[1] if gap[1]]
+        if strips:
+            union = unary_union([union, closed.intersection(unary_union(strips))])
+    if isinstance(union, MultiPolygon):
         union = max(union.geoms, key=lambda g: g.area)
     ring = np.asarray(union.simplify(SIMPLIFY_TOLERANCE).exterior.coords[:-1], dtype=np.float32)
 

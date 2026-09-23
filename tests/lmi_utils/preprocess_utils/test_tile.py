@@ -220,6 +220,26 @@ def test_tile_masks_under_interpolation_mode():
     assert out[0, :, :45].eq(0).all()
 
 
+def test_tile_apply_coords_interpolation_keeps_a_mask_on_its_box_and_its_labels():
+    # 90 scales to 120 (x 4/3): the box starts at 31 * 4/3 = 41.33, so pixel 41 (center 41.5) is the first inside
+    pre, rec = Preprocessor(), Reconstructor()
+    _, history = pre.preprocess([torch.zeros(90, 90, 3)], [steps.tile(tile_size=60, stride=60, scale_mode="interpolation")])
+    mask = torch.zeros((1, 90, 90), dtype=torch.uint8)
+    mask[0, 31:62, 31:62] = 3
+    results = _empty_results(
+        boxes=[torch.tensor([[31.0, 31.0, 62.0, 62.0]])],
+        scores=[torch.tensor([1.0])],
+        classes=[np.array([0], dtype=np.int32)],
+        masks=[mask],
+    )
+    out = rec.apply_coordinates(results, history)
+    assert out["boxes"][0][0, 0].item() == pytest.approx(124 / 3)
+    tile0 = out["masks"][0][0]
+    assert tile0.dtype == torch.uint8 and sorted(tile0.unique().tolist()) == [0, 3]
+    cols = tile0.any(dim=0).nonzero().flatten()
+    assert (cols.min().item(), cols.max().item()) == (41, 59)
+
+
 def test_tile_masks_under_padding_mode_cropped_to_im_size():
     # im_size 90 pads to 120 (tile 60, stride 60); reverted masks must come back at im_size
     pre, rec = Preprocessor(), Reconstructor()
@@ -365,13 +385,13 @@ def test_tile_revert_images_cursor_mismatch_raises():
         rec.reconstruct_images(extra, history)
 
 
-def _overlap_history(nms_iou=0.5, containment=None, merge_fragments=False):
+def _overlap_history(nms_iou=0.5, merge_fragments=False):
     # 150x150 with tile 100 / stride 50 -> 2x2 overlapping tiles; box [55,55,95,95] lands in all 4.
     pre, rec = Preprocessor(), Reconstructor()
     img = torch.zeros(150, 150, 3)
     _, history = pre.preprocess(
         [img],
-        [steps.tile(tile_size=100, stride=50, nms_iou=nms_iou, containment=containment, merge_fragments=merge_fragments)],
+        [steps.tile(tile_size=100, stride=50, nms_iou=nms_iou, merge_fragments=merge_fragments)],
     )
     return rec, history
 
@@ -503,7 +523,7 @@ def test_tile_revert_coords_rejects_keypoints():
 
 def test_tile_containment_nms_drops_a_fragment_nested_in_a_whole_detection():
     # Merging off, so NMS is the only containment check.
-    rec, history = _overlap_history(containment=0.8)
+    rec, history = _overlap_history()
     results = _empty_results(
         n=4,
         boxes=[
@@ -526,7 +546,7 @@ def test_tile_containment_nms_is_skipped_once_merging_has_run():
     The nested box here is not cut at a seam, so merging leaves it and it now survives. That is the
     cost of running containment once, and it measured far cheaper than over-deleting real objects.
     """
-    rec, history = _overlap_history(containment=0.8, merge_fragments=True)
+    rec, history = _overlap_history(merge_fragments=True)
     results = _empty_results(
         n=4,
         boxes=[
@@ -542,8 +562,8 @@ def test_tile_containment_nms_is_skipped_once_merging_has_run():
     assert out["boxes"][0].shape == (2, 4)
 
 
-def test_tile_containment_disabled_keeps_the_nested_detection():
-    rec, history = _overlap_history(containment=None)
+def test_tile_nms_disabled_keeps_the_nested_detection():
+    rec, history = _overlap_history(nms_iou=None)
     results = _empty_results(
         n=4,
         boxes=[
@@ -563,7 +583,7 @@ def _padded_history():
     # 120x120 with tile 100 / stride 50 pads out to 150x150, so x/y 120..150 is padding.
     pre, rec = Preprocessor(), Reconstructor()
     img = torch.zeros(120, 120, 3)
-    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=50, nms_iou=None, containment=None)])
+    _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=50, nms_iou=None)])
     return rec, history
 
 
@@ -879,7 +899,7 @@ def test_report_merge_origin_labels_a_merged_union():
 
 
 def test_report_merge_origin_still_reports_when_merging_is_off():
-    reverted = _seam_pair_reverted(merge_fragments=False, nms_iou=None, containment=None, report_merge_origin=True)
+    reverted = _seam_pair_reverted(merge_fragments=False, nms_iou=None, report_merge_origin=True)
     assert reverted["boxes"][0].shape == (2, 4)
     assert reverted["merge_origin"][0].tolist() == [tile_merge.ORIGIN_WHOLE, tile_merge.ORIGIN_WHOLE]
 
@@ -948,13 +968,11 @@ def _weak_whole_and_strong_fragment(fragment_x0=0.0, **cfg):
 
 def test_score_threshold_drops_a_weak_view_before_it_can_represent_its_group():
     # the weak whole view must not win the group then fail the threshold; 3 px off the edge avoids the drop rule
-    reverted = _weak_whole_and_strong_fragment(3.0, merge_fragments=True, score_threshold=0.25, nms_iou=None, containment=0.8)
+    reverted = _weak_whole_and_strong_fragment(3.0, merge_fragments=True, score_threshold=0.25, nms_iou=None)
     assert reverted["scores"][0].tolist() == pytest.approx([0.9])
     assert reverted["boxes"][0].tolist() == [[63.0, 20.0, 95.0, 50.0]]
 
 
-def test_containment_zero_asks_for_no_containment_at_all():
-    loose = _weak_whole_and_strong_fragment(merge_fragments=True, nms_iou=None, containment=0.0, report_merge_origin=True)
-    strict = _weak_whole_and_strong_fragment(merge_fragments=True, nms_iou=None, containment=0.9, report_merge_origin=True)
-    assert loose["merge_origin"][0].tolist() == [tile_merge.ORIGIN_WHOLE_GROUPED]
-    assert strict["merge_origin"][0].tolist() == [tile_merge.ORIGIN_WHOLE]
+def test_a_fragment_mostly_inside_a_whole_detection_joins_it():
+    reverted = _weak_whole_and_strong_fragment(merge_fragments=True, nms_iou=None, report_merge_origin=True)
+    assert reverted["merge_origin"][0].tolist() == [tile_merge.ORIGIN_WHOLE_GROUPED]
