@@ -1,5 +1,6 @@
 """Tiler configuration callback. from anomalib v2.3.3"""
 
+import inspect
 import logging
 from collections.abc import Sequence
 from typing import Any
@@ -9,7 +10,7 @@ from anomalib.callbacks.tiler_configuration import TilerConfigurationCallback
 from anomalib.data.utils.tiler import Tiler as AnomalibTiler
 from anomalib.models.components import AnomalibModule
 
-from lmi_utils.image_utils.tiler import ScaleMode, Tiler
+from lmi_utils.image_utils.tiler import OverlapMode, ScaleMode, Tiler
 
 logger = logging.getLogger(__name__)
 
@@ -21,15 +22,12 @@ class CallbackTiler(Tiler):
         stride: int | Sequence | None,
         remove_border_count: int = 0,
         mode: ScaleMode = ScaleMode.PADDING,
-        **kwargs,
+        overlap_mode: OverlapMode = OverlapMode.AVERAGE,
     ):
-        # Anomalib's Tiler allows stride=None -> stride=tile_size
-        # This behavior is included in this subclass instead of main
-        # repo Tiler, as stride is expected to always be present in
-        # main Tiler use case
+        # anomalib allows stride=None as stride=tile_size; the main Tiler always takes a stride
         tile_size = list(AnomalibTiler.validate_size_type(tile_size))
         stride = stride or tile_size
-        super().__init__(tile_size, stride, scale_mode=mode)
+        super().__init__(tile_size, stride, scale_mode=mode, overlap_mode=overlap_mode)
         self.remove_border_count = remove_border_count  # unused
 
     @property
@@ -65,6 +63,8 @@ class TilerConfigCallback(TilerConfigurationCallback):
                 raise ValueError(f"Unknown tiler_type {tiler_class!r}. Available: {sorted(TILERS)}")
             tiler_class = TILERS[tiler_class]
         self.tiler_class = tiler_class or CallbackTiler
+        # raise now on a setting the tiler does not take, not at setup
+        inspect.signature(self.tiler_class).bind(tile_size=tile_size, stride=stride, mode=mode, **tiler_kwargs)
         self.tiler_kwargs = tiler_kwargs
 
     def setup(self, trainer: pl.Trainer, pl_module: pl.LightningModule, stage: str | None = None) -> None:

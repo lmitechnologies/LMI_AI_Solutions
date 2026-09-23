@@ -136,9 +136,7 @@ def test_untile_with_a_one_pixel_overlap_blends_without_nan(overlap_mode):
 @pytest.mark.parametrize("overlap_mode", ["linear", "cosine", "gaussian", "average", "max"])
 @pytest.mark.parametrize(["tile", "stride"], [(256, 128), (256, 240), (64, 56), (32, 16), (8, 7), (32, 32)])
 def test_untile_rebuilds_a_flat_image_at_any_overlap(tile, stride, overlap_mode):
-    # regressions this covers: a gaussian of the distance from the tile centre underflowed to 0 over the whole
-    # tile at small overlaps; linear and cosine tapered the image border to 0 with no second tile to make up
-    # the weight; a 1 px overlap put both tiles on their own zero-weight edge at the seam
+    # covers gaussian underflow at small overlaps, tapered image borders and zero-weight 1 px seams
     t = Tiler([tile, tile], [stride, stride])
     im = torch.full((1, 1, tile * 2 + 3, tile * 2 + 5), 100.0)
     out = t.untile(t.tile(im), overlap_mode=overlap_mode)
@@ -147,9 +145,7 @@ def test_untile_rebuilds_a_flat_image_at_any_overlap(tile, stride, overlap_mode)
 
 @pytest.mark.parametrize("overlap_mode", ["linear", "cosine", "gaussian", "average", "max"])
 def test_feature_map_untile_blends_at_the_downscaled_size(overlap_mode):
-    # untile a model's feature maps: tiles come back smaller than the image tiles, so positions, stride and
-    # canvas rescale by tile_h/tile_size. The neighbour-aware blend must size its mask to the feature tile,
-    # not the image tile, or the broadcast would mismatch and border tiles would be tapered to no weight.
+    # feature-map tiles: the grid and the blend mask rescale by tile_h / tile_size
     t = Tiler([8, 8], [4, 4])
     t.tile(torch.zeros(1, 1, 16, 16))  # sets the grid; 3x3 tiles over a 16x16 scaled image
     feat = torch.full((t.n_tiles[0] * t.n_tiles[1], 1, 4, 4), 7.0)  # 4x4 feature tiles at half scale
@@ -169,8 +165,7 @@ def test_blended_untile_round_trips_a_random_batch(overlap_mode):
 
 @pytest.mark.parametrize("dtype", [torch.float32, torch.uint8, torch.int16])
 def test_interpolation_upscale_is_bilinear_not_nearest(dtype):
-    # nearest duplicates whole source pixels, so a smooth ramp comes back with flat steps and the
-    # detector sees an aliased image; it was the silent default before a mode was passed
+    # nearest duplicated source pixels, turning a smooth ramp into flat steps
     from lmi_utils.image_utils.tiler import upscale_image
 
     ramp = torch.linspace(0, 200, 16).view(1, 1, 1, 16).expand(1, 1, 16, 16).contiguous().to(dtype)
@@ -208,8 +203,7 @@ def test_untile_non_integral_feature_scale_covers_output():
 
 
 def test_untile_returns_the_size_it_asked_for():
-    # 752 px at 1/32 is 23.5 feature columns, and rounding asked for 24 from a 23 column canvas; the crop
-    # in downscale_image then quietly handed back 23, so the returned shape did not match the computed one
+    # 752 / 32 = 23.5 columns; round asked for 24 from a 23 column canvas and the crop returned 23
     tiler = Tiler([32, 32], [16, 16])
     flat = torch.full((1, 1, 480, 752), 100.0)
     features = torch.nn.functional.interpolate(tiler.tile(flat), size=(1, 1), mode="nearest")
@@ -255,10 +249,8 @@ def test_tiler_state_may_hold_tensors():
     assert tiler.tile_boxes().shape == (9, 4)
 
 
-def test_untile_survives_tracing():
-    # anomalib traces the model to export it, and under tracing a derived tensor's shape is 0-dim tensors,
-    # so every dimension untile reads has to be pulled back to an int before any arithmetic
-
+def test_traced_untile_keeps_the_batch_dynamic():
+    # anomalib traces the model to export it, and engines run at more than the traced batch
     class Tiled(torch.nn.Module):
         def __init__(self):
             super().__init__()
@@ -268,9 +260,9 @@ def test_untile_survives_tracing():
             features = torch.nn.functional.avg_pool2d(self.tiler.tile(x), 4)
             return self.tiler.untile(features)
 
-    image = torch.rand(1, 3, 224, 224)
-    assert Tiled()(image).shape == (1, 3, 56, 56)
-    torch.jit.trace(Tiled(), image, check_trace=False)
+    traced = torch.jit.trace(Tiled(), torch.rand(1, 3, 224, 224), check_trace=False)
+    batch = torch.rand(2, 3, 224, 224)
+    assert torch.allclose(traced(batch), Tiled()(batch))
 
 
 def test_untile_max_exports_to_onnx():
@@ -284,27 +276,6 @@ def test_untile_max_exports_to_onnx():
             return self.tiler.untile(torch.nn.functional.avg_pool2d(self.tiler.tile(x), 4))
 
     torch.onnx.export(Tiled(), torch.rand(1, 3, 224, 224), io.BytesIO(), opset_version=17)
-
-
-def test_expected_scale_rejects_tiles_that_are_not_image_tiles():
-    # callers that untile image tiles pass expected_scale=1, so a wrong tile size raises instead of
-    # being read as a feature map and rebuilt at that scale
-    tiler = Tiler([32, 32], [16, 16])
-    tiler.tile(torch.rand(1, 1, 64, 64))
-
-    with pytest.raises(ValueError, match=r"Expected tile size \[32, 32\]"):
-        tiler.untile(torch.rand(9, 1, 16, 16), expected_scale=1)
-
-    assert tiler.untile(torch.rand(9, 1, 32, 32), expected_scale=1).shape == (1, 1, 64, 64)
-
-
-def test_expected_scale_admits_a_known_feature_scale():
-    tiler = Tiler([32, 32], [16, 16])
-    tiler.tile(torch.rand(1, 1, 64, 64))
-
-    assert tiler.untile(torch.rand(9, 1, 8, 8), expected_scale=0.25).shape == (1, 1, 16, 16)
-    with pytest.raises(ValueError, match="at scale 0.25"):
-        tiler.untile(torch.rand(9, 1, 4, 4), expected_scale=0.25)
 
 
 def test_untile_rounds_integer_seams_instead_of_truncating():
@@ -342,10 +313,28 @@ def test_untile_max_mode_keeps_negative_values():
     assert torch.equal(out, im)
 
 
+def test_untile_max_mode_keeps_real_negative_infinity():
+    # -inf marked uncovered pixels and was replaced by 0, which also hit a real -inf in a log-score map
+    t = Tiler([64, 64], [32, 32])
+    im = torch.full((1, 1, 128, 128), -5.0)
+    im[0, 0, 40, 40] = float("-inf")
+
+    assert torch.equal(t.untile(t.tile(im), overlap_mode="max"), im)
+
+
+@pytest.mark.parametrize(["tile", "stride"], [(224, 112), (224, 160), (224, 224), (100, 37)])
+@pytest.mark.parametrize("feature", [1, 7, 13, 28, 55])
+@pytest.mark.parametrize("scale_mode", ["padding", "interpolation"])
+def test_untile_max_mode_covers_every_pixel_at_any_feature_scale(tile, stride, feature, scale_mode):
+    t = Tiler([tile, tile], [stride, stride], scale_mode=scale_mode)
+    features = torch.nn.functional.interpolate(t.tile(torch.rand(1, 1, 331, 517)), size=(feature, feature), mode="nearest")
+
+    assert torch.isfinite(t.untile(features, overlap_mode="max")).all()
+
+
 @pytest.mark.parametrize(["im", "tile", "stride"], [(torch.rand(1, 3, 400, 400), 224, 112), (torch.rand(1, 1, 300, 300), 128, 64)])
 def test_interpolation_round_trip_resamples_both_ways(im, tile, stride):
-    # upscale went bilinear while downscale kept torch's nearest default, so the reverse dropped whole columns;
-    # the existing interpolation tests all use sizes that divide evenly, where neither direction resamples at all
+    # downscale used nearest while upscale used bilinear, dropping whole columns on the way back
     t = Tiler([tile, tile], [stride, stride], scale_mode=ScaleMode.INTERPOLATION)
     assert tuple(t.tile(im).shape[2:]) == (tile, tile)
     assert tuple(t.scale_size) != tuple(im.shape[2:])  # this case really does resize
@@ -381,14 +370,21 @@ def test_scale_mode_survives_a_metadata_round_trip(tmp_path):
     assert torch.equal(restored.untile(tiles), t.untile(tiles))
 
 
-def test_metadata_without_a_scale_mode_still_loads():
+@pytest.mark.parametrize("recorded", ["missing", None])
+def test_metadata_without_a_scale_mode_uses_the_default(recorded):
     # json written before scale_mode was recorded must keep working
     t = Tiler([32, 32], [16, 16])
     t.tile(torch.rand(1, 1, 64, 64))
     meta = t.to_dict()
-    del meta["scale_mode"]
+    if recorded == "missing":
+        del meta["scale_mode"]
+    else:
+        meta["scale_mode"] = recorded
 
-    assert Tiler.from_dict(meta).untile(torch.rand(9, 1, 32, 32)).shape == (1, 1, 64, 64)
+    assert Tiler.from_dict(meta).scale_mode == ScaleMode.PADDING
+    restored = Tiler.from_dict(meta, default_scale_mode=ScaleMode.INTERPOLATION)
+    assert restored.scale_mode == ScaleMode.INTERPOLATION
+    assert restored.untile(torch.rand(9, 1, 32, 32)).shape == (1, 1, 64, 64)
 
 
 @pytest.mark.parametrize(["tile", "stride"], [([32, 32], [0, 0]), ([32, 32], [-16, -16]), ([0, 0], [0, 0]), ([32.5, 32.5], [16, 16])])

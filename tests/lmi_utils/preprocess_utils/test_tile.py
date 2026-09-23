@@ -142,6 +142,17 @@ def test_tile_apply_coords_interpolation_mode_scales_coords():
         assert torch.allclose(out["boxes"][i], torch.tensor(exp), atol=1e-4), f"tile {i} got {out['boxes'][i]}"
 
 
+def test_reconstruct_accepts_maps_smaller_than_the_tiles():
+    # an AD engine returns maps at its own image_size, not the tile size
+    _, history = Preprocessor().preprocess([torch.rand(448, 448, 3)], [steps.tile(tile_size=224, stride=112)])
+    maps = [torch.full((112, 112), 7.0) for _ in range(9)]
+
+    restored = Reconstructor().reconstruct_images(maps, history)
+
+    assert restored[0].shape == (224, 224)
+    assert torch.allclose(restored[0], torch.full((224, 224), 7.0))
+
+
 def test_tile_2d_grayscale_round_trip_preserves_shape_and_values():
     pre, rec = Preprocessor(), Reconstructor()
     img = torch.arange(100 * 100, dtype=torch.float32).reshape(100, 100)
@@ -210,8 +221,7 @@ def test_tile_masks_under_interpolation_mode():
 
 
 def test_tile_masks_under_padding_mode_cropped_to_im_size():
-    # im_size 90 pads to scale_size 120 (tile 60, stride 60). Reverted masks must come
-    # back at im_size to match the reverted image, not the padded scale_size.
+    # im_size 90 pads to 120 (tile 60, stride 60); reverted masks must come back at im_size
     pre, rec = Preprocessor(), Reconstructor()
     img = torch.zeros((90, 90, 3))
     _tiles, history = pre.preprocess([img], [steps.tile(tile_size=60, stride=60, scale_mode="padding")])
@@ -286,8 +296,7 @@ def test_rescale_to_image_scales_each_axis_independently():
 
 
 def test_tile_apply_coords_image_level_label_propagates_to_all_tiles():
-    # Classification-style result: only scores/classes, no geometry. With nothing to clip
-    # against, the label should propagate to every tile rather than being dropped.
+    # an image-level result has no geometry, so every tile keeps the label
     _, rec, history = _tile_pipeline()
     results = {
         "scores": [torch.tensor([0.7])],
@@ -458,8 +467,7 @@ def test_tile_revert_coords_dedupe_segments_via_polygon_iou():
 
 
 def test_tile_merge_fragments_spans_three_tiles():
-    # 250x100 with tile 100 / stride 80 -> 3 tiles at x = 0, 80, 160; the object covers all three
-    # and the middle tile sees only its interior, with no edge of the object visible.
+    # 250x100, tile 100 / stride 80: tiles at x = 0, 80, 160; the middle tile sees no edge of the object
     pre, rec = Preprocessor(), Reconstructor()
     img = torch.zeros(100, 250, 3)
     _, history = pre.preprocess([img], [steps.tile(tile_size=100, stride=80, merge_fragments=True)])
@@ -586,8 +594,7 @@ def test_tile_clips_predictions_that_straddle_the_image_edge():
 
 
 def test_tile_score_threshold_drops_weak_fragments_before_merging():
-    # three views of one object spanning the image; thresholding runs first, so the two weak ones are gone
-    # before merging can union them and only tile 2's own detection is left
+    # three views of one object; thresholding first drops the two weak ones, leaving tile 2's detection
     pre, rec = Preprocessor(), Reconstructor()
     img = torch.zeros(100, 250, 3)
     results = _empty_results(
@@ -657,8 +664,7 @@ def _two_tile_results(boxes, scores):
 
 
 def test_tile_two_objects_abutting_at_a_seam_survive_as_two():
-    # A is x 20..80, B is x 80..140. Each tile sees one whole and clips the other at the seam;
-    # the fragments must neither merge the two objects nor survive NMS.
+    # A is x 20..80, B is x 80..140; the clipped fragments must neither merge A with B nor survive NMS
     results = _two_tile_results(
         boxes=[[[20, 20, 80, 50], [80, 20, 100, 50]], [[0, 20, 20, 50], [20, 20, 80, 50]]],
         scores=[[0.9, 0.5], [0.5, 0.9]],
@@ -671,8 +677,7 @@ def test_tile_two_objects_abutting_at_a_seam_survive_as_two():
 
 
 def test_tile_two_whole_objects_in_the_overlap_band_survive_as_two():
-    # Both objects sit inside the overlap, so both tiles see both whole. Nothing is truncated;
-    # NMS must collapse each pair of duplicates without merging the two objects together.
+    # both objects sit in the overlap; NMS must collapse each duplicate pair without merging A and B
     results = _two_tile_results(
         boxes=[[[68, 20, 78, 50], [82, 20, 92, 50]], [[8, 20, 18, 50], [22, 20, 32, 50]]],
         scores=[[0.9, 0.8], [0.7, 0.6]],
@@ -942,8 +947,7 @@ def _weak_whole_and_strong_fragment(fragment_x0=0.0, **cfg):
 
 
 def test_score_threshold_drops_a_weak_view_before_it_can_represent_its_group():
-    # thresholding after merging lost the object entirely: the weak whole view won the group, then failed the threshold.
-    # 3px off the edge keeps the lone fragment out of the drop rule, which would delete it since tile 0 covered its area.
+    # the weak whole view must not win the group then fail the threshold; 3 px off the edge avoids the drop rule
     reverted = _weak_whole_and_strong_fragment(3.0, merge_fragments=True, score_threshold=0.25, nms_iou=None, containment=0.8)
     assert reverted["scores"][0].tolist() == pytest.approx([0.9])
     assert reverted["boxes"][0].tolist() == [[63.0, 20.0, 95.0, 50.0]]

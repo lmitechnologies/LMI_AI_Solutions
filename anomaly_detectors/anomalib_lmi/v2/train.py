@@ -144,8 +144,7 @@ def build_tiler(tile_size, stride, tiler_cls_name=None):
 
 
 def estimate_max_samples(config_path, num_samples=None):
-    # Run in a subprocess so the model/CUDA context built for profiling is fully
-    # released on process exit, leaving no lingering VRAM before engine.fit().
+    # a subprocess frees the profiling model's CUDA memory before engine.fit()
     cmd = [
         sys.executable,
         "-m",

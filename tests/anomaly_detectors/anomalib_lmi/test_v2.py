@@ -327,12 +327,28 @@ def test_tiler_type_selects_the_tiler(tiler_type, expected):
 
 @pytest.mark.parametrize("tiler_type", ["Tiler", "logging", "NotATiler"])
 def test_unknown_tiler_type_is_rejected_at_config_time(tiler_type):
-    # a globals() lookup also reached imports and the raw Tiler, which has no mode argument and only
-    # failed once setup ran, well after the config was accepted
+    # a globals() lookup also accepted the raw Tiler, which failed only once setup ran
     from anomaly_detectors.anomalib_lmi.v2.tiling import TilerConfigCallback
 
     with pytest.raises(ValueError, match="Unknown tiler_type"):
         TilerConfigCallback(enable=True, tile_size=224, stride=112, tiler_class=tiler_type)
+
+
+def test_callback_tiler_takes_the_overlap_mode():
+    from anomaly_detectors.anomalib_lmi.v2.tiling import TilerConfigCallback
+
+    callback = TilerConfigCallback(enable=True, tile_size=224, stride=112, overlap_mode="gaussian")
+    tiler = callback.tiler_class(tile_size=224, stride=112, mode=callback.mode, **callback.tiler_kwargs)
+
+    assert tiler.overlap_mode.value == "gaussian"
+
+
+@pytest.mark.parametrize("tiler_type", [None, "AnomalibTiler"])
+def test_a_setting_the_tiler_does_not_take_is_rejected_at_config_time(tiler_type):
+    from anomaly_detectors.anomalib_lmi.v2.tiling import TilerConfigCallback
+
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        TilerConfigCallback(enable=True, tile_size=224, stride=112, tiler_class=tiler_type, not_a_setting=1)
 
 
 def _write_padim_config(root, tile_size, stride, image_size=(448, 448)):

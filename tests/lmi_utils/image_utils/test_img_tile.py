@@ -93,3 +93,12 @@ def test_untile_falls_back_to_the_given_mode_for_metadata_without_one(tmp_path):
 
     for im1, im2 in zip(load_imgs(current), load_imgs(legacy), strict=True):
         assert torch.equal(im1, im2)
+
+
+def test_untile_warns_when_the_requested_mode_disagrees_with_the_metadata(tmp_path, caplog):
+    to_tiles(PATH_IMG, tmp_path / "tiles", 224, 112)
+
+    with caplog.at_level(logging.WARNING):
+        to_images(tmp_path / "tiles", tmp_path / "out", mode=ScaleMode.INTERPOLATION)
+
+    assert "tiles were built with padding, ignoring requested interpolation" in caplog.text

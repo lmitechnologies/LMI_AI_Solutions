@@ -233,7 +233,7 @@ class TileOperation(Operation[TileConfig, TileMeta]):
                 batch_hwc = batch_hwc.unsqueeze(-1)
             batch_chw = batch_hwc.permute(0, 3, 1, 2)  # [N, C, H, W]
 
-            restored_batch = tiler.untile(batch_chw, overlap_mode=meta.overlap_modes[i], expected_scale=1)
+            restored_batch = tiler.untile(batch_chw, overlap_mode=meta.overlap_modes[i])
             restored_img = restored_batch.squeeze(0).permute(1, 2, 0)
             if add_channel:
                 restored_img = restored_img.squeeze(-1)
@@ -352,8 +352,7 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
             report_origin=report_origin,
         )
 
-    # merging replaces containment suppression: it widens a box to its group's union, so a containment test
-    # would delete the neighbours that union now encloses.
+    # merging replaces containment, which would delete the neighbours a merged union encloses
     iou_thr = tiler_meta.get("nms_iou")
     containment = None if did_merge else tiler_meta.get("containment")
     if iou_thr is not None or containment is not None:
@@ -454,8 +453,7 @@ def _rescale_to_image(merged: Dict[str, Any], sx: float, sy: float, im_h: int, i
         return xy.float() * scale
 
     def mask_fn(masks: torch.Tensor) -> torch.Tensor:
-        # resampling holds a float copy of both sides at once, so go in chunks: a crowded image carries hundreds
-        # of full-image masks and converting them all at once costs more than the rest of the pipeline
+        # chunked: a float copy of hundreds of full-image masks at once dominates memory
         per_mask = 2 * (masks.shape[1] * masks.shape[2] + im_h * im_w)  # fp16: 2.4e-4 error against a 0.5 cut
         chunk = max(1, _MASK_RESIZE_BUDGET // per_mask)
         out = masks.new_empty((len(masks), im_h, im_w), dtype=mask_dtype)
@@ -620,8 +618,7 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
         kept |= (masks_out.reshape(n, -1) != 0).any(dim=-1)
 
     if not has_spatial:
-        # Image-level label (only scores/classes, no geometry): nothing to clip, so
-        # propagate every instance to this tile rather than dropping them all.
+        # an image-level label has no geometry to clip, so every tile keeps it
         kept[:] = True
 
     kept_idx = kept.nonzero(as_tuple=True)[0]
