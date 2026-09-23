@@ -71,7 +71,7 @@ def test_intersection_union_and_indexing_match_full_masks():
     members = [0, 2, 3, 7]
     crop, box = crops.union(members)
     picked = crops[torch.tensor([1, 3])]
-    picked.set(0, crop, box)
+    picked.set_runs(torch.tensor([0]), crop.reshape(-1), box.reshape(1, 4))
     want = torch.stack([masks[members].any(dim=0), masks[3]])
     assert torch.equal(picked.paste(), want)
     assert torch.equal(crops.paste(), masks)  # editing the indexed copy leaves the source alone

@@ -268,10 +268,6 @@ class MaskCrops:
         self.offset = _offsets(sizes)
         self._areas = None
 
-    def set(self, k: int, crop: torch.Tensor, box: torch.Tensor) -> None:
-        """Replace mask k. Prefer ``set_runs``: a crop can change size, so each call rebuilds the buffer."""
-        self.set_runs(torch.tensor([int(k)]), crop.reshape(-1), box.reshape(1, 4))
-
     def paste(self) -> torch.Tensor:
         """(N, H, W) full-image masks of ``dtype``."""
         out = torch.zeros(len(self), *self.size, dtype=self.dtype, device=self.device)

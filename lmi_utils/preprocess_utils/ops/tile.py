@@ -329,10 +329,12 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     merged = _concat_tile_results(shifted)
     tile_idx = torch.cat(tile_idx_parts) if tile_idx_parts else torch.zeros(0, dtype=torch.long)
 
+    keep = _above_score(merged, float(tiler_meta.get("score_threshold") or 0.0), len(tile_idx))
     if not is_interp and (scale_h != im_h or scale_w != im_w):
-        merged, tile_idx = _drop_in_padding(merged, tile_idx, im_h, im_w)
-
-    merged, tile_idx = _apply_score_threshold(merged, float(tiler_meta.get("score_threshold") or 0.0), tile_idx)
+        keep &= _inside_image(merged, len(tile_idx), im_h, im_w)
+    if not keep.all():
+        kept = keep.nonzero(as_tuple=True)[0]
+        merged, tile_idx = filter_instances(merged, kept), tile_idx[kept]
 
     report_origin = bool(tiler_meta.get("report_merge_origin"))
     did_merge = bool(tiler_meta.get("merge_fragments", False))  # absent means a hand-built meta: off
@@ -370,10 +372,7 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
 
 
 def _reject_unsupported(result: Dict[str, Any]) -> None:
-    """Tiling has no rule for keypoints or oriented boxes; fail rather than return them wrong.
-
-    The clip/refit code for both is still in ``_project_to_tile``, kept for future support.
-    """
+    """Tiling has no rule for keypoints or oriented boxes; fail rather than return them wrong."""
     points = result.get("points")
     if isinstance(points, torch.Tensor) and len(points):
         raise ValueError("tile: tiling does not support keypoints")
@@ -382,28 +381,22 @@ def _reject_unsupported(result: Dict[str, Any]) -> None:
         raise ValueError("tile: tiling does not support oriented boxes")
 
 
-def _drop_in_padding(merged: Dict[str, Any], tile_idx: torch.Tensor, im_h: int, im_w: int) -> Tuple[Dict[str, Any], torch.Tensor]:
-    """Discard predictions that lie wholly outside the original image, in the padding."""
+def _inside_image(merged: Dict[str, Any], n: int, im_h: int, im_w: int) -> torch.Tensor:
+    """(n,) bool: the prediction is not wholly in the padding outside the original image."""
     boxes = instance_boxes(merged)
-    if boxes is None or len(boxes) != len(tile_idx):
-        return merged, tile_idx
+    if boxes is None or len(boxes) != n:
+        return torch.ones(n, dtype=torch.bool)
     # a mask keeps only its in-image pixels, so an empty box means the prediction sat entirely in the padding
     inside = (boxes[:, 2] > boxes[:, 0]) & (boxes[:, 3] > boxes[:, 1])
-    keep = (inside & (boxes[:, 0] < im_w) & (boxes[:, 1] < im_h)).nonzero(as_tuple=True)[0]
-    if len(keep) == len(tile_idx):
-        return merged, tile_idx
-    return filter_instances(merged, keep), tile_idx[keep]
+    return inside & (boxes[:, 0] < im_w) & (boxes[:, 1] < im_h)
 
 
-def _apply_score_threshold(merged: Dict[str, Any], threshold: float, tile_idx: torch.Tensor) -> Tuple[Dict[str, Any], torch.Tensor]:
-    """Drop predictions below ``threshold``, keeping ``tile_idx`` in step. Runs before merging."""
+def _above_score(merged: Dict[str, Any], threshold: float, n: int) -> torch.Tensor:
+    """(n,) bool: the prediction reaches ``threshold``."""
     scores = merged.get("scores")
-    if threshold <= 0 or not isinstance(scores, torch.Tensor) or len(scores) != len(tile_idx):
-        return merged, tile_idx
-    keep = (scores.detach().cpu().float() >= threshold).nonzero(as_tuple=True)[0]
-    if len(keep) == len(scores):
-        return merged, tile_idx
-    return filter_instances(merged, keep), tile_idx[keep]
+    if threshold <= 0 or not isinstance(scores, torch.Tensor) or len(scores) != n:
+        return torch.ones(n, dtype=torch.bool)
+    return scores.detach().cpu().float() >= threshold
 
 
 def _containment_or_strict(value: Optional[float]) -> float:
@@ -526,62 +519,29 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
 
     device = result_device(result)
     kept = torch.zeros(n, dtype=torch.bool, device=device)
-    boxes_out = points_out = masks_out = None
+    boxes_out = masks_out = None
     segments_out: Optional[List[torch.Tensor]] = None
     has_spatial = False  # whether any geometry field exists to clip against
 
     boxes = result.get("boxes")
-    if boxes is not None and len(boxes):
+    if boxes is not None and len(boxes):  # xyxy (N, 4): box around the projected corners, then clipped
         has_spatial = True
-        if boxes.ndim == 3:  # OBB (N, 4, 2)
-            # Unreachable: _reject_unsupported turns OBB away. Kept for future support.
-            obb_t = to_tile_xy(boxes.reshape(-1, 2)).reshape(n, 4, 2)
-            obb_kept = torch.zeros(n, dtype=torch.bool, device=device)
-            refit = obb_t.clone()
-            for i in range(n):
-                clipped = _polygon_clip(obb_t[i], tile_w, tile_h)
-                if clipped.shape[0] < 3:
-                    continue
-                fitted = _refit_obb_keep_orientation(clipped, obb_t[i])
-                if fitted is None:
-                    continue
-                refit[i] = fitted.to(refit.dtype).to(refit.device)
-                obb_kept[i] = True
-            boxes_out = refit
-            kept |= obb_kept
-        else:  # xyxy (N, 4) — rotate-style: take aabb of forward-projected corners, then clip
-            corners = torch.stack(
-                [
-                    torch.stack([boxes[:, 0], boxes[:, 1]], dim=-1),
-                    torch.stack([boxes[:, 2], boxes[:, 1]], dim=-1),
-                    torch.stack([boxes[:, 2], boxes[:, 3]], dim=-1),
-                    torch.stack([boxes[:, 0], boxes[:, 3]], dim=-1),
-                ],
-                dim=1,
-            )  # (N, 4, 2)
-            corners_t = to_tile_xy(corners.reshape(-1, 2)).reshape(n, 4, 2)
-            x1 = corners_t[..., 0].amin(dim=1).clamp(0, tile_w)
-            x2 = corners_t[..., 0].amax(dim=1).clamp(0, tile_w)
-            y1 = corners_t[..., 1].amin(dim=1).clamp(0, tile_h)
-            y2 = corners_t[..., 1].amax(dim=1).clamp(0, tile_h)
-            boxes_out = torch.stack([x1, y1, x2, y2], dim=-1)
-            kept |= (x2 > x1) & (y2 > y1)
-
-    points = result.get("points")
-    if points is not None and len(points):
-        # Unreachable: _reject_unsupported turns keypoints away. Kept for future support.
-        has_spatial = True
-        xy = points[..., :2]
-        xy_t = to_tile_xy(xy.reshape(-1, 2)).reshape(xy.shape)
-        in_tile = (xy_t[..., 0] >= 0) & (xy_t[..., 0] <= tile_w) & (xy_t[..., 1] >= 0) & (xy_t[..., 1] <= tile_h)
-        if points.shape[-1] == 3:
-            vis = points[..., 2]
-            new_vis = torch.where(in_tile, vis, torch.zeros_like(vis))
-            points_out = torch.cat([xy_t, new_vis.unsqueeze(-1)], dim=-1)
-            kept |= (new_vis > 0).any(dim=-1)
-        else:
-            points_out = xy_t
-            kept |= in_tile.any(dim=-1)
+        corners = torch.stack(
+            [
+                torch.stack([boxes[:, 0], boxes[:, 1]], dim=-1),
+                torch.stack([boxes[:, 2], boxes[:, 1]], dim=-1),
+                torch.stack([boxes[:, 2], boxes[:, 3]], dim=-1),
+                torch.stack([boxes[:, 0], boxes[:, 3]], dim=-1),
+            ],
+            dim=1,
+        )  # (N, 4, 2)
+        corners_t = to_tile_xy(corners.reshape(-1, 2)).reshape(n, 4, 2)
+        x1 = corners_t[..., 0].amin(dim=1).clamp(0, tile_w)
+        x2 = corners_t[..., 0].amax(dim=1).clamp(0, tile_w)
+        y1 = corners_t[..., 1].amin(dim=1).clamp(0, tile_h)
+        y2 = corners_t[..., 1].amax(dim=1).clamp(0, tile_h)
+        boxes_out = torch.stack([x1, y1, x2, y2], dim=-1)
+        kept |= (x2 > x1) & (y2 > y1)
 
     segments = result.get("segments")
     if segments is not None and len(segments):
@@ -624,8 +584,6 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
     kept_idx = kept.nonzero(as_tuple=True)[0]
     if boxes_out is not None:
         out["boxes"] = boxes_out[kept_idx]
-    if points_out is not None:
-        out["points"] = points_out[kept_idx]
     if segments_out is not None:
         out["segments"] = [segments_out[i] for i in kept_idx.tolist()]
     if masks_out is not None:
@@ -704,40 +662,3 @@ def _polygon_clip(poly: torch.Tensor, w: float, h: float) -> torch.Tensor:
     if not pts:
         return torch.zeros((0, 2), dtype=poly.dtype, device=poly.device)
     return torch.tensor(pts, dtype=poly.dtype, device=poly.device)
-
-
-def _refit_obb_keep_orientation(clipped: torch.Tensor, original: torch.Tensor) -> Optional[torch.Tensor]:
-    """Refit a clipped polygon as a 4-corner rect aligned with the original OBB's orientation.
-
-    Unreachable while tiling rejects OBB; kept for future support.
-
-    Project clipped points into the original OBB's local frame, take the AABB there,
-    then rotate back. Result keeps the original rotation (so a near-vertical OBB stays
-    near-vertical even after clipping a sliver). Output corners are in TL→TR→BR→BL
-    order in the original OBB's local frame.
-
-    Returns None for degenerate inputs (< 3 vertices, zero-length edge, or zero-area AABB).
-    """
-    if clipped.shape[0] < 3:
-        return None
-    pts = clipped.detach().cpu().numpy().astype(np.float32)
-    orig = original.detach().cpu().numpy().astype(np.float32)
-
-    dx = orig[1, 0] - orig[0, 0]
-    dy = orig[1, 1] - orig[0, 1]
-    if abs(dx) < 1e-9 and abs(dy) < 1e-9:
-        return None
-    theta = float(np.arctan2(dy, dx))
-    c, s = float(np.cos(theta)), float(np.sin(theta))
-
-    R_to_local = np.array([[c, -s], [s, c]], dtype=np.float32)
-    local = pts @ R_to_local
-    x_min, y_min = float(local[:, 0].min()), float(local[:, 1].min())
-    x_max, y_max = float(local[:, 0].max()), float(local[:, 1].max())
-    if (x_max - x_min) <= 1e-6 or (y_max - y_min) <= 1e-6:
-        return None
-
-    local_corners = np.array([[x_min, y_min], [x_max, y_min], [x_max, y_max], [x_min, y_max]], dtype=np.float32)
-    R_to_world = np.array([[c, s], [-s, c]], dtype=np.float32)
-    world = local_corners @ R_to_world
-    return torch.from_numpy(world)

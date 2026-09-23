@@ -31,7 +31,6 @@ SAME_OBJECT_CONTAINMENT = 0.95  # two whole detections are one object when this 
 AGREEMENT_IOU = 0.5  # to join, two boxes must reach this IoU within the area both tiles cover
 SIMPLIFY_TOLERANCE = 1.0  # px a combined polygon's outline may move when it is simplified
 _NO_PAIRS = torch.zeros(0, 2, dtype=torch.long)  # an (L, 2) index-pair list with nothing in it
-_TILE_TEST_BUDGET = 1_000_000  # (fragment, tile) rows tested at once when looking for a tile that saw a fragment whole
 
 
 # merge_origin codes: how each output detection was built
@@ -56,7 +55,7 @@ def merge_tile_fragments(
     Args:
         merged: one image's result dict, in image coordinates.
         tile_idx: (N,) tile index of each detection.
-        tile_origins: (T, 2) top-left (y, x) of each tile in the image.
+        tile_origins: (T, 2) top-left (y, x) of each tile in the image; a full grid, every row start with every column start.
         tile_size: (tile_h, tile_w).
         im_size: (im_h, im_w) of the original image, without padding.
         containment: to join a cut detection with a whole one, at least this share of the cut one must lie inside
@@ -99,23 +98,26 @@ def merge_tile_fragments(
     joins = _joins(merged, boxes, cut, tile_idx, grid, containment, touching)
     groups = _split_distinct_whole(merged, boxes, _connected_groups(joins, len(tile_idx)), whole, joins, touching)
 
-    united = any(len(g) > 1 for g in groups)
-    out, groups = _union_groups(merged, groups, whole, grid) if united else (merged, groups)
-    rows = _Rows(groups) if united else _Rows(groups, len(tile_idx))
+    if any(len(g) > 1 for g in groups):
+        out, groups = _union_groups(merged, groups, whole, grid)
+        rows = _Rows(groups)
+        origin = _origin_codes(rows, whole)
+        # only groups whose detections all reach the edge may be deleted; a whole object that just sits near an edge must stay
+        droppable = rows.every(at_edge)
+    else:  # nothing joined: every group is one detection, in input order
+        out = merged
+        origin = torch.where(whole, ORIGIN_WHOLE, ORIGIN_FRAGMENT).to(torch.uint8)
+        droppable = at_edge
     if report_origin:
-        out = {**out, "merge_origin": rows.scatter(_origin_codes(rows, whole))}
-    # only groups whose detections all reach the edge may be deleted; a whole object that just sits near an edge must stay
-    return _drop_fragments_seen_whole(out, rows.scatter(rows.every(at_edge)), grid)
+        out = {**out, "merge_origin": origin}
+    return _drop_fragments_seen_whole(out, droppable, grid)
 
 
 def instance_boxes(merged: Dict[str, Any]) -> Optional[torch.Tensor]:
     """(N, 4) xyxy box of each detection, taken from boxes, else masks, else segments."""
     boxes = merged.get("boxes")
     if isinstance(boxes, torch.Tensor) and len(boxes):
-        b = boxes.detach().cpu().float()
-        if b.ndim == 3:  # oriented box (N, 4, 2): use the upright box around it
-            return torch.cat([b.amin(dim=1), b.amax(dim=1)], dim=1)
-        return b
+        return boxes.detach().cpu().float()
 
     masks = merged.get("masks")
     if isinstance(masks, MaskCrops) and len(masks):
@@ -184,19 +186,12 @@ class _Grid:
 
 
 class _Rows:
-    """Every group's members in one flat run, and the output row each group's summary belongs on.
+    """Every group's members in one flat run, so a per-group summary is one scatter over that run, not a pass per group."""
 
-    The summaries are then scatters over that run, not a pass per group. ``out`` has one row per group only when
-    a union ran; otherwise it keeps the input rows, and a group's summary lands on its first member's row.
-    """
-
-    def __init__(self, groups: List[List[int]], n_rows: Optional[int] = None):
-        """``n_rows`` is the input row count when no union ran; leave it out for one output row per group."""
+    def __init__(self, groups: List[List[int]]):
         self.sizes = torch.tensor([len(g) for g in groups])
         self.members = torch.tensor([m for g in groups for m in g], dtype=torch.long)
         self.gid = torch.repeat_interleave(torch.arange(len(groups)), self.sizes)
-        self.n_rows = len(groups) if n_rows is None else n_rows
-        self.at = torch.arange(len(groups)) if n_rows is None else torch.tensor([g[0] for g in groups], dtype=torch.long)
 
     def any(self, flags: torch.Tensor) -> torch.Tensor:
         """(G,) bool: ``flags`` is set on at least one member of the group."""
@@ -209,12 +204,6 @@ class _Rows:
     def _fold(self, flags: torch.Tensor, reduce: str) -> torch.Tensor:
         n = len(self.sizes)
         return torch.zeros(n, dtype=torch.bool).scatter_reduce_(0, self.gid, flags[self.members], reduce=reduce, include_self=False)
-
-    def scatter(self, values: torch.Tensor) -> torch.Tensor:
-        """(n_rows,) with each group's value on its own output row, zero elsewhere."""
-        out = torch.zeros(self.n_rows, dtype=values.dtype)
-        out[self.at] = values
-        return out
 
 
 def _origin_codes(rows: _Rows, whole: torch.Tensor) -> torch.Tensor:
@@ -493,7 +482,7 @@ def _connected_groups(edges: torch.Tensor, n: int) -> List[List[int]]:
 
 
 def _union_groups(
-    merged: Dict[str, Any], groups: List[List[int]], whole: torch.Tensor, grid: Optional["_Grid"] = None
+    merged: Dict[str, Any], groups: List[List[int]], whole: torch.Tensor, grid: "_Grid"
 ) -> Tuple[Dict[str, Any], List[List[int]]]:
     """Turn each group into one output detection, keeping input order.
 
@@ -504,8 +493,8 @@ def _union_groups(
     pieces that stop short of a seam. The rest of the shape is left as the model drew it. With masks, the polygon is
     traced from the closed mask.
     """
-    gap_xy = [int(np.ceil(v)) for v in grid.pad.tolist()] if grid is not None else [0, 0]
-    seams = grid.seams() if grid is not None else (np.zeros(0), np.zeros(0))
+    gap_xy = [int(np.ceil(v)) for v in grid.pad.tolist()]
+    seams = grid.seams()
     scores = merged.get("scores")
     g = _Rows(groups)
     members, gid = g.members, g.gid
@@ -626,24 +615,16 @@ def _trace(crop: np.ndarray, x0: int, y0: int) -> Optional[np.ndarray]:
 def _seen_whole_by_a_tile(boxes: torch.Tensor, grid: "_Grid") -> torch.Tensor:
     """(F,) bool: some tile holds the box with more than the grid's tolerance px to each of that tile's inner edges.
 
-    Blocked by ``_TILE_TEST_BUDGET``: a crowded image carries a hundred thousand fragments over a grid of several
-    hundred tiles, and testing that product in one go runs to tens of gigabytes.
+    Each condition concerns one axis and the tiles form a full grid, so some tile fits exactly when some tile column
+    fits the box's x span and some tile row its y span.
     """
-    n_tiles = len(grid.origins)
-    tiles = torch.arange(n_tiles)
-    origins = grid.corners(tiles)
-    extent = torch.tensor([grid.size[1], grid.size[0]], dtype=torch.float32)
-    out = torch.zeros(len(boxes), dtype=torch.bool)
-    block = max(1, _TILE_TEST_BUDGET // max(1, n_tiles))
-    for start in range(0, len(boxes), block):
-        chunk = boxes[start : start + block]
-        b = chunk.repeat_interleave(n_tiles, dim=0)
-        t = tiles.repeat(len(chunk))
-        lo = origins[t]
-        hi = lo + extent
-        inside = (b[:, :2] >= lo).all(dim=1) & (b[:, 2:] <= hi).all(dim=1)
-        fits = inside & ~_cut_flags(b, t, grid, grid.tolerance)
-        out[start : start + len(chunk)] = fits.view(len(chunk), n_tiles).any(dim=1)
+    out = torch.ones(len(boxes), dtype=torch.bool)
+    for axis, lo, hi in ((1, 0, 2), (0, 1, 3)):  # tile axis (y, x) -> box columns
+        starts = torch.as_tensor(np.unique(grid.origins[:, axis]), dtype=torch.float32)[None, :]
+        ends = starts + grid.size[axis]
+        a, b = boxes[:, lo, None], boxes[:, hi, None]
+        cut = ((starts > 0) & (a <= starts + grid.tolerance)) | ((ends < grid.im_size[axis]) & (b >= ends - grid.tolerance))
+        out &= ((a >= starts) & (b <= ends) & ~cut).any(dim=1)
     return out
 
 
