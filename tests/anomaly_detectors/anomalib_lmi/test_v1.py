@@ -86,13 +86,11 @@ def trt_model():
 
 def test_compare_with_raw(anomalib_model, cpu_models):
     """
-    Compare prediction results between current implementation and anomalib's TorchInferencer.
+    Compare prediction results between current implementation and anomalib's TorchInferencer on off-size images.
 
-    ONNX-loaded models are excluded: anomalib v1.1.1 disables antialiasing only on the ONNX
-    export path (``InferenceModel(..., disable_antialias=True)``), not on ``to_torch``, so
-    ``.pt`` and ``.onnx`` are not numerically equivalent in v1.
+    anomalib v1.1.1 drops antialiasing from the resize inside its ONNX export, so the ONNX backend resizes before the
+    engine the way the ``.pt`` transform does.
     """
-    ais_models = [m for m in cpu_models if not isinstance(m, AnomalibONNX)]
     paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
     for p in paths:
         # using anomalib code
@@ -111,7 +109,7 @@ def test_compare_with_raw(anomalib_model, cpu_models):
         # using AIS code
         im = cv2.imread(p)
         rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        for model in ais_models:
+        for model in cpu_models:
             pred2 = model.predict(rgb)
             atol = 1e-3
             assert np.allclose(pred, pred2, atol=atol), f"mismatch for {type(model).__name__}"
