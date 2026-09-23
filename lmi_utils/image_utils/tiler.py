@@ -71,8 +71,7 @@ def create_blend_mask(
     overlap_h = tile_h - stride_h
     overlap_w = tile_w - stride_w
 
-    if overlap_h <= 0 or overlap_w <= 0:
-        # no overlap
+    if overlap_h <= 0 and overlap_w <= 0:
         return torch.ones(tile_h, tile_w, device=device)
 
     mask = torch.ones(tile_h, tile_w, device=device)
@@ -111,8 +110,9 @@ def create_blend_mask(
 
     # the ramp is offset by a pixel so the outermost row and column still carry weight: on a 1 px overlap both
     # tiles sit on their own edge, and a ramp reaching 0 there leaves that seam with no weight to divide by
-    y_ramp = torch.clamp((y_edge_dist + 1) / (blend_region_h + 1), 0, 1)
-    x_ramp = torch.clamp((x_edge_dist + 1) / (blend_region_w + 1), 0, 1)
+    # an axis without overlap (a single row or column, or stride == tile) has no seam to blend
+    y_ramp = torch.clamp((y_edge_dist + 1) / (blend_region_h + 1), 0, 1) if overlap_h > 0 else torch.ones_like(y_grid)
+    x_ramp = torch.clamp((x_edge_dist + 1) / (blend_region_w + 1), 0, 1) if overlap_w > 0 else torch.ones_like(x_grid)
 
     if overlap_mode == OverlapMode.LINEAR:
         mask = torch.minimum(y_ramp, x_ramp)
@@ -235,6 +235,8 @@ class Tiler:
         Args:
             tile_size (int | list): a int if tile_h equals to tile_w or a list of [tile_h, tile_w]
             stride (int | list): a int if stride_h equals to stride_w or a list of [stride_h, stride_w]
+            scale_mode (str | ScaleMode): how tile() fits the image to the grid and untile() undoes it
+            overlap_mode (str | OverlapMode): default blending of overlapping tiles in untile()
         """
         if isinstance(tile_size, int):
             tile_size = [tile_size] * 2
@@ -243,8 +245,8 @@ class Tiler:
 
         self.validate_tile_and_stride(tile_size, stride)
 
-        self.tile_size = tile_size
-        self.stride = stride
+        self.tile_size = [as_int(v) for v in tile_size]  # 32.0 passes validation but slicing and F.pad need ints
+        self.stride = [as_int(v) for v in stride]
         self.im_size: list = None
         self.scale_size: list = None
         self.batch_size: int = None
@@ -279,19 +281,7 @@ class Tiler:
             json_path (str): path to a metadata json
         """
         with open(json_path, "r") as file:
-            metadata = json.load(file)
-            tile_size = metadata.get("tile_size")
-            stride = metadata.get("stride")
-            if tile_size is None or stride is None:
-                raise ValueError("JSON metadata must contain 'tile_size' and 'stride'")
-
-        obj = cls(tile_size, stride)
-        for k, v in metadata.items():
-            if k in cls.EXPECTED_FIELDS and getattr(obj, k, None) is None:
-                setattr(obj, k, v)
-        if metadata.get("scale_mode") is not None:
-            obj.scale_mode = ScaleMode(metadata["scale_mode"])
-        return obj
+            return cls.from_dict(json.load(file))
 
     @classmethod
     def from_dict(cls, metadata: dict):
@@ -359,25 +349,16 @@ class Tiler:
             raise RuntimeError(f"Tiler state incomplete. Missing: {missing}. Call tile() first or ensure metadata contains all fields.")
 
     @torch.inference_mode()
-    def tile(self, im: torch.Tensor, mode=None) -> torch.Tensor:
-        """generate tiles from the image. Will resize images if necessary.
+    def tile(self, im: torch.Tensor) -> torch.Tensor:
+        """generate tiles from the image, scaled to the tile grid with ``self.scale_mode``.
 
         Args:
             im (Tensor): input image in the format: [b,c,h,w]
-            mode (str | ScaleMode, optional): scale mode. Defaults to self.scale_mode.
 
         Returns:
             Tensor: resized tiles
         """
-        mode = mode or self.scale_mode
-        if not isinstance(mode, (str, ScaleMode)):
-            raise ValueError(f"mode must be str or ScaleMode enum. Got: {type(mode)}")
-
-        # Convert string to enum if needed
-        if not isinstance(mode, ScaleMode):
-            mode = ScaleMode(mode)
-        self.scale_mode = mode  # untile has to undo exactly what was done here
-
+        mode = self.scale_mode
         self.batch_size, self.num_channel, im_h, im_w = im.shape
         self.im_size = [im_h, im_w]
         device = im.device
@@ -437,15 +418,13 @@ class Tiler:
     def untile(
         self,
         tiles,
-        scale_mode=None,
         overlap_mode=None,
         expected_scale=None,
     ):
-        """convert tiles into original image. Apply blending for smooth transitions.
+        """convert tiles into original image, undoing ``self.scale_mode``. Apply blending for smooth transitions.
 
         Args:
             tiles (Torch): the tiles tensor in the format: [n_tiles*batch, c, tile_h, tile_w]
-            scale_mode (str | ScaleMode, optional): scale mode. Defaults to self.scale_mode.
             overlap_mode (str | OverlapMode, optional): overlap handling mode. Defaults to self.overlap_mode.
             expected_scale (float, optional): require the tiles to be this multiple of ``tile_size``. Pass 1 for image
                 tiles, so a wrong tile size raises instead of reconstructing at the wrong scale.
@@ -454,23 +433,13 @@ class Tiler:
             Tensor: the reconstructed image with smooth blending
         """
         self._validate_state()
-        requested = scale_mode
-        scale_mode = scale_mode or self.scale_mode
         overlap_mode = overlap_mode or self.overlap_mode
-        if not isinstance(scale_mode, (str, ScaleMode)):
-            raise ValueError(f"scale_mode must be str or ScaleMode enum. Got: {type(scale_mode)}")
         if not isinstance(overlap_mode, (str, OverlapMode)):
             raise ValueError(f"overlap_mode must be str or OverlapMode enum. Got: {type(overlap_mode)}")
 
         # Convert string to enum if needed
-        if not isinstance(scale_mode, ScaleMode):
-            scale_mode = ScaleMode(scale_mode)
         if not isinstance(overlap_mode, OverlapMode):
             overlap_mode = OverlapMode(overlap_mode)
-        # padding crops and interpolation resizes, so undoing with the other mode returns the right shape
-        # full of wrong pixels; tile() records what it did, and metadata carries it between runs
-        if requested is not None and scale_mode != self.scale_mode:
-            raise ValueError(f"tiles were built with scale mode {ScaleMode(self.scale_mode).value}, cannot untile as {scale_mode.value}")
 
         # anomalib traces this for export, and a traced shape is 0-dim tensors rather than ints
         n_tiles_total, num_channel, tile_h, tile_w = (as_int(d) for d in tiles.shape)
@@ -495,7 +464,7 @@ class Tiler:
             for tile, (i, j) in zip(tiles, positions):
                 # Take maximum between existing values and new tile
                 im[:, :, i : i + tile_h, j : j + tile_w] = torch.maximum(im[:, :, i : i + tile_h, j : j + tile_w], tile)
-            im = torch.where(im.isneginf(), torch.zeros_like(im), im)
+            im = torch.where(im == float("-inf"), torch.zeros_like(im), im)  # isneginf has no ONNX export
         else:
             im = torch.zeros(canvas, dtype=work_dtype, device=device)
             weight_sum = torch.zeros(canvas, dtype=work_dtype, device=device)
@@ -510,7 +479,7 @@ class Tiler:
             # clamp rather than add: a covered pixel must divide by its exact weight, not weight + eps
             im = torch.div(im, weight_sum.clamp(min=1e-8))
 
-        return restore_dtype(downscale_image(im, grid.im_size, scale_mode), tiles.dtype)
+        return restore_dtype(downscale_image(im, grid.im_size, self.scale_mode), tiles.dtype)
 
     def _out_grid(self, tile_h: int, tile_w: int, expected_scale=None) -> "_OutGrid":
         """The grid ``untile`` writes into, at the scale of the tiles handed back.
@@ -534,8 +503,9 @@ class Tiler:
         positions_w = [int(round(c * scale_w)) for c in cols]
 
         scale_size = [positions_h[-1] + tile_h, positions_w[-1] + tile_w]
-        # round can ask for more than the canvas holds and the crop silently returns less; floor fits, and 0 rows is unusable
-        im_size = [max(1, floor(as_int(self.im_size[0]) * scale_h)), max(1, floor(as_int(self.im_size[1]) * scale_w))]
+        # padding: floor drops a partly padded cell and stays inside the canvas; interpolation has no padding, so take the nearest
+        to_int = floor if self.scale_mode == ScaleMode.PADDING else round
+        im_size = [max(1, to_int(as_int(self.im_size[0]) * scale_h)), max(1, to_int(as_int(self.im_size[1]) * scale_w))]
         # the blend ramp is sized from tile - stride, so stride has to describe the scaled grid, not the image grid
         stride = [
             max(1, positions_h[-1] // (len(rows) - 1)) if len(rows) > 1 else tile_h,

@@ -1,5 +1,6 @@
 import argparse
 import collections
+import json
 import logging
 import os
 from pathlib import Path
@@ -20,8 +21,8 @@ METADATA_FILENAME = "metadata.json"
 def __to_tiles(source: Path, dest: Path, tile_hw: list, stride_hw: list, mode=ScaleMode.PADDING):
     img = torchvision.io.read_image(source.as_posix()).unsqueeze(0)  # [b,c,h,w]
 
-    tiler = Tiler(tile_hw, stride_hw)
-    tiles = tiler.tile(img, mode)
+    tiler = Tiler(tile_hw, stride_hw, scale_mode=mode)
+    tiles = tiler.tile(img)
 
     # write tile images
     os.makedirs(dest, exist_ok=True)
@@ -63,7 +64,7 @@ def to_images(source, dest, mode=ScaleMode.PADDING):
     Args:
         source (str): the source directory of tile images
         dest (str): the output directory
-        mode (ScaleMode, optional): scale mode. Defaults to ScaleMode.PADDING.
+        mode (ScaleMode, optional): scale mode for metadata that does not record one. Defaults to ScaleMode.PADDING.
     """
     src_path = Path(source)
     dest_path = Path(dest)
@@ -92,7 +93,11 @@ def to_images(source, dest, mode=ScaleMode.PADDING):
     for fname, ps in tile_map.items():
         logger.debug(str(p) + ".png")
         # init tiler through loading a metadata.json
-        tiler = Tiler.from_json(meta_map[fname])
+        with open(meta_map[fname]) as f:
+            metadata = json.load(f)
+        tiler = Tiler.from_dict(metadata)
+        if "scale_mode" not in metadata:
+            tiler.scale_mode = ScaleMode(mode)
 
         # load tiles
         tiles = torch.zeros(len(ps), tiler.num_channel, *tiler.tile_size, dtype=torch.uint8)
@@ -103,7 +108,7 @@ def to_images(source, dest, mode=ScaleMode.PADDING):
             tiles[i] = im
 
         # save image
-        im = tiler.untile(tiles, mode, expected_scale=1).squeeze()
+        im = tiler.untile(tiles, expected_scale=1).squeeze()
         torchvision.io.write_png(im, str(dest_path / (fname + ".png")))
 
 

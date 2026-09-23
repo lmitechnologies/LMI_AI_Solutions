@@ -172,9 +172,9 @@ class TileOperation(Operation[TileConfig, TileMeta]):
                 add_channel = True
                 img = img.unsqueeze(-1)
 
-            tiler = Tiler(tile_size=config.tile_size, stride=config.stride)
+            tiler = Tiler(tile_size=config.tile_size, stride=config.stride, scale_mode=scale_mode)
             img_batch = img.permute(2, 0, 1).unsqueeze(0)  # [1, C, H, W]
-            tiles_batch = tiler.tile(img_batch, mode=scale_mode)  # [N, C, H, W]
+            tiles_batch = tiler.tile(img_batch)  # [N, C, H, W]
 
             tiles_list_chw = list(torch.unbind(tiles_batch, dim=0))
             tiles_list_hwc = [t.permute(1, 2, 0) for t in tiles_list_chw]
@@ -233,7 +233,7 @@ class TileOperation(Operation[TileConfig, TileMeta]):
                 batch_hwc = batch_hwc.unsqueeze(-1)
             batch_chw = batch_hwc.permute(0, 3, 1, 2)  # [N, C, H, W]
 
-            restored_batch = tiler.untile(batch_chw, scale_mode=meta.scale_modes[i], overlap_mode=meta.overlap_modes[i], expected_scale=1)
+            restored_batch = tiler.untile(batch_chw, overlap_mode=meta.overlap_modes[i], expected_scale=1)
             restored_img = restored_batch.squeeze(0).permute(1, 2, 0)
             if add_channel:
                 restored_img = restored_img.squeeze(-1)

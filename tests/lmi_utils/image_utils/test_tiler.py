@@ -1,3 +1,4 @@
+import io
 import logging
 import os
 
@@ -93,10 +94,9 @@ def test_cases(im, tile, stride, expected_tile_hw, expected_resized_hw):
     ],
 )
 def test_batch(im, tile, stride):
-    mode = ScaleMode.INTERPOLATION
-    t = Tiler(tile, stride)
-    tiles = t.tile(im, mode)
-    im2 = t.untile(tiles, mode)
+    t = Tiler(tile, stride, scale_mode=ScaleMode.INTERPOLATION)
+    tiles = t.tile(im)
+    im2 = t.untile(tiles)
     assert torch.equal(im, im2)
 
 
@@ -273,6 +273,19 @@ def test_untile_survives_tracing():
     torch.jit.trace(Tiled(), image, check_trace=False)
 
 
+def test_untile_max_exports_to_onnx():
+    # tiled anomalib models are exported through ONNX to TensorRT
+    class Tiled(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.tiler = Tiler([64, 64], [32, 32], overlap_mode="max")
+
+        def forward(self, x):
+            return self.tiler.untile(torch.nn.functional.avg_pool2d(self.tiler.tile(x), 4))
+
+    torch.onnx.export(Tiled(), torch.rand(1, 3, 224, 224), io.BytesIO(), opset_version=17)
+
+
 def test_expected_scale_rejects_tiles_that_are_not_image_tiles():
     # callers that untile image tiles pass expected_scale=1, so a wrong tile size raises instead of
     # being read as a feature map and rebuilt at that scale
@@ -333,15 +346,15 @@ def test_untile_max_mode_keeps_negative_values():
 def test_interpolation_round_trip_resamples_both_ways(im, tile, stride):
     # upscale went bilinear while downscale kept torch's nearest default, so the reverse dropped whole columns;
     # the existing interpolation tests all use sizes that divide evenly, where neither direction resamples at all
-    t = Tiler([tile, tile], [stride, stride])
-    assert tuple(t.tile(im, ScaleMode.INTERPOLATION).shape[2:]) == (tile, tile)
+    t = Tiler([tile, tile], [stride, stride], scale_mode=ScaleMode.INTERPOLATION)
+    assert tuple(t.tile(im).shape[2:]) == (tile, tile)
     assert tuple(t.scale_size) != tuple(im.shape[2:])  # this case really does resize
 
-    out = t.untile(t.tile(im, ScaleMode.INTERPOLATION), ScaleMode.INTERPOLATION)
+    out = t.untile(t.tile(im))
 
     assert out.shape == im.shape
     smooth = torch.linspace(0, 1, im.shape[-1]).expand(im.shape[0], im.shape[1], im.shape[-2], im.shape[-1]).contiguous()
-    back = t.untile(t.tile(smooth, ScaleMode.INTERPOLATION), ScaleMode.INTERPOLATION)
+    back = t.untile(t.tile(smooth))
     assert torch.allclose(back, smooth, atol=5e-4)  # a nearest reverse lands around 3e-3 on this ramp
 
 
@@ -355,29 +368,17 @@ def test_tile_boxes_rejects_metadata_that_contradicts_the_grid():
         Tiler.from_dict(meta).tile_boxes()
 
 
-def test_untile_refuses_a_scale_mode_the_tiles_were_not_built_with():
-    # padding crops and interpolation resizes, so the wrong one returns the right shape full of wrong pixels
-    t = Tiler([32, 32], [16, 16])
-    im = torch.rand(1, 1, 50, 50)
-    tiles = t.tile(im, ScaleMode.PADDING)
-
-    with pytest.raises(ValueError, match="cannot untile as interpolation"):
-        t.untile(tiles, scale_mode=ScaleMode.INTERPOLATION)
-
-    assert torch.allclose(t.untile(tiles, scale_mode=ScaleMode.PADDING), im, atol=1e-5)
-
-
 def test_scale_mode_survives_a_metadata_round_trip(tmp_path):
     # the mode lives outside EXPECTED_FIELDS, so a second process untiling from json still undoes the right thing
-    t = Tiler([32, 32], [16, 16])
-    t.tile(torch.rand(1, 1, 50, 50), ScaleMode.INTERPOLATION)
+    t = Tiler([32, 32], [16, 16], scale_mode=ScaleMode.INTERPOLATION)
+    im = torch.rand(1, 1, 50, 50)
+    tiles = t.tile(im)
     t.write_metadata(tmp_path)
 
     restored = Tiler.from_json(tmp_path / "metadata.json")
 
     assert restored.scale_mode == ScaleMode.INTERPOLATION
-    with pytest.raises(ValueError, match="cannot untile as padding"):
-        restored.untile(torch.rand(9, 1, 32, 32), scale_mode=ScaleMode.PADDING)
+    assert torch.equal(restored.untile(tiles), t.untile(tiles))
 
 
 def test_metadata_without_a_scale_mode_still_loads():
@@ -397,6 +398,12 @@ def test_tiler_rejects_sizes_that_cannot_make_a_grid(tile, stride):
         Tiler(tile, stride)
 
 
+def test_whole_number_float_sizes_are_stored_as_ints():
+    t = Tiler([32.0, 32.0], [16.0, 16.0])
+    assert t.tile_size == [32, 32] and t.stride == [16, 16]
+    assert t.tile(torch.rand(1, 1, 50, 50)).shape == (9, 1, 32, 32)
+
+
 def test_untile_refuses_tiles_larger_than_the_tile_size():
     t = Tiler([32, 32], [16, 16])
     t.tile(torch.rand(1, 1, 64, 64))
@@ -411,3 +418,30 @@ def test_scale_size_is_a_list_before_and_after_a_round_trip():
 
     assert isinstance(t.scale_size, list)
     assert Tiler.from_dict(t.to_dict()).to_dict() == t.to_dict()
+
+
+@pytest.mark.parametrize("overlap_mode", ["linear", "cosine", "gaussian"])
+@pytest.mark.parametrize(
+    ["im_hw", "stride", "seam_axis"],
+    [((224, 448), [112, 112], "w"), ((448, 224), [112, 112], "h"), ((448, 448), [224, 112], "w"), ((448, 448), [112, 224], "h")],
+)
+def test_blending_survives_an_axis_without_overlap(overlap_mode, im_hw, stride, seam_axis):
+    # the axis without overlap used to switch blending off on the other axis too, averaging its seams flat
+    t = Tiler([224, 224], stride, overlap_mode=overlap_mode)
+    tiles = t.tile(torch.zeros(1, 1, *im_hw))
+    tiles = torch.arange(len(tiles), dtype=torch.float32).view(-1, 1, 1, 1).expand_as(tiles) * 10
+    out = t.untile(tiles)[0, 0]
+
+    seam = out[100, 112:224] if seam_axis == "w" else out[112:224, 100]
+    assert len(seam.unique()) > 10  # a ramp, not the single average value
+
+    im = torch.rand(1, 1, *im_hw)
+    assert torch.allclose(t.untile(t.tile(im)), im, atol=1e-5)
+
+
+@pytest.mark.parametrize(["scale_mode", "expected_w"], [("padding", 23), ("interpolation", 24)])
+def test_feature_map_width_follows_the_scale_mode(scale_mode, expected_w):
+    # 752 / 32 = 23.5: padding drops the half-padded cell, interpolation has no padding and takes the nearest
+    t = Tiler([224, 224], [224, 224], scale_mode=scale_mode)
+    features = torch.nn.functional.avg_pool2d(t.tile(torch.rand(1, 1, 224, 752)), 32)
+    assert t.untile(features).shape == (1, 1, 7, expected_w)
