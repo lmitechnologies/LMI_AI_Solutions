@@ -14,6 +14,8 @@ import numpy as np
 import torch
 from torch.nn import functional as F
 
+from lmi_utils.image_utils.tiler import restore_dtype
+
 BLACK = (0, 0, 0)
 TWO_TO_FIFTEEN = 2**15
 
@@ -27,7 +29,10 @@ def resize_image(im, W=None, H=None, mode="bilinear"):
         im(np array | torch.tensor): the image of the shape (H,W) or (H,W,C)
         W(int): width
         H:(int): Height
-        mode(str): 'nearest' | 'linear' | 'bilinear' | 'bicubic' | 'trilinear' | 'area' | 'nearest-exact'. Default: 'bilinear'
+        mode(str): 'bilinear' | 'nearest-exact' | 'bicubic' | 'area' | 'nearest'. Default: 'bilinear'.
+            Use 'nearest-exact' to keep label values; 'nearest' shifts the image half a pixel toward the top-left.
+
+    Integer results are rounded and clamped, and a bool image is cut at 0.5.
     """
     if W is None and H is None:
         return im
@@ -49,18 +54,12 @@ def resize_image(im, W=None, H=None, mode="bilinear"):
     if one_channel:
         im = im.unsqueeze(-1)
 
-    # deal with integer image
     dtype = im.dtype
-    is_fp = im.is_floating_point()
-    if not is_fp:
+    if not im.is_floating_point():
         im = im.float()
 
     im2 = F.interpolate(im.permute(2, 0, 1).unsqueeze(0), size=(H, W), mode=mode)
-    im2 = im2.squeeze(0).permute(1, 2, 0)
-
-    # back to integer image
-    if not is_fp:
-        im2 = im2.to(dtype)
+    im2 = restore_dtype(im2.squeeze(0).permute(1, 2, 0), dtype)
 
     # back to 1 channel
     if one_channel:

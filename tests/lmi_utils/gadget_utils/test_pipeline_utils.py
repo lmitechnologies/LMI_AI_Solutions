@@ -55,6 +55,26 @@ class Test_resize_image:
             assert isinstance(im2, torch.Tensor)
             assert im2.is_cuda
 
+    def test_integer_results_round_rather_than_truncate(self):
+        im = torch.zeros(10, 10, dtype=torch.uint8)
+        im[:, 5:] = 1
+        out = pipeline_utils.resize_image(im, W=13, H=10)
+        want = torch.nn.functional.interpolate(im[None, None].float(), size=(10, 13), mode="bilinear")[0, 0]
+        assert torch.equal(out, want.round().to(torch.uint8))
+
+    def test_bool_masks_cut_at_half(self):
+        im = torch.zeros(10, 10, dtype=torch.bool)
+        im[:, 5:] = True
+        out = pipeline_utils.resize_image(im, W=13, H=10)
+        want = torch.nn.functional.interpolate(im[None, None].float(), size=(10, 13), mode="bilinear")[0, 0] > 0.5
+        assert torch.equal(out, want)
+
+    def test_bicubic_overshoot_clamps_instead_of_wrapping(self):
+        edge = np.zeros((20, 20), np.uint8)
+        edge[:, 10:] = 255
+        row = pipeline_utils.resize_image(edge, W=33, H=20, mode="bicubic")[10].astype(int)
+        assert (np.diff(row) >= 0).all()
+
 
 class Test_fit_im_to_size:
     def np_func(self, im, W=None, H=None):
@@ -506,7 +526,7 @@ class Test_revert_mask_interpolation:
         m[1:3, 1:3] = 1
         return m
 
-    def test_nearest_preserves_binary_area(self):
+    def test_nearest_and_bilinear_preserve_binary_area(self):
         mask = self._block_mask()
         ops = [_resize_entry(4, 4, 8, 8)]  # revert upscales 4x4 -> 8x8
 
@@ -517,8 +537,8 @@ class Test_revert_mask_interpolation:
         # nearest doubles the 2x2 block -> 4x4 = 16 fg px and stays binary
         assert set(np.unique(nearest)).issubset({0, 1})
         assert int((nearest > 0).sum()) == 16
-        # bilinear + uint8 truncation erodes the block
-        assert int((bilinear > 0).sum()) < int((nearest > 0).sum())
+        # bilinear rounds back to binary without eroding the block
+        assert np.array_equal(bilinear, nearest)
 
     def test_stack_equals_loop_over_singular(self):
         masks = np.stack([self._block_mask(), self._block_mask()])  # (2,4,4)
