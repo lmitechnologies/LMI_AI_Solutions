@@ -31,6 +31,7 @@ class Detectron2Base(ODBase):
     """
 
     RESIZE_PRESERVE_ASPECT = False  # stretch (see preprocess())
+    RESIZE_ANTIALIAS = True  # training and DefaultPredictor resize with PIL bilinear, which antialiases
 
     def _postprocess_masks(self, raw_masks, boxes, image_size, mask_threshold, **kwargs):
         """Rescale masks and optionally compute polygon segments.

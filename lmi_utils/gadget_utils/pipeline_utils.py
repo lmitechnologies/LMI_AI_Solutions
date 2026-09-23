@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 @torch.inference_mode()
-def resize_image(im, W=None, H=None, mode="bilinear"):
+def resize_image(im, W=None, H=None, mode="bilinear", antialias=False):
     """
     Args:
         im(np array | torch.tensor): the image of the shape (H,W) or (H,W,C)
@@ -31,6 +31,7 @@ def resize_image(im, W=None, H=None, mode="bilinear"):
         H:(int): Height
         mode(str): 'bilinear' | 'nearest-exact' | 'bicubic' | 'area' | 'nearest'. Default: 'bilinear'.
             Use 'nearest-exact' to keep label values; 'nearest' shifts the image half a pixel toward the top-left.
+        antialias(bool): low-pass before shrinking, as PIL and torchvision do. 'bilinear' and 'bicubic' only.
 
     Integer results are rounded and clamped, and a bool image is cut at 0.5.
     """
@@ -58,7 +59,7 @@ def resize_image(im, W=None, H=None, mode="bilinear"):
     if not im.is_floating_point():
         im = im.float()
 
-    im2 = F.interpolate(im.permute(2, 0, 1).unsqueeze(0), size=(H, W), mode=mode)
+    im2 = F.interpolate(im.permute(2, 0, 1).unsqueeze(0), size=(H, W), mode=mode, antialias=antialias)
     im2 = restore_dtype(im2.squeeze(0).permute(1, 2, 0), dtype)
 
     # back to 1 channel

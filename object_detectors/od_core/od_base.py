@@ -40,6 +40,9 @@ class ODBase(abc.ABC):
     # Letterbox pad fill for auto-injected resize; match training (e.g. 114 for YOLO). Ignored when stretching.
     RESIZE_PAD_VALUE: int = 0
 
+    # Low-pass before shrinking in the default and auto-injected resize; True when training resizes with PIL or torchvision.
+    RESIZE_ANTIALIAS: bool = False
+
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         # Skip abstract intermediates; their concrete leaves inherit the value.
@@ -214,7 +217,7 @@ class ODBase(abc.ABC):
                 if resize_fn is not None:
                     im = resize_fn(im, (th, tw))
                 else:
-                    im = resize_and_pad(im, width=tw, height=th, preserve_aspect=preserve_aspect)
+                    im = resize_and_pad(im, width=tw, height=th, preserve_aspect=preserve_aspect, antialias=self.RESIZE_ANTIALIAS)
             out.append(im)
 
         if mismatched is not None:
