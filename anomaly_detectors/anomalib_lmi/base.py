@@ -196,7 +196,7 @@ class _AnomalibEngine(Anomalib_Base):
     """
 
     _engine_cls = None  # subclass sets
-    RESIZE_ANTIALIAS = False  # match the .pt backend: anomalib 2 exports every format without antialias
+    RESIZE_ANTIALIAS = False  # match the .pt backend's resize; a version that antialiases overrides it (v1)
 
     def __init__(self, model_path: str, **kwargs: Any) -> None:
         self._init_common(model_path, **kwargs)
