@@ -107,8 +107,7 @@ STANDARD_DEFAULTS: dict[str, Any] = {
     "diagnostic_fail_on_overlap": True,
     "diagnostic_reject_class_depth": 1,
     "deployment_thresholds_enable": True,
-    # Match LMI_AI_Solutions' direct-model PatchCore/PaDiM inference contract:
-    # preserve both image score and pixel anomaly map in their native raw domains.
+    # Preserve both the image score and pixel anomaly map in their native raw domains.
     "return_raw_score": True,
     "return_raw_anomaly_map": True,
 }
@@ -118,6 +117,9 @@ STANDARD_DEFAULTS: dict[str, Any] = {
 DATA_KEYS = {
     "acceptable_dir",
     "reject_dir",
+    "defect_augmentations",
+    "defect_augmentation_repeats",
+    "defect_augmentation_include_original",
     "split_seed",
     "tad_auto_split",
     "postprocessor_val_ratio",
@@ -341,22 +343,54 @@ def _has_explicit_paths(params: dict[str, Any]) -> bool:
     return any(params.get(key) not in (None, "") for key in EXPLICIT_PATH_KEYS)
 
 
+def _configure_defect_augmentations(params: dict[str, Any], data_cfg: dict[str, Any]) -> None:
+    """Route Anomalib-style augmentation config into TAD tolerance-bank training.
+
+    By default, when ``data.train_augmentations`` is present, ACCEPT/REJECT
+    reference-bank construction inherits the same transform list. Users can
+    override with ``data.defect_augmentations`` or disable synthetic tolerance
+    views with ``data.defect_augmentation_repeats: 0``.
+    """
+    if "defect_augmentations" not in params:
+        requested = data_cfg.get("defect_augmentations", "same_as_train")
+        if isinstance(requested, str):
+            mode = requested.strip().lower()
+            if mode in {"same_as_train", "train", "inherit", "inherit_train"}:
+                requested = copy.deepcopy(data_cfg.get("train_augmentations"))
+            elif mode in {"none", "off", "disabled"}:
+                requested = None
+            else:
+                raise ValueError(
+                    "data.defect_augmentations must be a transform list, null, or 'same_as_train'"
+                )
+        params["defect_augmentations"] = copy.deepcopy(requested)
+
+    augmentations_enabled = bool(params.get("defect_augmentations"))
+    if "defect_augmentation_repeats" not in params:
+        repeats = data_cfg.get("defect_augmentation_repeats", 1 if augmentations_enabled else 0)
+        params["defect_augmentation_repeats"] = int(repeats)
+    if "defect_augmentation_include_original" not in params:
+        params["defect_augmentation_include_original"] = bool(
+            data_cfg.get("defect_augmentation_include_original", True)
+        )
+
+
 def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dict:
     """Resolve concise TAD YAML into a leakage-safe internal training config."""
     cfg = copy.deepcopy(cfg)
     model_cfg = cfg.setdefault("model", {})
     params = _expand_defaults(model_class, dict(model_cfg.get("params", {}) or {}))
     model_cfg["params"] = params
+    data_cfg = cfg.setdefault("data", {})
+    _configure_defect_augmentations(params, data_cfg)
 
     # Advanced/legacy explicit split paths remain supported and bypass autosplit.
     if _has_explicit_paths(params):
         logger.info("TAD explicit split paths detected; automatic splitting disabled.")
-        data_cfg = cfg.setdefault("data", {})
         for key in DATA_KEYS:
             data_cfg.pop(key, None)
         return cfg
 
-    data_cfg = cfg.setdefault("data", {})
     if not bool(data_cfg.get("tad_auto_split", True)):
         logger.info("TAD automatic splitting disabled by data.tad_auto_split=false.")
         for key in DATA_KEYS:
@@ -543,6 +577,16 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
             "test_split_ratio": test_ratio,
             "val_split_mode": val_mode,
             "val_split_ratio": val_ratio,
+        },
+        "reference_augmentation": {
+            "enabled": bool(params.get("defect_augmentations")),
+            "repeats": int(params.get("defect_augmentation_repeats", 0)),
+            "include_original": bool(params.get("defect_augmentation_include_original", True)),
+            "inherits_train_augmentations": (
+                data_cfg.get("defect_augmentations", "same_as_train") == "same_as_train"
+                if isinstance(data_cfg.get("defect_augmentations", "same_as_train"), str)
+                else False
+            ),
         },
         "counts": {
             group: {
