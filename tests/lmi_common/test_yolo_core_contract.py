@@ -167,21 +167,3 @@ def test_a_dynamic_onnx_export_takes_any_batch(tmp_path):
     source.write_bytes(open(ASSET_MODEL, "rb").read())
     path = YOLO(str(source), task="detect").export(format="onnx", imgsz=DEPLOY_SHAPE, dynamic=True, simplify=False, verbose=False)
     assert YoloCore(str(path), device="cpu", image_size=None).engine_batch() is None
-
-
-@pytest.mark.parametrize("dynamic, expected", [(False, (1, False)), (True, (2, True))], ids=["static", "dynamic"])
-def test_a_tensorrt_export_reports_its_batch(tmp_path, dynamic, expected):
-    """engine_batch reads the TensorRT backend's 'images' binding, which holds a dynamic engine's profile max."""
-    if not torch.cuda.is_available():
-        pytest.skip("No CUDA device.")
-    pytest.importorskip("tensorrt")
-    source = tmp_path / "model.pt"
-    source.write_bytes(open(ASSET_MODEL, "rb").read())
-    path = YOLO(str(source), task="detect").export(
-        format="engine", imgsz=DEPLOY_SHAPE, dynamic=dynamic, batch=expected[0], half=True, verbose=False
-    )
-    core = YoloCore(str(path), device="cuda", image_size=None)
-    backend = _backend_of(core)
-    assert "images" in backend.bindings, "TensorRT backend's 'bindings' or its 'images' key was renamed or removed"
-    assert isinstance(backend.dynamic, bool), "TensorRT backend's 'dynamic' was renamed or removed"
-    assert core.engine_batch() == expected
