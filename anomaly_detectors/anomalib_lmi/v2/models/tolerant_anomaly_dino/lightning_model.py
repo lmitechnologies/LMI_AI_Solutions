@@ -16,6 +16,7 @@ import torch
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 from torch import nn
 from torch.utils.data import DataLoader
+from torchvision.transforms import v2 as tv_v2
 from torchvision.transforms.v2 import Compose, InterpolationMode, Normalize, Resize
 
 from anomalib import LearningType, PrecisionType
@@ -32,10 +33,9 @@ logger = logging.getLogger(__name__)
 
 
 class TADPostProcessor(PostProcessor):
-    """Anomalib-compatible post-processor with LMI-compatible raw outputs.
+    """Anomalib-compatible post-processor that returns raw score and map by default.
 
-    LMI_AI_Solutions consumes Anomalib model outputs directly. PatchCore/PaDiM
-    therefore use their native score/map domains in that path. TAD defaults to
+    PatchCore/PaDiM use their native score/map domains. TAD defaults to
     the same contract: raw ``pred_score`` and raw ``anomaly_map``. Either domain
     can still opt back into Anomalib normalization independently.
     """
@@ -140,6 +140,122 @@ class TADPostProcessor(PostProcessor):
             if batch.pred_mask is not None
             else self._apply_threshold(batch.anomaly_map, map_threshold)
         )
+
+
+class _TADONNXExportAdapter(nn.Module):
+    """Expose stable ``pred_score`` + ``anomaly_map`` outputs for ONNX.
+
+    Anomalib's Lightning ``PostProcessor`` is a callback rather than an nn.Module,
+    and some AnomalyDINO/TAD inference branches can return a bare anomaly-map
+    Tensor.  The exported interface needs only the native image score and anomaly
+    map, so this adapter canonicalizes those cases without requiring the public
+    Lightning ``forward()`` to return an InferenceBatch.
+    """
+
+    def __init__(self, source: "TolerantAnomalyDINO") -> None:
+        super().__init__()
+        # Match AnomalibModule.forward at the exported model boundary:
+        # callers supply [0,1] tensors, while the serialized PT module applies its
+        # exportable Resize/Normalize pre-processor before invoking the inner TAD
+        # model.  The ONNX adapter must preserve that same preprocessing.
+        self.pre_processor = source.pre_processor
+        self.inner = source.model
+        # Mirror TolerantAnomalyDINOModel.forward's inference branch decision once
+        # at export construction time. This avoids tracing the expensive DINO path
+        # twice merely to inspect whether the first result was a Tensor.
+        detector_only = bool(getattr(self.inner, "detector_only", False))
+        strict_stock = bool(getattr(self.inner, "strict_stock_when_damping_one", False))
+        emit_patch_class = bool(getattr(self.inner, "emit_patch_class", False))
+        image_accept = bool(getattr(self.inner, "image_accept_enable", False))
+        projected_accept = bool(getattr(self.inner, "projected_image_accept_enable", False))
+        reject_boost = bool(getattr(self.inner, "image_reject_boost_enable", False))
+        reject_lambda_value = getattr(self.inner, "image_reject_boost_lambda", 0.0)
+        if torch.is_tensor(reject_lambda_value):
+            reject_lambda = float(reject_lambda_value.detach().float().cpu())
+        else:
+            reject_lambda = float(reject_lambda_value)
+        accept_damping_value = getattr(self.inner, "accept_damping", 1.0)
+        if torch.is_tensor(accept_damping_value):
+            accept_damping = float(accept_damping_value.detach().float().cpu())
+        else:
+            accept_damping = float(accept_damping_value)
+        stock_compat = (
+            strict_stock
+            and not emit_patch_class
+            and not image_accept
+            and not projected_accept
+            and (not reject_boost or reject_lambda == 0.0)
+            and accept_damping == 1.0
+        )
+        self._use_tolerance_forward = (
+            not detector_only
+            and not stock_compat
+            and callable(getattr(self.inner, "_tolerance_forward", None))
+        )
+
+        # PostProcessor is a Lightning callback, not necessarily callable. Keep a
+        # plain reference and invoke its ``forward`` method explicitly when present.
+        object.__setattr__(self, "_tad_post_processor", getattr(source, "post_processor", None))
+        self._apply_post_processor = not (
+            bool(getattr(source, "return_raw_score", True))
+            and bool(getattr(source, "return_raw_anomaly_map", True))
+        )
+
+    @staticmethod
+    def _unwrap(value: Any) -> Any:
+        if isinstance(value, tuple) and value:
+            first = value[0]
+            if hasattr(first, "anomaly_map") or hasattr(first, "_asdict"):
+                return first
+        return value
+
+    def _canonical_predictions(self, batch: torch.Tensor) -> InferenceBatch:
+        self.inner.eval()
+        model_input = self.pre_processor(batch) if self.pre_processor is not None else batch
+        if self._use_tolerance_forward:
+            value = self._unwrap(
+                self.inner._tolerance_forward(model_input, return_diagnostics=False)
+            )
+        else:
+            value = self._unwrap(self.inner(model_input))
+
+        if torch.is_tensor(value):
+            # Last-resort stock/map-only compatibility.
+            # Fall back to a map-derived score when no native score is available.
+            anomaly_map = value
+            pred_score = torch.amax(anomaly_map, dim=(-2, -1))
+            value = InferenceBatch(pred_score=pred_score, anomaly_map=anomaly_map)
+
+        if not hasattr(value, "anomaly_map"):
+            raise TypeError(
+                "TAD ONNX export could not obtain an InferenceBatch-like output; "
+                f"inner model returned {type(value)!r}."
+            )
+
+        # Raw score + raw map is TAD's default, so no callback processing
+        # is needed in the common path. If either domain explicitly requests
+        # Anomalib normalization, invoke the callback's forward method directly
+        # (PostProcessor is a Lightning callback, not an nn.Module).
+        if self._apply_post_processor:
+            post = getattr(self, "_tad_post_processor", None)
+            post_forward = getattr(post, "forward", None)
+            if callable(post_forward):
+                value = post_forward(value)
+
+        pred_score = getattr(value, "pred_score", None)
+        anomaly_map = getattr(value, "anomaly_map", None)
+        if pred_score is None and anomaly_map is not None:
+            pred_score = torch.amax(anomaly_map, dim=(-2, -1))
+        if pred_score is None or anomaly_map is None:
+            raise TypeError(
+                "TAD ONNX export requires both pred_score and anomaly_map after "
+                "canonicalization/post-processing."
+            )
+        return InferenceBatch(pred_score=pred_score, anomaly_map=anomaly_map)
+
+    def forward(self, batch: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        predictions = self._canonical_predictions(batch)
+        return predictions.pred_score, predictions.anomaly_map
 
 
 class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
@@ -277,6 +393,13 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         reject_dir: str | Path | None = None,
         defect_batch_size: int = 8,
         defect_num_workers: int = 4,
+        # Optional stochastic augmentation for ACCEPT/REJECT reference-bank
+        # construction. These use the same torchvision-v2 list-of-dicts schema
+        # as data.train_augmentations. The training-config adapter inherits
+        # data.train_augmentations automatically unless explicitly overridden.
+        defect_augmentations: tuple[dict[str, Any], ...] | list[dict[str, Any]] | None = None,
+        defect_augmentation_repeats: int = 1,
+        defect_augmentation_include_original: bool = True,
         # image-level calibration data (never added to residual banks)
         image_calibration_good_dir: str | Path | None = None,
         image_calibration_acceptable_dir: str | Path | None = None,
@@ -299,7 +422,6 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         # Deployment threshold calibration. Enabled by default and derived from
         # image_calibration_{good,acceptable,reject}_dir after all tolerance rules
         # are frozen. TAD returns raw score + raw anomaly map by default to match
-        # the direct-model inference contract used by LMI_AI_Solutions.
         deployment_thresholds_enable: bool = True,
         deployment_target_precisions: tuple[float, ...] | list[float] = (0.95, 0.99, 0.999),
         deployment_thresholds_output_dir: str | Path | None = None,
@@ -308,8 +430,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         training_workspace: str | Path | None = None,
         training_original_config_path: str | Path | None = None,
         precision: str | PrecisionType = PrecisionType.FLOAT32,
-        # Export/inference contract. Defaults match LMI_AI_Solutions' direct
-        # Anomalib model path. Set either flag False to opt that output back into
+        # Set either flag False to opt that output back into
         # Anomalib's validation-fitted normalization.
         return_raw_score: bool = True,
         return_raw_anomaly_map: bool = True,
@@ -343,6 +464,18 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         self.reject_dir = Path(reject_dir) if reject_dir else None
         self.defect_batch_size = int(defect_batch_size)
         self.defect_num_workers = int(defect_num_workers)
+        self.defect_augmentation_repeats = int(defect_augmentation_repeats)
+        if self.defect_augmentation_repeats < 0:
+            raise ValueError("defect_augmentation_repeats must be >= 0")
+        self.defect_augmentation_include_original = bool(defect_augmentation_include_original)
+        self.defect_augmentations = _build_augmentation_pipeline(defect_augmentations)
+        if self.defect_augmentations is None:
+            self.defect_augmentation_repeats = 0
+        elif not self.defect_augmentation_include_original and self.defect_augmentation_repeats == 0:
+            raise ValueError(
+                "defect augmentation would produce zero views: set "
+                "defect_augmentation_include_original=true or defect_augmentation_repeats>0"
+            )
         self.calibrate = bool(calibrate)
         self.calibrate_t_normal_percentile = float(calibrate_t_normal_percentile)
         self.calibrate_t_known_percentile = float(calibrate_t_known_percentile)
@@ -579,95 +712,68 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         input_size: tuple[int, int] | None = None,
         **kwargs: Any,
     ) -> Path:
-        """Export an LMI-compatible ONNX model with dynamic batch only.
+        """Export TAD with native score/map and static non-batch shapes.
 
-        Two Anomalib/PyTorch export quirks are handled here:
-
-        1. Anomalib 2.3.x defaults ``dynamic_axes`` to a generic ``output`` key,
-           while the real outputs are named ``anomaly_map``, ``pred_score``, etc.
-        2. Even with fixed input H/W and correct named dynamic axes, PyTorch can
-           leave TAD's map/mask output ValueInfo spatial dimensions symbolic
-           (``Castanomaly_map_dim_*``). LMI ONNXEngine intentionally rejects
-           symbolic non-batch output dimensions because it pre-allocates buffers.
-
-        We therefore trace one fixed-size PyTorch batch, use the real output names
-        for dynamic axes, export normally, and then harden only the ONNX *output
-        metadata*: axis 0 remains dynamic while axes 1+ are set to the concrete
-        shapes observed from that same fixed-size PyTorch forward pass.
+        This intentionally bypasses Anomalib 2.3.x ``ExportMixin.to_onnx``. That
+        implementation assumes ``self(input)._asdict()``, but TAD/AnomalyDINO can
+        expose a map-only Tensor on some inference branches. The adapter above
+        canonicalizes the result and exports only ``pred_score`` and ``anomaly_map``.
         """
-        traced_output_shapes: dict[str, tuple[int, ...]] | None = None
-
-        if input_size is not None:
-            if isinstance(input_size, int):
-                input_size = (input_size, input_size)
-            else:
-                input_size = tuple(int(x) for x in input_size)
-
-            dummy = torch.zeros((1, 3, *input_size), device=self.device)
-            with torch.inference_mode():
-                output = self.eval()(dummy)
-
-            # TAD normally returns InferenceBatch, but some serialized LMI/TAD
-            # artifacts expose a public forward() that returns only anomaly_map.
-            # In that case recover the complete Anomalib output explicitly from
-            # pre_processor -> inner model -> post_processor instead of failing.
-            inference_output = output[0] if isinstance(output, tuple) else output
-            if not hasattr(inference_output, "_asdict"):
-                value: Any = dummy
-                pre = getattr(self, "pre_processor", None)
-                if callable(pre):
-                    value = pre(value)
-
-                inner = getattr(self, "model", None)
-                if not callable(inner):
-                    raise TypeError(
-                        "TAD ONNX export could not recover named outputs: public "
-                        f"forward returned {type(inference_output)!r} and self.model "
-                        "is not callable."
-                    )
-                value = inner(value)
-
-                post = getattr(self, "post_processor", None)
-                if callable(post):
-                    value = post(value)
-
-                inference_output = value[0] if isinstance(value, tuple) else value
-
-            if not hasattr(inference_output, "_asdict"):
-                raise TypeError(
-                    "TAD ONNX export expected an InferenceBatch-like explicit pipeline "
-                    f"output with _asdict(), got {type(inference_output)!r}."
-                )
-
-            output_items = [
-                (name, value)
-                for name, value in inference_output._asdict().items()
-                if value is not None and torch.is_tensor(value)
-            ]
-            traced_output_shapes = {
-                name: tuple(int(dim) for dim in value.shape)
-                for name, value in output_items
-            }
-
-            if "dynamic_axes" not in kwargs:
-                dynamic_axes: dict[str, dict[int, str]] = {"input": {0: "batch_size"}}
-                for name, value in output_items:
-                    if value.ndim > 0:
-                        dynamic_axes[name] = {0: "batch_size"}
-                kwargs["dynamic_axes"] = dynamic_axes
-
-        onnx_path = Path(
-            super().to_onnx(
-                export_root,
-                model_file_name=model_file_name,
-                input_size=input_size,
-                **kwargs,
+        if input_size is None:
+            raise ValueError(
+                "TAD ONNX export requires a fixed input_size to allocate "
+                "static non-batch output buffers."
             )
+        if isinstance(input_size, int):
+            input_size = (input_size, input_size)
+        else:
+            input_size = tuple(int(x) for x in input_size)
+
+        self.eval()
+        self.model.eval()
+        dummy = torch.zeros((1, 3, *input_size), device=self.device)
+        adapter = _TADONNXExportAdapter(self).to(self.device).eval()
+
+        with torch.inference_mode():
+            traced_score, traced_map = adapter(dummy)
+        traced_output_shapes = {
+            "pred_score": tuple(int(dim) for dim in traced_score.shape),
+            "anomaly_map": tuple(int(dim) for dim in traced_map.shape),
+        }
+
+        dynamic_axes = kwargs.pop(
+            "dynamic_axes",
+            {
+                "input": {0: "batch_size"},
+                "pred_score": {0: "batch_size"},
+                "anomaly_map": {0: "batch_size"},
+            },
+        )
+        input_names = kwargs.pop("input_names", ["input"])
+        output_names = kwargs.pop("output_names", ["pred_score", "anomaly_map"])
+        if list(output_names) != ["pred_score", "anomaly_map"]:
+            raise ValueError(
+                "TAD's ONNX export has a fixed two-output contract: "
+                "['pred_score', 'anomaly_map']."
+            )
+
+        onnx_dir = Path(export_root) / "weights" / "onnx"
+        onnx_dir.mkdir(parents=True, exist_ok=True)
+        onnx_path = onnx_dir / f"{model_file_name}.onnx"
+
+        torch.onnx.export(
+            model=adapter,
+            args=(dummy,),
+            f=str(onnx_path),
+            opset_version=kwargs.pop("opset_version", 14),
+            dynamo=kwargs.pop("dynamo", False),
+            dynamic_axes=dynamic_axes,
+            input_names=input_names,
+            output_names=list(output_names),
+            **kwargs,
         )
 
-        if traced_output_shapes is not None:
-            self._freeze_onnx_nonbatch_output_shapes(onnx_path, traced_output_shapes)
-
+        self._freeze_onnx_nonbatch_output_shapes(onnx_path, traced_output_shapes)
         return onnx_path
 
     @staticmethod
@@ -685,7 +791,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             import onnx
         except ModuleNotFoundError as exc:
             raise RuntimeError(
-                "The 'onnx' package is required to finalize LMI-compatible TAD "
+                "The 'onnx' package is required to finalize TAD "
                 "output shapes. Install the same ONNX dependency used for export."
             ) from exc
 
@@ -758,7 +864,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
 
     @staticmethod
     def configure_post_processor() -> PostProcessor:
-        """Return TAD's LMI-compatible raw-score/raw-map post-processor by default."""
+        """Return raw-score/raw-map post-processor by default."""
         return TADPostProcessor(return_raw_pred_score=True, return_raw_anomaly_map=True)
 
     def on_fit_start(self) -> None:
@@ -776,6 +882,24 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         super_hook = getattr(super(), "on_fit_start", None)
         if callable(super_hook):
             super_hook()
+
+        # TAD is a memory-bank model. With stochastic train augmentations, every
+        # requested epoch contributes another set of normal embeddings, so the
+        # bank must remain unfitted until the final epoch. Keep this scheduling
+        # policy model-local rather than teaching the shared train.py about TAD.
+        trainer = getattr(self, "trainer", None)
+        if trainer is not None:
+            max_epochs = int(getattr(trainer, "max_epochs", 1) or 1)
+            if max_epochs > 1:
+                previous = getattr(trainer, "check_val_every_n_epoch", 1)
+                trainer.check_val_every_n_epoch = max_epochs
+                logger.info(
+                    "TolerantAnomalyDINO: multi-epoch memory-bank schedule active: "
+                    "max_epochs=%d check_val_every_n_epoch=%d (previous=%s).",
+                    max_epochs,
+                    max_epochs,
+                    previous,
+                )
 
         context = warnings.catch_warnings()
         context.__enter__()
@@ -842,12 +966,24 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             return
 
         transform = self._get_defect_transform()
+        if self.defect_augmentations is not None and self.defect_augmentation_repeats > 0:
+            logger.info(
+                "Tolerance reference augmentation enabled: repeats=%d include_original=%s pipeline=%s",
+                self.defect_augmentation_repeats,
+                self.defect_augmentation_include_original,
+                self.defect_augmentations,
+            )
         for label, dir_path in (("accept", self.acceptable_dir), ("reject", self.reject_dir)):
             if dir_path is None or not dir_path.exists():
                 logger.warning("No %s_dir provided or path missing; skipping.", label)
                 continue
             logger.info("Building %s residual bank from: %s", label, dir_path)
-            self._extract_defect_residuals(dir_path, label, transform)  # type: ignore[arg-type]
+            self._extract_defect_residuals(
+                dir_path,
+                label,
+                transform,
+                augmentation=self.defect_augmentations,
+            )  # type: ignore[arg-type]
 
         self.model.finalize_residual_banks()
 
@@ -911,17 +1047,27 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         dir_path: Path,
         label: Literal["accept", "reject"],
         transform,
+        *,
+        augmentation=None,
     ) -> None:
         dataset = _FlatImageDataset(
             dir_path,
             transform=transform,
+            augmentation=augmentation,
+            augmentation_repeats=self.defect_augmentation_repeats,
+            include_original=self.defect_augmentation_include_original,
             return_path=(label == "reject" and self.model.residual_projection_enable),
         )
         if len(dataset) == 0:
             logger.warning("%s: no images found in %s", label, dir_path)
             return
 
-        logger.info("%s residual source images: %d", label, len(dataset))
+        logger.info(
+            "%s residual source images: %d originals -> %d reference views",
+            label,
+            dataset.num_source_images,
+            len(dataset),
+        )
         loader = DataLoader(
             dataset,
             batch_size=self.defect_batch_size,
@@ -1994,7 +2140,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 "nonreject_count": 0,
             }
         # numpy linear quantile is deterministic. Deployment fails strictly on >,
-        # matching LMI_AI_Solutions, so values equal to the threshold remain PASS.
+        # so values equal to the threshold remain PASS.
         threshold = float(np.quantile(values, q, method="linear"))
         empirical_fpr = float(np.mean(values > threshold))
         return {
@@ -2225,7 +2371,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 },
                 "anomaly_map_domain": post_meta.get("anomaly_map_domain"),
                 "note": (
-                    "For LMI ADBase.annotate, ad_threshold is the pixel-map display floor. "
+                    "For ADBase.annotate, ad_threshold is the pixel-map display floor. "
                     "ad_max follows the exported image-score operating threshold so the reject "
                     "boundary maps to full heatmap intensity. TAD pred_score and anomaly_map are "
                     "derived from the same effective patch-score field."
@@ -2738,30 +2884,157 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
 
     @property
     def trainer_arguments(self) -> dict[str, Any]:
-        return {"gradient_clip_val": 0, "max_epochs": 1, "num_sanity_val_steps": 0, "devices": 1}
+        # Do not force max_epochs=1 here. Anomalib's Engine gives model-level
+        # trainer_arguments precedence over Engine(...) arguments, so doing so
+        # silently overrides data-driven multi-view training such as
+        # engine.max_epochs=3. TAD's epoch hooks below defer memory-bank fitting
+        # until the final epoch, making multiple stochastic augmentation passes
+        # safe. Keep only constraints that are intrinsic to this implementation.
+        return {"gradient_clip_val": 0, "num_sanity_val_steps": 0, "devices": 1}
+
+    def _is_final_training_epoch(self) -> bool:
+        trainer = getattr(self, "trainer", None)
+        if trainer is None:
+            return True
+        max_epochs = int(getattr(trainer, "max_epochs", 1) or 1)
+        current_epoch = int(getattr(trainer, "current_epoch", 0))
+        return current_epoch >= max_epochs - 1
+
+    def _finalize_memory_bank_once(self, *, trigger: str) -> None:
+        """Fit the complete multi-epoch memory bank exactly once."""
+        if bool(self._is_fitted):
+            return
+        logger.info(
+            "TolerantAnomalyDINO: finalizing accumulated memory bank at %s "
+            "(epoch=%d/%d)",
+            trigger,
+            int(getattr(getattr(self, "trainer", None), "current_epoch", 0)) + 1,
+            int(getattr(getattr(self, "trainer", None), "max_epochs", 1) or 1),
+        )
+        self.fit()
+        self._is_fitted.fill_(True)
+
+    def on_train_epoch_end(self) -> None:
+        """Defer MemoryBankMixin fitting until the requested final epoch.
+
+        The stock MemoryBankMixin implementation fits after epoch 0 and marks
+        the model fitted. That is correct for PatchCore/PaDiM-style one-pass
+        training, but would discard the value of epochs 2+ when stochastic
+        train augmentations are being used to create additional normal views.
+        """
+        if self._is_final_training_epoch():
+            self._finalize_memory_bank_once(trigger="final train epoch")
+        else:
+            trainer = getattr(self, "trainer", None)
+            logger.info(
+                "TolerantAnomalyDINO: retaining normal embedding reservoir after "
+                "epoch %d/%d; finalization deferred until the last epoch.",
+                int(getattr(trainer, "current_epoch", 0)) + 1,
+                int(getattr(trainer, "max_epochs", 1) or 1),
+            )
+
+    def on_validation_start(self) -> None:
+        """Fit immediately before the final validation, never on earlier epochs."""
+        if not self._is_final_training_epoch():
+            trainer = getattr(self, "trainer", None)
+            raise RuntimeError(
+                "TAD multi-epoch training entered validation before the final epoch "
+                "even though its on_fit_start hook schedules final-epoch-only validation. "
+                "This indicates the Trainer schedule was changed after on_fit_start. "
+                f"current_epoch={int(getattr(trainer, 'current_epoch', 0)) + 1} "
+                f"max_epochs={int(getattr(trainer, 'max_epochs', 1) or 1)}"
+            )
+        self._finalize_memory_bank_once(trigger="final validation")
 
     @property
     def learning_type(self) -> LearningType:
         return LearningType.ONE_CLASS
 
 
+def _clean_augmentation_params(value: Any) -> Any:
+    """Normalize YAML transform parameters for torchvision v2 constructors."""
+    if isinstance(value, dict):
+        return {key: _clean_augmentation_params(val) for key, val in value.items()}
+    if isinstance(value, list):
+        return tuple(_clean_augmentation_params(val) for val in value)
+    if isinstance(value, tuple):
+        return tuple(_clean_augmentation_params(val) for val in value)
+    return value
+
+
+def _build_augmentation_pipeline(
+    spec: tuple[dict[str, Any], ...] | list[dict[str, Any]] | None,
+):
+    """Build torchvision-v2 augmentations from Anomalib-style YAML entries."""
+    if not spec:
+        return None
+
+    transforms: list[nn.Module] = []
+    for item in spec:
+        if not isinstance(item, dict):
+            raise TypeError(f"augmentation entry must be a mapping, got {type(item)!r}")
+        name = str(item.get("class_name", "")).strip()
+        if not name:
+            raise ValueError("augmentation entry is missing class_name")
+        if not hasattr(tv_v2, name):
+            raise ValueError(f"torchvision.transforms.v2 has no transform named {name!r}")
+        params = _clean_augmentation_params(item.get("params", {}) or {})
+        transform_cls = getattr(tv_v2, name)
+        try:
+            transforms.append(transform_cls(**params))
+        except Exception as exc:
+            raise ValueError(f"failed to construct defect augmentation {name}: {exc}") from exc
+
+    return tv_v2.Compose(transforms) if transforms else None
+
+
 class _FlatImageDataset(torch.utils.data.Dataset):
     EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
 
-    def __init__(self, root: Path, transform=None, return_path: bool = False) -> None:
+    def __init__(
+        self,
+        root: Path,
+        transform=None,
+        return_path: bool = False,
+        *,
+        augmentation=None,
+        augmentation_repeats: int = 0,
+        include_original: bool = True,
+    ) -> None:
         self.paths = list(_iter_image_paths(root))
         self.transform = transform
         self.return_path = bool(return_path)
+        self.augmentation = augmentation
+        self.augmentation_repeats = max(0, int(augmentation_repeats)) if augmentation is not None else 0
+        self.include_original = bool(include_original)
+        self.views_per_image = int(self.include_original) + self.augmentation_repeats
+        if self.paths and self.views_per_image <= 0:
+            raise ValueError("_FlatImageDataset requires at least one view per image")
+
+    @property
+    def num_source_images(self) -> int:
+        return len(self.paths)
 
     def __len__(self) -> int:
-        return len(self.paths)
+        return len(self.paths) * self.views_per_image
 
     def __getitem__(self, idx: int):
         from PIL import Image
 
-        path = self.paths[idx]
+        if self.views_per_image <= 0:
+            raise IndexError(idx)
+        path_idx = idx // self.views_per_image
+        view_idx = idx % self.views_per_image
+        path = self.paths[path_idx]
         img = Image.open(path).convert("RGB")
         img_t = torch.from_numpy(np.array(img, dtype="float32") / 255.0).permute(2, 0, 1)
+
+        is_original_view = self.include_original and view_idx == 0
+        if not is_original_view and self.augmentation is not None:
+            # Photometric/geometric augmentation happens before the model's
+            # Resize/Normalize preprocessing, matching Anomalib train augmentation
+            # semantics while preserving an unmodified reference view as well.
+            img_t = self.augmentation(img_t)
         if self.transform is not None:
             img_t = self.transform(img_t)
         if self.return_path:
@@ -3669,7 +3942,7 @@ def _metrics_at_threshold_deployment(
     scores: np.ndarray,
     threshold: float,
 ) -> dict[str, Any]:
-    """Metrics for the LMI deployment rule: FAIL iff score > threshold."""
+    """Metrics for the deployment rule: FAIL iff score > threshold."""
     pred = scores > threshold
     pos = labels == 1
     neg = ~pos

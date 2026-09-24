@@ -103,9 +103,9 @@ def build_model(model_config: Dict[str, Any]):
 def build_data(data_config: Dict[str, Any]) -> Folder:
     if data_config.get("train_augmentations", None) is not None:
         data_config["train_augmentations"] = build_augmentations(data_config["train_augmentations"])
-    elif data_config.get("val_augmentations", None) is not None:
+    if data_config.get("val_augmentations", None) is not None:
         data_config["val_augmentations"] = build_augmentations(data_config["val_augmentations"])
-    elif data_config.get("augmentations", None) is not None:
+    if data_config.get("augmentations", None) is not None:
         data_config["augmentations"] = build_augmentations(data_config["augmentations"])
     return Folder(**data_config)
 
@@ -151,8 +151,25 @@ def main():
     # --- Export to Torch---
     engine.export(model=model, export_type=ExportType.TORCH)
 
-    # --- Export to ONNX---
-    engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model))
+    # --- Export to ONNX, then simplify in-place for TRT 10 compatibility ---
+    onnx_path = engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model))
+    if onnx_path is not None and onnx_path.exists():
+        try:
+            import onnx
+            from onnxsim import simplify
+            m = onnx.load(str(onnx_path))
+            inp = m.graph.input[0]
+            dims = [(d.dim_value if d.HasField("dim_value") else -1) for d in inp.type.tensor_type.shape.dim]
+            H = dims[2] if len(dims) > 2 and dims[2] > 0 else get_image_size(model)[0]
+            W = dims[3] if len(dims) > 3 and dims[3] > 0 else H
+            m_sim, ok = simplify(m, overwrite_input_shapes={inp.name: [1, 3, H, W]})
+            if ok:
+                onnx.save(m_sim, str(onnx_path))
+                logger.info(f"ONNX simplified in-place at {onnx_path}")
+            else:
+                logger.warning("onnxsim returned ok=False; keeping original ONNX")
+        except Exception as e:
+            logger.warning(f"onnxsim failed (ONNX still valid for ORT): {e}")
 
     # Optional model-owned artifact publication. Standard models are no-ops.
     notify_model_exported(model, cfg)
