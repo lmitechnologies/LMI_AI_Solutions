@@ -92,29 +92,6 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
 
-  cleanup-untagged-images:
-    needs: build-images
-    if: needs.build-images.result == 'success' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-        with:
-          lfs: false
-          submodules: false
-
-      - name: Delete untagged images older than retention period
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          OWNER: ${{ github.repository_owner }}
-          PACKAGE_NAME: "ais-test-env"
-          RETENTION_DAYS: 7
-        run: bash .github/workflows/scripts/cleanup_untagged_images.sh
-
   run-test:
     needs: [check-changes, build-images]
     if: |
