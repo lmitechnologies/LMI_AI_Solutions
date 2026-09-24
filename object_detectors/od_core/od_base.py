@@ -34,6 +34,9 @@ class ODBase(abc.ABC):
     # Set to a positive integer in subclasses that use a fixed-batch-size model.
     fixed_batch_size: int = None
 
+    # Largest batch a dynamic-batch model accepts; predict() splits larger inputs into chunks of it.
+    max_batch_size: int = None
+
     # True = letterbox, False = stretch. Required on concrete subclasses (see __init_subclass__).
     RESIZE_PRESERVE_ASPECT: bool = None
 
@@ -74,7 +77,9 @@ class ODBase(abc.ABC):
 
         Supports both single image and batch inference. When ``self.fixed_batch_size``
         is set (e.g. TRT engines with a hard-coded batch dimension), the input is
-        processed in chunks of that size and the last chunk is zero-padded.
+        processed in chunks of that size and the last chunk is zero-padded. When
+        ``self.max_batch_size`` is set (dynamic-batch engines), chunks are at most that size
+        and are not padded.
 
         Return tensors if input image are tensors, otherwise return numpy arrays.
 
@@ -90,8 +95,8 @@ class ODBase(abc.ABC):
                   Each entry's batched fields must have length 1 (broadcast to all images) or
                   equal to the number of images that entry saw.
         kwargs:
-            batch_size (int): chunk size for dynamic mini-batch inference (default: None = all at once).
-                Ignored when self.fixed_batch_size is set.
+            batch_size (int): chunk size for dynamic mini-batch inference, capped at self.max_batch_size
+                (default: self.max_batch_size, or all at once when that is unset). Ignored when self.fixed_batch_size is set.
             return_segments (bool): Whether to return 'segments' in the output dict when available. A segment is the
                 mask's outer outline, traced by the backend's own rule. With a tile step, segments are traced again from
                 the merged masks, largest piece only (``mask_segments.masks_to_segments``).
@@ -116,6 +121,8 @@ class ODBase(abc.ABC):
 
         fixed_bs = self.fixed_batch_size
         batch_size = kwargs.pop("batch_size", None)
+        if self.max_batch_size:
+            batch_size = min(batch_size or self.max_batch_size, self.max_batch_size)
         effective_bs = fixed_bs or batch_size
 
         if effective_bs:

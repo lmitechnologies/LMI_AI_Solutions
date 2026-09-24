@@ -90,6 +90,20 @@ class YoloCore:
         imgsz = self._training_arg("imgsz")
         return int(imgsz) if isinstance(imgsz, int) and self._training_arg("rect") else None
 
+    def engine_batch(self):
+        """(batch, dynamic) for a model that limits its batch, or None when it takes any batch (.pt, dynamic ONNX).
+
+        A static TensorRT or ONNX model takes exactly `batch` images; a dynamic TensorRT engine takes up to its profile max.
+        """
+        backend = getattr(self.model, "backend", self.model)  # ultralytics < 8.4 keeps the backend state on AutoBackend
+        bindings = getattr(backend, "bindings", None)
+        if isinstance(bindings, dict) and "images" in bindings:  # TensorRT; a dynamic engine's binding starts at its max
+            return int(bindings["images"].shape[0]), bool(backend.dynamic)
+        session = getattr(backend, "session", None)
+        if session is not None and not backend.dynamic:
+            return int(session.get_inputs()[0].shape[0]), False
+        return None
+
     @smart_inference_mode()
     def from_numpy(self, x: np.ndarray) -> torch.Tensor:
         """

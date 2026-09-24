@@ -60,10 +60,39 @@ def pth_model():
     )
 
 
+def _assert_masks_match(ref, out, i, min_iou=0.99):
+    """Per-instance mask IoU; runtimes that order float ops differently may flip a few edge pixels."""
+    ref_m, out_m = np.asarray(ref["masks"][i]) > 0, np.asarray(out["masks"][i]) > 0
+    assert out_m.shape == ref_m.shape, f"image {i}: mask shape mismatch"
+    iou = (ref_m & out_m).sum((1, 2)) / np.maximum((ref_m | out_m).sum((1, 2)), 1)
+    assert (iou >= min_iou).all(), f"image {i}: mask IoU {iou.min():.4f} < {min_iou}"
+
+
 def test_dispatch_and_shapes(onnx_model):
     assert isinstance(onnx_model, RfdetrONNX)
     assert onnx_model.image_size == [IMAGE_SIZE, IMAGE_SIZE]
     assert onnx_model.fixed_batch_size == 1  # rfdetr exports a static batch
+
+
+def test_dynamic_batch_export(tmp_path, imgs_coco, onnx_model):
+    """A dynamic-batch export runs a whole batch in one pass, capped at the engine's max, and matches the static export."""
+    from rfdetr import RFDETRSegSmall
+
+    from object_detectors.rf_detr_lmi.convert import convert_to_onnx
+
+    path = convert_to_onnx(
+        RFDETRSegSmall(pretrain_weights=PTH_FILE, resolution=IMAGE_SIZE, device="cpu"), str(tmp_path), dynamic_batch=True
+    )
+    model = ObjectDetector(metadata=METADATA, model_path=str(path), image_size=[IMAGE_SIZE, IMAGE_SIZE], device="cpu")
+    assert model.fixed_batch_size is None
+    assert model.max_batch_size == model.engine.max_batch
+
+    out, _ = model.predict(imgs_coco, configs=0.5)
+    ref, _ = onnx_model.predict(imgs_coco, configs=0.5)
+    for i in range(len(imgs_coco)):
+        assert np.array_equal(ref["classes"][i], out["classes"][i]), f"image {i}: class mismatch"
+        np.testing.assert_allclose(ref["boxes"][i], out["boxes"][i], atol=0.5)
+        _assert_masks_match(ref, out, i)
 
 
 def test_warmup(onnx_model):
@@ -83,7 +112,7 @@ def test_matches_pth(imgs_coco, onnx_model, pth_model):
         _assert_nonempty_out({k: out[k][i] for k in KEYS})
         _assert_scores_geq({"scores": out["scores"][i]}, 0.5)
         assert np.array_equal(ref["classes"][i], out["classes"][i]), f"image {i}: class mismatch"
-        assert np.asarray(out["masks"][i]).shape == np.asarray(ref["masks"][i]).shape, f"image {i}: mask shape mismatch"
+        _assert_masks_match(ref, out, i)
         # ONNX Runtime and torch order float ops differently, so boxes agree only to sub-pixel noise.
         np.testing.assert_allclose(ref["boxes"][i], out["boxes"][i], atol=0.5)
         np.testing.assert_allclose(ref["scores"][i], out["scores"][i], atol=5e-3)

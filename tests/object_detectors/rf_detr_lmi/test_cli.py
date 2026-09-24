@@ -27,13 +27,18 @@ def loaded(monkeypatch):
         return build
 
     def fake_convert_to_onnx(model, output_dir, **kwargs):
+        calls["onnx_kwargs"] = kwargs
         path = os.path.join(output_dir, "rfdetr-seg-small.onnx")
         open(path, "w").close()
         return path
 
+    def fake_convert_to_tensorrt(onnx_path, **kwargs):
+        calls["trt_kwargs"] = kwargs
+
     monkeypatch.setattr(cli, "load_from_checkpoint", fake_from_checkpoint)
     monkeypatch.setattr(cli, "get_model_class", fake_get_model_class)
     monkeypatch.setattr(cli, "convert_to_onnx", fake_convert_to_onnx)
+    monkeypatch.setattr(cli, "convert_to_tensorrt", fake_convert_to_tensorrt)
     return calls
 
 
@@ -123,6 +128,59 @@ def test_export_model_type_overrides_checkpoint(loaded, tmp_path):
     cli.handle_export(configs)
     assert loaded["source"] == "model_type"
     assert (loaded["task"], loaded["model_type"]) == ("seg", "small")
+
+
+@pytest.mark.parametrize("export", [{}, {"dynamic_batch": True}], ids=["default", "dynamic"])
+def test_export_dynamic_batch_reaches_the_exporter(loaded, tmp_path, export):
+    configs = cli.parse_config(
+        {
+            "operation": "export",
+            "task": "seg",
+            "pretrain_weights": PTH_FILE,
+            "export": {"output_dir": str(tmp_path), "resolution": 384, **export},
+        }
+    )
+    cli.handle_export(configs)
+    assert loaded["onnx_kwargs"]["dynamic_batch"] is export.get("dynamic_batch", False)
+    assert loaded["kwargs"] == {"resolution": 384}
+
+
+def _convert(fmt, **conversion):
+    return cli.parse_config(
+        {
+            "operation": "convert",
+            "task": "seg",
+            "format": fmt,
+            "conversion": {"pretrain_weights": PTH_FILE, "resolution": 384, **conversion},
+        }
+    )
+
+
+def test_dynamic_tensorrt_conversion_builds_up_to_max_batch(loaded, tmp_path):
+    cli.handle_conversion(_convert("tensorrt", output_dir=str(tmp_path), dynamic_batch=True, max_batch=12))
+    assert loaded["onnx_kwargs"] == {"dynamic_batch": True}
+    assert loaded["trt_kwargs"] == {"max_batch": 12}
+    assert loaded["kwargs"] == {"resolution": 384}
+
+
+def test_static_tensorrt_conversion_is_unchanged(loaded, tmp_path):
+    cli.handle_conversion(_convert("tensorrt", output_dir=str(tmp_path)))
+    assert loaded["onnx_kwargs"] == {"dynamic_batch": False}
+    assert loaded["trt_kwargs"] == {}
+
+
+@pytest.mark.parametrize(
+    "fmt, conversion, match",
+    [
+        ("tensorrt", {"dynamic_batch": True}, "needs max_batch"),
+        ("tensorrt", {"max_batch": 12}, "applies only"),
+        ("onnx", {"dynamic_batch": True, "max_batch": 12}, "applies only"),
+    ],
+    ids=["dynamic-without-max", "max-without-dynamic", "max-on-onnx"],
+)
+def test_max_batch_that_would_be_ignored_or_missing_is_rejected(fmt, conversion, match):
+    with pytest.raises(ValueError, match=match):
+        _convert(fmt, **conversion)
 
 
 def test_train_still_defaults_the_variant(loaded):
