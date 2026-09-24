@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from lmi_utils.postprocess_utils import tile_merge
+from lmi_utils.postprocess_utils.mask_crops import MaskCrops
 from lmi_utils.postprocess_utils.tile_merge import merge_tile_fragments
 
 # Two tiles side by side: T0 spans x [0, 100), T1 spans x [60, 160). Image is 150x100, so T1's
@@ -166,25 +167,26 @@ def test_image_border_is_not_a_seam():
     assert out["boxes"].shape == (2, 4)
 
 
-def test_masks_union_and_segments_union():
+def _ring(out):
+    masks = out["masks"]
+    return tile_merge.trace_crops(MaskCrops.from_masks(masks, tuple(masks.shape[1:])))[0]
+
+
+def test_masks_union_traces_one_outline():
     masks = torch.zeros((2, 100, 150), dtype=torch.uint8)
     masks[0, 20:50, 40:100] = 1
     masks[1, 20:50, 60:120] = 1
     merged = {
         "boxes": torch.tensor([[40.0, 20, 100, 50], [60.0, 20, 120, 50]]),
         "masks": masks,
-        "segments": [
-            torch.tensor([[40.0, 20], [100.0, 20], [100.0, 50], [40.0, 50]]),
-            torch.tensor([[60.0, 20], [120.0, 20], [120.0, 50], [60.0, 50]]),
-        ],
         "scores": torch.tensor([0.4, 0.9]),
         "classes": np.array([0, 0], dtype=np.int32),
     }
     out = merge_tile_fragments(merged, torch.tensor([0, 1]), _ORIGINS, _TILE_SIZE, _IM_SIZE, 0.8)
     assert out["masks"].shape == (1, 100, 150)
     assert int(out["masks"].sum()) == 30 * 80  # x 40..120, y 20..50
-    # traced from the combined mask through pixel centres, as the detectors trace theirs
-    ring = out["segments"][0]
+    # outline through pixel centres, as cv2.findContours gives it
+    ring = _ring(out)
     assert ring[:, 0].min() == pytest.approx(40.0) and ring[:, 0].max() == pytest.approx(119.0)
 
 
@@ -568,68 +570,44 @@ def test_no_overlap_tiles_compare_a_mask_that_ends_at_the_band_edge():
     assert len(out["masks"]) == 2
 
 
-def _seam_pieces(masks: bool, segments: bool, a_end: int, b_start: int, dent_x: Optional[int] = None):
+def _seam_pieces(a_end: int, b_start: int, dent_x: Optional[int] = None):
     """One object at y 20..50 cut at the no-overlap seam x = 100: piece A ends at column a_end, B starts at b_start.
 
     ``dent_x`` cuts a 2px wide notch into A's top edge there, far from the seam.
     """
     merged = _result([[40, 20, a_end, 50], [b_start, 20, 160, 50]], [0.4, 0.9])
-    if masks:
-        m = torch.zeros((2, 100, 200), dtype=torch.uint8)
-        m[0, 20:50, 40:a_end] = 1
-        m[1, 20:50, b_start:160] = 1
-        if dent_x is not None:
-            m[0, 20:22, dent_x : dent_x + 2] = 0
-        merged["masks"] = m
-    if segments:  # outlines through pixel centres, as cv2.findContours gives them
-        top = [[40.0, 20]]
-        if dent_x is not None:
-            top += [[dent_x - 1.0, 20], [dent_x - 1.0, 25], [dent_x + 1.0, 25], [dent_x + 1.0, 20]]
-        merged["segments"] = [
-            torch.tensor(top + [[a_end - 1.0, 20], [a_end - 1.0, 49], [40.0, 49]]),
-            torch.tensor([[float(b_start), 20], [159.0, 20], [159.0, 49], [float(b_start), 49]]),
-        ]
+    m = torch.zeros((2, 100, 200), dtype=torch.uint8)
+    m[0, 20:50, 40:a_end] = 1
+    m[1, 20:50, b_start:160] = 1
+    if dent_x is not None:
+        m[0, 20:22, dent_x : dent_x + 2] = 0
+    merged["masks"] = m
     return merge_tile_fragments(merged, torch.tensor([0, 1]), _NO_OVERLAP_ORIGINS, _TILE_SIZE, _NO_OVERLAP_IM_SIZE, 0.8)
 
 
 def test_no_overlap_tiles_close_the_seam_gap_in_the_combined_mask():
-    out = _seam_pieces(masks=True, segments=False, a_end=99, b_start=101)
+    out = _seam_pieces(a_end=99, b_start=101)
     assert out["masks"].shape == (1, 100, 200)
     assert bool(out["masks"][0, 20:50, 40:160].all())  # the 2px gap at the seam is filled
     assert int(out["masks"].sum()) == 30 * 120  # and nothing outside the object is
 
 
 def test_no_overlap_tiles_trace_one_outline_across_the_seam():
-    out = _seam_pieces(masks=True, segments=True, a_end=100, b_start=100)
-    ring = out["segments"][0]
-    assert ring[:, 0].min() == pytest.approx(40.0) and ring[:, 0].max() == pytest.approx(159.0)
-
-
-def test_no_overlap_tiles_close_the_seam_gap_between_polygons():
-    # without masks: A's outline ends at x 99 and B's starts at 100, 1px apart
-    out = _seam_pieces(masks=False, segments=True, a_end=100, b_start=100)
-    ring = out["segments"][0]
+    out = _seam_pieces(a_end=100, b_start=100)
+    ring = _ring(out)
     assert ring[:, 0].min() == pytest.approx(40.0) and ring[:, 0].max() == pytest.approx(159.0)
 
 
 def test_no_overlap_tiles_keep_a_narrow_dent_away_from_the_seam():
-    out = _seam_pieces(masks=True, segments=True, a_end=99, b_start=101, dent_x=50)
+    out = _seam_pieces(a_end=99, b_start=101, dent_x=50)
     assert bool(out["masks"][0, 20:50, 98:101].all())  # seam gap filled
     assert not bool(out["masks"][0, 20:22, 50:52].any())  # the 2px dent at x 50 is the model's and stays
     assert int(out["masks"].sum()) == 30 * 120 - 4
-    assert (out["segments"][0][:, 1] > 20).any()  # the outline still dips into the dent
-
-
-def test_no_overlap_tiles_keep_a_narrow_dent_away_from_the_seam_between_polygons():
-    out = _seam_pieces(masks=False, segments=True, a_end=100, b_start=100, dent_x=50)
-    ring = out["segments"][0]
-    assert ring[:, 0].min() == pytest.approx(40.0) and ring[:, 0].max() == pytest.approx(159.0)
-    dent = ring[(ring[:, 0] >= 49) & (ring[:, 0] <= 51)]
-    assert dent[:, 1].max() == pytest.approx(25.0)
+    assert (_ring(out)[:, 1] > 20).any()  # the outline still dips into the dent
 
 
 def test_overlapping_tiles_do_not_close_the_combined_mask():
-    # the grid's pad is zero with overlap, so a notch in the combined mask survives
+    # the seam band is zero with overlap, so a notch in the combined mask survives
     masks = torch.zeros((2, 100, 150), dtype=torch.uint8)
     masks[0, 20:50, 40:100] = 1
     masks[1, 20:50, 60:120] = 1
@@ -638,15 +616,6 @@ def test_overlapping_tiles_do_not_close_the_combined_mask():
     merged["masks"] = masks
     out = merge_tile_fragments(merged, torch.tensor([0, 1]), _ORIGINS, _TILE_SIZE, _IM_SIZE, 0.8)
     assert int(out["masks"].sum()) == 30 * 80 - 3 * 2
-
-
-def test_trace_keeps_the_largest_of_pieces_that_do_not_touch():
-    crop = np.zeros((10, 30), dtype=np.uint8)
-    crop[2:8, 0:5] = 1
-    crop[2:8, 20:30] = 1
-    ring = tile_merge._trace(crop, 100, 50)
-    assert ring[:, 0].min() == pytest.approx(120.0) and ring[:, 0].max() == pytest.approx(129.0)
-    assert ring[:, 1].min() == pytest.approx(52.0) and ring[:, 1].max() == pytest.approx(57.0)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="needs CUDA")

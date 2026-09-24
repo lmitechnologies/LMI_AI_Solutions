@@ -109,6 +109,8 @@ for boxes, scores, classes in zip(results["boxes"], results["scores"], results["
     ...  # process per image
 ```
 
+**Segments without tiling keep each backend's own rule; tiled segments keep the largest piece.** A segment is the mask's outer outline: holes are dropped, and the mask keeps the exact shape. YOLO joins pieces that do not touch, as Ultralytics does (`Results.masks.xy`); Detectron2 and RF-DETR keep the largest piece. RF-DETR used to chain the pieces' points in one list, so its segments change on such masks. With a tile step, segments are traced from the merged masks and keep the largest piece for every backend, so a YOLO mask in pieces is outlined differently tiled and untiled.
+
 The `operators` parameter is also now formally typed and uses the **unified preprocessing-history schema** — the same shape returned by `Preprocessor.preprocess()` and consumed by `Reconstructor`. See new feature 3 below.
 
 ---
@@ -510,7 +512,7 @@ The results come back in the same form as the image you passed in: numpy arrays 
 
 The detector scripts do this for you behind `--tile`/`--stride` (see breaking change 7). `object_detectors.od_core.infer_cli.predict_tiled(model, image, step, **predict_kwargs)` is the first route plus the tile rectangles for plotting.
 
-**Objects split across a seam are rejoined.** A tile only sees part of an object that crosses its edge, so the detector's box stops at the edge. Merging groups those pieces and emits one detection per object: if some tile saw the object whole, that detection wins; if every view is cut, the group's shapes are combined (box, mask or polygon). Class-aware NMS then runs across tiles.
+**Objects split across a seam are rejoined.** A tile only sees part of an object that crosses its edge, so the detector's box stops at the edge. Merging groups those pieces and emits one detection per object: if some tile saw the object whole, that detection wins; if every view is cut, the group's boxes and masks are combined. Class-aware NMS then runs across tiles. Segments are not merged as polygons: each result's segment is traced from its merged mask, so tiled segments need masks, and segments without masks raise. Pass `return_segments=False` to skip the model's per-tile tracing when you do not need segments.
 
 **Merge options** — all on `steps.tile(...)`, applied when coordinates are reverted:
 

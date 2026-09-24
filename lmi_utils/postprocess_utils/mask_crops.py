@@ -212,17 +212,6 @@ class MaskCrops:
         found = torch.stack([x0 + c0 + first_c, y0 + r0 + first_r, x0 + c0 + last_c + 1, y0 + r0 + last_r + 1], dim=1)
         return torch.where((last_r < 0)[:, None], empty, found.float())
 
-    def intersection(self, a: int, b: int) -> float:
-        """Pixels shared by masks a and b."""
-        return float(self.intersections(torch.tensor([a]), torch.tensor([b]))[0])
-
-    def union(self, members: Sequence[int]) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Crop and (4,) box of masks ``members`` combined."""
-        idx = torch.as_tensor(list(members), dtype=torch.long, device=self.device)
-        data, boxes = self.unions(idx, torch.zeros(len(idx), dtype=torch.long, device=self.device), 1)
-        box = boxes[0]
-        return data.view(int(box[3] - box[1]), int(box[2] - box[0])), box
-
     def unions(self, members: torch.Tensor, group: torch.Tensor, n: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """Packed data and boxes of ``n`` masks, mask g being every member with ``group[k] == g`` combined.
 

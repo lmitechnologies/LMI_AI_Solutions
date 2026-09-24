@@ -128,8 +128,7 @@ def tile_annotated_image(
     Keypoints and oriented boxes raise. Every tile label is a new object; the input annotations are left alone.
 
     Args:
-        min_label_size: drop a clipped label thinner than this many pixels on either axis. Slivers only —
-            an interior fragment showing none of the object's edges must survive.
+        min_label_size: see ``TileConfig.min_label_size``.
 
     Returns:
         one (row, col, tile_image, tile_annotations) per tile, row-major.

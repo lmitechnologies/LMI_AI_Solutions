@@ -3,7 +3,6 @@ import logging
 import os
 from typing import List, Optional
 
-import cv2
 import numpy as np
 import torch
 import torchvision.transforms.functional as F
@@ -14,6 +13,7 @@ from lmi_common.model_factory import ModelFactory
 from lmi_common.onnx_engine import ONNXEngine
 from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
+from lmi_utils.postprocess_utils.mask_segments import masks_to_segments
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 from object_detectors.rf_detr_lmi.checkpoint import load_from_checkpoint
@@ -132,30 +132,6 @@ class RfdetrBase(ODBase):
         tensors = self._fit_to_input_size(tensors, preserve_aspect=False, resize_fn=resize_stretch, channels_first=True)
         return torch.stack([F.normalize(t, self.means, self.stds) for t in tensors])
 
-    @staticmethod
-    def _masks_to_segments(masks) -> List[np.ndarray]:
-        """Convert binary masks to contour segments.
-
-        Args:
-            masks: (N, H, W) tensor or numpy array of binary masks.
-
-        Returns:
-            List of N numpy arrays, each with shape (M, 2) containing (x, y) contour points.
-            Returns an empty array for masks with no contours.
-        """
-        if isinstance(masks, torch.Tensor):
-            masks = masks.cpu().numpy()
-        segments = []
-        for mask in masks:
-            binary = (mask > 0.5).astype(np.uint8)
-            contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if contours:
-                merged = np.concatenate([c.reshape(-1, 2) for c in contours], axis=0).astype(np.float32)
-                segments.append(merged)
-            else:
-                segments.append(np.zeros((0, 2), dtype=np.float32))
-        return segments
-
     def _postprocess_single(self, output, configs, return_segments) -> Results:
         """Postprocess a single image's decoded output from PostProcess.
 
@@ -177,9 +153,7 @@ class RfdetrBase(ODBase):
         # masks from rf-detr are (N, 1, H, W); squeeze to (N, H, W) for downstream use
         if len(masks) > 0:
             masks = masks.squeeze(1)
-        segments = (
-            [torch.from_numpy(s).to(self.device) for s in self._masks_to_segments(masks)] if len(masks) > 0 and return_segments else None
-        )
+        segments = [torch.from_numpy(s).to(self.device) for s in masks_to_segments(masks)] if len(masks) > 0 and return_segments else None
         return Results(
             boxes=boxes,
             scores=scores,

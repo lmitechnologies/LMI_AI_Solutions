@@ -944,6 +944,14 @@ def test_mask_to_polygons_skips_regions_enclosing_no_area():
     assert len(Mask(mask).to_polygons(h=100, w=100)) == 1
 
 
+def test_mask_area_excludes_holes():
+    mask = np.zeros((100, 100), np.uint8)
+    mask[10:50, 10:50] = 1
+    mask[20:40, 20:40] = 0
+
+    assert Mask(mask).area(h=100, w=100) == 40 * 40 - 20 * 20
+
+
 def test_polygon_obb_output_is_its_rotated_box():
     polygon = Polygon(points=[[10, 20], [20, 10], [40, 10], [50, 20], [40, 30], [20, 30]])
 

@@ -1,6 +1,5 @@
 from typing import Tuple
 
-import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -291,31 +290,3 @@ def segment_to_obb(points):
 def mask_to_obb(mask):
     polygon = mask_to_polygon(mask)
     return segment_to_obb(polygon)
-
-
-def mask_to_polygon_cv2(mask):
-    """
-    Converts a binary mask to the largest polygon.
-
-    Parameters:
-        mask (numpy.ndarray): A 2D binary mask (values are 0 or 255).
-
-    Returns:
-        list: A list of (x, y) tuples representing the largest polygon.
-    """
-    if len(mask.shape) != 2:
-        raise ValueError("Mask must be a 2D array.")
-
-    # Find contours of the mask
-    contours, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    if not contours:
-        return []
-
-    # Find the largest contour by area
-    largest_contour = max(contours, key=cv2.contourArea)
-
-    # Simplify the contour and convert it to a numpy array of (x, y) tuples
-    polygon = np.squeeze(largest_contour, axis=1)
-
-    return polygon

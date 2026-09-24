@@ -470,11 +470,9 @@ class Mask(Base):
         return instances
 
     def area(self, **kwargs):
-        polygons = self.to_polygons(**kwargs)
-        area = 0
-        for polygon in polygons:
-            area += polygon.area(**kwargs)
-        return area
+        """Pixel count, as COCO measures an RLE mask; holes are not counted."""
+        h, w = _require_hw(kwargs)
+        return int(np.count_nonzero(self.to_numpy(h=h, w=w)))
 
     def to_box(self, **kwargs):
         """The single box enclosing the whole mask, disconnected regions included.

@@ -609,6 +609,31 @@ def test_tiled_predict_merge_fragments_rejoins_seam_splits(yolo_models, imgs_coc
     assert len(merged["boxes"][0]) < len(split["boxes"][0]), "merging should collapse seam fragments"
 
 
+def test_tiled_segments_are_the_same_whether_predict_or_the_caller_reverts(yolo_models, imgs_coco):
+    """predict skips the model's per-tile tracing; the merge traces the survivors on both paths."""
+    from lmi_utils.preprocess_utils import steps
+    from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+    from lmi_utils.preprocess_utils.reconstructor import Reconstructor
+
+    model = yolo_models["seg"][0]
+    net_h, net_w = model.image_size
+    configs = [
+        steps.tile(tile_size=[320, 320], stride=[256, 256], scale_mode="padding"),
+        steps.resize(width=net_w, height=net_h, preserve_aspect=False),
+    ]
+    tiles, history = Preprocessor().preprocess(imgs_coco[0][:1], configs)
+
+    inside, _ = model.predict(tiles, configs=0.25, operators=history, return_segments=True)
+    per_tile, _ = model.predict(tiles, configs=0.25, return_segments=True)
+    outside = Reconstructor().reconstruct_coordinates(per_tile, history)
+
+    segments = inside["segments"][0]
+    assert len(segments) == len(inside["masks"][0]) > 0
+    assert len(outside["segments"][0]) == len(segments)
+    for a, b in zip(segments, outside["segments"][0]):
+        np.testing.assert_array_equal(a, np.clip(np.round(b), 0, None))  # predict rounds; the Reconstructor does not
+
+
 def test_tiled_predict_rejects_a_tile_count_that_does_not_match(yolo_models, imgs_coco):
     from lmi_utils.preprocess_utils import steps
     from lmi_utils.preprocess_utils.preprocessor import Preprocessor

@@ -111,7 +111,7 @@ class Yolo(YoloCore, ODBase):
         if do_scale_boxes:
             pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
         xyxy, scores, clss = pred[:, :4], pred[:, 4], pred[:, 5]
-        classes = np.array([self.model.names[c.item()] for c in clss])
+        classes = np.array([self.model.names[c] for c in clss.int().tolist()])  # one transfer, not a sync per detection
         xyxy, scores, classes, _, keep = self._apply_confidence_filter(scores, xyxy, classes, confs)
         return Results(xyxy, scores, classes), keep
 
@@ -180,8 +180,7 @@ class YoloSeg(Yolo):
         Returns:
             (list): a list of segments, each segment is a numpy array of shape (n, 2)
         """
-        segments = [ops.scale_coords(masks.shape[1:], x, img_shape, normalize=False) for x in ops.masks2segments(masks)]
-        return segments
+        return [ops.scale_coords(masks.shape[1:], x, img_shape, normalize=False) for x in ops.masks2segments(masks)]
 
     def construct_result(self, pred, img, orig_img, conf, proto=None, return_segments=True, **kwargs):
         """Constructs a Results object from the model prediction.
@@ -200,7 +199,7 @@ class YoloSeg(Yolo):
             pred[:, :4] = ops.scale_boxes(img.shape[2:], pred[:, :4], orig_img.shape)
             masks = ops.process_mask_native(proto, pred[:, 6:], pred[:, :4], orig_img.shape[:2])
             keep = masks.amax((-2, -1)) > 0  # only keep predictions with non-empty masks
-            if not all(keep):
+            if not keep.all():
                 pred, masks = pred[keep], masks[keep]
 
         # Boxes were already scaled above (needed for process_mask_native); don't re-scale.
@@ -272,7 +271,7 @@ class YoloObb(Yolo):
         rboxes = torch.cat([pred[:, :4], pred[:, -1:]], dim=-1)
         rboxes[:, :4] = ops.scale_boxes(img.shape[2:], rboxes[:, :4], orig_img.shape, xywh=True)
         scores, clss = pred[:, 4], pred[:, 5]
-        classes = np.array([self.model.names[c.item()] for c in clss])
+        classes = np.array([self.model.names[c] for c in clss.int().tolist()])
 
         # covert the boxes from xywhr to xyxyxyxy format
         rboxes = ops.xywhr2xyxyxyxy(rboxes)  # [n_obj, 4, 2]
