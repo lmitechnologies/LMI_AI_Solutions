@@ -139,7 +139,14 @@ conversion:
     resolution: 384   # required; set it to the resolution the model was trained at
     device: cuda
     output_dir: /app/training
+    # dynamic_batch: true  # optional; the engine takes any batch from 1 to max_batch instead of exactly 1
+    # max_batch: 12        # required with dynamic_batch for tensorrt; e.g. the tile count of one image
 ```
+
+A batch-1 model runs the tiles of a tiled image one at a time. A dynamic-batch engine runs them together, and `predict()`
+splits a larger input into chunks of `max_batch`. On 12 tiles of 512 px, RF-DETR Small's TensorRT fp16 engine went from
+33.7 to 20.3 ms per image, using about 330 MB more GPU memory.
+A dynamic-batch export needs `onnxruntime`: one batch-1 run sizes the outputs, which rfdetr leaves unsized.
 
 docker-compose file
 ```yaml
@@ -171,6 +178,7 @@ export:
     output_dir: /app/training   # receives model.onnx
     resolution: 384             # required; set it to the resolution the model was trained at
     opset_version: 17           # optional, default 17
+    dynamic_batch: false        # optional; true exports a dynamic batch dimension, for engines built with a max batch
 ```
 
 For `convert` and `export`, `model_type` is optional: the variant is read from the checkpoint named by

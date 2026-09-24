@@ -597,6 +597,22 @@ def test_tiled_predict_merges_tiles_back_to_source_images(yolo_models, imgs_coco
             assert boxes[:, 0::2].max() <= w and boxes[:, 1::2].max() <= h
 
 
+def test_tiled_predict_on_a_batch_1_export(imgs_coco, tmp_path):
+    """A deployed export takes one image per pass; predict must feed it the tiles one at a time, matching the .pt."""
+    pytest.importorskip("onnx")
+    source = tmp_path / "model.pt"
+    source.write_bytes(open(OD_DET_MODELS[0], "rb").read())
+    exported = YOLO(str(source), task="detect").export(format="onnx", imgsz=IMGSZ, verbose=False)
+    onnx_model = Yolo(str(exported), device="cpu", image_size=IMGSZ)
+    assert onnx_model.fixed_batch_size == 1
+
+    images = imgs_coco[0][:1]
+    _, out = _tile_and_predict(onnx_model, images, 0.25, stride=[256, 256])
+    _, ref = _tile_and_predict(Yolo(OD_DET_MODELS[0], device="cpu", image_size=IMGSZ), images, 0.25, stride=[256, 256])
+    assert len(out["boxes"][0]) == len(ref["boxes"][0]) > 0
+    np.testing.assert_allclose(np.sort(out["boxes"][0], 0), np.sort(ref["boxes"][0], 0), atol=1)
+
+
 def test_tiled_predict_merge_fragments_rejoins_seam_splits(yolo_models, imgs_coco):
     """Overlapping tiles plus merge_fragments must not leave more detections than the split run."""
     model = yolo_models["det"][0]

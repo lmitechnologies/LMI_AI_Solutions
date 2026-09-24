@@ -242,7 +242,9 @@ class _RfdetrEngine(RfdetrBase):
         self.input_shape = self.engine.input_shape  # (C, H, W)
         self.image_size = list(self.input_shape[-2:])  # (H, W) — used by the input-size guard
         self.input_dtype = self.engine.input_dtype
-        if not self.engine.is_dynamic:
+        if self.engine.is_dynamic:
+            self.max_batch_size = self.engine.max_batch
+        else:
             self.fixed_batch_size = self.engine.max_batch
         self._init_common()
         metadata = RfdetrMetadata.from_engine(self.engine.metadata, model_path)

@@ -57,6 +57,13 @@ class Yolo(YoloCore, ODBase):
         """
         YoloCore.__init__(self, model_path, device, data, fp16, **kwargs)
         self.task = "detect"
+        batch = self.engine_batch()
+        if batch is not None:
+            size, dynamic = batch
+            if dynamic:
+                self.max_batch_size = size
+            else:
+                self.fixed_batch_size = size
 
     @smart_inference_mode()
     def _preprocess_single(self, im: ImageLike) -> torch.Tensor:

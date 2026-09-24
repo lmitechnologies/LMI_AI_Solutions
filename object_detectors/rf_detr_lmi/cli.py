@@ -2,7 +2,7 @@ import argparse
 import logging
 import os
 from datetime import date
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import yaml
 
@@ -110,7 +110,7 @@ def validate_conversion_config(conversion_configs: Dict[str, Any], format: str) 
         format: Target conversion format.
 
     Raises:
-        ValueError: If required conversion parameters are missing.
+        ValueError: If required conversion parameters are missing, or max_batch would be ignored.
     """
     if not format:
         raise ValueError("Conversion format must be specified.")
@@ -121,6 +121,11 @@ def validate_conversion_config(conversion_configs: Dict[str, Any], format: str) 
             "resolution must be specified in conversion configuration; use the resolution the model was trained at, "
             "which training_config.json records under model_config."
         )
+    dynamic, max_batch = conversion_configs.get("dynamic_batch", False), conversion_configs.get("max_batch")
+    if max_batch is not None and not (dynamic and format == FORMAT_TENSORRT):
+        raise ValueError("max_batch applies only to a tensorrt conversion with dynamic_batch: true.")
+    if dynamic and format == FORMAT_TENSORRT and max_batch is None:
+        raise ValueError("A dynamic_batch tensorrt conversion needs max_batch, the largest batch the engine accepts.")
 
 
 def parse_config(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -324,32 +329,35 @@ def get_conversion_output_dir(conversion_configs: Dict[str, Any]) -> str:
     return os.path.dirname(pretrain_weights) if pretrain_weights else "."
 
 
-def convert_model_to_onnx(model: Any, output_dir: str) -> str:
+def convert_model_to_onnx(model: Any, output_dir: str, dynamic_batch: bool = False) -> str:
     """Convert model to ONNX format.
 
     Args:
         model: The model instance to convert.
         output_dir: Directory to save the converted model.
+        dynamic_batch: Export the batch dimension as dynamic instead of fixed at 1.
 
     Returns:
         Path to the exported ONNX file; rfdetr names it after the model variant.
     """
     logger.info("Starting model conversion to ONNX format...")
-    onnx_path = convert_to_onnx(model, output_dir)
+    onnx_path = convert_to_onnx(model, output_dir, dynamic_batch=dynamic_batch)
     logger.info(f"ONNX model saved to: {onnx_path}")
     return onnx_path
 
 
-def convert_model_to_tensorrt(model: Any, output_dir: str) -> None:
+def convert_model_to_tensorrt(model: Any, output_dir: str, dynamic_batch: bool = False, max_batch: Optional[int] = None) -> None:
     """Convert model to TensorRT format, exporting the ONNX it is built from first.
 
     Args:
         model: The model instance to convert.
         output_dir: Directory to save the converted model.
+        dynamic_batch: Build an engine that takes any batch from 1 to max_batch.
+        max_batch: Largest batch a dynamic engine accepts; the engine is optimized for it.
     """
-    onnx_path = convert_model_to_onnx(model, output_dir)
+    onnx_path = convert_model_to_onnx(model, output_dir, dynamic_batch=dynamic_batch)
     logger.info("Converting to TensorRT engine...")
-    engine_path = convert_to_tensorrt(onnx_path)
+    engine_path = convert_to_tensorrt(onnx_path, **({"max_batch": max_batch} if dynamic_batch else {}))
     logger.info(f"TensorRT model saved to: {engine_path}")
 
 
@@ -362,7 +370,12 @@ def handle_conversion(configs: Dict[str, Any]) -> None:
     Raises:
         ValueError: If the conversion format is unsupported.
     """
-    output_dir = get_conversion_output_dir(configs.get("conversion_configs", {}))
+    conversion_configs = configs.get("conversion_configs", {})
+    output_dir = get_conversion_output_dir(conversion_configs)
+    # The remaining conversion keys are model constructor kwargs
+    batch_kwargs = {"dynamic_batch": conversion_configs.pop("dynamic_batch", False)}
+    if "max_batch" in conversion_configs:
+        batch_kwargs["max_batch"] = conversion_configs.pop("max_batch")
     model = load_model(configs)
     format = configs.get("format")
 
@@ -375,7 +388,7 @@ def handle_conversion(configs: Dict[str, Any]) -> None:
     if handler is None:
         raise ValueError(f"Unsupported conversion format: {format}")
 
-    handler(model, output_dir)
+    handler(model, output_dir, **batch_kwargs)
 
 
 def handle_export(configs: Dict[str, Any]) -> None:
@@ -395,6 +408,7 @@ def handle_export(configs: Dict[str, Any]) -> None:
     opset_version = export_params.pop("opset_version", 17)
     # rfdetr defaults verbose to True, making torch.onnx.export dump the entire graph
     verbose = export_params.pop("verbose", False)
+    dynamic_batch = export_params.pop("dynamic_batch", False)
     os.makedirs(output_dir, exist_ok=True)
 
     # Remaining export params (resolution, device, ...) are model constructor kwargs
@@ -402,7 +416,7 @@ def handle_export(configs: Dict[str, Any]) -> None:
 
     # rfdetr names the exported file after the model variant (e.g. rfdetr-small.onnx);
     # stage it as model.onnx instead
-    onnx_path = convert_to_onnx(model, output_dir, opset_version=opset_version, verbose=verbose)
+    onnx_path = convert_to_onnx(model, output_dir, opset_version=opset_version, verbose=verbose, dynamic_batch=dynamic_batch)
     final_path = os.path.join(output_dir, "model.onnx")
     os.replace(onnx_path, final_path)
     logger.info(f"ONNX model exported to: {final_path}")
