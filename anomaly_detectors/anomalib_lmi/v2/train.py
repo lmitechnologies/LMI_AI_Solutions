@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 import anomalib.models as ad_models
 import torch
 import yaml
+from anomalib import PrecisionType
 from anomalib.data import Folder
 from anomalib.deploy import ExportType
 from anomalib.engine import Engine
@@ -17,6 +18,9 @@ from anomalib.pre_processing import PreProcessor
 from torchvision.transforms import v2
 
 from .tiling import TilerConfigCallback
+
+# supported anomalib models that accept the precision config parameter
+PRECISION_CAPABLE_MODELS = ["Patchcore"]
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +87,24 @@ def build_model(model_config: Dict[str, Any]):
     """
     class_name = model_config.get("class_name")
     params = model_config.get("params", {}) or {}
-    for rm in ["tiler_type", "tile_size", "stride", "precision"]:
+    for rm in ["tiler_type", "tile_size", "stride"]:
         params.pop(rm, None)
+
+    # precision is a per-model dtype selector; only some anomalib models accept it
+    precision = params.pop("precision", None)
+    if precision is not None:
+        try:
+            precision = PrecisionType(str(precision).lower())
+        except ValueError:
+            valid = ", ".join(p.value for p in PrecisionType)
+            raise ValueError(f"Invalid precision '{precision}'. Valid values: {valid}.") from None
+        if class_name in PRECISION_CAPABLE_MODELS:
+            params["precision"] = precision
+        else:
+            logger.warning(
+                f"Model '{class_name}' does not support the precision parameter; training in float32."
+                f"Models supporting precision: {', '.join(PRECISION_CAPABLE_MODELS)}."
+            )
 
     # Clean params (convert lists to tuples)
     params = clean_params(params)
@@ -121,9 +141,9 @@ def build_model(model_config: Dict[str, Any]):
 def build_data(data_config: Dict[str, Any]) -> Folder:
     if data_config.get("train_augmentations", None) is not None:
         data_config["train_augmentations"] = build_augmentations(data_config["train_augmentations"])
-    elif data_config.get("val_augmentations", None) is not None:
+    if data_config.get("val_augmentations", None) is not None:
         data_config["val_augmentations"] = build_augmentations(data_config["val_augmentations"])
-    elif data_config.get("augmentations", None) is not None:
+    if data_config.get("augmentations", None) is not None:
         data_config["augmentations"] = build_augmentations(data_config["augmentations"])
     return Folder(**data_config)
 
@@ -190,7 +210,11 @@ def main():
     # --- Build Model Dynamically ---
     model_params = cfg["model"]["params"]
     tiler_cls_name = model_params.pop("tiler_type", None)
-    tiler_callbacks = build_tiler(model_params.pop("tile_size", None), model_params.pop("stride", None), tiler_cls_name=tiler_cls_name)
+    tiler_callbacks = build_tiler(
+        model_params.pop("tile_size", None),
+        model_params.pop("stride", None),
+        tiler_cls_name=tiler_cls_name,
+    )
     model = build_model(cfg["model"])
 
     # --- Data Module Setup ---
@@ -251,17 +275,19 @@ def main():
     # Avoid unsupported data type (half precision) issues (ex. reflection_pad2d)
     model = model.float()
 
-    def export_engine(external_data=False):
+    def export_onnx(external_data=False):
         onnx_kwargs = {"external_data": external_data}
         engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model), onnx_kwargs=onnx_kwargs)
 
     try:
-        export_engine()
+        export_onnx()
     except RuntimeError as e:
         if "larger than 2GiB limit" in str(e):
             # Retry export with external data
             logger.info("2GiB onnx export limit exceeded, export will include additional files.")
-            export_engine(external_data=True)
+            export_onnx(external_data=True)
+        else:
+            raise e
 
 
 if __name__ == "__main__":

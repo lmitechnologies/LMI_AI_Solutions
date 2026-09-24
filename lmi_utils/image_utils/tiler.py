@@ -292,6 +292,8 @@ class Tiler:
         for k, v in metadata.items():
             if k in cls.EXPECTED_FIELDS and getattr(obj, k, None) is None:
                 setattr(obj, k, v)
+        if metadata.get("scale_mode") is not None:
+            obj.scale_mode = ScaleMode(metadata["scale_mode"])
         return obj
 
     def to_dict(self):
@@ -401,6 +403,8 @@ class Tiler:
         Args:
             tiles (Torch): the tiles tensor in the format: [n_tiles*batch, c, tile_h, tile_w]
             overlap_mode (str | OverlapMode, optional): overlap handling mode. Defaults to self.overlap_mode.
+            expected_scale (float, optional): require the tiles to be this multiple of ``tile_size``. Pass 1 for image
+                tiles, so a wrong tile size raises instead of reconstructing at the wrong scale.
 
         Returns:
             Tensor: the reconstructed image with smooth blending
@@ -428,6 +432,7 @@ class Tiler:
             im = torch.full(canvas, float("-inf"), dtype=work_dtype, device=device)
             for tile, (i, j) in zip(tiles, positions):
                 im[:, :, i : i + tile_h, j : j + tile_w] = torch.maximum(im[:, :, i : i + tile_h, j : j + tile_w], tile)
+            im = torch.where(im.isneginf(), torch.zeros_like(im), im)
         else:
             im = torch.zeros(canvas, dtype=work_dtype, device=device)
             weight_sum = torch.zeros(grid.scale_size, dtype=work_dtype, device=device)
