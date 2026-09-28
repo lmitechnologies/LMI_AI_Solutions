@@ -411,6 +411,78 @@ def test_padim_trains_through_the_cli_with_224_tiles_and_112_stride(tmp_path):
     assert torch.isfinite(state["model.gaussian.inv_covariance"]).all()
 
 
+_needs_gpu = pytest.mark.skipif(not USE_GPU, reason="needs a model trained on CUDA")
+
+
+def _train_tiled(root, class_name):
+    """Train a 448 model with 224 tiles / 112 stride through the CLI and return its model.pt."""
+    config_path = _write_padim_config(root, tile_size=224, stride=112)
+    if class_name == "Patchcore":
+        config = yaml.safe_load(config_path.read_text())
+        config["model"] = {
+            "class_name": "Patchcore",
+            "params": {
+                "backbone": "resnet18",
+                "layers": ["layer2", "layer3"],
+                "pre_trained": False,
+                "image_size": [448, 448],
+                "tile_size": 224,
+                "stride": 112,
+            },
+        }
+        config_path.write_text(yaml.safe_dump(config))
+    _train_via_cli(config_path)
+    return glob.glob(str(root / "out" / "**" / "model.pt"), recursive=True)[0]
+
+
+@pytest.fixture(scope="module")
+def tiled_padim_pt(tmp_path_factory):
+    return _train_tiled(tmp_path_factory.mktemp("tiled_padim"), "Padim")
+
+
+@pytest.fixture(scope="module")
+def tiled_patchcore_pt(tmp_path_factory):
+    return _train_tiled(tmp_path_factory.mktemp("tiled_patchcore"), "Patchcore")
+
+
+def _bad_image():
+    return cv2.imread(glob.glob(os.path.join(DATA_PATH, "*bad*.png"))[0])
+
+
+@_needs_gpu
+def test_tiled_model_exports_to_onnx_from_cuda(tiled_padim_pt, tmp_path):
+    pt_model = AnomalyModelV2(tiled_padim_pt, device="cuda", image_size=[448, 448])
+    onnx_path = str(tmp_path / "model.onnx")
+    pt_model.export_onnx(onnx_path)
+
+    expected = pt_model.predict([_bad_image()])[0]
+    actual = AnomalyModelV2(onnx_path, device="cuda").predict([_bad_image()])[0]
+    np.testing.assert_allclose(actual, expected, rtol=1e-2, atol=1e-2 * float(np.abs(expected).max()))
+
+
+@_needs_gpu
+def test_tiled_model_traces_to_torchscript_on_cpu(tiled_padim_pt, tmp_path):
+    # the trace check runs the model twice, so both runs must build the same graph
+    convert_v2_torchscript(tiled_padim_pt, str(tmp_path / "model.ts"), device="cpu")
+
+
+@_needs_gpu
+def test_tiled_model_loaded_on_cpu_runs_on_cuda(tiled_padim_pt):
+    model = torch.load(tiled_padim_pt, map_location="cpu", weights_only=False)["model"].eval().to("cuda")
+    with torch.inference_mode():
+        model(torch.rand(1, 3, 448, 448, device="cuda"))
+
+
+@_needs_gpu
+def test_torchscript_model_still_predicts_after_onnx_export(tiled_patchcore_pt, tmp_path):
+    ts_path = str(tmp_path / "model.ts")
+    convert_v2_torchscript(tiled_patchcore_pt, ts_path, device="cuda")
+    ts_model = AnomalyModelV2(ts_path, device="cuda", image_size=[448, 448])
+
+    ts_model.export_onnx(str(tmp_path / "model.onnx"))
+    ts_model.predict([_bad_image()])
+
+
 def test_padim_cli_tiled_and_untiled_agree_on_the_embedding_grid(tmp_path):
     # tiling changes what the backbone sees, not the shape contract downstream
     tiled = _train_via_cli(_write_padim_config(tmp_path / "tiled", tile_size=224, stride=112))
