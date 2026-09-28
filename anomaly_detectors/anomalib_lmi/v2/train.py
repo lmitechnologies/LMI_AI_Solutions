@@ -289,6 +289,24 @@ def main():
         else:
             raise e
 
+    # Fold symbolic "Clip*" dims that anomalib exports as dynamic into static constants.
+    # ONNXEngine rejects dynamic non-batch output dims; onnx-simplifier resolves them.
+    try:
+        import onnx
+        from onnxsim import simplify
+
+        onnx_dir = Path(eng_cfg["default_root_dir"])
+        onnx_path = next(onnx_dir.rglob("model.onnx"), None)
+        if onnx_path is not None:
+            m, ok = simplify(onnx.load(str(onnx_path)))
+            if ok:
+                onnx.save(m, str(onnx_path))
+                logger.info("ONNX simplified: symbolic non-batch dims folded to static.")
+            else:
+                logger.warning("onnx-simplifier could not fully simplify the model; skipping.")
+    except ImportError:
+        logger.warning("onnxsim not installed; skipping ONNX simplification. Install with: pip install onnxsim")
+
 
 if __name__ == "__main__":
     main()
