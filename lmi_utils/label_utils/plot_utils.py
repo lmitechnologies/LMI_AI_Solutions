@@ -170,46 +170,34 @@ def plot_one_brush(xs, ys, img, color=None, label=None, line_thickness=None):
         )
 
 
-def plot_tile_grid(boxes, img, colors=None, line_thickness=None, inset=2):
-    """Outline a tile grid on img, in place.
+def plot_tile_grid(boxes, img, color=(220, 220, 220), alpha=0.7, line_thickness=None):
+    """Outline a tile grid on img as semi-transparent dotted lines, in place.
 
     arguments:
-        boxes: (N, 4) xyxy tile rects, row-major, e.g. from ``Tiler.tile_boxes()``
+        boxes: (N, 4) xyxy tile rects, e.g. from ``Tiler.tile_boxes()``
         img(np array): a opencv image object
-        colors(list): one color per group, cycled if short. Defaults to distinct hues, one per group.
-        line_thickness(int): the thickness of the line
-        inset(int): px per row group that vertical lines shift right, and per column group that horizontal lines shift down
+        color(tuple): line color
+        alpha(float): line opacity, 0 to 1
+        line_thickness(int): the thickness of the line; dots and gaps are twice that long
     return:
         no return
-
-    Tiles are grouped by row and column index, so overlapping neighbours never share a color. Tiles in one column
-    share vertical edges, and tiles in one row share horizontal edges, so each rect is shifted by its row and column
-    group and those edges show as separate lines. Tiles of one group that touch keep a single line.
-    A tile overlaps every neighbour within ``ceil(tile / stride) - 1`` steps, so that many colors per axis are
-    needed: one color without overlap, 2 x 2 up to half-tile overlap, more as the overlap grows.
     """
     boxes = np.asarray(boxes.detach().cpu() if hasattr(boxes, "detach") else boxes, dtype=float).reshape(-1, 4)
     if not len(boxes):
         return
     tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1
-    rows = sorted({round(v) for v in boxes[:, 1]})
-    cols = sorted({round(v) for v in boxes[:, 0]})
-    n_rows, n_cols = _overlap_span(rows, boxes[0, 3] - boxes[0, 1]), _overlap_span(cols, boxes[0, 2] - boxes[0, 0])
-    colors = colors or get_distinct_colors(n_rows * n_cols)
-    for x0, y0, x1, y1 in boxes:
-        row, col = rows.index(round(y0)) % n_rows, cols.index(round(x0)) % n_cols
-        group = row * n_cols + col
-        dx, dy = row * inset, col * inset
-        c1, c2 = (int(x0) + dx, int(y0) + dy), (int(x1) - 1 + dx, int(y1) - 1 + dy)
-        cv2.rectangle(img, c1, c2, colors[group % len(colors)], thickness=tl)
-
-
-def _overlap_span(origins, tile):
-    """How many tiles along one axis can overlap each other: ceil(tile / stride), so 1 when tiles do not overlap."""
-    if len(origins) < 2:
-        return 1
-    stride = min(b - a for a, b in zip(origins, origins[1:]))
-    return int(np.ceil(tile / stride)) if stride > 0 else 1
+    h, w = img.shape[:2]
+    # one dot pattern for the whole image, so edges shared by overlapping tiles land on the same dots
+    dots_x = np.arange(w) % (4 * tl) < 2 * tl
+    dots_y = (np.arange(h) % (4 * tl) < 2 * tl)[:, None]
+    mask = np.zeros((h, w), bool)
+    for x0, y0, x1, y1 in boxes.round().astype(int):
+        for y in (y0, y1):
+            mask[max(y - tl // 2, 0) : y - tl // 2 + tl, x0:x1] |= dots_x[x0:x1]
+        for x in (x0, x1):
+            mask[y0:y1, max(x - tl // 2, 0) : x - tl // 2 + tl] |= dots_y[y0:y1]
+    # one blend per pixel, so crossing lines are no darker than single ones
+    img[mask] = (img[mask] * (1 - alpha) + np.asarray(color) * alpha).round().astype(img.dtype)
 
 
 def plot_boxes_by_group(boxes, img, groups, colors=None, line_thickness=None):

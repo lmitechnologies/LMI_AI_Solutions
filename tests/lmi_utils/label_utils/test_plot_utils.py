@@ -1,4 +1,4 @@
-"""Tile-grid overlay: parity coloring and the inset that keeps shared seams visible."""
+"""Tile-grid overlay: semi-transparent dotted gray lines."""
 
 import numpy as np
 import torch
@@ -13,49 +13,36 @@ def _grid(im_hw=(1024, 1024), tile=512, stride=256):
     return tiler.tile_boxes()
 
 
-def _colors_drawn(boxes, im_hw):
-    img = np.zeros((*im_hw, 3), np.uint8)
-    plot_tile_grid(boxes, img, line_thickness=1, inset=2)
-    return {tuple(c) for c in img.reshape(-1, 3).tolist()} - {(0, 0, 0)}
-
-
-def test_overlapping_neighbours_get_different_colors():
+def test_grid_lines_are_see_through_gray():
     img = np.zeros((1024, 1024, 3), np.uint8)
-    plot_tile_grid(_grid(), img, line_thickness=1, inset=2)
-    colors = {tuple(c) for c in img.reshape(-1, 3).tolist()} - {(0, 0, 0)}
-    assert len(colors) == 4
+    plot_tile_grid(_grid(), img, line_thickness=1)
+    drawn = {tuple(c) for c in img.reshape(-1, 3).tolist()} - {(0, 0, 0)}
+    assert len(drawn) == 1
+    (c,) = drawn
+    assert c[0] == c[1] == c[2] and 100 < c[0] < 220  # gray, blended with the image under it
 
 
-def test_a_shared_seam_is_drawn_as_two_lines():
+def test_grid_lines_are_dotted():
     img = np.zeros((1024, 1024, 3), np.uint8)
-    plot_tile_grid(_grid(), img, line_thickness=1, inset=2)
+    plot_tile_grid(_grid(), img, line_thickness=2)
+    top = img[0, :512].any(axis=1)
+    assert 0.4 < top.mean() < 0.6  # dots and gaps 4 px long
+    assert top[:4].all() and not top[4:8].any()
+
+
+def test_a_shared_edge_is_drawn_as_one_line():
+    img = np.zeros((1024, 1024, 3), np.uint8)
+    plot_tile_grid(_grid(), img, line_thickness=1)
     lit = img.any(axis=2).sum(axis=1)
-    # the tiles at y=256 are column groups 0 and 1, so their top edges land 0 and 2 px down, not on top of each other
-    assert lit[256] > 100 and lit[258] > 100
-    assert lit[257] < 20
+    # tiles at x=0, 256 and 512 all have a top edge at y=256; their dots coincide
+    assert 450 < lit[256] < 580
+    assert lit[255] < 20 and lit[257] < 20
 
 
 def test_no_boxes_leaves_the_image_alone():
     img = np.zeros((8, 8, 3), np.uint8)
     plot_tile_grid(np.zeros((0, 4)), img)
     assert not img.any()
-
-
-def test_a_third_of_a_tile_stride_needs_nine_colors():
-    # tiles two steps apart still overlap here, so 2 x 2 parity would give two overlapping tiles one color
-    boxes = _grid(im_hw=(640, 640), tile=384, stride=128)
-    assert len(boxes) == 9
-    assert len(_colors_drawn(boxes, (640, 640))) == 9
-
-
-def test_quarter_overlap_still_needs_only_four():
-    boxes = _grid(im_hw=(1280, 1280), tile=512, stride=384)
-    assert len(_colors_drawn(boxes, (1280, 1280))) == 4
-
-
-def test_tiles_that_do_not_overlap_share_one_color():
-    boxes = _grid(im_hw=(1024, 1024), tile=512, stride=512)
-    assert len(_colors_drawn(boxes, (1024, 1024))) == 1
 
 
 def test_boxes_are_colored_by_their_group_code():

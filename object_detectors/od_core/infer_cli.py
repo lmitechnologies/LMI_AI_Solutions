@@ -138,7 +138,7 @@ def plot_tile_merge(image, outputs: Dict, tile_boxes, hide_label: bool = False, 
     from lmi_utils.label_utils.plot_utils import plot_one_box, plot_tile_grid
 
     im = np.ascontiguousarray(image).copy()
-    plot_tile_grid(tile_boxes, im, line_thickness=2, inset=3)
+    plot_tile_grid(tile_boxes, im, line_thickness=2)
     boxes = np.asarray(outputs.get("boxes", []), dtype=float).reshape(-1, 4)
     classes = outputs.get("classes", [])
     codes = outputs.get("merge_origin")
