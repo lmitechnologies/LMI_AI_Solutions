@@ -13,9 +13,6 @@ services:
       bash -c "bash tests/run_tests.sh all-v1"
 
   test_ais_ad_v2:
-    depends_on:
-      test_ais_v1_all:
-        condition: service_completed_successfully
     build:
       context: ..
       dockerfile: ./tests/dockerfile.tests

@@ -5,8 +5,7 @@ import pytest
 from anomaly_detectors.anomalib_lmi.v2.memory_estimation.common import MemoryBudget
 from anomaly_detectors.anomalib_lmi.v2.memory_estimation.patchcore import (
     ANOMALIB_QUERY_CHUNK_SIZE,
-    EUCLIDEAN_DIST_CHUNKED_FACTOR,
-    EUCLIDEAN_DIST_UNCHUNKED_FACTOR,
+    EUCLIDEAN_DIST_TRANSIENT_FACTOR,
 )
 from anomaly_detectors.anomalib_lmi.v2.memory_estimation.patchcore import (
     PatchCoreMemoryEstimator as MemoryEstimator,
@@ -39,7 +38,7 @@ EXPECTED_WORKSPACE_FACTOR = 1.234
 # n_query = batch_size * patches_per_image. euclidean_dist keeps ~2x the matrix
 # alive at once (EUCLIDEAN_DIST_TRANSIENT_FACTOR), so this cap drops well below
 # bank storage. Derived from the same fixture.
-EXPECTED_MAX_TRAIN_IMAGES_UNCHUNKED = 696
+EXPECTED_MAX_TRAIN_IMAGES_UNCHUNKED = 1375
 
 
 def test_patchcore_fp16_per_image_math(tiled_config, patchcore_profile_fp16):
@@ -205,7 +204,7 @@ def test_patchcore_distance_matrix_transient_factor_depends_on_chunk_mode(
         memory_bank_patches=memory_bank_patches,
         inference_chunk_size=0,
     )
-    assert distance_unchunked == pytest.approx(EUCLIDEAN_DIST_UNCHUNKED_FACTOR * single_unchunked_mib)
+    assert distance_unchunked == pytest.approx(EUCLIDEAN_DIST_TRANSIENT_FACTOR * single_unchunked_mib)
 
     # Chunked: 1x a single (chunk_size, M) tensor.
     n_query_chunked = est.query_patches(patchcore_profile_fp16, inference_chunk_size=ANOMALIB_QUERY_CHUNK_SIZE)
@@ -215,7 +214,7 @@ def test_patchcore_distance_matrix_transient_factor_depends_on_chunk_mode(
         memory_bank_patches=memory_bank_patches,
         inference_chunk_size=ANOMALIB_QUERY_CHUNK_SIZE,
     )
-    assert distance_chunked == pytest.approx(EUCLIDEAN_DIST_CHUNKED_FACTOR * single_chunked_mib)
+    assert distance_chunked == pytest.approx(EUCLIDEAN_DIST_TRANSIENT_FACTOR * single_chunked_mib)
 
 
 def test_patchcore_fp32_max_roughly_half_fp16(
