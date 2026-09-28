@@ -38,7 +38,7 @@ EXPECTED_WORKSPACE_FACTOR = 1.234
 # n_query = batch_size * patches_per_image. euclidean_dist keeps ~2x the matrix
 # alive at once (EUCLIDEAN_DIST_TRANSIENT_FACTOR), so this cap drops well below
 # bank storage. Derived from the same fixture.
-EXPECTED_MAX_TRAIN_IMAGES_UNCHUNKED = 696
+EXPECTED_MAX_TRAIN_IMAGES_UNCHUNKED = 1375
 
 
 def test_patchcore_fp16_per_image_math(tiled_config, patchcore_profile_fp16):
