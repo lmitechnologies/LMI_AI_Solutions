@@ -428,11 +428,13 @@ class Tiler:
         canvas = (tiles.shape[1], num_channel, *grid.scale_size)
 
         if overlap_mode == OverlapMode.MAX:
-            # the grid covers every canvas pixel, so no -inf survives unless a tile holds one
             im = torch.full(canvas, float("-inf"), dtype=work_dtype, device=device)
+            # track which pixels have been written; the grid should cover all, but zero any gaps
+            covered = torch.zeros(canvas, dtype=torch.bool, device=device)
             for tile, (i, j) in zip(tiles, positions):
                 im[:, :, i : i + tile_h, j : j + tile_w] = torch.maximum(im[:, :, i : i + tile_h, j : j + tile_w], tile)
-            im = torch.where(im.isneginf(), torch.zeros_like(im), im)
+                covered[:, :, i : i + tile_h, j : j + tile_w] = True
+            im = torch.where(covered, im, torch.zeros_like(im))
         else:
             im = torch.zeros(canvas, dtype=work_dtype, device=device)
             weight_sum = torch.zeros(grid.scale_size, dtype=work_dtype, device=device)
