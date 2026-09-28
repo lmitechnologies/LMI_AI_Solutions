@@ -240,7 +240,6 @@ class Tiler:
         self.batch_size: int = None
         self.num_channel: int = None
         self.n_tiles: list = None
-        self._blend_mask_cache = {}  # Cache for blend masks by overlap mode
         self.scale_mode = ScaleMode(scale_mode)
         self.overlap_mode = OverlapMode(overlap_mode)
 
@@ -432,8 +431,9 @@ class Tiler:
             im = torch.zeros(canvas, dtype=work_dtype, device=device)
             weight_sum = torch.zeros(grid.scale_size, dtype=work_dtype, device=device)
 
+            masks = {}
             for tile, (i, j) in zip(tiles, positions):
-                blend_mask = self._blend_mask(overlap_mode, device, i, j, grid)
+                blend_mask = self._blend_mask(overlap_mode, device, i, j, grid, masks)
                 im[:, :, i : i + tile_h, j : j + tile_w] += tile * blend_mask
                 weight_sum[i : i + tile_h, j : j + tile_w] += blend_mask
 
@@ -466,22 +466,15 @@ class Tiler:
         ]
         return _OutGrid([tile_h, tile_w], stride, scale_size, positions_h, positions_w, im_size)
 
-    def _blend_mask(self, overlap_mode: OverlapMode, device, i: int, j: int, grid: "_OutGrid") -> torch.Tensor:
-        """Blend mask for the tile at (i, j), cached per overlap mode, grid, device and neighbouring sides."""
+    @staticmethod
+    def _blend_mask(overlap_mode: OverlapMode, device, i: int, j: int, grid: "_OutGrid", masks: dict) -> torch.Tensor:
+        """Blend mask for the tile at (i, j); ``masks`` holds the ones already built in this call, keyed by neighbouring sides."""
         neighbours = (
             i > 0,
             j > 0,
             i + grid.tile_size[0] < grid.scale_size[0],
             j + grid.tile_size[1] < grid.scale_size[1],
         )
-        key = (
-            overlap_mode.value,
-            tuple(grid.tile_size),
-            tuple(grid.stride),
-            device.type,
-            device.index if device.index is not None else -1,
-            neighbours,
-        )
-        if key not in self._blend_mask_cache:
-            self._blend_mask_cache[key] = create_blend_mask(grid.tile_size, grid.stride, overlap_mode, device, neighbours)
-        return self._blend_mask_cache[key]
+        if neighbours not in masks:
+            masks[neighbours] = create_blend_mask(grid.tile_size, grid.stride, overlap_mode, device, neighbours)
+        return masks[neighbours]

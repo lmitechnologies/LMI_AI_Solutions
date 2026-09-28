@@ -138,14 +138,18 @@ class Anomalib_Base(ADBase):
                 json.dump(self.pt_metadata, f, ensure_ascii=False, indent=4)
 
         h, w = self.image_size
-        torch.onnx.export(
-            self.pt_model,
-            torch.zeros((1, 3, h, w)).to(self.device),
-            export_path,
-            opset_version=opset_version,
-            input_names=["input"],
-            output_names=["output"],
-        )
+        # a TorchScript model run once with grad enabled fails every later inference_mode predict
+        with torch.no_grad():
+            torch.onnx.export(
+                self.pt_model,
+                torch.zeros((1, 3, h, w)).to(self.device),
+                export_path,
+                opset_version=opset_version,
+                input_names=["input"],
+                output_names=["output"],
+                # folding a tiled model on CUDA fails on mixed CUDA and CPU constants
+                do_constant_folding=False,
+            )
         self.logger.info(f"ONNX model saved at {export_path}")
 
     def export_trt(self, export_path, fp16=True, workspace_gb=4, min_batch=1, opt_batch=None, max_batch=1):
