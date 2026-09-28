@@ -426,11 +426,7 @@ def test_padim_cli_tiled_and_untiled_agree_on_the_embedding_grid(tmp_path):
 
 
 def _write_patchcore_config(root, precision=None, image_size=(64, 64), n_images=4):
-    """A Patchcore config for the training CLI over dummy normal images.
-
-    fp16 training only runs on CUDA (several CPU kernels, e.g. reflection_pad2d, are not implemented for Half),
-    so a float16 config pins accelerator=cuda. float32 keeps accelerator=auto.
-    """
+    """A Patchcore config for the training CLI over dummy normal images."""
     normal = root / "data" / "train"
     normal.mkdir(parents=True)
     # a fixed seed so both precision runs (and any rerun) see the exact same images
@@ -442,7 +438,6 @@ def _write_patchcore_config(root, precision=None, image_size=(64, 64), n_images=
     params = {"backbone": "resnet18", "layers": ["layer2", "layer3"], "pre_trained": False, "image_size": list(image_size)}
     if precision is not None:
         params["precision"] = precision
-    accelerator = "cuda" if precision == "float16" else "auto"
     config = {
         "model": {"class_name": "Patchcore", "params": params},
         "data": {
@@ -458,7 +453,7 @@ def _write_patchcore_config(root, precision=None, image_size=(64, 64), n_images=
             "val_split_mode": "same_as_test",
             "val_split_ratio": 0.5,
         },
-        "engine": {"max_epochs": 1, "accelerator": accelerator, "devices": 1, "default_root_dir": str(root / "out")},
+        "engine": {"max_epochs": 1, "accelerator": "auto", "devices": 1, "default_root_dir": str(root / "out")},
     }
     config_path = root / "config.yaml"
     config_path.write_text(yaml.safe_dump(config))
@@ -511,11 +506,6 @@ def test_invalid_precision_raises():
         build_model({"class_name": "Patchcore", "params": {"backbone": "resnet18", "layers": ["layer1"], "precision": "float8"}})
 
 
-# PatchCore fp16 is not supported on CPU: its anomaly-map blur uses
-# reflection_pad2d, which has no CPU Half implementation.
-_float16_cli = pytest.mark.skipif(not USE_GPU, reason="fp16 CLI training requires CUDA")
-
-
 def test_patchcore_cli_trains_with_precision(tmp_path):
     config_path = _write_patchcore_config(tmp_path, precision="float32")
     _train_via_cli(config_path)
@@ -526,7 +516,6 @@ def test_patchcore_cli_trains_with_precision(tmp_path):
     assert bank.shape[0] > 0, "memory bank is empty; training produced no embeddings"
 
 
-@_float16_cli
 def test_patchcore_cli_trains_with_float16_precision(tmp_path):
     config_path = _write_patchcore_config(tmp_path, precision="float16")
     _train_via_cli(config_path)
@@ -537,7 +526,6 @@ def test_patchcore_cli_trains_with_float16_precision(tmp_path):
     assert bank.shape[0] > 0, "memory bank is empty; training produced no embeddings"
 
 
-@_float16_cli
 def test_patchcore_cli_float16_bank_is_half_float32(tmp_path):
     """Same dataset and layers: the fp16 bank holds the same vectors at half the bytes.
 

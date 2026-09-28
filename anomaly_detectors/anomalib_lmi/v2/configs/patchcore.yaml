@@ -9,8 +9,8 @@ model:
     stride: [112, 112]
     coreset_sampling_ratio: 0.1
     num_neighbors: 15
-    # "float16" halves memory-bank size and speeds up training; requires available GPU
-    # "float32" is the default and works on CPU/GPU
+    # "float16" halves the memory-bank size
+    # "float32" is the default
     precision: "float16"
 
 data:

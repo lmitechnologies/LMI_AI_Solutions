@@ -33,13 +33,6 @@ PEAK_BANK_PER_IMAGE_MIB = 12.274505
 EXPECTED_MAX_TRAIN_IMAGES = 1839
 EXPECTED_WORKSPACE_FACTOR = 1.234
 
-# When the query is NOT chunked (older anomalib), the validation peak dominates:
-# the (n_query x M) distance matrix plus the resident coreset, with
-# n_query = batch_size * patches_per_image. euclidean_dist keeps ~2x the matrix
-# alive at once (EUCLIDEAN_DIST_TRANSIENT_FACTOR), so this cap drops well below
-# bank storage. Derived from the same fixture.
-EXPECTED_MAX_TRAIN_IMAGES_UNCHUNKED = 1375
-
 
 def test_patchcore_fp16_per_image_math(tiled_config, patchcore_profile_fp16):
     est = MemoryEstimator(
@@ -149,12 +142,12 @@ def test_patchcore_estimate_known_target_1782(
     assert estimate.max_train_images == EXPECTED_MAX_TRAIN_IMAGES
 
 
-def test_patchcore_unchunked_inference_distance_binds(
+def test_patchcore_inference_distance_binds_when_coreset_keeps_every_patch(
     tiled_config,
     patchcore_profile_fp16,
 ):
-    """On anomalib versions that don't chunk, the (n_query x M) distance matrix
-    is the binding constraint and caps max_train_images well below bank storage."""
+    """With the whole bank kept and no dataset workspace, the validation peak (coreset + distance matrix)
+    outgrows bank storage."""
     est = MemoryEstimator(
         model=object(),
         tile_config=tiled_config,
@@ -170,22 +163,20 @@ def test_patchcore_unchunked_inference_distance_binds(
             safety_fraction=1.0,
         ),
         profile=patchcore_profile_fp16,
-        coreset_sampling_ratio=CORESET_SAMPLING_RATIO,
-        dataset_workspace_factor=DATASET_WORKSPACE_FACTOR,
-        inference_chunk_size=0,  # 0 forces the conservative, un-chunked estimate
+        coreset_sampling_ratio=1.0,
+        dataset_workspace_factor=0.0,
     )
 
     assert estimate.budget["binding_constraint"] == "inference_distance_matrix"
-    assert estimate.max_train_images == EXPECTED_MAX_TRAIN_IMAGES_UNCHUNKED
-    assert estimate.max_train_images < EXPECTED_MAX_TRAIN_IMAGES
+    assert estimate.max_train_images == estimate.budget["max_train_images_inference_distance"]
+    assert estimate.max_train_images < estimate.budget["max_train_images_bank_storage"]
 
 
-def test_patchcore_distance_matrix_transient_factor_depends_on_chunk_mode(
+def test_patchcore_distance_matrix_is_one_query_chunk_by_bank(
     tiled_config,
     patchcore_profile_fp16,
 ):
-    """Un-chunked anomalib (< 2.3) keeps two (n_query, M) tensors alive (2x); the
-    chunked, in-place euclidean_dist (>= 2.3) keeps one (1x)."""
+    """euclidean_dist is in-place, so the peak is a single (chunk_size, M) tensor."""
     est = MemoryEstimator(
         model=object(),
         tile_config=tiled_config,
@@ -196,25 +187,34 @@ def test_patchcore_distance_matrix_transient_factor_depends_on_chunk_mode(
     memory_bank_patches = 10_000
     bank_dtype_bytes = est.dtype_nbytes(est.resolve_bank_dtype(patchcore_profile_fp16))
 
-    # Un-chunked: 2x a single (n_query, M) tensor.
-    n_query_unchunked = est.query_patches(patchcore_profile_fp16, inference_chunk_size=0)
-    single_unchunked_mib = (n_query_unchunked * memory_bank_patches * bank_dtype_bytes) / 1024**2
-    distance_unchunked = est.inference_distance_matrix_mib(
-        patchcore_profile_fp16,
-        memory_bank_patches=memory_bank_patches,
-        inference_chunk_size=0,
-    )
-    assert distance_unchunked == pytest.approx(EUCLIDEAN_DIST_TRANSIENT_FACTOR * single_unchunked_mib)
+    n_query = est.query_patches(patchcore_profile_fp16, inference_chunk_size=ANOMALIB_QUERY_CHUNK_SIZE)
+    assert n_query == ANOMALIB_QUERY_CHUNK_SIZE
 
-    # Chunked: 1x a single (chunk_size, M) tensor.
-    n_query_chunked = est.query_patches(patchcore_profile_fp16, inference_chunk_size=ANOMALIB_QUERY_CHUNK_SIZE)
-    single_chunked_mib = (n_query_chunked * memory_bank_patches * bank_dtype_bytes) / 1024**2
-    distance_chunked = est.inference_distance_matrix_mib(
+    distance = est.inference_distance_matrix_mib(
         patchcore_profile_fp16,
         memory_bank_patches=memory_bank_patches,
         inference_chunk_size=ANOMALIB_QUERY_CHUNK_SIZE,
     )
-    assert distance_chunked == pytest.approx(EUCLIDEAN_DIST_TRANSIENT_FACTOR * single_chunked_mib)
+    single_mib = (n_query * memory_bank_patches * bank_dtype_bytes) / 1024**2
+    assert distance == pytest.approx(EUCLIDEAN_DIST_TRANSIENT_FACTOR * single_mib)
+
+
+@pytest.mark.parametrize("chunk_size", [0, -1])
+def test_patchcore_rejects_non_positive_chunk_size(tiled_config, patchcore_profile_fp16, chunk_size):
+    est = MemoryEstimator(
+        model=object(),
+        tile_config=tiled_config,
+        precision="float16",
+        profiling_device="cpu",
+    )
+
+    with pytest.raises(ValueError, match="inference_chunk_size"):
+        est.estimate(
+            memory_budget=MemoryBudget(memory_limit_mib=MEMORY_LIMIT_MIB, reserve_mib=RESERVE_MIB),
+            profile=patchcore_profile_fp16,
+            coreset_sampling_ratio=CORESET_SAMPLING_RATIO,
+            inference_chunk_size=chunk_size,
+        )
 
 
 def test_patchcore_fp32_max_roughly_half_fp16(

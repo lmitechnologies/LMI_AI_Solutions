@@ -30,22 +30,24 @@ test = [
 ]
 # CPU / CI env (GitHub runners): CPU torch + CPU onnxruntime. torch is also a
 # transitive dep of rfdetr/ultralytics, hence the ci/gpu conflict below.
+# ci/gpu pick the torch build (index); the ad group installed with them pins its version.
 ci = [
     { include-group = "test" },
     "onnxruntime==1.21.0",
-    "torch==2.5.1",
-    "torchvision==0.20.1",
+    "torch",
+    "torchvision",
 ]
 # Resolving [core] replaces `anomalib install --option core`, which pip-installed numpy>=2 behind the lock's back.
 ad-v1 = [
     "anomalib[core]==1.1.1",
     "jsonargparse==4.27.7",
-    "torch==2.5.1",
+    "torch==2.5.1",  # torch>=2.6 raises a weights_only error loading anomalib 1.x models
     "torchvision==0.20.1",
 ]
 ad-v2 = [
     "anomalib==2.6.0",
-    "torch==2.6.0",
+    "onnx==1.22.0",  # train.py fixes exported ONNX output shapes
+    "torch==2.6.0",  # anomalib 2.x requires torch>=2.6
     "torchvision==0.21.0",
 ]
 # GPU / TensorRT env (local + compose): cu124 torch, onnxruntime-gpu, and the
@@ -54,8 +56,8 @@ ad-v2 = [
 gpu = [
     { include-group = "test" },
     "onnxruntime-gpu==1.21.0",
-    "torch==2.5.1",  # torch>=2.6 raises a weights_only error loading anomalib models
-    "torchvision==0.20.1",
+    "torch",
+    "torchvision",
     "tensorrt==10.9.0.34",
     "onnx-graphsurgeon>=0.5.0",
     "pytest-html>=4.1.1",
@@ -68,8 +70,6 @@ environments = ["python_full_version >= '3.10' and python_full_version < '3.13'"
 conflicts = [
     [{ group = "ci" }, { group = "gpu" }],
     [{ group = "ad-v1" }, { group = "ad-v2" }],
-    [{ group = "ad-v2" }, { group = "ci" }],
-    [{ group = "ad-v2" }, { group = "gpu" }],
 ]
 
 [[tool.uv.index]]

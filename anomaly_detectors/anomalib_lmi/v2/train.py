@@ -1,4 +1,5 @@
 import argparse
+import inspect
 import logging
 import subprocess
 import sys
@@ -18,9 +19,6 @@ from anomalib.pre_processing import PreProcessor
 from torchvision.transforms import v2
 
 from .tiling import TilerConfigCallback
-
-# supported anomalib models that accept the precision config parameter
-PRECISION_CAPABLE_MODELS = ["Patchcore"]
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +88,13 @@ def build_model(model_config: Dict[str, Any]):
     for rm in ["tiler_type", "tile_size", "stride"]:
         params.pop(rm, None)
 
+    # 1. Get the model class dynamically
+    if not hasattr(ad_models, class_name):
+        raise ValueError(f"Model '{class_name}' not found in anomalib.models")
+
+    model_class = getattr(ad_models, class_name)
+    logger.info(f"Initializing Model: {class_name}")
+
     # precision is a per-model dtype selector; only some anomalib models accept it
     precision = params.pop("precision", None)
     if precision is not None:
@@ -98,23 +103,13 @@ def build_model(model_config: Dict[str, Any]):
         except ValueError:
             valid = ", ".join(p.value for p in PrecisionType)
             raise ValueError(f"Invalid precision '{precision}'. Valid values: {valid}.") from None
-        if class_name in PRECISION_CAPABLE_MODELS:
+        if "precision" in inspect.signature(model_class).parameters:
             params["precision"] = precision
         else:
-            logger.warning(
-                f"Model '{class_name}' does not support the precision parameter; training in float32."
-                f"Models supporting precision: {', '.join(PRECISION_CAPABLE_MODELS)}."
-            )
+            logger.warning(f"Model '{class_name}' does not support the precision parameter; training in float32.")
 
     # Clean params (convert lists to tuples)
     params = clean_params(params)
-
-    # 1. Get the model class dynamically
-    if not hasattr(ad_models, class_name):
-        raise ValueError(f"Model '{class_name}' not found in anomalib.models")
-
-    model_class = getattr(ad_models, class_name)
-    logger.info(f"Initializing Model: {class_name}")
 
     # 2. Extract and REMOVE image_size
     image_size = params.pop("image_size", None)
@@ -154,6 +149,33 @@ def get_image_size(model) -> Optional[tuple]:
         if type(t).__name__ == "Resize":
             return t.size
     return None
+
+
+def fix_onnx_output_shapes(onnx_path: Path) -> None:
+    """Record static non-batch output dims that torch's legacy exporter leaves symbolic (e.g. ``Clippred_score_dim_1``)."""
+    try:
+        import onnx
+    except ImportError:
+        logger.warning(f"onnx is not installed; output shapes in {onnx_path} stay symbolic and ONNXEngine will reject them.")
+        return
+
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    probe = onnx.ModelProto()
+    probe.CopyFrom(model)
+    # inference keeps existing output dims, so clear them to get the inferred ones
+    for out in probe.graph.output:
+        out.type.tensor_type.ClearField("shape")
+    inferred = onnx.shape_inference.infer_shapes(probe, data_prop=True)
+
+    for out, inf in zip(model.graph.output, inferred.graph.output):
+        dims, inf_dims = out.type.tensor_type.shape.dim, inf.type.tensor_type.shape.dim
+        if len(dims) != len(inf_dims):
+            continue
+        # dim 0 keeps its exported name, e.g. batch_size
+        for dim, inf_dim in zip(dims[1:], inf_dims[1:]):
+            if inf_dim.HasField("dim_value"):
+                dim.dim_value = inf_dim.dim_value
+    onnx.save(model, str(onnx_path))
 
 
 def build_tiler(tile_size, stride, tiler_cls_name=None):
@@ -272,12 +294,12 @@ def main():
     engine.export(model=model, export_type=ExportType.TORCH)
 
     # --- Export to ONNX---
-    # Avoid unsupported data type (half precision) issues (ex. reflection_pad2d)
     model = model.float()
 
     def export_onnx(external_data=False):
         onnx_kwargs = {"external_data": external_data}
-        engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model), onnx_kwargs=onnx_kwargs)
+        onnx_path = engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model), onnx_kwargs=onnx_kwargs)
+        fix_onnx_output_shapes(onnx_path)
 
     try:
         export_onnx()
@@ -288,24 +310,6 @@ def main():
             export_onnx(external_data=True)
         else:
             raise e
-
-    # Fold symbolic "Clip*" dims that anomalib exports as dynamic into static constants.
-    # ONNXEngine rejects dynamic non-batch output dims; onnx-simplifier resolves them.
-    try:
-        import onnx
-        from onnxsim import simplify
-
-        onnx_dir = Path(eng_cfg["default_root_dir"])
-        onnx_path = next(onnx_dir.rglob("model.onnx"), None)
-        if onnx_path is not None:
-            m, ok = simplify(onnx.load(str(onnx_path)))
-            if ok:
-                onnx.save(m, str(onnx_path))
-                logger.info("ONNX simplified: symbolic non-batch dims folded to static.")
-            else:
-                logger.warning("onnx-simplifier could not fully simplify the model; skipping.")
-    except ImportError:
-        logger.warning("onnxsim not installed; skipping ONNX simplification. Install with: pip install onnxsim")
 
 
 if __name__ == "__main__":
