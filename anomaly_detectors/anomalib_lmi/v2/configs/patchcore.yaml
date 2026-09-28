@@ -6,7 +6,7 @@ model:
     pre_trained: true
     image_size: [448, 448]
     tile_size: [224, 224]
-    sride: [112, 112]
+    stride: [112, 112]
     coreset_sampling_ratio: 0.1
     num_neighbors: 15
     # "float16" halves memory-bank size and speeds up training; requires available GPU
