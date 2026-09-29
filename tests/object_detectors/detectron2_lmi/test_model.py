@@ -19,6 +19,7 @@ MASKRCNN_MODEL_CONFIG = "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
 COCO_CLASSMAP = "tests/assets/models/od/detectron2/class_map.json"
 MODEL_PATH = "tests/assets/models/od/detectron2/model.pt"
 OG_WEIGHTS_PATH = "tests/assets/models/od/detectron2/model_final_f10217.pkl"
+CONFIG_PATH = "tests/assets/models/od/detectron2/config.yaml"
 OUT_DIR = "tests/outputs/od/detectron2"
 USE_CUDA = torch.cuda.is_available()
 KEYS = ["boxes", "classes", "scores", "masks", "segments"]
@@ -151,6 +152,26 @@ def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
         assert np.array_equal(instances.scores.cpu().numpy(), preds.get("scores")[0])
         assert np.array_equal(instances.pred_boxes.tensor.cpu().numpy(), preds.get("boxes")[0])
         assert np.array_equal(instances.pred_masks.cpu().numpy(), preds.get("masks")[0])
+
+
+def test_torchscript_conversion_matches_original_model(og_cpu_model, imgs_coco, tmp_path):
+    """convert --pt scripts the .pkl weights into a model.pt that predicts like the original."""
+    from object_detectors.detectron2_lmi.convert import convert
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(open(CONFIG_PATH).read().replace("DEVICE: cuda", "DEVICE: cpu"))
+    output = tmp_path / "export"  # not created yet: convert makes it
+    convert({"config_file": str(cfg_path), "weights": OG_WEIGHTS_PATH, "output": str(output), "pt": True})
+    converted = Detectron2Model(str(output / "model.pt"), class_map=class_map, device="cpu")
+
+    for image in imgs_coco:
+        with torch.no_grad():
+            instances = og_cpu_model.inference([{"image": torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))}])[0]["instances"]
+        preds, _ = converted.predict(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), configs=0)
+        assert len(instances) > 0
+        assert np.array_equal(instances.scores.numpy(), preds["scores"][0])
+        assert np.array_equal(instances.pred_boxes.tensor.numpy(), preds["boxes"][0])
+        assert np.array_equal(instances.pred_masks.numpy(), preds["masks"][0])
 
 
 def test_compare_with_original_model_nonsquare(og_cpu_model, model_cpu, imgs_coco):

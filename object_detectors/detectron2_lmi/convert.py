@@ -7,6 +7,7 @@ def convert(args):
     from .cli import DET2_ONNX_EXPORT, DET2_PT_EXPORT, DET2_TRT_EXPORT
 
     output = args["output"]
+    os.makedirs(output, exist_ok=True)
     args["onnx_file_path"] = os.path.join(output, DET2_ONNX_EXPORT)
     args["trt_file_path"] = os.path.join(output, DET2_TRT_EXPORT)
     args["pt_file_path"] = os.path.join(output, DET2_PT_EXPORT)
