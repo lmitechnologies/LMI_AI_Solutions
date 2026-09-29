@@ -33,7 +33,10 @@ def main():
         "-c", "--config-file", metavar="FILE", default=os.path.join("/home", DET2_CONFIG_FILE), help="path to config file"
     )
     train_ap.add_argument(
-        "--detectron2-config", type=str, default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", help="Detectron2 config file"
+        "--detectron2-config",
+        type=str,
+        default=None,
+        help="Detectron2 model-zoo base config; defaults to MODEL_CONFIG_FILE in the config file, else Mask R-CNN R50-FPN 3x",
     )
     train_ap.add_argument("--dataset_dir", type=str, default=DET2_DATASET_DIR, help="Dataset dir")
     train_ap.add_argument("--output", type=str, default=DET2_DEFAULT_DIR, help="Path to the output directory")
