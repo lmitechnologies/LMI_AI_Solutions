@@ -116,7 +116,9 @@ jobs:
             arch: arm64
         python-version: ['3.10']
         test_scenario:
-          - name: "no_ad"
+          - name: "utils_cls"
+            group: "ad-v1"
+          - name: "od"
             group: "ad-v1"
           - name: "ad_v1"
             group: "ad-v1"
@@ -168,30 +170,24 @@ jobs:
           MODE="${{ matrix.test_scenario.name }}"
           echo "Running Test Scenario: $MODE"
           
-          # Check if the mode string starts with 'ad_'
           if [[ "$MODE" == ad_v1 ]]; then
-            echo "Running Anomaly Detection Tests..."
             pytest tests/anomaly_detectors \
               --ignore=tests/anomaly_detectors/anomalib_lmi/test_v0.py \
               --ignore=tests/anomaly_detectors/anomalib_lmi/test_v2.py
           elif [[ "$MODE" == ad_v2 ]]; then
-            echo "Running Anomaly Detection Tests (anomalib v2)..."
             pytest tests/anomaly_detectors/anomalib_lmi/test_v2.py
-          else
-            echo "Running Standard (No-AD) Tests..."
+          elif [[ "$MODE" == od ]]; then
             OD_MARKS=()
             # arm64 inference is slow; the other OD tests give the same result on any CPU and run on amd64
             if [[ "${{ matrix.runner-config.arch }}" == arm64 ]]; then
               OD_MARKS=(-m arch_sensitive)
             fi
-            OTHER_TEST_SUITE=(lmi_common lmi_utils object_detectors classifiers)
-            for suite in "${OTHER_TEST_SUITE[@]}"; do
-              if [[ $suite == object_detectors ]]; then
-                pytest tests/${suite} "${OD_MARKS[@]}"
-              else
-                pytest tests/${suite}
-              fi
-            done
+            pytest tests/object_detectors "${OD_MARKS[@]}"
+          elif [[ "$MODE" == utils_cls ]]; then
+            pytest tests/lmi_common tests/lmi_utils tests/classifiers
+          else
+            echo "Unknown test scenario: $MODE"
+            exit 1
           fi
 
   ci-success:
