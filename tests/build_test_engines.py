@@ -46,7 +46,6 @@ DET2_DIR = os.path.join(ASSETS, "detectron2")
 DET2_WEIGHTS = os.path.join(DET2_DIR, "model_final_f10217.pkl")
 DET2_CONFIG_FILE = os.path.join(DET2_DIR, "config.yaml")  # committed, resolved Mask R-CNN config
 DET2_SAMPLE = os.path.join(DET2_DIR, "sample_image.png")  # committed representative image (read-only)
-DET2_TMP_SAMPLE = os.path.join(DET2_DIR, "_anchor_sample.png")  # transient, built + removed here
 DET2_ONNX = os.path.join(DET2_DIR, "model.onnx")
 DET2_ENGINE = os.path.join(DET2_DIR, "model.engine")
 
@@ -121,42 +120,27 @@ def build_rf_detr(fp16: bool = True, keep_onnx: bool = False) -> None:
 def build_detectron2(fp16: bool = True, keep_onnx: bool = False) -> None:
     """Export the Mask R-CNN weights → ONNX (+ EfficientNMS graph surgery) → TensorRT engine.
 
-    Uses the committed config.yaml and sample_image.png. The sample is resized to a square
-    ``MIN_SIZE_TEST`` (divisible by 32) written to a transient file: the ONNX is traced at the
-    sample's native size while the surgeon regenerates anchors via ``ResizeShortestEdge(MIN_SIZE_TEST,
-    MAX_SIZE_TEST)``, so the two only agree — and the RPN only produces detections — when the sample
-    is square at MIN_SIZE_TEST. The committed sample_image.png is read but never modified.
+    Uses the committed config.yaml and sample_image.png; convert sizes the engine by the config's test-time resize.
     """
     for path in (DET2_WEIGHTS, DET2_CONFIG_FILE, DET2_SAMPLE):
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Missing detectron2 asset: {path} (fetch via git-lfs).")
-    import cv2
-    from detectron2.config import get_cfg
-
     from object_detectors.detectron2_lmi.convert import convert
 
-    cfg = get_cfg()
-    cfg.merge_from_file(DET2_CONFIG_FILE)
-    size = int(cfg.INPUT.MIN_SIZE_TEST)
-    size -= size % 32  # EfficientNMS plugin build requires divisible-by-32 dims
-    cv2.imwrite(DET2_TMP_SAMPLE, cv2.resize(cv2.imread(DET2_SAMPLE), (size, size)))
-
-    logger.info("[detectron2] exporting ONNX + building %dx%d engine → %s ...", size, size, DET2_ENGINE)
+    logger.info("[detectron2] exporting ONNX + building engine → %s ...", DET2_ENGINE)
     try:
         convert(
             {
                 "config_file": DET2_CONFIG_FILE,
                 "weights": DET2_WEIGHTS,
-                "sample_image": DET2_TMP_SAMPLE,
+                "sample_image": DET2_SAMPLE,
                 "output": DET2_DIR,
                 "batch_size": 1,
                 "fp16": fp16,
-                "onnx": True,  # export ONNX + run EfficientNMS graph surgery
-                "trt": True,  # then build the engine
+                "trt": True,
             }
         )
     finally:
-        os.remove(DET2_TMP_SAMPLE)
         if not keep_onnx and os.path.isfile(DET2_ONNX):
             os.remove(DET2_ONNX)
     logger.info("[detectron2] done: %s", DET2_ENGINE)

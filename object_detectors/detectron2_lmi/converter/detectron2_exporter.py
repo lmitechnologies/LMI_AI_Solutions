@@ -4,7 +4,6 @@ import argparse
 from typing import Dict, List
 
 import cv2
-import detectron2.data.transforms as T
 import torch
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
@@ -143,10 +142,8 @@ def get_sample_inputs(args, cfg):
 
         if cfg.INPUT.FORMAT == "RGB":
             original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
-        aug = T.ResizeShortestEdge([original_image.shape[0], original_image.shape[0]], original_image.shape[0])
-        image = aug.get_transform(original_image).apply_image(original_image)
-        image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
-        logger.info(f"Transformed image shape: {image.shape[1:]}")
+        # traced at the sample's own size, which convert set to the engine input size
+        image = torch.as_tensor(original_image.astype("float32").transpose(2, 0, 1))
 
         inputs = {"image": image, "height": original_image.shape[0], "width": original_image.shape[1]}
 

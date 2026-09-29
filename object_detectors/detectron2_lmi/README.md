@@ -210,7 +210,9 @@ With `--json`, all predictions are saved as `predictions.json`, in the LMI datas
 
 ## Convert to TensorRT
 
-To convert to tensorrt a `sample_image.png` is required to be in folder where the weights are stored. The image should be of size thats divizeable by 32. The imagesize should be defined in the config.yaml file shown above for training.
+Converting to TensorRT needs a `sample_image.png` in the weights folder; training copies one there. The engine has a fixed input
+size: the sample's size after the config's test-time resize (`INPUT.MIN_SIZE_TEST`, `INPUT.MAX_SIZE_TEST`), rounded to multiples of
+32. `--trt` builds the ONNX first, so `--onnx` is not needed with it.
 
 *Default batch size is 1 although batch size can be changed to any batch size using -b*
 

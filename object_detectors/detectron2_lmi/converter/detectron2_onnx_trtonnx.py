@@ -128,15 +128,8 @@ class DET2GraphSurgeon:
 
     def get_anchors(self, sample_image):
         """
-        Detectron 2 exported ONNX does not contain anchors required for efficientNMS plug-in, so they must be generated
-        "offline" by calling actual Detectron 2 model and getting anchors from it.
-        :param sample_image: Sample image required to run through the model and obtain anchors.
-        Can be any image from a dataset. Make sure listed here Detectron 2 preprocessing steps
-        actually match your preprocessing steps. Otherwise, behavior can be unpredictable.
-        Additionally, anchors have to be generated for a fixed input dimensions,
-        meaning as soon as image leaves a preprocessor and enters predictor.model.backbone() it must have
-        a fixed dimension (1344x1344 in my case) that every single image in dataset must follow, since currently
-        TensorRT plug-ins do not support dynamic shapes.
+        Generate the anchors the EfficientNMS plug-in needs, which the exported ONNX lacks, by running the Detectron 2 model.
+        :param sample_image: An image at the ONNX input size (convert resizes the sample to it); the plug-ins need fixed shapes.
         """
         # Get Detectron 2 model config and build it.
         predictor = DefaultPredictor(self.det2_cfg)
@@ -157,9 +150,8 @@ class DET2GraphSurgeon:
         if raw_height % 32 != 0 or raw_width % 32 != 0:
             raise ValueError("Input image height and width must be divisible by 32 for fixed anchor generation.")
 
-        image = predictor.aug.get_transform(input_im).apply_image(input_im)
-        image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
-        log.info(f"Transformed image shape: {image.shape[1:]}")
+        # anchors for the ONNX input size, which is the sample's size
+        image = torch.as_tensor(input_im.astype("float32").transpose(2, 0, 1))
 
         # Model preprocessing.
         inputs = [{"image": image, "height": raw_height, "width": raw_width}]

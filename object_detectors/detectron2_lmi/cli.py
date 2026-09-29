@@ -51,13 +51,17 @@ def main():
         "-w", "--weights", type=str, default=wpath(DET2_PTH_EXPORT), help="The Detectron 2 model weights (.pth or .pkl)"
     )
     convert_ap.add_argument(
-        "-s", "--sample_image", type=str, default=wpath(DET2_SAMPLE_IMAGE), help="Sample image for anchors generation/predictions"
+        "-s",
+        "--sample_image",
+        type=str,
+        default=wpath(DET2_SAMPLE_IMAGE),
+        help="Sample image; its test-time resize sets the engine size",
     )
     convert_ap.add_argument("-b", "--batch-size", type=int, default=1, help="Batch size for the model")
     convert_ap.add_argument("--fp16", action="store_true", help="Use fp16")
     convert_ap.add_argument("--pt", action="store_true", help="Convert to pt")
     convert_ap.add_argument("--onnx", action="store_true", help="Convert to onnx")
-    convert_ap.add_argument("--trt", action="store_true", help="Convert to TensorRT")
+    convert_ap.add_argument("--trt", action="store_true", help="Convert to TensorRT (builds the ONNX first)")
 
     namespace = ap.parse_args()
     if namespace.action == "test":
