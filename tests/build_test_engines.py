@@ -45,7 +45,7 @@ RF_DETR_RESOLUTION = 384  # matches IMAGE_SIZE in rf_detr_lmi/test_model.py
 DET2_DIR = os.path.join(ASSETS, "detectron2")
 DET2_WEIGHTS = os.path.join(DET2_DIR, "model_final_f10217.pkl")
 DET2_CONFIG_FILE = os.path.join(DET2_DIR, "config.yaml")  # committed, resolved Mask R-CNN config
-DET2_SAMPLE = os.path.join(DET2_DIR, "sample_image.png")  # committed representative image (read-only)
+DET2_IMAGE_SIZE = (800, 800)  # INPUT.MIN_SIZE_TEST in the committed config.yaml
 DET2_ONNX = os.path.join(DET2_DIR, "model.onnx")
 DET2_ENGINE = os.path.join(DET2_DIR, "model.engine")
 
@@ -120,9 +120,9 @@ def build_rf_detr(fp16: bool = True, keep_onnx: bool = False) -> None:
 def build_detectron2(fp16: bool = True, keep_onnx: bool = False) -> None:
     """Export the Mask R-CNN weights → ONNX (+ EfficientNMS graph surgery) → TensorRT engine.
 
-    Uses the committed config.yaml and sample_image.png; convert sizes the engine by the config's test-time resize.
+    Uses the committed config.yaml, at a square MIN_SIZE_TEST engine size.
     """
-    for path in (DET2_WEIGHTS, DET2_CONFIG_FILE, DET2_SAMPLE):
+    for path in (DET2_WEIGHTS, DET2_CONFIG_FILE):
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Missing detectron2 asset: {path} (fetch via git-lfs).")
     from object_detectors.detectron2_lmi.convert import convert
@@ -133,7 +133,7 @@ def build_detectron2(fp16: bool = True, keep_onnx: bool = False) -> None:
             {
                 "config_file": DET2_CONFIG_FILE,
                 "weights": DET2_WEIGHTS,
-                "sample_image": DET2_SAMPLE,
+                "image_size": DET2_IMAGE_SIZE,
                 "output": DET2_DIR,
                 "batch_size": 1,
                 "fp16": fp16,

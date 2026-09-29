@@ -5,7 +5,6 @@ import math
 import os
 import sys
 
-import cv2
 import numpy as np
 import onnx
 import onnx_graphsurgeon as gs
@@ -126,32 +125,20 @@ class DET2GraphSurgeon:
                 # No new folding occurred in this iteration, so we can stop for now.
                 break
 
-    def get_anchors(self, sample_image):
+    def get_anchors(self, image_size):
         """
         Generate the anchors the EfficientNMS plug-in needs, which the exported ONNX lacks, by running the Detectron 2 model.
-        :param sample_image: An image at the ONNX input size (convert resizes the sample to it); the plug-ins need fixed shapes.
+        :param image_size: The ONNX input (height, width); the plug-ins need fixed shapes.
         """
         # Get Detectron 2 model config and build it.
         predictor = DefaultPredictor(self.det2_cfg)
         model = build_model(self.det2_cfg)
 
-        # Image preprocessing.
-        input_im = cv2.imread(sample_image)
-        if input_im is None:
-            raise ValueError(f"Failed to read image from path: {sample_image}")
-
-        log.info(f"Input image format: {self.det2_cfg.INPUT.FORMAT}")
-        log.info(f"Input image shape: {input_im.shape}")
-
-        if self.det2_cfg.INPUT.FORMAT == "RGB":
-            input_im = cv2.cvtColor(input_im, cv2.COLOR_BGR2RGB)
-
-        raw_height, raw_width = input_im.shape[:2]
+        raw_height, raw_width = image_size
         if raw_height % 32 != 0 or raw_width % 32 != 0:
             raise ValueError("Input image height and width must be divisible by 32 for fixed anchor generation.")
-
-        # anchors for the ONNX input size, which is the sample's size
-        image = torch.as_tensor(input_im.astype("float32").transpose(2, 0, 1))
+        # anchors depend only on the feature map sizes
+        image = torch.zeros(3, raw_height, raw_width)
 
         # Model preprocessing.
         inputs = [{"image": image, "height": raw_height, "width": raw_width}]
@@ -734,7 +721,7 @@ def onnx_gs(args):
     # det2_gs = DET2GraphSurgeon(args.exported_onnx, args.det2_config, args.det2_weights)
     det2_gs = DET2GraphSurgeon(args.get("onnx_file_path"), args.get("config_file"), args.get("weights"))
     det2_gs.update_preprocessor(args.get("batch_size"))
-    anchors = det2_gs.get_anchors(args.get("sample_image"))
+    anchors = det2_gs.get_anchors(args["image_size"])
     det2_gs.process_graph(
         anchors,
         args.get("first_nms_threshold", None),

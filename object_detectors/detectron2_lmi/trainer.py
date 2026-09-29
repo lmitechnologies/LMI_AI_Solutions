@@ -1,4 +1,3 @@
-import glob
 import os
 import shutil
 import subprocess
@@ -93,8 +92,6 @@ def training_run(args):
 
     for name in (*cfg.DATASETS.TRAIN, *cfg.DATASETS.TEST):
         register_dataset(os.path.join(args["dataset_dir"], name), name)
-    first_train_images = sorted(glob.glob(os.path.join(args["dataset_dir"], cfg.DATASETS.TRAIN[0], "images", "*")))
-    shutil.copy(first_train_images[-1], os.path.join(cfg.OUTPUT_DIR, "sample_image.png"))
 
     # the config convert reads: the trainer keeps using the pretrained weights in memory
     final = cfg.clone()

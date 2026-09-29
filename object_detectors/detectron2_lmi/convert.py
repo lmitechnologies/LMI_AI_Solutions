@@ -1,33 +1,6 @@
-import logging
 import os
-import tempfile
-
-import cv2
 
 from lmi_common.trt_convert import onnx_to_trt
-
-logger = logging.getLogger(__name__)
-
-
-def engine_input_size(cfg, height, width):
-    """detectron2's test-time resize of a (height, width) image, rounded to multiples of 32 for the fixed-size engine."""
-    import detectron2.data.transforms as T
-
-    if cfg.INPUT.MIN_SIZE_TEST:
-        height, width = T.ResizeShortestEdge.get_output_shape(height, width, cfg.INPUT.MIN_SIZE_TEST, cfg.INPUT.MAX_SIZE_TEST)
-    return tuple(max(32, round(x / 32) * 32) for x in (height, width))
-
-
-def write_engine_sample(sample_image, config_file, path):
-    """Write ``sample_image`` resized to the engine input size; the ONNX is traced and the anchors built at this size."""
-    from .converter.detectron2_exporter import setup_cfg
-
-    image = cv2.imread(sample_image)
-    if image is None:
-        raise ValueError(f"Could not read image {sample_image}")
-    height, width = engine_input_size(setup_cfg({"config_file": config_file}), *image.shape[:2])
-    logger.info(f"Engine input size (h, w): {height}, {width}; sample image was {image.shape[:2]}")
-    cv2.imwrite(path, cv2.resize(image, (width, height)))
 
 
 def convert(args):
@@ -50,12 +23,12 @@ def convert(args):
         from .converter.detectron2_exporter import det2export
         from .converter.detectron2_onnx_trtonnx import onnx_gs
 
-        with tempfile.TemporaryDirectory() as tmp:
-            sample = os.path.join(tmp, "engine_sample.png")
-            write_engine_sample(args["sample_image"], args["config_file"], sample)
-            onnx_args = {**args, "format": "onnx", "sample_image": sample}
-            det2export(onnx_args)
-            onnx_gs(onnx_args)
+        image_size = args.get("image_size")
+        if not image_size or len(image_size) != 2 or any(x <= 0 or x % 32 for x in image_size):
+            raise ValueError(f"ONNX/TensorRT conversion needs image_size (h, w) in positive multiples of 32, got {image_size}")
+        args["format"] = "onnx"
+        det2export(args)
+        onnx_gs(args)
 
     if args.get("trt", False):
         onnx_to_trt(

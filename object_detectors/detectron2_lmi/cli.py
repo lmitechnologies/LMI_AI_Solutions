@@ -17,7 +17,6 @@ DET2_INPUT_DIR = "/home/input"
 DET2_OUTPUT_DIR = "/home/output"
 DET2_CLASS_MAP = "/home/class_map.json"
 DET2_CONFIG_FILE = "config.yaml"
-DET2_SAMPLE_IMAGE = "sample_image.png"
 DET2_PTH_EXPORT = "model_final.pth"
 
 
@@ -51,11 +50,7 @@ def main():
         "-w", "--weights", type=str, default=wpath(DET2_PTH_EXPORT), help="The Detectron 2 model weights (.pth or .pkl)"
     )
     convert_ap.add_argument(
-        "-s",
-        "--sample_image",
-        type=str,
-        default=wpath(DET2_SAMPLE_IMAGE),
-        help="Sample image; its test-time resize sets the engine size",
+        "-is", "--image-size", type=int, nargs=2, metavar=("H", "W"), help="Engine input size, multiples of 32; needed for --onnx/--trt"
     )
     convert_ap.add_argument("-b", "--batch-size", type=int, default=1, help="Batch size for the model")
     convert_ap.add_argument("--fp16", action="store_true", help="Use fp16")
@@ -84,6 +79,8 @@ def main():
         weights = args.get("weights", "")
         if not (weights.endswith(".pth") or weights.endswith(".pkl")):
             ap.error(f"Weights file must be a .pth or .pkl file, got: {weights}")
+        if (args["onnx"] or args["trt"]) and args["image_size"] is None:
+            ap.error("--image-size H W is required for --onnx and --trt")
         convert(args)
 
 
