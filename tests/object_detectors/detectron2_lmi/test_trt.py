@@ -52,10 +52,7 @@ def trt_model():
         pytest.skip("TensorRT not available")
     if not os.path.exists(ENGINE_PATH):
         pytest.skip(f"Engine file not found: {ENGINE_PATH}")
-    try:
-        return Detectron2Model(ENGINE_PATH, class_map=class_map)
-    except Exception as e:
-        pytest.skip(f"Failed to load TRT engine: {e}")
+    return Detectron2Model(ENGINE_PATH, class_map=class_map)
 
 
 def _assert_all_cuda(outputs, keys=KEYS):

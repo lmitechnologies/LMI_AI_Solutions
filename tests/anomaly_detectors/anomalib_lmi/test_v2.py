@@ -153,23 +153,32 @@ def test_model_api(ad_models):
     ad.test(DATA_PATH, OUTPUT_PATH)
 
 
-def test_convert_to_torchscript():
-    with tempfile.TemporaryDirectory() as t:
-        outpath = os.path.join(t, "trace.pt")
-        convert_v2_torchscript(MODEL_PATH, outpath, device="cpu")
-        assert os.path.isfile(outpath)
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_convert_to_torchscript(device, tmp_path):
+    """The traced model gives the .pt model's anomaly maps on the device it was traced on."""
+    if device == "cuda" and not USE_GPU:
+        pytest.skip("GPU not available")
+    outpath = str(tmp_path / "trace.pt")
+    convert_v2_torchscript(MODEL_PATH, outpath, device=device)
 
-        model = AnomalyModelV2(outpath, device="cpu")
-        inp = torch.randint(0, 255, (256, 256, 3), dtype=torch.uint8)
-        model.predict(inp)
+    pt_model = AnomalyModelV2(MODEL_PATH, device=device)
+    ts_model = AnomalyModelV2(outpath, device=device)
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+        np.testing.assert_allclose(ts_model.predict(rgb)[0], pt_model.predict(rgb)[0], atol=1e-3, err_msg=os.path.basename(p))
 
-        if USE_GPU:
-            outpath = os.path.join(t, "trace_gpu.pt")
-            convert_v2_torchscript(MODEL_PATH, outpath, device="cuda")
-            assert os.path.isfile(outpath)
 
-            model = AnomalyModelV2(outpath, device="cuda")
-            model.predict(inp.cuda())
+def test_cli_onnx_export_matches_pt(cpu_models, tmp_path):
+    """The CLI's ONNX export, run on CPU, gives the .pt model's anomaly maps."""
+    cmd = [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v2.model", "convert", "-i", MODEL_PATH, "-o", str(tmp_path), "-c", "onnx"]
+    result = subprocess.run(cmd, env=os.environ | {"CUDA_VISIBLE_DEVICES": ""}, capture_output=True, text=True)
+    assert result.returncode == 0, f"convert failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+
+    onnx_model = AnomalyModelV2(str(tmp_path / "model.onnx"), device="cpu")
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+        expected = cpu_models[0].predict(rgb)[0]
+        np.testing.assert_allclose(onnx_model.predict(rgb)[0], expected, atol=1e-3, err_msg=os.path.basename(p))
 
 
 def test_predict_input_variants():
@@ -463,7 +472,12 @@ def test_tiled_model_exports_to_onnx_from_cuda(tiled_padim_pt, tmp_path):
 @_needs_gpu
 def test_tiled_model_traces_to_torchscript_on_cpu(tiled_padim_pt, tmp_path):
     # the trace check runs the model twice, so both runs must build the same graph
-    convert_v2_torchscript(tiled_padim_pt, str(tmp_path / "model.ts"), device="cpu")
+    ts_path = str(tmp_path / "model.ts")
+    convert_v2_torchscript(tiled_padim_pt, ts_path, device="cpu")
+
+    expected = AnomalyModelV2(tiled_padim_pt, device="cpu", image_size=[448, 448]).predict([_bad_image()])[0]
+    actual = AnomalyModelV2(ts_path, device="cpu", image_size=[448, 448]).predict([_bad_image()])[0]
+    np.testing.assert_allclose(actual, expected, atol=1e-3 * float(np.abs(expected).max()))
 
 
 @_needs_gpu

@@ -18,8 +18,8 @@ Run this inside the test container (see ``tests/dockerfile.tests``) from the com
 ``tests/run_tests.sh`` calls this automatically before each suite with ``--skip-existing
 --if-available``, so engines are built on demand:
     --skip-existing : leave engines that already exist untouched.
-    --if-available  : exit 0 when no GPU/TensorRT is present, and downgrade per-backend build
-                      failures to warnings (the corresponding TRT tests then skip) instead of aborting.
+    --if-available  : exit 0 when no GPU/TensorRT is present (the TRT tests then skip). With a GPU,
+                      a failed build still exits non-zero, after trying the remaining backends.
 
 Requires a GPU and TensorRT. Per-backend deps: rf_detr needs ``rfdetr``; detectron2 needs
 ``detectron2`` plus ``onnx-graphsurgeon`` (EfficientNMS graph surgery). The ad_v1/ad_v2 engines
@@ -97,9 +97,11 @@ def build_rf_detr(fp16: bool = True, keep_onnx: bool = False) -> None:
     onnx_path = produced[-1]
 
     logger.info("[rf_detr] building engine %s → %s ...", os.path.basename(onnx_path), RF_DETR_ENGINE)
-    onnx_to_trt(onnx_path, RF_DETR_ENGINE, fp16=fp16)  # static batch: batch kwargs are ignored
-    if not keep_onnx and os.path.isfile(onnx_path):
-        os.remove(onnx_path)
+    try:
+        onnx_to_trt(onnx_path, RF_DETR_ENGINE, fp16=fp16)  # static batch: batch kwargs are ignored
+    finally:
+        if not keep_onnx and os.path.isfile(onnx_path):
+            os.remove(onnx_path)
     logger.info("[rf_detr] done: %s", RF_DETR_ENGINE)
 
 
@@ -207,8 +209,7 @@ def main() -> None:
     ap.add_argument(
         "--if-available",
         action="store_true",
-        help="No-op (exit 0) when a GPU/TensorRT is not available, "
-        "and treat per-backend build failures as warnings. Use when auto-building before tests.",
+        help="No-op (exit 0) when a GPU/TensorRT is not available. Use when auto-building before tests.",
     )
     args = ap.parse_args()
 
@@ -226,14 +227,12 @@ def main() -> None:
             continue
         try:
             BUILDERS[name](fp16=args.fp16, keep_onnx=args.keep_onnx)
-        except Exception as e:
-            if not args.if_available:
-                raise
-            logger.warning("[%s] build failed (its TRT tests will skip): %s", name, e)
+        except Exception:
+            logger.exception("[%s] build failed", name)
             failed.append(name)
 
     if failed:
-        logger.warning("Engines not built: %s", ", ".join(failed))
+        raise SystemExit(f"Engines not built: {', '.join(failed)}")
 
 
 if __name__ == "__main__":

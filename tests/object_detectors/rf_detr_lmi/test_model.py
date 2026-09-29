@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 COCO_DIR = "tests/assets/images/coco"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 PTH_FILE = "tests/assets/models/od/rf_detr/rf-detr-seg-small.pth"
-TRT_MODEL = "tests/assets/models/od/rf_detr/inference_model.engine"
 OUT_DIR = "tests/outputs/od/rf_detr"
 IMAGE_SIZE = 384
 MODEL_TYPE = "seg-small"
@@ -62,21 +61,6 @@ def obj_detector():
         image_size=[IMAGE_SIZE, IMAGE_SIZE],
     )
     return obj_detector
-
-
-@pytest.fixture(scope="module")
-def trt_model():
-    if DEVICE != "cuda":
-        pytest.skip("TensorRT model can only be tested on CUDA device.")
-    try:
-        return ObjectDetector(
-            metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
-            model_path=TRT_MODEL,
-            class_map=COCO_CLASSES,
-            image_size=[IMAGE_SIZE, IMAGE_SIZE],
-        )
-    except Exception as e:
-        pytest.skip(f"Failed to load TRT engine: {e}")
 
 
 @pytest.fixture(scope="module")

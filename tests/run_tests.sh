@@ -9,8 +9,8 @@ outpath=tests/outputs
 ARGUMENT=$1
 
 # Build any missing TensorRT engines for the given backends before their tests run. Engines are
-# gitignored (platform-specific), so this regenerates them locally. No-op without a GPU/TensorRT,
-# and per-backend build failures are warnings — the corresponding TRT tests then skip.
+# gitignored (platform-specific), so this regenerates them locally. No-op without a GPU/TensorRT;
+# with one, a failed build stops the run.
 build_engines() {
     python -m tests.build_test_engines --backend "$1" --skip-existing --if-available
 }

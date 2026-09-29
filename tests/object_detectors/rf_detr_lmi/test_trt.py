@@ -44,15 +44,15 @@ def imgs_coco():
 def trt_model():
     if DEVICE != "cuda":
         pytest.skip("TensorRT model can only be tested on CUDA device.")
-    try:
-        return ObjectDetector(
-            metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
-            model_path=TRT_MODEL,
-            class_map=COCO_CLASSES,
-            image_size=[IMAGE_SIZE, IMAGE_SIZE],
-        )
-    except Exception as e:
-        pytest.skip(f"Failed to load TRT engine: {e}")
+    pytest.importorskip("tensorrt")
+    if not os.path.exists(TRT_MODEL):
+        pytest.skip(f"Engine file not found: {TRT_MODEL}")
+    return ObjectDetector(
+        metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
+        model_path=TRT_MODEL,
+        class_map=COCO_CLASSES,
+        image_size=[IMAGE_SIZE, IMAGE_SIZE],
+    )
 
 
 def _assert_all_cuda(outputs, keys=KEYS):

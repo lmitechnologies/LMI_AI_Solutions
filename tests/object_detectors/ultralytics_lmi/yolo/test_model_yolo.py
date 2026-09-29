@@ -683,3 +683,41 @@ def test_tiled_predict_rejects_obb(yolo_models, imgs_dota8):
 
     with pytest.raises(ValueError, match="does not support oriented boxes"):
         model.predict(tiles, configs=0.1, operators=history)
+
+
+ONNX_CASES = [
+    (cls, path, task, imgsz, images)
+    for cls, paths, task, imgsz, images in [
+        (Yolo, OD_DET_MODELS, "detect", IMGSZ, "imgs_coco"),
+        (YoloSeg, OD_SEG_MODELS, "segment", IMGSZ, "imgs_coco"),
+        (YoloObb, OD_OBB_DOTA_8, "obb", OBB_IMGSZ, "imgs_dota8"),
+        (YoloPose, OD_POSE_MODELS, "pose", IMGSZ, "imgs_coco"),
+    ]
+    for path in paths
+]
+
+
+@pytest.mark.parametrize("cls,path,task,imgsz,images", ONNX_CASES, ids=[_model_name(c[1]) for c in ONNX_CASES])
+def test_onnx_export_matches_pt(cls, path, task, imgsz, images, tmp_path, request):
+    """An ONNX export run through our wrapper gives the .pt model's detections."""
+    pytest.importorskip("onnx")
+    source = tmp_path / os.path.basename(path)
+    source.write_bytes(open(path, "rb").read())
+    exported = YOLO(str(source), task=task).export(format="onnx", imgsz=imgsz, verbose=False)
+
+    resized = request.getfixturevalue(images)[1]
+    ref, _ = cls(path, device="cpu", image_size=imgsz).predict(resized, configs=0.5)
+    out, _ = cls(str(exported), device="cpu", image_size=imgsz).predict(resized, configs=0.5)
+
+    assert sum(len(s) for s in ref["scores"]) > 0, "the .pt model found nothing, so the comparison proves nothing"
+    for i in range(len(resized)):
+        assert len(out["scores"][i]) == len(ref["scores"][i]), f"image {i}: detection count differs"
+        np.testing.assert_array_equal(out["classes"][i], ref["classes"][i])
+        np.testing.assert_allclose(np.asarray(out["scores"][i]), np.asarray(ref["scores"][i]), atol=1e-3)
+        np.testing.assert_allclose(np.asarray(out["boxes"][i]), np.asarray(ref["boxes"][i]), atol=0.5)
+        if "points" in ref:
+            np.testing.assert_allclose(np.asarray(out["points"][i]), np.asarray(ref["points"][i]), atol=0.5)
+        if "masks" in ref:
+            a, b = np.asarray(ref["masks"][i]) > 0, np.asarray(out["masks"][i]) > 0
+            iou = (a & b).sum((1, 2)) / np.maximum((a | b).sum((1, 2)), 1)
+            assert (iou >= 0.99).all(), f"image {i}: mask IoU {iou.min():.4f} < 0.99"
