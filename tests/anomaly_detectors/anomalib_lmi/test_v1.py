@@ -249,17 +249,6 @@ def test_cmds():
         assert result.returncode == 0, f"Command failed:\n{result.stdout}"
         assert len(glob.glob(os.path.join(t, "*_annot.png"))) == 1
 
-        if USE_GPU:
-            t2 = os.path.join(t, "recon")
-            cmd = f"python -m anomaly_detectors.anomalib_lmi.v1.model convert -i {MODEL_PATH} -o {t2}"
-            logger.info(f"running cmd: {cmd}")
-            result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
-            logger.info(result.stdout)
-            logger.info(result.stderr)
-
-            out_engine = os.path.join(t2, "model.engine")
-            assert os.path.isfile(out_engine)
-
 
 def test_cli_onnx_export_matches_pt(cpu_models, tmp_path):
     """The CLI's ONNX export, run on CPU, gives the .pt model's anomaly maps."""
@@ -272,6 +261,22 @@ def test_cli_onnx_export_matches_pt(cpu_models, tmp_path):
         rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
         expected = cpu_models[0].predict(rgb)[0]
         np.testing.assert_allclose(onnx_model.predict(rgb)[0], expected, atol=1e-3, err_msg=os.path.basename(p))
+
+
+def test_cli_trt_export_matches_pt(ad_model, tmp_path):
+    """The CLI's FP32 engine gives the .pt model's anomaly maps within 2% of the peak; TF32 alone moves them ~0.8%."""
+    if not USE_GPU:
+        pytest.skip("GPU not available")
+    pytest.importorskip("tensorrt")
+    cmd = [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v1.model", "convert", "-i", MODEL_PATH, "-o", str(tmp_path), "--fp32"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    assert result.returncode == 0, f"convert failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+
+    engine = AnomalyModelV1(str(tmp_path / "model.engine"), device="cuda")
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+        expected = ad_model.predict(rgb)[0]
+        np.testing.assert_allclose(engine.predict(rgb)[0], expected, atol=0.02 * np.abs(expected).max(), err_msg=os.path.basename(p))
 
 
 def test_predict_input_variants(api_model):

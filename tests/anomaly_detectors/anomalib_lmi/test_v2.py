@@ -181,6 +181,22 @@ def test_cli_onnx_export_matches_pt(cpu_models, tmp_path):
         np.testing.assert_allclose(onnx_model.predict(rgb)[0], expected, atol=1e-3, err_msg=os.path.basename(p))
 
 
+def test_cli_trt_export_matches_pt(ad_models, tmp_path):
+    """The CLI's FP32 engine gives the .pt model's anomaly maps (peak ~0.8)."""
+    if not USE_GPU:
+        pytest.skip("GPU not available")
+    pytest.importorskip("tensorrt")
+    cmd = [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v2.model", "convert", "-i", MODEL_PATH, "-o", str(tmp_path), "--fp32"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    assert result.returncode == 0, f"convert failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+
+    engine = AnomalyModelV2(str(tmp_path / "model.engine"), device="cuda")
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+        expected = ad_models[0].predict(rgb)[0]
+        np.testing.assert_allclose(engine.predict(rgb)[0], expected, atol=2e-3, err_msg=os.path.basename(p))
+
+
 def test_predict_input_variants():
     """Test predict with different input formats (numpy, torch tensor, grayscale)."""
     ad = AnomalyDetector(BASE_CONFIG, device=DEVICE)
