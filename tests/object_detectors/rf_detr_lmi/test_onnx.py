@@ -74,6 +74,7 @@ def test_dispatch_and_shapes(onnx_model):
     assert onnx_model.fixed_batch_size == 1  # rfdetr exports a static batch
 
 
+@pytest.mark.arch_sensitive
 def test_dynamic_batch_export(tmp_path, imgs_coco, onnx_model):
     """A dynamic-batch export runs a whole batch in one pass, capped at the engine's max, and matches the static export."""
     from rfdetr import RFDETRSegSmall
@@ -104,6 +105,7 @@ def test_empty(onnx_model):
     _assert_empty_out({k: out[k][0] for k in KEYS})
 
 
+@pytest.mark.arch_sensitive
 def test_matches_pth(imgs_coco, onnx_model, pth_model):
     """Same weights through a different runtime: detections must agree, which also pins the dets/labels/masks output order."""
     out, _ = onnx_model.predict(imgs_coco, configs=0.5)

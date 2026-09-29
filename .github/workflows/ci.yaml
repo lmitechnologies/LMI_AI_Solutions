@@ -179,9 +179,18 @@ jobs:
             pytest tests/anomaly_detectors/anomalib_lmi/test_v2.py
           else
             echo "Running Standard (No-AD) Tests..."
+            OD_MARKS=()
+            # arm64 inference is slow; the other OD tests give the same result on any CPU and run on amd64
+            if [[ "${{ matrix.runner-config.arch }}" == arm64 ]]; then
+              OD_MARKS=(-m arch_sensitive)
+            fi
             OTHER_TEST_SUITE=(lmi_common lmi_utils object_detectors classifiers)
             for suite in "${OTHER_TEST_SUITE[@]}"; do
-              pytest tests/${suite}
+              if [[ $suite == object_detectors ]]; then
+                pytest tests/${suite} "${OD_MARKS[@]}"
+              else
+                pytest tests/${suite}
+              fi
             done
           fi
 

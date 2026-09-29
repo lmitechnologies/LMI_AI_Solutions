@@ -142,3 +142,4 @@ log_level = "INFO"
 testpaths = ["tests"]
 norecursedirs = ["submodules", "assets", "__pycache__"]
 addopts = "-rs"
+markers = ["arch_sensitive: compares two inference paths, which can drift apart on another CPU; the only OD tests CI runs on arm64"]
