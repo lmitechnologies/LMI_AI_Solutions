@@ -120,7 +120,6 @@ def test_matches_pth(imgs_coco, onnx_model, pth_model):
         np.testing.assert_allclose(ref["scores"][i], out["scores"][i], atol=5e-3)
 
 
-@pytest.mark.arch_sensitive
 def test_class_map_from_embedded_metadata(imgs_coco, onnx_file, pth_model):
     """convert_to_onnx embeds the ordered class names in the file; names read back from it must match an explicit class_map."""
     model = ObjectDetector(metadata=METADATA, model_path=onnx_file, image_size=[IMAGE_SIZE, IMAGE_SIZE], device="cpu")

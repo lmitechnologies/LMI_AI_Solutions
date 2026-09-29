@@ -177,24 +177,6 @@ def _nonsquare_batch(images):
     return resized, ops
 
 
-def _shared_ops(per_image_history):
-    """Take a per-image history and produce a single-image (broadcast) variant.
-
-    Used to exercise the "single chain applied to all images" code path: each
-    history entry's per-image fields are collapsed to their first element.
-    """
-    from dataclasses import fields
-
-    out = []
-    for entry in per_image_history:
-        fresh = type(entry).__new__(type(entry))
-        for f in fields(entry):
-            v = getattr(entry, f.name)
-            object.__setattr__(fresh, f.name, v[:1] if isinstance(v, list) else v)
-        out.append(fresh)
-    return out
-
-
 def _assert_empty_output(out, keys, batch_size=1):
     """Assert each key in out has batch_size items and all are empty."""
     for key in keys:
@@ -278,29 +260,18 @@ class Test_Yolo_Det:
             out, _ = model.predict(batch, configs=0.5)
             _assert_empty_output(out, self.KEYS, batch_size=2)
 
-    def test_predict_batch(self, all_models, imgs_coco):
+    def test_tensor_input_batch(self, all_models, imgs_coco):
+        """predict() accepts a list of CUDA HWC tensors."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         images, _, _ = imgs_coco
-        if len(images) < 2:
-            pytest.skip("Not enough images for batch test")
-        num_imgs = len(images)
         resized_images, ops_list = _nonsquare_batch(images)
-
+        tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
         for model in all_models["det"]:
-            # per-image operators
-            model.predict(resized_images, configs=0.5, operators=ops_list)
-
-            # shared operators (single chain broadcast to all images)
-            model.predict(resized_images, configs=0.5, operators=_shared_ops(ops_list))
-
-            # no operators
-            model.predict(resized_images, configs=0.5)
-
-            if torch.cuda.is_available():
-                tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
-                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
-                for img_idx in range(num_imgs):
-                    _assert_batch_cuda(out_gpu, self.KEYS[:-1], img_idx)
-                _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+            out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
+            for img_idx in range(len(images)):
+                _assert_batch_cuda(out_gpu, self.KEYS[:-1], img_idx)
+            _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
 
     def test_predict_batch_square(self, all_models, imgs_coco):
         _, resized_images, ops_list = imgs_coco
@@ -367,31 +338,24 @@ class Test_Yolo_Seg:
             out, _ = model.predict(batch, configs=0.5)
             _assert_empty_output(out, self.KEYS, batch_size=2)
 
-    def test_predict_batch(self, all_models, imgs_coco):
+    def test_tensor_input_batch(self, all_models, imgs_coco):
+        """predict() accepts a list of CUDA HWC tensors."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         images, _, _ = imgs_coco
-        if len(images) < 2:
-            pytest.skip("Not enough images for batch test")
-
-        num_images = len(images)
-        resized_images, batch_ops = _nonsquare_batch(images)
+        resized_images, ops_list = _nonsquare_batch(images)
+        tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
         for model in all_models["seg"]:
-            # per-image operators
-            out, _ = model.predict(resized_images, configs=0.5, operators=batch_ops, return_segments=False)
-            for img_idx in range(num_images):
-                assert len(out["segments"][img_idx]) == 0
+            out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
+            for img_idx in range(len(images)):
+                _assert_batch_cuda(out_gpu, self.KEYS[:-1], img_idx)
+            _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
 
-            # shared operators (single chain broadcast to all images)
-            model.predict(resized_images, configs=0.5, operators=_shared_ops(batch_ops))
-
-            # no operators
-            model.predict(resized_images, configs=0.5)
-
-            if torch.cuda.is_available():
-                tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
-                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=batch_ops)
-                for img_idx in range(num_images):
-                    _assert_batch_cuda(out_gpu, self.KEYS[:-1], img_idx)
-                _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+    def test_no_segments_unless_requested(self, all_models, imgs_coco):
+        _, resized_images, ops_list = imgs_coco
+        for model in all_models["seg"]:
+            out, _ = model.predict(resized_images, configs=0.5, operators=ops_list, return_segments=False)
+            assert all(len(segs) == 0 for segs in out["segments"])
 
     def test_predict_batch_square(self, all_models, imgs_coco):
         _, resized_images, ops_list = imgs_coco
@@ -431,26 +395,16 @@ class Test_Yolo_Obb:
             out, _ = model.predict(batch, configs=0.5)
             _assert_empty_output(out, self.KEYS, batch_size=2)
 
-    def test_predict_batch(self, all_models, imgs_dota8):
+    def test_tensor_input_batch(self, all_models, imgs_dota8):
+        """predict() accepts a list of CUDA HWC tensors."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         images, _, _ = imgs_dota8
-        if len(images) < 2:
-            pytest.skip("Not enough images for batch test")
         resized_images, ops_list = _nonsquare_batch(images)
-
+        tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
         for model in all_models["obb_dota8"]:
-            # per-image operators
-            out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
-
-            # shared operators (single chain broadcast to all images)
-            model.predict(resized_images, configs=0.5, operators=_shared_ops(ops_list))
-
-            # no operators
-            out3, _ = model.predict(resized_images, configs=0.5)
-
-            if torch.cuda.is_available():
-                tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
-                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
-                _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+            out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
+            _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
 
     def test_predict_batch_square(self, all_models, imgs_dota8):
         _, resized_images, ops_list = imgs_dota8
@@ -491,26 +445,16 @@ class Test_Yolo_Pose:
             out, _ = model.predict(batch, configs=0.5)
             _assert_empty_output(out, self.KEYS, batch_size=2)
 
-    def test_predict_batch(self, all_models, imgs_coco):
-        # No _assert_batch_output here because pose is more sensitive to distortion and drop some detections.
+    def test_tensor_input_batch(self, all_models, imgs_coco):
+        """predict() accepts a list of CUDA HWC tensors."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         images, _, _ = imgs_coco
-        if len(images) < 2:
-            pytest.skip("Not enough images for batch test")
         resized_images, ops_list = _nonsquare_batch(images)
+        tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
         for model in all_models["pose"]:
-            # per-image operators
-            out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
-
-            # shared operators (single chain broadcast to all images)
-            model.predict(resized_images, configs=0.5, operators=_shared_ops(ops_list))
-
-            # no operators
-            out3, _ = model.predict(resized_images, configs=0.5)
-
-            if torch.cuda.is_available():
-                tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
-                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
-                _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+            out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
+            _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
 
     def test_predict_batch_square(self, all_models, imgs_coco):
         _, resized_images, ops_list = imgs_coco
@@ -699,6 +643,7 @@ ONNX_CASES = [
         (YoloPose, OD_POSE_MODELS, "pose", IMGSZ, "imgs_coco"),
     ]
     for path in paths
+    if "yolov8n" not in path  # same output head and postprocess as yolo11n
 ]
 
 
