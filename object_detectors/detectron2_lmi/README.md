@@ -74,7 +74,11 @@ TEST:
   DETECTIONS_PER_IMAGE: 1000 # Number of detections per image
   EVAL_PERIOD: 0 # Runs evaluation every N iterations
 
-# Update the training augmentations here, if you would like to not use one of the augmentations one can comment the out. All of the augmentations are random
+# Detectron2 model-zoo base config; --detectron2-config overrides it (default: COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml)
+MODEL_CONFIG_FILE: COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml
+
+# Extra random augmentations, applied after detectron2's resize, crop (INPUT.CROP) and flip (INPUT.RANDOM_FLIP).
+# Setting FLIP_HORIZONTAL or FLIP_VERTICAL replaces INPUT.RANDOM_FLIP. Comment out the ones you don't want.
 AUGMENTATIONS:
   BRIGHTNESS:
     MIN: 0.9

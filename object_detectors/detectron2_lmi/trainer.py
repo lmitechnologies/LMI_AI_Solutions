@@ -1,159 +1,116 @@
 import glob
 import os
-import signal
-import sys
+import shutil
+import subprocess
+from datetime import date
 
 import detectron2.data.transforms as T
 import yaml
+from detectron2 import model_zoo
+from detectron2.config import CfgNode, get_cfg
 from detectron2.data import DatasetMapper, build_detection_train_loader
+from detectron2.data.datasets import register_coco_instances
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.logger import setup_logger
 
-from object_detectors.detectron2_lmi.utils.det_utils import create_config, register_datasets
-
 logger = setup_logger()
 
+DEFAULT_BASE_CONFIG = "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
 
-def build_augmentations(cfg, augmentations=None):
-    augs = [
-        T.ResizeShortestEdge(
-            cfg.INPUT.MIN_SIZE_TRAIN,
-            cfg.INPUT.MAX_SIZE_TRAIN,
-            cfg.INPUT.MIN_SIZE_TRAIN_SAMPLING,
-        )
-    ]
-    if cfg.INPUT.CROP.ENABLED:
-        augs.append(
-            T.RandomCrop_CategoryAreaConstraint(
-                cfg.INPUT.CROP.TYPE,
-                cfg.INPUT.CROP.SIZE,
-                cfg.INPUT.CROP.SINGLE_CATEGORY_MAX_AREA,
-                cfg.MODEL.SEM_SEG_HEAD.IGNORE_VALUE,
-            )
-        )
+# AUGMENTATIONS keys in our training YAML, applied after detectron2's own resize, crop and flip
+EXTRA_AUGMENTATIONS = {
+    "BRIGHTNESS": lambda a: T.RandomBrightness(a["MIN"], a["MAX"]),
+    "FLIP_HORIZONTAL": lambda a: T.RandomFlip(prob=a["PROB"], horizontal=True, vertical=False),
+    "FLIP_VERTICAL": lambda a: T.RandomFlip(prob=a["PROB"], horizontal=False, vertical=True),
+    "ROTATION": lambda a: T.RandomRotation(angle=[a["MIN"], a["MAX"]]),
+    "LIGHTING": lambda a: T.RandomLighting(a["SCALE"]),
+    "CONTRAST": lambda a: T.RandomContrast(a["MIN"], a["MAX"]),
+    "SATURATION": lambda a: T.RandomSaturation(a["MIN"], a["MAX"]),
+}
 
-    if augmentations:
-        if augmentations.get("BRIGHTNESS", None):
-            augs.append(T.RandomBrightness(augmentations["BRIGHTNESS"]["MIN"], augmentations["BRIGHTNESS"]["MAX"]))
-        if augmentations.get("FLIP_HORIZONTAL", None):
-            augs.append(
-                T.RandomFlip(
-                    prob=augmentations["FLIP_HORIZONTAL"]["PROB"],
-                    horizontal=True,
-                    vertical=False,
-                )
-            )
-        if augmentations.get("FLIP_VERTICAL", None):
-            augs.append(
-                T.RandomFlip(
-                    prob=augmentations["FLIP_VERTICAL"]["PROB"],
-                    horizontal=False,
-                    vertical=True,
-                )
-            )
-        if augmentations.get("ROTATION", None):
-            augs.append(
-                T.RandomRotation(
-                    angle=[
-                        augmentations["ROTATION"]["MIN"],
-                        augmentations["ROTATION"]["MAX"],
-                    ]
-                )
-            )
-        if augmentations.get("LIGHTING", None):
-            augs.append(T.RandomLighting(augmentations["LIGHTING"]["SCALE"]))
-        if augmentations.get("CONTRAST", None):
-            augs.append(T.RandomContrast(augmentations["CONTRAST"]["MIN"], augmentations["CONTRAST"]["MAX"]))
-        if augmentations.get("SATURATION", None):
-            augs.append(T.RandomSaturation(augmentations["SATURATION"]["MIN"], augmentations["SATURATION"]["MAX"]))
 
-    return augs
+def build_config(config_file, base_config=None):
+    """Build the detectron2 config and extra augmentations from our training YAML.
+
+    The YAML holds detectron2 keys plus ``AUGMENTATIONS`` and ``MODEL_CONFIG_FILE`` (the model-zoo base config, used
+    when ``base_config`` is None). Flips in ``AUGMENTATIONS`` replace detectron2's ``INPUT.RANDOM_FLIP``.
+    """
+    with open(config_file) as f:
+        overrides = yaml.safe_load(f) or {}
+    augmentations = overrides.pop("AUGMENTATIONS", None) or {}
+    file_base_config = overrides.pop("MODEL_CONFIG_FILE", None)
+    base_config = base_config or file_base_config or DEFAULT_BASE_CONFIG
+    unknown = set(augmentations) - set(EXTRA_AUGMENTATIONS)
+    if unknown:
+        raise ValueError(f"Unknown AUGMENTATIONS {sorted(unknown)}; supported: {list(EXTRA_AUGMENTATIONS)}")
+
+    cfg = get_cfg()
+    cfg.merge_from_file(model_zoo.get_config_file(base_config))
+    cfg.merge_from_other_cfg(CfgNode(overrides))
+    cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(base_config)
+    if {"FLIP_HORIZONTAL", "FLIP_VERTICAL"} & set(augmentations):
+        cfg.INPUT.RANDOM_FLIP = "none"
+    extras = [build(augmentations[k]) for k, build in EXTRA_AUGMENTATIONS.items() if k in augmentations]
+    return cfg, extras
+
+
+def train_mapper_args(cfg, extra_augmentations):
+    """detectron2's training DatasetMapper arguments with our extra augmentations appended."""
+    mapper_args = DatasetMapper.from_config(cfg, is_train=True)
+    mapper_args["augmentations"] = mapper_args["augmentations"] + list(extra_augmentations)
+    return mapper_args
 
 
 class Trainer(DefaultTrainer):
-    @classmethod
-    def build_train_loader(cls, cfg):
-        if os.path.isfile(os.path.join(cfg.OUTPUT_DIR, "augmentations.yaml")):
-            augmentations = yaml.safe_load(open(os.path.join(cfg.OUTPUT_DIR, "augmentations.yaml"), "r"))
-            mapper = DatasetMapper(
-                cfg,
-                is_train=True,
-                augmentations=build_augmentations(cfg=cfg, augmentations=augmentations),
-            )
-        else:
-            mapper = DatasetMapper(cfg, is_train=True, augmentations=build_augmentations(cfg=cfg))
-        return build_detection_train_loader(cfg, mapper=mapper)
+    def __init__(self, cfg, extra_augmentations=()):
+        # set before super().__init__, which calls build_train_loader
+        self.extra_augmentations = list(extra_augmentations)
+        super().__init__(cfg)
+
+    def build_train_loader(self, cfg):
+        return build_detection_train_loader(cfg, mapper=DatasetMapper(**train_mapper_args(cfg, self.extra_augmentations)))
 
 
-def train_model(cfg):
-    """
-    Train the model using the given configuration
-    """
-    trainer = Trainer(cfg)
-    # trainer = DefaultTrainer(cfg)
-    trainer.resume_or_load(resume=False)
-    trainer.train()
-    return cfg.OUTPUT_DIR
+def register_dataset(dataset_dir, name):
+    annotations, images = os.path.join(dataset_dir, "annotations.json"), os.path.join(dataset_dir, "images")
+    if not (os.path.isfile(annotations) and os.path.isdir(images)):
+        raise ValueError(f"Dataset {name}: {dataset_dir} needs annotations.json and an images folder")
+    register_coco_instances(name, {}, annotations, images)
+
+
+def next_output_dir(output_dir):
+    version = 1
+    while os.path.exists(os.path.join(output_dir, f"{date.today()}-v{version}")):
+        version += 1
+    return os.path.join(output_dir, f"{date.today()}-v{version}")
 
 
 def training_run(args):
-    # start tensorboard
-    os.system("pkill -f tensorboard")
-    pid = os.fork()
-    if pid == 0:
-        os.setsid()
-        os.system(f"tensorboard --logdir {args.get('output')} --port 6006")
-        sys.exit(0)
-    else:
-        logger.info(f"Tensorboard started with PID {pid}")
+    cfg, extras = build_config(args["config_file"], args.get("detectron2_config"))
+    cfg.OUTPUT_DIR = next_output_dir(args["output"])
+    os.makedirs(cfg.OUTPUT_DIR)
+    logger.info(f"Output directory: {cfg.OUTPUT_DIR}")
 
-    config_file = args.get("config_file")
-    cfg, _ = create_config(config_file, args.get("detectron2_config"), output_dir=args.get("output"))
-    logger.info(f"Dataset Directory: {args.get('dataset_dir')}")
-    logger.info(f"Output Directory: {cfg.OUTPUT_DIR}")
-    # register the datasets train, test
+    for name in (*cfg.DATASETS.TRAIN, *cfg.DATASETS.TEST):
+        register_dataset(os.path.join(args["dataset_dir"], name), name)
+    first_train_images = sorted(glob.glob(os.path.join(args["dataset_dir"], cfg.DATASETS.TRAIN[0], "images", "*")))
+    shutil.copy(first_train_images[-1], os.path.join(cfg.OUTPUT_DIR, "sample_image.png"))
 
-    for dataset_name in cfg.DATASETS.TRAIN:
-        register_datasets(
-            dataset_dir=os.path.join(args.get("dataset_dir"), f"{dataset_name}"),
-            dataset_name=dataset_name,
-        )
-        if not os.path.isfile(os.path.join(cfg.OUTPUT_DIR, "sample_image.png")):
-            images_in_folder = glob.glob(os.path.join(args.get("dataset_dir"), f"{dataset_name}/images/*"))
-            os.system(
-                f"cp {os.path.join(args.get('dataset_dir'), dataset_name, 'images', os.path.basename(images_in_folder[-1]))} "
-                f"{cfg.OUTPUT_DIR}/sample_image.png"
-            )
-        logger.info(f"registered dataset: {dataset_name}")
-
-    if len(cfg.DATASETS.TEST) > 0:
-        register_datasets(
-            dataset_dir=os.path.join(args.get("dataset_dir"), cfg.DATASETS.TEST[0]),
-            dataset_name=cfg.DATASETS.TEST[0],
-        )
-
-    logger.info("Starting training run")
-
-    train_model(cfg)
-    # kill tensorboard
-    os.kill(pid, signal.SIGTERM)
-
-    # update the config file with the output directory
-    # load the yaml file in the output directory
-    config = yaml.safe_load(open(os.path.join(cfg.OUTPUT_DIR, "config.yaml"), "r"))
-    config["OUTPUT_DIR"] = cfg.OUTPUT_DIR  # update the output directory
-    config["MODEL"]["WEIGHTS"] = os.path.join(cfg.OUTPUT_DIR, "model_final.pth")  # update the weights path
+    # the config convert reads: the trainer keeps using the pretrained weights in memory
+    final = cfg.clone()
+    final.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, "model_final.pth")
     with open(os.path.join(cfg.OUTPUT_DIR, "config.yaml"), "w") as f:
-        yaml.dump(config, f)
+        f.write(yaml.dump(yaml.safe_load(final.dump())))
 
-
-# if __name__ == "__main__":
-#     import argparse
-#     parser = argparse.ArgumentParser()
-#     parser.add_argument("--config-file", type=str, help="Path to the config file", default="/home/config.yaml")
-#     parser.add_argument("--detectron2-config", type=str, help="Detectron2 config file",
-#           default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml")
-#     parser.add_argument("--dataset-dir", type=str, help="Dataset dir", default="/home/data")
-#     parser.add_argument("--output-dir", type=str, help="Path to the output directory", default="/home/weights/")
-#     args = parser.parse_args()
-#     main(args=args)
+    tensorboard = None
+    if shutil.which("tensorboard"):
+        tensorboard = subprocess.Popen(["tensorboard", "--logdir", args["output"], "--port", "6006"])
+    else:
+        logger.warning("tensorboard not found; training without it")
+    try:
+        trainer = Trainer(cfg, extras)
+        trainer.resume_or_load(resume=False)
+        trainer.train()
+    finally:
+        if tensorboard:
+            tensorboard.terminate()
