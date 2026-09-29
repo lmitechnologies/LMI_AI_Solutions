@@ -5,8 +5,9 @@ GPU architecture and TensorRT build they were serialized on — and are **not** 
 engine fails to deserialize with a "platform tag mismatch"). So they are not committed; regenerate
 them locally for your platform before running the engine-gated TRT suites, which otherwise skip:
 
-    tests/object_detectors/detectron2_lmi/test_trt.py    (rf_detr, detectron2)
-    tests/object_detectors/rf_detr_lmi/test_trt.py
+    tests/object_detectors/detectron2_lmi/test_trt.py    (detectron2)
+    tests/object_detectors/rf_detr_lmi/test_trt.py        (rf_detr)
+    tests/object_detectors/ultralytics_lmi/yolo/test_trt.py (yolo)
     tests/anomaly_detectors/anomalib_lmi/test_v1.py       (ad_v1)  / test_v2.py (ad_v2)
 
 Run this inside the test container (see ``tests/dockerfile.tests``) from the committed weights/ONNX:
@@ -22,7 +23,7 @@ Run this inside the test container (see ``tests/dockerfile.tests``) from the com
                       a failed build still exits non-zero, after trying the remaining backends.
 
 Requires a GPU and TensorRT. Per-backend deps: rf_detr needs ``rfdetr``; detectron2 needs
-``detectron2`` plus ``onnx-graphsurgeon`` (EfficientNMS graph surgery). The ad_v1/ad_v2 engines
+``detectron2`` plus ``onnx-graphsurgeon`` (EfficientNMS graph surgery); yolo needs ``ultralytics``. The ad_v1/ad_v2 engines
 build straight from their committed ONNX and need only TensorRT. Engines are written next to their
 weights.
 """
@@ -48,6 +49,11 @@ DET2_SAMPLE = os.path.join(DET2_DIR, "sample_image.png")  # committed representa
 DET2_TMP_SAMPLE = os.path.join(DET2_DIR, "_anchor_sample.png")  # transient, built + removed here
 DET2_ONNX = os.path.join(DET2_DIR, "model.onnx")
 DET2_ENGINE = os.path.join(DET2_DIR, "model.engine")
+
+YOLO_DIR = os.path.join(ASSETS, "ultralytics")
+YOLO_IMGSZ = 640  # matches IMGSZ in ultralytics_lmi/yolo/test_model_yolo.py
+YOLO_MODELS = ["yolo26n.pt", "yolo11n-seg.pt"]  # an NMS-free detect head and an NMS seg head
+YOLO_ENGINES = [os.path.join(YOLO_DIR, os.path.splitext(m)[0] + ".engine") for m in YOLO_MODELS]
 
 # Anomaly-detection engines build straight from their committed ONNX — no anomalib needed, so both
 # variants build in any TensorRT container (../.. path is relative to the OD ``ASSETS`` root).
@@ -149,6 +155,24 @@ def build_detectron2(fp16: bool = True, keep_onnx: bool = False) -> None:
     logger.info("[detectron2] done: %s", DET2_ENGINE)
 
 
+def build_yolo(fp16: bool = True, keep_onnx: bool = False) -> None:
+    """Export the YOLO test models → TensorRT with ultralytics' exporter, writing <name>.engine next to each .pt."""
+    # ultralytics' auto-install would put the CPU onnxruntime over the GPU build
+    os.environ.setdefault("YOLO_AUTOINSTALL", "false")
+    from ultralytics import YOLO
+
+    for name in YOLO_MODELS:
+        pt = os.path.join(YOLO_DIR, name)
+        onnx_path = os.path.splitext(pt)[0] + ".onnx"
+        logger.info("[yolo] exporting %s → TensorRT ...", pt)
+        try:
+            YOLO(pt).export(format="engine", imgsz=YOLO_IMGSZ, half=fp16, device=0, verbose=False)
+        finally:
+            if not keep_onnx and os.path.isfile(onnx_path):
+                os.remove(onnx_path)
+    logger.info("[yolo] done: %s", ", ".join(YOLO_ENGINES))
+
+
 def _build_from_onnx(name: str, onnx_path: str, engine_path: str, fp16: bool) -> None:
     """Build a TensorRT engine directly from a committed ONNX file (used by the AD variants)."""
     if not os.path.isfile(onnx_path):
@@ -175,16 +199,18 @@ def build_ad_v2(fp16: bool = True, keep_onnx: bool = False) -> None:
 BUILDERS = {
     "rf_detr": build_rf_detr,
     "detectron2": build_detectron2,
+    "yolo": build_yolo,
     "ad_v1": build_ad_v1,
     "ad_v2": build_ad_v2,
 }
 
-# Output engine path per backend — used to skip backends whose engine already exists.
+# Output engine paths per backend — used to skip backends whose engines already exist.
 ENGINE_PATHS = {
-    "rf_detr": RF_DETR_ENGINE,
-    "detectron2": DET2_ENGINE,
-    "ad_v1": AD_V1_ENGINE,
-    "ad_v2": AD_V2_ENGINE,
+    "rf_detr": [RF_DETR_ENGINE],
+    "detectron2": [DET2_ENGINE],
+    "yolo": YOLO_ENGINES,
+    "ad_v1": [AD_V1_ENGINE],
+    "ad_v2": [AD_V2_ENGINE],
 }
 
 
@@ -222,8 +248,8 @@ def main() -> None:
 
     failed = []
     for name in _parse_backends(args.backend):
-        if args.skip_existing and os.path.isfile(ENGINE_PATHS[name]):
-            logger.info("[%s] engine exists, skipping: %s", name, ENGINE_PATHS[name])
+        if args.skip_existing and all(os.path.isfile(p) for p in ENGINE_PATHS[name]):
+            logger.info("[%s] engines exist, skipping: %s", name, ", ".join(ENGINE_PATHS[name]))
             continue
         try:
             BUILDERS[name](fp16=args.fp16, keep_onnx=args.keep_onnx)

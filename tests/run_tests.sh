@@ -22,10 +22,10 @@ AD_V1=(tests/anomaly_detectors
     --ignore=tests/anomaly_detectors/anomalib_lmi/test_v2.py)
 
 if [ "$ARGUMENT" == "all-v1" ]; then
-    build_engines rf_detr,detectron2,ad_v1
+    build_engines rf_detr,detectron2,yolo,ad_v1
     pytest --html=$outpath/all-v1.html tests/lmi_utils tests/lmi_common tests/object_detectors tests/classifiers "${AD_V1[@]}"
 elif [ "$ARGUMENT" == "od" ]; then
-    build_engines rf_detr,detectron2
+    build_engines rf_detr,detectron2,yolo
     pytest --html=$outpath/object_detectors.html tests/object_detectors
 elif [ "$ARGUMENT" == "utils" ]; then
     pytest --html=$outpath/lmi_utils.html tests/lmi_utils

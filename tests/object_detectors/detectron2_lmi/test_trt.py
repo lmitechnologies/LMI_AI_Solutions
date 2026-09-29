@@ -8,8 +8,9 @@ import pytest
 import torch
 
 from object_detectors.detectron2_lmi.model import Detectron2Model
+from tests.object_detectors.match_detections import assert_detections_match
 
-from .test_model import _assert_batch_counts, _assert_empty_out, _assert_nonempty_out, _assert_scores_geq
+from .test_model import _assert_batch_counts, _assert_empty_out, _assert_nonempty_out, _assert_scores_geq, _make_og_model
 
 COCO_DIR = "tests/assets/images/coco"
 COCO_CLASSMAP = "tests/assets/models/od/detectron2/class_map.json"
@@ -219,3 +220,28 @@ def test_no_cross_chunk_contamination(trt_model, imgs_coco):
                 _assert_nonempty_out(out)
             else:
                 _assert_empty_out(out)
+
+
+def test_matches_original_model(trt_model, imgs_coco):
+    """The engine finds the .pkl model's confident detections.
+
+    Loose tolerances: even an FP32 engine moves some boxes to IoU ~0.7 and drops a 0.57 detection, since the TensorRT
+    graph (EfficientNMS, ROI align plugin) is not an exact copy of the model.
+    """
+    og_model = _make_og_model("cuda")
+    h, w = trt_model.image_size
+    for i, bgr in enumerate(imgs_coco):
+        bgr = cv2.resize(bgr, (w, h))  # engine input size, so neither model resizes
+        with torch.no_grad():
+            inst = og_model.inference([{"image": torch.as_tensor(bgr.transpose(2, 0, 1).astype("float32")).cuda()}])[0]["instances"]
+        inst = inst.to("cpu")
+        ref = {
+            "boxes": inst.pred_boxes.tensor,
+            "scores": inst.scores,
+            "classes": np.array([class_map[str(c)] for c in inst.pred_classes.tolist()]),
+            "masks": inst.pred_masks,
+        }
+        out, _ = trt_model.predict(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB), configs=0.5)
+        assert_detections_match(
+            ref, {k: v[0] for k, v in out.items()}, min_score=0.6, score_tol=0.1, min_box_iou=0.6, min_mask_iou=0.5, label=f"image {i}"
+        )
