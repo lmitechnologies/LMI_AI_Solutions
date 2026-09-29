@@ -223,10 +223,9 @@ def test_no_cross_chunk_contamination(trt_model, imgs_coco):
 
 
 def test_matches_original_model(trt_model, imgs_coco):
-    """The engine finds the .pkl model's confident detections.
+    """The engine finds the .pkl model's detections.
 
-    Loose tolerances: even an FP32 engine moves some boxes to IoU ~0.7 and drops a 0.57 detection, since the TensorRT
-    graph (EfficientNMS, ROI align plugin) is not an exact copy of the model.
+    Box and mask IoU allow 0.8: two pizza candidates in one image score 0.96588 and 0.96581, and an engine may keep either.
     """
     og_model = _make_og_model("cuda")
     h, w = trt_model.image_size
@@ -241,7 +240,7 @@ def test_matches_original_model(trt_model, imgs_coco):
             "classes": np.array([class_map[str(c)] for c in inst.pred_classes.tolist()]),
             "masks": inst.pred_masks,
         }
-        out, _ = trt_model.predict(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB), configs=0.5)
+        out, _ = trt_model.predict(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB), configs=0.47)
         assert_detections_match(
-            ref, {k: v[0] for k, v in out.items()}, min_score=0.6, score_tol=0.1, min_box_iou=0.6, min_mask_iou=0.5, label=f"image {i}"
+            ref, {k: v[0] for k, v in out.items()}, min_score=0.5, score_tol=0.03, min_box_iou=0.8, min_mask_iou=0.8, label=f"image {i}"
         )
