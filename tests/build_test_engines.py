@@ -51,8 +51,15 @@ DET2_ONNX = os.path.join(DET2_DIR, "model.onnx")
 DET2_ENGINE = os.path.join(DET2_DIR, "model.engine")
 
 YOLO_DIR = os.path.join(ASSETS, "ultralytics")
-YOLO_IMGSZ = 640  # matches IMGSZ in ultralytics_lmi/yolo/test_model_yolo.py
-YOLO_MODELS = ["yolo26n.pt", "yolo11n-seg.pt"]  # an NMS-free detect head and an NMS seg head
+# model → image size, matching IMGSZ/OBB_IMGSZ in ultralytics_lmi/yolo/test_model_yolo.py; yolo26 heads are NMS-free, yolo11 use NMS
+YOLO_MODELS = {
+    "yolo26n.pt": 640,
+    "yolo11n-seg.pt": 640,
+    "yolo26n-pose.pt": 640,
+    "yolo11n-pose.pt": 640,
+    "yolo26n-obb.pt": 1024,
+    "yolo11n-obb.pt": 1024,
+}
 YOLO_ENGINES = [os.path.join(YOLO_DIR, os.path.splitext(m)[0] + ".engine") for m in YOLO_MODELS]
 
 # Anomaly-detection engines build straight from their committed ONNX — no anomalib needed, so both
@@ -161,12 +168,12 @@ def build_yolo(fp16: bool = True, keep_onnx: bool = False) -> None:
     os.environ.setdefault("YOLO_AUTOINSTALL", "false")
     from ultralytics import YOLO
 
-    for name in YOLO_MODELS:
+    for name, imgsz in YOLO_MODELS.items():
         pt = os.path.join(YOLO_DIR, name)
         onnx_path = os.path.splitext(pt)[0] + ".onnx"
         logger.info("[yolo] exporting %s → TensorRT ...", pt)
         try:
-            YOLO(pt).export(format="engine", imgsz=YOLO_IMGSZ, half=fp16, device=0, verbose=False)
+            YOLO(pt).export(format="engine", imgsz=imgsz, half=fp16, device=0, verbose=False)
         finally:
             if not keep_onnx and os.path.isfile(onnx_path):
                 os.remove(onnx_path)

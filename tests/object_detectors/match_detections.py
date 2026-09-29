@@ -16,7 +16,7 @@ def box_iou(a, b):
     return inter / np.maximum(area(a)[:, None] + area(b)[None] - inter, 1e-9)
 
 
-def _match_one_way(src, dst, min_score, score_tol, min_box_iou, min_mask_iou, label):
+def _match_one_way(src, dst, min_score, score_tol, min_box_iou, min_mask_iou, max_point_dist, label):
     iou = box_iou(src["boxes"], dst["boxes"]) if len(src["boxes"]) and len(dst["boxes"]) else np.zeros((len(src["boxes"]), 0))
     used = set()
     for i in np.argsort(-src["scores"]):
@@ -34,16 +34,29 @@ def _match_one_way(src, dst, min_score, score_tol, min_box_iou, min_mask_iou, la
             a, b = src["masks"][i] > 0, dst["masks"][j] > 0
             mask_iou = (a & b).sum() / max((a | b).sum(), 1)
             assert mask_iou >= min_mask_iou, f"{what}: mask IoU {mask_iou:.3f} < {min_mask_iou}"
+        if max_point_dist is not None:
+            visible = src["points"][i][:, 2] >= 0.5
+            dist = np.linalg.norm(src["points"][i][visible, :2] - dst["points"][j][visible, :2], axis=-1)
+            assert (dist <= max_point_dist).all(), f"{what}: a visible keypoint moved {dist.max():.1f} px > {max_point_dist}"
 
 
-def assert_detections_match(ref, out, min_score, score_tol, min_box_iou, min_mask_iou=None, label=""):
+def assert_detections_match(ref, out, min_score, score_tol, min_box_iou, min_mask_iou=None, max_point_dist=None, label=""):
     """Every detection scoring >= min_score on either side has a same-class match on the other side.
 
-    ``ref`` and ``out`` are one image's outputs with ``boxes`` (xyxy), ``scores`` and ``classes``, plus ``masks`` when
-    ``min_mask_iou`` is set. Predict both at ``min_score - score_tol`` so a score that crosses ``min_score`` within
-    tolerance still finds its match.
+    ``ref`` and ``out`` are one image's outputs with ``boxes`` (xyxy, or (N,4,2) oriented corners, compared by their
+    bounding rectangles), ``scores`` and ``classes``, plus ``masks`` when ``min_mask_iou`` is set and ``points`` (N,K,3)
+    when ``max_point_dist`` is set; only keypoints visible (>= 0.5) on the side being matched are compared. Predict both at
+    ``min_score - score_tol`` so a score that crosses ``min_score`` within tolerance still finds its match.
     """
-    keys = ["boxes", "scores", "classes"] + (["masks"] if min_mask_iou is not None else [])
+    keys = (
+        ["boxes", "scores", "classes"]
+        + (["masks"] if min_mask_iou is not None else [])
+        + (["points"] if max_point_dist is not None else [])
+    )
     ref, out = ({k: _to_numpy(d[k]) for k in keys} for d in (ref, out))
-    _match_one_way(ref, out, min_score, score_tol, min_box_iou, min_mask_iou, f"{label} ref->out")
-    _match_one_way(out, ref, min_score, score_tol, min_box_iou, min_mask_iou, f"{label} out->ref")
+    for d in (ref, out):
+        if d["boxes"].ndim == 3:
+            d["boxes"] = np.concatenate([d["boxes"].min(1), d["boxes"].max(1)], axis=-1)
+    args = (min_score, score_tol, min_box_iou, min_mask_iou, max_point_dist)
+    _match_one_way(ref, out, *args, f"{label} ref->out")
+    _match_one_way(out, ref, *args, f"{label} out->ref")
