@@ -157,8 +157,8 @@ def build_detectron2(fp16: bool = True, keep_onnx: bool = False) -> None:
         )
     finally:
         os.remove(DET2_TMP_SAMPLE)
-    if not keep_onnx and os.path.isfile(DET2_ONNX):
-        os.remove(DET2_ONNX)
+        if not keep_onnx and os.path.isfile(DET2_ONNX):
+            os.remove(DET2_ONNX)
     logger.info("[detectron2] done: %s", DET2_ENGINE)
 
 
