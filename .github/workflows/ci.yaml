@@ -99,6 +99,7 @@ jobs:
           tags: ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
 
   run-test:
+    name: test (${{ matrix.runner-config.arch }}, ${{ matrix.test_scenario.name }})
     needs: [check-changes, build-images]
     if: |
       always() &&
