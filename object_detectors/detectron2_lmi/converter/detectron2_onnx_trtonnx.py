@@ -1,6 +1,7 @@
 # source: https://github.com/NVIDIA/TensorRT/blob/main/samples/python/detectron2/create_onnx.py
 
 import logging
+import math
 import os
 import sys
 
@@ -180,6 +181,7 @@ class DET2GraphSurgeon:
         p5_anchors = det2_anchors[3].tensor.detach().cpu().numpy()
         p6_anchors = det2_anchors[4].tensor.detach().cpu().numpy()
         final_anchors = np.concatenate((p2_anchors, p3_anchors, p4_anchors, p5_anchors, p6_anchors))
+        self.anchor_level_sizes = [len(a) for a in (p2_anchors, p3_anchors, p4_anchors, p5_anchors, p6_anchors)]
 
         return final_anchors
 
@@ -259,7 +261,7 @@ class DET2GraphSurgeon:
         # EfficientNMS_TRT TensorRT Plugin is suitable for our use case.
         # :param boxes: The box predictions from the Box Net.
         # :param scores: The class predictions from the Class Net.
-        # :param anchors: The default anchor coordinates.
+        # :param anchors: The default anchor coordinates, or None when boxes are already decoded corners.
         # :param background_class: The label ID for the background class.
         # :param max_proposals: Number of proposals made by NMS.
         # :param score_activation: If set to True - apply sigmoid activation to the confidence scores during NMS operation,
@@ -306,7 +308,7 @@ class DET2GraphSurgeon:
         self.graph.plugin(
             op="EfficientNMS_TRT",
             name="nms" + nms_name,
-            inputs=[boxes, scores, anchors],
+            inputs=[boxes, scores] if anchors is None else [boxes, scores, anchors],
             outputs=nms_outputs,
             attrs={
                 "plugin_version": "1",
@@ -316,12 +318,37 @@ class DET2GraphSurgeon:
                 "iou_threshold": iou_threshold,
                 "score_activation": score_activation,
                 "class_agnostic": False,
-                "box_coding": 1,
+                "box_coding": 0 if anchors is None else 1,
             },
         )
         log.info("Created nms{} with EfficientNMS_TRT plugin".format(nms_name))
 
         return nms_outputs
+
+    def decode_boxes(self, name, deltas, anchors, weights):
+        """Decode (dx, dy, dw, dh) deltas against constant center-size anchors into clipped corner boxes, as Detectron2's
+        Box2BoxTransform then Boxes.clip do. Coordinates are normalized to the image.
+        :param deltas: [batch, N, 4] tensor.
+        :param anchors: [N, 4] array of (cx, cy, w, h).
+        :param weights: Detectron2 BBOX_REG_WEIGHTS (wx, wy, ww, wh).
+        """
+        wx, wy, ww, wh = weights
+        anchor_xy, anchor_wh = anchors[None, :, :2].astype(np.float32), anchors[None, :, 2:].astype(np.float32)
+        d_xy = self.graph.slice(f"{name}/d_xy", deltas, 0, 2, 2)[0]
+        d_wh = self.graph.slice(f"{name}/d_wh", deltas, 2, 4, 2)[0]
+        ctr = self.graph.op_with_const("Mul", f"{name}/ctr_scale", d_xy, anchor_wh / np.asarray([wx, wy], dtype=np.float32))[0]
+        ctr = self.graph.op_with_const("Add", f"{name}/ctr", ctr, anchor_xy)[0]
+        d_wh = self.graph.op_with_const("Mul", f"{name}/wh_weights", d_wh, np.asarray([1 / ww, 1 / wh], dtype=np.float32))[0]
+        # Detectron2's _DEFAULT_SCALE_CLAMP
+        d_wh = self.graph.op_with_const("Min", f"{name}/wh_clamp", d_wh, np.asarray(math.log(1000.0 / 16), dtype=np.float32))[0]
+        size = self.graph.layer(name=f"{name}/wh_exp", op="Exp", inputs=[d_wh], outputs=[f"{name}/wh_exp:0"])[0]
+        half = self.graph.op_with_const("Mul", f"{name}/half_wh", size, anchor_wh * 0.5)[0]
+        top_left = self.graph.layer(name=f"{name}/top_left", op="Sub", inputs=[ctr, half], outputs=[f"{name}/top_left:0"])[0]
+        bottom_right = self.graph.layer(name=f"{name}/bottom_right", op="Add", inputs=[ctr, half], outputs=[f"{name}/bottom_right:0"])[0]
+        corners = self.graph.layer(
+            name=f"{name}/corners", op="Concat", inputs=[top_left, bottom_right], outputs=[f"{name}/corners:0"], attrs={"axis": 2}
+        )[0]
+        return self.graph.clip(f"{name}/clip", corners, 0.0, 1.0)[0]
 
     def ROIAlign(
         self,
@@ -478,17 +505,22 @@ class DET2GraphSurgeon:
                 self.width,
                 self.height,
             ]  # Normalize anchors to [0-1] range
-            anchors = np.expand_dims(anchors, axis=0)
-            anchors = anchors.astype(np.float32)
-            anchors = gs.Constant(name="default_anchors", values=anchors)
 
-            # Create NMS node.
+            # Detectron2 decodes and clips proposals before NMS, and runs NMS within each FPN level.
+            boxes = self.decode_boxes("rpn_decode", boxes, anchors, self.det2_cfg.MODEL.RPN.BBOX_REG_WEIGHTS)
+            # One score column per level; the other levels' columns get a logit of -1e4, which the sigmoid puts under the cutoff.
+            level = np.repeat(np.arange(len(self.anchor_level_sizes)), self.anchor_level_sizes)
+            level_offset = np.full((1, len(level), len(self.anchor_level_sizes)), -1e4, dtype=np.float32)
+            level_offset[0, np.arange(len(level)), level] = 0
+            scores = self.graph.op_with_const("Add", "scores_per_level", scores, level_offset)[0]
+
+            # Create NMS node. The scores are objectness logits: the sigmoid makes the 0.01 cutoff a probability, not logit > 0.01.
             nms_outputs = self.NMS(
                 boxes,
                 scores,
-                anchors,
+                None,
                 -1,
-                False,
+                True,
                 self.first_NMS_max_proposals,
                 self.first_NMS_iou_threshold,
                 self.first_NMS_score_threshold,
@@ -584,6 +616,12 @@ class DET2GraphSurgeon:
                 second_nms_threshold,
                 "box_outputs",
             )
+            # Detectron2 clips boxes to the image; PyramidROIAlign pools boxes past the edge differently.
+            final_boxes = self.graph.clip("box_outputs/clip_boxes", nms_outputs[1], 0.0, 1.0)[0]
+            final_boxes.dtype, final_boxes.shape = nms_outputs[1].dtype, nms_outputs[1].shape
+            nms_outputs[1].name += "_unclipped"
+            final_boxes.name = "detection_boxes_box_outputs"
+            nms_outputs[1] = final_boxes
 
             # Create ROIAlign node.
             mask_pooler_output = self.ROIAlign(
