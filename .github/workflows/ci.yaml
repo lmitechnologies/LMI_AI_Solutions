@@ -24,7 +24,13 @@ jobs:
           lfs: false
           submodules: false
           fetch-depth: 0
-          
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10
+        with:
+          version: "0.11"
+          enable-cache: false
+
       - name: Check if run CI
         id: check
         run: |
