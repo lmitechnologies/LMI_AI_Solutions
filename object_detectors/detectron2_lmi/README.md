@@ -119,7 +119,6 @@ RUN pip install --user -e detectron2
 RUN pip install tensorboard
 RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && pip install -e LMI_AI_Solutions
 RUN pip install onnx-graphsurgeon onnxruntime
-RUN pip install numba
 
 ```
 
