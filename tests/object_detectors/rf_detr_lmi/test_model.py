@@ -225,6 +225,7 @@ def test_model_class_comparison(obj_detector):
 
 
 class Test_Rfdetr_Model:
+    @pytest.mark.arch_sensitive
     def test_compare_with_rfdetr(self, imgs_coco, cpu_models):
         "Use cpu to avoid gpu non-determinism issues."
 
@@ -244,6 +245,7 @@ class Test_Rfdetr_Model:
         reason="rfdetr < 1.9.0 antialiases in predict(); preprocess() follows the training resize instead",
         strict=False,
     )
+    @pytest.mark.arch_sensitive
     def test_compare_with_rfdetr_nonsquare(self, imgs_coco, cpu_models):
         """Non-square inputs exercise the off-size resize guard.
 

@@ -252,6 +252,7 @@ def _assert_batch_cuda(out, keys, idx=0):
 class Test_Yolo_Det:
     KEYS = ["boxes", "scores", "classes"]
 
+    @pytest.mark.arch_sensitive
     def test_compare_with_ultralytics_nonsquare(self, imgs_coco):
         images, _, _ = imgs_coco
         resized_images, _ = _nonsquare_batch(images)
@@ -335,6 +336,7 @@ class Test_Yolo_Det:
 class Test_Yolo_Seg:
     KEYS = ["boxes", "masks", "scores", "segments", "classes"]
 
+    @pytest.mark.arch_sensitive
     def test_compare_with_ultralytics_nonsquare(self, imgs_coco):
         images, _, _ = imgs_coco
         resized_images, _ = _nonsquare_batch(images)
@@ -404,6 +406,7 @@ class Test_Yolo_Seg:
 class Test_Yolo_Obb:
     KEYS = ["boxes", "scores", "classes"]
 
+    @pytest.mark.arch_sensitive
     def test_compare_with_ultralytics_nonsquare(self, imgs_dota8):
         images, _, _ = imgs_dota8
         for model_path in OD_OBB_DOTA_8:
@@ -462,6 +465,7 @@ class Test_Yolo_Obb:
 class Test_Yolo_Pose:
     KEYS = ["boxes", "scores", "points", "classes"]
 
+    @pytest.mark.arch_sensitive
     def test_compare_with_ultralytics_nonsquare(self, imgs_coco):
         images, _, _ = imgs_coco
         resized_images, _ = _nonsquare_batch(images)
@@ -597,6 +601,7 @@ def test_tiled_predict_merges_tiles_back_to_source_images(yolo_models, imgs_coco
             assert boxes[:, 0::2].max() <= w and boxes[:, 1::2].max() <= h
 
 
+@pytest.mark.arch_sensitive
 def test_tiled_predict_on_a_batch_1_export(imgs_coco, tmp_path):
     """A deployed export takes one image per pass; predict must feed it the tiles one at a time, matching the .pt."""
     pytest.importorskip("onnx")
@@ -697,6 +702,7 @@ ONNX_CASES = [
 ]
 
 
+@pytest.mark.arch_sensitive
 @pytest.mark.parametrize("cls,path,task,imgsz,images", ONNX_CASES, ids=[_model_name(c[1]) for c in ONNX_CASES])
 def test_onnx_export_matches_pt(cls, path, task, imgsz, images, tmp_path, request):
     """An ONNX export run through our wrapper gives the .pt model's detections."""

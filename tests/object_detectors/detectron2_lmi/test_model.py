@@ -137,6 +137,7 @@ def _assert_batch_empty(outputs, keys, n):
             assert len(item) == 0, f"Expected empty item in outputs['{k}']"
 
 
+@pytest.mark.arch_sensitive
 def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
     for image in imgs_coco:
         img = torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))
@@ -154,6 +155,7 @@ def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
         assert np.array_equal(instances.pred_masks.cpu().numpy(), preds.get("masks")[0])
 
 
+@pytest.mark.arch_sensitive
 def test_torchscript_conversion_matches_original_model(og_cpu_model, imgs_coco, tmp_path):
     """convert --pt scripts the .pkl weights into a model.pt that predicts like the original."""
     from object_detectors.detectron2_lmi.convert import convert
@@ -174,6 +176,7 @@ def test_torchscript_conversion_matches_original_model(og_cpu_model, imgs_coco, 
         assert np.array_equal(instances.pred_masks.numpy(), preds["masks"][0])
 
 
+@pytest.mark.arch_sensitive
 def test_compare_with_original_model_nonsquare(og_cpu_model, model_cpu, imgs_coco):
     off_sizes = [(512, 640), (576, 704), (704, 512)]  # (h, w), non-square
     for i, image in enumerate(imgs_coco):

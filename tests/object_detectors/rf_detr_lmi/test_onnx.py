@@ -74,6 +74,7 @@ def test_dispatch_and_shapes(onnx_model):
     assert onnx_model.fixed_batch_size == 1  # rfdetr exports a static batch
 
 
+@pytest.mark.arch_sensitive
 def test_dynamic_batch_export(tmp_path, imgs_coco, onnx_model):
     """A dynamic-batch export runs a whole batch in one pass, capped at the engine's max, and matches the static export."""
     from rfdetr import RFDETRSegSmall
@@ -104,6 +105,7 @@ def test_empty(onnx_model):
     _assert_empty_out({k: out[k][0] for k in KEYS})
 
 
+@pytest.mark.arch_sensitive
 def test_matches_pth(imgs_coco, onnx_model, pth_model):
     """Same weights through a different runtime: detections must agree, which also pins the dets/labels/masks output order."""
     out, _ = onnx_model.predict(imgs_coco, configs=0.5)
@@ -118,6 +120,7 @@ def test_matches_pth(imgs_coco, onnx_model, pth_model):
         np.testing.assert_allclose(ref["scores"][i], out["scores"][i], atol=5e-3)
 
 
+@pytest.mark.arch_sensitive
 def test_class_map_from_embedded_metadata(imgs_coco, onnx_file, pth_model):
     """convert_to_onnx embeds the ordered class names in the file; names read back from it must match an explicit class_map."""
     model = ObjectDetector(metadata=METADATA, model_path=onnx_file, image_size=[IMAGE_SIZE, IMAGE_SIZE], device="cpu")
