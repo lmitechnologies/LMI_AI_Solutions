@@ -170,3 +170,23 @@ def test_non_contiguous_input_cuda(dynamic_onnx_path):
     out = engine.infer(x)[0].clone().cpu().numpy()
     ref = _reference_output(dynamic_onnx_path, x.contiguous().cpu().numpy())
     np.testing.assert_allclose(out, ref, atol=1e-4)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_input_still_being_written_by_torch_cuda(dynamic_onnx_path):
+    """ORT must not read a bound input before torch's queued kernels have written it."""
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
+
+    engine = ONNXEngine(dynamic_onnx_path, device="cuda", dynamic_max_batch=8)
+    base_cpu = torch.randn(8, 3, 32, 32, dtype=torch.float32)
+    base = base_cpu.cuda()
+    busy = torch.randn(4096, 4096, device="cuda")
+
+    for shift in range(1, 8):
+        for _ in range(4):  # queue slow kernels ahead of the input's
+            busy = (busy @ busy).clamp(-1, 1)
+        x = base.roll(shift, dims=0)  # differs per pass so a stale buffer gives a wrong answer
+        out = engine.infer(x)[0].cpu().numpy()
+        ref = _reference_output(dynamic_onnx_path, base_cpu.roll(shift, dims=0).numpy())
+        np.testing.assert_allclose(out, ref, atol=1e-4)
