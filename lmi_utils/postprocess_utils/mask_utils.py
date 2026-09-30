@@ -1,10 +1,9 @@
 from typing import Tuple
 
+import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
-from numba import njit
-from numba.np.extensions import cross2d
 
 BYTES_PER_FLOAT = 4
 GPU_MEM_LIMIT = 1024**3  # 1 GB memory limit
@@ -149,83 +148,20 @@ def rescale_masks(
     return img_masks
 
 
-@njit(
-    "(float64[:,:], int64[:], int64, int64)",
-    nopython=True,
-)
-def process(S, P, a, b):
-    """
-    Recursively processes a set of points to find a subset that forms a convex hull.
-
-    Args:
-        S (numpy.ndarray): An array of points in 2D space.
-        P (numpy.ndarray): An array of indices corresponding to points in S.
-        a (int): The index of the starting point in S.
-        b (int): The index of the ending point in S.
-
-    Returns:
-        list: A list of indices that form the convex hull between points a and b.
-    """
-    signed_dist = cross2d(S[P] - S[a], S[b] - S[a])
-    # Use Boolean indexing instead of a loop
-    mask = (signed_dist > 0) & (P != a) & (P != b)
-    K = P[mask]
-
-    if len(K) == 0:
-        return [a, b]
-
-    c = P[np.argmax(signed_dist)]
-    return process(S, K, a, c)[:-1] + process(S, K, c, b)
-
-
-@njit("(float64[:,:],)", nopython=True)
-def quickhull(S: np.ndarray) -> np.ndarray:
-    """
-    Computes the convex hull of a set of 2D points using the Quickhull algorithm.
-
-    Parameters:
-    S (np.ndarray): A 2D numpy array of shape (n, 2) representing the set of points.
-
-    Returns:
-    np.ndarray: A 2D numpy array representing the vertices of the convex hull in counter-clockwise order.
-    """
-    a = np.argmin(S[:, 0])
-    max_index = np.argmax(S[:, 0])
-    return process(S, np.arange(S.shape[0]), a, max_index)[:-1] + process(S, np.arange(S.shape[0]), max_index, a)[:-1]
-
-
-def points_to_segments(points):
-    """
-    Converts a set of points into segments using the Quickhull algorithm.
-
-    Args:
-        points (torch.Tensor or numpy.ndarray): A set of points to be converted into segments.
-            If a torch.Tensor is provided, it will be converted to a numpy.ndarray.
-
-    Returns:
-        numpy.ndarray: An array of points representing the segments formed by the Quickhull algorithm.
-    """
-    if isinstance(points, torch.Tensor):
-        points = points.cpu().numpy()
-    return points[quickhull(points.astype(np.float64))]
-
-
 def mask_to_polygon(mask, value=1.0):
     """
-    Converts a mask to a polygon using the Quickhull algorithm.
+    Converts a mask to its convex hull.
 
     Args:
-        mask (torch.Tensor or numpy.ndarray): A mask to be converted into a polygon.
-            If a torch.Tensor is provided, it will be converted to a numpy.ndarray.
+        mask (torch.Tensor or numpy.ndarray): pixels equal to value belong to the object.
 
     Returns:
-        numpy.ndarray: An array of points representing the polygon formed by the Quickhull algorithm.
+        numpy.ndarray: hull vertices as float64 (x, y) rows.
     """
     if isinstance(mask, torch.Tensor):
-        points = torch.nonzero(mask == value, as_tuple=False)[:, [1, 0]].cpu().numpy()
-    else:
-        points = np.vstack(np.where(mask == value))[::-1].T
-    return points_to_segments(points.astype(np.float64))
+        mask = mask.cpu().numpy()
+    contours, _ = cv2.findContours((mask == value).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    return cv2.convexHull(np.concatenate(contours))[:, 0].astype(np.float64)
 
 
 def segment_to_obb(points):
@@ -241,7 +177,7 @@ def segment_to_obb(points):
     pi2 = np.pi / 2.0
 
     # Calculate edge angles
-    edges = points[1:] - points[:-1]
+    edges = np.roll(points, -1, axis=0) - points
     angles = np.arctan2(edges[:, 1], edges[:, 0])
     angles = np.abs(np.mod(angles, pi2))
     angles = np.unique(angles)
