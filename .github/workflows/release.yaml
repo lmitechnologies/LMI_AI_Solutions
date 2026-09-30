@@ -47,7 +47,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          npm install -g semantic-release @semantic-release/github @semantic-release/changelog @semantic-release/git @semantic-release/exec
+          npm install -g semantic-release @semantic-release/github @semantic-release/changelog @semantic-release/git @semantic-release/exec \
+            conventional-changelog-conventionalcommits@9
 
       - name: Run semantic-release
         run: npx semantic-release ${{ inputs.dry_run && '--dry-run' || '' }}
