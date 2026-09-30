@@ -125,6 +125,12 @@ def parse_args():
         action="store_true",
         help="Maintain aspect ratio when resizing and pad when needed.",
     )
+    resize_parser.add_argument(
+        "--pad_value",
+        type=int,
+        default=0,
+        help="Fill value for the --par padding. 0 is black; use 114 to match the YOLO letterbox.",
+    )
     subparsers.add_parser("pad", parents=[dim_parser], help="Pad images")
     rotate_parser = subparsers.add_parser("rotate", help="Rotate images")
     rotate_parser.add_argument(
@@ -213,7 +219,7 @@ def apply_ops(args):
         output_images, output_dataset = resize_dataset(dataset, images, output_imsize, args["par"])
         if args["par"]:
             if args["width"] is not None and args["height"] is not None:
-                output_images, output_dataset = pad_dataset(output_dataset, output_images, output_imsize)
+                output_images, output_dataset = pad_dataset(output_dataset, output_images, output_imsize, value=args.get("pad_value", 0))
 
     # Pad images
     elif args["operation"] == "pad":

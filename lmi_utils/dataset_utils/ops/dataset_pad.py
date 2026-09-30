@@ -33,7 +33,7 @@ def fit_shapes_to_size(shapes, pad_l, pad_t, pad_h, pad_w, orig_h, orig_w):
 
 
 def pad_annotated_image(
-    image: np.ndarray, annotations: list[Annotation], width: int, height: int
+    image: np.ndarray, annotations: list[Annotation], width: int, height: int, value: int = 0
 ) -> tuple[np.ndarray, list[Annotation], bool]:
     """
     description:
@@ -43,6 +43,7 @@ def pad_annotated_image(
         annotations(list): a list of annotation objects
         width(int): the target width of the output image
         height(int): the target height of the output image
+        value(int): the image pad fill value
     return:
         im_out(np.ndarray): the padded image
         annotations(list): a list of annotation objects
@@ -57,7 +58,7 @@ def pad_annotated_image(
         pw = w
 
     # pad image
-    im_out, pad_l, _, pad_t, _ = fit_array_to_size(image, pw, ph)
+    im_out, pad_l, _, pad_t, _ = fit_array_to_size(image, pw, ph, value=value)
     pw = im_out.shape[1]
     ph = im_out.shape[0]
 
@@ -70,13 +71,14 @@ def pad_annotated_image(
     return im_out, annotations, is_warning
 
 
-def pad_dataset(dataset, images, output_imsize, crop_warning_level=logging.DEBUG):
+def pad_dataset(dataset, images, output_imsize, crop_warning_level=logging.DEBUG, value=0):
     """
     pad/crop the image to the size [W,H] and modify its annotations accordingly
     arguments:
         input_path(str): the input image path
         json_path(str): the path to the json annotation file
         output_imsize(list): the width and height of the output image
+        value(int): the image pad fill value
     """
 
     padded_images = {}
@@ -89,6 +91,7 @@ def pad_dataset(dataset, images, output_imsize, crop_warning_level=logging.DEBUG
             annotations=f.annotations,
             width=output_imsize[0],
             height=output_imsize[1],
+            value=value,
         )
 
         if is_warning:
