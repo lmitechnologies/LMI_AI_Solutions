@@ -14,6 +14,7 @@ from anomalib.data import Folder
 from anomalib.deploy import ExportType
 from anomalib.engine import Engine
 from anomalib.pre_processing import PreProcessor
+from anomalib.pre_processing.utils.transform import disable_antialiasing
 
 # import before anomalib to avoid partial-init circular import
 from torchvision.transforms import v2
@@ -78,6 +79,13 @@ def build_preprocessor(preprocessor_config: Optional[List[Dict]]) -> PreProcesso
     return PreProcessor(transform=transforms)
 
 
+def disable_train_antialias(model) -> None:
+    """Resize training images the way the exported model does; anomalib drops antialiasing in every export."""
+    pre_processor = getattr(model, "pre_processor", None)
+    if pre_processor is not None and pre_processor.transform is not None:
+        disable_antialiasing(pre_processor.transform)
+
+
 def build_model(model_config: Dict[str, Any]):
     """
     Dynamically builds the Anomalib model.
@@ -126,11 +134,12 @@ def build_model(model_config: Dict[str, Any]):
     # 4. Instantiate the model
     try:
         model = model_class(**params)
-        return model
     except TypeError as e:
         logger.error(f"Error initializing {class_name}: {e}")
         logger.error(f"Parameters provided: {list(params.keys())}")
         raise e
+    disable_train_antialias(model)
+    return model
 
 
 def build_data(data_config: Dict[str, Any]) -> Folder:

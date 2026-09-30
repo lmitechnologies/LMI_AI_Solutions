@@ -603,6 +603,26 @@ def test_unsupported_model_warns_and_falls_back_to_float32(caplog):
     )
 
 
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"image_size": [64, 64]},
+        {},
+        {"pre_processor": [{"class_name": "Resize", "params": {"size": [64, 64]}}]},
+    ],
+    ids=["image_size", "model default", "configured pre_processor"],
+)
+def test_build_model_trains_with_the_resize_exported_models_use(params):
+    """anomalib exports every format with antialiasing off, so training with it on would see different pixels."""
+    base = {"backbone": "resnet18", "layers": ["layer1"], "pre_trained": False, "n_features": 64}
+    model = build_model({"class_name": "Padim", "params": {**base, **params}})
+
+    image = torch.rand(1, 3, 200, 300)
+    trained_on = model.pre_processor.transform(image)
+    assert trained_on.shape[-2:] != image.shape[-2:]
+    assert torch.equal(trained_on, model.pre_processor.export_transform(image))
+
+
 def test_invalid_precision_raises():
     with pytest.raises(ValueError, match="Invalid precision"):
         build_model({"class_name": "Patchcore", "params": {"backbone": "resnet18", "layers": ["layer1"], "precision": "float8"}})
