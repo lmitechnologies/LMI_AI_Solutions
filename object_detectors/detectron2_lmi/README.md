@@ -210,7 +210,7 @@ With `--json`, all predictions are saved as `predictions.json`, in the LMI datas
 
 ## Convert to TensorRT
 
-The engine has a fixed input size, set with `--image-size H W` (multiples of 32); every image is resized to it at inference. Pick the
+The engine has a fixed input size, set with `--image_size H W` (multiples of 32); every image is resized to it at inference. Pick the
 size the model sees at test time, e.g. `INPUT.MIN_SIZE_TEST` for square images. `--trt` builds the ONNX first, so `--onnx` is not
 needed with it. `--pt` (TorchScript) needs no size.
 
@@ -232,5 +232,5 @@ services:
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     command: >
-      python3 -m detectron2_lmi.cli convert --trt --fp16 --image-size 800 800
+      python3 -m detectron2_lmi.cli convert --trt --fp16 --image_size 800 800
 ```

@@ -50,7 +50,13 @@ def main():
         "-w", "--weights", type=str, default=wpath(DET2_PTH_EXPORT), help="The Detectron 2 model weights (.pth or .pkl)"
     )
     convert_ap.add_argument(
-        "-is", "--image-size", type=int, nargs=2, metavar=("H", "W"), help="Engine input size, multiples of 32; needed for --onnx/--trt"
+        "-is",
+        "--image_size",
+        "--image-size",
+        type=int,
+        nargs=2,
+        metavar=("H", "W"),
+        help="Engine input size, multiples of 32; needed for --onnx/--trt",
     )
     convert_ap.add_argument("-b", "--batch-size", type=int, default=1, help="Batch size for the model")
     convert_ap.add_argument("--fp16", action="store_true", help="Use fp16")
@@ -80,7 +86,7 @@ def main():
         if not (weights.endswith(".pth") or weights.endswith(".pkl")):
             ap.error(f"Weights file must be a .pth or .pkl file, got: {weights}")
         if (args["onnx"] or args["trt"]) and args["image_size"] is None:
-            ap.error("--image-size H W is required for --onnx and --trt")
+            ap.error("--image_size H W is required for --onnx and --trt")
         convert(args)
 
 
