@@ -1,9 +1,7 @@
 import glob
 import os
 
-import cv2
 import detectron2.data.transforms as T
-import numpy as np
 import pytest
 import yaml
 from detectron2.config import get_cfg
@@ -70,7 +68,6 @@ def test_unknown_augmentation_is_rejected(tmp_path):
 def test_training_run_writes_what_convert_reads(tmp_path, monkeypatch):
     for name in ("my_train", "my_test"):
         os.makedirs(tmp_path / "data" / name / "images")
-        cv2.imwrite(str(tmp_path / "data" / name / "images" / "a.png"), np.zeros((8, 8, 3), np.uint8))
         (tmp_path / "data" / name / "annotations.json").write_text('{"images": [], "annotations": [], "categories": []}')
     os.makedirs(trainer.next_output_dir(str(tmp_path / "out")))
     trained = []
@@ -89,7 +86,6 @@ def test_training_run_writes_what_convert_reads(tmp_path, monkeypatch):
     saved = get_cfg()
     saved.merge_from_file(os.path.join(out_dir, "config.yaml"))
     assert saved.MODEL.WEIGHTS == os.path.join(out_dir, "model_final.pth")
-    assert os.path.isfile(os.path.join(out_dir, "sample_image.png"))
 
 
 class _NoTrain:

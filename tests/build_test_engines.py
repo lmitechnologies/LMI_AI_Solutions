@@ -45,8 +45,7 @@ RF_DETR_RESOLUTION = 384  # matches IMAGE_SIZE in rf_detr_lmi/test_model.py
 DET2_DIR = os.path.join(ASSETS, "detectron2")
 DET2_WEIGHTS = os.path.join(DET2_DIR, "model_final_f10217.pkl")
 DET2_CONFIG_FILE = os.path.join(DET2_DIR, "config.yaml")  # committed, resolved Mask R-CNN config
-DET2_SAMPLE = os.path.join(DET2_DIR, "sample_image.png")  # committed representative image (read-only)
-DET2_TMP_SAMPLE = os.path.join(DET2_DIR, "_anchor_sample.png")  # transient, built + removed here
+DET2_IMAGE_SIZE = (800, 800)  # INPUT.MIN_SIZE_TEST in the committed config.yaml
 DET2_ONNX = os.path.join(DET2_DIR, "model.onnx")
 DET2_ENGINE = os.path.join(DET2_DIR, "model.engine")
 
@@ -121,54 +120,42 @@ def build_rf_detr(fp16: bool = True, keep_onnx: bool = False) -> None:
 def build_detectron2(fp16: bool = True, keep_onnx: bool = False) -> None:
     """Export the Mask R-CNN weights → ONNX (+ EfficientNMS graph surgery) → TensorRT engine.
 
-    Uses the committed config.yaml and sample_image.png. The sample is resized to a square
-    ``MIN_SIZE_TEST`` (divisible by 32) written to a transient file: the ONNX is traced at the
-    sample's native size while the surgeon regenerates anchors via ``ResizeShortestEdge(MIN_SIZE_TEST,
-    MAX_SIZE_TEST)``, so the two only agree — and the RPN only produces detections — when the sample
-    is square at MIN_SIZE_TEST. The committed sample_image.png is read but never modified.
+    Uses the committed config.yaml, at a square MIN_SIZE_TEST engine size.
     """
-    for path in (DET2_WEIGHTS, DET2_CONFIG_FILE, DET2_SAMPLE):
+    for path in (DET2_WEIGHTS, DET2_CONFIG_FILE):
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Missing detectron2 asset: {path} (fetch via git-lfs).")
-    import cv2
-    from detectron2.config import get_cfg
-
     from object_detectors.detectron2_lmi.convert import convert
 
-    cfg = get_cfg()
-    cfg.merge_from_file(DET2_CONFIG_FILE)
-    size = int(cfg.INPUT.MIN_SIZE_TEST)
-    size -= size % 32  # EfficientNMS plugin build requires divisible-by-32 dims
-    cv2.imwrite(DET2_TMP_SAMPLE, cv2.resize(cv2.imread(DET2_SAMPLE), (size, size)))
-
-    logger.info("[detectron2] exporting ONNX + building %dx%d engine → %s ...", size, size, DET2_ENGINE)
+    logger.info("[detectron2] exporting ONNX + building engine → %s ...", DET2_ENGINE)
     try:
         convert(
             {
                 "config_file": DET2_CONFIG_FILE,
                 "weights": DET2_WEIGHTS,
-                "sample_image": DET2_TMP_SAMPLE,
+                "image_size": DET2_IMAGE_SIZE,
                 "output": DET2_DIR,
                 "batch_size": 1,
                 "fp16": fp16,
-                "onnx": True,  # export ONNX + run EfficientNMS graph surgery
-                "trt": True,  # then build the engine
+                "trt": True,
             }
         )
     finally:
-        os.remove(DET2_TMP_SAMPLE)
         if not keep_onnx and os.path.isfile(DET2_ONNX):
             os.remove(DET2_ONNX)
     logger.info("[detectron2] done: %s", DET2_ENGINE)
 
 
-def build_yolo(fp16: bool = True, keep_onnx: bool = False) -> None:
+def build_yolo(fp16: bool = True, keep_onnx: bool = False, skip_existing: bool = False) -> None:
     """Export the YOLO test models → TensorRT with ultralytics' exporter, writing <name>.engine next to each .pt."""
     # ultralytics' auto-install would put the CPU onnxruntime over the GPU build
     os.environ.setdefault("YOLO_AUTOINSTALL", "false")
     from ultralytics import YOLO
 
-    for name, imgsz in YOLO_MODELS.items():
+    for (name, imgsz), engine in zip(YOLO_MODELS.items(), YOLO_ENGINES):
+        if skip_existing and os.path.isfile(engine):
+            logger.info("[yolo] engine exists, skipping: %s", engine)
+            continue
         pt = os.path.join(YOLO_DIR, name)
         onnx_path = os.path.splitext(pt)[0] + ".onnx"
         logger.info("[yolo] exporting %s → TensorRT ...", pt)
@@ -177,7 +164,7 @@ def build_yolo(fp16: bool = True, keep_onnx: bool = False) -> None:
         finally:
             if not keep_onnx and os.path.isfile(onnx_path):
                 os.remove(onnx_path)
-    logger.info("[yolo] done: %s", ", ".join(YOLO_ENGINES))
+        logger.info("[yolo] done: %s", engine)
 
 
 def _build_from_onnx(name: str, onnx_path: str, engine_path: str, fp16: bool) -> None:
@@ -238,7 +225,7 @@ def main() -> None:
     ap.add_argument("--backend", default="all", help=f"Backend(s) to build: 'all' or a comma-separated list of {', '.join(BUILDERS)}.")
     ap.add_argument("--no-fp16", dest="fp16", action="store_false", help="Build in FP32 instead of FP16.")
     ap.add_argument("--keep-onnx", action="store_true", help="Keep the intermediate ONNX files.")
-    ap.add_argument("--skip-existing", action="store_true", help="Skip backends whose engine file already exists.")
+    ap.add_argument("--skip-existing", action="store_true", help="Skip engines that already exist.")
     ap.add_argument(
         "--if-available",
         action="store_true",
@@ -258,8 +245,10 @@ def main() -> None:
         if args.skip_existing and all(os.path.isfile(p) for p in ENGINE_PATHS[name]):
             logger.info("[%s] engines exist, skipping: %s", name, ", ".join(ENGINE_PATHS[name]))
             continue
+        # yolo builds several engines, so it skips the existing ones itself
+        extra = {"skip_existing": args.skip_existing} if name == "yolo" else {}
         try:
-            BUILDERS[name](fp16=args.fp16, keep_onnx=args.keep_onnx)
+            BUILDERS[name](fp16=args.fp16, keep_onnx=args.keep_onnx, **extra)
         except Exception:
             logger.exception("[%s] build failed", name)
             failed.append(name)

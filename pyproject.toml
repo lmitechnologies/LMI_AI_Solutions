@@ -33,6 +33,7 @@ test = [
 ci = [
     { include-group = "test" },
     "onnxruntime==1.21.0",
+    "onnx-graphsurgeon>=0.5.0",  # detectron2 convert test
     "torch",
     "torchvision",
 ]
