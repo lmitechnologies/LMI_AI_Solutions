@@ -9,6 +9,9 @@ services:
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     ipc: host
     working_dir: /repo
+    user: "${UID:-1000}:${GID:-1000}" # bash does not export UID or set GID: export UID GID=$(id -g) if not 1000
+    environment:
+      HOME: /tmp # the user may have no account in the image
     command: >
       bash -c "bash tests/run_tests.sh all-v1"
 
@@ -25,5 +28,8 @@ services:
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     ipc: host
     working_dir: /repo
+    user: "${UID:-1000}:${GID:-1000}" # bash does not export UID or set GID: export UID GID=$(id -g) if not 1000
+    environment:
+      HOME: /tmp # the user may have no account in the image
     command: >
       bash -c "bash tests/run_tests.sh ad-v2"
