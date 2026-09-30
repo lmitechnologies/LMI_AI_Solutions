@@ -2,8 +2,14 @@ import numpy as np
 import pytest
 import torch
 
-from lmi_utils.image_utils.img_resize import resize_and_pad
+from lmi_utils.image_utils.img_resize import resize, resize_and_pad
 from lmi_utils.preprocess_utils.ops import ResizeMeta
+
+
+@pytest.mark.parametrize("target_w, target_h", [(64, 64), (128, 32), (32, 16)])
+def test_resize_reaches_the_target_when_one_side_already_matches(target_w, target_h):
+    image = np.zeros((64, 128, 3), dtype=np.uint8)
+    assert resize(image, width=target_w, height=target_h).shape == (target_h, target_w, 3)
 
 
 @pytest.mark.parametrize(

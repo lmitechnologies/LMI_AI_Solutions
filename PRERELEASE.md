@@ -301,7 +301,7 @@ python -m object_detectors.detectron2_lmi.cli convert --trt --fp16 --image_size 
 
 Supported step types: `resize`, `tile`. Steps can be chained and nested (e.g. resize → tile → tile).
 
-When an OD model's preprocessed input still doesn't match its training size, the pipeline auto-injects a final resize. A letterbox injection pads with the model's `RESIZE_PAD_VALUE` (`114` for YOLO, `0` otherwise) to match training-time padding. A manifest-declared `resize` step pads with `0` unless its configuration sets `pad_value`. The injected resize also antialiases when the model's `RESIZE_ANTIALIAS` is set (Detectron2, which trains and predicts with PIL bilinear).
+When an OD model's preprocessed input still doesn't match its training size, the pipeline auto-injects a final resize. A letterbox injection pads with the model's `RESIZE_PAD_VALUE` (`114` for YOLO, `0` otherwise) to match training-time padding. A manifest-declared `resize` step pads with `0` unless its configuration sets `pad_value`. `labels-preprocess resize --par` pads a dataset with `0` too; pass `--pad_value 114` to match the YOLO letterbox. The injected resize also antialiases when the model's `RESIZE_ANTIALIAS` is set (Detectron2, which trains and predicts with PIL bilinear).
 
 **Resize with Object Detection**
 

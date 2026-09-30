@@ -90,7 +90,7 @@ def resize(image, width=None, height=None, device="cpu", inter=cv2.INTER_AREA):
 
     (h, w) = image.shape[:2]
 
-    if h == height and width == width:
+    if h == height and w == width:
         return image
 
     if (height is None) and (width is None):

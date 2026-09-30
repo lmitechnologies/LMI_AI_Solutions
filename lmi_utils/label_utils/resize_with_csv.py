@@ -14,6 +14,8 @@ from lmi_utils.system_utils.path_utils import get_relative_paths
 
 logger = logging.getLogger(__name__)
 
+_INTER = cv2.INTER_LINEAR  # the bilinear resize inference and Ultralytics training use; INTER_AREA differs when shrinking
+
 
 def resize_shapes(shapes, rx, ry):
     """resize shapes in-place
@@ -73,14 +75,14 @@ def resize_imgs_with_csv(path_imgs, path_csv, output_imsize, path_out, save_bg_i
         elif tw is None:
             tw = "w"
             rx = ry = th / h
-            im2 = resize(im, height=th)
+            im2 = resize(im, height=th, inter=_INTER)
         elif th is None:
             th = "h"
             rx = ry = tw / w
-            im2 = resize(im, width=tw)
+            im2 = resize(im, width=tw, inter=_INTER)
         else:
             rx, ry = tw / w, th / h
-            im2 = resize(im, width=tw, height=th)
+            im2 = resize(im, width=tw, height=th, inter=_INTER)
 
         out_name = os.path.splitext(im_name)[0] + f"_resized_{tw}x{th}" + ".png"
         logger.info(f"write to {out_name}")
