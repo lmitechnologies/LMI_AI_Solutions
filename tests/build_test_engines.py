@@ -146,13 +146,16 @@ def build_detectron2(fp16: bool = True, keep_onnx: bool = False) -> None:
     logger.info("[detectron2] done: %s", DET2_ENGINE)
 
 
-def build_yolo(fp16: bool = True, keep_onnx: bool = False) -> None:
+def build_yolo(fp16: bool = True, keep_onnx: bool = False, skip_existing: bool = False) -> None:
     """Export the YOLO test models → TensorRT with ultralytics' exporter, writing <name>.engine next to each .pt."""
     # ultralytics' auto-install would put the CPU onnxruntime over the GPU build
     os.environ.setdefault("YOLO_AUTOINSTALL", "false")
     from ultralytics import YOLO
 
-    for name, imgsz in YOLO_MODELS.items():
+    for (name, imgsz), engine in zip(YOLO_MODELS.items(), YOLO_ENGINES):
+        if skip_existing and os.path.isfile(engine):
+            logger.info("[yolo] engine exists, skipping: %s", engine)
+            continue
         pt = os.path.join(YOLO_DIR, name)
         onnx_path = os.path.splitext(pt)[0] + ".onnx"
         logger.info("[yolo] exporting %s → TensorRT ...", pt)
@@ -161,7 +164,7 @@ def build_yolo(fp16: bool = True, keep_onnx: bool = False) -> None:
         finally:
             if not keep_onnx and os.path.isfile(onnx_path):
                 os.remove(onnx_path)
-    logger.info("[yolo] done: %s", ", ".join(YOLO_ENGINES))
+        logger.info("[yolo] done: %s", engine)
 
 
 def _build_from_onnx(name: str, onnx_path: str, engine_path: str, fp16: bool) -> None:
@@ -222,7 +225,7 @@ def main() -> None:
     ap.add_argument("--backend", default="all", help=f"Backend(s) to build: 'all' or a comma-separated list of {', '.join(BUILDERS)}.")
     ap.add_argument("--no-fp16", dest="fp16", action="store_false", help="Build in FP32 instead of FP16.")
     ap.add_argument("--keep-onnx", action="store_true", help="Keep the intermediate ONNX files.")
-    ap.add_argument("--skip-existing", action="store_true", help="Skip backends whose engine file already exists.")
+    ap.add_argument("--skip-existing", action="store_true", help="Skip engines that already exist.")
     ap.add_argument(
         "--if-available",
         action="store_true",
@@ -242,8 +245,10 @@ def main() -> None:
         if args.skip_existing and all(os.path.isfile(p) for p in ENGINE_PATHS[name]):
             logger.info("[%s] engines exist, skipping: %s", name, ", ".join(ENGINE_PATHS[name]))
             continue
+        # yolo builds several engines, so it skips the existing ones itself
+        extra = {"skip_existing": args.skip_existing} if name == "yolo" else {}
         try:
-            BUILDERS[name](fp16=args.fp16, keep_onnx=args.keep_onnx)
+            BUILDERS[name](fp16=args.fp16, keep_onnx=args.keep_onnx, **extra)
         except Exception:
             logger.exception("[%s] build failed", name)
             failed.append(name)
