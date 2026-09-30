@@ -14,6 +14,7 @@ This document covers all **breaking changes and new features** introduced after 
 5. [YOLO v0 support dropped](#5-yolo-v0-support-dropped)
 6. [Anomaly model files renamed to versioned sub-packages, and AD tiling moved to the pipeline](#6-anomaly-model-files-renamed-to-versioned-sub-packages-and-ad-tiling-moved-to-the-pipeline)
 7. [Inference scripts renamed to `infer.py` with shared flags](#7-inference-scripts-renamed-to-inferpy-with-shared-flags)
+8. [Detectron2 convert takes `--image_size` instead of a sample image](#8-detectron2-convert-takes---image_size-instead-of-a-sample-image)
 
 **New Features**
 
@@ -268,6 +269,25 @@ python -m object_detectors.rf_detr_lmi.infer -w best.pth -i images -o out -c 0.5
 
 > **Impact:** Commands that call `run_model`, or pass `--wts_file`, `--path_imgs`, `--path_out` or `--sz`, fail with an error. No script writes a CSV any more: pass `--json` for `predictions.json`. RF-DETR no longer resizes each image to the model input size before drawing, so its output images and predictions are at the original image size.
 
+
+---
+
+## 8. Detectron2 convert takes `--image_size` instead of a sample image
+
+**What changed:** `convert` no longer reads a `sample_image.png` from the weights folder to set the engine input size. Pass the size with `-is/--image_size H W` (multiples of 32); it is required for `--onnx` and `--trt`. `--trt` now builds the ONNX itself, so `--onnx` is no longer needed with it. Training no longer writes `sample_image.png` to its output folder.
+
+**Before:**
+```bash
+# sample_image.png in the weights folder sets the engine size
+python -m object_detectors.detectron2_lmi.cli convert --onnx --trt --fp16
+```
+
+**After:**
+```bash
+python -m object_detectors.detectron2_lmi.cli convert --trt --fp16 --image_size 800 800
+```
+
+> **Impact:** `-s/--sample_image` is gone, and `convert --onnx` or `--trt` without `--image_size` exits with an error. Pick the size the model sees at test time, e.g. `INPUT.MIN_SIZE_TEST` for square images. Before, a sample image whose size differed from detectron2's test-time resize could give anchors that did not match the engine input; engines built now always match.
 
 ---
 
