@@ -55,7 +55,7 @@ ad-v2 = [
 # version (10.9.0.34) so local engines match CI. pytest-html backs run_tests.sh.
 gpu = [
     { include-group = "test" },
-    "onnxruntime-gpu==1.21.0",
+    "onnxruntime-gpu==1.21.0; platform_machine == 'x86_64'",  # no aarch64 wheels
     "torch",
     "torchvision",
     "tensorrt==10.9.0.34",
@@ -64,8 +64,13 @@ gpu = [
 ]
 
 [tool.uv]
-# Scoped to the test images' Pythons (3.10 CI, 3.12 nvcr) rather than requires-python; numpy<2.0 breaks onnx on 3.13+.
-environments = ["python_full_version >= '3.10' and python_full_version < '3.13'"]
+# Scoped to the test images (Linux CPython; 3.10 CI, 3.12 nvcr) rather than requires-python; numpy<2.0 breaks onnx on 3.13+.
+# uv >= 0.12.18 fails the lock if a pin lacks wheels for any environment, so every pin must have Linux wheels here.
+# One entry per arch so the x86_64-only cu124 source below gets its own fork.
+environments = [
+    "python_full_version >= '3.10' and python_full_version < '3.13' and sys_platform == 'linux' and platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
+    "python_full_version >= '3.10' and python_full_version < '3.13' and sys_platform == 'linux' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython'",
+]
 # ci/gpu are incompatible torch builds (+cpu vs +cu124); ad-v1/ad-v2 are incompatible anomalib majors.
 conflicts = [
     [{ group = "ci" }, { group = "gpu" }],
@@ -82,14 +87,15 @@ name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
+# cu124 has no aarch64 torch 2.6.0 wheels; gpu on aarch64 (unused) falls back to PyPI.
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cpu", group = "ci" },
-    { index = "pytorch-cu124", group = "gpu" },
+    { index = "pytorch-cu124", group = "gpu", marker = "platform_machine == 'x86_64'" },
 ]
 torchvision = [
     { index = "pytorch-cpu", group = "ci" },
-    { index = "pytorch-cu124", group = "gpu" },
+    { index = "pytorch-cu124", group = "gpu", marker = "platform_machine == 'x86_64'" },
 ]
 
 [project.scripts]
