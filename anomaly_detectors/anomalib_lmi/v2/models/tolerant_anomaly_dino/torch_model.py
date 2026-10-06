@@ -15,7 +15,6 @@ from typing import Literal
 
 import torch
 import torch.nn.functional as F
-
 from anomalib.data import InferenceBatch
 from anomalib.models.components import KCenterGreedy
 from anomalib.models.image.anomaly_dino.torch_model import AnomalyDINOModel
@@ -134,7 +133,6 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
     This makes it possible to establish detector parity before evaluating the
     tolerance head.
     """
-
 
     def __init__(
         self,
@@ -262,12 +260,8 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         self.shared_residual_decontamination_percentile = float(shared_residual_decontamination_percentile)
         if not 0.0 < self.shared_residual_decontamination_percentile <= 100.0:
             raise ValueError("shared_residual_decontamination_percentile must be in (0, 100]")
-        self.shared_residual_decontamination_use_magnitude = bool(
-            shared_residual_decontamination_use_magnitude
-        )
-        self.shared_residual_decontamination_min_accept_samples = max(
-            2, int(shared_residual_decontamination_min_accept_samples)
-        )
+        self.shared_residual_decontamination_use_magnitude = bool(shared_residual_decontamination_use_magnitude)
+        self.shared_residual_decontamination_min_accept_samples = max(2, int(shared_residual_decontamination_min_accept_samples))
         self.shared_residual_decontamination_last_summary: dict[str, object] = {
             "status": "not_run",
             "enabled": self.shared_residual_decontamination_enable,
@@ -282,9 +276,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         # the dominant full-bank search unchanged while making the final soft-anchor
         # membership far less sensitive to PT/ORT GEMM ranking noise.
         self.residual_anchor_k = max(1, int(residual_anchor_k))
-        self.residual_anchor_search_k = max(
-            self.residual_anchor_k, int(residual_anchor_search_k)
-        )
+        self.residual_anchor_search_k = max(self.residual_anchor_k, int(residual_anchor_search_k))
         self.residual_anchor_temperature = float(V81_RESIDUAL_ANCHOR_TEMPERATURE)
         self.residual_anchor_rerank_candidate_chunk = int(V82_RESIDUAL_RERANK_CANDIDATE_CHUNK)
         self.calibration_query_chunk_size = max(1, int(calibration_query_chunk_size))
@@ -322,9 +314,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         del _cap_generator
 
         self._normal_bank_ratio_mode = bool(coreset_subsampling)
-        self._normal_bank_stream_cap_enabled = bool(
-            (not self._normal_bank_ratio_mode) and self.normal_bank_max_size is not None
-        )
+        self._normal_bank_stream_cap_enabled = bool((not self._normal_bank_ratio_mode) and self.normal_bank_max_size is not None)
         if self._normal_bank_ratio_mode and self.normal_bank_max_size is not None:
             logger.info(
                 "coreset_subsampling=True: using legacy KCenterGreedy sampling_ratio=%.6f; "
@@ -406,9 +396,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         self.register_buffer("residual_projection_magnitude_mean", torch.tensor(0.0))
         self.register_buffer("residual_projection_magnitude_std", torch.tensor(1.0))
         weights = residual_projection_reject_type_weights or {}
-        self.residual_projection_reject_type_weights = {
-            str(name): max(0.0, float(weight)) for name, weight in weights.items()
-        }
+        self.residual_projection_reject_type_weights = {str(name): max(0.0, float(weight)) for name, weight in weights.items()}
         self.residual_projection_seed = int(residual_projection_seed)
         fit_device = str(residual_projection_fit_device).strip().lower()
         if fit_device not in {"cpu", "model"}:
@@ -427,9 +415,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         else:
             resolved_projection_mode = str(residual_projection_mode).strip().lower()
         if resolved_projection_mode not in {"direction", "magnitude", "dual"}:
-            raise ValueError(
-                "residual_projection_mode must be one of: 'direction', 'magnitude', 'dual'"
-            )
+            raise ValueError("residual_projection_mode must be one of: 'direction', 'magnitude', 'dual'")
         # Runtime/export mode only. Both heads are fitted and calibrated regardless
         # of this selector so switching direction/magnitude/dual never retrains a
         # different projection.  Persist the selector as a state_dict buffer so
@@ -451,17 +437,13 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         self.residual_projection_use_magnitude = self.magnitude_projection_enabled
 
         # Optional context channels shared by whichever projection head(s) are active.
-        self.residual_projection_use_relative_xy = bool(
-            self.residual_projection_enable and residual_projection_use_relative_xy
-        )
+        self.residual_projection_use_relative_xy = bool(self.residual_projection_enable and residual_projection_use_relative_xy)
         self.residual_projection_xy_scale = float(residual_projection_xy_scale)
         if self.residual_projection_xy_scale < 0.0:
             raise ValueError("residual_projection_xy_scale must be >= 0")
 
         intermediate_layers = tuple(sorted(set(int(v) for v in (residual_projection_intermediate_layers or ()))))
-        self.residual_projection_final_layer_name, last_block = _resolve_final_layer_name(
-            self.feature_encoder, encoder_name
-        )
+        self.residual_projection_final_layer_name, last_block = _resolve_final_layer_name(self.feature_encoder, encoder_name)
         invalid_layers = [v for v in intermediate_layers if v < 0 or v >= last_block]
         if invalid_layers:
             raise ValueError(
@@ -469,9 +451,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 f"block indices before the final block {last_block}; got {invalid_layers}"
             )
         self.residual_projection_intermediate_layers = intermediate_layers
-        self.residual_projection_intermediate_layer_names = tuple(
-            f"blocks.{idx}" for idx in self.residual_projection_intermediate_layers
-        )
+        self.residual_projection_intermediate_layer_names = tuple(f"blocks.{idx}" for idx in self.residual_projection_intermediate_layers)
         self.residual_projection_intermediate_scale = float(residual_projection_intermediate_scale)
         if self.residual_projection_intermediate_scale < 0.0:
             raise ValueError("residual_projection_intermediate_scale must be >= 0")
@@ -526,10 +506,22 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         self.register_buffer("reject_projected_bank", torch.empty(0))
 
         self.projected_reject_boost_enable = bool(projected_reject_boost_enable)
-        direction_a0 = projected_reject_boost_advantage_threshold if direction_projected_reject_boost_advantage_threshold is None else direction_projected_reject_boost_advantage_threshold
-        direction_lam = projected_reject_boost_lambda if direction_projected_reject_boost_lambda is None else direction_projected_reject_boost_lambda
-        magnitude_a0 = projected_reject_boost_advantage_threshold if magnitude_projected_reject_boost_advantage_threshold is None else magnitude_projected_reject_boost_advantage_threshold
-        magnitude_lam = projected_reject_boost_lambda if magnitude_projected_reject_boost_lambda is None else magnitude_projected_reject_boost_lambda
+        direction_a0 = (
+            projected_reject_boost_advantage_threshold
+            if direction_projected_reject_boost_advantage_threshold is None
+            else direction_projected_reject_boost_advantage_threshold
+        )
+        direction_lam = (
+            projected_reject_boost_lambda if direction_projected_reject_boost_lambda is None else direction_projected_reject_boost_lambda
+        )
+        magnitude_a0 = (
+            projected_reject_boost_advantage_threshold
+            if magnitude_projected_reject_boost_advantage_threshold is None
+            else magnitude_projected_reject_boost_advantage_threshold
+        )
+        magnitude_lam = (
+            projected_reject_boost_lambda if magnitude_projected_reject_boost_lambda is None else magnitude_projected_reject_boost_lambda
+        )
         self.register_buffer("direction_projected_reject_boost_advantage_threshold", torch.tensor(float(direction_a0)))
         self.register_buffer("direction_projected_reject_boost_lambda", torch.tensor(float(direction_lam)))
         self.register_buffer("magnitude_projected_reject_boost_advantage_threshold", torch.tensor(float(magnitude_a0)))
@@ -567,9 +559,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
     # Normal detector helpers
     # ------------------------------------------------------------------
 
-    def extract_features_with_context(
-        self, image_tensor: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+    def extract_features_with_context(self, image_tensor: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
         """Extract final and optional intermediate DINO patch tokens in one pass.
 
         On Anomalib 2.3.3 the stock detector uses
@@ -610,15 +600,12 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             )
         if len(outputs) != len(requested):
             raise RuntimeError(
-                "DINO intermediate extraction returned an unexpected number of layers: "
-                f"requested={requested} returned={len(outputs)}"
+                f"DINO intermediate extraction returned an unexpected number of layers: requested={requested} returned={len(outputs)}"
             )
 
         final = outputs[-1]
         if final.ndim != 3:
-            raise RuntimeError(
-                f"Expected final DINO patch tokens [B,N,D], got {tuple(final.shape)}"
-            )
+            raise RuntimeError(f"Expected final DINO patch tokens [B,N,D], got {tuple(final.shape)}")
         intermediate_outputs = list(outputs[:-1])
         for layer_idx, tensor in zip(
             self.residual_projection_intermediate_layers,
@@ -683,9 +670,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
 
         grid_size = self._grid_size_from_input(original_input)
         if grid_size[0] * grid_size[1] != final.shape[1]:
-            raise RuntimeError(
-                f"Intermediate grid mismatch: grid={grid_size} tokens={final.shape[1]}"
-            )
+            raise RuntimeError(f"Intermediate grid mismatch: grid={grid_size} tokens={final.shape[1]}")
         if self.masking:
             masks_np = self.compute_background_masks(final.detach().cpu().numpy(), grid_size)
             masks = torch.from_numpy(masks_np).to(final.device)
@@ -721,20 +706,16 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         new_intermediate: torch.Tensor | None = None
         if self.residual_projection_intermediate_enabled:
             if not self.intermediate_embedding_store:
-                raise RuntimeError(
-                    "Intermediate normal feature store missing while applying normal-bank cap"
-                )
+                raise RuntimeError("Intermediate normal feature store missing while applying normal-bank cap")
             new_intermediate = self.intermediate_embedding_store.pop()
             if int(new_intermediate.shape[0]) != new_rows:
                 raise RuntimeError(
-                    "Normal-bank cap alignment failure for current batch: "
-                    f"final={new_rows} intermediate={new_intermediate.shape[0]}"
+                    f"Normal-bank cap alignment failure for current batch: final={new_rows} intermediate={new_intermediate.shape[0]}"
                 )
 
         if len(self.embedding_store) > 1:
             raise RuntimeError(
-                "Streaming normal-bank cap expected at most one existing reservoir chunk; "
-                f"found {len(self.embedding_store)}"
+                f"Streaming normal-bank cap expected at most one existing reservoir chunk; found {len(self.embedding_store)}"
             )
         if self.residual_projection_intermediate_enabled and len(self.intermediate_embedding_store) > 1:
             raise RuntimeError(
@@ -751,8 +732,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         existing_rows = 0 if existing_final is None else int(existing_final.shape[0])
         if int(self._normal_bank_reservoir_keys.numel()) != existing_rows:
             raise RuntimeError(
-                "Normal-bank reservoir key alignment failure: "
-                f"keys={self._normal_bank_reservoir_keys.numel()} rows={existing_rows}"
+                f"Normal-bank reservoir key alignment failure: keys={self._normal_bank_reservoir_keys.numel()} rows={existing_rows}"
             )
 
         # Recreate the CPU generator from a plain uint8 state tensor. The state is
@@ -771,16 +751,12 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         )
         self._normal_bank_cap_rng_state = cap_generator.get_state().clone().cpu()
         combined_keys = torch.cat((self._normal_bank_reservoir_keys, new_keys), dim=0)
-        combined_final = (
-            new_final if existing_final is None else torch.cat((existing_final, new_final), dim=0)
-        )
+        combined_final = new_final if existing_final is None else torch.cat((existing_final, new_final), dim=0)
         combined_intermediate: torch.Tensor | None = None
         if self.residual_projection_intermediate_enabled:
             assert new_intermediate is not None
             combined_intermediate = (
-                new_intermediate
-                if existing_intermediate is None
-                else torch.cat((existing_intermediate, new_intermediate), dim=0)
+                new_intermediate if existing_intermediate is None else torch.cat((existing_intermediate, new_intermediate), dim=0)
             )
 
         self._normal_bank_rows_seen += new_rows
@@ -833,12 +809,8 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         intermediate_bank: torch.Tensor | None = None
         if self.residual_projection_intermediate_enabled:
             if not self.intermediate_embedding_store:
-                raise RuntimeError(
-                    "Intermediate projection layers are enabled but no normal intermediate embeddings were collected"
-                )
-            intermediate_bank = torch.cat(self.intermediate_embedding_store, dim=0).to(
-                device=full_bank.device, dtype=full_bank.dtype
-            )
+                raise RuntimeError("Intermediate projection layers are enabled but no normal intermediate embeddings were collected")
+            intermediate_bank = torch.cat(self.intermediate_embedding_store, dim=0).to(device=full_bank.device, dtype=full_bank.dtype)
             self.intermediate_embedding_store.clear()
             if int(intermediate_bank.shape[0]) != rows_before_selection:
                 raise RuntimeError(
@@ -862,9 +834,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 selected_idx = torch.as_tensor(selected, device=full_bank.device, dtype=torch.long)
                 full_bank = full_bank.index_select(0, selected_idx)
                 if intermediate_bank is not None:
-                    intermediate_bank = intermediate_bank.index_select(
-                        0, selected_idx.to(intermediate_bank.device)
-                    )
+                    intermediate_bank = intermediate_bank.index_select(0, selected_idx.to(intermediate_bank.device))
                 selection_mode = "kcenter_ratio"
             else:
                 selection_mode = "kcenter_ratio_noop"
@@ -881,16 +851,12 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 selected_idx = selected_cpu.to(device=full_bank.device)
                 full_bank = full_bank.index_select(0, selected_idx)
                 if intermediate_bank is not None:
-                    intermediate_bank = intermediate_bank.index_select(
-                        0, selected_cpu.to(device=intermediate_bank.device)
-                    )
+                    intermediate_bank = intermediate_bank.index_select(0, selected_cpu.to(device=intermediate_bank.device))
             selection_mode = "stream_cap"
 
         self.memory_bank = full_bank
         if intermediate_bank is None:
-            self.intermediate_memory_bank = torch.empty(
-                0, device=self.memory_bank.device, dtype=self.memory_bank.dtype
-            )
+            self.intermediate_memory_bank = torch.empty(0, device=self.memory_bank.device, dtype=self.memory_bank.dtype)
         else:
             if int(intermediate_bank.shape[0]) != int(self.memory_bank.shape[0]):
                 raise RuntimeError(
@@ -921,7 +887,6 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         # Training-only sampling state is no longer needed after the bank is frozen.
         self._normal_bank_reservoir_keys = torch.empty(0, dtype=torch.float64)
         self._normal_bank_cap_rng_state = torch.empty(0, dtype=torch.uint8)
-
 
     def _normal_knn(
         self,
@@ -964,9 +929,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         # candidate-pool semantics while fresh v8.2 instances still use the configured
         # wider search pool (128 by default). This is a static Python attribute lookup,
         # so it does not introduce tensor-dependent control flow into ONNX export.
-        residual_anchor_search_k = int(
-            getattr(self, "residual_anchor_search_k", self.residual_anchor_k)
-        )
+        residual_anchor_search_k = int(getattr(self, "residual_anchor_search_k", self.residual_anchor_k))
         candidate_k = min(
             max(score_k, anchor_k, residual_anchor_search_k),
             bank_rows,
@@ -1001,9 +964,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             dist = (1.0 - sim).clamp(0.0, 2.0)
             local_k = min(candidate_k, int(bank_chunk.shape[0]))
 
-            global_idx = torch.arange(
-                start, start + bank_chunk.shape[0], device=features.device, dtype=torch.long
-            )
+            global_idx = torch.arange(start, start + bank_chunk.shape[0], device=features.device, dtype=torch.long)
             tie = global_idx.to(torch.float32) / float(bank_size) * tie_eps
             rank_dist = dist.float() + tie.unsqueeze(0)
             local_rank, local_pos = torch.topk(rank_dist, k=local_k, dim=1, largest=False)
@@ -1031,9 +992,9 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             c_end = min(c_start + rerank_chunk, candidate_k)
             idx_chunk = best_idx[:, c_start:c_end]
             flat_idx = idx_chunk.reshape(-1)
-            candidate_features = self.memory_bank.index_select(0, flat_idx).reshape(
-                features.shape[0], c_end - c_start, self.memory_bank.shape[1]
-            ).float()
+            candidate_features = (
+                self.memory_bank.index_select(0, flat_idx).reshape(features.shape[0], c_end - c_start, self.memory_bank.shape[1]).float()
+            )
             # Explicit elementwise multiply+reduce avoids relying on another large
             # GEMM kernel for the decision-critical local rerank.
             sim32 = (features_fp32.unsqueeze(1) * candidate_features).sum(dim=2)
@@ -1051,9 +1012,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         anchor_weights = torch.softmax(-anchor_relative_dist / anchor_temperature, dim=1)
 
         flat_anchor_idx = anchor_indices.reshape(-1)
-        anchor_features = self.memory_bank.index_select(0, flat_anchor_idx).reshape(
-            features.shape[0], anchor_k, self.memory_bank.shape[1]
-        )
+        anchor_features = self.memory_bank.index_select(0, flat_anchor_idx).reshape(features.shape[0], anchor_k, self.memory_bank.shape[1])
         anchor = (anchor_features.float() * anchor_weights.unsqueeze(-1)).sum(dim=1)
         anchor = F.normalize(anchor, p=2, dim=1)
         return anchor, d_n, anchor_indices, anchor_weights
@@ -1121,9 +1080,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             if intermediate_features.ndim == 3:
                 intermediate_features = intermediate_features.unsqueeze(0)
             if intermediate_features.ndim != 4:
-                raise ValueError(
-                    f"Expected intermediate_features [B,N,L,D], got {tuple(intermediate_features.shape)}"
-                )
+                raise ValueError(f"Expected intermediate_features [B,N,L,D], got {tuple(intermediate_features.shape)}")
             if intermediate_features.shape[:2] != features.shape[:2]:
                 raise ValueError(
                     "Final/intermediate defect feature shape mismatch: "
@@ -1174,15 +1131,13 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 if grid_size is None:
                     side = int(round(math.sqrt(image_features.shape[0])))
                     if side * side != image_features.shape[0]:
-                        raise ValueError(
-                            "grid_size is required for relative XY when patch tokens are not square"
-                        )
+                        raise ValueError("grid_size is required for relative XY when patch tokens are not square")
                     active_grid = (side, side)
                 else:
                     active_grid = grid_size
-                selected_xy = self._relative_xy_from_patch_indices(
-                    selected_idx, active_grid, dtype=torch.float32
-                ).to(self.memory_bank.device)
+                selected_xy = self._relative_xy_from_patch_indices(selected_idx, active_grid, dtype=torch.float32).to(
+                    self.memory_bank.device
+                )
                 xy_store.append(selected_xy.detach())
 
             selected_intermediate: torch.Tensor | None = None
@@ -1190,33 +1145,24 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 if self.intermediate_memory_bank.numel() == 0:
                     raise RuntimeError("Intermediate normal memory bank is empty")
                 assert intermediate_features is not None
-                image_intermediate = intermediate_features[image_i].to(
-                    self.memory_bank.device, self.memory_bank.dtype
-                )
+                image_intermediate = intermediate_features[image_i].to(self.memory_bank.device, self.memory_bank.dtype)
                 image_intermediate = F.normalize(image_intermediate, p=2, dim=-1)
                 selected_anchor_idx = anchor_indices.index_select(0, selected_idx)
                 selected_anchor_weights = anchor_weights.index_select(0, selected_idx)
                 anchor_k = selected_anchor_idx.shape[1]
                 flat_anchor_idx = selected_anchor_idx.reshape(-1)
-                normal_intermediate_neighbors = self.intermediate_memory_bank.index_select(
-                    0, flat_anchor_idx
-                ).reshape(
+                normal_intermediate_neighbors = self.intermediate_memory_bank.index_select(0, flat_anchor_idx).reshape(
                     selected_idx.shape[0],
                     anchor_k,
                     self.intermediate_memory_bank.shape[1],
                     self.intermediate_memory_bank.shape[2],
                 )
-                intermediate_anchor = (
-                    normal_intermediate_neighbors.float()
-                    * selected_anchor_weights[:, :, None, None]
-                ).sum(dim=1)
+                intermediate_anchor = (normal_intermediate_neighbors.float() * selected_anchor_weights[:, :, None, None]).sum(dim=1)
                 intermediate_anchor = F.normalize(intermediate_anchor, p=2, dim=-1)
                 raw_intermediate = image_intermediate[selected_idx].float() - intermediate_anchor
                 # Normalize each layer residual independently so one layer cannot
                 # dominate merely because of activation scale, then concatenate.
-                selected_intermediate = F.normalize(
-                    raw_intermediate, p=2, dim=-1
-                ).flatten(start_dim=1)
+                selected_intermediate = F.normalize(raw_intermediate, p=2, dim=-1).flatten(start_dim=1)
                 intermediate_store.append(selected_intermediate.detach())
 
             if label == "reject" and self.residual_projection_enable:
@@ -1228,9 +1174,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 if selected_xy is not None:
                     self.reject_projection_xy_store.setdefault(reject_type, []).append(selected_xy.detach())
                 if selected_intermediate is not None:
-                    self.reject_projection_intermediate_store.setdefault(reject_type, []).append(
-                        selected_intermediate.detach()
-                    )
+                    self.reject_projection_intermediate_store.setdefault(reject_type, []).append(selected_intermediate.detach())
 
     def _nearest_accept_support_match(
         self,
@@ -1328,14 +1272,10 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
 
         magnitude_cutoff: float | None = None
         if self.shared_residual_decontamination_use_magnitude:
-            accept_mag = self._transform_projection_magnitude(self.accept_mag_bank).to(
-                device=loo_idx.device, dtype=torch.float32
-            )
+            accept_mag = self._transform_projection_magnitude(self.accept_mag_bank).to(device=loo_idx.device, dtype=torch.float32)
             rows = torch.nonzero(valid, as_tuple=False).squeeze(1)
             neighbors = loo_idx.index_select(0, rows)
-            mag_delta = (
-                accept_mag.index_select(0, rows) - accept_mag.index_select(0, neighbors)
-            ).abs()
+            mag_delta = (accept_mag.index_select(0, rows) - accept_mag.index_select(0, neighbors)).abs()
             magnitude_cutoff = float(torch.quantile(mag_delta.float(), q).item())
 
         return direction_cutoff, magnitude_cutoff
@@ -1365,21 +1305,13 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         )
         # Tiny numerical slack only; the behavior-defining radius comes entirely
         # from the ACCEPT leave-one-out distribution above.
-        shared = torch.isfinite(distance) & (accept_idx >= 0) & (
-            distance <= float(direction_cutoff) + 1.0e-7
-        )
+        shared = torch.isfinite(distance) & (accept_idx >= 0) & (distance <= float(direction_cutoff) + 1.0e-7)
 
         if magnitude_cutoff is not None:
             if reject_mags.numel() == 0 or reject_mags.shape[0] != reject_dirs.shape[0]:
-                raise RuntimeError(
-                    "Shared-residual decontamination requires aligned REJECT magnitude values"
-                )
-            accept_mag = self._transform_projection_magnitude(self.accept_mag_bank).to(
-                device=reject_dirs.device, dtype=torch.float32
-            )
-            reject_mag = self._transform_projection_magnitude(reject_mags).to(
-                device=reject_dirs.device, dtype=torch.float32
-            )
+                raise RuntimeError("Shared-residual decontamination requires aligned REJECT magnitude values")
+            accept_mag = self._transform_projection_magnitude(self.accept_mag_bank).to(device=reject_dirs.device, dtype=torch.float32)
+            reject_mag = self._transform_projection_magnitude(reject_mags).to(device=reject_dirs.device, dtype=torch.float32)
             nearest_mag = accept_mag.index_select(0, accept_idx.clamp_min(0))
             magnitude_close = (reject_mag - nearest_mag).abs() <= float(magnitude_cutoff) + 1.0e-7
             shared = shared & magnitude_close
@@ -1392,9 +1324,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         if bank.numel() == 0:
             return bank
         if bank.shape[0] != keep.shape[0]:
-            raise RuntimeError(
-                f"Shared-residual decontamination row mismatch: bank={bank.shape[0]} mask={keep.shape[0]}"
-            )
+            raise RuntimeError(f"Shared-residual decontamination row mismatch: bank={bank.shape[0]} mask={keep.shape[0]}")
         idx = torch.nonzero(keep.to(device=bank.device), as_tuple=False).squeeze(1)
         return bank.index_select(0, idx)
 
@@ -1419,8 +1349,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             mags = torch.cat(mag_chunks, dim=0)
             if dirs.shape[0] != mags.shape[0]:
                 raise RuntimeError(
-                    f"Projection direction/magnitude count mismatch during decontamination for {name!r}: "
-                    f"{dirs.shape[0]} vs {mags.shape[0]}"
+                    f"Projection direction/magnitude count mismatch during decontamination for {name!r}: {dirs.shape[0]} vs {mags.shape[0]}"
                 )
             before_total += int(dirs.shape[0])
 
@@ -1463,26 +1392,21 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                     xy = torch.cat(xy_chunks, dim=0)
                     if xy.shape[0] != dirs.shape[0]:
                         raise RuntimeError(
-                            f"Projection direction/XY count mismatch during decontamination for {name!r}: "
-                            f"{dirs.shape[0]} vs {xy.shape[0]}"
+                            f"Projection direction/XY count mismatch during decontamination for {name!r}: {dirs.shape[0]} vs {xy.shape[0]}"
                         )
                     self.reject_projection_xy_store[name] = [xy.index_select(0, idx).detach()]
 
                 if self.residual_projection_intermediate_enabled:
                     inter_chunks = self.reject_projection_intermediate_store.get(name, [])
                     if not inter_chunks:
-                        raise RuntimeError(
-                            f"Missing intermediate context during decontamination for reject type {name!r}"
-                        )
+                        raise RuntimeError(f"Missing intermediate context during decontamination for reject type {name!r}")
                     intermediate = torch.cat(inter_chunks, dim=0)
                     if intermediate.shape[0] != dirs.shape[0]:
                         raise RuntimeError(
                             f"Projection direction/intermediate count mismatch during decontamination for {name!r}: "
                             f"{dirs.shape[0]} vs {intermediate.shape[0]}"
                         )
-                    self.reject_projection_intermediate_store[name] = [
-                        intermediate.index_select(0, idx).detach()
-                    ]
+                    self.reject_projection_intermediate_store[name] = [intermediate.index_select(0, idx).detach()]
             else:
                 self.reject_projection_store.pop(name, None)
                 self.reject_projection_magnitude_store.pop(name, None)
@@ -1550,9 +1474,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         if self.reject_xy_bank.numel() > 0:
             self.reject_xy_bank = self._apply_keep_mask(self.reject_xy_bank, keep)
         if self.reject_intermediate_dir_bank.numel() > 0:
-            self.reject_intermediate_dir_bank = self._apply_keep_mask(
-                self.reject_intermediate_dir_bank, keep
-            )
+            self.reject_intermediate_dir_bank = self._apply_keep_mask(self.reject_intermediate_dir_bank, keep)
 
         projection_before, projection_after = self._decontaminate_reject_projection_stores(
             direction_cutoff=direction_cutoff,
@@ -1640,18 +1562,12 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             bank = torch.cat(store, dim=0).to(target_device, torch.float32)
             store.clear()
             if bank.shape[0] != expected_rows:
-                raise RuntimeError(
-                    f"{name} row alignment mismatch: context={bank.shape[0]} residual={expected_rows}"
-                )
+                raise RuntimeError(f"{name} row alignment mismatch: context={bank.shape[0]} residual={expected_rows}")
             return bank
 
         if self.residual_projection_use_relative_xy:
-            self.accept_xy_bank = _finalize_optional_store(
-                self.accept_xy_store, int(self.accept_dir_bank.shape[0]), 2, "accept_xy_bank"
-            )
-            self.reject_xy_bank = _finalize_optional_store(
-                self.reject_xy_store, int(self.reject_dir_bank.shape[0]), 2, "reject_xy_bank"
-            )
+            self.accept_xy_bank = _finalize_optional_store(self.accept_xy_store, int(self.accept_dir_bank.shape[0]), 2, "accept_xy_bank")
+            self.reject_xy_bank = _finalize_optional_store(self.reject_xy_store, int(self.reject_dir_bank.shape[0]), 2, "reject_xy_bank")
         else:
             self.accept_xy_store.clear()
             self.reject_xy_store.clear()
@@ -1661,14 +1577,19 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         if self.residual_projection_intermediate_enabled:
             inter_width = (
                 int(self.intermediate_memory_bank.shape[1] * self.intermediate_memory_bank.shape[2])
-                if self.intermediate_memory_bank.ndim == 3 else 0
+                if self.intermediate_memory_bank.ndim == 3
+                else 0
             )
             self.accept_intermediate_dir_bank = _finalize_optional_store(
-                self.accept_intermediate_store, int(self.accept_dir_bank.shape[0]), inter_width,
+                self.accept_intermediate_store,
+                int(self.accept_dir_bank.shape[0]),
+                inter_width,
                 "accept_intermediate_dir_bank",
             )
             self.reject_intermediate_dir_bank = _finalize_optional_store(
-                self.reject_intermediate_store, int(self.reject_dir_bank.shape[0]), inter_width,
+                self.reject_intermediate_store,
+                int(self.reject_dir_bank.shape[0]),
+                inter_width,
                 "reject_intermediate_dir_bank",
             )
         else:
@@ -1734,18 +1655,14 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         self.residual_projection_use_magnitude = self.magnitude_projection_enabled
         if persist and hasattr(self, "residual_projection_mode_id"):
             with torch.no_grad():
-                self.residual_projection_mode_id.fill_(
-                    RESIDUAL_PROJECTION_MODE_TO_ID[resolved]
-                )
+                self.residual_projection_mode_id.fill_(RESIDUAL_PROJECTION_MODE_TO_ID[resolved])
 
     def _restore_residual_projection_mode_from_state(self) -> None:
         """Restore Python execution flags from the persisted mode buffer."""
         mode_id = int(self.residual_projection_mode_id.detach().cpu().item())
         mode = RESIDUAL_PROJECTION_ID_TO_MODE.get(mode_id)
         if mode is None:
-            raise RuntimeError(
-                f"Invalid persisted residual_projection_mode_id={mode_id}; expected 0, 1, or 2"
-            )
+            raise RuntimeError(f"Invalid persisted residual_projection_mode_id={mode_id}; expected 0, 1, or 2")
         self._apply_residual_projection_mode(mode, persist=False)
 
     def set_residual_projection_mode(self, mode: str) -> None:
@@ -1794,41 +1711,27 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 "Checkpoint has no residual_projection_mode_id; retaining constructor mode=%s",
                 self.residual_projection_mode,
             )
-            self._apply_residual_projection_mode(
-                self.residual_projection_mode, persist=True
-            )
+            self._apply_residual_projection_mode(self.residual_projection_mode, persist=True)
             return
         self._restore_residual_projection_mode_from_state()
 
     def _fit_projection_magnitude_stats(self) -> None:
         """Fit reference-only magnitude normalization deterministically."""
-        fit_device = (
-            torch.device("cpu")
-            if self.residual_projection_fit_device == "cpu"
-            else self.memory_bank.device
-        )
+        fit_device = torch.device("cpu") if self.residual_projection_fit_device == "cpu" else self.memory_bank.device
         parts: list[torch.Tensor] = []
         if self.accept_mag_bank.numel() > 0:
             parts.append(self.accept_mag_bank.detach().to(fit_device, torch.float32))
         if self.reject_mag_bank.numel() > 0:
             parts.append(self.reject_mag_bank.detach().to(fit_device, torch.float32))
         if not parts:
-            self.residual_projection_magnitude_mean = torch.tensor(
-                0.0, device=self.memory_bank.device, dtype=torch.float32
-            )
-            self.residual_projection_magnitude_std = torch.tensor(
-                1.0, device=self.memory_bank.device, dtype=torch.float32
-            )
+            self.residual_projection_magnitude_mean = torch.tensor(0.0, device=self.memory_bank.device, dtype=torch.float32)
+            self.residual_projection_magnitude_std = torch.tensor(1.0, device=self.memory_bank.device, dtype=torch.float32)
             return
         values = self._transform_projection_magnitude(torch.cat(parts, dim=0))
         mean = values.mean()
         std = values.std(unbiased=False).clamp_min(1.0e-6)
-        self.residual_projection_magnitude_mean = mean.detach().to(
-            device=self.memory_bank.device, dtype=torch.float32
-        )
-        self.residual_projection_magnitude_std = std.detach().to(
-            device=self.memory_bank.device, dtype=torch.float32
-        )
+        self.residual_projection_magnitude_mean = mean.detach().to(device=self.memory_bank.device, dtype=torch.float32)
+        self.residual_projection_magnitude_std = std.detach().to(device=self.memory_bank.device, dtype=torch.float32)
         logger.info(
             "Residual projection magnitude stats: transform=%s mean=%.6f std=%.6f scale=%.3f clip=%.3f fit_device=%s",
             self.residual_projection_magnitude_transform,
@@ -1863,25 +1766,15 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             if intermediate_dirs is None:
                 raise ValueError("Intermediate projection context is enabled but intermediate_dirs are missing")
             if intermediate_dirs.shape[0] != direction.shape[0]:
-                raise ValueError(
-                    f"Intermediate row mismatch: {intermediate_dirs.shape[0]} vs {direction.shape[0]}"
-                )
-            parts.append(
-                intermediate_dirs.to(direction.device, torch.float32)
-                * self.residual_projection_intermediate_scale
-            )
+                raise ValueError(f"Intermediate row mismatch: {intermediate_dirs.shape[0]} vs {direction.shape[0]}")
+            parts.append(intermediate_dirs.to(direction.device, torch.float32) * self.residual_projection_intermediate_scale)
 
         if self.residual_projection_use_relative_xy:
             if relative_xy is None:
                 raise ValueError("Relative XY projection context is enabled but relative_xy is missing")
             if relative_xy.shape != (direction.shape[0], 2):
-                raise ValueError(
-                    f"Expected relative_xy [{direction.shape[0]},2], got {tuple(relative_xy.shape)}"
-                )
-            parts.append(
-                relative_xy.to(direction.device, torch.float32)
-                * self.residual_projection_xy_scale
-            )
+                raise ValueError(f"Expected relative_xy [{direction.shape[0]},2], got {tuple(relative_xy.shape)}")
+            parts.append(relative_xy.to(direction.device, torch.float32) * self.residual_projection_xy_scale)
 
         use_magnitude = self.residual_projection_use_magnitude if include_magnitude is None else bool(include_magnitude)
         if use_magnitude:
@@ -1934,14 +1827,16 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         with torch.no_grad():
             if self.residual_projection_direction_weight.numel() > 0:
                 self.accept_direction_projected_bank = self._projection_encode_head(
-                    self.accept_dir_bank, self.accept_mag_bank,
+                    self.accept_dir_bank,
+                    self.accept_mag_bank,
                     relative_xy=self.accept_xy_bank,
                     intermediate_dirs=self.accept_intermediate_dir_bank,
                     include_magnitude=False,
                     weight=self.residual_projection_direction_weight,
                 )
                 self.reject_direction_projected_bank = self._projection_encode_head(
-                    self.reject_dir_bank, self.reject_mag_bank,
+                    self.reject_dir_bank,
+                    self.reject_mag_bank,
                     relative_xy=self.reject_xy_bank,
                     intermediate_dirs=self.reject_intermediate_dir_bank,
                     include_magnitude=False,
@@ -1953,14 +1848,16 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
 
             if self.residual_projection_magnitude_weight.numel() > 0:
                 self.accept_magnitude_projected_bank = self._projection_encode_head(
-                    self.accept_dir_bank, self.accept_mag_bank,
+                    self.accept_dir_bank,
+                    self.accept_mag_bank,
                     relative_xy=self.accept_xy_bank,
                     intermediate_dirs=self.accept_intermediate_dir_bank,
                     include_magnitude=True,
                     weight=self.residual_projection_magnitude_weight,
                 )
                 self.reject_magnitude_projected_bank = self._projection_encode_head(
-                    self.reject_dir_bank, self.reject_mag_bank,
+                    self.reject_dir_bank,
+                    self.reject_mag_bank,
                     relative_xy=self.reject_xy_bank,
                     intermediate_dirs=self.reject_intermediate_dir_bank,
                     include_magnitude=True,
@@ -2000,11 +1897,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         head_name: str,
     ) -> tuple[torch.Tensor, dict[str, object]]:
         model_device = self.accept_dir_bank.device
-        device = (
-            torch.device("cpu")
-            if self.residual_projection_fit_device == "cpu"
-            else model_device
-        )
+        device = torch.device("cpu") if self.residual_projection_fit_device == "cpu" else model_device
         accept_dirs = self.accept_dir_bank.detach().to(device=device, dtype=torch.float32).clone()
         reject_dirs = self.reject_dir_bank.detach().to(device=device, dtype=torch.float32).clone()
         accept_mags = self.accept_mag_bank.detach().to(device=device, dtype=torch.float32).clone()
@@ -2014,12 +1907,10 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         accept_intermediate = self.accept_intermediate_dir_bank.detach().to(device=device, dtype=torch.float32).clone()
         reject_intermediate = self.reject_intermediate_dir_bank.detach().to(device=device, dtype=torch.float32).clone()
         accept_source = self._projection_features(
-            accept_dirs, accept_mags, relative_xy=accept_xy, intermediate_dirs=accept_intermediate,
-            include_magnitude=include_magnitude
+            accept_dirs, accept_mags, relative_xy=accept_xy, intermediate_dirs=accept_intermediate, include_magnitude=include_magnitude
         )
         reject_source = self._projection_features(
-            reject_dirs, reject_mags, relative_xy=reject_xy, intermediate_dirs=reject_intermediate,
-            include_magnitude=include_magnitude
+            reject_dirs, reject_mags, relative_xy=reject_xy, intermediate_dirs=reject_intermediate, include_magnitude=include_magnitude
         )
         d = int(accept_source.shape[1])
         generator = torch.Generator(device=device)
@@ -2057,8 +1948,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 mags = torch.cat(mag_chunks, dim=0).detach().to(device=device, dtype=torch.float32).clone()
                 if dirs.shape[0] != mags.shape[0]:
                     raise RuntimeError(
-                        f"Projection direction/magnitude count mismatch for reject type {name!r}: "
-                        f"{dirs.shape[0]} vs {mags.shape[0]}"
+                        f"Projection direction/magnitude count mismatch for reject type {name!r}: {dirs.shape[0]} vs {mags.shape[0]}"
                     )
 
                 xy: torch.Tensor | None = None
@@ -2069,8 +1959,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                     xy = torch.cat(xy_chunks, dim=0).detach().to(device=device, dtype=torch.float32).clone()
                     if xy.shape[0] != dirs.shape[0]:
                         raise RuntimeError(
-                            f"Projection direction/XY count mismatch for reject type {name!r}: "
-                            f"{dirs.shape[0]} vs {xy.shape[0]}"
+                            f"Projection direction/XY count mismatch for reject type {name!r}: {dirs.shape[0]} vs {xy.shape[0]}"
                         )
 
                 intermediate: torch.Tensor | None = None
@@ -2078,9 +1967,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                     inter_chunks = self.reject_projection_intermediate_store.get(name, [])
                     if not inter_chunks:
                         raise RuntimeError(f"Missing intermediate context for reject type {name!r}")
-                    intermediate = torch.cat(inter_chunks, dim=0).detach().to(
-                        device=device, dtype=torch.float32
-                    ).clone()
+                    intermediate = torch.cat(inter_chunks, dim=0).detach().to(device=device, dtype=torch.float32).clone()
                     if intermediate.shape[0] != dirs.shape[0]:
                         raise RuntimeError(
                             f"Projection direction/intermediate count mismatch for reject type {name!r}: "
@@ -2088,8 +1975,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                         )
 
                 reject_groups[name] = self._projection_features(
-                    dirs, mags, relative_xy=xy, intermediate_dirs=intermediate,
-                    include_magnitude=include_magnitude
+                    dirs, mags, relative_xy=xy, intermediate_dirs=intermediate, include_magnitude=include_magnitude
                 )
         if not reject_groups:
             reject_groups = {"": reject_source}
@@ -2099,12 +1985,10 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         if missing:
             logger.warning(
                 "%s projection weights configured for missing REFERENCE folders: %s",
-                head_name, missing,
+                head_name,
+                missing,
             )
-        active_type_weights = {
-            name: float(self.residual_projection_reject_type_weights.get(name, 1.0))
-            for name in group_names
-        }
+        active_type_weights = {name: float(self.residual_projection_reject_type_weights.get(name, 1.0)) for name in group_names}
 
         half = max(4, self.residual_projection_batch_size // 2)
         last_loss = 0.0
@@ -2127,10 +2011,12 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 r_names = r_names[: r.shape[0]]
 
                 x = torch.cat((a, r), dim=0)
-                labels = torch.cat((
-                    torch.zeros(a.shape[0], device=device, dtype=torch.long),
-                    torch.ones(r.shape[0], device=device, dtype=torch.long),
-                ))
+                labels = torch.cat(
+                    (
+                        torch.zeros(a.shape[0], device=device, dtype=torch.long),
+                        torch.ones(r.shape[0], device=device, dtype=torch.long),
+                    )
+                )
                 anchor_weights = torch.ones(x.shape[0], device=device, dtype=torch.float32)
                 for j, name in enumerate(r_names):
                     anchor_weights[a.shape[0] + j] = active_type_weights.get(name, 1.0)
@@ -2146,10 +2032,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 d_neg = distance.masked_fill(~neg_mask, float("inf")).min(dim=1).values
                 valid = torch.isfinite(d_pos) & torch.isfinite(d_neg)
                 rank = F.relu(d_pos + self.residual_projection_margin - d_neg)
-                rank_loss = (
-                    (rank[valid] * anchor_weights[valid]).sum()
-                    / anchor_weights[valid].sum().clamp_min(1.0)
-                )
+                rank_loss = (rank[valid] * anchor_weights[valid]).sum() / anchor_weights[valid].sum().clamp_min(1.0)
 
                 gram = weight @ weight.T
                 ident = torch.eye(p, device=device, dtype=torch.float32)
@@ -2183,7 +2066,11 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         }
         logger.info(
             "%s residual projection fitted: input_dim=%d dim=%d magnitude=%s final_rank_loss=%.6f",
-            head_name, d, p, include_magnitude, last_rank,
+            head_name,
+            d,
+            p,
+            include_magnitude,
+            last_rank,
         )
         return fitted, info
 
@@ -2257,12 +2144,8 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 include_magnitude=False,
                 weight=self.residual_projection_direction_weight,
             )
-            direction_d_a = self._cosine_knn_distance(
-                direction_query, self.accept_direction_projected_bank
-            ).float()
-            direction_d_r = self._cosine_knn_distance(
-                direction_query, self.reject_direction_projected_bank
-            ).float()
+            direction_d_a = self._cosine_knn_distance(direction_query, self.accept_direction_projected_bank).float()
+            direction_d_r = self._cosine_knn_distance(direction_query, self.reject_direction_projected_bank).float()
         else:
             direction_d_a = inf.clone()
             direction_d_r = inf.clone()
@@ -2276,12 +2159,8 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 include_magnitude=True,
                 weight=self.residual_projection_magnitude_weight,
             )
-            magnitude_d_a = self._cosine_knn_distance(
-                magnitude_query, self.accept_magnitude_projected_bank
-            ).float()
-            magnitude_d_r = self._cosine_knn_distance(
-                magnitude_query, self.reject_magnitude_projected_bank
-            ).float()
+            magnitude_d_a = self._cosine_knn_distance(magnitude_query, self.accept_magnitude_projected_bank).float()
+            magnitude_d_r = self._cosine_knn_distance(magnitude_query, self.reject_magnitude_projected_bank).float()
         else:
             magnitude_d_a = inf.clone()
             magnitude_d_r = inf.clone()
@@ -2309,14 +2188,10 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             )
 
         k = min(max(1, int(self.num_neighbours)), bank.shape[0])
-        best = torch.full(
-            (query32.shape[0], k), -float("inf"), device=query32.device, dtype=torch.float32
-        )
+        best = torch.full((query32.shape[0], k), -float("inf"), device=query32.device, dtype=torch.float32)
 
         for start in range(0, bank.shape[0], self.residual_bank_chunk_size):
-            bank_chunk = bank[start : start + self.residual_bank_chunk_size].to(
-                device=query32.device, dtype=torch.float32
-            )
+            bank_chunk = bank[start : start + self.residual_bank_chunk_size].to(device=query32.device, dtype=torch.float32)
             sim = torch.matmul(query32, bank_chunk.T)
             best = torch.topk(torch.cat((best, sim), dim=1), k=k, dim=1, largest=True).values
 
@@ -2348,12 +2223,8 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         return self._cosine_knn_distance(query32, dir_bank)
 
     def _residual_distances(self, residual_dirs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        d_a = self._bank_distance(
-            residual_dirs, self.accept_dir_bank, self.accept_pca_basis, self.accept_pca_mean
-        )
-        d_d = self._bank_distance(
-            residual_dirs, self.reject_dir_bank, self.reject_pca_basis, self.reject_pca_mean
-        )
+        d_a = self._bank_distance(residual_dirs, self.accept_dir_bank, self.accept_pca_basis, self.accept_pca_mean)
+        d_d = self._bank_distance(residual_dirs, self.reject_dir_bank, self.reject_pca_basis, self.reject_pca_mean)
         return d_a.float(), d_d.float()
 
     def _leave_one_out_cosine_distances(
@@ -2515,9 +2386,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
 
         relative_xy_all: torch.Tensor | None = None
         if self.residual_projection_use_relative_xy:
-            relative_xy_all = self._relative_xy_from_patch_indices(
-                patch_idx, grid_size, dtype=torch.float32
-            ).to(device)
+            relative_xy_all = self._relative_xy_from_patch_indices(patch_idx, grid_size, dtype=torch.float32).to(device)
 
         normal_anchor, d_n, anchor_indices, anchor_weights = self._normal_knn(features)
 
@@ -2528,10 +2397,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         # Avoid tensor-dependent Python control flow here. ``anom_idx`` may be
         # empty and all downstream tensor ops remain valid for zero-row inputs.
         if self.accept_dir_bank.numel() > 0 or self.reject_dir_bank.numel() > 0:
-            raw_residual = (
-                features.index_select(0, anom_idx).float()
-                - normal_anchor.index_select(0, anom_idx)
-            )
+            raw_residual = features.index_select(0, anom_idx).float() - normal_anchor.index_select(0, anom_idx)
             residual_mag = raw_residual.norm(dim=1)
             residual_dirs = F.normalize(raw_residual, p=2, dim=1)
             d_a, d_d = self._residual_distances(residual_dirs)
@@ -2547,23 +2413,16 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 selected_anchor_weights = anchor_weights.index_select(0, anom_idx)
                 anchor_k = selected_anchor_idx.shape[1]
                 flat_anchor_idx = selected_anchor_idx.reshape(-1)
-                normal_intermediate_neighbors = self.intermediate_memory_bank.index_select(
-                    0, flat_anchor_idx
-                ).reshape(
+                normal_intermediate_neighbors = self.intermediate_memory_bank.index_select(0, flat_anchor_idx).reshape(
                     anom_idx.shape[0],
                     anchor_k,
                     self.intermediate_memory_bank.shape[1],
                     self.intermediate_memory_bank.shape[2],
                 )
-                intermediate_anchor = (
-                    normal_intermediate_neighbors.float()
-                    * selected_anchor_weights[:, :, None, None]
-                ).sum(dim=1)
+                intermediate_anchor = (normal_intermediate_neighbors.float() * selected_anchor_weights[:, :, None, None]).sum(dim=1)
                 intermediate_anchor = F.normalize(intermediate_anchor, p=2, dim=-1)
                 raw_intermediate = query_intermediate.float() - intermediate_anchor
-                projected_intermediate = F.normalize(
-                    raw_intermediate, p=2, dim=-1
-                ).flatten(start_dim=1)
+                projected_intermediate = F.normalize(raw_intermediate, p=2, dim=-1).flatten(start_dim=1)
 
             (
                 direction_projected_d_a,
@@ -2587,32 +2446,20 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             # boundaries.  Class labels/diagnostics retain the calibrated legacy
             # boolean semantics.  The ramp is one-sided/conservative: a patch gets
             # no forgiveness until it is already on the legacy ACCEPT side.
-            transition_width = torch.as_tensor(
-                ACCEPT_DECISION_TRANSITION_WIDTH, device=device, dtype=torch.float32
-            )
+            transition_width = torch.as_tensor(ACCEPT_DECISION_TRANSITION_WIDTH, device=device, dtype=torch.float32)
             da32 = d_a.float()
             dd32 = d_d.float()
             accept_threshold32 = self.t_accept_known.to(device=device, dtype=torch.float32)
             reject_threshold32 = self.t_reject_known.to(device=device, dtype=torch.float32)
             margin32 = self.margin.to(device=device, dtype=torch.float32)
 
-            accept_known_strength = torch.clamp(
-                (accept_threshold32 - da32) / transition_width, min=0.0, max=1.0
-            )
-            reject_not_known_strength = torch.clamp(
-                (dd32 - reject_threshold32) / transition_width, min=0.0, max=1.0
-            )
-            prefer_accept_strength = torch.clamp(
-                (dd32 - da32 - margin32) / transition_width, min=0.0, max=1.0
-            )
-            accept_competition_strength = torch.maximum(
-                reject_not_known_strength, prefer_accept_strength
-            )
+            accept_known_strength = torch.clamp((accept_threshold32 - da32) / transition_width, min=0.0, max=1.0)
+            reject_not_known_strength = torch.clamp((dd32 - reject_threshold32) / transition_width, min=0.0, max=1.0)
+            prefer_accept_strength = torch.clamp((dd32 - da32 - margin32) / transition_width, min=0.0, max=1.0)
+            accept_competition_strength = torch.maximum(reject_not_known_strength, prefer_accept_strength)
             local_accept_strength = accept_known_strength * accept_competition_strength
             # Never grant soft forgiveness outside the legacy ACCEPT class.
-            local_accept_strength = torch.where(
-                local_accept, local_accept_strength, torch.zeros_like(local_accept_strength)
-            )
+            local_accept_strength = torch.where(local_accept, local_accept_strength, torch.zeros_like(local_accept_strength))
 
             # Functional scatter avoids in-place index_put_ in the export path.
             is_accept = torch.zeros(q, dtype=torch.bool, device=device).scatter(0, anom_idx, local_accept)
@@ -2621,30 +2468,22 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             # d_a/d_d are intentionally FP32 even when the base detector/memory
             # bank uses FP16. Keep the bookkeeping tensors FP32 as well; scatter
             # requires source and destination dtypes to match exactly.
-            d_a_all = torch.full((q,), float("inf"), device=device, dtype=torch.float32).scatter(
-                0, anom_idx, d_a.to(torch.float32)
+            d_a_all = torch.full((q,), float("inf"), device=device, dtype=torch.float32).scatter(0, anom_idx, d_a.to(torch.float32))
+            d_d_all = torch.full((q,), float("inf"), device=device, dtype=torch.float32).scatter(0, anom_idx, d_d.to(torch.float32))
+            direction_projected_d_a_all = torch.full((q,), float("inf"), device=device, dtype=torch.float32).scatter(
+                0, anom_idx, direction_projected_d_a
             )
-            d_d_all = torch.full((q,), float("inf"), device=device, dtype=torch.float32).scatter(
-                0, anom_idx, d_d.to(torch.float32)
+            direction_projected_d_d_all = torch.full((q,), float("inf"), device=device, dtype=torch.float32).scatter(
+                0, anom_idx, direction_projected_d_d
             )
-            direction_projected_d_a_all = torch.full(
-                (q,), float("inf"), device=device, dtype=torch.float32
-            ).scatter(0, anom_idx, direction_projected_d_a)
-            direction_projected_d_d_all = torch.full(
-                (q,), float("inf"), device=device, dtype=torch.float32
-            ).scatter(0, anom_idx, direction_projected_d_d)
-            magnitude_projected_d_a_all = torch.full(
-                (q,), float("inf"), device=device, dtype=torch.float32
-            ).scatter(0, anom_idx, magnitude_projected_d_a)
-            magnitude_projected_d_d_all = torch.full(
-                (q,), float("inf"), device=device, dtype=torch.float32
-            ).scatter(0, anom_idx, magnitude_projected_d_d)
-            residual_mag_all = torch.zeros(q, device=device, dtype=d_n.dtype).scatter(
-                0, anom_idx, residual_mag.to(d_n.dtype)
+            magnitude_projected_d_a_all = torch.full((q,), float("inf"), device=device, dtype=torch.float32).scatter(
+                0, anom_idx, magnitude_projected_d_a
             )
-            accept_strength_all = torch.zeros(q, device=device, dtype=torch.float32).scatter(
-                0, anom_idx, local_accept_strength
+            magnitude_projected_d_d_all = torch.full((q,), float("inf"), device=device, dtype=torch.float32).scatter(
+                0, anom_idx, magnitude_projected_d_d
             )
+            residual_mag_all = torch.zeros(q, device=device, dtype=d_n.dtype).scatter(0, anom_idx, residual_mag.to(d_n.dtype))
+            accept_strength_all = torch.zeros(q, device=device, dtype=torch.float32).scatter(0, anom_idx, local_accept_strength)
         else:
             # Static trained-model fallback; determined by reference-bank buffers.
             is_accept = torch.zeros(q, dtype=torch.bool, device=device)
@@ -2669,45 +2508,43 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         n_grid = grid_size[0] * grid_size[1]
         flat_pos = batch_idx * n_grid + patch_idx
         flat_size = b * n_grid
-        base_full = torch.zeros((flat_size,), device=device, dtype=d_n.dtype).scatter(
-            0, flat_pos, d_n
-        ).view(b, n_grid)
-        effective_full = torch.zeros((flat_size,), device=device, dtype=effective_d.dtype).scatter(
-            0, flat_pos, effective_d
-        ).view(b, n_grid)
+        base_full = torch.zeros((flat_size,), device=device, dtype=d_n.dtype).scatter(0, flat_pos, d_n).view(b, n_grid)
+        effective_full = torch.zeros((flat_size,), device=device, dtype=effective_d.dtype).scatter(0, flat_pos, effective_d).view(b, n_grid)
 
         local_class = torch.full((q,), PATCH_GOOD, dtype=torch.uint8, device=device)
         local_class = torch.where(is_accept, torch.full_like(local_class, PATCH_ACCEPT), local_class)
         local_class = torch.where(is_reject, torch.full_like(local_class, PATCH_REJECT), local_class)
         local_class = torch.where(is_unknown, torch.full_like(local_class, PATCH_UNKNOWN), local_class)
-        class_full = torch.full((flat_size,), PATCH_GOOD, dtype=torch.uint8, device=device).scatter(
-            0, flat_pos, local_class
-        ).view(b, n_grid)
+        class_full = (
+            torch.full((flat_size,), PATCH_GOOD, dtype=torch.uint8, device=device).scatter(0, flat_pos, local_class).view(b, n_grid)
+        )
 
-        da_full = torch.full((flat_size,), float("inf"), device=device, dtype=torch.float32).scatter(
-            0, flat_pos, d_a_all
-        ).view(b, n_grid)
-        dd_full = torch.full((flat_size,), float("inf"), device=device, dtype=torch.float32).scatter(
-            0, flat_pos, d_d_all
-        ).view(b, n_grid)
-        direction_projected_da_full = torch.full(
-            (flat_size,), float("inf"), device=device, dtype=torch.float32
-        ).scatter(0, flat_pos, direction_projected_d_a_all).view(b, n_grid)
-        direction_projected_dd_full = torch.full(
-            (flat_size,), float("inf"), device=device, dtype=torch.float32
-        ).scatter(0, flat_pos, direction_projected_d_d_all).view(b, n_grid)
-        magnitude_projected_da_full = torch.full(
-            (flat_size,), float("inf"), device=device, dtype=torch.float32
-        ).scatter(0, flat_pos, magnitude_projected_d_a_all).view(b, n_grid)
-        magnitude_projected_dd_full = torch.full(
-            (flat_size,), float("inf"), device=device, dtype=torch.float32
-        ).scatter(0, flat_pos, magnitude_projected_d_d_all).view(b, n_grid)
-        mag_full = torch.zeros((flat_size,), device=device, dtype=d_n.dtype).scatter(
-            0, flat_pos, residual_mag_all
-        ).view(b, n_grid)
-        accept_strength_full = torch.zeros(
-            (flat_size,), device=device, dtype=torch.float32
-        ).scatter(0, flat_pos, accept_strength_all).view(b, n_grid)
+        da_full = torch.full((flat_size,), float("inf"), device=device, dtype=torch.float32).scatter(0, flat_pos, d_a_all).view(b, n_grid)
+        dd_full = torch.full((flat_size,), float("inf"), device=device, dtype=torch.float32).scatter(0, flat_pos, d_d_all).view(b, n_grid)
+        direction_projected_da_full = (
+            torch.full((flat_size,), float("inf"), device=device, dtype=torch.float32)
+            .scatter(0, flat_pos, direction_projected_d_a_all)
+            .view(b, n_grid)
+        )
+        direction_projected_dd_full = (
+            torch.full((flat_size,), float("inf"), device=device, dtype=torch.float32)
+            .scatter(0, flat_pos, direction_projected_d_d_all)
+            .view(b, n_grid)
+        )
+        magnitude_projected_da_full = (
+            torch.full((flat_size,), float("inf"), device=device, dtype=torch.float32)
+            .scatter(0, flat_pos, magnitude_projected_d_a_all)
+            .view(b, n_grid)
+        )
+        magnitude_projected_dd_full = (
+            torch.full((flat_size,), float("inf"), device=device, dtype=torch.float32)
+            .scatter(0, flat_pos, magnitude_projected_d_d_all)
+            .view(b, n_grid)
+        )
+        mag_full = torch.zeros((flat_size,), device=device, dtype=d_n.dtype).scatter(0, flat_pos, residual_mag_all).view(b, n_grid)
+        accept_strength_full = (
+            torch.zeros((flat_size,), device=device, dtype=torch.float32).scatter(0, flat_pos, accept_strength_all).view(b, n_grid)
+        )
 
         # Image-level evidence is computed from the same top 1% *base* anomaly
         # patches used by AnomalyDINO's image score.  With both reference classes
@@ -2722,9 +2559,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         # The actual base/effective values are untouched; this only stabilizes
         # which near-tied patches feed the hard image-level tolerance decision.
         patch_order = torch.arange(n_grid, device=device, dtype=torch.float32)
-        top_tie = (patch_order / float(max(n_grid, 1))) * self.image_topk_tie_break_epsilon.to(
-            device=device, dtype=torch.float32
-        )
+        top_tie = (patch_order / float(max(n_grid, 1))) * self.image_topk_tie_break_epsilon.to(device=device, dtype=torch.float32)
         top_rank = base_full.float() - top_tie.unsqueeze(0)  # lower patch index wins ties
         top_idx = torch.topk(top_rank, k=num_top, dim=1, largest=True).indices
         top_class = torch.gather(class_full.long(), 1, top_idx)
@@ -2786,14 +2621,10 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         if has_accept_bank and has_reject_bank:
             accept_advantage = top_dd - top_da  # positive => closer to acceptable bank
         elif has_accept_bank:
-            accept_threshold_evidence = self.t_accept_known.to(
-                device=device, dtype=torch.float32
-            )
+            accept_threshold_evidence = self.t_accept_known.to(device=device, dtype=torch.float32)
             accept_advantage = accept_threshold_evidence - top_da
         elif has_reject_bank:
-            reject_threshold_evidence = self.t_reject_known.to(
-                device=device, dtype=torch.float32
-            )
+            reject_threshold_evidence = self.t_reject_known.to(device=device, dtype=torch.float32)
             accept_advantage = top_dd - reject_threshold_evidence
         else:
             accept_advantage = torch.full_like(top_da, float("nan"))
@@ -2837,9 +2668,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         # patches from suppressing an image that is globally reject-like.
         image_reject_veto = torch.zeros((b,), dtype=torch.bool, device=device)
         if self.image_reject_veto_enable:
-            veto_threshold = self.image_reject_veto_threshold.to(
-                device=device, dtype=top_mean_advantage.dtype
-            )
+            veto_threshold = self.image_reject_veto_threshold.to(device=device, dtype=top_mean_advantage.dtype)
             image_reject_veto = torch.isfinite(top_mean_advantage) & (top_mean_advantage <= veto_threshold)
             effective_full = torch.where(
                 image_reject_veto[:, None],
@@ -2856,17 +2685,13 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         # residual space is reject-like but BOTH projected heads agree ACCEPT.
         raw_image_accept_strength = torch.zeros((b,), device=device, dtype=torch.float32)
         projected_image_accept_strength = torch.zeros((b,), device=device, dtype=torch.float32)
-        projected_image_accept_evidence = torch.full(
-            (b,), float("nan"), device=device, dtype=torch.float32
-        )
+        projected_image_accept_evidence = torch.full((b,), float("nan"), device=device, dtype=torch.float32)
 
         if apply_image_accept and self.image_accept_enable:
             advantage32 = top_mean_advantage.float()
             threshold32 = self.image_accept_threshold.to(device=device, dtype=torch.float32)
             finite_advantage = torch.isfinite(advantage32)
-            transition_width = torch.as_tensor(
-                ACCEPT_DECISION_TRANSITION_WIDTH, device=device, dtype=torch.float32
-            )
+            transition_width = torch.as_tensor(ACCEPT_DECISION_TRANSITION_WIDTH, device=device, dtype=torch.float32)
             raw_image_accept_strength = torch.where(
                 finite_advantage,
                 torch.clamp(
@@ -2883,9 +2708,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 raw_image_accept_strength,
             )
 
-        projected_image_accept_enabled = bool(
-            getattr(self, "projected_image_accept_enable", False)
-        )
+        projected_image_accept_enabled = bool(getattr(self, "projected_image_accept_enable", False))
         if apply_image_accept and projected_image_accept_enabled:
             direction_adv32 = top_mean_direction_projected_advantage.float()
             magnitude_adv32 = top_mean_magnitude_projected_advantage.float()
@@ -2908,13 +2731,11 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
 
             # Backward-compatible fallbacks only matter for an older full-module
             # checkpoint that is manually opted into the new gate after loading.
-            projected_threshold = getattr(
-                self, "projected_image_accept_threshold", self.image_accept_threshold
-            ).to(device=device, dtype=torch.float32)
-            projected_finite = torch.isfinite(projected_image_accept_evidence)
-            transition_width = torch.as_tensor(
-                ACCEPT_DECISION_TRANSITION_WIDTH, device=device, dtype=torch.float32
+            projected_threshold = getattr(self, "projected_image_accept_threshold", self.image_accept_threshold).to(
+                device=device, dtype=torch.float32
             )
+            projected_finite = torch.isfinite(projected_image_accept_evidence)
+            transition_width = torch.as_tensor(ACCEPT_DECISION_TRANSITION_WIDTH, device=device, dtype=torch.float32)
             projected_image_accept_strength = torch.where(
                 projected_finite,
                 torch.clamp(
@@ -2929,16 +2750,12 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
 
         raw_image_accept = raw_image_accept_strength > 0.0
         projected_image_accept = projected_image_accept_strength > 0.0
-        image_accept_strength = torch.maximum(
-            raw_image_accept_strength, projected_image_accept_strength
-        )
+        image_accept_strength = torch.maximum(raw_image_accept_strength, projected_image_accept_strength)
         image_accept = image_accept_strength > 0.0
 
         if apply_image_accept:
             raw_damping32 = self.image_accept_damping.to(device=device, dtype=torch.float32)
-            projected_damping = getattr(
-                self, "projected_image_accept_damping", self.image_accept_damping
-            )
+            projected_damping = getattr(self, "projected_image_accept_damping", self.image_accept_damping)
             projected_damping32 = projected_damping.to(device=device, dtype=torch.float32)
             raw_scale32 = 1.0 - raw_image_accept_strength * (1.0 - raw_damping32)
             projected_scale32 = 1.0 - projected_image_accept_strength * (1.0 - projected_damping32)
@@ -2963,9 +2780,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         reject_boost_amount = torch.zeros((b,), device=device, dtype=effective_full.dtype)
         reject_boost_applied = torch.zeros((b,), dtype=torch.bool, device=device)
         if apply_reject_boost and self.image_reject_boost_enable:
-            boost_threshold = self.image_reject_boost_advantage_threshold.to(
-                device=device, dtype=top_mean_advantage.dtype
-            )
+            boost_threshold = self.image_reject_boost_advantage_threshold.to(device=device, dtype=top_mean_advantage.dtype)
             finite_advantage = torch.isfinite(top_mean_advantage)
             reject_boost_evidence = torch.where(
                 finite_advantage,
@@ -2982,9 +2797,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             # ACCEPT wins only when the aggregate evidence itself was ACCEPT-like.
             # Explicitly keep the two image-level actions mutually exclusive for
             # unusual custom threshold configurations.
-            reject_boost_amount = reject_boost_amount * (
-                1.0 - image_accept_strength.to(reject_boost_amount.dtype)
-            )
+            reject_boost_amount = reject_boost_amount * (1.0 - image_accept_strength.to(reject_boost_amount.dtype))
             reject_boost_applied = reject_boost_amount > 0
 
             # ONNX opset-14 friendly: no tensor-dependent Python branch and no
@@ -3000,12 +2813,8 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
         # head has zero boost, so the same max-fusion code reduces exactly to the
         # active head. In dual mode both calibrated boosts are computed from the
         # same frozen v5 score and max-fused to avoid double-counting evidence.
-        direction_projected_boost_evidence = torch.zeros(
-            (b,), device=device, dtype=top_mean_direction_projected_advantage.dtype
-        )
-        magnitude_projected_boost_evidence = torch.zeros(
-            (b,), device=device, dtype=top_mean_magnitude_projected_advantage.dtype
-        )
+        direction_projected_boost_evidence = torch.zeros((b,), device=device, dtype=top_mean_direction_projected_advantage.dtype)
+        magnitude_projected_boost_evidence = torch.zeros((b,), device=device, dtype=top_mean_magnitude_projected_advantage.dtype)
         direction_projected_boost_amount = torch.zeros((b,), device=device, dtype=effective_full.dtype)
         magnitude_projected_boost_amount = torch.zeros((b,), device=device, dtype=effective_full.dtype)
         direction_projected_boost_applied = torch.zeros((b,), dtype=torch.bool, device=device)
@@ -3024,12 +2833,9 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 ),
                 torch.zeros_like(top_mean_direction_projected_advantage),
             )
-            direction_projected_boost_amount = (
-                direction_projected_boost_evidence.to(effective_full.dtype)
-                * self.direction_projected_reject_boost_lambda.to(
-                    device=device, dtype=effective_full.dtype
-                )
-            )
+            direction_projected_boost_amount = direction_projected_boost_evidence.to(
+                effective_full.dtype
+            ) * self.direction_projected_reject_boost_lambda.to(device=device, dtype=effective_full.dtype)
 
             magnitude_threshold = self.magnitude_projected_reject_boost_advantage_threshold.to(
                 device=device, dtype=top_mean_magnitude_projected_advantage.dtype
@@ -3043,31 +2849,19 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 ),
                 torch.zeros_like(top_mean_magnitude_projected_advantage),
             )
-            magnitude_projected_boost_amount = (
-                magnitude_projected_boost_evidence.to(effective_full.dtype)
-                * self.magnitude_projected_reject_boost_lambda.to(
-                    device=device, dtype=effective_full.dtype
-                )
-            )
+            magnitude_projected_boost_amount = magnitude_projected_boost_evidence.to(
+                effective_full.dtype
+            ) * self.magnitude_projected_reject_boost_lambda.to(device=device, dtype=effective_full.dtype)
 
             proj_max = self.projected_reject_boost_max.to(device=device, dtype=effective_full.dtype)
             if float(proj_max.detach().float().cpu()) > 0.0:
-                direction_projected_boost_amount = torch.clamp(
-                    direction_projected_boost_amount, max=proj_max
-                )
-                magnitude_projected_boost_amount = torch.clamp(
-                    magnitude_projected_boost_amount, max=proj_max
-                )
+                direction_projected_boost_amount = torch.clamp(direction_projected_boost_amount, max=proj_max)
+                magnitude_projected_boost_amount = torch.clamp(magnitude_projected_boost_amount, max=proj_max)
 
-            remaining_reject_strength = 1.0 - image_accept_strength.to(
-                direction_projected_boost_amount.dtype
-            )
-            direction_projected_boost_amount = (
-                direction_projected_boost_amount * remaining_reject_strength
-            )
-            magnitude_projected_boost_amount = (
-                magnitude_projected_boost_amount
-                * remaining_reject_strength.to(magnitude_projected_boost_amount.dtype)
+            remaining_reject_strength = 1.0 - image_accept_strength.to(direction_projected_boost_amount.dtype)
+            direction_projected_boost_amount = direction_projected_boost_amount * remaining_reject_strength
+            magnitude_projected_boost_amount = magnitude_projected_boost_amount * remaining_reject_strength.to(
+                magnitude_projected_boost_amount.dtype
             )
             direction_projected_boost_applied = direction_projected_boost_amount > 0
             magnitude_projected_boost_applied = magnitude_projected_boost_amount > 0
@@ -3170,19 +2964,11 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             "image_accept_threshold": torch.full((b,), float(self.image_accept_threshold.detach().float().cpu()), device=device),
             "projected_image_accept_threshold": torch.full(
                 (b,),
-                float(
-                    getattr(
-                        self, "projected_image_accept_threshold", self.image_accept_threshold
-                    ).detach().float().cpu()
-                ),
+                float(getattr(self, "projected_image_accept_threshold", self.image_accept_threshold).detach().float().cpu()),
                 device=device,
             ),
-            "accept_decision_transition_width": torch.full(
-                (b,), ACCEPT_DECISION_TRANSITION_WIDTH, device=device, dtype=torch.float32
-            ),
-            "top_mean_local_accept_strength": torch.gather(
-                accept_strength_full, 1, top_idx
-            ).mean(dim=1).float(),
+            "accept_decision_transition_width": torch.full((b,), ACCEPT_DECISION_TRANSITION_WIDTH, device=device, dtype=torch.float32),
+            "top_mean_local_accept_strength": torch.gather(accept_strength_full, 1, top_idx).mean(dim=1).float(),
             "image_reject_boost_applied": reject_boost_applied.float(),
             "image_reject_boost_evidence": reject_boost_evidence.float(),
             "image_reject_boost_amount": reject_boost_amount.float(),
@@ -3191,9 +2977,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
                 float(self.image_reject_boost_advantage_threshold.detach().float().cpu()),
                 device=device,
             ),
-            "image_reject_boost_lambda": torch.full(
-                (b,), float(self.image_reject_boost_lambda.detach().float().cpu()), device=device
-            ),
+            "image_reject_boost_lambda": torch.full((b,), float(self.image_reject_boost_lambda.detach().float().cpu()), device=device),
             "projected_reject_boost_applied": projected_boost_applied.float(),
             "projected_reject_boost_evidence": projected_boost_evidence.float(),
             "projected_reject_boost_amount": projected_boost_amount.float(),
@@ -3222,9 +3006,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             "projected_reject_boost_lambda": torch.full(
                 (b,), float(self.magnitude_projected_reject_boost_lambda.detach().float().cpu()), device=device
             ),
-            "residual_projection_use_magnitude": torch.full(
-                (b,), 1.0 if self.residual_projection_use_magnitude else 0.0, device=device
-            ),
+            "residual_projection_use_magnitude": torch.full((b,), 1.0 if self.residual_projection_use_magnitude else 0.0, device=device),
             "dual_projection_direction_fusion_scale": torch.full(
                 (b,), float(self.dual_projection_direction_fusion_scale.detach().float().cpu()), device=device
             ),
@@ -3256,15 +3038,51 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             "top_mean_d_accept": _nanmean(finite_da).float(),
             "top_mean_d_reject": _nanmean(finite_dd).float(),
             "top_mean_accept_advantage": top_mean_advantage.float(),
-            "top_mean_direction_projected_d_accept": _nanmean(torch.where(torch.isfinite(top_direction_projected_da), top_direction_projected_da, torch.full_like(top_direction_projected_da, float("nan")))).float(),
-            "top_mean_direction_projected_d_reject": _nanmean(torch.where(torch.isfinite(top_direction_projected_dd), top_direction_projected_dd, torch.full_like(top_direction_projected_dd, float("nan")))).float(),
+            "top_mean_direction_projected_d_accept": _nanmean(
+                torch.where(
+                    torch.isfinite(top_direction_projected_da),
+                    top_direction_projected_da,
+                    torch.full_like(top_direction_projected_da, float("nan")),
+                )
+            ).float(),
+            "top_mean_direction_projected_d_reject": _nanmean(
+                torch.where(
+                    torch.isfinite(top_direction_projected_dd),
+                    top_direction_projected_dd,
+                    torch.full_like(top_direction_projected_dd, float("nan")),
+                )
+            ).float(),
             "top_mean_direction_projected_accept_advantage": top_mean_direction_projected_advantage.float(),
-            "top_mean_magnitude_projected_d_accept": _nanmean(torch.where(torch.isfinite(top_magnitude_projected_da), top_magnitude_projected_da, torch.full_like(top_magnitude_projected_da, float("nan")))).float(),
-            "top_mean_magnitude_projected_d_reject": _nanmean(torch.where(torch.isfinite(top_magnitude_projected_dd), top_magnitude_projected_dd, torch.full_like(top_magnitude_projected_dd, float("nan")))).float(),
+            "top_mean_magnitude_projected_d_accept": _nanmean(
+                torch.where(
+                    torch.isfinite(top_magnitude_projected_da),
+                    top_magnitude_projected_da,
+                    torch.full_like(top_magnitude_projected_da, float("nan")),
+                )
+            ).float(),
+            "top_mean_magnitude_projected_d_reject": _nanmean(
+                torch.where(
+                    torch.isfinite(top_magnitude_projected_dd),
+                    top_magnitude_projected_dd,
+                    torch.full_like(top_magnitude_projected_dd, float("nan")),
+                )
+            ).float(),
             "top_mean_magnitude_projected_accept_advantage": top_mean_magnitude_projected_advantage.float(),
             # Legacy projected diagnostics mirror the magnitude-aware head.
-            "top_mean_projected_d_accept": _nanmean(torch.where(torch.isfinite(top_magnitude_projected_da), top_magnitude_projected_da, torch.full_like(top_magnitude_projected_da, float("nan")))).float(),
-            "top_mean_projected_d_reject": _nanmean(torch.where(torch.isfinite(top_magnitude_projected_dd), top_magnitude_projected_dd, torch.full_like(top_magnitude_projected_dd, float("nan")))).float(),
+            "top_mean_projected_d_accept": _nanmean(
+                torch.where(
+                    torch.isfinite(top_magnitude_projected_da),
+                    top_magnitude_projected_da,
+                    torch.full_like(top_magnitude_projected_da, float("nan")),
+                )
+            ).float(),
+            "top_mean_projected_d_reject": _nanmean(
+                torch.where(
+                    torch.isfinite(top_magnitude_projected_dd),
+                    top_magnitude_projected_dd,
+                    torch.full_like(top_magnitude_projected_dd, float("nan")),
+                )
+            ).float(),
             "top_mean_projected_accept_advantage": top_mean_magnitude_projected_advantage.float(),
             "top_mean_residual_magnitude": top_mag.mean(dim=1).float(),
             "top_mean_projection_magnitude_feature": _nanmean(projected_mag_feature).float(),
@@ -3311,10 +3129,7 @@ class TolerantAnomalyDINOModel(AnomalyDINOModel):
             and not self.emit_patch_class
             and not self.image_accept_enable
             and not bool(getattr(self, "projected_image_accept_enable", False))
-            and (
-                not self.image_reject_boost_enable
-                or float(self.image_reject_boost_lambda.detach().float().cpu()) == 0.0
-            )
+            and (not self.image_reject_boost_enable or float(self.image_reject_boost_lambda.detach().float().cpu()) == 0.0)
             and float(self.accept_damping.detach().float().cpu()) == 1.0
         ):
             return super().forward(input_tensor)

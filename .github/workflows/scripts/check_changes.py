@@ -15,6 +15,8 @@ Environment variables (injected by the workflow step):
 import os
 import re
 import subprocess
+import tempfile
+from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Configuration — edit these to change what counts as "docs only"
@@ -30,13 +32,17 @@ DOCS_PATTERNS: list[re.Pattern] = [
     re.compile(r"^\.pre-commit-config\.yaml$"),
 ]
 
-# Files whose change requires rebuilding the CI test Docker images. Deps are
-# resolved from the uv lock (pyproject.toml [dependency-groups]) at image build.
+# Files whose change always requires rebuilding the CI test Docker images.
 REQ_PATTERNS: list[re.Pattern] = [
-    re.compile(r"^pyproject\.toml$"),
-    re.compile(r"^uv\.lock$"),
     re.compile(r"^tests/dockerfile\.ci$"),
 ]
+
+# The images install the package list exported from these; a change rebuilds only if that list changes.
+LOCK_FILES = ["pyproject.toml", "uv.lock"]
+
+# Must match the export in tests/dockerfile.ci and the ad-group matrix in ci.yaml.
+EXPORT_CMD = ["uv", "export", "--frozen", "--no-hashes", "--no-header", "--no-emit-project", "--only-group", "ci"]
+AD_GROUPS = ["ad-v1", "ad-v2"]
 
 # Files under .github/ are also skipped by default …
 GITHUB_DIR_PATTERNS: list[re.Pattern] = [re.compile(r"^\.github/")]
@@ -78,6 +84,22 @@ def get_changed_files(base: str) -> list[str]:
         result = run(["git", "diff", "--name-only", "HEAD~1", "HEAD"])
 
     return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def export_packages(rev: str) -> list[str]:
+    with tempfile.TemporaryDirectory() as tmp:
+        for name in LOCK_FILES:
+            Path(tmp, name).write_text(run(["git", "show", f"{rev}:{name}"]).stdout)
+        return [run([*EXPORT_CMD, "--only-group", group, "--directory", tmp]).stdout for group in AD_GROUPS]
+
+
+def lock_changes_images(base: str) -> bool:
+    """Return True if any CI image's exported package list differs from base, or cannot be compared."""
+    try:
+        return export_packages(base) != export_packages("HEAD")
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"⚠️  Could not compare package exports ({e}) — rebuilding to be safe.", flush=True)
+        return True
 
 
 def is_code_file(path: str) -> bool:
@@ -128,6 +150,12 @@ def main() -> None:
     code_files = [f for f in changed if is_code_file(f)]
 
     req_files = [f for f in changed if any(p.match(f) for p in REQ_PATTERNS)]
+    lock_files = [f for f in changed if f in LOCK_FILES]
+    if lock_files:
+        if lock_changes_images(base):
+            req_files += lock_files
+        else:
+            print(f"\nℹ️  {', '.join(lock_files)} changed, but not the packages the CI images install — no rebuild.", flush=True)
     if req_files:
         print("\n🐳 CI image files changed — Docker rebuild required:", flush=True)
         for f in req_files:

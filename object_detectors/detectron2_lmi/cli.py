@@ -2,6 +2,9 @@ import argparse
 import logging
 import os
 
+from object_detectors.detectron2_lmi.infer import add_args as add_infer_args
+from object_detectors.od_core.infer_cli import check_infer_args
+
 logger = logging.getLogger(__name__)
 
 
@@ -14,7 +17,6 @@ DET2_INPUT_DIR = "/home/input"
 DET2_OUTPUT_DIR = "/home/output"
 DET2_CLASS_MAP = "/home/class_map.json"
 DET2_CONFIG_FILE = "config.yaml"
-DET2_SAMPLE_IMAGE = "sample_image.png"
 DET2_PTH_EXPORT = "model_final.pth"
 
 
@@ -30,17 +32,16 @@ def main():
         "-c", "--config-file", metavar="FILE", default=os.path.join("/home", DET2_CONFIG_FILE), help="path to config file"
     )
     train_ap.add_argument(
-        "--detectron2-config", type=str, default="COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml", help="Detectron2 config file"
+        "--detectron2-config",
+        type=str,
+        default=None,
+        help="Detectron2 model-zoo base config; defaults to MODEL_CONFIG_FILE in the config file, else Mask R-CNN R50-FPN 3x",
     )
     train_ap.add_argument("--dataset_dir", type=str, default=DET2_DATASET_DIR, help="Dataset dir")
     train_ap.add_argument("--output", type=str, default=DET2_DEFAULT_DIR, help="Path to the output directory")
 
     test = subs.add_parser("test", help="test model")
-    test.add_argument("-w", "--weights", type=str, default=wpath(DET2_PT_EXPORT), help="The path to the model")
-    test.add_argument("-i", "--input", type=str, default=DET2_INPUT_DIR, help="The path to the images")
-    test.add_argument("-o", "--output", type=str, default=DET2_OUTPUT_DIR, help="The path to the outputs")
-    test.add_argument("--class_map", type=str, default=DET2_CLASS_MAP, help="The path to the class map")
-    test.add_argument("--confidence", type=float, default=0.5, help="The confidence threshold")
+    add_infer_args(test, weights=wpath(DET2_PT_EXPORT), input=DET2_INPUT_DIR, output=DET2_OUTPUT_DIR, class_map=DET2_CLASS_MAP)
 
     convert_ap = subs.add_parser("convert", help="convert model")
     convert_ap.add_argument("-c", "--config-file", metavar="FILE", default=wpath(DET2_CONFIG_FILE), help="path to config file")
@@ -49,15 +50,24 @@ def main():
         "-w", "--weights", type=str, default=wpath(DET2_PTH_EXPORT), help="The Detectron 2 model weights (.pth or .pkl)"
     )
     convert_ap.add_argument(
-        "-s", "--sample_image", type=str, default=wpath(DET2_SAMPLE_IMAGE), help="Sample image for anchors generation/predictions"
+        "-is",
+        "--image_size",
+        "--image-size",
+        type=int,
+        nargs=2,
+        metavar=("H", "W"),
+        help="Engine input size, multiples of 32; needed for --onnx/--trt",
     )
     convert_ap.add_argument("-b", "--batch-size", type=int, default=1, help="Batch size for the model")
     convert_ap.add_argument("--fp16", action="store_true", help="Use fp16")
     convert_ap.add_argument("--pt", action="store_true", help="Convert to pt")
     convert_ap.add_argument("--onnx", action="store_true", help="Convert to onnx")
-    convert_ap.add_argument("--trt", action="store_true", help="Convert to TensorRT")
+    convert_ap.add_argument("--trt", action="store_true", help="Convert to TensorRT (builds the ONNX first)")
 
-    args = vars(ap.parse_args())
+    namespace = ap.parse_args()
+    if namespace.action == "test":
+        check_infer_args(test, namespace)
+    args = vars(namespace)
     action = args["action"]
 
     if action == "train":
@@ -75,6 +85,8 @@ def main():
         weights = args.get("weights", "")
         if not (weights.endswith(".pth") or weights.endswith(".pkl")):
             ap.error(f"Weights file must be a .pth or .pkl file, got: {weights}")
+        if (args["onnx"] or args["trt"]) and args["image_size"] is None:
+            ap.error("--image_size H W is required for --onnx and --trt")
         convert(args)
 
 

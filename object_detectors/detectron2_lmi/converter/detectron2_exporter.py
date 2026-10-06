@@ -1,14 +1,10 @@
 #!/usr/bin/env python
 # Copyright (c) Facebook, Inc. and its affiliates.
-import argparse
 from typing import Dict, List
 
-import cv2
-import detectron2.data.transforms as T
 import torch
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
-from detectron2.data import build_detection_test_loader
 from detectron2.export import (
     STABLE_ONNX_OPSET_VERSION,
     TracingAdapter,
@@ -126,33 +122,10 @@ def export_tracing(torch_model, inputs, args):
     return eval_wrapper
 
 
-def get_sample_inputs(args, cfg):
-    if args.get("sample_image", None) is None:
-        # get a first batch from dataset
-        data_loader = build_detection_test_loader(cfg, cfg.DATASETS.TEST[0])
-        first_batch = next(iter(data_loader))
-        return first_batch
-    else:
-        # get a sample data
-        original_image = cv2.imread(args.get("sample_image", None))
-        if original_image is None:
-            raise ValueError(f"Could not read image {args.get('sample_image', None)}")
-
-        logger.info(f"Input image format: {cfg.INPUT.FORMAT}")
-        logger.info(f"Image size (h,w): {original_image.shape[:2]}")
-
-        if cfg.INPUT.FORMAT == "RGB":
-            original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2RGB)
-        aug = T.ResizeShortestEdge([original_image.shape[0], original_image.shape[0]], original_image.shape[0])
-        image = aug.get_transform(original_image).apply_image(original_image)
-        image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
-        logger.info(f"Transformed image shape: {image.shape[1:]}")
-
-        inputs = {"image": image, "height": original_image.shape[0], "width": original_image.shape[1]}
-
-        # Sample ready
-        sample_inputs = [inputs]
-        return sample_inputs
+def get_sample_inputs(args):
+    """A black image at the engine input size: the trace needs only the input shape."""
+    height, width = args["image_size"]
+    return [{"image": torch.zeros(3, height, width), "height": height, "width": width}]
 
 
 def det2export(args) -> None:
@@ -172,45 +145,8 @@ def det2export(args) -> None:
     if args.get("format") == "pt":
         export_scripting(torch_model, args)
     elif args.get("format") == "onnx":
-        sample_inputs = get_sample_inputs(args, cfg)
+        sample_inputs = get_sample_inputs(args)
         export_tracing(torch_model, sample_inputs, args)
 
     logger.info("Success.")
     return None
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Export a model for deployment.")
-    parser.add_argument(
-        "--format",
-        choices=["onnx", "pt"],
-        help="output format",
-        default="onnx",
-    )
-    parser.add_argument(
-        "-c",
-        "--config-file",
-        metavar="FILE",
-        help="path to config file",
-        default="/home/weights/config.yaml",
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        help="output directory for the converted model",
-        default="/home/weights",
-    )
-    parser.add_argument(
-        "-w",
-        "--weights",
-        help="The Detectron 2 model weights (.pkl)",
-        type=str,
-        default="/home/weights/model_final.pth",
-    )
-    parser.add_argument(
-        "-s",
-        "--sample_image",
-        help="Sample image for anchors generation/predictions",
-        type=str,
-        default="/home/weights/sample_image.png",
-    )

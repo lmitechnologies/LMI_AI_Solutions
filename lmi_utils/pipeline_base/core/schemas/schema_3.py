@@ -32,7 +32,7 @@ class Details(BaseModel):
 
 
 class ODConfigs(BaseModel):
-    """Configs for ObjectDetection / InstanceSegmentation."""
+    """Configs for ObjectDetection / InstanceSegmentation / OrientedObjectDetection / KeypointDetection."""
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
@@ -77,7 +77,9 @@ class _ModelBase(BaseModel):
 
 
 class ODModel(_ModelBase):
-    model_type: Literal["ObjectDetection", "InstanceSegmentation"]
+    # kpt model is currently only supported for static models.
+    # TODO: once kpt feature branch on FSP repo is merged to main, update kpt contract in this repo.
+    model_type: Literal["ObjectDetection", "InstanceSegmentation", "OrientedObjectDetection", "KeypointDetection"]
     configs: ODConfigs
 
 
@@ -113,7 +115,7 @@ class ModelCollectionV3(BaseModel):
         return {role: model.get_metadata() for role, model in self.models.items()}
 
     def get_global_preprocessing(self) -> Dict[str, List[Dict[str, Any]]]:
-        supported = {"resize", "tile"}
+        supported = {"resize", "tile", "rotate"}
         ignored = {"crop-to-label"}
         tiling_keys = {"height", "width", "x_stride", "y_stride"}
 

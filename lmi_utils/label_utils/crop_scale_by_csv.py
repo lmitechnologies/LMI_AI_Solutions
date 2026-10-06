@@ -3,15 +3,147 @@ import argparse
 import csv
 import logging
 import os
+import re
 
 import cv2
 import numpy as np
 
-from lmi_utils.eval_utils.iou_from_csv import csv_to_dictionary, find_class_index
 from lmi_utils.label_utils.crop_scale_labeled_image import crop_scale_labeled_image
 
 logger = logging.getLogger(__name__)
 NAN_INT = -999999
+
+
+def csv_to_dictionary(csv_file: str, object_classes: str):
+    """
+    DESCRIPTION:
+        Converts a .csv file with image paths, labels, and ROIs to a python dictionary.
+    ARGUMENTS:
+        csv_file: input csv file path
+        object classes: list of object classes
+    RETURNS:
+        list of dictionaries for each object in the input csv file
+
+    """
+
+    supported_shapes = ["rect", "polygon", "point"]
+    list_of_dics = []
+    rows = open(csv_file).read().strip().split("\n")
+    ul_found = False
+    lr_found = False
+    x_found = False
+    y_found = False
+    cx_found = False
+    cy_found = False
+
+    # Step through each row and create a new dictionary when the row includes a target object
+    for row in rows:
+        logger.info(row)
+        if row[-1] == ";":
+            row = row[0:-1]
+        row = row.split(";")
+
+        # search the cells for target object classes
+        obj = list(set(object_classes) & set(row))
+        if not obj or len(obj) > 1:
+            # raise Exception(f'csv format error. Bad object definition: {obj}')
+            continue
+        else:
+            this_obj = obj[0]
+
+        # search cells for image file
+        image_file = [x for x in row if (re.search(".png", x) or re.search(".jpg", x))]
+        if len(image_file) != 1:
+            raise Exception("csv format error. Image file not present.")
+        else:
+            this_file = image_file[0]
+
+        # search for supported shapes
+        shape = list(set(supported_shapes) & set(row))
+        if not shape or len(shape) > 1:
+            raise Exception("csv format error. Unsupported shape.")
+        else:
+            this_shape = shape[0]
+
+        if this_shape == "rect":
+            uli = [i for i, s in enumerate(row) if "upper left" in s]
+            if len(uli) == 1:
+                x_ul = int(row[uli[0] + 1])
+                y_ul = int(row[uli[0] + 2])
+                ul = (x_ul, y_ul)
+                ul_found = True
+            lri = [i for i, s in enumerate(row) if "lower right" in s]
+            if len(lri) == 1:
+                x_lr = int(row[lri[0] + 1])
+                y_lr = int(row[lri[0] + 2])
+                lr = (x_lr, y_lr)
+                lr_found = True
+            if ul_found and lr_found:
+                list_of_dics.append(
+                    {
+                        "image_file": this_file,
+                        "obj_class": this_obj,
+                        "shape": this_shape,
+                        "upper_left": ul,
+                        "lower_right": lr,
+                    }
+                )
+                ul_found = False
+                lr_found = False
+
+        if this_shape == "polygon":
+            xind = [i for i, s in enumerate(row) if "x values" in s]
+            if len(xind) == 1:
+                this_x = np.array(row[xind[0] + 1 :], dtype=np.uint32)
+                x_found = True
+            yind = [i for i, s in enumerate(row) if "y values" in s]
+            if len(yind) == 1:
+                this_y = np.array(row[yind[0] + 1 :], dtype=np.uint32)
+                y_found = True
+            if x_found and y_found:
+                list_of_dics.append(
+                    {
+                        "image_file": this_file,
+                        "obj_class": this_obj,
+                        "shape": this_shape,
+                        "x_values": this_x,
+                        "y_values": this_y,
+                    }
+                )
+                x_found = False
+                y_found = False
+
+        if this_shape == "point":
+            cxi = [i for i, s in enumerate(row) if "cx" in s]
+            if len(cxi) == 1:
+                cx = int(row[cxi[0] + 1])
+                cx_found = True
+            cyi = [i for i, s in enumerate(row) if "cy" in s]
+            if len(cyi) == 1:
+                cy = int(row[cyi[0] + 1])
+                cy_found = True
+            if cx_found and cy_found:
+                list_of_dics.append(
+                    {
+                        "image_file": this_file,
+                        "obj_class": this_obj,
+                        "shape": this_shape,
+                        "cx": cx,
+                        "cy": cy,
+                    }
+                )
+                cx_found = False
+                cy_found = False
+
+    return list_of_dics
+
+
+def find_class_index(target_class, list_of_dicts):
+    out = []
+    for i, lod in enumerate(list_of_dicts):
+        if lod["obj_class"] == target_class:
+            out.append(i)
+    return out
 
 
 # %% File paths

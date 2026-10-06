@@ -6,11 +6,16 @@ drops the export metadata, stops collapsing a configured pair to the long side, 
 run's size as a pair. Each of those silently changes which branch of _infer_image_size a real model takes.
 """
 
+import ast
+import inspect
+import textwrap
+
 import numpy as np
 import pytest
 import torch
 from ultralytics import YOLO
 from ultralytics.nn.autobackend import AutoBackend
+from ultralytics.nn.backends import ONNXBackend, TensorRTBackend
 from ultralytics.utils.checks import check_imgsz
 
 from lmi_common.yolo_core import YoloCore
@@ -107,3 +112,58 @@ def test_an_exported_model_reports_the_shape_it_was_built_at(exported_onnx):
     core = YoloCore(str(exported_onnx), device="cpu", image_size=None)
     assert core._infer_image_size() == DEPLOY_SHAPE
     assert core.image_size == DEPLOY_SHAPE
+
+
+def _self_attrs(cls):
+    """Attributes the class and its ultralytics bases assign or index on self, e.g. {"session", "bindings[images]"}."""
+    found = set()
+    for klass in cls.__mro__:
+        if not klass.__module__.startswith("ultralytics."):
+            continue
+        for node in ast.walk(ast.parse(textwrap.dedent(inspect.getsource(klass)))):
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self":
+                if isinstance(node.ctx, ast.Store):
+                    found.add(node.attr)
+            elif isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) and isinstance(node.slice, ast.Constant):
+                found.add(f"{node.value.attr}[{node.slice.value}]")
+    return found
+
+
+@pytest.mark.parametrize(
+    "owner, attrs",
+    [
+        (AutoBackend, {"backend"}),
+        (ONNXBackend, {"session", "dynamic"}),
+        (TensorRTBackend, {"bindings", "dynamic", "bindings[images]"}),
+    ],
+    ids=["autobackend", "onnx", "tensorrt"],
+)
+def test_ultralytics_source_still_sets_what_engine_batch_reads(owner, attrs):
+    """Reads the source, so it needs no model or GPU and catches a TensorRT rename on the CPU runners."""
+    assert attrs <= _self_attrs(owner), f"{owner.__name__} no longer sets {sorted(attrs - _self_attrs(owner))}"
+
+
+def _backend_of(core):
+    backend = getattr(core.model, "backend", None)
+    assert backend is not None, "AutoBackend.backend is gone; engine_batch falls back to AutoBackend itself"
+    return backend
+
+
+def test_the_onnx_backend_still_exposes_what_engine_batch_reads(exported_onnx):
+    """engine_batch reads these by getattr, so a rename makes it return None instead of failing."""
+    backend = _backend_of(YoloCore(str(exported_onnx), device="cpu", image_size=None))
+    assert hasattr(backend.session, "get_inputs"), "ONNX backend's 'session' was renamed or removed"
+    assert isinstance(backend.dynamic, bool), "ONNX backend's 'dynamic' was renamed or removed"
+
+
+def test_a_static_onnx_export_takes_exactly_its_batch(exported_onnx):
+    """engine_batch reads the ONNX backend's session and dynamic flag; losing either lets a tile batch reach a batch-1 model."""
+    assert YoloCore(str(exported_onnx), device="cpu", image_size=None).engine_batch() == (1, False)
+
+
+def test_a_dynamic_onnx_export_takes_any_batch(tmp_path):
+    pytest.importorskip("onnx")
+    source = tmp_path / "model.pt"
+    source.write_bytes(open(ASSET_MODEL, "rb").read())
+    path = YOLO(str(source), task="detect").export(format="onnx", imgsz=DEPLOY_SHAPE, dynamic=True, simplify=False, verbose=False)
+    assert YoloCore(str(path), device="cpu", image_size=None).engine_batch() is None

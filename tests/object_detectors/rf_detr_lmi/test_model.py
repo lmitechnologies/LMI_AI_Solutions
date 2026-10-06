@@ -11,14 +11,13 @@ from rfdetr import RFDETRSegSmall
 from rfdetr.assets.coco_classes import COCO_CLASSES
 
 from object_detectors.od_core.object_detector import ObjectDetector
-from object_detectors.rf_detr_lmi.model import RfdetrBase, RfdetrModel
+from object_detectors.rf_detr_lmi.model import RfdetrBase, RfdetrModel, RfdetrPTH
 
 logger = logging.getLogger(__name__)
 
 COCO_DIR = "tests/assets/images/coco"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 PTH_FILE = "tests/assets/models/od/rf_detr/rf-detr-seg-small.pth"
-TRT_MODEL = "tests/assets/models/od/rf_detr/inference_model.engine"
 OUT_DIR = "tests/outputs/od/rf_detr"
 IMAGE_SIZE = 384
 MODEL_TYPE = "seg-small"
@@ -65,23 +64,10 @@ def obj_detector():
 
 
 @pytest.fixture(scope="module")
-def trt_model():
-    if DEVICE != "cuda":
-        pytest.skip("TensorRT model can only be tested on CUDA device.")
-    try:
-        return ObjectDetector(
-            metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
-            model_path=TRT_MODEL,
-            class_map=COCO_CLASSES,
-            image_size=[IMAGE_SIZE, IMAGE_SIZE],
-        )
-    except Exception as e:
-        pytest.skip(f"Failed to load TRT engine: {e}")
-
-
-@pytest.fixture(scope="module")
-def cpu_models():
+def cpu_models(request):
     rf_model = RFDETRSegSmall(pretrain_weights=PTH_FILE, device="cpu")
+    if DEVICE == "cpu":
+        return rf_model, request.getfixturevalue("obj_detector")
 
     od_pth = ObjectDetector(
         metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
@@ -173,36 +159,50 @@ def test_batch_size_chunks_and_pads(imgs_coco):
         _assert_nonempty_out({k: out[k][i] for k in KEYS})
 
 
-def test_variant_read_from_checkpoint():
+def _load_with_warnings(path, **kwargs):
+    """Load an RfdetrModel on cpu and return it with the warnings it logged."""
+    collector = _WarningCollector()
+    RfdetrPTH.logger.addHandler(collector)
+    try:
+        return RfdetrModel(path, device="cpu", class_map=COCO_CLASSES, **kwargs), collector.messages
+    finally:
+        RfdetrPTH.logger.removeHandler(collector)
+
+
+@pytest.fixture(scope="module")
+def default_load():
+    """PTH_FILE loaded with neither model_type nor image_size, and its warnings."""
+    return _load_with_warnings(PTH_FILE)
+
+
+@pytest.fixture(scope="module")
+def trained_at_432(tmp_path_factory):
+    path = str(tmp_path_factory.mktemp("rf_detr_432") / "trained_at_432.pth")
+    ckpt = torch.load(PTH_FILE, map_location="cpu", weights_only=False)
+    ckpt["model_config"]["resolution"] = 432
+    torch.save(ckpt, path)
+    return path
+
+
+def test_variant_read_from_checkpoint(default_load):
     """The default path resolves the variant from the checkpoint, matching an explicit model_type."""
-    inferred = RfdetrModel(PTH_FILE, device="cpu", class_map=COCO_CLASSES)
+    inferred, _ = default_load
     override = RfdetrModel(PTH_FILE, model_type=MODEL_TYPE, device="cpu", class_map=COCO_CLASSES)
     assert type(inferred.model) is type(override.model)
     assert inferred.image_size == override.image_size == (IMAGE_SIZE, IMAGE_SIZE)
 
 
-def test_resolution_defaults_to_the_variant(tmp_path):
+def test_resolution_defaults_to_the_variant(trained_at_432):
     """No image_size means the variant's own resolution, whatever size the checkpoint was trained at."""
-    path = str(tmp_path / "trained_at_432.pth")
-    ckpt = torch.load(PTH_FILE, map_location="cpu", weights_only=False)
-    ckpt["model_config"]["resolution"] = 432
-    torch.save(ckpt, path)
-
-    assert RfdetrModel(path, model_type=MODEL_TYPE, device="cpu", class_map=COCO_CLASSES).image_size == (IMAGE_SIZE, IMAGE_SIZE)
-
-
-def test_unspecified_image_size_is_logged(tmp_path, caplog):
-    """The variant default is only right by luck for a model trained at another size; the fallback must be visible."""
-    with caplog.at_level(logging.WARNING):
-        model = RfdetrModel(PTH_FILE, device="cpu", class_map=COCO_CLASSES)
+    model = RfdetrModel(trained_at_432, model_type=MODEL_TYPE, device="cpu", class_map=COCO_CLASSES)
     assert model.image_size == (IMAGE_SIZE, IMAGE_SIZE)
-    assert "image_size is not specified" in caplog.text
 
 
-def test_explicit_image_size_is_not_logged_as_a_default(caplog):
-    with caplog.at_level(logging.WARNING):
-        RfdetrModel(PTH_FILE, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
-    assert "image_size is not specified" not in caplog.text
+def test_unspecified_image_size_is_logged(default_load):
+    """The variant default is only right by luck for a model trained at another size; the fallback must be visible."""
+    model, warnings = default_load
+    assert model.image_size == (IMAGE_SIZE, IMAGE_SIZE)
+    assert any("image_size is not specified" in m for m in warnings)
 
 
 def test_stripped_checkpoint_loads_at_the_variant_default(tmp_path):
@@ -215,15 +215,11 @@ def test_stripped_checkpoint_loads_at_the_variant_default(tmp_path):
     assert RfdetrModel(path, device="cpu", class_map=COCO_CLASSES).image_size == (IMAGE_SIZE, IMAGE_SIZE)
 
 
-def test_explicit_image_size_still_wins(tmp_path):
-    """image_size is the only way to run at a non-default resolution."""
-    path = str(tmp_path / "trained_at_432.pth")
-    ckpt = torch.load(PTH_FILE, map_location="cpu", weights_only=False)
-    ckpt["model_config"]["resolution"] = 432
-    torch.save(ckpt, path)
-
-    model = RfdetrModel(path, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
-    assert model.image_size == (IMAGE_SIZE, IMAGE_SIZE)
+def test_explicit_image_size_still_wins(trained_at_432):
+    """image_size is the only way to run at a non-default resolution, and is not logged as a default."""
+    model, warnings = _load_with_warnings(trained_at_432, image_size=[336, 336])  # neither the variant's 384 nor the checkpoint's 432
+    assert model.image_size == (336, 336)
+    assert not any("image_size is not specified" in m for m in warnings)
 
 
 def test_checkpoint_without_variant_asks_for_model_type(tmp_path):
@@ -235,12 +231,11 @@ def test_checkpoint_without_variant_asks_for_model_type(tmp_path):
 
 
 def test_model_class_comparison(obj_detector):
-    direct = RfdetrModel(PTH_FILE, device=DEVICE, class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE])
-    api = obj_detector
-    assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
+    assert type(obj_detector) is RfdetrPTH, f"api={type(obj_detector).__name__}"
 
 
 class Test_Rfdetr_Model:
+    @pytest.mark.arch_sensitive
     def test_compare_with_rfdetr(self, imgs_coco, cpu_models):
         "Use cpu to avoid gpu non-determinism issues."
 
@@ -260,6 +255,7 @@ class Test_Rfdetr_Model:
         reason="rfdetr < 1.9.0 antialiases in predict(); preprocess() follows the training resize instead",
         strict=False,
     )
+    @pytest.mark.arch_sensitive
     def test_compare_with_rfdetr_nonsquare(self, imgs_coco, cpu_models):
         """Non-square inputs exercise the off-size resize guard.
 

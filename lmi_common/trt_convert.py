@@ -3,9 +3,10 @@
 Requires TensorRT >= 8.5 (matches `lmi_common/trt_engine.py`).
 """
 
+import ast
 import inspect
 import logging
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from lmi_common.model_metadata import engine_props_header
 
@@ -29,6 +30,14 @@ def _inspect_onnx(onnx_path: str) -> Tuple[Dict[str, str], bool]:
         dim.HasField("dim_value") and dim.dim_value > 0 for inp in model.graph.input for dim in inp.type.tensor_type.shape.dim
     )
     return props, static_shape and props.get("author") == _ULTRALYTICS_AUTHOR
+
+
+def _ultralytics_imgsz(props: Dict[str, str]) -> Optional[Tuple[int, int]]:
+    """The (h, w) an ultralytics export records, or None for any other ONNX."""
+    if props.get("author") != _ULTRALYTICS_AUTHOR or "imgsz" not in props:
+        return None
+    h, w = ast.literal_eval(props["imgsz"])
+    return int(h), int(w)
 
 
 def _get_trt_logger():
@@ -77,7 +86,8 @@ def onnx_to_trt(
     A static-shape ultralytics ONNX is built by ``ultralytics.utils.export.onnx2engine`` so its export metadata is embedded in the
     plan file; everything else is built here, and the source ONNX's whole metadata_props map is carried over to the engine's header
     in the same layout. Static-batch ONNX (no dynamic dims) ignores the batch kwargs. Dynamic-batch ONNX (axis 0 == -1) gets an
-    optimization profile from the kwargs; other dynamic axes are not supported and will raise.
+    optimization profile from the kwargs. Other dynamic axes raise, except the height and width of an ultralytics
+    ``dynamic=True`` export, which are held at the ``imgsz`` it records.
 
     Args:
         onnx_path: source .onnx path.
@@ -129,10 +139,13 @@ def onnx_to_trt(
             logger.warning("FP16 requested but not natively supported on this platform")
         config.set_flag(trt.BuilderFlag.FP16)
 
+    image_hw = _ultralytics_imgsz(props)
     dynamic_inputs = []
     for i in range(network.num_inputs):
         inp = network.get_input(i)
         shape = tuple(inp.shape)
+        if image_hw is not None and len(shape) == 4 and shape[1] != -1:
+            shape = (shape[0], shape[1], *image_hw)
         if any(d == -1 for d in shape[1:]):
             raise ValueError(f"Input '{inp.name}' has dynamic non-batch dims {shape}; only dynamic batch (axis 0) is supported")
         if shape[0] == -1:

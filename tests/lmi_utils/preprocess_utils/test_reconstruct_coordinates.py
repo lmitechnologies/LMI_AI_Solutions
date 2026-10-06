@@ -12,7 +12,7 @@ def pipeline():
     return Preprocessor(), Reconstructor()
 
 
-def _make_full_results(boxes_list, tile_hw=None):
+def _make_full_results(boxes_list, tile_hw=None, with_points=True):
     segs_list, pts_list, masks_list = [], [], []
     for boxes in boxes_list:
         if len(boxes) == 0:
@@ -25,9 +25,9 @@ def _make_full_results(boxes_list, tile_hw=None):
             cx = (boxes[:, 0] + boxes[:, 2]) / 2
             cy = (boxes[:, 1] + boxes[:, 3]) / 2
             xy = torch.stack([cx, cy], dim=-1).unsqueeze(1)
-            pts_list.append(torch.cat([xy, torch.ones(len(boxes), 1, 1)], dim=-1))
+            pts_list.append(torch.cat([xy, torch.ones(len(boxes), 1, 1)], dim=-1) if with_points else torch.zeros((0, 1, 3)))
             if tile_hw is not None:
-                masks_list.append(torch.ones(len(boxes), tile_hw[0], tile_hw[1]))
+                masks_list.append(_box_masks(boxes, tile_hw))
 
     result = {
         "boxes": boxes_list,
@@ -39,6 +39,22 @@ def _make_full_results(boxes_list, tile_hw=None):
     if tile_hw is not None:
         result["masks"] = masks_list
     return result
+
+
+def _box_masks(boxes, hw):
+    masks = torch.zeros(len(boxes), hw[0], hw[1])
+    for k, (x0, y0, x1, y1) in enumerate(boxes.long().tolist()):
+        masks[k, y0:y1, x0:x1] = 1.0
+    return masks
+
+
+def _assert_traced(reverted, image_idx, expected_boxes, atol=1.0):
+    """Tiled segments are traced from the masks, through pixel centres: they end one pixel short of the box."""
+    segs = reverted["segments"][image_idx]
+    assert len(segs) == len(expected_boxes)
+    for seg, box in zip(segs, expected_boxes.float()):
+        bounds = torch.cat([seg.float().amin(dim=0), seg.float().amax(dim=0)])
+        assert torch.allclose(bounds, box - torch.tensor([0.0, 0.0, 1.0, 1.0]), atol=atol), f"segment bounds {bounds} vs box {box}"
 
 
 def _corners(boxes):
@@ -58,13 +74,17 @@ def _assert_mask_quadrant(canvas, det_idx, y_slice, x_slice, h, w):
     assert torch.all(canvas[det_idx] == ref), f"mask[{det_idx}] placement mismatch"
 
 
-def _assert_coords(reverted, image_idx, expected_boxes, atol=1.0):
+def _assert_coords(reverted, image_idx, expected_boxes, atol=1.0, check_points=True, traced=False):
     boxes = reverted["boxes"][image_idx].float()
+    assert boxes.shape == expected_boxes.shape, f"boxes mismatch: {boxes}"
     assert torch.allclose(boxes, expected_boxes.float(), atol=atol), f"boxes mismatch: {boxes}"
-    for seg, exp in zip(reverted["segments"][image_idx], _corners(expected_boxes)):
+    if traced:
+        _assert_traced(reverted, image_idx, expected_boxes)
+    for seg, exp in zip([] if traced else reverted["segments"][image_idx], _corners(expected_boxes)):
         assert torch.allclose(seg.float(), exp.float(), atol=atol), "segment mismatch"
-    pts = reverted["points"][image_idx].float()
-    assert torch.allclose(pts, _centroids(expected_boxes).float(), atol=atol), "points mismatch"
+    if check_points:
+        pts = reverted["points"][image_idx].float()
+        assert torch.allclose(pts, _centroids(expected_boxes).float(), atol=atol), "points mismatch"
 
 
 class TestResize:
@@ -154,6 +174,20 @@ class TestBinaryMaskResample:
         assert out.dtype == torch.float32
         assert set(torch.unique(out).tolist()) <= {0.0, 1.0}
 
+    def test_revert_keeps_the_caller_dtype(self, pipeline):
+        prep, recon = pipeline
+        image = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
+        _, history = prep.preprocess(image, [steps.resize(width=64, height=64, preserve_aspect=False)])
+
+        mask = torch.zeros(1, 64, 64, dtype=torch.uint8)
+        mask[:, 10:40, 12:50] = 1
+        out = recon.reconstruct_coordinates({"masks": [mask]}, history)["masks"][0]
+        numpy_out = recon.reconstruct_coordinates({"masks": [mask.numpy()]}, history)["masks"][0]
+
+        assert out.dtype == torch.uint8
+        assert numpy_out.dtype == np.uint8
+        assert set(torch.unique(out).tolist()) <= {0, 1}
+
     def test_apply_forward_stays_binary(self, pipeline):
         prep, recon = pipeline
         image = np.random.randint(0, 256, (200, 200, 3), dtype=np.uint8)
@@ -188,6 +222,22 @@ class TestBinaryMaskResample:
         assert torch.all(out == 1.0)  # pad column stripped, not resampled into the mask
 
 
+def test_numpy_masks_and_merge_origin_keep_their_dtype(pipeline):
+    prep, recon = pipeline
+    image = np.random.randint(0, 256, (20, 30, 3), dtype=np.uint8)
+    _, history = prep.preprocess(image, [steps.flip(lr=True)])
+
+    mask = np.zeros((1, 20, 30), dtype=np.uint8)
+    mask[:, :, :5] = 1
+    results = {"masks": [mask], "scores": [np.ones(1)], "merge_origin": [np.array([2], dtype=np.uint8)]}
+    out = recon.reconstruct_coordinates(results, history)
+
+    assert out["masks"][0].dtype == np.uint8
+    assert out["masks"][0][:, :, -5:].all() and not out["masks"][0][:, :, :-5].any()
+    assert out["merge_origin"][0].dtype == np.uint8 and out["merge_origin"][0].tolist() == [2]
+    assert out["scores"][0].dtype == np.float32
+
+
 class TestTile:
     def test_shifts_all_fields_by_tile_offset(self, pipeline):
         prep, recon = pipeline
@@ -195,7 +245,7 @@ class TestTile:
         _, history = prep.preprocess(image, [steps.tile(tile_size=50, stride=50)])
 
         tile_box = torch.tensor([[3.0, 7.0, 15.0, 25.0]])
-        results = _make_full_results([tile_box] * 4, tile_hw=(50, 50))
+        results = _make_full_results([tile_box] * 4, tile_hw=(50, 50), with_points=False)
         reverted = recon.reconstruct_coordinates(results, history)
 
         assert len(reverted["boxes"]) == 1
@@ -207,14 +257,11 @@ class TestTile:
                 [53.0, 57.0, 65.0, 75.0],
             ]
         )
-        _assert_coords(reverted, 0, expected, atol=1e-3)
+        _assert_coords(reverted, 0, expected, atol=1e-3, check_points=False, traced=True)
 
         out = reverted["masks"][0]
         assert out.shape == (4, 100, 100)
-        _assert_mask_quadrant(out, 0, slice(0, 50), slice(0, 50), 100, 100)
-        _assert_mask_quadrant(out, 1, slice(0, 50), slice(50, 100), 100, 100)
-        _assert_mask_quadrant(out, 2, slice(50, 100), slice(0, 50), 100, 100)
-        _assert_mask_quadrant(out, 3, slice(50, 100), slice(50, 100), 100, 100)
+        assert torch.equal(out, _box_masks(expected, (100, 100)))
 
     def test_empty_detections_per_tile(self, pipeline):
         prep, recon = pipeline
@@ -238,15 +285,15 @@ class TestTile:
 
         empty = torch.zeros((0, 4))
         det = torch.tensor([[6.0, 9.0, 22.0, 35.0]])
-        results = _make_full_results([empty, empty, empty, det], tile_hw=(50, 50))
+        results = _make_full_results([empty, empty, empty, det], tile_hw=(50, 50), with_points=False)
         reverted = recon.reconstruct_coordinates(results, history)
 
-        _assert_coords(reverted, 0, torch.tensor([[56.0, 59.0, 72.0, 85.0]]), atol=1e-3)
+        expected = torch.tensor([[56.0, 59.0, 72.0, 85.0]])
+        _assert_coords(reverted, 0, expected, atol=1e-3, check_points=False, traced=True)
 
         out = reverted["masks"][0]
         assert out.shape == (1, 100, 100)
-        assert torch.all(out[0, 50:100, 50:100] == 1.0)
-        assert torch.all(out[0, :50, :] == 0.0) and torch.all(out[0, 50:, :50] == 0.0)
+        assert torch.equal(out, _box_masks(expected, (100, 100)))
 
     def test_multiple_images_tile(self, pipeline):
         prep, recon = pipeline
@@ -254,7 +301,7 @@ class TestTile:
         _, history = prep.preprocess(images, [steps.tile(tile_size=50, stride=50)])
 
         tile_box = torch.tensor([[4.0, 11.0, 18.0, 28.0]])
-        results = _make_full_results([tile_box] * 8, tile_hw=(50, 50))
+        results = _make_full_results([tile_box] * 8, tile_hw=(50, 50), with_points=False)
         reverted = recon.reconstruct_coordinates(results, history)
 
         assert len(reverted["boxes"]) == 2
@@ -269,7 +316,7 @@ class TestTile:
         _, history = prep.preprocess(image, [steps.tile(tile_size=60, stride=30)])
 
         tile_box = torch.tensor([[5.0, 8.0, 20.0, 25.0]])
-        results = _make_full_results([tile_box] * 4, tile_hw=(60, 60))
+        results = _make_full_results([tile_box] * 4, tile_hw=(60, 60), with_points=False)
         reverted = recon.reconstruct_coordinates(results, history)
 
         expected = torch.tensor(
@@ -280,12 +327,11 @@ class TestTile:
                 [35.0, 38.0, 50.0, 55.0],
             ]
         )
-        _assert_coords(reverted, 0, expected, atol=1e-3)
+        _assert_coords(reverted, 0, expected, atol=1e-3, check_points=False, traced=True)
 
         out = reverted["masks"][0]
         assert out.shape == (4, 90, 90)
-        assert torch.all(out[3, 30:90, 30:90] == 1.0)
-        assert torch.all(out[3, :30, :] == 0.0) and torch.all(out[3, :, :30] == 0.0)
+        assert torch.equal(out, _box_masks(expected, (90, 90)))
 
     def test_overlapping_stride_three_column_grid_middle_tile(self, pipeline):
         prep, recon = pipeline
@@ -293,10 +339,12 @@ class TestTile:
         _, history = prep.preprocess(image, [steps.tile(tile_size=50, stride=25)])
 
         empty = torch.zeros((0, 4))
-        det = torch.tensor([[2.0, 6.0, 18.0, 30.0]])
-        reverted = recon.reconstruct_coordinates(_make_full_results([empty, det, empty]), history)
+        # clear of the middle tile's seams: near one, the left tile saw the area whole and the merge drops it
+        det = torch.tensor([[6.0, 6.0, 18.0, 30.0]])
+        results = _make_full_results([empty, det, empty], tile_hw=(50, 50), with_points=False)
+        reverted = recon.reconstruct_coordinates(results, history)
 
-        _assert_coords(reverted, 0, torch.tensor([[27.0, 6.0, 43.0, 30.0]]), atol=1e-3)
+        _assert_coords(reverted, 0, torch.tensor([[31.0, 6.0, 43.0, 30.0]]), atol=1e-3, check_points=False, traced=True)
 
 
 class TestPipeline:
@@ -311,9 +359,11 @@ class TestPipeline:
 
         empty = torch.zeros((0, 4))
         det = torch.tensor([[7.0, 12.0, 25.0, 38.0]])
-        reverted = recon.reconstruct_coordinates(_make_full_results([empty, empty, empty, det]), history)
+        results = _make_full_results([empty, empty, empty, det], tile_hw=(50, 50), with_points=False)
+        reverted = recon.reconstruct_coordinates(results, history)
 
-        _assert_coords(reverted, 0, torch.tensor([[114.0, 124.0, 150.0, 176.0]]))
+        # one tile px is two image px, so the outline ends two px short of the box
+        _assert_coords(reverted, 0, torch.tensor([[114.0, 124.0, 150.0, 176.0]]), check_points=False, traced=True)
 
     def test_tile_internal_interpolation_scales_coordinates(self, pipeline):
         prep, recon = pipeline
@@ -322,9 +372,10 @@ class TestPipeline:
 
         empty = torch.zeros((0, 4))
         det = torch.tensor([[4.0, 8.0, 20.0, 20.0]])
-        reverted = recon.reconstruct_coordinates(_make_full_results([empty, empty, empty, det]), history)
+        results = _make_full_results([empty, empty, empty, det], tile_hw=(60, 60), with_points=False)
+        reverted = recon.reconstruct_coordinates(results, history)
 
-        _assert_coords(reverted, 0, torch.tensor([[48.0, 51.0, 60.0, 60.0]]), atol=1e-3)
+        _assert_coords(reverted, 0, torch.tensor([[48.0, 51.0, 60.0, 60.0]]), atol=1e-3, check_points=False, traced=True)
 
 
 class TestOBB:
@@ -340,7 +391,8 @@ class TestOBB:
         expected = torch.tensor([[[20.0, 30.0], [40.0, 20.0], [50.0, 40.0], [30.0, 50.0]]])
         assert torch.allclose(reverted["boxes"][0].float(), expected, atol=1.0)
 
-    def test_obb_tile(self, pipeline):
+    def test_obb_tile_is_rejected(self, pipeline):
+        """Tiling has no rule for oriented boxes; it refuses rather than returning them wrong."""
         prep, recon = pipeline
         image = np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8)
         _, history = prep.preprocess(image, [steps.tile(tile_size=50, stride=50)])
@@ -352,12 +404,8 @@ class TestOBB:
             "scores": [torch.zeros(0)] * 3 + [torch.ones(1)],
             "classes": [np.zeros(0, dtype=np.int32)] * 3 + [np.zeros(1, dtype=np.int32)],
         }
-        reverted = recon.reconstruct_coordinates(results, history)
-
-        merged = reverted["boxes"][0]
-        assert merged.shape == (1, 4, 2)
-        expected = torch.tensor([[[53.0, 55.0], [65.0, 53.0], [68.0, 62.0], [56.0, 64.0]]])
-        assert torch.allclose(merged.float(), expected, atol=1e-3)
+        with pytest.raises(ValueError, match="does not support oriented boxes"):
+            recon.reconstruct_coordinates(results, history)
 
 
 class TestPoints:

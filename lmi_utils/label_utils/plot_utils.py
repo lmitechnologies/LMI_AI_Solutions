@@ -168,3 +168,56 @@ def plot_one_brush(xs, ys, img, color=None, label=None, line_thickness=None):
             thickness=tf,
             lineType=cv2.LINE_AA,
         )
+
+
+def plot_tile_grid(boxes, img, color=(220, 220, 220), alpha=0.7, line_thickness=None):
+    """Outline a tile grid on img as semi-transparent dotted lines, in place.
+
+    arguments:
+        boxes: (N, 4) xyxy tile rects, e.g. from ``Tiler.tile_boxes()``
+        img(np array): a opencv image object
+        color(tuple): line color
+        alpha(float): line opacity, 0 to 1
+        line_thickness(int): the thickness of the line; dots and gaps are twice that long
+    return:
+        no return
+    """
+    boxes = np.asarray(boxes.detach().cpu() if hasattr(boxes, "detach") else boxes, dtype=float).reshape(-1, 4)
+    if not len(boxes):
+        return
+    tl = line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1
+    h, w = img.shape[:2]
+    # one dot pattern for the whole image, so edges shared by overlapping tiles land on the same dots
+    dots_x = np.arange(w) % (4 * tl) < 2 * tl
+    dots_y = (np.arange(h) % (4 * tl) < 2 * tl)[:, None]
+    mask = np.zeros((h, w), bool)
+    for x0, y0, x1, y1 in boxes.round().astype(int):
+        for y in (y0, y1):
+            mask[max(y - tl // 2, 0) : y - tl // 2 + tl, x0:x1] |= dots_x[x0:x1]
+        for x in (x0, x1):
+            mask[y0:y1, max(x - tl // 2, 0) : x - tl // 2 + tl] |= dots_y[y0:y1]
+    # one blend per pixel, so crossing lines are no darker than single ones
+    img[mask] = (img[mask] * (1 - alpha) + np.asarray(color) * alpha).round().astype(img.dtype)
+
+
+def plot_boxes_by_group(boxes, img, groups, colors=None, line_thickness=None):
+    """Plots boxes on image img, colored by a per-box group code, in place.
+
+    arguments:
+        boxes: (N, 4) xyxy
+        img(np array): a opencv image object
+        groups: (N,) integer code per box, e.g. a tile merge's ``merge_origin``
+        colors(list): one color per code, cycled if short. Defaults to distinct hues, one per code seen.
+        line_thickness(int): the thickness of the line
+    return:
+        no return
+    """
+    boxes = np.asarray(boxes.detach().cpu() if hasattr(boxes, "detach") else boxes, dtype=float).reshape(-1, 4)
+    groups = np.asarray(groups.detach().cpu() if hasattr(groups, "detach") else groups, dtype=int).reshape(-1)
+    if len(groups) != len(boxes):
+        raise ValueError(f"plot_boxes_by_group: got {len(boxes)} boxes and {len(groups)} group codes")
+    if not len(boxes):
+        return
+    colors = colors or get_distinct_colors(int(groups.max()) + 1)
+    for box, g in zip(boxes, groups):
+        plot_one_box(box, img, color=colors[int(g) % len(colors)], line_thickness=line_thickness)

@@ -137,3 +137,23 @@ def test_our_metadata_survives_the_ultralytics_builder(ultralytics_onnx, tmp_pat
 
     assert TRTEngine(str(engine_path), device="cuda").metadata == {"class_names": ["cat", "dog"]}
     assert AutoBackend(str(engine_path), torch.device("cuda:0")).task == "detect", "ultralytics' own keys must survive too"
+
+
+@needs_engine
+def test_dynamic_export_builds_a_dynamic_batch_engine_at_its_imgsz(tmp_path_factory, tmp_path):
+    """ultralytics' dynamic=True also frees height and width; the engine holds them at the recorded imgsz, batch 1..max."""
+    from lmi_common.yolo_core import YoloCore
+
+    weights = tmp_path_factory.mktemp("ul_dyn_rect") / Path(ASSET_MODEL).name
+    shutil.copy(ASSET_MODEL, weights)
+    onnx_path = YOLO(str(weights), task="detect").export(format="onnx", imgsz=[480, 640], dynamic=True, simplify=True)
+    engine_path = tmp_path / "model.engine"
+    onnx_to_trt(onnx_path, str(engine_path), fp16=False, workspace_gb=2, max_batch=4)
+
+    core = YoloCore(str(engine_path), device="cuda", image_size=None)
+    assert core.engine_batch() == (4, True)
+    assert tuple(core.model.bindings["images"].shape) == (4, 3, 480, 640)
+    assert core.image_size == [480, 640]
+    for batch in (1, 3, 4):
+        out = core.forward(torch.zeros(batch, 3, 480, 640, device="cuda"))
+        assert (out[0] if isinstance(out, (list, tuple)) else out).shape[0] == batch

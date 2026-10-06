@@ -100,7 +100,7 @@ class Anomalib_Base(ADBase):
             raise ValueError(f"Batch size {batch} exceeds {type(self).__name__} engine max batch size {self.batch_size}")
 
         if is_engine and (img.shape[2] != self.image_size[0] or img.shape[3] != self.image_size[1]):
-            img = v2.Resize(self.image_size, antialias=False)(img)
+            img = v2.Resize(self.image_size, antialias=self.RESIZE_ANTIALIAS)(img)
 
         img = img.contiguous()
         return img.half() if self.fp16 else img
@@ -146,14 +146,18 @@ class Anomalib_Base(ADBase):
                 json.dump(self.pt_metadata, f, ensure_ascii=False, indent=4)
 
         h, w = self.image_size
-        torch.onnx.export(
-            self.pt_model,
-            torch.zeros((1, 3, h, w)).to(self.device),
-            export_path,
-            opset_version=opset_version,
-            input_names=["input"],
-            output_names=["output"],
-        )
+        # a TorchScript model run once with grad enabled fails every later inference_mode predict
+        with torch.no_grad():
+            torch.onnx.export(
+                self.pt_model,
+                torch.zeros((1, 3, h, w)).to(self.device),
+                export_path,
+                opset_version=opset_version,
+                input_names=["input"],
+                output_names=["output"],
+                # folding a tiled model on CUDA fails on mixed CUDA and CPU constants
+                do_constant_folding=False,
+            )
         self.logger.info(f"ONNX model saved at {export_path}")
 
     def export_trt(self, export_path, fp16=True, workspace_gb=4, min_batch=1, opt_batch=None, max_batch=1):
@@ -204,6 +208,7 @@ class _AnomalibEngine(Anomalib_Base):
     """
 
     _engine_cls = None  # subclass sets
+    RESIZE_ANTIALIAS = False  # match the .pt backend's resize; a version that antialiases overrides it (v1)
 
     def __init__(self, model_path: str, **kwargs: Any) -> None:
         self._init_common(model_path, **kwargs)
@@ -296,13 +301,13 @@ class AnomalibPT(Anomalib_Base):
         return self.forward(input_batch), None
 
 
-def register_backends(factory_cls, pt_cls) -> None:
+def register_backends(factory_cls, pt_cls, trt_cls=AnomalibTRT, onnx_cls=AnomalibONNX) -> None:
     """Register the standard set of file-extension backends on a factory.
 
-    `pt_cls` is the per-version PT backend (e.g. AnomalibPTv1); TRT and ONNX
-    backends are version-agnostic and shared across factories.
+    `pt_cls` is the per-version PT backend (e.g. AnomalibPTv1); a version whose engines resize differently passes its own
+    `trt_cls` and `onnx_cls`.
     """
-    factory_cls.register("engine")(AnomalibTRT)
-    factory_cls.register("onnx")(AnomalibONNX)
+    factory_cls.register("engine")(trt_cls)
+    factory_cls.register("onnx")(onnx_cls)
     for ext in ("pt", "ts", "torchscript"):
         factory_cls.register(ext)(pt_cls)

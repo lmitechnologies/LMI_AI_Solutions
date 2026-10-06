@@ -1,20 +1,27 @@
 import glob
+import hashlib
 import logging
 import os
 import platform
+import subprocess
+import sys
 import tempfile
+from functools import cache
 from typing import List
 
 import cv2
 import numpy as np
 import pytest
 import torch
+import yaml
+from anomalib import __version__ as anomalib_version
 from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
 
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v2_torchscript
 from anomaly_detectors.anomalib_lmi.v2.model import AnomalyModel as AnomalyModelV2
+from anomaly_detectors.anomalib_lmi.v2.train import build_data, build_model, build_preprocessor
 
 os.environ["TRUST_REMOTE_CODE"] = "1"
 
@@ -82,6 +89,21 @@ def test_model_class_comparison(ad_models):
     assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
 
 
+@cache
+def _fixture_digest(path: str) -> str:
+    """Short sha256 of a model fixture, so a stale or partial LFS checkout is visible in failures."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return f"{h.hexdigest()[:12]}/{os.path.getsize(path)}B"
+
+
+def _model_id(model) -> str:
+    path = getattr(model, "model_path", None)
+    return f"{type(model).__name__}({os.path.basename(path)})" if path else type(model).__name__
+
+
 def test_compare_with_anomalib(cpu_models):
     """
     compare prediction results between current implementation and anomalib
@@ -101,7 +123,16 @@ def test_compare_with_anomalib(cpu_models):
         for model in cpu_models:
             pred2 = model.predict(rgb)
             atol = 1e-2 if IS_ARM else 1e-5
-            assert np.allclose(pred, pred2, atol=atol, rtol=0.05), f"mismatch for {type(model).__name__}"
+            if not np.allclose(pred, pred2, atol=atol, rtol=0.05):
+                diff = np.abs(pred - np.squeeze(pred2))
+                over = int((diff > atol + 0.05 * np.abs(np.squeeze(pred2))).sum())
+                raise AssertionError(
+                    f"mismatch for {_model_id(model)} on {os.path.basename(p)}: "
+                    f"max|diff|={diff.max():.3e} mean={diff.mean():.3e}, {over}/{diff.size} px over tol "
+                    f"(atol={atol}, rtol=0.05) | machine={platform.machine()} IS_ARM={IS_ARM} "
+                    f"torch={torch.__version__} anomalib={anomalib_version} gpu={USE_GPU} | fixtures "
+                    f"pt={_fixture_digest(MODEL_PATH)} ts={_fixture_digest(TS_PATH)} onnx={_fixture_digest(ONNX_PATH)}"
+                )
 
 
 @pytest.mark.parametrize("warmup_size", [[672, 640], [256, 224]])
@@ -122,23 +153,48 @@ def test_model_api(ad_models):
     ad.test(DATA_PATH, OUTPUT_PATH)
 
 
-def test_convert_to_torchscript():
-    with tempfile.TemporaryDirectory() as t:
-        outpath = os.path.join(t, "trace.pt")
-        convert_v2_torchscript(MODEL_PATH, outpath, device="cpu")
-        assert os.path.isfile(outpath)
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_convert_to_torchscript(device, tmp_path):
+    """The traced model gives the .pt model's anomaly maps on the device it was traced on."""
+    if device == "cuda" and not USE_GPU:
+        pytest.skip("GPU not available")
+    outpath = str(tmp_path / "trace.pt")
+    convert_v2_torchscript(MODEL_PATH, outpath, device=device)
 
-        model = AnomalyModelV2(outpath, device="cpu")
-        inp = torch.randint(0, 255, (256, 256, 3), dtype=torch.uint8)
-        model.predict(inp)
+    pt_model = AnomalyModelV2(MODEL_PATH, device=device)
+    ts_model = AnomalyModelV2(outpath, device=device)
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+        np.testing.assert_allclose(ts_model.predict(rgb)[0], pt_model.predict(rgb)[0], atol=1e-3, err_msg=os.path.basename(p))
 
-        if USE_GPU:
-            outpath = os.path.join(t, "trace_gpu.pt")
-            convert_v2_torchscript(MODEL_PATH, outpath, device="cuda")
-            assert os.path.isfile(outpath)
 
-            model = AnomalyModelV2(outpath, device="cuda")
-            model.predict(inp.cuda())
+def test_cli_onnx_export_matches_pt(cpu_models, tmp_path):
+    """The CLI's ONNX export, run on CPU, gives the .pt model's anomaly maps."""
+    cmd = [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v2.model", "convert", "-i", MODEL_PATH, "-o", str(tmp_path), "-c", "onnx"]
+    result = subprocess.run(cmd, env=os.environ | {"CUDA_VISIBLE_DEVICES": ""}, capture_output=True, text=True)
+    assert result.returncode == 0, f"convert failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+
+    onnx_model = AnomalyModelV2(str(tmp_path / "model.onnx"), device="cpu")
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+        expected = cpu_models[0].predict(rgb)[0]
+        np.testing.assert_allclose(onnx_model.predict(rgb)[0], expected, atol=1e-3, err_msg=os.path.basename(p))
+
+
+def test_cli_trt_export_matches_pt(ad_models, tmp_path):
+    """The CLI's FP32 engine gives the .pt model's anomaly maps (peak ~0.8)."""
+    if not USE_GPU:
+        pytest.skip("GPU not available")
+    pytest.importorskip("tensorrt")
+    cmd = [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v2.model", "convert", "-i", MODEL_PATH, "-o", str(tmp_path), "--fp32"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    assert result.returncode == 0, f"convert failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+
+    engine = AnomalyModelV2(str(tmp_path / "model.engine"), device="cuda")
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+        expected = ad_models[0].predict(rgb)[0]
+        np.testing.assert_allclose(engine.predict(rgb)[0], expected, atol=2e-3, err_msg=os.path.basename(p))
 
 
 def test_predict_input_variants():
@@ -220,11 +276,407 @@ def test_compare_trt_onnx(trt_model):
         assert np.allclose(pred_trt, pred_onnx, atol=0.01, rtol=0.05), f"TRT vs ONNX mismatch for {os.path.basename(p)}"
 
 
+def test_folder_dataset_non_empty():
+    """Ensure build_data produces a non-empty samples frame with correct label values.
+
+    Regression guard: anomalib < 2.3 compared labels against DirType members rather than their .value,
+    yielding an empty samples frame. Fixed in anomalib >= 2.3 via DirType(str, Enum); pandas<3 pin no longer needed.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a minimal normal_dir structure: tmpdir/normal/img.png
+        normal_dir = os.path.join(tmpdir, "normal")
+        os.makedirs(normal_dir)
+        dummy = np.zeros((32, 32, 3), dtype=np.uint8)
+        # Two images so the 0.5 synthetic split yields at least 1 image per subset (floor(2*0.5)=1).
+        cv2.imwrite(os.path.join(normal_dir, "img0.png"), dummy)
+        cv2.imwrite(os.path.join(normal_dir, "img1.png"), dummy)
+
+        datamodule = build_data(
+            {
+                "name": "test_dataset",
+                "root": tmpdir,
+                "normal_dir": "normal",
+                "extensions": [".png"],
+                "train_batch_size": 1,
+                "eval_batch_size": 1,
+                "num_workers": 0,
+                "test_split_mode": "synthetic",
+                "test_split_ratio": 0.5,
+                "val_split_mode": "same_as_test",
+                "val_split_ratio": 0.5,
+            }
+        )
+
+        datamodule.setup()
+        samples = datamodule.train_data.samples
+
+        assert len(samples) > 0, "Dataset is empty — labels may be stored as 'DirType.NORMAL' instead of 'normal'."
+
+        label_col = "label_index" if "label_index" in samples.columns else "label"
+        assert label_col in samples.columns, f"Expected label column not found; columns: {list(samples.columns)}"
+
+        if "label" in samples.columns:
+            # Use .value if the stored object is an enum, else fall back to str().
+            bad = [v for v in samples["label"].unique() if "DirType" in str(getattr(v, "value", v))]
+            assert not bad, f"Labels contain raw StrEnum repr: {bad}."
+
+
+def test_build_preprocessor():
+    pre_processor = build_preprocessor(
+        [
+            {"class_name": "Resize", "params": {"size": [64, 32]}},
+            {"class_name": "Normalize", "params": {"mean": [0.5, 0.5, 0.5], "std": [0.5, 0.5, 0.5]}},
+        ]
+    )
+
+    assert pre_processor.transform is not None
+    assert [type(transform).__name__ for transform in pre_processor.transform.transforms] == ["Resize", "Normalize"]
+
+
+@pytest.mark.parametrize(
+    ["tiler_type", "expected"],
+    [(None, "CallbackTiler"), ("CallbackTiler", "CallbackTiler"), ("AnomalibTiler", "Tiler")],
+)
+def test_tiler_type_selects_the_tiler(tiler_type, expected):
+    from anomaly_detectors.anomalib_lmi.v2.tiling import TilerConfigCallback
+
+    callback = TilerConfigCallback(enable=True, tile_size=224, stride=112, tiler_class=tiler_type)
+    tiler = callback.tiler_class(tile_size=224, stride=112, mode=callback.mode)
+
+    assert type(tiler).__name__ == expected
+    tiles = tiler.tile(torch.rand(1, 3, 448, 448))
+    assert tuple(tiles.shape) == (9, 3, 224, 224)
+    # both tilers untile a feature map back to the feature scale, not the image scale
+    assert tuple(tiler.untile(torch.nn.functional.interpolate(tiles, size=(28, 28), mode="nearest")).shape) == (1, 3, 56, 56)
+
+
+@pytest.mark.parametrize("tiler_type", ["Tiler", "logging", "NotATiler"])
+def test_unknown_tiler_type_is_rejected_at_config_time(tiler_type):
+    # a globals() lookup also accepted the raw Tiler, which failed only once setup ran
+    from anomaly_detectors.anomalib_lmi.v2.tiling import TilerConfigCallback
+
+    with pytest.raises(ValueError, match="Unknown tiler_type"):
+        TilerConfigCallback(enable=True, tile_size=224, stride=112, tiler_class=tiler_type)
+
+
+def test_callback_tiler_takes_the_overlap_mode():
+    from anomaly_detectors.anomalib_lmi.v2.tiling import TilerConfigCallback
+
+    callback = TilerConfigCallback(enable=True, tile_size=224, stride=112, overlap_mode="gaussian")
+    tiler = callback.tiler_class(tile_size=224, stride=112, mode=callback.mode, **callback.tiler_kwargs)
+
+    assert tiler.overlap_mode.value == "gaussian"
+
+
+@pytest.mark.parametrize("tiler_type", [None, "AnomalibTiler"])
+def test_a_setting_the_tiler_does_not_take_is_rejected_at_config_time(tiler_type):
+    from anomaly_detectors.anomalib_lmi.v2.tiling import TilerConfigCallback
+
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        TilerConfigCallback(enable=True, tile_size=224, stride=112, tiler_class=tiler_type, not_a_setting=1)
+
+
+def _write_padim_config(root, tile_size, stride, image_size=(448, 448)):
+    """A config for the training CLI, with the shipped assets copied into the normal_dir layout Folder expects."""
+    normal = root / "data" / "train"
+    normal.mkdir(parents=True)
+    for p in sorted(glob.glob(os.path.join(DATA_PATH, "*good*.png"))):
+        cv2.imwrite(str(normal / os.path.basename(p)), cv2.imread(p))
+    assert list(normal.iterdir()), f"no training images under {DATA_PATH}"
+
+    params = {"backbone": "resnet18", "layers": ["layer1", "layer2", "layer3"], "pre_trained": False, "image_size": list(image_size)}
+    if tile_size is not None:
+        params |= {"tile_size": tile_size, "stride": stride}
+    config = {
+        "model": {"class_name": "Padim", "params": params},
+        "data": {
+            "name": "padim_tiling",
+            "root": str(root / "data"),
+            "normal_dir": "train",
+            "extensions": [".png"],
+            "train_batch_size": 2,
+            "eval_batch_size": 2,
+            "num_workers": 0,
+            "test_split_mode": "synthetic",
+            "test_split_ratio": 0.5,
+            "val_split_mode": "same_as_test",
+            "val_split_ratio": 0.5,
+        },
+        "engine": {"max_epochs": 1, "accelerator": "auto", "devices": 1, "default_root_dir": str(root / "out")},
+    }
+    config_path = root / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    return config_path
+
+
+def _train_via_cli(config_path):
+    """Run the training entry point the way a user does, and return the checkpoint it writes."""
+    result = subprocess.run(
+        [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v2.train", "--config", str(config_path), "--skip-mem-estimate"],
+        capture_output=True,
+        text=True,
+        cwd=os.getcwd(),
+    )
+    assert result.returncode == 0, f"training CLI failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+    return result
+
+
+def test_padim_trains_through_the_cli_with_224_tiles_and_112_stride(tmp_path):
+    """A 448 image at tile 224 / stride 112 is a 3x3 grid; resnet18 layer1 puts the embedding at 1/4 scale."""
+    config_path = _write_padim_config(tmp_path, tile_size=224, stride=112)
+
+    result = _train_via_cli(config_path)
+    assert "Tiling enabled: tile_size=224, stride=112, tiler=CallbackTiler" in result.stdout + result.stderr
+
+    ckpt = torch.load(tmp_path / "out" / "model.ckpt", map_location="cpu", weights_only=False)
+    state = ckpt["state_dict"]
+    # the gaussian is fit over the untiled embedding grid, so tiling must have round-tripped at feature scale
+    assert state["model.gaussian.mean"].shape[-1] == (448 // 4) ** 2
+    assert torch.isfinite(state["model.gaussian.mean"]).all()
+    assert torch.isfinite(state["model.gaussian.inv_covariance"]).all()
+
+
+_needs_gpu = pytest.mark.skipif(not USE_GPU, reason="needs a model trained on CUDA")
+
+
+def _train_tiled(root, class_name):
+    """Train a 448 model with 224 tiles / 112 stride through the CLI and return its model.pt."""
+    config_path = _write_padim_config(root, tile_size=224, stride=112)
+    if class_name == "Patchcore":
+        config = yaml.safe_load(config_path.read_text())
+        config["model"] = {
+            "class_name": "Patchcore",
+            "params": {
+                "backbone": "resnet18",
+                "layers": ["layer2", "layer3"],
+                "pre_trained": False,
+                "image_size": [448, 448],
+                "tile_size": 224,
+                "stride": 112,
+            },
+        }
+        config_path.write_text(yaml.safe_dump(config))
+    _train_via_cli(config_path)
+    return glob.glob(str(root / "out" / "**" / "model.pt"), recursive=True)[0]
+
+
+@pytest.fixture(scope="module")
+def tiled_padim_pt(tmp_path_factory):
+    return _train_tiled(tmp_path_factory.mktemp("tiled_padim"), "Padim")
+
+
+@pytest.fixture(scope="module")
+def tiled_patchcore_pt(tmp_path_factory):
+    return _train_tiled(tmp_path_factory.mktemp("tiled_patchcore"), "Patchcore")
+
+
+def _bad_image():
+    return cv2.imread(glob.glob(os.path.join(DATA_PATH, "*bad*.png"))[0])
+
+
+@_needs_gpu
+def test_tiled_model_exports_to_onnx_from_cuda(tiled_padim_pt, tmp_path):
+    pt_model = AnomalyModelV2(tiled_padim_pt, device="cuda", image_size=[448, 448])
+    onnx_path = str(tmp_path / "model.onnx")
+    pt_model.export_onnx(onnx_path)
+
+    expected = pt_model.predict([_bad_image()])[0]
+    actual = AnomalyModelV2(onnx_path, device="cuda").predict([_bad_image()])[0]
+    np.testing.assert_allclose(actual, expected, rtol=1e-2, atol=1e-2 * float(np.abs(expected).max()))
+
+
+@_needs_gpu
+def test_tiled_model_traces_to_torchscript_on_cpu(tiled_padim_pt, tmp_path):
+    # the trace check runs the model twice, so both runs must build the same graph
+    ts_path = str(tmp_path / "model.ts")
+    convert_v2_torchscript(tiled_padim_pt, ts_path, device="cpu")
+
+    expected = AnomalyModelV2(tiled_padim_pt, device="cpu", image_size=[448, 448]).predict([_bad_image()])[0]
+    actual = AnomalyModelV2(ts_path, device="cpu", image_size=[448, 448]).predict([_bad_image()])[0]
+    np.testing.assert_allclose(actual, expected, atol=1e-3 * float(np.abs(expected).max()))
+
+
+@_needs_gpu
+def test_tiled_model_loaded_on_cpu_runs_on_cuda(tiled_padim_pt):
+    model = torch.load(tiled_padim_pt, map_location="cpu", weights_only=False)["model"].eval().to("cuda")
+    with torch.inference_mode():
+        model(torch.rand(1, 3, 448, 448, device="cuda"))
+
+
+@_needs_gpu
+def test_torchscript_model_still_predicts_after_onnx_export(tiled_patchcore_pt, tmp_path):
+    ts_path = str(tmp_path / "model.ts")
+    convert_v2_torchscript(tiled_patchcore_pt, ts_path, device="cuda")
+    ts_model = AnomalyModelV2(ts_path, device="cuda", image_size=[448, 448])
+
+    ts_model.export_onnx(str(tmp_path / "model.onnx"))
+    ts_model.predict([_bad_image()])
+
+
+def test_padim_cli_tiled_and_untiled_agree_on_the_embedding_grid(tmp_path):
+    # tiling changes what the backbone sees, not the shape contract downstream
+    tiled = _train_via_cli(_write_padim_config(tmp_path / "tiled", tile_size=224, stride=112))
+    untiled = _train_via_cli(_write_padim_config(tmp_path / "plain", tile_size=None, stride=None))
+    assert "Tiling enabled" in tiled.stdout + tiled.stderr
+    assert "Tiling enabled" not in untiled.stdout + untiled.stderr
+
+    def mean_shape(name):
+        ckpt = torch.load(tmp_path / name / "out" / "model.ckpt", map_location="cpu", weights_only=False)
+        return ckpt["state_dict"]["model.gaussian.mean"].shape
+
+    assert mean_shape("tiled") == mean_shape("plain")
+
+
+def _write_patchcore_config(root, precision=None, image_size=(64, 64), n_images=4):
+    """A Patchcore config for the training CLI over dummy normal images."""
+    normal = root / "data" / "train"
+    normal.mkdir(parents=True)
+    # a fixed seed so both precision runs (and any rerun) see the exact same images
+    rng = np.random.default_rng(42)
+    for i in range(n_images):
+        dummy = rng.integers(0, 256, (*image_size, 3), dtype=np.uint8)
+        assert cv2.imwrite(str(normal / f"n{i}.png"), dummy), f"failed to write training image n{i}.png"
+
+    params = {"backbone": "resnet18", "layers": ["layer2", "layer3"], "pre_trained": False, "image_size": list(image_size)}
+    if precision is not None:
+        params["precision"] = precision
+    config = {
+        "model": {"class_name": "Patchcore", "params": params},
+        "data": {
+            "name": "patchcore_precision",
+            "root": str(root / "data"),
+            "normal_dir": "train",
+            "extensions": [".png"],
+            "train_batch_size": 2,
+            "eval_batch_size": 2,
+            "num_workers": 0,
+            "test_split_mode": "synthetic",
+            "test_split_ratio": 0.5,
+            "val_split_mode": "same_as_test",
+            "val_split_ratio": 0.5,
+        },
+        "engine": {"max_epochs": 1, "accelerator": "auto", "devices": 1, "default_root_dir": str(root / "out")},
+    }
+    config_path = root / "config.yaml"
+    config_path.write_text(yaml.safe_dump(config))
+    return config_path
+
+
+def _bank(state):
+    """The trained Patchcore memory bank from a checkpoint state dict."""
+    return state["state_dict"]["model.memory_bank"]
+
+
+@pytest.mark.parametrize("precision,expected", [("float16", torch.float16), ("float32", torch.float32)])
+def test_patchcore_build_model_precision_sets_weight_dtype(precision, expected):
+    model = build_model(
+        {
+            "class_name": "Patchcore",
+            "params": {"backbone": "resnet18", "layers": ["layer1"], "pre_trained": False, "precision": precision},
+        }
+    )
+    assert next(model.parameters()).dtype == expected
+
+
+def test_unsupported_model_warns_and_falls_back_to_float32(caplog):
+    """Padim has no precision arg: build_model warns and falls back to its fp32 default."""
+    with caplog.at_level(logging.WARNING):
+        model = build_model(
+            {
+                "class_name": "Padim",
+                "params": {
+                    "backbone": "resnet18",
+                    "layers": ["layer1"],
+                    "pre_trained": False,
+                    "n_features": 64,
+                    "image_size": [64, 64],
+                    "precision": "float16",
+                },
+            }
+        )
+
+    assert next(model.parameters()).dtype == torch.float32
+    assert any(
+        "precision" in record.getMessage() and "Padim" in record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+    )
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"image_size": [64, 64]},
+        {},
+        {"pre_processor": [{"class_name": "Resize", "params": {"size": [64, 64]}}]},
+    ],
+    ids=["image_size", "model default", "configured pre_processor"],
+)
+def test_build_model_trains_with_the_resize_exported_models_use(params):
+    """anomalib exports every format with antialiasing off, so training with it on would see different pixels."""
+    base = {"backbone": "resnet18", "layers": ["layer1"], "pre_trained": False, "n_features": 64}
+    model = build_model({"class_name": "Padim", "params": {**base, **params}})
+
+    image = torch.rand(1, 3, 200, 300)
+    trained_on = model.pre_processor.transform(image)
+    assert trained_on.shape[-2:] != image.shape[-2:]
+    assert torch.equal(trained_on, model.pre_processor.export_transform(image))
+
+
+def test_invalid_precision_raises():
+    with pytest.raises(ValueError, match="Invalid precision"):
+        build_model({"class_name": "Patchcore", "params": {"backbone": "resnet18", "layers": ["layer1"], "precision": "float8"}})
+
+
+def test_patchcore_cli_trains_with_precision(tmp_path):
+    config_path = _write_patchcore_config(tmp_path, precision="float32")
+    _train_via_cli(config_path)
+
+    ckpt = torch.load(tmp_path / "out" / "model.ckpt", map_location="cpu", weights_only=False)
+    bank = _bank(ckpt)
+    assert bank.dtype == torch.float32
+    assert bank.shape[0] > 0, "memory bank is empty; training produced no embeddings"
+
+
+def test_patchcore_cli_trains_with_float16_precision(tmp_path):
+    config_path = _write_patchcore_config(tmp_path, precision="float16")
+    _train_via_cli(config_path)
+
+    ckpt = torch.load(tmp_path / "out" / "model.ckpt", map_location="cpu", weights_only=False)
+    bank = _bank(ckpt)
+    assert bank.dtype == torch.float16
+    assert bank.shape[0] > 0, "memory bank is empty; training produced no embeddings"
+
+
+def test_patchcore_cli_float16_bank_is_half_float32(tmp_path):
+    """Same dataset and layers: the fp16 bank holds the same vectors at half the bytes.
+
+    Byte count (numel x itemsize) is deterministic and needs no peak-RAM measurement.
+    Coreset sampling is seeded (anomalib fixes manual_seed 42 via seed_everything), so both
+    runs select the same number of patches; a small tolerance covers rounding.
+    """
+    results = {}
+    for precision in ["float32", "float16"]:
+        config_path = _write_patchcore_config(tmp_path / precision, precision=precision, n_images=4)
+        _train_via_cli(config_path)
+        ckpt = torch.load(tmp_path / precision / "out" / "model.ckpt", map_location="cpu", weights_only=False)
+        bank = _bank(ckpt)
+        results[precision] = bank
+
+    f32, f16 = results["float32"], results["float16"]
+    # the coreset samples a fixed ratio of features, so element counts can differ slightly due to rounding
+    assert f16.numel() == pytest.approx(f32.numel(), rel=0.05), f"bank sizes differ: {f32.numel()} vs {f16.numel()}"
+    f32_bytes = f32.numel() * f32.element_size()
+    f16_bytes = f16.numel() * f16.element_size()
+    ratio = f16_bytes / f32_bytes
+    assert ratio == pytest.approx(0.5, rel=0.1), f"fp16 bank bytes are not ~half of fp32: {f16_bytes=} {f32_bytes=} ratio={ratio:.3f}"
+
+
 # ---------------------------------------------------------------------------
 # TolerantAnomalyDINO (.pt) tests
 # ---------------------------------------------------------------------------
 
-TAD_MODEL_PATH = "/home/justice.vidal/projects/lmi_anomalib_utils/training/BMX_cap_ad/TolerantAnomalyDINO/dataset/v68/weights/torch/model.pt"
+TAD_MODEL_PATH = "tests/assets/models/ad/model_v2/TAD/model.pt"
 
 
 @pytest.fixture(scope="module")

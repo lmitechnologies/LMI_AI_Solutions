@@ -56,6 +56,9 @@ engine:
   devices: 1
   default_root_dir: "/app/out/"
 ```
+
+Images that are not `image_size` are resized to it without antialiasing, the same resize the exported models apply at inference.
+
 ### Training
 The following is the dockerfile that is requried for training and inference.
 

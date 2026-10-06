@@ -2,6 +2,9 @@ name: Cleanup Old Images
 on:
   pull_request:
     types: [closed]
+  # pull_request does not fire for PRs with merge conflicts (e.g. Dependabot closing superseded PRs)
+  schedule:
+    - cron: '0 6 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -15,7 +18,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   cleanup-pr-images:
@@ -41,19 +44,40 @@ jobs:
         run: bash .github/workflows/scripts/cleanup_pr_images.sh
 
   cleanup:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
       packages: write
-    
+      pull-requests: read
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           lfs: false
           submodules: false
+
+      # Must match the tag format in ci.yaml's "Compute image tag" step
+      - name: Compute base tags from the CI build matrix
+        id: base-tags
+        shell: bash
+        run: |
+          TAGS=$(yq -o=json '.jobs["build-images"].strategy.matrix' .github/workflows/ci.yaml | jq -r '
+            . as $m | $m["python-version"][] as $py | $m["runner-config"][].arch as $a | $m["ad-group"][] as $g
+            | "py\($py)-\($a)-\($g)"' | tr '\n' ' ')
+          echo "tags=${TAGS}" >> "$GITHUB_OUTPUT"
+
+      - name: Delete stale tagged images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          PACKAGE_NAME: "ais-test-env"
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
+          ALLOWED_TAGS: ${{ steps.base-tags.outputs.tags }}
+        run: bash .github/workflows/scripts/cleanup_stale_tagged_images.sh
 
       - name: Delete untagged images older than retention period
         env:

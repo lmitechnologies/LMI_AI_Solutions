@@ -18,6 +18,7 @@ class ResizeConfig(Config):
     preserve_aspect: scale-to-fit preserving aspect ratio then pad (letterbox).
     pad_value: fill value for letterbox padding (only used when preserve_aspect). 0 is black; use 114 to match YOLO.
     mode: interpolation mode passed to ``resize_image``.
+    antialias: low-pass before shrinking, matching models trained with PIL or torchvision antialiased resizes.
     """
 
     width: Optional[int] = None
@@ -25,6 +26,7 @@ class ResizeConfig(Config):
     preserve_aspect: bool = False
     pad_value: int = 0
     mode: str = "bilinear"
+    antialias: bool = False
 
 
 @dataclass
@@ -79,7 +81,7 @@ class ResizeOperation(Operation[ResizeConfig, ResizeMeta]):
                 scale = min(th / h0, tw / w0)
                 w1 = int(scale * w0)
                 h1 = int(scale * h0)
-                scaled = resize_image(img, W=w1, H=h1, mode=config.mode)
+                scaled = resize_image(img, W=w1, H=h1, mode=config.mode, antialias=config.antialias)
                 src_sizes.append([w0, h0])
                 dst_sizes.append([w1, h1])
                 if w1 != tw or h1 != th:
@@ -90,7 +92,7 @@ class ResizeOperation(Operation[ResizeConfig, ResizeMeta]):
                     pads.append([0, 0, 0, 0])
                     out_images.append(scaled)
             else:
-                scaled = resize_image(img, W=tw, H=th, mode=config.mode)
+                scaled = resize_image(img, W=tw, H=th, mode=config.mode, antialias=config.antialias)
                 out_images.append(scaled)
                 src_sizes.append([w0, h0])
                 dst_sizes.append([tw, th])

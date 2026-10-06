@@ -3,7 +3,6 @@ import logging
 import os
 from typing import List, Optional
 
-import cv2
 import numpy as np
 import torch
 import torchvision.transforms.functional as F
@@ -14,6 +13,7 @@ from lmi_common.model_factory import ModelFactory
 from lmi_common.onnx_engine import ONNXEngine
 from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
+from lmi_utils.postprocess_utils.mask_segments import masks_to_segments
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 from object_detectors.rf_detr_lmi.checkpoint import load_from_checkpoint
@@ -132,38 +132,13 @@ class RfdetrBase(ODBase):
         tensors = self._fit_to_input_size(tensors, preserve_aspect=False, resize_fn=resize_stretch, channels_first=True)
         return torch.stack([F.normalize(t, self.means, self.stds) for t in tensors])
 
-    @staticmethod
-    def _masks_to_segments(masks) -> List[np.ndarray]:
-        """Convert binary masks to contour segments.
-
-        Args:
-            masks: (N, H, W) tensor or numpy array of binary masks.
-
-        Returns:
-            List of N numpy arrays, each with shape (M, 2) containing (x, y) contour points.
-            Returns an empty array for masks with no contours.
-        """
-        if isinstance(masks, torch.Tensor):
-            masks = masks.cpu().numpy()
-        segments = []
-        for mask in masks:
-            binary = (mask > 0.5).astype(np.uint8)
-            contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            if contours:
-                merged = np.concatenate([c.reshape(-1, 2) for c in contours], axis=0).astype(np.float32)
-                segments.append(merged)
-            else:
-                segments.append(np.zeros((0, 2), dtype=np.float32))
-        return segments
-
-    def _postprocess_single(self, output, configs, ops, return_segments) -> Results:
+    def _postprocess_single(self, output, configs, return_segments) -> Results:
         """Postprocess a single image's decoded output from PostProcess.
 
         Args:
             output (dict): Decoded output with keys 'boxes', 'scores', 'labels',
                 and optionally 'masks'. Values are tensors on self.device.
             configs (dict): Per-class confidence thresholds.
-            ops (list): Coordinate transform operators to revert.
             return_segments (bool): Whether to convert masks to segments.
 
         Returns:
@@ -178,10 +153,8 @@ class RfdetrBase(ODBase):
         # masks from rf-detr are (N, 1, H, W); squeeze to (N, H, W) for downstream use
         if len(masks) > 0:
             masks = masks.squeeze(1)
-        segments = (
-            [torch.from_numpy(s).to(self.device) for s in self._masks_to_segments(masks)] if len(masks) > 0 and return_segments else None
-        )
-        result = Results(
+        segments = [torch.from_numpy(s).to(self.device) for s in masks_to_segments(masks)] if len(masks) > 0 and return_segments else None
+        return Results(
             boxes=boxes,
             scores=scores,
             classes=classes,
@@ -189,7 +162,6 @@ class RfdetrBase(ODBase):
             segments=segments,
             is_seg=is_seg,
         )
-        return self._apply_revert_to_result(result, ops)
 
     def postprocess(self, outputs, **kwargs) -> List[Results]:
         """Postprocess outputs for a batch using the rfdetr PostProcess decoder.
@@ -203,8 +175,6 @@ class RfdetrBase(ODBase):
             **kwargs:
                 images (list[np.ndarray]): Original images, used to determine target sizes.
                 configs: Confidence threshold (float) or per-class dict.
-                operators (list): per-image-sliced preprocessing history (one slice per image).
-                    Produced by ODBase._normalize_operators from the unified history.
                 return_segments (bool): Whether to convert masks to segments.
 
         Returns:
@@ -212,7 +182,6 @@ class RfdetrBase(ODBase):
         """
         images = kwargs["images"]
         configs = self._parse_confidence_config(kwargs.get("configs"), list(self.class_map.values()))
-        operators = kwargs.get("operators", [[] for _ in range(len(images))])
         return_segments = kwargs.get("return_segments", True)
 
         if len(outputs) < 2:
@@ -229,7 +198,7 @@ class RfdetrBase(ODBase):
         target_sizes = torch.tensor(orig_sizes, device=self.device)
         extra = {"score_threshold": self._mask_score_floor(configs)} if _POSTPROCESS_TAKES_SCORE_THRESHOLD else {}
         rs = self.postprocessor(return_predictions, target_sizes=target_sizes, **extra)
-        return [self._postprocess_single(r, configs, operators[i], return_segments) for i, r in enumerate(rs)]
+        return [self._postprocess_single(r, configs, return_segments) for r in rs]
 
     @staticmethod
     def _mask_score_floor(configs: dict) -> float:
@@ -273,7 +242,9 @@ class _RfdetrEngine(RfdetrBase):
         self.input_shape = self.engine.input_shape  # (C, H, W)
         self.image_size = list(self.input_shape[-2:])  # (H, W) — used by the input-size guard
         self.input_dtype = self.engine.input_dtype
-        if not self.engine.is_dynamic:
+        if self.engine.is_dynamic:
+            self.max_batch_size = self.engine.max_batch
+        else:
             self.fixed_batch_size = self.engine.max_batch
         self._init_common()
         metadata = RfdetrMetadata.from_engine(self.engine.metadata, model_path)

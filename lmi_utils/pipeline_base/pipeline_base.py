@@ -10,6 +10,7 @@ from logging import Logger
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
+import numpy as np
 import torch
 
 from anomaly_detectors.ad_core.ad_base import ADBase
@@ -47,6 +48,14 @@ def compact_json(obj: Any, indent: int = 2) -> str:
     )
 
 
+def _box_value(value: object) -> Box:
+    """A 4-corner OBB becomes a rotated box; anything else is xyxy with an optional trailing angle."""
+    arr = np.asarray(value, dtype=float)
+    if arr.size == 8:
+        return Polygon(points=arr.reshape(4, 2)).to_rbox()
+    return Box(x_min=arr[0], y_min=arr[1], x_max=arr[2], y_max=arr[3], angle=arr[4] if arr.size > 4 else 0)
+
+
 class PipelineBase(metaclass=ABCMeta):
     logger = logging.getLogger(__name__)
 
@@ -54,13 +63,7 @@ class PipelineBase(metaclass=ABCMeta):
     # This is used for uploading labels to label studio.
     _PREDICTION_HANDLERS = {
         "boxes": {
-            "value_factory": lambda v: Box(
-                x_min=v[0],
-                y_min=v[1],
-                x_max=v[2],
-                y_max=v[3],
-                angle=v[4] if len(v) > 4 else 0,
-            ),
+            "value_factory": _box_value,
             "type": AnnotationType.BOX.value,
         },
         "polygons": {
@@ -253,20 +256,22 @@ class PipelineBase(metaclass=ABCMeta):
 
         model = self.models.get(model_role)
         if isinstance(model, ODBase):
-            return self._ensure_od_input_size(model_role, images, processed, history)
+            return self._ensure_od_input_size(model_role, processed, history)
         if isinstance(model, ADBase):
-            return self._record_ad_internal_resize(model_role, images, processed, history)
+            return self._record_ad_internal_resize(model_role, processed, history)
         return processed, history
 
     def _ensure_od_input_size(
         self,
         model_role: str,
-        images: List[ImageLike],
         processed: List[ImageLike],
         history: List[Meta],
     ) -> Tuple[List[ImageLike], List[Meta]]:
         """Append a resize so an OD model's preprocessed input matches its training size.
         No-op when the size already matches.
+
+        A step that changes the image count (tiling) is fine: the resize is recorded against the
+        images it actually saw, and the reconstructor unwinds it before the tile step.
         """
         model = self.models[model_role]
         th, tw = int(model.image_size[0]), int(model.image_size[1])
@@ -274,26 +279,25 @@ class PipelineBase(metaclass=ABCMeta):
         if not mismatched:
             return processed, history
 
-        if len(processed) != len(images):
-            # Reachable only once OD tiling exists (a tile op changes the image count).
-            raise NotImplementedError(
-                f"Resize injection assumes a 1:1 image mapping, but preprocessing changed the image "
-                f"count ({len(images)} -> {len(processed)}) for OD model '{model_role}'. Add tile-aware "
-                "resize/revert handling and a round-trip test before enabling this."
-            )
-
         self.logger.warning(
             f"[{model_role}] preprocessed size(s) {mismatched} != model input {(th, tw)}; injecting a resize. "
             "Configure a matching resize step in global preprocessing to remove this."
         )
-        resize_step = [steps.resize(width=tw, height=th, preserve_aspect=model.RESIZE_PRESERVE_ASPECT, pad_value=model.RESIZE_PAD_VALUE)]
+        resize_step = [
+            steps.resize(
+                width=tw,
+                height=th,
+                preserve_aspect=model.RESIZE_PRESERVE_ASPECT,
+                pad_value=model.RESIZE_PAD_VALUE,
+                antialias=model.RESIZE_ANTIALIAS,
+            )
+        ]
         processed, extra = self.preprocessor.preprocess(processed, resize_step)
         return processed, history + extra
 
     def _record_ad_internal_resize(
         self,
         model_role: str,
-        images: List[ImageLike],
         processed: List[ImageLike],
         history: List[Meta],
     ) -> Tuple[List[ImageLike], List[Meta]]:
@@ -302,20 +306,15 @@ class PipelineBase(metaclass=ABCMeta):
         The forward images are left off-size for the model to resize internally, so ``predict()`` scores are
         unchanged. This only appends the inverse so ``revert_preprocess`` upsamples the score maps back to
         input space (overlay/output, not re-thresholding). No-op when the sizes already match.
+
+        A step that changes the image count (tiling) is fine: the inverse is recorded against the images
+        it actually saw, and ``reconstruct_images`` unwinds it before the tile step.
         """
         model = self.models[model_role]
         th, tw = int(model.image_size[0]), int(model.image_size[1])
         mismatched = sorted({tuple(p.shape[:2]) for p in processed} - {(th, tw)})
         if not mismatched:
             return processed, history
-
-        if len(processed) != len(images):
-            # Reachable only once AD tiling exists (a tile op changes the image count); per-tile score reverting is not handled.
-            raise NotImplementedError(
-                f"AD inverse-resize assumes a 1:1 image mapping, but preprocessing changed the image "
-                f"count ({len(images)} -> {len(processed)}) for AD model '{model_role}'. Configure a "
-                f"resize to {(th, tw)} in global preprocessing."
-            )
 
         if model.RESIZE_PRESERVE_ASPECT:
             # Letterbox would need the model's internal pad metadata to invert; only stretch is supported.

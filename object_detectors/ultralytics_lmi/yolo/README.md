@@ -288,6 +288,11 @@ workspace: 4  # (int) TensorRT: workspace size (GB)
 # more hyperparameters: https://github.com/ultralytics/ultralytics/blob/main/ultralytics/cfg/default.yaml
 ```
 
+An engine takes the batch it was exported with (`batch`, default 1), and `predict()` splits a larger input into chunks of it.
+For tiled inference, set `dynamic: True` and `batch` to the tile count of one image, so all tiles run in one pass instead of
+one at a time. An ONNX exported with `dynamic: True` can also be built with `lmi_common.trt_convert.onnx_to_trt(..., max_batch=N)`,
+which holds height and width at the exported `imgsz`.
+
 Create `./docker-compose_trt.yaml`:
 ```yaml
 services:

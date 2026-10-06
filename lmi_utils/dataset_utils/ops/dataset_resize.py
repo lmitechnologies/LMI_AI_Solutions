@@ -1,5 +1,6 @@
 import logging
 
+import cv2
 import numpy as np
 
 # LMI packages
@@ -7,6 +8,8 @@ from lmi_utils.dataset_utils.representations import Annotation
 from lmi_utils.image_utils.img_resize import resize
 
 logger = logging.getLogger(__name__)
+
+_INTER = cv2.INTER_LINEAR  # the bilinear resize inference and Ultralytics training use; INTER_AREA differs when shrinking
 
 
 def resize_annotations(shapes, orig_h: int, orig_w: int, new_h: int, new_w: int):
@@ -54,16 +57,16 @@ def resize_annotated_image(
             scale = min(th / h, tw / w)
             tw = np.int32(scale * w)
             th = np.int32(scale * h)
-            im_out = resize(image, width=tw, height=th)
+            im_out = resize(image, width=tw, height=th, inter=_INTER)
         else:
             if tw is None:
                 tw = w
-                im_out = resize(image, height=th)
+                im_out = resize(image, height=th, inter=_INTER)
             elif th is None:
                 th = h
-                im_out = resize(image, width=tw)
+                im_out = resize(image, width=tw, inter=_INTER)
             else:
-                im_out = resize(image, width=tw, height=th)
+                im_out = resize(image, width=tw, height=th, inter=_INTER)
 
     th, tw = im_out.shape[:2]
     if tw != w or th != h:

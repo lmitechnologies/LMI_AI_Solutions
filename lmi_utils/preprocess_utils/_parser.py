@@ -14,6 +14,7 @@ from .ops import (
     FlipConfig,
     PadConfig,
     ResizeConfig,
+    RotateConfig,
     TileConfig,
 )
 
@@ -23,6 +24,7 @@ STEP_TYPES: Dict[str, Type[Config]] = {
     "flip": FlipConfig,
     "pad": PadConfig,
     "resize": ResizeConfig,
+    "rotate": RotateConfig,
     "tile": TileConfig,
 }
 

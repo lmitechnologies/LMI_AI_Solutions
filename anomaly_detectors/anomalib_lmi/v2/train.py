@@ -1,18 +1,27 @@
 import argparse
+import inspect
 import logging
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import anomalib.models as ad_models
+import torch
 import yaml
+from anomalib import PrecisionType
 from anomalib.data import Folder
-from .models import TolerantAnomalyDINO  # noqa: F401 — registers class into anomalib.models
-
-ad_models.TolerantAnomalyDINO = TolerantAnomalyDINO
 from anomalib.deploy import ExportType
 from anomalib.engine import Engine
+from anomalib.pre_processing import PreProcessor
+from anomalib.pre_processing.utils.transform import disable_antialiasing
 from torchvision.transforms import v2
+
+from .models import TolerantAnomalyDINO  # noqa: F401 — registers class into anomalib.models
+from .tiling import TilerConfigCallback
 from .training_hooks import notify_model_exported, prepare_model_training_config
+
+ad_models.TolerantAnomalyDINO = TolerantAnomalyDINO
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +57,10 @@ def build_augmentations(aug_config: Optional[List[Dict]]) -> Optional[v2.Compose
         params = clean_params(params)
 
         try:
+            if not isinstance(name, str):
+                logger.warning("Transform class_name must be a string. Skipping.")
+                continue
+
             if not hasattr(v2, name):
                 logger.warning(f"Transform '{name}' not found in torchvision.transforms.v2. Skipping.")
                 continue
@@ -62,6 +75,19 @@ def build_augmentations(aug_config: Optional[List[Dict]]) -> Optional[v2.Compose
     return v2.Compose(transforms_list) if transforms_list else None
 
 
+def build_preprocessor(preprocessor_config: Optional[List[Dict]]) -> PreProcessor:
+    """Build an Anomalib preprocessor from torchvision v2 transform settings."""
+    transforms = build_augmentations(preprocessor_config)
+    return PreProcessor(transform=transforms)
+
+
+def disable_train_antialias(model) -> None:
+    """Resize training images the way the exported model does; anomalib drops antialiasing in every export."""
+    pre_processor = getattr(model, "pre_processor", None)
+    if pre_processor is not None and pre_processor.transform is not None:
+        disable_antialiasing(pre_processor.transform)
+
+
 def build_model(model_config: Dict[str, Any]):
     """
     Dynamically builds the Anomalib model.
@@ -69,9 +95,8 @@ def build_model(model_config: Dict[str, Any]):
     """
     class_name = model_config.get("class_name")
     params = model_config.get("params", {}) or {}
-
-    # Clean params (convert lists to tuples)
-    params = clean_params(params)
+    for rm in ["tiler_type", "tile_size", "stride"]:
+        params.pop(rm, None)
 
     # 1. Get the model class dynamically
     if not hasattr(ad_models, class_name):
@@ -80,24 +105,43 @@ def build_model(model_config: Dict[str, Any]):
     model_class = getattr(ad_models, class_name)
     logger.info(f"Initializing Model: {class_name}")
 
+    # precision is a per-model dtype selector; only some anomalib models accept it
+    precision = params.pop("precision", None)
+    if precision is not None:
+        try:
+            precision = PrecisionType(str(precision).lower())
+        except ValueError:
+            valid = ", ".join(p.value for p in PrecisionType)
+            raise ValueError(f"Invalid precision '{precision}'. Valid values: {valid}.") from None
+        if "precision" in inspect.signature(model_class).parameters:
+            params["precision"] = precision
+        else:
+            logger.warning(f"Model '{class_name}' does not support the precision parameter; training in float32.")
+
+    # Clean params (convert lists to tuples)
+    params = clean_params(params)
+
     # 2. Extract and REMOVE image_size
     image_size = params.pop("image_size", None)
 
     # 3. Configure Pre-processor (if applicable) using the extracted image_size
-    if hasattr(model_class, "configure_pre_processor") and image_size is not None:
-        if "pre_processor" not in params:
+    if "pre_processor" not in params:
+        if hasattr(model_class, "configure_pre_processor") and image_size is not None:
             logger.info(f"Auto-configuring pre-processor for {class_name} with size {image_size}...")
             pre_processor = model_class.configure_pre_processor(image_size=image_size)
             params["pre_processor"] = pre_processor
+    else:
+        params["pre_processor"] = build_preprocessor(params["pre_processor"])
 
     # 4. Instantiate the model
     try:
         model = model_class(**params)
-        return model
     except TypeError as e:
         logger.error(f"Error initializing {class_name}: {e}")
         logger.error(f"Parameters provided: {list(params.keys())}")
         raise e
+    disable_train_antialias(model)
+    return model
 
 
 def build_data(data_config: Dict[str, Any]) -> Folder:
@@ -118,16 +162,93 @@ def get_image_size(model) -> Optional[tuple]:
     return None
 
 
+def fix_onnx_output_shapes(onnx_path: Path) -> None:
+    """Record static non-batch output dims that torch's legacy exporter leaves symbolic (e.g. ``Clippred_score_dim_1``)."""
+    try:
+        import onnx
+    except ImportError:
+        logger.warning(f"onnx is not installed; output shapes in {onnx_path} stay symbolic and ONNXEngine will reject them.")
+        return
+
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    probe = onnx.ModelProto()
+    probe.CopyFrom(model)
+    # inference keeps existing output dims, so clear them to get the inferred ones
+    for out in probe.graph.output:
+        out.type.tensor_type.ClearField("shape")
+    inferred = onnx.shape_inference.infer_shapes(probe, data_prop=True)
+
+    for out, inf in zip(model.graph.output, inferred.graph.output):
+        dims, inf_dims = out.type.tensor_type.shape.dim, inf.type.tensor_type.shape.dim
+        if len(dims) != len(inf_dims):
+            continue
+        # dim 0 keeps its exported name, e.g. batch_size
+        for dim, inf_dim in zip(dims[1:], inf_dims[1:]):
+            if inf_dim.HasField("dim_value"):
+                dim.dim_value = inf_dim.dim_value
+    onnx.save(model, str(onnx_path))
+
+
+def build_tiler(tile_size, stride, tiler_cls_name=None):
+    if tile_size is None:
+        return []
+    logger.info(f"Tiling enabled: tile_size={tile_size}, stride={stride}, tiler={tiler_cls_name or 'CallbackTiler'}")
+    return [TilerConfigCallback(enable=True, tile_size=tile_size, stride=stride, tiler_class=tiler_cls_name)]
+
+
+def estimate_max_samples(config_path, num_samples=None):
+    # a subprocess frees the profiling model's CUDA memory before engine.fit()
+    cmd = [
+        sys.executable,
+        "-m",
+        "anomaly_detectors.anomalib_lmi.v2.memory_estimation.estimate",
+        "-i",
+        config_path,
+    ]
+    if num_samples:
+        cmd.extend(["-n", str(num_samples)])
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        logger.warning(f"Could not estimate training memory:\n{result.stderr.strip()}")
+        return None, None
+
+    max_images, peak_mib = None, None
+    for line in result.stdout.strip().splitlines():
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        try:
+            if key == "max_train_images":
+                max_images = None if value == "None" else int(value)
+            elif key == "estimated_peak_mib":
+                peak_mib = float(value)
+        except ValueError:
+            continue
+
+    if max_images is None and peak_mib is None:
+        logger.warning(f"Unexpected estimate output:\n{result.stdout.strip()}")
+    return max_images, peak_mib
+
+
 def main():
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Train Anomalib Model from YAML config")
     parser.add_argument("--config", type=str, default="config.yaml", help="Path to config file")
+    parser.add_argument("--skip-mem-estimate", action="store_true", help="Run memory estimation before training")
+    parser.add_argument("--ckpt-path", type=Path, help="Path to a Lightning checkpoint to resume")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     cfg = prepare_model_training_config(cfg, args.config)
 
     # --- Build Model Dynamically ---
+    model_params = cfg["model"]["params"]
+    tiler_cls_name = model_params.pop("tiler_type", None)
+    tiler_callbacks = build_tiler(
+        model_params.pop("tile_size", None),
+        model_params.pop("stride", None),
+        tiler_cls_name=tiler_cls_name,
+    )
     model = build_model(cfg["model"])
 
     # --- Data Module Setup ---
@@ -139,37 +260,68 @@ def main():
     eng_cfg = cfg["engine"]
     engine = Engine(
         max_epochs=eng_cfg["max_epochs"],
-        accelerator=eng_cfg["accelerator"],
+        accelerator=eng_cfg.get("accelerator", "gpu"),
         devices=eng_cfg["devices"],
         default_root_dir=Path(eng_cfg["default_root_dir"]),
+        callbacks=tiler_callbacks,
     )
+
+    if not args.skip_mem_estimate:
+        max_dataset_size, estimated_peak_mib = estimate_max_samples(args.config)
+        logger.info(f"Approximated max dataset size: {max_dataset_size or 'Could not estimate max dataset size'}")
+        logger.info(
+            "Estimated training memory: %s",
+            f"{estimated_peak_mib:.2f} MiB" if estimated_peak_mib is not None else "Could not estimate training memory",
+        )
 
     # --- Train ---
     logger.info("Starting training...")
-    engine.fit(model=model, datamodule=datamodule)
+    # reset_peak_memory_stats raises on a host without CUDA, before lightning can report the real problem
+    on_cuda = torch.cuda.is_available()
+    if on_cuda:
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+    engine.fit(model=model, datamodule=datamodule, ckpt_path=args.ckpt_path)
+    checkpoint_path = Path(eng_cfg["default_root_dir"]) / "model.ckpt"
+    engine.trainer.save_checkpoint(checkpoint_path)
+    if on_cuda:
+        logger.info(
+            "cuda max allocated MiB: %.2f",
+            torch.cuda.max_memory_allocated() / 1024**2,
+        )
+        logger.info(
+            "cuda max reserved MiB: %.2f",
+            torch.cuda.max_memory_reserved() / 1024**2,
+        )
+
+    inner = getattr(model, "model", model)
+
+    for name in ["memory_bank", "embedding", "embeddings"]:
+        if hasattr(inner, name):
+            value = getattr(inner, name)
+            if isinstance(value, torch.Tensor):
+                logger.info(f"{name}: shape={tuple(value.shape)}, dtype={value.dtype}, device={value.device}")
 
     # --- Export to Torch---
     engine.export(model=model, export_type=ExportType.TORCH)
 
-    # --- Export to ONNX, then simplify in-place for TRT 10 compatibility ---
-    onnx_path = engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model))
-    if onnx_path is not None and onnx_path.exists():
-        try:
-            import onnx
-            from onnxsim import simplify
-            m = onnx.load(str(onnx_path))
-            inp = m.graph.input[0]
-            dims = [(d.dim_value if d.HasField("dim_value") else -1) for d in inp.type.tensor_type.shape.dim]
-            H = dims[2] if len(dims) > 2 and dims[2] > 0 else get_image_size(model)[0]
-            W = dims[3] if len(dims) > 3 and dims[3] > 0 else H
-            m_sim, ok = simplify(m, overwrite_input_shapes={inp.name: [1, 3, H, W]})
-            if ok:
-                onnx.save(m_sim, str(onnx_path))
-                logger.info(f"ONNX simplified in-place at {onnx_path}")
-            else:
-                logger.warning("onnxsim returned ok=False; keeping original ONNX")
-        except Exception as e:
-            logger.warning(f"onnxsim failed (ONNX still valid for ORT): {e}")
+    # --- Export to ONNX---
+    model = model.float()
+
+    def export_onnx(external_data=False):
+        onnx_kwargs = {"external_data": external_data}
+        onnx_path = engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model), onnx_kwargs=onnx_kwargs)
+        fix_onnx_output_shapes(onnx_path)
+
+    try:
+        export_onnx()
+    except RuntimeError as e:
+        if "larger than 2GiB limit" in str(e):
+            # Retry export with external data
+            logger.info("2GiB onnx export limit exceeded, export will include additional files.")
+            export_onnx(external_data=True)
+        else:
+            raise e
 
     # Optional model-owned artifact publication. Standard models are no-ops.
     notify_model_exported(model, cfg)

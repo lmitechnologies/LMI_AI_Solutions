@@ -8,6 +8,7 @@ import torch
 from rfdetr.assets.coco_classes import COCO_CLASSES
 
 from object_detectors.od_core.object_detector import ObjectDetector
+from tests.object_detectors.match_detections import assert_detections_match
 
 from .test_model import _assert_empty_out, _assert_nonempty_out, _assert_scores_geq
 
@@ -17,6 +18,7 @@ COCO_DIR = "tests/assets/images/coco"
 KEYS = ["boxes", "scores", "masks", "segments", "classes"]
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TRT_MODEL = "tests/assets/models/od/rf_detr/inference_model.engine"
+PTH_FILE = "tests/assets/models/od/rf_detr/rf-detr-seg-small.pth"
 OUT_DIR = "tests/outputs/od/rf_detr"
 IMAGE_SIZE = 384
 OFF_SIZES = [(512, 640), (576, 704), (704, 512)]  # (h, w), non-square — exercise the off-size resize guard
@@ -44,15 +46,15 @@ def imgs_coco():
 def trt_model():
     if DEVICE != "cuda":
         pytest.skip("TensorRT model can only be tested on CUDA device.")
-    try:
-        return ObjectDetector(
-            metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
-            model_path=TRT_MODEL,
-            class_map=COCO_CLASSES,
-            image_size=[IMAGE_SIZE, IMAGE_SIZE],
-        )
-    except Exception as e:
-        pytest.skip(f"Failed to load TRT engine: {e}")
+    pytest.importorskip("tensorrt")
+    if not os.path.exists(TRT_MODEL):
+        pytest.skip(f"Engine file not found: {TRT_MODEL}")
+    return ObjectDetector(
+        metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
+        model_path=TRT_MODEL,
+        class_map=COCO_CLASSES,
+        image_size=[IMAGE_SIZE, IMAGE_SIZE],
+    )
 
 
 def _assert_all_cuda(outputs, keys=KEYS):
@@ -198,3 +200,27 @@ def test_no_cross_chunk_contamination(imgs_coco, trt_model):
                 _assert_nonempty_out(out, ["boxes", "scores", "classes"])
             else:
                 _assert_empty_out(out, ["boxes", "scores", "classes"])
+
+
+def test_matches_pth(imgs_coco, trt_model):
+    """The engine built by tests/build_test_engines.py finds the .pth model's detections."""
+    pth_model = ObjectDetector(
+        metadata=dict(version="v1", model_name="rfdetr", task="od", framework="rfdetr"),
+        model_path=PTH_FILE,
+        class_map=COCO_CLASSES,
+        image_size=[IMAGE_SIZE, IMAGE_SIZE],
+        device="cuda",
+    )
+    images = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco]
+    ref, _ = pth_model.predict(images, configs=0.47)
+    out, _ = trt_model.predict(images, configs=0.47)
+    for i in range(len(images)):
+        assert_detections_match(
+            {k: v[i] for k, v in ref.items()},
+            {k: v[i] for k, v in out.items()},
+            min_score=0.5,
+            score_tol=0.03,
+            min_box_iou=0.9,
+            min_mask_iou=0.95,
+            label=f"image {i}",
+        )

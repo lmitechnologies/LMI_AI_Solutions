@@ -6,6 +6,7 @@ from .torch_model import TolerantAnomalyDINOModel
 def __getattr__(name: str):
     if name == "TolerantAnomalyDINO":
         from .lightning_model import TolerantAnomalyDINO
+
         return TolerantAnomalyDINO
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

@@ -8,6 +8,7 @@ from lmi_utils.dataset_utils.ops.dataset_crop_by_label import crop_dataset_by_la
 from lmi_utils.dataset_utils.ops.dataset_pad import pad_dataset
 from lmi_utils.dataset_utils.ops.dataset_resize import resize_dataset
 from lmi_utils.dataset_utils.ops.dataset_rotate import rotate_dataset
+from lmi_utils.dataset_utils.ops.dataset_tile import tile_dataset
 
 # LMI packages
 from lmi_utils.dataset_utils.representations import Dataset
@@ -47,6 +48,9 @@ def generate_image_name(image_name, args):
         )  # -1 so that the angle is positive for clockwise rotation
     elif args["operation"] == "crop-by-label":
         out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}_{args['target_label']}" + ".png"
+    elif args["operation"] == "tile":
+        # the row/col is already in the name; tile_dataset put it there
+        out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}_{args['width']}x{args['height']}" + ".png"
     else:
         out_name = os.path.splitext(image_name)[0] + f"_{args['operation']}" + ".png"
 
@@ -121,6 +125,12 @@ def parse_args():
         action="store_true",
         help="Maintain aspect ratio when resizing and pad when needed.",
     )
+    resize_parser.add_argument(
+        "--pad_value",
+        type=int,
+        default=0,
+        help="Fill value for the --par padding. 0 is black; use 114 to match the YOLO letterbox.",
+    )
     subparsers.add_parser("pad", parents=[dim_parser], help="Pad images")
     rotate_parser = subparsers.add_parser("rotate", help="Rotate images")
     rotate_parser.add_argument(
@@ -137,6 +147,22 @@ def parse_args():
         help="rotate the images counter-clockwise",
         default=False,
         required=False,
+    )
+
+    # tile parser
+    tile_parser = subparsers.add_parser("tile", parents=[dim_parser], help="Cut images into a grid of tiles")
+    tile_parser.add_argument(
+        "--stride",
+        type=int,
+        nargs="+",
+        required=True,
+        help="Step between tile origins, one int or two (height width). Overlap is tile size minus stride.",
+    )
+    tile_parser.add_argument(
+        "--min_label_size",
+        type=float,
+        default=0.0,
+        help="Drop a clipped label thinner than this many pixels on either axis. Slivers only.",
     )
 
     # crop by label parser
@@ -158,7 +184,7 @@ def apply_ops(args):
     if args.get("height", None) == 0:
         args["height"] = None
 
-    if args["operation"] in ["resize", "pad"]:
+    if args["operation"] in ["resize", "pad", "tile"]:
         output_imsize = [args["width"], args["height"]]
     else:
         output_imsize = None
@@ -193,7 +219,7 @@ def apply_ops(args):
         output_images, output_dataset = resize_dataset(dataset, images, output_imsize, args["par"])
         if args["par"]:
             if args["width"] is not None and args["height"] is not None:
-                output_images, output_dataset = pad_dataset(output_dataset, output_images, output_imsize)
+                output_images, output_dataset = pad_dataset(output_dataset, output_images, output_imsize, value=args.get("pad_value", 0))
 
     # Pad images
     elif args["operation"] == "pad":
@@ -204,6 +230,19 @@ def apply_ops(args):
     elif args["operation"] == "rotate":
         logger.debug(f"Rotating images by {args['angle']} degrees")
         output_images, output_dataset = rotate_dataset(dataset, images, args["angle"], args["counter_clockwise"])
+
+    # Tile images
+    elif args["operation"] == "tile":
+        if args["width"] is None or args["height"] is None:
+            raise ValueError("tile requires both --width and --height")
+        stride = args["stride"]
+        if len(stride) not in (1, 2):
+            raise ValueError("--stride requires 1 or 2 integers")
+        stride = stride * 2 if len(stride) == 1 else stride
+        logger.debug(f"Tiling images to {output_imsize} with stride {stride}")
+        output_images, output_dataset = tile_dataset(
+            dataset, images, tile_size=[args["height"], args["width"]], stride=stride, min_label_size=args["min_label_size"]
+        )
 
     # Crop images by label
     elif args["operation"] == "crop-by-label":

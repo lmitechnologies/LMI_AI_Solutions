@@ -161,3 +161,30 @@ def test_static_engine_matches_reference(static_engine_path):
     out = engine.infer(x_cpu.cuda())[0].clone().cpu().numpy()
     ref = _ort_reference(onnx_path, x_cpu.numpy())
     np.testing.assert_allclose(out, ref, atol=1e-3)
+
+
+def test_input_still_being_written_by_torch(dynamic_engine_path):
+    """TRT must not read an input before torch's queued kernels have written it."""
+    onnx_path, engine_path = dynamic_engine_path
+    engine = TRTEngine(engine_path, device="cuda")
+    base_cpu = torch.randn(8, 3, 32, 32, dtype=torch.float32)
+    base = base_cpu.cuda()
+    busy = torch.randn(4096, 4096, device="cuda")
+
+    for shift in range(1, 8):
+        for _ in range(4):  # queue slow kernels ahead of the input's
+            busy = (busy @ busy).clamp(-1, 1)
+        x = base.roll(shift, dims=0)  # differs per pass so a stale buffer gives a wrong answer
+        out = engine.infer(x)[0].cpu().numpy()
+        ref = _ort_reference(onnx_path, base_cpu.roll(shift, dims=0).numpy())
+        np.testing.assert_allclose(out, ref, atol=1e-3)
+
+
+def test_infer_outside_default_stream_raises(dynamic_engine_path):
+    """infer() relies on the default stream to order torch's writes before TRT's reads."""
+    _, engine_path = dynamic_engine_path
+    engine = TRTEngine(engine_path, device="cuda")
+    x = torch.randn(1, 3, 32, 32, dtype=torch.float32, device="cuda")
+
+    with torch.cuda.stream(torch.cuda.Stream()), pytest.raises(RuntimeError, match="default CUDA stream"):
+        engine.infer(x)

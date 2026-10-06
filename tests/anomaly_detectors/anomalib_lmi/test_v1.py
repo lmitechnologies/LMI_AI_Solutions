@@ -2,6 +2,7 @@ import glob
 import logging
 import os
 import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Sequence
@@ -86,13 +87,11 @@ def trt_model():
 
 def test_compare_with_raw(anomalib_model, cpu_models):
     """
-    Compare prediction results between current implementation and anomalib's TorchInferencer.
+    Compare prediction results between current implementation and anomalib's TorchInferencer on off-size images.
 
-    ONNX-loaded models are excluded: anomalib v1.1.1 disables antialiasing only on the ONNX
-    export path (``InferenceModel(..., disable_antialias=True)``), not on ``to_torch``, so
-    ``.pt`` and ``.onnx`` are not numerically equivalent in v1.
+    anomalib v1.1.1 drops antialiasing from the resize inside its ONNX export, so the ONNX backend resizes before the
+    engine the way the ``.pt`` transform does.
     """
-    ais_models = [m for m in cpu_models if not isinstance(m, AnomalibONNX)]
     paths = glob.glob(os.path.join(DATA_PATH, "*.png"))
     for p in paths:
         # using anomalib code
@@ -111,7 +110,7 @@ def test_compare_with_raw(anomalib_model, cpu_models):
         # using AIS code
         im = cv2.imread(p)
         rgb = cv2.cvtColor(im, cv2.COLOR_BGR2RGB)
-        for model in ais_models:
+        for model in cpu_models:
             pred2 = model.predict(rgb)
             atol = 1e-3
             assert np.allclose(pred, pred2, atol=atol), f"mismatch for {type(model).__name__}"
@@ -223,23 +222,19 @@ def test_annotate(api_model, test_data):
             assert np.array_equal(out2, out3)
 
 
-def test_convert_to_torchscript():
-    with tempfile.TemporaryDirectory() as t:
-        outpath = os.path.join(t, "trace.pt")
-        convert_v1_torchscript(MODEL_PATH, outpath, device="cpu")
-        assert os.path.isfile(outpath)
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_convert_to_torchscript(device, tmp_path):
+    """The traced model gives the .pt model's anomaly maps on the device it was traced on."""
+    if device == "cuda" and not USE_GPU:
+        pytest.skip("GPU not available")
+    outpath = str(tmp_path / "trace.pt")
+    convert_v1_torchscript(MODEL_PATH, outpath, device=device)
 
-        model = AnomalyModelV1(outpath, device="cpu")
-        inp = torch.randint(0, 255, (256, 256, 3), dtype=torch.uint8)
-        model.predict(inp)
-
-        if USE_GPU:
-            outpath = os.path.join(t, "trace_gpu.pt")
-            convert_v1_torchscript(MODEL_PATH, outpath, device="cuda")
-            assert os.path.isfile(outpath)
-
-            model = AnomalyModelV1(outpath, device="cuda")
-            model.predict(inp.cuda())
+    pt_model = AnomalyModelV1(MODEL_PATH, device=device)
+    ts_model = AnomalyModelV1(outpath, device=device)
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+        np.testing.assert_allclose(ts_model.predict(rgb)[0], pt_model.predict(rgb)[0], atol=1e-3, err_msg=os.path.basename(p))
 
 
 def test_cmds():
@@ -254,16 +249,34 @@ def test_cmds():
         assert result.returncode == 0, f"Command failed:\n{result.stdout}"
         assert len(glob.glob(os.path.join(t, "*_annot.png"))) == 1
 
-        if USE_GPU:
-            t2 = os.path.join(t, "recon")
-            cmd = f"python -m anomaly_detectors.anomalib_lmi.v1.model convert -i {MODEL_PATH} -o {t2}"
-            logger.info(f"running cmd: {cmd}")
-            result = subprocess.run(cmd, shell=True, env=my_env, capture_output=True, text=True)
-            logger.info(result.stdout)
-            logger.info(result.stderr)
 
-            out_engine = os.path.join(t2, "model.engine")
-            assert os.path.isfile(out_engine)
+def test_cli_onnx_export_matches_pt(cpu_models, tmp_path):
+    """The CLI's ONNX export, run on CPU, gives the .pt model's anomaly maps."""
+    cmd = [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v1.model", "convert", "-i", MODEL_PATH, "-o", str(tmp_path), "-c", "onnx"]
+    result = subprocess.run(cmd, env=os.environ | {"CUDA_VISIBLE_DEVICES": ""}, capture_output=True, text=True)
+    assert result.returncode == 0, f"convert failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+
+    onnx_model = AnomalyModelV1(str(tmp_path / "model.onnx"), device="cpu")
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+        expected = cpu_models[0].predict(rgb)[0]
+        np.testing.assert_allclose(onnx_model.predict(rgb)[0], expected, atol=1e-3, err_msg=os.path.basename(p))
+
+
+def test_cli_trt_export_matches_pt(ad_model, tmp_path):
+    """The CLI's FP32 engine gives the .pt model's anomaly maps within 2% of the peak; TF32 alone moves them ~0.8%."""
+    if not USE_GPU:
+        pytest.skip("GPU not available")
+    pytest.importorskip("tensorrt")
+    cmd = [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v1.model", "convert", "-i", MODEL_PATH, "-o", str(tmp_path), "--fp32"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    assert result.returncode == 0, f"convert failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+
+    engine = AnomalyModelV1(str(tmp_path / "model.engine"), device="cuda")
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+        expected = ad_model.predict(rgb)[0]
+        np.testing.assert_allclose(engine.predict(rgb)[0], expected, atol=0.02 * np.abs(expected).max(), err_msg=os.path.basename(p))
 
 
 def test_predict_input_variants(api_model):

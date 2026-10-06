@@ -6,19 +6,12 @@ import csv
 import json
 import logging
 import math
-import os
 import warnings
 from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
 import torch
-from lightning.pytorch.utilities.types import STEP_OUTPUT
-from torch import nn
-from torch.utils.data import DataLoader
-from torchvision.transforms import v2 as tv_v2
-from torchvision.transforms.v2 import Compose, InterpolationMode, Normalize, Resize
-
 from anomalib import LearningType, PrecisionType
 from anomalib.data import Batch, InferenceBatch
 from anomalib.metrics import Evaluator
@@ -26,6 +19,11 @@ from anomalib.models.components import AnomalibModule, MemoryBankMixin
 from anomalib.post_processing import PostProcessor
 from anomalib.pre_processing import PreProcessor
 from anomalib.visualization import Visualizer
+from lightning.pytorch.utilities.types import STEP_OUTPUT
+from torch import nn
+from torch.utils.data import DataLoader
+from torchvision.transforms import v2 as tv_v2
+from torchvision.transforms.v2 import Compose, InterpolationMode, Normalize, Resize
 
 from .torch_model import TolerantAnomalyDINOModel
 
@@ -71,24 +69,16 @@ class TADPostProcessor(PostProcessor):
         anomaly_map = raw_map
         if self.enable_normalization:
             if not return_raw_pred_score:
-                pred_score = self._normalize(
-                    raw_score, self.image_min, self.image_max, self.image_threshold
-                )
+                pred_score = self._normalize(raw_score, self.image_min, self.image_max, self.image_threshold)
             if not return_raw_anomaly_map:
-                anomaly_map = self._normalize(
-                    raw_map, self.pixel_min, self.pixel_max, self.pixel_threshold
-                )
+                anomaly_map = self._normalize(raw_map, self.pixel_min, self.pixel_max, self.pixel_threshold)
 
         if self.enable_thresholding:
             score_threshold = (
-                self.image_threshold
-                if return_raw_pred_score or not self.enable_normalization
-                else self.normalized_image_threshold
+                self.image_threshold if return_raw_pred_score or not self.enable_normalization else self.normalized_image_threshold
             )
             map_threshold = (
-                self.pixel_threshold
-                if return_raw_anomaly_map or not self.enable_normalization
-                else self.normalized_pixel_threshold
+                self.pixel_threshold if return_raw_anomaly_map or not self.enable_normalization else self.normalized_pixel_threshold
             )
             pred_label = self._apply_threshold(pred_score, score_threshold)
             pred_mask = self._apply_threshold(anomaly_map, map_threshold)
@@ -108,38 +98,20 @@ class TADPostProcessor(PostProcessor):
         return_raw_pred_score = bool(getattr(self, "return_raw_pred_score", True))
         return_raw_anomaly_map = bool(getattr(self, "return_raw_anomaly_map", False))
         if not return_raw_anomaly_map:
-            batch.anomaly_map = self._normalize(
-                batch.anomaly_map, self.pixel_min, self.pixel_max, self.pixel_threshold
-            )
+            batch.anomaly_map = self._normalize(batch.anomaly_map, self.pixel_min, self.pixel_max, self.pixel_threshold)
         if not return_raw_pred_score:
-            batch.pred_score = self._normalize(
-                batch.pred_score, self.image_min, self.image_max, self.image_threshold
-            )
+            batch.pred_score = self._normalize(batch.pred_score, self.image_min, self.image_max, self.image_threshold)
 
     def threshold_batch(self, batch: Batch) -> None:
         """Threshold each output in the numerical domain actually returned."""
         return_raw_pred_score = bool(getattr(self, "return_raw_pred_score", True))
         return_raw_anomaly_map = bool(getattr(self, "return_raw_anomaly_map", False))
         score_threshold = (
-            self.image_threshold
-            if return_raw_pred_score or not self.enable_normalization
-            else self.normalized_image_threshold
+            self.image_threshold if return_raw_pred_score or not self.enable_normalization else self.normalized_image_threshold
         )
-        map_threshold = (
-            self.pixel_threshold
-            if return_raw_anomaly_map or not self.enable_normalization
-            else self.normalized_pixel_threshold
-        )
-        batch.pred_label = (
-            batch.pred_label
-            if batch.pred_label is not None
-            else self._apply_threshold(batch.pred_score, score_threshold)
-        )
-        batch.pred_mask = (
-            batch.pred_mask
-            if batch.pred_mask is not None
-            else self._apply_threshold(batch.anomaly_map, map_threshold)
-        )
+        map_threshold = self.pixel_threshold if return_raw_anomaly_map or not self.enable_normalization else self.normalized_pixel_threshold
+        batch.pred_label = batch.pred_label if batch.pred_label is not None else self._apply_threshold(batch.pred_score, score_threshold)
+        batch.pred_mask = batch.pred_mask if batch.pred_mask is not None else self._apply_threshold(batch.anomaly_map, map_threshold)
 
 
 class _TADONNXExportAdapter(nn.Module):
@@ -187,18 +159,13 @@ class _TADONNXExportAdapter(nn.Module):
             and (not reject_boost or reject_lambda == 0.0)
             and accept_damping == 1.0
         )
-        self._use_tolerance_forward = (
-            not detector_only
-            and not stock_compat
-            and callable(getattr(self.inner, "_tolerance_forward", None))
-        )
+        self._use_tolerance_forward = not detector_only and not stock_compat and callable(getattr(self.inner, "_tolerance_forward", None))
 
         # PostProcessor is a Lightning callback, not necessarily callable. Keep a
         # plain reference and invoke its ``forward`` method explicitly when present.
         object.__setattr__(self, "_tad_post_processor", getattr(source, "post_processor", None))
         self._apply_post_processor = not (
-            bool(getattr(source, "return_raw_score", True))
-            and bool(getattr(source, "return_raw_anomaly_map", True))
+            bool(getattr(source, "return_raw_score", True)) and bool(getattr(source, "return_raw_anomaly_map", True))
         )
 
     @staticmethod
@@ -213,9 +180,7 @@ class _TADONNXExportAdapter(nn.Module):
         self.inner.eval()
         model_input = self.pre_processor(batch) if self.pre_processor is not None else batch
         if self._use_tolerance_forward:
-            value = self._unwrap(
-                self.inner._tolerance_forward(model_input, return_diagnostics=False)
-            )
+            value = self._unwrap(self.inner._tolerance_forward(model_input, return_diagnostics=False))
         else:
             value = self._unwrap(self.inner(model_input))
 
@@ -227,10 +192,7 @@ class _TADONNXExportAdapter(nn.Module):
             value = InferenceBatch(pred_score=pred_score, anomaly_map=anomaly_map)
 
         if not hasattr(value, "anomaly_map"):
-            raise TypeError(
-                "TAD ONNX export could not obtain an InferenceBatch-like output; "
-                f"inner model returned {type(value)!r}."
-            )
+            raise TypeError(f"TAD ONNX export could not obtain an InferenceBatch-like output; inner model returned {type(value)!r}.")
 
         # Raw score + raw map is TAD's default, so no callback processing
         # is needed in the common path. If either domain explicitly requests
@@ -247,10 +209,7 @@ class _TADONNXExportAdapter(nn.Module):
         if pred_score is None and anomaly_map is not None:
             pred_score = torch.amax(anomaly_map, dim=(-2, -1))
         if pred_score is None or anomaly_map is None:
-            raise TypeError(
-                "TAD ONNX export requires both pred_score and anomaly_map after "
-                "canonicalization/post-processing."
-            )
+            raise TypeError("TAD ONNX export requires both pred_score and anomaly_map after canonicalization/post-processing.")
         return InferenceBatch(pred_score=pred_score, anomaly_map=anomaly_map)
 
     def forward(self, batch: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -328,11 +287,17 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         image_reject_boost_calibrate: bool = True,
         image_reject_boost_target_precision: float = 0.99,
         image_reject_boost_advantage_candidates: tuple[float, ...] | list[float] = (
-            -0.30, -0.25, -0.20, -0.15, -0.10, -0.075, -0.05, -0.025, 0.0
+            -0.30,
+            -0.25,
+            -0.20,
+            -0.15,
+            -0.10,
+            -0.075,
+            -0.05,
+            -0.025,
+            0.0,
         ),
-        image_reject_boost_lambda_candidates: tuple[float, ...] | list[float] = (
-            0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0
-        ),
+        image_reject_boost_lambda_candidates: tuple[float, ...] | list[float] = (0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0),
         # v6c supervised residual projection (trained on REFERENCE only)
         residual_projection_enable: bool = True,
         residual_projection_dim: int = 32,
@@ -370,11 +335,20 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         projected_reject_boost_reject_type_weights: dict[str, float] | None = None,
         projected_reject_boost_require_non_decreasing_overall_recall: bool = True,
         projected_reject_boost_advantage_candidates: tuple[float, ...] | list[float] = (
-            -0.40, -0.30, -0.25, -0.20, -0.15, -0.10, -0.075, -0.05, -0.025, 0.0, 0.025, 0.05
+            -0.40,
+            -0.30,
+            -0.25,
+            -0.20,
+            -0.15,
+            -0.10,
+            -0.075,
+            -0.05,
+            -0.025,
+            0.0,
+            0.025,
+            0.05,
         ),
-        projected_reject_boost_lambda_candidates: tuple[float, ...] | list[float] = (
-            0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0
-        ),
+        projected_reject_boost_lambda_candidates: tuple[float, ...] | list[float] = (0.0, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0),
         detector_only: bool = False,
         strict_stock_when_damping_one: bool = True,
         emit_patch_class: bool = False,
@@ -455,9 +429,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         )
 
         self.training_workspace = Path(training_workspace) if training_workspace else None
-        self.training_original_config_path = (
-            Path(training_original_config_path) if training_original_config_path else None
-        )
+        self.training_original_config_path = Path(training_original_config_path) if training_original_config_path else None
 
         self.normal_reference_dir = Path(normal_reference_dir) if normal_reference_dir else None
         self.acceptable_dir = Path(acceptable_dir) if acceptable_dir else None
@@ -490,9 +462,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         self.image_accept_min_threshold = float(image_accept_min_threshold)
 
         self.projected_image_accept_calibrate = bool(projected_image_accept_calibrate)
-        self.projected_image_accept_max_reject_false_accept_rate = float(
-            projected_image_accept_max_reject_false_accept_rate
-        )
+        self.projected_image_accept_max_reject_false_accept_rate = float(projected_image_accept_max_reject_false_accept_rate)
         if not 0.0 <= self.projected_image_accept_max_reject_false_accept_rate <= 1.0:
             raise ValueError("projected_image_accept_max_reject_false_accept_rate must be in [0, 1]")
         self.projected_image_accept_safety_margin = float(projected_image_accept_safety_margin)
@@ -505,12 +475,8 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         self.image_reject_boost_target_precision = float(image_reject_boost_target_precision)
         if not 0.0 < self.image_reject_boost_target_precision <= 1.0:
             raise ValueError("image_reject_boost_target_precision must be in (0, 1]")
-        self.image_reject_boost_advantage_candidates = tuple(
-            sorted(set(float(v) for v in image_reject_boost_advantage_candidates))
-        )
-        self.image_reject_boost_lambda_candidates = tuple(
-            sorted(set(float(v) for v in image_reject_boost_lambda_candidates))
-        )
+        self.image_reject_boost_advantage_candidates = tuple(sorted(set(float(v) for v in image_reject_boost_advantage_candidates)))
+        self.image_reject_boost_lambda_candidates = tuple(sorted(set(float(v) for v in image_reject_boost_lambda_candidates)))
         if not self.image_reject_boost_advantage_candidates:
             raise ValueError("image_reject_boost_advantage_candidates must not be empty")
         if not self.image_reject_boost_lambda_candidates:
@@ -527,18 +493,12 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         if not 0.0 < self.projected_reject_boost_target_precision <= 1.0:
             raise ValueError("projected_reject_boost_target_precision must be in (0, 1]")
         type_weights = projected_reject_boost_reject_type_weights or {}
-        self.projected_reject_boost_reject_type_weights = {
-            str(name): max(0.0, float(weight)) for name, weight in type_weights.items()
-        }
+        self.projected_reject_boost_reject_type_weights = {str(name): max(0.0, float(weight)) for name, weight in type_weights.items()}
         self.projected_reject_boost_require_non_decreasing_overall_recall = bool(
             projected_reject_boost_require_non_decreasing_overall_recall
         )
-        self.projected_reject_boost_advantage_candidates = tuple(
-            sorted(set(float(v) for v in projected_reject_boost_advantage_candidates))
-        )
-        self.projected_reject_boost_lambda_candidates = tuple(
-            sorted(set(float(v) for v in projected_reject_boost_lambda_candidates))
-        )
+        self.projected_reject_boost_advantage_candidates = tuple(sorted(set(float(v) for v in projected_reject_boost_advantage_candidates)))
+        self.projected_reject_boost_lambda_candidates = tuple(sorted(set(float(v) for v in projected_reject_boost_lambda_candidates)))
         if not self.projected_reject_boost_advantage_candidates:
             raise ValueError("projected_reject_boost_advantage_candidates must not be empty")
         if not self.projected_reject_boost_lambda_candidates:
@@ -549,15 +509,9 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             self.projected_reject_boost_lambda_candidates = (0.0,) + self.projected_reject_boost_lambda_candidates
 
         self.image_calibration_good_dir = Path(image_calibration_good_dir) if image_calibration_good_dir else None
-        self.image_calibration_acceptable_dir = (
-            Path(image_calibration_acceptable_dir) if image_calibration_acceptable_dir else None
-        )
-        self.image_calibration_reject_dir = (
-            Path(image_calibration_reject_dir) if image_calibration_reject_dir else None
-        )
-        self.image_calibration_output_dir = (
-            Path(image_calibration_output_dir) if image_calibration_output_dir else None
-        )
+        self.image_calibration_acceptable_dir = Path(image_calibration_acceptable_dir) if image_calibration_acceptable_dir else None
+        self.image_calibration_reject_dir = Path(image_calibration_reject_dir) if image_calibration_reject_dir else None
+        self.image_calibration_output_dir = Path(image_calibration_output_dir) if image_calibration_output_dir else None
         self.image_calibration_batch_size = int(image_calibration_batch_size)
         self.image_calibration_num_workers = int(image_calibration_num_workers)
 
@@ -573,12 +527,8 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             target_precision = float(target_precision)
             if not 0.0 < target_precision <= 1.0:
                 raise ValueError("target_precision must be in (0, 1]")
-            self.diagnostic_target_precisions = tuple(
-                sorted(set(self.diagnostic_target_precisions) | {target_precision})
-            )
-        self.diagnostic_report_threshold = (
-            None if diagnostic_report_threshold is None else float(diagnostic_report_threshold)
-        )
+            self.diagnostic_target_precisions = tuple(sorted(set(self.diagnostic_target_precisions) | {target_precision}))
+        self.diagnostic_report_threshold = None if diagnostic_report_threshold is None else float(diagnostic_report_threshold)
         self.diagnostic_fail_on_overlap = bool(diagnostic_fail_on_overlap)
         self.diagnostic_reject_class_depth = int(diagnostic_reject_class_depth)
 
@@ -590,21 +540,13 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         )
         self.deployment_target_precisions = tuple(float(v) for v in targets)
         if target_precision is not None:
-            self.deployment_target_precisions = tuple(
-                sorted(set(self.deployment_target_precisions) | {float(target_precision)})
-            )
+            self.deployment_target_precisions = tuple(sorted(set(self.deployment_target_precisions) | {float(target_precision)}))
         if not self.deployment_target_precisions:
             raise ValueError("deployment_target_precisions must not be empty")
         if any(not 0.0 < v <= 1.0 for v in self.deployment_target_precisions):
             raise ValueError("deployment_target_precisions values must be in (0, 1]")
-        self.target_precision = (
-            float(target_precision)
-            if target_precision is not None
-            else float(max(self.deployment_target_precisions))
-        )
-        self.deployment_thresholds_output_dir = (
-            Path(deployment_thresholds_output_dir) if deployment_thresholds_output_dir else None
-        )
+        self.target_precision = float(target_precision) if target_precision is not None else float(max(self.deployment_target_precisions))
+        self.deployment_thresholds_output_dir = Path(deployment_thresholds_output_dir) if deployment_thresholds_output_dir else None
         self._pending_deployment_threshold_payload: dict[str, Any] | None = None
         self._pending_deployment_labels: np.ndarray | None = None
         self._pending_deployment_raw_scores: np.ndarray | None = None
@@ -693,10 +635,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         elif precision == PrecisionType.FLOAT32:
             self.model = self.model.float()
         else:
-            raise ValueError(
-                f"Unsupported precision: {precision}. "
-                f"Supported: {PrecisionType.FLOAT16}, {PrecisionType.FLOAT32}."
-            )
+            raise ValueError(f"Unsupported precision: {precision}. Supported: {PrecisionType.FLOAT16}, {PrecisionType.FLOAT32}.")
 
     @classmethod
     def prepare_training_config(cls, cfg: dict, *, config_path: Path) -> dict:
@@ -720,10 +659,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         canonicalizes the result and exports only ``pred_score`` and ``anomaly_map``.
         """
         if input_size is None:
-            raise ValueError(
-                "TAD ONNX export requires a fixed input_size to allocate "
-                "static non-batch output buffers."
-            )
+            raise ValueError("TAD ONNX export requires a fixed input_size to allocate static non-batch output buffers.")
         if isinstance(input_size, int):
             input_size = (input_size, input_size)
         else:
@@ -752,10 +688,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         input_names = kwargs.pop("input_names", ["input"])
         output_names = kwargs.pop("output_names", ["pred_score", "anomaly_map"])
         if list(output_names) != ["pred_score", "anomaly_map"]:
-            raise ValueError(
-                "TAD's ONNX export has a fixed two-output contract: "
-                "['pred_score', 'anomaly_map']."
-            )
+            raise ValueError("TAD's ONNX export has a fixed two-output contract: ['pred_score', 'anomaly_map'].")
 
         onnx_dir = Path(export_root) / "weights" / "onnx"
         onnx_dir.mkdir(parents=True, exist_ok=True)
@@ -791,8 +724,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             import onnx
         except ModuleNotFoundError as exc:
             raise RuntimeError(
-                "The 'onnx' package is required to finalize TAD "
-                "output shapes. Install the same ONNX dependency used for export."
+                "The 'onnx' package is required to finalize TAD output shapes. Install the same ONNX dependency used for export."
             ) from exc
 
         model = onnx.load(str(onnx_path))
@@ -801,8 +733,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         missing = sorted(set(traced_output_shapes) - set(graph_outputs))
         if missing:
             raise RuntimeError(
-                "Expected TAD outputs were not present in the exported ONNX graph: "
-                f"{missing}. Available outputs: {sorted(graph_outputs)}"
+                f"Expected TAD outputs were not present in the exported ONNX graph: {missing}. Available outputs: {sorted(graph_outputs)}"
             )
 
         for name, expected_shape in traced_output_shapes.items():
@@ -838,10 +769,12 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         image_size: tuple[int, int] | int | None = None,
     ) -> PreProcessor:
         image_size = image_size or (252, 252)
-        transform = Compose([
-            Resize(image_size, antialias=True, interpolation=InterpolationMode.BICUBIC),
-            Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
+        transform = Compose(
+            [
+                Resize(image_size, antialias=True, interpolation=InterpolationMode.BICUBIC),
+                Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
         return PreProcessor(transform=transform)
 
     def set_residual_projection_mode(self, mode: str) -> None:
@@ -894,8 +827,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 previous = getattr(trainer, "check_val_every_n_epoch", 1)
                 trainer.check_val_every_n_epoch = max_epochs
                 logger.info(
-                    "TolerantAnomalyDINO: multi-epoch memory-bank schedule active: "
-                    "max_epochs=%d check_val_every_n_epoch=%d (previous=%s).",
+                    "TolerantAnomalyDINO: multi-epoch memory-bank schedule active: max_epochs=%d check_val_every_n_epoch=%d (previous=%s).",
                     max_epochs,
                     max_epochs,
                     previous,
@@ -1006,9 +938,9 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 )
 
         raw_accept_calibration = bool(self.model.image_accept_enable and self.image_accept_calibrate)
-        projected_accept_calibration = bool(
-            getattr(self.model, "projected_image_accept_enable", False)
-        ) and bool(self.projected_image_accept_calibrate)
+        projected_accept_calibration = bool(getattr(self.model, "projected_image_accept_enable", False)) and bool(
+            self.projected_image_accept_calibrate
+        )
 
         if self.joint_image_accept_calibrate and raw_accept_calibration and projected_accept_calibration:
             self._run_joint_image_accept_calibration()
@@ -1037,10 +969,12 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         if self.pre_processor is not None and hasattr(self.pre_processor, "transform"):
             return self.pre_processor.transform
         image_size = (252, 252)
-        return Compose([
-            Resize(image_size, antialias=True, interpolation=InterpolationMode.BICUBIC),
-            Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
+        return Compose(
+            [
+                Resize(image_size, antialias=True, interpolation=InterpolationMode.BICUBIC),
+                Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ]
+        )
 
     def _extract_defect_residuals(
         self,
@@ -1089,10 +1023,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 reject_types = None
                 if label == "reject" and batch_paths is not None:
                     reject_types = [
-                        _reject_type_from_path(
-                            Path(path), dir_path, self.residual_projection_reject_class_depth
-                        )
-                        for path in batch_paths
+                        _reject_type_from_path(Path(path), dir_path, self.residual_projection_reject_class_depth) for path in batch_paths
                     ]
                 self.model.add_defect_features(
                     feats,
@@ -1187,8 +1118,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
 
         if overlaps:
             msg = (
-                "Reference/calibration/test leakage detected. The same image identity appears across partitions. "
-                f"Examples: {overlaps[:5]}"
+                f"Reference/calibration/test leakage detected. The same image identity appears across partitions. Examples: {overlaps[:5]}"
             )
             if self.diagnostic_fail_on_overlap:
                 raise RuntimeError(msg)
@@ -1279,8 +1209,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         missing = {"acceptable", "reject"} - set(dirs)
         if missing:
             logger.warning(
-                "Joint image ACCEPT calibration skipped; missing calibration dirs: %s. "
-                "Both ACCEPT thresholds are set to infinity.",
+                "Joint image ACCEPT calibration skipped; missing calibration dirs: %s. Both ACCEPT thresholds are set to infinity.",
                 sorted(missing),
             )
             self.model.image_accept_threshold.fill_(float("inf"))
@@ -1343,15 +1272,11 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             raw_min_threshold=self.image_accept_min_threshold,
             projected_min_threshold=self.projected_image_accept_min_threshold,
             raw_image_reject_veto_enable=bool(self.model.image_reject_veto_enable),
-            raw_image_reject_veto_threshold=float(
-                self.model.image_reject_veto_threshold.detach().float().cpu()
-            ),
+            raw_image_reject_veto_threshold=float(self.model.image_reject_veto_threshold.detach().float().cpu()),
         )
         calibration["calibration_seed"] = int(self.calibration_seed)
         self.model.image_accept_threshold.fill_(float(calibration["raw_threshold"]))
-        self.model.projected_image_accept_threshold.fill_(
-            float(calibration["projected_threshold"])
-        )
+        self.model.projected_image_accept_threshold.fill_(float(calibration["projected_threshold"]))
 
         out_dir = self.image_calibration_output_dir or self.diagnostic_output_dir
         if out_dir is None:
@@ -1366,29 +1291,37 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         # Preserve familiar per-gate filenames for scripts that collect calibration
         # artifacts, but make it explicit that the values came from a joint search.
         (out_dir / "image_accept_calibration.json").write_text(
-            json.dumps({
-                "fit_policy": "joint_raw_projected",
-                "threshold": calibration["raw_threshold"],
-                "raw_threshold_before_safety_margin": calibration["raw_threshold_before_safety_margin"],
-                "safety_margin": calibration["raw_safety_margin"],
-                "combined_reject_false_accept_rate": calibration["combined_reject_false_accept_rate"],
-                "combined_reject_false_accepted": calibration["combined_reject_false_accepted"],
-                "reject_count": calibration["reject_count"],
-                "calibration_seed": int(self.calibration_seed),
-            }, indent=2, sort_keys=True)
+            json.dumps(
+                {
+                    "fit_policy": "joint_raw_projected",
+                    "threshold": calibration["raw_threshold"],
+                    "raw_threshold_before_safety_margin": calibration["raw_threshold_before_safety_margin"],
+                    "safety_margin": calibration["raw_safety_margin"],
+                    "combined_reject_false_accept_rate": calibration["combined_reject_false_accept_rate"],
+                    "combined_reject_false_accepted": calibration["combined_reject_false_accepted"],
+                    "reject_count": calibration["reject_count"],
+                    "calibration_seed": int(self.calibration_seed),
+                },
+                indent=2,
+                sort_keys=True,
+            )
         )
         (out_dir / "projected_image_accept_calibration.json").write_text(
-            json.dumps({
-                "fit_policy": "joint_raw_projected",
-                "projection_mode": mode,
-                "threshold": calibration["projected_threshold"],
-                "raw_threshold_before_safety_margin": calibration["projected_threshold_before_safety_margin"],
-                "safety_margin": calibration["projected_safety_margin"],
-                "combined_reject_false_accept_rate": calibration["combined_reject_false_accept_rate"],
-                "combined_reject_false_accepted": calibration["combined_reject_false_accepted"],
-                "reject_count": calibration["reject_count"],
-                "calibration_seed": int(self.calibration_seed),
-            }, indent=2, sort_keys=True)
+            json.dumps(
+                {
+                    "fit_policy": "joint_raw_projected",
+                    "projection_mode": mode,
+                    "threshold": calibration["projected_threshold"],
+                    "raw_threshold_before_safety_margin": calibration["projected_threshold_before_safety_margin"],
+                    "safety_margin": calibration["projected_safety_margin"],
+                    "combined_reject_false_accept_rate": calibration["combined_reject_false_accept_rate"],
+                    "combined_reject_false_accepted": calibration["combined_reject_false_accepted"],
+                    "reject_count": calibration["reject_count"],
+                    "calibration_seed": int(self.calibration_seed),
+                },
+                indent=2,
+                sort_keys=True,
+            )
         )
 
         logger.info(
@@ -1504,8 +1437,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         json_path.write_text(json.dumps(calibration, indent=2, sort_keys=True))
 
         logger.info(
-            "IMAGE-CALIBRATION threshold=%.6f acceptable_accept_rate=%.4f (%d/%d) "
-            "reject_false_accept_rate=%.4f (%d/%d) safety_margin=%.6f",
+            "IMAGE-CALIBRATION threshold=%.6f acceptable_accept_rate=%.4f (%d/%d) reject_false_accept_rate=%.4f (%d/%d) safety_margin=%.6f",
             calibration["threshold"],
             calibration["acceptable_accept_rate"],
             calibration["acceptable_accepted"],
@@ -1550,7 +1482,9 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             logger.warning(
                 "Projected image ACCEPT calibration skipped; required projected head(s) "
                 "are unavailable for mode=%s (direction=%s magnitude=%s).",
-                mode, direction_available, magnitude_available,
+                mode,
+                direction_available,
+                magnitude_available,
             )
             self.model.projected_image_accept_threshold.fill_(float("inf"))
             return
@@ -1584,9 +1518,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             raw_image_accept_enable=bool(self.model.image_accept_enable),
             raw_image_accept_threshold=float(self.model.image_accept_threshold.detach().float().cpu()),
             raw_image_reject_veto_enable=bool(self.model.image_reject_veto_enable),
-            raw_image_reject_veto_threshold=float(
-                self.model.image_reject_veto_threshold.detach().float().cpu()
-            ),
+            raw_image_reject_veto_threshold=float(self.model.image_reject_veto_threshold.detach().float().cpu()),
         )
         calibration["calibration_seed"] = int(self.calibration_seed)
         self.model.projected_image_accept_threshold.fill_(float(calibration["threshold"]))
@@ -1667,8 +1599,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
 
         self._assert_no_cross_partition_overlap()
         logger.info(
-            "Running image-level REJECT boost calibration with ACCEPT rule frozen "
-            "(reject boost disabled during candidate scoring)..."
+            "Running image-level REJECT boost calibration with ACCEPT rule frozen (reject boost disabled during candidate scoring)..."
         )
         rows = self._collect_diagnostic_rows(
             dirs,
@@ -1691,9 +1622,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             max_boost=float(self.model.image_reject_boost_max.detach().float().cpu()),
         )
         calibration["calibration_seed"] = int(self.calibration_seed)
-        self.model.image_reject_boost_advantage_threshold.fill_(
-            float(calibration["advantage_threshold"])
-        )
+        self.model.image_reject_boost_advantage_threshold.fill_(float(calibration["advantage_threshold"]))
         self.model.image_reject_boost_lambda.fill_(float(calibration["lambda"]))
 
         out_dir = self.image_calibration_output_dir or self.diagnostic_output_dir
@@ -1708,8 +1637,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
 
         op = calibration["selected_operating_point"]
         logger.info(
-            "REJECT-BOOST-CALIBRATION target_P=%.4f thresholdA=%.6f lambda=%.6f "
-            "met=%s P=%.4f R=%.4f FP=%d TP=%d baseline_R=%.4f",
+            "REJECT-BOOST-CALIBRATION target_P=%.4f thresholdA=%.6f lambda=%.6f met=%s P=%.4f R=%.4f FP=%d TP=%d baseline_R=%.4f",
             calibration["target_precision"],
             calibration["advantage_threshold"],
             calibration["lambda"],
@@ -1744,8 +1672,9 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         magnitude_available = self.model.residual_projection_magnitude_weight.numel() > 0
         if not (direction_available and magnitude_available):
             logger.warning(
-                "Mode-invariant projected calibration requires both fitted heads "
-                "(direction=%s magnitude=%s).", direction_available, magnitude_available
+                "Mode-invariant projected calibration requires both fitted heads (direction=%s magnitude=%s).",
+                direction_available,
+                magnitude_available,
             )
             return
 
@@ -1790,12 +1719,8 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         )
         direction_calibration["calibration_seed"] = int(self.calibration_seed)
         direction_calibration["fit_policy"] = "both_heads_mode_invariant"
-        self.model.direction_projected_reject_boost_advantage_threshold.fill_(
-            float(direction_calibration["advantage_threshold"])
-        )
-        self.model.direction_projected_reject_boost_lambda.fill_(
-            float(direction_calibration["lambda"])
-        )
+        self.model.direction_projected_reject_boost_advantage_threshold.fill_(float(direction_calibration["advantage_threshold"]))
+        self.model.direction_projected_reject_boost_lambda.fill_(float(direction_calibration["lambda"]))
 
         magnitude_calibration = _calibrate_projected_reject_boost_rule(
             rows,
@@ -1804,48 +1729,42 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         )
         magnitude_calibration["calibration_seed"] = int(self.calibration_seed)
         magnitude_calibration["fit_policy"] = "both_heads_mode_invariant"
-        self.model.magnitude_projected_reject_boost_advantage_threshold.fill_(
-            float(magnitude_calibration["advantage_threshold"])
-        )
-        self.model.magnitude_projected_reject_boost_lambda.fill_(
-            float(magnitude_calibration["lambda"])
-        )
+        self.model.magnitude_projected_reject_boost_advantage_threshold.fill_(float(magnitude_calibration["advantage_threshold"]))
+        self.model.magnitude_projected_reject_boost_lambda.fill_(float(magnitude_calibration["lambda"]))
 
         # Backward-compatible projected_* fields mirror the active single head.
         # In dual mode retain the historical magnitude alias; final inference still
         # uses max(direction_boost, magnitude_boost).
         if mode == "direction":
-            self.model.projected_reject_boost_advantage_threshold.copy_(
-                self.model.direction_projected_reject_boost_advantage_threshold
-            )
-            self.model.projected_reject_boost_lambda.copy_(
-                self.model.direction_projected_reject_boost_lambda
-            )
+            self.model.projected_reject_boost_advantage_threshold.copy_(self.model.direction_projected_reject_boost_advantage_threshold)
+            self.model.projected_reject_boost_lambda.copy_(self.model.direction_projected_reject_boost_lambda)
         else:
-            self.model.projected_reject_boost_advantage_threshold.copy_(
-                self.model.magnitude_projected_reject_boost_advantage_threshold
-            )
-            self.model.projected_reject_boost_lambda.copy_(
-                self.model.magnitude_projected_reject_boost_lambda
-            )
+            self.model.projected_reject_boost_advantage_threshold.copy_(self.model.magnitude_projected_reject_boost_advantage_threshold)
+            self.model.projected_reject_boost_lambda.copy_(self.model.magnitude_projected_reject_boost_lambda)
 
         labels = np.asarray([int(r["label"]) for r in rows], dtype=np.int64)
         v5_scores = np.asarray(
             [float(r.get("v5_pred_score", r["final_pred_score"])) for r in rows],
             dtype=np.float64,
         )
-        dir_adv = np.asarray([
-            float(r["top_mean_direction_projected_accept_advantage"])
-            if r.get("top_mean_direction_projected_accept_advantage") is not None
-            else float("nan")
-            for r in rows
-        ], dtype=np.float64)
-        mag_adv = np.asarray([
-            float(r["top_mean_magnitude_projected_accept_advantage"])
-            if r.get("top_mean_magnitude_projected_accept_advantage") is not None
-            else float("nan")
-            for r in rows
-        ], dtype=np.float64)
+        dir_adv = np.asarray(
+            [
+                float(r["top_mean_direction_projected_accept_advantage"])
+                if r.get("top_mean_direction_projected_accept_advantage") is not None
+                else float("nan")
+                for r in rows
+            ],
+            dtype=np.float64,
+        )
+        mag_adv = np.asarray(
+            [
+                float(r["top_mean_magnitude_projected_accept_advantage"])
+                if r.get("top_mean_magnitude_projected_accept_advantage") is not None
+                else float("nan")
+                for r in rows
+            ],
+            dtype=np.float64,
+        )
 
         _dir_scores, _dir_evidence, dir_boost = _apply_reject_boost_numpy(
             v5_scores,
@@ -1868,19 +1787,21 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         self.model.dual_projection_magnitude_fusion_scale.fill_(1.0)
         dual_boost = np.maximum(dir_boost, mag_boost)
         dual_scores = v5_scores + dual_boost
-        dual_op = _target_precision_operating_point(
-            labels, dual_scores, float(self.projected_reject_boost_target_precision)
-        )
+        dual_op = _target_precision_operating_point(labels, dual_scores, float(self.projected_reject_boost_target_precision))
         fusion_fallback = None
         if not bool(dual_op.get("met", False)):
-            d_obj = float(direction_calibration.get(
-                "selected_weighted_objective",
-                direction_calibration["selected_operating_point"]["recall"],
-            ))
-            m_obj = float(magnitude_calibration.get(
-                "selected_weighted_objective",
-                magnitude_calibration["selected_operating_point"]["recall"],
-            ))
+            d_obj = float(
+                direction_calibration.get(
+                    "selected_weighted_objective",
+                    direction_calibration["selected_operating_point"]["recall"],
+                )
+            )
+            m_obj = float(
+                magnitude_calibration.get(
+                    "selected_weighted_objective",
+                    magnitude_calibration["selected_operating_point"]["recall"],
+                )
+            )
             if d_obj >= m_obj:
                 self.model.dual_projection_magnitude_fusion_scale.fill_(0.0)
                 safe_dual_boost = dir_boost
@@ -1890,30 +1811,22 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 safe_dual_boost = mag_boost
                 fusion_fallback = "magnitude_only"
             dual_scores = v5_scores + safe_dual_boost
-            dual_op = _target_precision_operating_point(
-                labels, dual_scores, float(self.projected_reject_boost_target_precision)
-            )
+            dual_op = _target_precision_operating_point(labels, dual_scores, float(self.projected_reject_boost_target_precision))
             logger.warning(
                 "Dual max fusion missed calibration precision target; fallback=%s P=%.4f R=%.4f",
-                fusion_fallback, dual_op["precision"], dual_op["recall"],
+                fusion_fallback,
+                dual_op["precision"],
+                dual_op["recall"],
             )
 
         # Keep legacy projected_* aliases descriptive without mutating either
         # standalone head calibration.
         if mode == "dual" and fusion_fallback == "direction_only":
-            self.model.projected_reject_boost_advantage_threshold.copy_(
-                self.model.direction_projected_reject_boost_advantage_threshold
-            )
-            self.model.projected_reject_boost_lambda.copy_(
-                self.model.direction_projected_reject_boost_lambda
-            )
+            self.model.projected_reject_boost_advantage_threshold.copy_(self.model.direction_projected_reject_boost_advantage_threshold)
+            self.model.projected_reject_boost_lambda.copy_(self.model.direction_projected_reject_boost_lambda)
         elif mode == "dual" and fusion_fallback == "magnitude_only":
-            self.model.projected_reject_boost_advantage_threshold.copy_(
-                self.model.magnitude_projected_reject_boost_advantage_threshold
-            )
-            self.model.projected_reject_boost_lambda.copy_(
-                self.model.magnitude_projected_reject_boost_lambda
-            )
+            self.model.projected_reject_boost_advantage_threshold.copy_(self.model.magnitude_projected_reject_boost_advantage_threshold)
+            self.model.projected_reject_boost_lambda.copy_(self.model.magnitude_projected_reject_boost_lambda)
 
         if mode == "direction":
             fused_boost = dir_boost
@@ -1929,9 +1842,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             fusion_name = "max_boost" if fusion_fallback is None else fusion_fallback
 
         fused_scores = v5_scores + fused_boost
-        fused_op = _target_precision_operating_point(
-            labels, fused_scores, float(self.projected_reject_boost_target_precision)
-        )
+        fused_op = _target_precision_operating_point(labels, fused_scores, float(self.projected_reject_boost_target_precision))
 
         out_dir = self.image_calibration_output_dir or self.diagnostic_output_dir
         if out_dir is None:
@@ -1966,9 +1877,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         }
         aggregate_json.write_text(json.dumps(aggregate_payload, indent=2, sort_keys=True))
         if mode == "dual":
-            (out_dir / "dual_projected_reject_boost_calibration.json").write_text(
-                json.dumps(aggregate_payload, indent=2, sort_keys=True)
-            )
+            (out_dir / "dual_projected_reject_boost_calibration.json").write_text(json.dumps(aggregate_payload, indent=2, sort_keys=True))
 
         if direction_available:
             d_op = direction_calibration["selected_operating_point"]
@@ -1976,8 +1885,10 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 "DIRECTION-PROJECTION-CALIBRATION A0=%.6f lambda=%.6f P=%.4f R=%.4f FP=%d TP=%d",
                 direction_calibration["advantage_threshold"],
                 direction_calibration["lambda"],
-                d_op["precision"], d_op["recall"],
-                d_op["confusion_matrix"]["FP"], d_op["confusion_matrix"]["TP"],
+                d_op["precision"],
+                d_op["recall"],
+                d_op["confusion_matrix"]["FP"],
+                d_op["confusion_matrix"]["TP"],
             )
         if magnitude_available:
             m_op = magnitude_calibration["selected_operating_point"]
@@ -1985,14 +1896,19 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 "MAGNITUDE-PROJECTION-CALIBRATION A0=%.6f lambda=%.6f P=%.4f R=%.4f FP=%d TP=%d",
                 magnitude_calibration["advantage_threshold"],
                 magnitude_calibration["lambda"],
-                m_op["precision"], m_op["recall"],
-                m_op["confusion_matrix"]["FP"], m_op["confusion_matrix"]["TP"],
+                m_op["precision"],
+                m_op["recall"],
+                m_op["confusion_matrix"]["FP"],
+                m_op["confusion_matrix"]["TP"],
             )
         logger.info(
             "PROJECTED-CALIBRATION mode=%s fusion=%s P=%.4f R=%.4f FP=%d TP=%d met=%s",
-            mode, fusion_name,
-            fused_op["precision"], fused_op["recall"],
-            fused_op["confusion_matrix"]["FP"], fused_op["confusion_matrix"]["TP"],
+            mode,
+            fusion_name,
+            fused_op["precision"],
+            fused_op["recall"],
+            fused_op["confusion_matrix"]["FP"],
+            fused_op["confusion_matrix"]["TP"],
             fused_op["met"],
         )
         logger.info("Projected boost calibration JSON: %s", aggregate_json)
@@ -2019,16 +1935,12 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         """
         dirs = self._image_calibration_dirs()
         if "good" not in dirs:
-            logger.warning(
-                "Deployment threshold calibration skipped; no GOOD calibration directory is available."
-            )
+            logger.warning("Deployment threshold calibration skipped; no GOOD calibration directory is available.")
             self._pending_deployment_threshold_payload = None
             return
 
         self._assert_no_cross_partition_overlap()
-        logger.info(
-            "Running deployment threshold calibration after all ACCEPT/REJECT rules are frozen..."
-        )
+        logger.info("Running deployment threshold calibration after all ACCEPT/REJECT rules are frozen...")
         rows = self._collect_diagnostic_rows(
             dirs,
             batch_size=self.image_calibration_batch_size,
@@ -2054,10 +1966,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             labels = labels[finite]
             scores = scores[finite]
 
-        source_counts = {
-            source: int(sum(str(r.get("source")) == source for r in rows))
-            for source in ("good", "acceptable", "reject")
-        }
+        source_counts = {source: int(sum(str(r.get("source")) == source for r in rows)) for source in ("good", "acceptable", "reject")}
         has_reject = bool(np.any(labels == 1))
         nonreject_scores = scores[labels == 0]
         if nonreject_scores.size == 0:
@@ -2069,9 +1978,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         if has_reject:
             for target in self.deployment_target_precisions:
                 key = f"precision_{target:.4f}".rstrip("0").rstrip(".")
-                raw_ops[key] = _target_precision_operating_point_deployment(
-                    labels, scores, float(target)
-                )
+                raw_ops[key] = _target_precision_operating_point_deployment(labels, scores, float(target))
 
         raw_quantiles: dict[str, Any] = {}
         for q in self.deployment_target_precisions:
@@ -2114,8 +2021,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 )
         else:
             logger.warning(
-                "No reject calibration samples: precision cannot be estimated. "
-                "Using explicit non-reject quantile/FPR fallback thresholds."
+                "No reject calibration samples: precision cannot be estimated. Using explicit non-reject quantile/FPR fallback thresholds."
             )
             for key, op in raw_quantiles.items():
                 logger.info(
@@ -2227,20 +2133,21 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             "return_raw_pred_score": raw_score,
             "return_raw_anomaly_map": raw_map,
             "pred_score_domain": (
-                "raw_inner_model"
-                if raw_score or not bool(getattr(post, "enable_normalization", False))
-                else "postprocessed_normalized"
+                "raw_inner_model" if raw_score or not bool(getattr(post, "enable_normalization", False)) else "postprocessed_normalized"
             ),
             "anomaly_map_domain": (
-                "raw_inner_model"
-                if raw_map or not bool(getattr(post, "enable_normalization", False))
-                else "postprocessed_normalized"
+                "raw_inner_model" if raw_map or not bool(getattr(post, "enable_normalization", False)) else "postprocessed_normalized"
             ),
         }
         for name in (
-            "image_min", "image_max", "image_threshold",
-            "pixel_min", "pixel_max", "pixel_threshold",
-            "normalized_image_threshold", "normalized_pixel_threshold",
+            "image_min",
+            "image_max",
+            "image_threshold",
+            "pixel_min",
+            "pixel_max",
+            "pixel_threshold",
+            "normalized_image_threshold",
+            "normalized_pixel_threshold",
         ):
             fields[name] = self._tensor_scalar(getattr(post, name, None))
         return fields
@@ -2273,9 +2180,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         if has_reject:
             for target in self.deployment_target_precisions:
                 key = f"precision_{target:.4f}".rstrip("0").rstrip(".")
-                op = _target_precision_operating_point_deployment(
-                    export_labels, export_scores, float(target)
-                )
+                op = _target_precision_operating_point_deployment(export_labels, export_scores, float(target))
                 op["score_domain"] = domain
                 raw_op = payload.get("raw_operating_points", {}).get(key, {})
                 op["raw_domain_threshold"] = raw_op.get("threshold")
@@ -2292,10 +2197,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             export_quantiles[key] = op
 
         post_meta = self._postprocessor_metadata()
-        if (
-            bool(post_meta.get("enable_normalization", False))
-            and not bool(post_meta.get("return_raw_anomaly_map", False))
-        ):
+        if bool(post_meta.get("enable_normalization", False)) and not bool(post_meta.get("return_raw_anomaly_map", False)):
             annotation_min = post_meta.get("normalized_pixel_threshold")
         else:
             annotation_min = post_meta.get("pixel_threshold")
@@ -2315,10 +2217,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                     "criterion": "target_precision",
                     "target_precision": target,
                     "threshold": float(op["threshold"]),
-                    "raw_threshold": (
-                        None if op.get("raw_domain_threshold") is None
-                        else float(op["raw_domain_threshold"])
-                    ),
+                    "raw_threshold": (None if op.get("raw_domain_threshold") is None else float(op["raw_domain_threshold"])),
                     "observed_precision": float(op.get("precision", 0.0)),
                     "observed_recall": float(op.get("recall", 0.0)),
                 }
@@ -2326,9 +2225,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             # No reject examples means precision/recall are unknowable. Select the
             # strictest requested non-reject quantile and label it explicitly.
             candidates = [
-                (float(op.get("quantile", 0.0)), key, op)
-                for key, op in export_quantiles.items()
-                if op.get("threshold") is not None
+                (float(op.get("quantile", 0.0)), key, op) for key, op in export_quantiles.items() if op.get("threshold") is not None
             ]
             preferred = max(candidates, default=None, key=lambda item: item[0])
             if preferred is not None:
@@ -2339,10 +2236,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                     "quantile": q,
                     "target_fpr_nominal": float(max(0.0, 1.0 - q)),
                     "threshold": float(op["threshold"]),
-                    "raw_threshold": (
-                        None if op.get("raw_domain_threshold") is None
-                        else float(op["raw_domain_threshold"])
-                    ),
+                    "raw_threshold": (None if op.get("raw_domain_threshold") is None else float(op["raw_domain_threshold"])),
                     "empirical_fpr": float(op.get("empirical_fpr", 0.0)),
                     "nonreject_count": int(op.get("nonreject_count", 0)),
                 }
@@ -2363,12 +2257,8 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
             "annotation": {
                 "ad_threshold": annotation_min,
                 "ad_max": None if recommended is None else recommended["threshold"],
-                "ad_max_by_precision": {
-                    key: op.get("threshold") for key, op in export_ops.items()
-                },
-                "ad_max_by_nonreject_quantile": {
-                    key: op.get("threshold") for key, op in export_quantiles.items()
-                },
+                "ad_max_by_precision": {key: op.get("threshold") for key, op in export_ops.items()},
+                "ad_max_by_nonreject_quantile": {key: op.get("threshold") for key, op in export_quantiles.items()},
                 "anomaly_map_domain": post_meta.get("anomaly_map_domain"),
                 "note": (
                     "For ADBase.annotate, ad_threshold is the pixel-map display floor. "
@@ -2388,8 +2278,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         logger.info("Recommended exported PT/ONNX thresholds: %s", path)
         if recommended is not None and recommended.get("criterion") == "target_precision":
             logger.info(
-                "RECOMMENDED-DEPLOYMENT-THRESHOLD target_precision=%.4f threshold=%.8f "
-                "observed_P=%.4f observed_R=%.4f",
+                "RECOMMENDED-DEPLOYMENT-THRESHOLD target_precision=%.4f threshold=%.8f observed_P=%.4f observed_R=%.4f",
                 recommended["target_precision"],
                 recommended["threshold"],
                 recommended["observed_precision"],
@@ -2481,15 +2370,19 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         labels = np.asarray([int(r["label"]) for r in rows], dtype=np.int64)
         base = np.asarray([float(r["base_pred_score"]) for r in rows], dtype=np.float64)
         patch = np.asarray([float(r.get("patch_pred_score", r["final_pred_score"])) for r in rows], dtype=np.float64)
-        veto = np.asarray([
-            float(r.get("veto_pred_score", r.get("patch_pred_score", r["final_pred_score"]))) for r in rows
-        ], dtype=np.float64)
-        accept = np.asarray([
-            float(r.get("accept_pred_score", r.get("veto_pred_score", r["final_pred_score"]))) for r in rows
-        ], dtype=np.float64)
+        veto = np.asarray(
+            [float(r.get("veto_pred_score", r.get("patch_pred_score", r["final_pred_score"]))) for r in rows], dtype=np.float64
+        )
+        accept = np.asarray(
+            [float(r.get("accept_pred_score", r.get("veto_pred_score", r["final_pred_score"]))) for r in rows], dtype=np.float64
+        )
         v5 = np.asarray([float(r.get("v5_pred_score", r["final_pred_score"])) for r in rows], dtype=np.float64)
-        direction_projected = np.asarray([float(r.get("direction_projected_pred_score", r.get("v5_pred_score", r["final_pred_score"]))) for r in rows], dtype=np.float64)
-        magnitude_projected = np.asarray([float(r.get("magnitude_projected_pred_score", r.get("v5_pred_score", r["final_pred_score"]))) for r in rows], dtype=np.float64)
+        direction_projected = np.asarray(
+            [float(r.get("direction_projected_pred_score", r.get("v5_pred_score", r["final_pred_score"]))) for r in rows], dtype=np.float64
+        )
+        magnitude_projected = np.asarray(
+            [float(r.get("magnitude_projected_pred_score", r.get("v5_pred_score", r["final_pred_score"]))) for r in rows], dtype=np.float64
+        )
         final = np.asarray([float(r["final_pred_score"]) for r in rows], dtype=np.float64)
         sources = np.asarray([str(r["source"]) for r in rows], dtype=object)
         reject_types = np.asarray([str(r.get("reject_type") or "") for r in rows], dtype=object)
@@ -2524,23 +2417,17 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 "image_accept_enable": bool(self.model.image_accept_enable),
                 "image_accept_threshold": float(self.model.image_accept_threshold.detach().float().cpu()),
                 "image_accept_damping": float(self.model.image_accept_damping.detach().float().cpu()),
-                "projected_image_accept_enable": bool(
-                    getattr(self.model, "projected_image_accept_enable", False)
-                ),
+                "projected_image_accept_enable": bool(getattr(self.model, "projected_image_accept_enable", False)),
                 "projected_image_accept_threshold": float(
-                    getattr(self.model, "projected_image_accept_threshold", self.model.image_accept_threshold)
-                    .detach().float().cpu()
+                    getattr(self.model, "projected_image_accept_threshold", self.model.image_accept_threshold).detach().float().cpu()
                 ),
                 "projected_image_accept_damping": float(
-                    getattr(self.model, "projected_image_accept_damping", self.model.image_accept_damping)
-                    .detach().float().cpu()
+                    getattr(self.model, "projected_image_accept_damping", self.model.image_accept_damping).detach().float().cpu()
                 ),
                 "image_reject_veto_enable": bool(self.model.image_reject_veto_enable),
                 "image_reject_veto_threshold": float(self.model.image_reject_veto_threshold.detach().float().cpu()),
                 "image_reject_boost_enable": bool(self.model.image_reject_boost_enable),
-                "image_reject_boost_advantage_threshold": float(
-                    self.model.image_reject_boost_advantage_threshold.detach().float().cpu()
-                ),
+                "image_reject_boost_advantage_threshold": float(self.model.image_reject_boost_advantage_threshold.detach().float().cpu()),
                 "image_reject_boost_lambda": float(self.model.image_reject_boost_lambda.detach().float().cpu()),
                 "image_reject_boost_max": float(self.model.image_reject_boost_max.detach().float().cpu()),
                 "residual_projection_enable": bool(self.model.residual_projection_enable),
@@ -2548,33 +2435,31 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 "direction_projection_enabled": bool(self.model.direction_projection_enabled),
                 "magnitude_projection_enabled": bool(self.model.magnitude_projection_enabled),
                 "dual_projection_enable": bool(self.model.dual_projection_enable),
-                "dual_projection_direction_fusion_scale": float(
-                    self.model.dual_projection_direction_fusion_scale.detach().float().cpu()
-                ),
-                "dual_projection_magnitude_fusion_scale": float(
-                    self.model.dual_projection_magnitude_fusion_scale.detach().float().cpu()
-                ),
-                "direction_projection_dim": int(self.model.residual_projection_direction_weight.shape[0]) if self.model.residual_projection_direction_weight.ndim == 2 else 0,
-                "direction_projection_input_dim": int(self.model.residual_projection_direction_weight.shape[1]) if self.model.residual_projection_direction_weight.ndim == 2 else 0,
-                "magnitude_projection_dim": int(self.model.residual_projection_magnitude_weight.shape[0]) if self.model.residual_projection_magnitude_weight.ndim == 2 else 0,
-                "magnitude_projection_input_dim": int(self.model.residual_projection_magnitude_weight.shape[1]) if self.model.residual_projection_magnitude_weight.ndim == 2 else 0,
-                "residual_projection_dim": int(self.model.residual_projection_weight.shape[0]) if self.model.residual_projection_weight.ndim == 2 else 0,
-                "residual_projection_input_dim": int(self.model.residual_projection_weight.shape[1]) if self.model.residual_projection_weight.ndim == 2 else 0,
-                "shared_residual_decontamination_enable": bool(
-                    self.model.shared_residual_decontamination_enable
-                ),
-                "shared_residual_decontamination_percentile": float(
-                    self.model.shared_residual_decontamination_percentile
-                ),
-                "shared_residual_decontamination_use_magnitude": bool(
-                    self.model.shared_residual_decontamination_use_magnitude
-                ),
-                "shared_residual_decontamination_min_accept_samples": int(
-                    self.model.shared_residual_decontamination_min_accept_samples
-                ),
-                "shared_residual_decontamination_summary": dict(
-                    self.model.shared_residual_decontamination_last_summary
-                ),
+                "dual_projection_direction_fusion_scale": float(self.model.dual_projection_direction_fusion_scale.detach().float().cpu()),
+                "dual_projection_magnitude_fusion_scale": float(self.model.dual_projection_magnitude_fusion_scale.detach().float().cpu()),
+                "direction_projection_dim": int(self.model.residual_projection_direction_weight.shape[0])
+                if self.model.residual_projection_direction_weight.ndim == 2
+                else 0,
+                "direction_projection_input_dim": int(self.model.residual_projection_direction_weight.shape[1])
+                if self.model.residual_projection_direction_weight.ndim == 2
+                else 0,
+                "magnitude_projection_dim": int(self.model.residual_projection_magnitude_weight.shape[0])
+                if self.model.residual_projection_magnitude_weight.ndim == 2
+                else 0,
+                "magnitude_projection_input_dim": int(self.model.residual_projection_magnitude_weight.shape[1])
+                if self.model.residual_projection_magnitude_weight.ndim == 2
+                else 0,
+                "residual_projection_dim": int(self.model.residual_projection_weight.shape[0])
+                if self.model.residual_projection_weight.ndim == 2
+                else 0,
+                "residual_projection_input_dim": int(self.model.residual_projection_weight.shape[1])
+                if self.model.residual_projection_weight.ndim == 2
+                else 0,
+                "shared_residual_decontamination_enable": bool(self.model.shared_residual_decontamination_enable),
+                "shared_residual_decontamination_percentile": float(self.model.shared_residual_decontamination_percentile),
+                "shared_residual_decontamination_use_magnitude": bool(self.model.shared_residual_decontamination_use_magnitude),
+                "shared_residual_decontamination_min_accept_samples": int(self.model.shared_residual_decontamination_min_accept_samples),
+                "shared_residual_decontamination_summary": dict(self.model.shared_residual_decontamination_last_summary),
                 "residual_projection_use_magnitude": bool(self.model.residual_projection_use_magnitude),
                 "residual_projection_use_relative_xy": bool(self.model.residual_projection_use_relative_xy),
                 "residual_projection_xy_scale": float(self.model.residual_projection_xy_scale),
@@ -2586,18 +2471,28 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 "residual_projection_magnitude_mean": float(self.model.residual_projection_magnitude_mean.detach().float().cpu()),
                 "residual_projection_magnitude_std": float(self.model.residual_projection_magnitude_std.detach().float().cpu()),
                 "projected_reject_boost_enable": bool(self.model.projected_reject_boost_enable),
-                "direction_projected_reject_boost_advantage_threshold": float(self.model.direction_projected_reject_boost_advantage_threshold.detach().float().cpu()),
+                "direction_projected_reject_boost_advantage_threshold": float(
+                    self.model.direction_projected_reject_boost_advantage_threshold.detach().float().cpu()
+                ),
                 "direction_projected_reject_boost_lambda": float(self.model.direction_projected_reject_boost_lambda.detach().float().cpu()),
-                "magnitude_projected_reject_boost_advantage_threshold": float(self.model.magnitude_projected_reject_boost_advantage_threshold.detach().float().cpu()),
+                "magnitude_projected_reject_boost_advantage_threshold": float(
+                    self.model.magnitude_projected_reject_boost_advantage_threshold.detach().float().cpu()
+                ),
                 "magnitude_projected_reject_boost_lambda": float(self.model.magnitude_projected_reject_boost_lambda.detach().float().cpu()),
-                "projected_reject_boost_advantage_threshold": float(self.model.projected_reject_boost_advantage_threshold.detach().float().cpu()),
+                "projected_reject_boost_advantage_threshold": float(
+                    self.model.projected_reject_boost_advantage_threshold.detach().float().cpu()
+                ),
                 "projected_reject_boost_lambda": float(self.model.projected_reject_boost_lambda.detach().float().cpu()),
                 "projected_reject_boost_max": float(self.model.projected_reject_boost_max.detach().float().cpu()),
             },
             "bank_sizes": {
                 "normal": int(self.model.memory_bank.shape[0]),
-                "normal_intermediate": int(self.model.intermediate_memory_bank.shape[0]) if self.model.intermediate_memory_bank.ndim == 3 else 0,
-                "normal_intermediate_layers": int(self.model.intermediate_memory_bank.shape[1]) if self.model.intermediate_memory_bank.ndim == 3 else 0,
+                "normal_intermediate": int(self.model.intermediate_memory_bank.shape[0])
+                if self.model.intermediate_memory_bank.ndim == 3
+                else 0,
+                "normal_intermediate_layers": int(self.model.intermediate_memory_bank.shape[1])
+                if self.model.intermediate_memory_bank.ndim == 3
+                else 0,
                 "acceptable_residual": int(self.model.accept_dir_bank.shape[0]) if self.model.accept_dir_bank.ndim > 1 else 0,
                 "reject_residual": int(self.model.reject_dir_bank.shape[0]) if self.model.reject_dir_bank.ndim > 1 else 0,
             },
@@ -2610,9 +2505,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
 
         for source in ("good", "acceptable", "reject"):
             mask = sources == source
-            summary["score_stats_by_source"][source] = {
-                name: _score_stats(scores[mask]) for name, scores in stage_scores.items()
-            }
+            summary["score_stats_by_source"][source] = {name: _score_stats(scores[mask]) for name, scores in stage_scores.items()}
             total_reduction = base[mask] - final[mask]
             patch_reductions = base[mask] - patch[mask]
             veto_restorations = veto[mask] - patch[mask]
@@ -2630,18 +2523,38 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 "mean_reject_boost_score_increase": float(np.mean(boost_increases)) if boost_increases.size else 0.0,
                 "mean_projected_boost_score_increase": float(np.mean(projected_boost_increases)) if projected_boost_increases.size else 0.0,
                 "images_reject_vetoed": int(sum((r.get("image_reject_veto_applied") or 0) > 0 for r in source_rows)),
-                "reject_veto_rate": float(np.mean([(r.get("image_reject_veto_applied") or 0) > 0 for r in source_rows])) if source_rows else 0.0,
+                "reject_veto_rate": float(np.mean([(r.get("image_reject_veto_applied") or 0) > 0 for r in source_rows]))
+                if source_rows
+                else 0.0,
                 "images_image_accepted": int(sum((r.get("image_accept_applied") or 0) > 0 for r in source_rows)),
-                "image_accept_rate": float(np.mean([(r.get("image_accept_applied") or 0) > 0 for r in source_rows])) if source_rows else 0.0,
-                "raw_image_accept_rate": float(np.mean([(r.get("raw_image_accept_applied") or 0) > 0 for r in source_rows])) if source_rows else 0.0,
-                "projected_image_accept_rate": float(np.mean([(r.get("projected_image_accept_applied") or 0) > 0 for r in source_rows])) if source_rows else 0.0,
+                "image_accept_rate": float(np.mean([(r.get("image_accept_applied") or 0) > 0 for r in source_rows]))
+                if source_rows
+                else 0.0,
+                "raw_image_accept_rate": float(np.mean([(r.get("raw_image_accept_applied") or 0) > 0 for r in source_rows]))
+                if source_rows
+                else 0.0,
+                "projected_image_accept_rate": float(np.mean([(r.get("projected_image_accept_applied") or 0) > 0 for r in source_rows]))
+                if source_rows
+                else 0.0,
                 "images_projected_image_accepted": int(sum((r.get("projected_image_accept_applied") or 0) > 0 for r in source_rows)),
                 "images_reject_boosted": int(sum((r.get("image_reject_boost_applied") or 0) > 0 for r in source_rows)),
-                "reject_boost_rate": float(np.mean([(r.get("image_reject_boost_applied") or 0) > 0 for r in source_rows])) if source_rows else 0.0,
+                "reject_boost_rate": float(np.mean([(r.get("image_reject_boost_applied") or 0) > 0 for r in source_rows]))
+                if source_rows
+                else 0.0,
                 "images_projected_boosted": int(sum((r.get("projected_reject_boost_applied") or 0) > 0 for r in source_rows)),
-                "projected_boost_rate": float(np.mean([(r.get("projected_reject_boost_applied") or 0) > 0 for r in source_rows])) if source_rows else 0.0,
-                "direction_projected_boost_rate": float(np.mean([(r.get("direction_projected_reject_boost_applied") or 0) > 0 for r in source_rows])) if source_rows else 0.0,
-                "magnitude_projected_boost_rate": float(np.mean([(r.get("magnitude_projected_reject_boost_applied") or 0) > 0 for r in source_rows])) if source_rows else 0.0,
+                "projected_boost_rate": float(np.mean([(r.get("projected_reject_boost_applied") or 0) > 0 for r in source_rows]))
+                if source_rows
+                else 0.0,
+                "direction_projected_boost_rate": float(
+                    np.mean([(r.get("direction_projected_reject_boost_applied") or 0) > 0 for r in source_rows])
+                )
+                if source_rows
+                else 0.0,
+                "magnitude_projected_boost_rate": float(
+                    np.mean([(r.get("magnitude_projected_reject_boost_applied") or 0) > 0 for r in source_rows])
+                )
+                if source_rows
+                else 0.0,
                 "images_with_top_accept_patch": int(sum((r.get("top_accept_patches") or 0) > 0 for r in source_rows)),
                 "images_with_top_reject_patch": int(sum((r.get("top_reject_patches") or 0) > 0 for r in source_rows)),
                 "images_with_top_unknown_patch": int(sum((r.get("top_unknown_patches") or 0) > 0 for r in source_rows)),
@@ -2649,9 +2562,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
 
         for name, scores in stage_scores.items():
             summary["operating_points"][name]["best_f1"] = _best_operating_point(labels, scores, objective="f1")
-            summary["operating_points"][name]["best_balanced_acc"] = _best_operating_point(
-                labels, scores, objective="balanced_acc"
-            )
+            summary["operating_points"][name]["best_balanced_acc"] = _best_operating_point(labels, scores, objective="balanced_acc")
             summary["operating_points"][name]["average_precision"] = _average_precision_binary(labels, scores)
             summary["operating_points"][name]["auroc"] = _auroc_binary(labels, scores)
             for target in self.diagnostic_target_precisions:
@@ -2691,48 +2602,86 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         type_names = sorted(set(str(v) for v in reject_types[reject_mask] if str(v)))
         for reject_type in type_names:
             mask = reject_mask & (reject_types == reject_type)
-            type_rows = [
-                row for row in rows
-                if row["source"] == "reject" and str(row.get("reject_type") or "") == reject_type
-            ]
+            type_rows = [row for row in rows if row["source"] == "reject" and str(row.get("reject_type") or "") == reject_type]
             type_summary: dict[str, Any] = {
                 "count": int(np.sum(mask)),
                 "score_stats": {name: _score_stats(scores[mask]) for name, scores in stage_scores.items()},
-                "top_mean_accept_advantage": _score_stats(np.asarray([
-                    float(r["top_mean_accept_advantage"])
-                    for r in type_rows
-                    if r.get("top_mean_accept_advantage") is not None
-                ], dtype=np.float64)),
-                "top_mean_direction_projected_accept_advantage": _score_stats(np.asarray([
-                    float(r["top_mean_direction_projected_accept_advantage"])
-                    for r in type_rows
-                    if r.get("top_mean_direction_projected_accept_advantage") is not None
-                ], dtype=np.float64)),
-                "top_mean_magnitude_projected_accept_advantage": _score_stats(np.asarray([
-                    float(r["top_mean_magnitude_projected_accept_advantage"])
-                    for r in type_rows
-                    if r.get("top_mean_magnitude_projected_accept_advantage") is not None
-                ], dtype=np.float64)),
-                "top_mean_projected_accept_advantage": _score_stats(np.asarray([
-                    float(r["top_mean_projected_accept_advantage"])
-                    for r in type_rows
-                    if r.get("top_mean_projected_accept_advantage") is not None
-                ], dtype=np.float64)),
-                "top_mean_projection_magnitude_feature": _score_stats(np.asarray([
-                    float(r["top_mean_projection_magnitude_feature"])
-                    for r in type_rows
-                    if r.get("top_mean_projection_magnitude_feature") is not None
-                ], dtype=np.float64)),
+                "top_mean_accept_advantage": _score_stats(
+                    np.asarray(
+                        [float(r["top_mean_accept_advantage"]) for r in type_rows if r.get("top_mean_accept_advantage") is not None],
+                        dtype=np.float64,
+                    )
+                ),
+                "top_mean_direction_projected_accept_advantage": _score_stats(
+                    np.asarray(
+                        [
+                            float(r["top_mean_direction_projected_accept_advantage"])
+                            for r in type_rows
+                            if r.get("top_mean_direction_projected_accept_advantage") is not None
+                        ],
+                        dtype=np.float64,
+                    )
+                ),
+                "top_mean_magnitude_projected_accept_advantage": _score_stats(
+                    np.asarray(
+                        [
+                            float(r["top_mean_magnitude_projected_accept_advantage"])
+                            for r in type_rows
+                            if r.get("top_mean_magnitude_projected_accept_advantage") is not None
+                        ],
+                        dtype=np.float64,
+                    )
+                ),
+                "top_mean_projected_accept_advantage": _score_stats(
+                    np.asarray(
+                        [
+                            float(r["top_mean_projected_accept_advantage"])
+                            for r in type_rows
+                            if r.get("top_mean_projected_accept_advantage") is not None
+                        ],
+                        dtype=np.float64,
+                    )
+                ),
+                "top_mean_projection_magnitude_feature": _score_stats(
+                    np.asarray(
+                        [
+                            float(r["top_mean_projection_magnitude_feature"])
+                            for r in type_rows
+                            if r.get("top_mean_projection_magnitude_feature") is not None
+                        ],
+                        dtype=np.float64,
+                    )
+                ),
                 "image_accept_rate": float(np.mean([(r.get("image_accept_applied") or 0) > 0 for r in type_rows])) if type_rows else 0.0,
-                "raw_image_accept_rate": float(np.mean([(r.get("raw_image_accept_applied") or 0) > 0 for r in type_rows])) if type_rows else 0.0,
-                "projected_image_accept_rate": float(np.mean([(r.get("projected_image_accept_applied") or 0) > 0 for r in type_rows])) if type_rows else 0.0,
-                "reject_veto_rate": float(np.mean([(r.get("image_reject_veto_applied") or 0) > 0 for r in type_rows])) if type_rows else 0.0,
-                "reject_boost_rate": float(np.mean([(r.get("image_reject_boost_applied") or 0) > 0 for r in type_rows])) if type_rows else 0.0,
+                "raw_image_accept_rate": float(np.mean([(r.get("raw_image_accept_applied") or 0) > 0 for r in type_rows]))
+                if type_rows
+                else 0.0,
+                "projected_image_accept_rate": float(np.mean([(r.get("projected_image_accept_applied") or 0) > 0 for r in type_rows]))
+                if type_rows
+                else 0.0,
+                "reject_veto_rate": float(np.mean([(r.get("image_reject_veto_applied") or 0) > 0 for r in type_rows]))
+                if type_rows
+                else 0.0,
+                "reject_boost_rate": float(np.mean([(r.get("image_reject_boost_applied") or 0) > 0 for r in type_rows]))
+                if type_rows
+                else 0.0,
                 "mean_reject_boost": float(np.mean([(r.get("image_reject_boost_amount") or 0.0) for r in type_rows])) if type_rows else 0.0,
-                "projected_boost_rate": float(np.mean([(r.get("projected_reject_boost_applied") or 0) > 0 for r in type_rows])) if type_rows else 0.0,
-                "mean_projected_boost": float(np.mean([(r.get("projected_reject_boost_amount") or 0.0) for r in type_rows])) if type_rows else 0.0,
-                "direction_projected_boost_rate": float(np.mean([(r.get("direction_projected_reject_boost_applied") or 0) > 0 for r in type_rows])) if type_rows else 0.0,
-                "magnitude_projected_boost_rate": float(np.mean([(r.get("magnitude_projected_reject_boost_applied") or 0) > 0 for r in type_rows])) if type_rows else 0.0,
+                "projected_boost_rate": float(np.mean([(r.get("projected_reject_boost_applied") or 0) > 0 for r in type_rows]))
+                if type_rows
+                else 0.0,
+                "mean_projected_boost": float(np.mean([(r.get("projected_reject_boost_amount") or 0.0) for r in type_rows]))
+                if type_rows
+                else 0.0,
+                "direction_projected_boost_rate": float(
+                    np.mean([(r.get("direction_projected_reject_boost_applied") or 0) > 0 for r in type_rows])
+                )
+                if type_rows
+                else 0.0,
+                "magnitude_projected_boost_rate": float(
+                    np.mean([(r.get("magnitude_projected_reject_boost_applied") or 0) > 0 for r in type_rows])
+                )
+                if type_rows
+                else 0.0,
                 "recall_at_global_operating_points": {},
             }
             for stage_name, scores in stage_scores.items():
@@ -2762,7 +2711,9 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         counts = summary["counts"]
         logger.info(
             "DIAGNOSTICS counts good=%d acceptable=%d reject=%d",
-            counts["good"], counts["acceptable"], counts["reject"],
+            counts["good"],
+            counts["acceptable"],
+            counts["reject"],
         )
         thresholds = summary["model_thresholds"]
         logger.info(
@@ -2788,8 +2739,10 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         )
         logger.info(
             "DIAGNOSTICS v6c projected boost: enabled=%s dim=%d advantage_threshold=%.6f lambda=%.6f max=%.6f",
-            thresholds["projected_reject_boost_enable"], thresholds["residual_projection_dim"],
-            thresholds["projected_reject_boost_advantage_threshold"], thresholds["projected_reject_boost_lambda"],
+            thresholds["projected_reject_boost_enable"],
+            thresholds["residual_projection_dim"],
+            thresholds["projected_reject_boost_advantage_threshold"],
+            thresholds["projected_reject_boost_lambda"],
             thresholds["projected_reject_boost_max"],
         )
         for source in ("good", "acceptable", "reject"):
@@ -2818,8 +2771,12 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                 model_name,
                 ops["average_precision"],
                 ops["auroc"],
-                best["precision"], best["recall"], best["f1"], best["threshold"],
-                best["confusion_matrix"]["FP"], best["confusion_matrix"]["TP"],
+                best["precision"],
+                best["recall"],
+                best["f1"],
+                best["threshold"],
+                best["confusion_matrix"]["FP"],
+                best["confusion_matrix"]["TP"],
             )
             for key, op in ops.items():
                 if key.startswith("precision_"):
@@ -2830,7 +2787,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
                         op["met"],
                         op["precision"],
                         op["recall"],
-                        f'{op["threshold"]:.6f}' if op["threshold"] is not None else "n/a",
+                        f"{op['threshold']:.6f}" if op["threshold"] is not None else "n/a",
                         op["confusion_matrix"]["FP"],
                         op["confusion_matrix"]["TP"],
                     )
@@ -2839,12 +2796,16 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         logger.info(
             "DIAGNOSTICS same base-best-F1 threshold %.6f: good positive %d->%d; acceptable positive %d->%d; reject TP %d->%d",
             effect["threshold"],
-            effect["base_by_source"]["good"]["positive"], effect["final_by_source"]["good"]["positive"],
-            effect["base_by_source"]["acceptable"]["positive"], effect["final_by_source"]["acceptable"]["positive"],
-            effect["base_by_source"]["reject"]["positive"], effect["final_by_source"]["reject"]["positive"],
+            effect["base_by_source"]["good"]["positive"],
+            effect["final_by_source"]["good"]["positive"],
+            effect["base_by_source"]["acceptable"]["positive"],
+            effect["final_by_source"]["acceptable"]["positive"],
+            effect["base_by_source"]["reject"]["positive"],
+            effect["final_by_source"]["reject"]["positive"],
         )
         logger.info(
-            "DIAGNOSTICS transitions: acceptable FP suppressed=%.4f added=%.4f; reject TP suppressed=%.4f recovered=%.4f; good FP removed=%.4f added=%.4f",
+            "DIAGNOSTICS transitions: acceptable FP suppressed=%.4f added=%.4f; reject TP suppressed=%.4f "
+            "recovered=%.4f; good FP removed=%.4f added=%.4f",
             effect["acceptable_fp_suppression_rate"],
             effect["acceptable_fp_addition_rate"],
             effect["reject_tp_false_suppression_rate"],
@@ -2875,11 +2836,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
     def validation_step(self, batch: Batch, *args, **kwargs) -> STEP_OUTPUT:
         del args, kwargs
         predictions = self.model(batch.image)
-        predictions = (
-            predictions[0]
-            if (isinstance(predictions, tuple) and not hasattr(predictions, "_asdict"))
-            else predictions
-        )
+        predictions = predictions[0] if (isinstance(predictions, tuple) and not hasattr(predictions, "_asdict")) else predictions
         return batch.update(**predictions._asdict())
 
     @property
@@ -2905,8 +2862,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         if bool(self._is_fitted):
             return
         logger.info(
-            "TolerantAnomalyDINO: finalizing accumulated memory bank at %s "
-            "(epoch=%d/%d)",
+            "TolerantAnomalyDINO: finalizing accumulated memory bank at %s (epoch=%d/%d)",
             trigger,
             int(getattr(getattr(self, "trainer", None), "current_epoch", 0)) + 1,
             int(getattr(getattr(self, "trainer", None), "max_epochs", 1) or 1),
@@ -2927,8 +2883,7 @@ class TolerantAnomalyDINO(MemoryBankMixin, AnomalibModule):
         else:
             trainer = getattr(self, "trainer", None)
             logger.info(
-                "TolerantAnomalyDINO: retaining normal embedding reservoir after "
-                "epoch %d/%d; finalization deferred until the last epoch.",
+                "TolerantAnomalyDINO: retaining normal embedding reservoir after epoch %d/%d; finalization deferred until the last epoch.",
                 int(getattr(trainer, "current_epoch", 0)) + 1,
                 int(getattr(trainer, "max_epochs", 1) or 1),
             )
@@ -3043,10 +2998,7 @@ class _FlatImageDataset(torch.utils.data.Dataset):
 
 
 def _iter_image_paths(root: Path):
-    return sorted(
-        p for p in root.rglob("*")
-        if p.is_file() and p.suffix.lower() in _FlatImageDataset.EXTENSIONS
-    )
+    return sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in _FlatImageDataset.EXTENSIONS)
 
 
 def _reject_type_from_path(path: Path, reject_root: Path, depth: int = 1) -> str:
@@ -3117,12 +3069,13 @@ def _calibrate_joint_image_accept_rule(
     good_rows = [r for r in rows if r.get("source") == "good"]
 
     def arrays(source_rows: list[dict[str, Any]]) -> tuple[np.ndarray, np.ndarray]:
-        raw = np.asarray([
-            float(r["top_mean_accept_advantage"])
-            if r.get("top_mean_accept_advantage") is not None
-            else float("nan")
-            for r in source_rows
-        ], dtype=np.float64)
+        raw = np.asarray(
+            [
+                float(r["top_mean_accept_advantage"]) if r.get("top_mean_accept_advantage") is not None else float("nan")
+                for r in source_rows
+            ],
+            dtype=np.float64,
+        )
         projected = np.asarray([projected_value(r) for r in source_rows], dtype=np.float64)
         return raw, projected
 
@@ -3293,16 +3246,18 @@ def _calibrate_image_accept_rule(
     maximizes acceptable suppression under the safety constraint.  A positive
     safety margin is then added to make the deployed threshold more conservative.
     """
-    acc = np.asarray([
-        float(r["top_mean_accept_advantage"])
-        for r in rows
-        if r["source"] == "acceptable" and r.get("top_mean_accept_advantage") is not None
-    ], dtype=np.float64)
-    rej = np.asarray([
-        float(r["top_mean_accept_advantage"])
-        for r in rows
-        if r["source"] == "reject" and r.get("top_mean_accept_advantage") is not None
-    ], dtype=np.float64)
+    acc = np.asarray(
+        [
+            float(r["top_mean_accept_advantage"])
+            for r in rows
+            if r["source"] == "acceptable" and r.get("top_mean_accept_advantage") is not None
+        ],
+        dtype=np.float64,
+    )
+    rej = np.asarray(
+        [float(r["top_mean_accept_advantage"]) for r in rows if r["source"] == "reject" and r.get("top_mean_accept_advantage") is not None],
+        dtype=np.float64,
+    )
     acc = acc[np.isfinite(acc)]
     rej = rej[np.isfinite(rej)]
 
@@ -3476,11 +3431,7 @@ def _calibrate_projected_image_accept_rule(
                 break
 
     raw_threshold = max(float(min_threshold), float(chosen))
-    deployed = (
-        float("inf")
-        if not np.isfinite(raw_threshold)
-        else raw_threshold + max(0.0, float(safety_margin))
-    )
+    deployed = float("inf") if not np.isfinite(raw_threshold) else raw_threshold + max(0.0, float(safety_margin))
 
     def projected_counts(values: np.ndarray, finite: np.ndarray) -> tuple[int, int, float]:
         valid = values[finite]
@@ -3523,9 +3474,7 @@ def _calibrate_projected_image_accept_rule(
         "raw_reject_false_accepted": raw_rej_count,
         "raw_reject_false_accept_rate": raw_rej_rate,
         "combined_reject_false_accepted": int(np.sum(combined_rej)),
-        "combined_reject_false_accept_rate": (
-            float(np.mean(combined_rej)) if combined_rej.size else 0.0
-        ),
+        "combined_reject_false_accept_rate": (float(np.mean(combined_rej)) if combined_rej.size else 0.0),
         "acceptable_projected_evidence_stats": _score_stats(acc[acc_finite]),
         "good_projected_evidence_stats": _score_stats(good[good_finite]),
         "reject_projected_evidence_stats": _score_stats(rej[rej_finite]),
@@ -3574,15 +3523,11 @@ def _calibrate_image_reject_boost_rule(
     """
     labels = np.asarray([int(r["label"]) for r in rows], dtype=np.int64)
     sources = np.asarray([str(r["source"]) for r in rows], dtype=object)
-    scores = np.asarray([
-        float(r.get("accept_pred_score", r.get("final_pred_score", 0.0))) for r in rows
-    ], dtype=np.float64)
-    advantages = np.asarray([
-        float(r["top_mean_accept_advantage"])
-        if r.get("top_mean_accept_advantage") is not None
-        else float("nan")
-        for r in rows
-    ], dtype=np.float64)
+    scores = np.asarray([float(r.get("accept_pred_score", r.get("final_pred_score", 0.0))) for r in rows], dtype=np.float64)
+    advantages = np.asarray(
+        [float(r["top_mean_accept_advantage"]) if r.get("top_mean_accept_advantage") is not None else float("nan") for r in rows],
+        dtype=np.float64,
+    )
 
     baseline = _target_precision_operating_point(labels, scores, float(target_precision))
     candidate_results: list[dict[str, Any]] = []
@@ -3708,9 +3653,12 @@ def _calibrate_image_reject_boost_rule(
 
 
 def _calibrate_projected_reject_boost_rule(
-    rows: list[dict[str, Any]], *, target_precision: float,
+    rows: list[dict[str, Any]],
+    *,
+    target_precision: float,
     advantage_candidates: tuple[float, ...] | list[float],
-    lambda_candidates: tuple[float, ...] | list[float], max_boost: float,
+    lambda_candidates: tuple[float, ...] | list[float],
+    max_boost: float,
     reject_type_weights: dict[str, float] | None,
     require_non_decreasing_overall_recall: bool,
     advantage_key: str = "top_mean_projected_accept_advantage",
@@ -3725,10 +3673,7 @@ def _calibrate_projected_reject_boost_rule(
     """
     labels = np.asarray([int(r["label"]) for r in rows], dtype=np.int64)
     scores = np.asarray([float(r.get("v5_pred_score", r["final_pred_score"])) for r in rows], dtype=np.float64)
-    advantages = np.asarray([
-        float(r[advantage_key]) if r.get(advantage_key) is not None else float("nan")
-        for r in rows
-    ], dtype=np.float64)
+    advantages = np.asarray([float(r[advantage_key]) if r.get(advantage_key) is not None else float("nan") for r in rows], dtype=np.float64)
     reject_types = np.asarray([str(r.get("reject_type") or "") for r in rows], dtype=object)
     weights = {str(k): max(0.0, float(v)) for k, v in (reject_type_weights or {}).items()}
 
@@ -3758,8 +3703,7 @@ def _calibrate_projected_reject_boost_rule(
 
     def weighted_objective(op: dict[str, Any], type_recalls: dict[str, float]) -> float:
         return float(op["recall"]) + sum(
-            float(weight) * float(type_recalls.get(reject_type, 0.0))
-            for reject_type, weight in weights.items()
+            float(weight) * float(type_recalls.get(reject_type, 0.0)) for reject_type, weight in weights.items()
         )
 
     baseline_weighted = weighted_objective(baseline, baseline_type_recalls)
@@ -3775,19 +3719,14 @@ def _calibrate_projected_reject_boost_rule(
             op = _target_precision_operating_point(labels, boosted, float(target_precision))
             threshold = op.get("threshold")
             type_recalls = recalls_by_type(boosted, threshold)
-            overall_ok = (
-                (not require_non_decreasing_overall_recall)
-                or (float(op["recall"]) + 1e-12 >= float(baseline["recall"]))
-            )
+            overall_ok = (not require_non_decreasing_overall_recall) or (float(op["recall"]) + 1e-12 >= float(baseline["recall"]))
             weighted = weighted_objective(op, type_recalls)
             neg = labels == 0
             neg_rate = float(np.mean(boost[neg] > 1e-12)) if np.any(neg) else 0.0
             boost_rate_by_type = {}
             for reject_type in all_reject_types:
                 mask = (labels == 1) & (reject_types == reject_type)
-                boost_rate_by_type[reject_type] = (
-                    float(np.mean(boost[mask] > 1e-12)) if np.any(mask) else 0.0
-                )
+                boost_rate_by_type[reject_type] = float(np.mean(boost[mask] > 1e-12)) if np.any(mask) else 0.0
             entry = {
                 "advantage_threshold": a0,
                 "lambda": lam,
@@ -3801,21 +3740,29 @@ def _calibrate_projected_reject_boost_rule(
             }
             results.append(entry)
 
-            weighted_type_vector = tuple(
-                float(type_recalls.get(name, 0.0)) for name in sorted(weights)
-            )
+            weighted_type_vector = tuple(float(type_recalls.get(name, 0.0)) for name in sorted(weights))
             eligible = bool(op["met"]) and bool(overall_ok)
             if eligible:
                 key = (
-                    1, weighted, weighted_type_vector, float(op["recall"]),
-                    float(op["precision"]), -int(op["confusion_matrix"]["FP"]),
-                    -neg_rate, -lam,
+                    1,
+                    weighted,
+                    weighted_type_vector,
+                    float(op["recall"]),
+                    float(op["precision"]),
+                    -int(op["confusion_matrix"]["FP"]),
+                    -neg_rate,
+                    -lam,
                 )
             else:
                 key = (
-                    0, float(op["precision"]), weighted, weighted_type_vector,
-                    float(op["recall"]), -int(op["confusion_matrix"]["FP"]),
-                    -neg_rate, -lam,
+                    0,
+                    float(op["precision"]),
+                    weighted,
+                    weighted_type_vector,
+                    float(op["recall"]),
+                    -int(op["confusion_matrix"]["FP"]),
+                    -neg_rate,
+                    -lam,
                 )
             if selected_key is None or key > selected_key:
                 selected_key, selected = key, entry
@@ -3835,14 +3782,13 @@ def _calibrate_projected_reject_boost_rule(
 
     def rank_key(entry: dict[str, Any]) -> tuple[Any, ...]:
         op = entry["operating_point"]
-        type_vector = tuple(
-            float(entry["recall_by_reject_type"].get(name, 0.0)) for name in sorted(weights)
-        )
+        type_vector = tuple(float(entry["recall_by_reject_type"].get(name, 0.0)) for name in sorted(weights))
         return (
             bool(op["met"] and entry["overall_recall_constraint_met"]),
             float(entry["weighted_objective"]),
             type_vector,
-            float(op["recall"]), float(op["precision"]),
+            float(op["recall"]),
+            float(op["precision"]),
             -float(entry["negative_boost_rate"]),
         )
 
@@ -3984,11 +3930,13 @@ def _candidate_thresholds_deployment(scores: np.ndarray) -> np.ndarray:
     if values.size == 1:
         return np.asarray([np.nextafter(values[0], -np.inf), values[0]], dtype=np.float64)
     mids = values[:-1] + (values[1:] - values[:-1]) * 0.5
-    return np.concatenate((
-        np.asarray([np.nextafter(values[0], -np.inf)], dtype=np.float64),
-        mids,
-        np.asarray([values[-1]], dtype=np.float64),
-    ))
+    return np.concatenate(
+        (
+            np.asarray([np.nextafter(values[0], -np.inf)], dtype=np.float64),
+            mids,
+            np.asarray([values[-1]], dtype=np.float64),
+        )
+    )
 
 
 def _target_precision_operating_point_deployment(
@@ -4062,11 +4010,7 @@ def _best_operating_point(labels: np.ndarray, scores: np.ndarray, objective: str
     for threshold in _candidate_thresholds(scores):
         metrics = _metrics_at_threshold(labels, scores, float(threshold))
         value = float(metrics[objective])
-        if value > best_value + 1e-12 or (
-            abs(value - best_value) <= 1e-12
-            and best is not None
-            and metrics["recall"] > best["recall"]
-        ):
+        if value > best_value + 1e-12 or (abs(value - best_value) <= 1e-12 and best is not None and metrics["recall"] > best["recall"]):
             best = metrics
             best_value = value
     if best is None:

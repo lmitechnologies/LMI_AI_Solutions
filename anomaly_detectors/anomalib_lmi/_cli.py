@@ -29,17 +29,22 @@ def run_cli(model_cls):
         "--scale_mode", default="padding", choices=["padding", "interpolation"], help="tile scaling mode: padding or interpolation"
     )
     test_ap.add_argument("--limit", type=int, default=None, help="process only the first N images")
+    test_ap.add_argument("-is", "--image_size", type=int, nargs=2, default=None)
 
     convert_ap = subs.add_parser("convert", help="convert model to trt engine")
     convert_ap.add_argument("-i", "--model_path", default="/app/model/model.pt", help="Input model file path.")
     convert_ap.add_argument("-o", "--export_dir", default="/app/export")
     convert_ap.add_argument("-c", "--convert_type", default="trt", choices=["trt", "onnx"], help="convert type: trt or onnx")
     convert_ap.add_argument("--fp32", action="store_true", help="disable fp16 and use fp32 for TRT conversion")
+    convert_ap.add_argument("-is", "--image_size", type=int, nargs=2, default=None)
     args = vars(ap.parse_args())
 
     action = args["action"]
     model_path = args["model_path"]
-    ad = model_cls(model_path)
+    kwargs = {}
+    if args["image_size"] is not None:
+        kwargs["image_size"] = args["image_size"]
+    ad = model_cls(model_path, **kwargs)
 
     if action == "convert":
         export_dir = args["export_dir"]
