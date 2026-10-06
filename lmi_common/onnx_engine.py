@@ -282,6 +282,8 @@ class ONNXEngine:
                 buffer_ptr=b.buffer.data_ptr(),
             )
 
+        # ORT runs on its own CUDA stream and does not wait for torch kernels still writing the inputs.
+        torch.cuda.synchronize(self.device)
         self._session.run_with_iobinding(binding)
         binding.synchronize_outputs()
         del contiguous_tensors

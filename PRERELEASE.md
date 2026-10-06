@@ -14,6 +14,7 @@ This document covers all **breaking changes and new features** introduced after 
 5. [YOLO v0 support dropped](#5-yolo-v0-support-dropped)
 6. [Anomaly model files renamed to versioned sub-packages, and AD tiling moved to the pipeline](#6-anomaly-model-files-renamed-to-versioned-sub-packages-and-ad-tiling-moved-to-the-pipeline)
 7. [Inference scripts renamed to `infer.py` with shared flags](#7-inference-scripts-renamed-to-inferpy-with-shared-flags)
+8. [Detectron2 convert takes `--image_size` instead of a sample image](#8-detectron2-convert-takes---image_size-instead-of-a-sample-image)
 
 **New Features**
 
@@ -108,6 +109,8 @@ results, time_info = model.predict(images, configs=0.5)
 for boxes, scores, classes in zip(results["boxes"], results["scores"], results["classes"]):
     ...  # process per image
 ```
+
+**Segments without tiling keep each backend's own rule; tiled segments keep the largest piece.** A segment is the mask's outer outline: holes are dropped, and the mask keeps the exact shape. YOLO joins pieces that do not touch, as Ultralytics does (`Results.masks.xy`); Detectron2 and RF-DETR keep the largest piece. RF-DETR used to chain the pieces' points in one list, so its segments change on such masks. With a tile step, segments are traced from the merged masks and keep the largest piece for every backend, so a YOLO mask in pieces is outlined differently tiled and untiled.
 
 The `operators` parameter is also now formally typed and uses the **unified preprocessing-history schema** — the same shape returned by `Preprocessor.preprocess()` and consumed by `Reconstructor`. See new feature 3 below.
 
@@ -269,6 +272,25 @@ python -m object_detectors.rf_detr_lmi.infer -w best.pth -i images -o out -c 0.5
 
 ---
 
+## 8. Detectron2 convert takes `--image_size` instead of a sample image
+
+**What changed:** `convert` no longer reads a `sample_image.png` from the weights folder to set the engine input size. Pass the size with `-is/--image_size H W` (multiples of 32); it is required for `--onnx` and `--trt`. `--trt` now builds the ONNX itself, so `--onnx` is no longer needed with it. Training no longer writes `sample_image.png` to its output folder.
+
+**Before:**
+```bash
+# sample_image.png in the weights folder sets the engine size
+python -m object_detectors.detectron2_lmi.cli convert --onnx --trt --fp16
+```
+
+**After:**
+```bash
+python -m object_detectors.detectron2_lmi.cli convert --trt --fp16 --image_size 800 800
+```
+
+> **Impact:** `-s/--sample_image` is gone, and `convert --onnx` or `--trt` without `--image_size` exits with an error. Pick the size the model sees at test time, e.g. `INPUT.MIN_SIZE_TEST` for square images. Before, a sample image whose size differed from detectron2's test-time resize could give anchors that did not match the engine input; engines built now always match.
+
+---
+
 ## New Features
 
 ### 1. `preprocess` & `revert_preprocess` — batch processing with history-based reconstruction
@@ -279,7 +301,7 @@ python -m object_detectors.rf_detr_lmi.infer -w best.pth -i images -o out -c 0.5
 
 Supported step types: `resize`, `tile`. Steps can be chained and nested (e.g. resize → tile → tile).
 
-When an OD model's preprocessed input still doesn't match its training size, the pipeline auto-injects a final resize. A letterbox injection pads with the model's `RESIZE_PAD_VALUE` (`114` for YOLO, `0` otherwise) to match training-time padding. A manifest-declared `resize` step pads with `0` unless its configuration sets `pad_value`.
+When an OD model's preprocessed input still doesn't match its training size, the pipeline auto-injects a final resize. A letterbox injection pads with the model's `RESIZE_PAD_VALUE` (`114` for YOLO, `0` otherwise) to match training-time padding. A manifest-declared `resize` step pads with `0` unless its configuration sets `pad_value`. `labels-preprocess resize --par` pads a dataset with `0` too; pass `--pad_value 114` to match the YOLO letterbox. The injected resize also antialiases when the model's `RESIZE_ANTIALIAS` is set (Detectron2, which trains and predicts with PIL bilinear).
 
 **Resize with Object Detection**
 
@@ -393,7 +415,7 @@ When you need to apply preprocessing **beyond what the model manifest declares**
 
 | Step builder | Required kwargs | Notes |
 |---|---|---|
-| `steps.resize(width=..., height=..., preserve_aspect=False, pad_value=0, mode="bilinear")` | — | Each dim defaults to the source image's matching dim. `pad_value` is the letterbox fill, only used when `preserve_aspect=True` (e.g. `114` to match YOLO) |
+| `steps.resize(width=..., height=..., preserve_aspect=False, pad_value=0, mode="bilinear", antialias=False)` | — | Each dim defaults to the source image's matching dim. `pad_value` is the letterbox fill, only used when `preserve_aspect=True` (e.g. `114` to match YOLO). `antialias=True` low-passes before shrinking, as PIL and torchvision do |
 | `steps.cropbox(boxes=...)` | `boxes` | One `[x1, y1, x2, y2]` per image |
 | `steps.flip(lr=False, ud=False)` | — | Defaults to a no-op |
 | `steps.pad(width=None, height=None, pad=None, value=0)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` is positive to pad / negative to crop; a `width`/`height` smaller than the input center-crops, otherwise pad |
@@ -510,7 +532,7 @@ The results come back in the same form as the image you passed in: numpy arrays 
 
 The detector scripts do this for you behind `--tile`/`--stride` (see breaking change 7). `object_detectors.od_core.infer_cli.predict_tiled(model, image, step, **predict_kwargs)` is the first route plus the tile rectangles for plotting.
 
-**Objects split across a seam are rejoined.** A tile only sees part of an object that crosses its edge, so the detector's box stops at the edge. Merging groups those pieces and emits one detection per object: if some tile saw the object whole, that detection wins; if every view is cut, the group's shapes are combined (box, mask or polygon). Class-aware NMS then runs across tiles.
+**Objects split across a seam are rejoined.** A tile only sees part of an object that crosses its edge, so the detector's box stops at the edge. Merging groups those pieces and emits one detection per object: if some tile saw the object whole, that detection wins; if every view is cut, the group's boxes and masks are combined. Class-aware NMS then runs across tiles. Segments are not merged as polygons: each result's segment is traced from its merged mask, so tiled segments need masks, and segments without masks raise. Pass `return_segments=False` to skip the model's per-tile tracing when you do not need segments.
 
 **Merge options** — all on `steps.tile(...)`, applied when coordinates are reverted:
 
@@ -518,9 +540,8 @@ The detector scripts do this for you behind `--tile`/`--stride` (see breaking ch
 |---|---|---|
 | `merge_fragments` | `True` | On for every grid, including `scale_mode="interpolation"`, where merging runs in the scaled image's coordinates and the result is mapped back; `False` leaves seam-split objects split |
 | `score_threshold` | `0.0` | An extra threshold on top of the per-class `configs` confidence the model already applied, dropping detections *before* merging so a weak piece cannot represent its group and take the whole group down with it. Off by default |
-| `nms_iou` | `0.5` | Class-aware NMS IoU across tiles; `None` disables both NMS rules |
-| `containment` | `0.8` | Share of one detection that must lie inside another to count as contained; `None` disables the containment rule |
-| `edge_tolerance` | `2.0` | Px from a tile edge that still counts as touching it. Absolute, not a fraction of the tile: it tracks the detector's box-regression error at a crop boundary. Results change little between `0.5` and `4` |
+| `nms_iou` | `0.5` | Class-aware NMS IoU across tiles; `None` disables NMS. With merging off, NMS also drops a detection that lies 80% inside a higher-scoring one |
+| `edge_tolerance` | `2.0` | Px from a tile edge that still counts as touching it. Absolute, not a fraction of the tile: it tracks the detector's box-regression error at a crop boundary. Below `2`, tiles without overlap stop joining |
 | `min_label_size` | `0.0` | Forward direction only: drop a clipped *label* thinner than this many px on either axis when projecting ground truth into tiles |
 | `report_merge_origin` | `False` | Add a `merge_origin` code per detection saying how it was built |
 

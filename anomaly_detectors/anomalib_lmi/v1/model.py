@@ -6,7 +6,7 @@ import torch
 
 from lmi_common.model_factory import ModelFactory
 
-from ..base import Anomalib_Base, AnomalibPT, register_backends
+from ..base import Anomalib_Base, AnomalibONNX, AnomalibPT, AnomalibTRT, register_backends
 
 
 class AnomalibPTv1(AnomalibPT):
@@ -27,12 +27,24 @@ class AnomalibPTv1(AnomalibPT):
         raise TypeError(f"Unknown prediction type: {type(preds)}")
 
 
+class AnomalibTRTv1(AnomalibTRT):
+    """TensorRT backend resizing like the v1 .pt transform."""
+
+    RESIZE_ANTIALIAS = True  # v1 trains and runs .pt with an antialiased resize; only its ONNX export drops it
+
+
+class AnomalibONNXv1(AnomalibONNX):
+    """ONNX Runtime backend resizing like the v1 .pt transform."""
+
+    RESIZE_ANTIALIAS = True
+
+
 class AnomalyModel(ModelFactory, Anomalib_Base):
     """AD model factory for Anomalib v1. Dispatches on file extension.
 
     Supported extensions:
-        .engine             -> AnomalibTRT  (TensorRT)
-        .onnx               -> AnomalibONNX (ONNX Runtime)
+        .engine             -> AnomalibTRTv1  (TensorRT)
+        .onnx               -> AnomalibONNXv1 (ONNX Runtime)
         .pt / .ts / .torchscript -> AnomalibPTv1 (PyTorch / TorchScript)
     """
 
@@ -40,7 +52,7 @@ class AnomalyModel(ModelFactory, Anomalib_Base):
     _registry = {}
 
 
-register_backends(AnomalyModel, AnomalibPTv1)
+register_backends(AnomalyModel, AnomalibPTv1, AnomalibTRTv1, AnomalibONNXv1)
 
 
 if __name__ == "__main__":

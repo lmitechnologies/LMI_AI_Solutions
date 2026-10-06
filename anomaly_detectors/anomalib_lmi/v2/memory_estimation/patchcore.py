@@ -9,48 +9,9 @@ from .base import BaseAnomalibMemoryEstimator
 from .common import FeatureProfile, MemoryBudget, MemoryEstimate, bytes_to_mib
 
 # anomalib's PatchcoreModel.nearest_neighbors query chunk size (DEFAULT_CHUNK_SIZE).
+# euclidean_dist is fully in-place since anomalib 2.3, so the transient factor is 1x.
 ANOMALIB_QUERY_CHUNK_SIZE = 1024
-# First anomalib release that chunks the nearest-neighbour query AND rewrote
-# euclidean_dist to be fully in-place. Earlier versions (e.g. 2.2.0) compute the
-# full (n_query, M) distance matrix at once with out-of-place arithmetic, the real
-# training-time OOM driver during validation.
-ANOMALIB_CHUNKING_MIN_VERSION = (2, 3)
-# Transient peak of euclidean_dist as a multiple of a single (n_query, M) tensor.
-# < 2.3 builds `x_norm - 2 * matmul(x, y.T) + y_norm.T` out-of-place, keeping the
-# matmul output and the arithmetic result alive at once (~2x). >= 2.3 does the
-# arithmetic in-place (mul_/add_/clamp_min_/sqrt_) on the matmul output (~1x).
-EUCLIDEAN_DIST_UNCHUNKED_FACTOR = 2.0
-EUCLIDEAN_DIST_CHUNKED_FACTOR = 1.0
-
-
-def euclidean_dist_transient_factor(inference_chunk_size: int | None) -> float:
-    """Transient multiplier for the euclidean_dist peak given the runtime's chunk mode.
-
-    A truthy chunk size implies anomalib >= 2.3, whose euclidean_dist is in-place
-    (factor 1); an un-chunked runtime uses the older out-of-place form (factor 2).
-    """
-    return EUCLIDEAN_DIST_CHUNKED_FACTOR if inference_chunk_size else EUCLIDEAN_DIST_UNCHUNKED_FACTOR
-
-
-def detect_inference_chunk_size() -> int | None:
-    """Query chunk size anomalib uses for nearest-neighbour search.
-
-    Returns ``ANOMALIB_QUERY_CHUNK_SIZE`` when the installed anomalib chunks the
-    query, otherwise ``None`` (the full distance matrix is materialised at once).
-    Falls back to ``None`` (the conservative, larger estimate) if the version
-    cannot be determined.
-    """
-    try:
-        from importlib.metadata import version
-
-        parts = version("anomalib").split(".")
-        major, minor = int(parts[0]), int(parts[1])
-    except Exception:
-        return None
-
-    if (major, minor) >= ANOMALIB_CHUNKING_MIN_VERSION:
-        return ANOMALIB_QUERY_CHUNK_SIZE
-    return None
+EUCLIDEAN_DIST_TRANSIENT_FACTOR = 1.0
 
 
 @dataclass
@@ -134,40 +95,28 @@ class PatchCoreMemoryEstimator(BaseAnomalibMemoryEstimator):
             "include_coreset_in_peak": include_coreset_in_peak,
         }
 
-    def query_patches(self, profile: FeatureProfile, *, inference_chunk_size: int | None) -> int:
-        """Number of query rows in the inference distance matrix.
-
-        anomalib scores a full eval batch of ``batch_size * patches_per_image``
-        patches at once; newer versions chunk this at ``inference_chunk_size``. A
-        non-positive/None chunk size leaves the query un-chunked (here the caller
-        has already resolved ``None`` to a concrete size).
-        """
-        n_query = self.tile_config.batch_size * profile.patches_per_image
-        if inference_chunk_size:
-            n_query = min(n_query, inference_chunk_size)
-        return n_query
+    def query_patches(self, profile: FeatureProfile, *, inference_chunk_size: int) -> int:
+        """Number of query rows in the inference distance matrix: the eval batch, chunked at ``inference_chunk_size`` patches."""
+        return min(self.tile_config.batch_size * profile.patches_per_image, inference_chunk_size)
 
     def inference_distance_matrix_mib(
         self,
         profile: FeatureProfile,
         *,
         memory_bank_patches: float,
-        inference_chunk_size: int | None,
+        inference_chunk_size: int,
     ) -> float:
         """Peak of the ``euclidean_dist`` matrix during validation/inference.
 
         ``euclidean_dist(x, y)`` materialises a ``(n_query, M)`` tensor where ``M``
-        is the coreset/memory-bank patch count. Older (un-chunked) anomalib keeps
-        two such tensors alive at once; >= 2.3 does the arithmetic in-place — see
-        ``euclidean_dist_transient_factor``. This is the dominant PatchCore peak on
-        un-chunked runtimes and drives training-time OOMs (the fit loop runs
-        validation). Cost scales with the memory-bank size, hence with #train images.
+        is the coreset/memory-bank patch count. euclidean_dist is in-place (1x
+        transient), so cost is dominated by the coreset size and grows with
+        #train images.
         """
         n_query = self.query_patches(profile, inference_chunk_size=inference_chunk_size)
         bank_dtype = self.resolve_bank_dtype(profile)
         n_bytes = n_query * memory_bank_patches * self.dtype_nbytes(bank_dtype)
-        factor = euclidean_dist_transient_factor(inference_chunk_size)
-        return bytes_to_mib(n_bytes) * factor
+        return bytes_to_mib(n_bytes) * EUCLIDEAN_DIST_TRANSIENT_FACTOR
 
     def memory_bank_patches(
         self,
@@ -221,9 +170,9 @@ class PatchCoreMemoryEstimator(BaseAnomalibMemoryEstimator):
         if coreset_sampling_ratio is None:
             coreset_sampling_ratio = self.infer_coreset_sampling_ratio()
 
-        # None (the default) auto-detects the runtime's chunk size; a positive int
-        # pins it; 0 forces the conservative, un-chunked estimate.
-        chunk_size = detect_inference_chunk_size() if inference_chunk_size is None else inference_chunk_size
+        chunk_size = ANOMALIB_QUERY_CHUNK_SIZE if inference_chunk_size is None else inference_chunk_size
+        if chunk_size < 1:
+            raise ValueError(f"inference_chunk_size must be a positive int or None, got {inference_chunk_size!r}")
 
         per = self.per_image_bank_mib(
             profile,
@@ -250,8 +199,7 @@ class PatchCoreMemoryEstimator(BaseAnomalibMemoryEstimator):
         n_query = self.query_patches(profile, inference_chunk_size=chunk_size)
         bank_dtype_bytes = per["bank_dtype_bytes"]
         patches_per_train_image = profile.patches_per_image * coreset_sampling_ratio
-        distance_transient_factor = euclidean_dist_transient_factor(chunk_size)
-        distance_mib_per_image = bytes_to_mib(n_query * patches_per_train_image * bank_dtype_bytes) * distance_transient_factor
+        distance_mib_per_image = bytes_to_mib(n_query * patches_per_train_image * bank_dtype_bytes) * EUCLIDEAN_DIST_TRANSIENT_FACTOR
         resident_coreset_mib_per_image = per["coreset_bank_per_image_mib"]
         inference_mib_per_image = distance_mib_per_image + resident_coreset_mib_per_image
         max_images_distance = (

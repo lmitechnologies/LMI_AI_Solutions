@@ -1,13 +1,13 @@
 {
   "branches": ["ais"],
   "plugins": [
-    "@semantic-release/commit-analyzer",
-    "@semantic-release/release-notes-generator",
+    ["@semantic-release/commit-analyzer", { "preset": "conventionalcommits" }],
+    ["@semantic-release/release-notes-generator", { "preset": "conventionalcommits" }],
     "@semantic-release/changelog",
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "python3 .github/workflows/scripts/update_versions.py ${nextRelease.version}"
+        "prepareCmd": "uv version ${nextRelease.version} --no-sync"
       }
     ],
     "@semantic-release/github",
@@ -16,7 +16,8 @@
       {
         "assets": [
           "CHANGELOG.md",
-          "pyproject.toml"
+          "pyproject.toml",
+          "uv.lock"
         ],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }

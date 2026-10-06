@@ -32,10 +32,26 @@ VERSIONS=$(gh api \
   -H "X-GitHub-Api-Version: 2022-11-28" \
   "/orgs/${OWNER}/packages/container/${PACKAGE_NAME}/versions")
 
-# Filter: untagged + older than cutoff (compare epoch timestamps)
-OLD_VERSIONS=$(echo "$VERSIONS" | jq -rs --argjson cutoff "$CUTOFF_EPOCH" '
+# Tags point to image indexes whose child manifests are listed as untagged versions; deleting those breaks the tag.
+REGISTRY_TOKEN=$(curl -fsS -u "${OWNER}:${GH_TOKEN}" \
+  "https://ghcr.io/token?scope=repository:${OWNER}/${PACKAGE_NAME}:pull" | jq -r .token)
+ACCEPT="application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json"
+ACCEPT+=",application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json"
+TAGGED_DIGESTS=$(echo "$VERSIONS" | jq -rs '.[] | select(.metadata.container.tags | length > 0) | .name')
+CHILD_DIGESTS=""
+for digest in $TAGGED_DIGESTS; do
+  MANIFEST=$(curl -fsS -H "Authorization: Bearer ${REGISTRY_TOKEN}" -H "Accept: ${ACCEPT}" \
+    "https://ghcr.io/v2/${OWNER}/${PACKAGE_NAME}/manifests/${digest}")
+  CHILD_DIGESTS+=$(echo "$MANIFEST" | jq -r '.manifests[]?.digest')$'\n'
+done
+PROTECTED=$(printf '%s' "$CHILD_DIGESTS" | jq -Rsc 'split("\n") | map(select(length > 0))')
+echo "Protected child manifests of tagged images: $(echo "$PROTECTED" | jq length)"
+
+# Filter: untagged + not a child of a tagged image + older than cutoff (compare epoch timestamps)
+OLD_VERSIONS=$(echo "$VERSIONS" | jq -rs --argjson cutoff "$CUTOFF_EPOCH" --argjson protected "$PROTECTED" '
   .[]
   | select(.metadata.container.tags | length == 0)
+  | select(.name | IN($protected[]) | not)
   | select((.created_at | fromdateiso8601) < $cutoff)
   | .id
 ')

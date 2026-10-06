@@ -110,3 +110,42 @@ def test_tile_rejects_an_oriented_box(tmp_path):
 def test_tile_requires_both_dimensions(tmp_path):
     with pytest.raises(ValueError, match="requires both --width and --height"):
         _run(tmp_path, [_box("b1", 40, 10, 90, 60)], width=None)
+
+
+def _run_resize(tmp_path, annotations, h, w, **overrides):
+    path_in, path_out = _write_dataset(tmp_path / "in", annotations, h=h, w=w), tmp_path / "out"
+    args = {
+        "operation": "resize",
+        "path_imgs": str(path_in),
+        "path_json": "labels.json",
+        "path_out_images": str(path_out),
+        "path_out_json": "labels.json",
+        "bg": False,
+        "warn_crop": False,
+        "par": False,
+    }
+    args.update(overrides)
+    apply_ops(args)
+    f = json.loads((path_out / "labels.json").read_text())["files"][0]
+    return cv2.imread(str(path_out / f["path"])), f
+
+
+def test_resize_changes_width_when_height_already_matches(tmp_path):
+    image, f = _run_resize(tmp_path, [_box("b1", 40, 10, 120, 60)], h=100, w=200, width=100, height=100)
+
+    assert image.shape[:2] == (f["height"], f["width"]) == (100, 100)
+    v = f["annotations"][0]["value"]
+    assert [v["x_min"], v["y_min"], v["x_max"], v["y_max"]] == [20, 10, 60, 60]
+
+
+@pytest.mark.parametrize("pad_value", [None, 114])
+def test_resize_par_pads_with_the_given_value(tmp_path, pad_value):
+    overrides = {} if pad_value is None else {"pad_value": pad_value}
+    image, f = _run_resize(tmp_path, [_box("b1", 40, 10, 120, 60)], h=100, w=200, width=100, height=100, par=True, **overrides)
+
+    # 200x100 scales to 100x50, centered with 25 rows of padding above and below
+    assert image.shape[:2] == (100, 100)
+    assert np.all(image[:25] == (pad_value or 0)) and np.all(image[75:] == (pad_value or 0))
+    assert np.all(image[25:75] == 7)
+    v = f["annotations"][0]["value"]
+    assert [v["x_min"], v["y_min"], v["x_max"], v["y_max"]] == [20, 30, 60, 55]

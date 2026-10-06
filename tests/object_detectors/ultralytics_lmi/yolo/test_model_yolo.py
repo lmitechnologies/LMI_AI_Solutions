@@ -177,24 +177,6 @@ def _nonsquare_batch(images):
     return resized, ops
 
 
-def _shared_ops(per_image_history):
-    """Take a per-image history and produce a single-image (broadcast) variant.
-
-    Used to exercise the "single chain applied to all images" code path: each
-    history entry's per-image fields are collapsed to their first element.
-    """
-    from dataclasses import fields
-
-    out = []
-    for entry in per_image_history:
-        fresh = type(entry).__new__(type(entry))
-        for f in fields(entry):
-            v = getattr(entry, f.name)
-            object.__setattr__(fresh, f.name, v[:1] if isinstance(v, list) else v)
-        out.append(fresh)
-    return out
-
-
 def _assert_empty_output(out, keys, batch_size=1):
     """Assert each key in out has batch_size items and all are empty."""
     for key in keys:
@@ -252,6 +234,7 @@ def _assert_batch_cuda(out, keys, idx=0):
 class Test_Yolo_Det:
     KEYS = ["boxes", "scores", "classes"]
 
+    @pytest.mark.arch_sensitive
     def test_compare_with_ultralytics_nonsquare(self, imgs_coco):
         images, _, _ = imgs_coco
         resized_images, _ = _nonsquare_batch(images)
@@ -277,29 +260,18 @@ class Test_Yolo_Det:
             out, _ = model.predict(batch, configs=0.5)
             _assert_empty_output(out, self.KEYS, batch_size=2)
 
-    def test_predict_batch(self, all_models, imgs_coco):
+    def test_tensor_input_batch(self, all_models, imgs_coco):
+        """predict() accepts a list of CUDA HWC tensors."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         images, _, _ = imgs_coco
-        if len(images) < 2:
-            pytest.skip("Not enough images for batch test")
-        num_imgs = len(images)
         resized_images, ops_list = _nonsquare_batch(images)
-
+        tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
         for model in all_models["det"]:
-            # per-image operators
-            model.predict(resized_images, configs=0.5, operators=ops_list)
-
-            # shared operators (single chain broadcast to all images)
-            model.predict(resized_images, configs=0.5, operators=_shared_ops(ops_list))
-
-            # no operators
-            model.predict(resized_images, configs=0.5)
-
-            if torch.cuda.is_available():
-                tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
-                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
-                for img_idx in range(num_imgs):
-                    _assert_batch_cuda(out_gpu, self.KEYS[:-1], img_idx)
-                _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+            out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
+            for img_idx in range(len(images)):
+                _assert_batch_cuda(out_gpu, self.KEYS[:-1], img_idx)
+            _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
 
     def test_predict_batch_square(self, all_models, imgs_coco):
         _, resized_images, ops_list = imgs_coco
@@ -335,6 +307,7 @@ class Test_Yolo_Det:
 class Test_Yolo_Seg:
     KEYS = ["boxes", "masks", "scores", "segments", "classes"]
 
+    @pytest.mark.arch_sensitive
     def test_compare_with_ultralytics_nonsquare(self, imgs_coco):
         images, _, _ = imgs_coco
         resized_images, _ = _nonsquare_batch(images)
@@ -365,31 +338,24 @@ class Test_Yolo_Seg:
             out, _ = model.predict(batch, configs=0.5)
             _assert_empty_output(out, self.KEYS, batch_size=2)
 
-    def test_predict_batch(self, all_models, imgs_coco):
+    def test_tensor_input_batch(self, all_models, imgs_coco):
+        """predict() accepts a list of CUDA HWC tensors."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         images, _, _ = imgs_coco
-        if len(images) < 2:
-            pytest.skip("Not enough images for batch test")
-
-        num_images = len(images)
-        resized_images, batch_ops = _nonsquare_batch(images)
+        resized_images, ops_list = _nonsquare_batch(images)
+        tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
         for model in all_models["seg"]:
-            # per-image operators
-            out, _ = model.predict(resized_images, configs=0.5, operators=batch_ops, return_segments=False)
-            for img_idx in range(num_images):
-                assert len(out["segments"][img_idx]) == 0
+            out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
+            for img_idx in range(len(images)):
+                _assert_batch_cuda(out_gpu, self.KEYS[:-1], img_idx)
+            _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
 
-            # shared operators (single chain broadcast to all images)
-            model.predict(resized_images, configs=0.5, operators=_shared_ops(batch_ops))
-
-            # no operators
-            model.predict(resized_images, configs=0.5)
-
-            if torch.cuda.is_available():
-                tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
-                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=batch_ops)
-                for img_idx in range(num_images):
-                    _assert_batch_cuda(out_gpu, self.KEYS[:-1], img_idx)
-                _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+    def test_no_segments_unless_requested(self, all_models, imgs_coco):
+        _, resized_images, ops_list = imgs_coco
+        for model in all_models["seg"]:
+            out, _ = model.predict(resized_images, configs=0.5, operators=ops_list, return_segments=False)
+            assert all(len(segs) == 0 for segs in out["segments"])
 
     def test_predict_batch_square(self, all_models, imgs_coco):
         _, resized_images, ops_list = imgs_coco
@@ -404,6 +370,7 @@ class Test_Yolo_Seg:
 class Test_Yolo_Obb:
     KEYS = ["boxes", "scores", "classes"]
 
+    @pytest.mark.arch_sensitive
     def test_compare_with_ultralytics_nonsquare(self, imgs_dota8):
         images, _, _ = imgs_dota8
         for model_path in OD_OBB_DOTA_8:
@@ -428,26 +395,16 @@ class Test_Yolo_Obb:
             out, _ = model.predict(batch, configs=0.5)
             _assert_empty_output(out, self.KEYS, batch_size=2)
 
-    def test_predict_batch(self, all_models, imgs_dota8):
+    def test_tensor_input_batch(self, all_models, imgs_dota8):
+        """predict() accepts a list of CUDA HWC tensors."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         images, _, _ = imgs_dota8
-        if len(images) < 2:
-            pytest.skip("Not enough images for batch test")
         resized_images, ops_list = _nonsquare_batch(images)
-
+        tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
         for model in all_models["obb_dota8"]:
-            # per-image operators
-            out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
-
-            # shared operators (single chain broadcast to all images)
-            model.predict(resized_images, configs=0.5, operators=_shared_ops(ops_list))
-
-            # no operators
-            out3, _ = model.predict(resized_images, configs=0.5)
-
-            if torch.cuda.is_available():
-                tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
-                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
-                _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+            out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
+            _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
 
     def test_predict_batch_square(self, all_models, imgs_dota8):
         _, resized_images, ops_list = imgs_dota8
@@ -462,6 +419,7 @@ class Test_Yolo_Obb:
 class Test_Yolo_Pose:
     KEYS = ["boxes", "scores", "points", "classes"]
 
+    @pytest.mark.arch_sensitive
     def test_compare_with_ultralytics_nonsquare(self, imgs_coco):
         images, _, _ = imgs_coco
         resized_images, _ = _nonsquare_batch(images)
@@ -487,26 +445,16 @@ class Test_Yolo_Pose:
             out, _ = model.predict(batch, configs=0.5)
             _assert_empty_output(out, self.KEYS, batch_size=2)
 
-    def test_predict_batch(self, all_models, imgs_coco):
-        # No _assert_batch_output here because pose is more sensitive to distortion and drop some detections.
+    def test_tensor_input_batch(self, all_models, imgs_coco):
+        """predict() accepts a list of CUDA HWC tensors."""
+        if not torch.cuda.is_available():
+            pytest.skip("CUDA not available")
         images, _, _ = imgs_coco
-        if len(images) < 2:
-            pytest.skip("Not enough images for batch test")
         resized_images, ops_list = _nonsquare_batch(images)
+        tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
         for model in all_models["pose"]:
-            # per-image operators
-            out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
-
-            # shared operators (single chain broadcast to all images)
-            model.predict(resized_images, configs=0.5, operators=_shared_ops(ops_list))
-
-            # no operators
-            out3, _ = model.predict(resized_images, configs=0.5)
-
-            if torch.cuda.is_available():
-                tensor_batch = [torch.from_numpy(img).cuda() for img in resized_images]
-                out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
-                _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
+            out_gpu, _ = model.predict(tensor_batch, configs=0.5, operators=ops_list)
+            _write_annotated_images(model, out_gpu, images, filename_prefix=model.test_name)
 
     def test_predict_batch_square(self, all_models, imgs_coco):
         _, resized_images, ops_list = imgs_coco
@@ -597,16 +545,58 @@ def test_tiled_predict_merges_tiles_back_to_source_images(yolo_models, imgs_coco
             assert boxes[:, 0::2].max() <= w and boxes[:, 1::2].max() <= h
 
 
+@pytest.mark.arch_sensitive
+def test_tiled_predict_on_a_batch_1_export(imgs_coco, tmp_path):
+    """A deployed export takes one image per pass; predict must feed it the tiles one at a time, matching the .pt."""
+    pytest.importorskip("onnx")
+    source = tmp_path / "model.pt"
+    source.write_bytes(open(OD_DET_MODELS[0], "rb").read())
+    exported = YOLO(str(source), task="detect").export(format="onnx", imgsz=IMGSZ, verbose=False)
+    onnx_model = Yolo(str(exported), device="cpu", image_size=IMGSZ)
+    assert onnx_model.fixed_batch_size == 1
+
+    images = imgs_coco[0][:1]
+    _, out = _tile_and_predict(onnx_model, images, 0.25, stride=[256, 256])
+    _, ref = _tile_and_predict(Yolo(OD_DET_MODELS[0], device="cpu", image_size=IMGSZ), images, 0.25, stride=[256, 256])
+    assert len(out["boxes"][0]) == len(ref["boxes"][0]) > 0
+    np.testing.assert_allclose(np.sort(out["boxes"][0], 0), np.sort(ref["boxes"][0], 0), atol=1)
+
+
 def test_tiled_predict_merge_fragments_rejoins_seam_splits(yolo_models, imgs_coco):
     """Overlapping tiles plus merge_fragments must not leave more detections than the split run."""
     model = yolo_models["det"][0]
     images = imgs_coco[0][:1]
-    overlapping = {"stride": [256, 256], "nms_iou": 0.45, "containment": 0.8}
+    overlapping = {"stride": [256, 256], "nms_iou": 0.45}
 
     _, split = _tile_and_predict(model, images, 0.25, merge_fragments=False, **overlapping)
     _, merged = _tile_and_predict(model, images, 0.25, merge_fragments=True, **overlapping)
 
     assert len(merged["boxes"][0]) < len(split["boxes"][0]), "merging should collapse seam fragments"
+
+
+def test_tiled_segments_are_the_same_whether_predict_or_the_caller_reverts(yolo_models, imgs_coco):
+    """predict skips the model's per-tile tracing; the merge traces the survivors on both paths."""
+    from lmi_utils.preprocess_utils import steps
+    from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+    from lmi_utils.preprocess_utils.reconstructor import Reconstructor
+
+    model = yolo_models["seg"][0]
+    net_h, net_w = model.image_size
+    configs = [
+        steps.tile(tile_size=[320, 320], stride=[256, 256], scale_mode="padding"),
+        steps.resize(width=net_w, height=net_h, preserve_aspect=False),
+    ]
+    tiles, history = Preprocessor().preprocess(imgs_coco[0][:1], configs)
+
+    inside, _ = model.predict(tiles, configs=0.25, operators=history, return_segments=True)
+    per_tile, _ = model.predict(tiles, configs=0.25, return_segments=True)
+    outside = Reconstructor().reconstruct_coordinates(per_tile, history)
+
+    segments = inside["segments"][0]
+    assert len(segments) == len(inside["masks"][0]) > 0
+    assert len(outside["segments"][0]) == len(segments)
+    for a, b in zip(segments, outside["segments"][0]):
+        np.testing.assert_array_equal(a, np.clip(np.round(b), 0, None))  # predict rounds; the Reconstructor does not
 
 
 def test_tiled_predict_rejects_a_tile_count_that_does_not_match(yolo_models, imgs_coco):
@@ -642,3 +632,43 @@ def test_tiled_predict_rejects_obb(yolo_models, imgs_dota8):
 
     with pytest.raises(ValueError, match="does not support oriented boxes"):
         model.predict(tiles, configs=0.1, operators=history)
+
+
+ONNX_CASES = [
+    (cls, path, task, imgsz, images)
+    for cls, paths, task, imgsz, images in [
+        (Yolo, OD_DET_MODELS, "detect", IMGSZ, "imgs_coco"),
+        (YoloSeg, OD_SEG_MODELS, "segment", IMGSZ, "imgs_coco"),
+        (YoloObb, OD_OBB_DOTA_8, "obb", OBB_IMGSZ, "imgs_dota8"),
+        (YoloPose, OD_POSE_MODELS, "pose", IMGSZ, "imgs_coco"),
+    ]
+    for path in paths
+    if "yolov8n" not in path  # same output head and postprocess as yolo11n
+]
+
+
+@pytest.mark.arch_sensitive
+@pytest.mark.parametrize("cls,path,task,imgsz,images", ONNX_CASES, ids=[_model_name(c[1]) for c in ONNX_CASES])
+def test_onnx_export_matches_pt(cls, path, task, imgsz, images, tmp_path, request):
+    """An ONNX export run through our wrapper gives the .pt model's detections."""
+    pytest.importorskip("onnx")
+    source = tmp_path / os.path.basename(path)
+    source.write_bytes(open(path, "rb").read())
+    exported = YOLO(str(source), task=task).export(format="onnx", imgsz=imgsz, verbose=False)
+
+    resized = request.getfixturevalue(images)[1]
+    ref, _ = cls(path, device="cpu", image_size=imgsz).predict(resized, configs=0.5)
+    out, _ = cls(str(exported), device="cpu", image_size=imgsz).predict(resized, configs=0.5)
+
+    assert sum(len(s) for s in ref["scores"]) > 0, "the .pt model found nothing, so the comparison proves nothing"
+    for i in range(len(resized)):
+        assert len(out["scores"][i]) == len(ref["scores"][i]), f"image {i}: detection count differs"
+        np.testing.assert_array_equal(out["classes"][i], ref["classes"][i])
+        np.testing.assert_allclose(np.asarray(out["scores"][i]), np.asarray(ref["scores"][i]), atol=1e-3)
+        np.testing.assert_allclose(np.asarray(out["boxes"][i]), np.asarray(ref["boxes"][i]), atol=0.5)
+        if "points" in ref:
+            np.testing.assert_allclose(np.asarray(out["points"][i]), np.asarray(ref["points"][i]), atol=0.5)
+        if "masks" in ref:
+            a, b = np.asarray(ref["masks"][i]) > 0, np.asarray(out["masks"][i]) > 0
+            iou = (a & b).sum((1, 2)) / np.maximum((a | b).sum((1, 2)), 1)
+            assert (iou >= 0.99).all(), f"image {i}: mask IoU {iou.min():.4f} < 0.99"

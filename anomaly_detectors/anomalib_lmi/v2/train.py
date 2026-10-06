@@ -1,4 +1,5 @@
 import argparse
+import inspect
 import logging
 import subprocess
 import sys
@@ -8,10 +9,12 @@ from typing import Any, Dict, List, Optional
 import anomalib.models as ad_models
 import torch
 import yaml
+from anomalib import PrecisionType
 from anomalib.data import Folder
 from anomalib.deploy import ExportType
 from anomalib.engine import Engine
 from anomalib.pre_processing import PreProcessor
+from anomalib.pre_processing.utils.transform import disable_antialiasing
 
 # import before anomalib to avoid partial-init circular import
 from torchvision.transforms import v2
@@ -76,6 +79,13 @@ def build_preprocessor(preprocessor_config: Optional[List[Dict]]) -> PreProcesso
     return PreProcessor(transform=transforms)
 
 
+def disable_train_antialias(model) -> None:
+    """Resize training images the way the exported model does; anomalib drops antialiasing in every export."""
+    pre_processor = getattr(model, "pre_processor", None)
+    if pre_processor is not None and pre_processor.transform is not None:
+        disable_antialiasing(pre_processor.transform)
+
+
 def build_model(model_config: Dict[str, Any]):
     """
     Dynamically builds the Anomalib model.
@@ -83,11 +93,8 @@ def build_model(model_config: Dict[str, Any]):
     """
     class_name = model_config.get("class_name")
     params = model_config.get("params", {}) or {}
-    for rm in ["tiler_type", "tile_size", "stride", "precision"]:
+    for rm in ["tiler_type", "tile_size", "stride"]:
         params.pop(rm, None)
-
-    # Clean params (convert lists to tuples)
-    params = clean_params(params)
 
     # 1. Get the model class dynamically
     if not hasattr(ad_models, class_name):
@@ -95,6 +102,22 @@ def build_model(model_config: Dict[str, Any]):
 
     model_class = getattr(ad_models, class_name)
     logger.info(f"Initializing Model: {class_name}")
+
+    # precision is a per-model dtype selector; only some anomalib models accept it
+    precision = params.pop("precision", None)
+    if precision is not None:
+        try:
+            precision = PrecisionType(str(precision).lower())
+        except ValueError:
+            valid = ", ".join(p.value for p in PrecisionType)
+            raise ValueError(f"Invalid precision '{precision}'. Valid values: {valid}.") from None
+        if "precision" in inspect.signature(model_class).parameters:
+            params["precision"] = precision
+        else:
+            logger.warning(f"Model '{class_name}' does not support the precision parameter; training in float32.")
+
+    # Clean params (convert lists to tuples)
+    params = clean_params(params)
 
     # 2. Extract and REMOVE image_size
     image_size = params.pop("image_size", None)
@@ -111,19 +134,20 @@ def build_model(model_config: Dict[str, Any]):
     # 4. Instantiate the model
     try:
         model = model_class(**params)
-        return model
     except TypeError as e:
         logger.error(f"Error initializing {class_name}: {e}")
         logger.error(f"Parameters provided: {list(params.keys())}")
         raise e
+    disable_train_antialias(model)
+    return model
 
 
 def build_data(data_config: Dict[str, Any]) -> Folder:
     if data_config.get("train_augmentations", None) is not None:
         data_config["train_augmentations"] = build_augmentations(data_config["train_augmentations"])
-    elif data_config.get("val_augmentations", None) is not None:
+    if data_config.get("val_augmentations", None) is not None:
         data_config["val_augmentations"] = build_augmentations(data_config["val_augmentations"])
-    elif data_config.get("augmentations", None) is not None:
+    if data_config.get("augmentations", None) is not None:
         data_config["augmentations"] = build_augmentations(data_config["augmentations"])
     return Folder(**data_config)
 
@@ -136,15 +160,42 @@ def get_image_size(model) -> Optional[tuple]:
     return None
 
 
+def fix_onnx_output_shapes(onnx_path: Path) -> None:
+    """Record static non-batch output dims that torch's legacy exporter leaves symbolic (e.g. ``Clippred_score_dim_1``)."""
+    try:
+        import onnx
+    except ImportError:
+        logger.warning(f"onnx is not installed; output shapes in {onnx_path} stay symbolic and ONNXEngine will reject them.")
+        return
+
+    model = onnx.load(str(onnx_path), load_external_data=False)
+    probe = onnx.ModelProto()
+    probe.CopyFrom(model)
+    # inference keeps existing output dims, so clear them to get the inferred ones
+    for out in probe.graph.output:
+        out.type.tensor_type.ClearField("shape")
+    inferred = onnx.shape_inference.infer_shapes(probe, data_prop=True)
+
+    for out, inf in zip(model.graph.output, inferred.graph.output):
+        dims, inf_dims = out.type.tensor_type.shape.dim, inf.type.tensor_type.shape.dim
+        if len(dims) != len(inf_dims):
+            continue
+        # dim 0 keeps its exported name, e.g. batch_size
+        for dim, inf_dim in zip(dims[1:], inf_dims[1:]):
+            if inf_dim.HasField("dim_value"):
+                dim.dim_value = inf_dim.dim_value
+    onnx.save(model, str(onnx_path))
+
+
 def build_tiler(tile_size, stride, tiler_cls_name=None):
     if tile_size is None:
         return []
+    logger.info(f"Tiling enabled: tile_size={tile_size}, stride={stride}, tiler={tiler_cls_name or 'CallbackTiler'}")
     return [TilerConfigCallback(enable=True, tile_size=tile_size, stride=stride, tiler_class=tiler_cls_name)]
 
 
 def estimate_max_samples(config_path, num_samples=None):
-    # Run in a subprocess so the model/CUDA context built for profiling is fully
-    # released on process exit, leaving no lingering VRAM before engine.fit().
+    # a subprocess frees the profiling model's CUDA memory before engine.fit()
     cmd = [
         sys.executable,
         "-m",
@@ -190,7 +241,11 @@ def main():
     # --- Build Model Dynamically ---
     model_params = cfg["model"]["params"]
     tiler_cls_name = model_params.pop("tiler_type", None)
-    tiler_callbacks = build_tiler(model_params.pop("tile_size", None), model_params.pop("stride", None), tiler_cls_name=tiler_cls_name)
+    tiler_callbacks = build_tiler(
+        model_params.pop("tile_size", None),
+        model_params.pop("stride", None),
+        tiler_cls_name=tiler_cls_name,
+    )
     model = build_model(cfg["model"])
 
     # --- Data Module Setup ---
@@ -218,19 +273,23 @@ def main():
 
     # --- Train ---
     logger.info("Starting training...")
-    torch.cuda.empty_cache()
-    torch.cuda.reset_peak_memory_stats()
+    # reset_peak_memory_stats raises on a host without CUDA, before lightning can report the real problem
+    on_cuda = torch.cuda.is_available()
+    if on_cuda:
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
     engine.fit(model=model, datamodule=datamodule, ckpt_path=args.ckpt_path)
     checkpoint_path = Path(eng_cfg["default_root_dir"]) / "model.ckpt"
     engine.trainer.save_checkpoint(checkpoint_path)
-    logger.info(
-        "cuda max allocated MiB: %.2f",
-        torch.cuda.max_memory_allocated() / 1024**2,
-    )
-    logger.info(
-        "cuda max reserved MiB: %.2f",
-        torch.cuda.max_memory_reserved() / 1024**2,
-    )
+    if on_cuda:
+        logger.info(
+            "cuda max allocated MiB: %.2f",
+            torch.cuda.max_memory_allocated() / 1024**2,
+        )
+        logger.info(
+            "cuda max reserved MiB: %.2f",
+            torch.cuda.max_memory_reserved() / 1024**2,
+        )
 
     inner = getattr(model, "model", model)
 
@@ -244,20 +303,22 @@ def main():
     engine.export(model=model, export_type=ExportType.TORCH)
 
     # --- Export to ONNX---
-    # Avoid unsupported data type (half precision) issues (ex. reflection_pad2d)
     model = model.float()
 
-    def export_engine(external_data=False):
+    def export_onnx(external_data=False):
         onnx_kwargs = {"external_data": external_data}
-        engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model), onnx_kwargs=onnx_kwargs)
+        onnx_path = engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model), onnx_kwargs=onnx_kwargs)
+        fix_onnx_output_shapes(onnx_path)
 
     try:
-        export_engine()
+        export_onnx()
     except RuntimeError as e:
         if "larger than 2GiB limit" in str(e):
             # Retry export with external data
             logger.info("2GiB onnx export limit exceeded, export will include additional files.")
-            export_engine(external_data=True)
+            export_onnx(external_data=True)
+        else:
+            raise e
 
 
 if __name__ == "__main__":

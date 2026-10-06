@@ -2,8 +2,14 @@ import numpy as np
 import pytest
 import torch
 
-from lmi_utils.image_utils.img_resize import resize_and_pad
+from lmi_utils.image_utils.img_resize import resize, resize_and_pad
 from lmi_utils.preprocess_utils.ops import ResizeMeta
+
+
+@pytest.mark.parametrize("target_w, target_h", [(64, 64), (128, 32), (32, 16)])
+def test_resize_reaches_the_target_when_one_side_already_matches(target_w, target_h):
+    image = np.zeros((64, 128, 3), dtype=np.uint8)
+    assert resize(image, width=target_w, height=target_h).shape == (target_h, target_w, 3)
 
 
 @pytest.mark.parametrize(
@@ -83,3 +89,16 @@ def test_resize_and_pad_polymorphism(input_type):
     assert meta.dst_sizes[0] == [100, 100]
     # 50x50 → 100x100 preserve aspect: no padding (already square).
     assert meta.pads[0] == [0, 0, 0, 0]
+
+
+def test_antialias_matches_pil_bilinear_when_shrinking():
+    # Detectron2 trains and predicts with PIL bilinear, which low-passes before shrinking
+    from PIL import Image
+
+    rng = np.random.default_rng(0)
+    image = rng.integers(0, 256, (240, 320, 3), dtype=np.uint8)
+    pil = np.asarray(Image.fromarray(image).resize((80, 60), Image.BILINEAR)).astype(int)
+    ours = resize_and_pad(image, width=80, height=60, antialias=True).astype(int)
+    plain = resize_and_pad(image, width=80, height=60).astype(int)
+    assert np.abs(ours - pil).max() <= 1
+    assert np.abs(plain - pil).max() > 10

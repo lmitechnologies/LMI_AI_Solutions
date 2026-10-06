@@ -8,7 +8,7 @@ import torch
 from lmi_utils.image_utils.tiler import Tiler
 from lmi_utils.postprocess_utils.mask_crops import MaskCrops
 from lmi_utils.postprocess_utils.nms import class_aware_nms, filter_instances, result_device
-from lmi_utils.postprocess_utils.tile_merge import DEFAULT_EDGE_TOLERANCE, instance_boxes, merge_tile_fragments
+from lmi_utils.postprocess_utils.tile_merge import CONTAINMENT, DEFAULT_EDGE_TOLERANCE, instance_boxes, merge_tile_fragments, trace_crops
 
 from .._coords import apply_coord_transform
 from ..operation import Config, Meta, Operation
@@ -20,38 +20,29 @@ _MASK_RESIZE_BUDGET = 64 * 1024 * 1024  # bytes one mask resize may hold; a sing
 
 @dataclass
 class TileConfig(Config):
-    """Tile each image into fixed-size patches; remember per-image grid for stitching.
+    """Split each image into tiles and remember the grid for merging predictions back.
 
-    Keypoints and oriented boxes are not supported and raise; only boxes, segments and masks tile.
+    Supports boxes, segments and masks; keypoints and oriented boxes raise. Merged segments are traced from the
+    merged masks, so predicted segments need their masks. A segment is the mask's outer outline, largest piece only;
+    holes are dropped.
 
-    tile_size: int or [h, w] — patch size.
-    stride: int or [h, w] — step between tile origins, never more than ``tile_size``. Overlap is ``tile_size - stride``.
-    scale_mode: how the image is fit to the tile grid before slicing ("padding" or "interpolation").
-    overlap_mode: how overlapping regions are merged on untile ("average", "max", ...).
+    tile_size: int or [h, w].
+    stride: int or [h, w], at most ``tile_size``. Overlap = ``tile_size - stride``.
+    scale_mode: fit the image to the grid by "padding" or "interpolation".
+    overlap_mode: how overlapping pixels combine on untile ("average", "max", ...).
 
-    The rest configure ``revert_coords``, which rebuilds per-tile predictions in image space:
+    Merging (``revert_coords``; details in ``tile_merge``):
+    merge_fragments: join fragments of one object cut by tile edges. Works better with overlap.
+    score_threshold: drop predictions below this before merging.
+    nms_iou: class-aware NMS IoU across tiles; None disables it. With merging off, also drops
+        predictions ``tile_merge.CONTAINMENT`` inside a higher-scoring one.
+    edge_tolerance: px from a tile edge that still counts as touching it. Matches detector box error,
+        not tile size. Below 2, tiles without overlap stop joining.
+    report_merge_origin: add a ``merge_origin`` code per prediction (``tile_merge.ORIGIN_*``).
 
-    merge_fragments: union predictions of one object that adjacent tiles each saw only part of. On by
-        default; False leaves seam-split objects split. Works without tile overlap, though overlap scores
-        better: two pieces that only meet at a seam can be compared along it but not across it.
-    score_threshold: predictions below this are dropped before merging, so a low-scoring piece cannot
-        become its group's representative and take the whole group down with it.
-    nms_iou: class-aware NMS IoU threshold across tiles. None disables both NMS rules.
-    containment: fraction of one prediction that must lie inside another to count as contained.
-        Used to suppress a fragment nested in a whole detection, and to fold a fragment into the
-        overlapping tile's prediction that covers it. None disables the containment rule.
-
-    edge_tolerance: px from a tile edge that still counts as touching it. Absolute, not a fraction of
-        the tile: it tracks the detector's box-regression error at a crop boundary, which the detection
-        head's feature stride fixes. It decides which leftover fragments may be dropped; joining reaches
-        further, to ``tile_merge.JOIN_MARGIN``, and with no tile overlap it also sets how wide a band
-        either side of a seam two pieces are compared in. Results change little between 0.5 and 4.
-    min_label_size: on ``apply_coords``, drop a clipped label thinner than this many pixels on
-        either axis. Slivers only — an interior fragment showing none of the object's edges must
-        survive, or the model never learns to fire on the middle of an object wider than a tile.
-    report_merge_origin: add a ``merge_origin`` code per prediction, saying whether a tile saw it whole, it
-        absorbed fragments, or it is a union of fragments (``tile_merge.ORIGIN_*``). For inspection; off by
-        default so the result keys do not change.
+    Labels (``apply_coords``):
+    min_label_size: drop clipped labels thinner than this many px on either axis. Keep it small; a tile
+        showing only the middle of an object is still a valid label.
     """
 
     tile_size: Union[int, List[int], None] = None
@@ -61,7 +52,6 @@ class TileConfig(Config):
     merge_fragments: bool = True
     score_threshold: float = 0.0
     nms_iou: Optional[float] = 0.5
-    containment: Optional[float] = 0.8
     edge_tolerance: float = DEFAULT_EDGE_TOLERANCE
     min_label_size: float = 0.0
     report_merge_origin: bool = False
@@ -79,7 +69,6 @@ class TileConfig(Config):
             "merge_fragments": self.merge_fragments,
             "score_threshold": self.score_threshold,
             "nms_iou": self.nms_iou,
-            "containment": self.containment,
             "edge_tolerance": self.edge_tolerance,
             "min_label_size": self.min_label_size,
             "report_merge_origin": self.report_merge_origin,
@@ -172,9 +161,9 @@ class TileOperation(Operation[TileConfig, TileMeta]):
                 add_channel = True
                 img = img.unsqueeze(-1)
 
-            tiler = Tiler(tile_size=config.tile_size, stride=config.stride)
+            tiler = Tiler(tile_size=config.tile_size, stride=config.stride, scale_mode=scale_mode)
             img_batch = img.permute(2, 0, 1).unsqueeze(0)  # [1, C, H, W]
-            tiles_batch = tiler.tile(img_batch, mode=scale_mode)  # [N, C, H, W]
+            tiles_batch = tiler.tile(img_batch)  # [N, C, H, W]
 
             tiles_list_chw = list(torch.unbind(tiles_batch, dim=0))
             tiles_list_hwc = [t.permute(1, 2, 0) for t in tiles_list_chw]
@@ -233,7 +222,7 @@ class TileOperation(Operation[TileConfig, TileMeta]):
                 batch_hwc = batch_hwc.unsqueeze(-1)
             batch_chw = batch_hwc.permute(0, 3, 1, 2)  # [N, C, H, W]
 
-            restored_batch = tiler.untile(batch_chw, scale_mode=meta.scale_modes[i], overlap_mode=meta.overlap_modes[i])
+            restored_batch = tiler.untile(batch_chw, overlap_mode=meta.overlap_modes[i])
             restored_img = restored_batch.squeeze(0).permute(1, 2, 0)
             if add_channel:
                 restored_img = restored_img.squeeze(-1)
@@ -254,12 +243,9 @@ class TileOperation(Operation[TileConfig, TileMeta]):
             - segments: Sutherland-Hodgman clip; instances with empty clipped polygon are dropped.
             - masks: per-tile spatial slice.
 
-        Results carrying no geometry (only image-level scores/classes) are passed through to
-        every tile unchanged, since there is nothing to clip.
+        Results with no geometry (image-level scores/classes only) go to every tile unchanged.
 
-        Mask input convention (original space, matching the box/segment coords):
-            - interpolation: masks are in ``im_size``; resampled to ``scale_size`` before tiling.
-            - padding: masks are in ``im_size``; zero-padded to ``scale_size`` before tiling.
+        Masks are in ``im_size``; they are resampled (interpolation) or zero-padded (padding) to ``scale_size``.
         """
         for r in results:
             _reject_unsupported(r)
@@ -279,6 +265,7 @@ class TileOperation(Operation[TileConfig, TileMeta]):
         """Rebuild per-tile predictions in image space. See ``_merge_tile_coords`` for the steps."""
         for r in results:
             _reject_unsupported(r)
+            _reject_segments_without_masks(r)
         output = []
         cursor = 0
         for i in range(len(meta.n_tiles)):
@@ -298,13 +285,18 @@ class TileOperation(Operation[TileConfig, TileMeta]):
 def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str, Any]) -> Dict[str, Any]:
     """Offset per-tile predictions into image space and rebuild whole objects from them.
 
-    Offset -> drop what landed in the padded region -> score threshold -> merge seam fragments ->
-    class-aware NMS -> clip to the image. Thresholding runs before merging so a weak view cannot
-    represent its group, and NMS runs last so it cannot delete fragments their partners still need.
+    Offset -> drop what landed in the padding -> score threshold -> merge fragments -> class-aware NMS -> clip.
+    Thresholding runs before merging so a weak prediction cannot represent its group; NMS runs after so it
+    cannot delete fragments still to be joined.
 
-    Under interpolation every step runs in the scaled image's coordinates, where the tile grid is exact and
-    ``edge_tolerance`` still measures the detector's error; the survivors are rescaled to image space at the end.
+    Under interpolation all steps run in the scaled image, where the grid is exact; survivors are rescaled at the end.
+
+    Segments are not merged: when the tiles carry segments, the survivors' outlines are traced from their merged masks.
     """
+    has_segments_key = any("segments" in r for r in tile_results)
+    trace = any(_populated(r.get("segments")) for r in tile_results)
+    tile_results = [{k: v for k, v in r.items() if k != "segments"} for r in tile_results]
+
     n_tiles_h, n_tiles_w = tiler_meta["n_tiles"]
     tile_h, tile_w = tiler_meta["tile_size"]
     stride_h, stride_w = tiler_meta["stride"]
@@ -313,7 +305,6 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     is_interp = tiler_meta.get("scale_mode", "padding") == "interpolation" and (scale_h != im_h or scale_w != im_w)
     work_h, work_w = (scale_h, scale_w) if is_interp else (im_h, im_w)
 
-    # masks stay as box crops until the survivors are pasted: a full-image mask per detection runs out of memory on large images
     target_size = (work_h, work_w)
     mask_dtype = _output_mask_dtype(tile_results)
 
@@ -322,6 +313,7 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     for idx, r in enumerate(tile_results):
         row = idx // n_tiles_w
         col = idx % n_tiles_w
+        # keep masks as box crops; full-image masks per detection run out of memory on large images
         s = _shift_tile_coords(r, col * stride_w, row * stride_h, target_size, mask_dtype)
         shifted.append(s)
         tile_idx_parts.append(torch.full((_instance_count(s),), idx, dtype=torch.long))
@@ -329,10 +321,12 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
     merged = _concat_tile_results(shifted)
     tile_idx = torch.cat(tile_idx_parts) if tile_idx_parts else torch.zeros(0, dtype=torch.long)
 
+    keep = _above_score(merged, float(tiler_meta.get("score_threshold") or 0.0), len(tile_idx))
     if not is_interp and (scale_h != im_h or scale_w != im_w):
-        merged, tile_idx = _drop_in_padding(merged, tile_idx, im_h, im_w)
-
-    merged, tile_idx = _apply_score_threshold(merged, float(tiler_meta.get("score_threshold") or 0.0), tile_idx)
+        keep &= _inside_image(merged, len(tile_idx), im_h, im_w)
+    if not keep.all():
+        kept = keep.nonzero(as_tuple=True)[0]
+        merged, tile_idx = filter_instances(merged, kept), tile_idx[kept]
 
     report_origin = bool(tiler_meta.get("report_merge_origin"))
     did_merge = bool(tiler_meta.get("merge_fragments", False))  # absent means a hand-built meta: off
@@ -347,18 +341,19 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
             origins,
             (tile_h, tile_w),
             (work_h, work_w),
-            containment=_containment_or_strict(tiler_meta.get("containment")),
             edge_tolerance=tolerance,
             report_origin=report_origin,
         )
 
-    # merging replaces containment suppression: it widens a box to its group's union, so a containment test
-    # would delete the neighbours that union now encloses.
     iou_thr = tiler_meta.get("nms_iou")
-    containment = None if did_merge else tiler_meta.get("containment")
-    if iou_thr is not None or containment is not None:
-        merged = class_aware_nms(merged, iou_thr, containment)
+    if iou_thr is not None:
+        # no containment after merging: it would delete the fragments a merged union encloses
+        merged = class_aware_nms(merged, iou_thr, None if did_merge else CONTAINMENT)
     masks = merged.get("masks")
+    if trace and isinstance(masks, MaskCrops):
+        merged["segments"] = trace_crops(masks)
+    elif trace or has_segments_key:
+        merged["segments"] = []
     if isinstance(masks, MaskCrops):
         merged["masks"] = masks.paste()
     elif isinstance(masks, torch.Tensor) and not len(masks):  # every tile was empty, so no crops were ever built
@@ -371,10 +366,7 @@ def _merge_tile_coords(tile_results: List[Dict[str, Any]], tiler_meta: Dict[str,
 
 
 def _reject_unsupported(result: Dict[str, Any]) -> None:
-    """Tiling has no rule for keypoints or oriented boxes; fail rather than return them wrong.
-
-    The clip/refit code for both is still in ``_project_to_tile``, kept for future support.
-    """
+    """Tiling has no rule for keypoints or oriented boxes; fail rather than return them wrong."""
     points = result.get("points")
     if isinstance(points, torch.Tensor) and len(points):
         raise ValueError("tile: tiling does not support keypoints")
@@ -383,37 +375,38 @@ def _reject_unsupported(result: Dict[str, Any]) -> None:
         raise ValueError("tile: tiling does not support oriented boxes")
 
 
-def _drop_in_padding(merged: Dict[str, Any], tile_idx: torch.Tensor, im_h: int, im_w: int) -> Tuple[Dict[str, Any], torch.Tensor]:
-    """Discard predictions that lie wholly outside the original image, in the padding."""
+def _reject_segments_without_masks(result: Dict[str, Any]) -> None:
+    """Merged segments are traced from the merged masks, so a prediction with segments needs its mask."""
+    if _populated(result.get("segments")) and not _populated(result.get("masks")):
+        raise ValueError("tile: merging tiled segments needs their masks; polygons alone are not supported")
+
+
+def _populated(values: Any) -> bool:
+    if values is None:
+        return False
+    return any(len(v) for v in values) if isinstance(values, list) else len(values) > 0
+
+
+def _inside_image(merged: Dict[str, Any], n: int, im_h: int, im_w: int) -> torch.Tensor:
+    """(n,) bool: the prediction is not wholly in the padding outside the original image."""
     boxes = instance_boxes(merged)
-    if boxes is None or len(boxes) != len(tile_idx):
-        return merged, tile_idx
+    if boxes is None or len(boxes) != n:
+        return torch.ones(n, dtype=torch.bool)
     # a mask keeps only its in-image pixels, so an empty box means the prediction sat entirely in the padding
     inside = (boxes[:, 2] > boxes[:, 0]) & (boxes[:, 3] > boxes[:, 1])
-    keep = (inside & (boxes[:, 0] < im_w) & (boxes[:, 1] < im_h)).nonzero(as_tuple=True)[0]
-    if len(keep) == len(tile_idx):
-        return merged, tile_idx
-    return filter_instances(merged, keep), tile_idx[keep]
+    return inside & (boxes[:, 0] < im_w) & (boxes[:, 1] < im_h)
 
 
-def _apply_score_threshold(merged: Dict[str, Any], threshold: float, tile_idx: torch.Tensor) -> Tuple[Dict[str, Any], torch.Tensor]:
-    """Drop predictions below ``threshold``, keeping ``tile_idx`` in step. Runs before merging."""
+def _above_score(merged: Dict[str, Any], threshold: float, n: int) -> torch.Tensor:
+    """(n,) bool: the prediction reaches ``threshold``."""
     scores = merged.get("scores")
-    if threshold <= 0 or not isinstance(scores, torch.Tensor) or len(scores) != len(tile_idx):
-        return merged, tile_idx
-    keep = (scores.detach().cpu().float() >= threshold).nonzero(as_tuple=True)[0]
-    if len(keep) == len(scores):
-        return merged, tile_idx
-    return filter_instances(merged, keep), tile_idx[keep]
-
-
-def _containment_or_strict(value: Optional[float]) -> float:
-    """A missing containment demands a whole object; 0.0 means no containment requirement at all."""
-    return 1.0 if value is None else float(value)
+    if threshold <= 0 or not isinstance(scores, torch.Tensor) or len(scores) != n:
+        return torch.ones(n, dtype=torch.bool)
+    return scores.detach().cpu().float() >= threshold
 
 
 def _clip_to_image(merged: Dict[str, Any], im_h: int, im_w: int) -> Dict[str, Any]:
-    """Clip geometry to the original image bounds. Masks are already cropped to it."""
+    """Clip boxes to the original image bounds. Masks, and segments traced from them, are already inside it."""
     out = dict(merged)
     boxes = merged.get("boxes")
     if isinstance(boxes, torch.Tensor) and len(boxes):
@@ -421,9 +414,6 @@ def _clip_to_image(merged: Dict[str, Any], im_h: int, im_w: int) -> Dict[str, An
         clipped[..., 0::2] = clipped[..., 0::2].clamp(0, im_w)
         clipped[..., 1::2] = clipped[..., 1::2].clamp(0, im_h)
         out["boxes"] = clipped
-    segments = merged.get("segments")
-    if segments is not None and len(segments):
-        out["segments"] = [_polygon_clip(s, im_w, im_h) if len(s) else s for s in segments]
     return out
 
 
@@ -454,13 +444,12 @@ def _rescale_to_image(merged: Dict[str, Any], sx: float, sy: float, im_h: int, i
         return xy.float() * scale
 
     def mask_fn(masks: torch.Tensor) -> torch.Tensor:
-        # resampling holds a float copy of both sides at once, so go in chunks: a crowded image carries hundreds
-        # of full-image masks and converting them all at once costs more than the rest of the pipeline
-        per_mask = 2 * (masks.shape[1] * masks.shape[2] + im_h * im_w)  # fp16: 2.4e-4 error against a 0.5 cut
+        # chunked: a float copy of hundreds of full-image masks at once dominates memory
+        per_mask = 4 * (masks.shape[1] * masks.shape[2] + im_h * im_w)
         chunk = max(1, _MASK_RESIZE_BUDGET // per_mask)
         out = masks.new_empty((len(masks), im_h, im_w), dtype=mask_dtype)
         for start in range(0, len(masks), chunk):
-            block = masks[start : start + chunk].to(torch.float16).unsqueeze(1)
+            block = masks[start : start + chunk].float().unsqueeze(1)
             resized = torch.nn.functional.interpolate(block, size=(im_h, im_w), mode="bilinear", align_corners=False)
             out[start : start + chunk] = (resized.squeeze(1) > 0.5).to(mask_dtype)
         return out
@@ -487,13 +476,11 @@ def _concat_tile_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
         vals = [r[key] for r in results if key in r and r[key] is not None]
         if not vals:
             continue
-        if key == "segments":
-            merged[key] = [seg for segs in vals for seg in segs]
-        elif key == "classes":
+        if key == "classes":
             non_empty = [v for v in vals if len(v) > 0]
             merged[key] = np.concatenate(non_empty) if non_empty else vals[0]
         elif key == "masks" and any(isinstance(v, MaskCrops) for v in vals):
-            # a tile without detections keeps its empty mask tensor
+            # a tile without detections has an empty tensor, not crops; skip it
             merged[key] = MaskCrops.cat([v for v in vals if isinstance(v, MaskCrops)])
         else:  # boxes, scores, points, masks
             non_empty = [v for v in vals if len(v) > 0]
@@ -528,62 +515,29 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
 
     device = result_device(result)
     kept = torch.zeros(n, dtype=torch.bool, device=device)
-    boxes_out = points_out = masks_out = None
+    boxes_out = masks_out = None
     segments_out: Optional[List[torch.Tensor]] = None
     has_spatial = False  # whether any geometry field exists to clip against
 
     boxes = result.get("boxes")
-    if boxes is not None and len(boxes):
+    if boxes is not None and len(boxes):  # xyxy (N, 4): box around the projected corners, then clipped
         has_spatial = True
-        if boxes.ndim == 3:  # OBB (N, 4, 2)
-            # Unreachable: _reject_unsupported turns OBB away. Kept for future support.
-            obb_t = to_tile_xy(boxes.reshape(-1, 2)).reshape(n, 4, 2)
-            obb_kept = torch.zeros(n, dtype=torch.bool, device=device)
-            refit = obb_t.clone()
-            for i in range(n):
-                clipped = _polygon_clip(obb_t[i], tile_w, tile_h)
-                if clipped.shape[0] < 3:
-                    continue
-                fitted = _refit_obb_keep_orientation(clipped, obb_t[i])
-                if fitted is None:
-                    continue
-                refit[i] = fitted.to(refit.dtype).to(refit.device)
-                obb_kept[i] = True
-            boxes_out = refit
-            kept |= obb_kept
-        else:  # xyxy (N, 4) — rotate-style: take aabb of forward-projected corners, then clip
-            corners = torch.stack(
-                [
-                    torch.stack([boxes[:, 0], boxes[:, 1]], dim=-1),
-                    torch.stack([boxes[:, 2], boxes[:, 1]], dim=-1),
-                    torch.stack([boxes[:, 2], boxes[:, 3]], dim=-1),
-                    torch.stack([boxes[:, 0], boxes[:, 3]], dim=-1),
-                ],
-                dim=1,
-            )  # (N, 4, 2)
-            corners_t = to_tile_xy(corners.reshape(-1, 2)).reshape(n, 4, 2)
-            x1 = corners_t[..., 0].amin(dim=1).clamp(0, tile_w)
-            x2 = corners_t[..., 0].amax(dim=1).clamp(0, tile_w)
-            y1 = corners_t[..., 1].amin(dim=1).clamp(0, tile_h)
-            y2 = corners_t[..., 1].amax(dim=1).clamp(0, tile_h)
-            boxes_out = torch.stack([x1, y1, x2, y2], dim=-1)
-            kept |= (x2 > x1) & (y2 > y1)
-
-    points = result.get("points")
-    if points is not None and len(points):
-        # Unreachable: _reject_unsupported turns keypoints away. Kept for future support.
-        has_spatial = True
-        xy = points[..., :2]
-        xy_t = to_tile_xy(xy.reshape(-1, 2)).reshape(xy.shape)
-        in_tile = (xy_t[..., 0] >= 0) & (xy_t[..., 0] <= tile_w) & (xy_t[..., 1] >= 0) & (xy_t[..., 1] <= tile_h)
-        if points.shape[-1] == 3:
-            vis = points[..., 2]
-            new_vis = torch.where(in_tile, vis, torch.zeros_like(vis))
-            points_out = torch.cat([xy_t, new_vis.unsqueeze(-1)], dim=-1)
-            kept |= (new_vis > 0).any(dim=-1)
-        else:
-            points_out = xy_t
-            kept |= in_tile.any(dim=-1)
+        corners = torch.stack(
+            [
+                torch.stack([boxes[:, 0], boxes[:, 1]], dim=-1),
+                torch.stack([boxes[:, 2], boxes[:, 1]], dim=-1),
+                torch.stack([boxes[:, 2], boxes[:, 3]], dim=-1),
+                torch.stack([boxes[:, 0], boxes[:, 3]], dim=-1),
+            ],
+            dim=1,
+        )  # (N, 4, 2)
+        corners_t = to_tile_xy(corners.reshape(-1, 2)).reshape(n, 4, 2)
+        x1 = corners_t[..., 0].amin(dim=1).clamp(0, tile_w)
+        x2 = corners_t[..., 0].amax(dim=1).clamp(0, tile_w)
+        y1 = corners_t[..., 1].amin(dim=1).clamp(0, tile_h)
+        y2 = corners_t[..., 1].amax(dim=1).clamp(0, tile_h)
+        boxes_out = torch.stack([x1, y1, x2, y2], dim=-1)
+        kept |= (x2 > x1) & (y2 > y1)
 
     segments = result.get("segments")
     if segments is not None and len(segments):
@@ -602,7 +556,8 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
     if masks is not None and len(masks):
         has_spatial = True
         if is_interp:
-            full = F.interpolate(masks.float().unsqueeze(1), size=(scale_h, scale_w), mode="nearest").squeeze(1)
+            # nearest-exact keeps integer labels; plain nearest shifts the mask half a pixel from its box
+            full = F.interpolate(masks.float().unsqueeze(1), size=(scale_h, scale_w), mode="nearest-exact").squeeze(1)
         else:
             mh, mw = masks.shape[1], masks.shape[2]
             if (mh, mw) != (scale_h, scale_w):
@@ -620,15 +575,12 @@ def _project_to_tile(result: Dict[str, Any], m: Dict[str, Any], row: int, col: i
         kept |= (masks_out.reshape(n, -1) != 0).any(dim=-1)
 
     if not has_spatial:
-        # Image-level label (only scores/classes, no geometry): nothing to clip, so
-        # propagate every instance to this tile rather than dropping them all.
+        # an image-level label has no geometry to clip, so every tile keeps it
         kept[:] = True
 
     kept_idx = kept.nonzero(as_tuple=True)[0]
     if boxes_out is not None:
         out["boxes"] = boxes_out[kept_idx]
-    if points_out is not None:
-        out["points"] = points_out[kept_idx]
     if segments_out is not None:
         out["segments"] = [segments_out[i] for i in kept_idx.tolist()]
     if masks_out is not None:
@@ -707,40 +659,3 @@ def _polygon_clip(poly: torch.Tensor, w: float, h: float) -> torch.Tensor:
     if not pts:
         return torch.zeros((0, 2), dtype=poly.dtype, device=poly.device)
     return torch.tensor(pts, dtype=poly.dtype, device=poly.device)
-
-
-def _refit_obb_keep_orientation(clipped: torch.Tensor, original: torch.Tensor) -> Optional[torch.Tensor]:
-    """Refit a clipped polygon as a 4-corner rect aligned with the original OBB's orientation.
-
-    Unreachable while tiling rejects OBB; kept for future support.
-
-    Project clipped points into the original OBB's local frame, take the AABB there,
-    then rotate back. Result keeps the original rotation (so a near-vertical OBB stays
-    near-vertical even after clipping a sliver). Output corners are in TL→TR→BR→BL
-    order in the original OBB's local frame.
-
-    Returns None for degenerate inputs (< 3 vertices, zero-length edge, or zero-area AABB).
-    """
-    if clipped.shape[0] < 3:
-        return None
-    pts = clipped.detach().cpu().numpy().astype(np.float32)
-    orig = original.detach().cpu().numpy().astype(np.float32)
-
-    dx = orig[1, 0] - orig[0, 0]
-    dy = orig[1, 1] - orig[0, 1]
-    if abs(dx) < 1e-9 and abs(dy) < 1e-9:
-        return None
-    theta = float(np.arctan2(dy, dx))
-    c, s = float(np.cos(theta)), float(np.sin(theta))
-
-    R_to_local = np.array([[c, -s], [s, c]], dtype=np.float32)
-    local = pts @ R_to_local
-    x_min, y_min = float(local[:, 0].min()), float(local[:, 1].min())
-    x_max, y_max = float(local[:, 0].max()), float(local[:, 1].max())
-    if (x_max - x_min) <= 1e-6 or (y_max - y_min) <= 1e-6:
-        return None
-
-    local_corners = np.array([[x_min, y_min], [x_max, y_min], [x_max, y_max], [x_min, y_max]], dtype=np.float32)
-    R_to_world = np.array([[c, s], [-s, c]], dtype=np.float32)
-    world = local_corners @ R_to_world
-    return torch.from_numpy(world)

@@ -5,8 +5,9 @@ GPU architecture and TensorRT build they were serialized on — and are **not** 
 engine fails to deserialize with a "platform tag mismatch"). So they are not committed; regenerate
 them locally for your platform before running the engine-gated TRT suites, which otherwise skip:
 
-    tests/object_detectors/detectron2_lmi/test_trt.py    (rf_detr, detectron2)
-    tests/object_detectors/rf_detr_lmi/test_trt.py
+    tests/object_detectors/detectron2_lmi/test_trt.py    (detectron2)
+    tests/object_detectors/rf_detr_lmi/test_trt.py        (rf_detr)
+    tests/object_detectors/ultralytics_lmi/yolo/test_trt.py (yolo)
     tests/anomaly_detectors/anomalib_lmi/test_v1.py       (ad_v1)  / test_v2.py (ad_v2)
 
 Run this inside the test container (see ``tests/dockerfile.tests``) from the committed weights/ONNX:
@@ -18,11 +19,11 @@ Run this inside the test container (see ``tests/dockerfile.tests``) from the com
 ``tests/run_tests.sh`` calls this automatically before each suite with ``--skip-existing
 --if-available``, so engines are built on demand:
     --skip-existing : leave engines that already exist untouched.
-    --if-available  : exit 0 when no GPU/TensorRT is present, and downgrade per-backend build
-                      failures to warnings (the corresponding TRT tests then skip) instead of aborting.
+    --if-available  : exit 0 when no GPU/TensorRT is present (the TRT tests then skip). With a GPU,
+                      a failed build still exits non-zero, after trying the remaining backends.
 
 Requires a GPU and TensorRT. Per-backend deps: rf_detr needs ``rfdetr``; detectron2 needs
-``detectron2`` plus ``onnx-graphsurgeon`` (EfficientNMS graph surgery). The ad_v1/ad_v2 engines
+``detectron2`` plus ``onnx-graphsurgeon`` (EfficientNMS graph surgery); yolo needs ``ultralytics``. The ad_v1/ad_v2 engines
 build straight from their committed ONNX and need only TensorRT. Engines are written next to their
 weights.
 """
@@ -44,10 +45,21 @@ RF_DETR_RESOLUTION = 384  # matches IMAGE_SIZE in rf_detr_lmi/test_model.py
 DET2_DIR = os.path.join(ASSETS, "detectron2")
 DET2_WEIGHTS = os.path.join(DET2_DIR, "model_final_f10217.pkl")
 DET2_CONFIG_FILE = os.path.join(DET2_DIR, "config.yaml")  # committed, resolved Mask R-CNN config
-DET2_SAMPLE = os.path.join(DET2_DIR, "sample_image.png")  # committed representative image (read-only)
-DET2_TMP_SAMPLE = os.path.join(DET2_DIR, "_anchor_sample.png")  # transient, built + removed here
+DET2_IMAGE_SIZE = (800, 800)  # INPUT.MIN_SIZE_TEST in the committed config.yaml
 DET2_ONNX = os.path.join(DET2_DIR, "model.onnx")
 DET2_ENGINE = os.path.join(DET2_DIR, "model.engine")
+
+YOLO_DIR = os.path.join(ASSETS, "ultralytics")
+# model → image size, matching IMGSZ/OBB_IMGSZ in ultralytics_lmi/yolo/test_model_yolo.py; yolo26 heads are NMS-free, yolo11 use NMS
+YOLO_MODELS = {
+    "yolo26n.pt": 640,
+    "yolo11n-seg.pt": 640,
+    "yolo26n-pose.pt": 640,
+    "yolo11n-pose.pt": 640,
+    "yolo26n-obb.pt": 1024,
+    "yolo11n-obb.pt": 1024,
+}
+YOLO_ENGINES = [os.path.join(YOLO_DIR, os.path.splitext(m)[0] + ".engine") for m in YOLO_MODELS]
 
 # Anomaly-detection engines build straight from their committed ONNX — no anomalib needed, so both
 # variants build in any TensorRT container (../.. path is relative to the OD ``ASSETS`` root).
@@ -97,54 +109,62 @@ def build_rf_detr(fp16: bool = True, keep_onnx: bool = False) -> None:
     onnx_path = produced[-1]
 
     logger.info("[rf_detr] building engine %s → %s ...", os.path.basename(onnx_path), RF_DETR_ENGINE)
-    onnx_to_trt(onnx_path, RF_DETR_ENGINE, fp16=fp16)  # static batch: batch kwargs are ignored
-    if not keep_onnx and os.path.isfile(onnx_path):
-        os.remove(onnx_path)
+    try:
+        onnx_to_trt(onnx_path, RF_DETR_ENGINE, fp16=fp16)  # static batch: batch kwargs are ignored
+    finally:
+        if not keep_onnx and os.path.isfile(onnx_path):
+            os.remove(onnx_path)
     logger.info("[rf_detr] done: %s", RF_DETR_ENGINE)
 
 
 def build_detectron2(fp16: bool = True, keep_onnx: bool = False) -> None:
     """Export the Mask R-CNN weights → ONNX (+ EfficientNMS graph surgery) → TensorRT engine.
 
-    Uses the committed config.yaml and sample_image.png. The sample is resized to a square
-    ``MIN_SIZE_TEST`` (divisible by 32) written to a transient file: the ONNX is traced at the
-    sample's native size while the surgeon regenerates anchors via ``ResizeShortestEdge(MIN_SIZE_TEST,
-    MAX_SIZE_TEST)``, so the two only agree — and the RPN only produces detections — when the sample
-    is square at MIN_SIZE_TEST. The committed sample_image.png is read but never modified.
+    Uses the committed config.yaml, at a square MIN_SIZE_TEST engine size.
     """
-    for path in (DET2_WEIGHTS, DET2_CONFIG_FILE, DET2_SAMPLE):
+    for path in (DET2_WEIGHTS, DET2_CONFIG_FILE):
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Missing detectron2 asset: {path} (fetch via git-lfs).")
-    import cv2
-    from detectron2.config import get_cfg
-
     from object_detectors.detectron2_lmi.convert import convert
 
-    cfg = get_cfg()
-    cfg.merge_from_file(DET2_CONFIG_FILE)
-    size = int(cfg.INPUT.MIN_SIZE_TEST)
-    size -= size % 32  # EfficientNMS plugin build requires divisible-by-32 dims
-    cv2.imwrite(DET2_TMP_SAMPLE, cv2.resize(cv2.imread(DET2_SAMPLE), (size, size)))
-
-    logger.info("[detectron2] exporting ONNX + building %dx%d engine → %s ...", size, size, DET2_ENGINE)
+    logger.info("[detectron2] exporting ONNX + building engine → %s ...", DET2_ENGINE)
     try:
         convert(
             {
                 "config_file": DET2_CONFIG_FILE,
                 "weights": DET2_WEIGHTS,
-                "sample_image": DET2_TMP_SAMPLE,
+                "image_size": DET2_IMAGE_SIZE,
                 "output": DET2_DIR,
                 "batch_size": 1,
                 "fp16": fp16,
-                "onnx": True,  # export ONNX + run EfficientNMS graph surgery
-                "trt": True,  # then build the engine
+                "trt": True,
             }
         )
     finally:
-        os.remove(DET2_TMP_SAMPLE)
-    if not keep_onnx and os.path.isfile(DET2_ONNX):
-        os.remove(DET2_ONNX)
+        if not keep_onnx and os.path.isfile(DET2_ONNX):
+            os.remove(DET2_ONNX)
     logger.info("[detectron2] done: %s", DET2_ENGINE)
+
+
+def build_yolo(fp16: bool = True, keep_onnx: bool = False, skip_existing: bool = False) -> None:
+    """Export the YOLO test models → TensorRT with ultralytics' exporter, writing <name>.engine next to each .pt."""
+    # ultralytics' auto-install would put the CPU onnxruntime over the GPU build
+    os.environ.setdefault("YOLO_AUTOINSTALL", "false")
+    from ultralytics import YOLO
+
+    for (name, imgsz), engine in zip(YOLO_MODELS.items(), YOLO_ENGINES):
+        if skip_existing and os.path.isfile(engine):
+            logger.info("[yolo] engine exists, skipping: %s", engine)
+            continue
+        pt = os.path.join(YOLO_DIR, name)
+        onnx_path = os.path.splitext(pt)[0] + ".onnx"
+        logger.info("[yolo] exporting %s → TensorRT ...", pt)
+        try:
+            YOLO(pt).export(format="engine", imgsz=imgsz, half=fp16, device=0, verbose=False)
+        finally:
+            if not keep_onnx and os.path.isfile(onnx_path):
+                os.remove(onnx_path)
+        logger.info("[yolo] done: %s", engine)
 
 
 def _build_from_onnx(name: str, onnx_path: str, engine_path: str, fp16: bool) -> None:
@@ -173,16 +193,18 @@ def build_ad_v2(fp16: bool = True, keep_onnx: bool = False) -> None:
 BUILDERS = {
     "rf_detr": build_rf_detr,
     "detectron2": build_detectron2,
+    "yolo": build_yolo,
     "ad_v1": build_ad_v1,
     "ad_v2": build_ad_v2,
 }
 
-# Output engine path per backend — used to skip backends whose engine already exists.
+# Output engine paths per backend — used to skip backends whose engines already exist.
 ENGINE_PATHS = {
-    "rf_detr": RF_DETR_ENGINE,
-    "detectron2": DET2_ENGINE,
-    "ad_v1": AD_V1_ENGINE,
-    "ad_v2": AD_V2_ENGINE,
+    "rf_detr": [RF_DETR_ENGINE],
+    "detectron2": [DET2_ENGINE],
+    "yolo": YOLO_ENGINES,
+    "ad_v1": [AD_V1_ENGINE],
+    "ad_v2": [AD_V2_ENGINE],
 }
 
 
@@ -203,12 +225,11 @@ def main() -> None:
     ap.add_argument("--backend", default="all", help=f"Backend(s) to build: 'all' or a comma-separated list of {', '.join(BUILDERS)}.")
     ap.add_argument("--no-fp16", dest="fp16", action="store_false", help="Build in FP32 instead of FP16.")
     ap.add_argument("--keep-onnx", action="store_true", help="Keep the intermediate ONNX files.")
-    ap.add_argument("--skip-existing", action="store_true", help="Skip backends whose engine file already exists.")
+    ap.add_argument("--skip-existing", action="store_true", help="Skip engines that already exist.")
     ap.add_argument(
         "--if-available",
         action="store_true",
-        help="No-op (exit 0) when a GPU/TensorRT is not available, "
-        "and treat per-backend build failures as warnings. Use when auto-building before tests.",
+        help="No-op (exit 0) when a GPU/TensorRT is not available. Use when auto-building before tests.",
     )
     args = ap.parse_args()
 
@@ -221,19 +242,19 @@ def main() -> None:
 
     failed = []
     for name in _parse_backends(args.backend):
-        if args.skip_existing and os.path.isfile(ENGINE_PATHS[name]):
-            logger.info("[%s] engine exists, skipping: %s", name, ENGINE_PATHS[name])
+        if args.skip_existing and all(os.path.isfile(p) for p in ENGINE_PATHS[name]):
+            logger.info("[%s] engines exist, skipping: %s", name, ", ".join(ENGINE_PATHS[name]))
             continue
+        # yolo builds several engines, so it skips the existing ones itself
+        extra = {"skip_existing": args.skip_existing} if name == "yolo" else {}
         try:
-            BUILDERS[name](fp16=args.fp16, keep_onnx=args.keep_onnx)
-        except Exception as e:
-            if not args.if_available:
-                raise
-            logger.warning("[%s] build failed (its TRT tests will skip): %s", name, e)
+            BUILDERS[name](fp16=args.fp16, keep_onnx=args.keep_onnx, **extra)
+        except Exception:
+            logger.exception("[%s] build failed", name)
             failed.append(name)
 
     if failed:
-        logger.warning("Engines not built: %s", ", ".join(failed))
+        raise SystemExit(f"Engines not built: {', '.join(failed)}")
 
 
 if __name__ == "__main__":

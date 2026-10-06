@@ -63,8 +63,9 @@ def clip(self, name, input, clip_min, clip_max):
     """
     input_tensor = input if type(input) is gs.Variable else input[0]
     log.debug("Created {} node '{}".format("Clip", name))
-    const_min = gs.Constant(name="{}_value:0".format(name), values=np.asarray([clip_min], dtype=np.float32))
-    const_max = gs.Constant(name="{}_value:1".format(name), values=np.asarray([clip_max], dtype=np.float32))
+    # ONNX Clip takes scalar min/max
+    const_min = gs.Constant(name="{}_value:0".format(name), values=np.asarray(clip_min, dtype=np.float32))
+    const_max = gs.Constant(name="{}_value:1".format(name), values=np.asarray(clip_max, dtype=np.float32))
     return self.layer(
         name=name,
         op="Clip",

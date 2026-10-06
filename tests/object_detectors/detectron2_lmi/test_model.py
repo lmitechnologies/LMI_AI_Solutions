@@ -11,7 +11,7 @@ from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.modeling import build_model
 
-from object_detectors.detectron2_lmi.model import Detectron2Model
+from object_detectors.detectron2_lmi.model import Detectron2Model, Detectron2PT
 from object_detectors.od_core.object_detector import ObjectDetector
 
 COCO_DIR = "tests/assets/images/coco"
@@ -19,6 +19,7 @@ MASKRCNN_MODEL_CONFIG = "COCO-InstanceSegmentation/mask_rcnn_R_50_FPN_3x.yaml"
 COCO_CLASSMAP = "tests/assets/models/od/detectron2/class_map.json"
 MODEL_PATH = "tests/assets/models/od/detectron2/model.pt"
 OG_WEIGHTS_PATH = "tests/assets/models/od/detectron2/model_final_f10217.pkl"
+CONFIG_PATH = "tests/assets/models/od/detectron2/config.yaml"
 OUT_DIR = "tests/outputs/od/detectron2"
 USE_CUDA = torch.cuda.is_available()
 KEYS = ["boxes", "classes", "scores", "masks", "segments"]
@@ -61,34 +62,39 @@ def og_cpu_model():
     return _make_og_model("cpu")
 
 
+@pytest.fixture(scope="module")
+def og_cpu_instances(og_cpu_model, imgs_coco):
+    """The original model's predictions on each of imgs_coco."""
+    with torch.no_grad():
+        return [
+            og_cpu_model.inference([{"image": torch.as_tensor(im.transpose(2, 0, 1).astype("float32"))}])[0]["instances"]
+            for im in imgs_coco
+        ]
+
+
 def _make_model(device):
-    return {
-        "direct": lambda: Detectron2Model(MODEL_PATH, class_map=class_map, device=device),
-        "api": lambda: ObjectDetector(
-            metadata=dict(version="v0", model_name="mask_rcnn", task="seg", framework="detectron2"),
-            model_path=MODEL_PATH,
-            class_map=class_map,
-            device=device,
-        ),
-    }
+    return ObjectDetector(
+        metadata=dict(version="v0", model_name="mask_rcnn", task="seg", framework="detectron2"),
+        model_path=MODEL_PATH,
+        class_map=class_map,
+        device=device,
+    )
 
 
 @pytest.fixture(scope="module")
 def model():
-    device = "cuda" if USE_CUDA else "cpu"
-    return _make_model(device)["api"]()
+    return _make_model("cuda" if USE_CUDA else "cpu")
 
 
 @pytest.fixture(scope="module")
-def model_cpu():
-    return _make_model("cpu")["api"]()
+def model_cpu(request):
+    if not USE_CUDA:
+        return request.getfixturevalue("model")
+    return _make_model("cpu")
 
 
-def test_model_class_comparison():
-    device = "cuda" if USE_CUDA else "cpu"
-    direct = _make_model(device)["direct"]()
-    api = _make_model(device)["api"]()
-    assert type(direct) is type(api), f"direct={type(direct).__name__}, api={type(api).__name__}"
+def test_model_class_comparison(model):
+    assert type(model) is Detectron2PT, f"api={type(model).__name__}"
 
 
 def _assert_empty_out(out, keys=None):
@@ -136,23 +142,35 @@ def _assert_batch_empty(outputs, keys, n):
             assert len(item) == 0, f"Expected empty item in outputs['{k}']"
 
 
-def test_compare_with_original_model(og_cpu_model, model_cpu, imgs_coco):
-    for image in imgs_coco:
-        img = torch.as_tensor(image.transpose(2, 0, 1).astype("float32"))
-        inputs = [{"image": img}]
-        with torch.no_grad():
-            orginal_preds = og_cpu_model.inference(inputs, do_postprocess=True)[0]
-        # to rgb
-        image2 = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        preds, _ = model_cpu.predict(image2, configs=0)
-
-        # check if the outputs are all close
-        instances = orginal_preds["instances"]
+@pytest.mark.arch_sensitive
+def test_compare_with_original_model(og_cpu_instances, model_cpu, imgs_coco):
+    for image, instances in zip(imgs_coco, og_cpu_instances):
+        preds, _ = model_cpu.predict(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), configs=0)
         assert np.array_equal(instances.scores.cpu().numpy(), preds.get("scores")[0])
         assert np.array_equal(instances.pred_boxes.tensor.cpu().numpy(), preds.get("boxes")[0])
         assert np.array_equal(instances.pred_masks.cpu().numpy(), preds.get("masks")[0])
 
 
+@pytest.mark.arch_sensitive
+def test_torchscript_conversion_matches_original_model(og_cpu_instances, imgs_coco, tmp_path):
+    """convert --pt scripts the .pkl weights into a model.pt that predicts like the original."""
+    from object_detectors.detectron2_lmi.convert import convert
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(open(CONFIG_PATH).read().replace("DEVICE: cuda", "DEVICE: cpu"))
+    output = tmp_path / "export"  # not created yet: convert makes it
+    convert({"config_file": str(cfg_path), "weights": OG_WEIGHTS_PATH, "output": str(output), "pt": True})
+    converted = Detectron2Model(str(output / "model.pt"), class_map=class_map, device="cpu")
+
+    for image, instances in zip(imgs_coco, og_cpu_instances):
+        preds, _ = converted.predict(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), configs=0)
+        assert len(instances) > 0
+        assert np.array_equal(instances.scores.numpy(), preds["scores"][0])
+        assert np.array_equal(instances.pred_boxes.tensor.numpy(), preds["boxes"][0])
+        assert np.array_equal(instances.pred_masks.numpy(), preds["masks"][0])
+
+
+@pytest.mark.arch_sensitive
 def test_compare_with_original_model_nonsquare(og_cpu_model, model_cpu, imgs_coco):
     off_sizes = [(512, 640), (576, 704), (704, 512)]  # (h, w), non-square
     for i, image in enumerate(imgs_coco):

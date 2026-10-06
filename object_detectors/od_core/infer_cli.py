@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 JSON_NAME = "predictions.json"
 TILE_PLOT_DIR = "tiles"  # tiled runs save their tile plots in this subfolder of the output folder
 
-# (merge_origin code, legend text, RGB color); codes match tile_merge.ORIGIN_*, which imports torch
+# (merge_origin code, legend text, RGB color); codes mirror tile_merge.ORIGIN_*, not imported since it pulls in torch
 MERGE_ORIGIN_LEGEND = [
     (0, "whole: seen whole in a tile", (0, 200, 0)),
     (1, "whole joined with cut pieces", (0, 160, 255)),
@@ -138,7 +138,7 @@ def plot_tile_merge(image, outputs: Dict, tile_boxes, hide_label: bool = False, 
     from lmi_utils.label_utils.plot_utils import plot_one_box, plot_tile_grid
 
     im = np.ascontiguousarray(image).copy()
-    plot_tile_grid(tile_boxes, im, line_thickness=2, inset=3)
+    plot_tile_grid(tile_boxes, im, line_thickness=2)
     boxes = np.asarray(outputs.get("boxes", []), dtype=float).reshape(-1, 4)
     classes = outputs.get("classes", [])
     codes = outputs.get("merge_origin")

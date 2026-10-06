@@ -146,3 +146,42 @@ def test_a_requested_size_is_coerced_to_ints():
     instance = core()
     instance._resolve_image_size(["480", "640"])
     assert instance.image_size == [480, 640]
+
+
+# ---------------------------------------------------------------------------
+# engine_batch
+# ---------------------------------------------------------------------------
+
+
+def _with_backend(backend, nested):
+    """ultralytics >= 8.4 holds the backend at AutoBackend.backend; older versions keep its state on AutoBackend."""
+    instance = YoloCore.__new__(YoloCore)
+    instance.model = type("AutoBackend", (), {"backend": backend})() if nested else backend
+    return instance
+
+
+def _trt(batch, dynamic):
+    binding = type("Binding", (), {"shape": (batch, 3, 640, 640)})()
+    return type("TensorRT", (), {"bindings": {"images": binding}, "dynamic": dynamic})()
+
+
+def _onnx(batch, dynamic):
+    inp = type("Input", (), {"shape": [batch, 3, 640, 640]})()
+    session = type("Session", (), {"get_inputs": lambda self: [inp]})()
+    return type("Onnx", (), {"session": session, "dynamic": dynamic, "bindings": []})()
+
+
+@pytest.mark.parametrize("nested", [True, False], ids=["backend", "flat"])
+@pytest.mark.parametrize(
+    "backend, expected",
+    [
+        (_trt(1, False), (1, False)),
+        (_trt(8, True), (8, True)),
+        (_onnx(1, False), (1, False)),
+        (_onnx("batch", True), None),
+        (type("PyTorch", (), {})(), None),
+    ],
+    ids=["static-trt", "dynamic-trt", "static-onnx", "dynamic-onnx", "pt"],
+)
+def test_engine_batch(backend, expected, nested):
+    assert _with_backend(backend, nested).engine_batch() == expected

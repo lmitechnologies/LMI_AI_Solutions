@@ -34,13 +34,10 @@ def estimate_max(train_config, num_samples=0, calibrate=None, reserve_mib=None):
     if isinstance(train_config, str):
         train_config = load_config(train_config)
     model_params = train_config["model"]["params"]
-    precision = model_params.get("precision", "float32").lower()
 
     # Optional per-run memory tuning. `reserve_mib` is headroom the peak model does
-    # not cover (CUDA context, cuDNN, fragmentation). `inference_chunk_size` controls
-    # the runtime's nearest-neighbour chunk behaviour: unset/None auto-detects from
-    # the installed anomalib, a positive int pins it, and 0 forces the conservative
-    # un-chunked estimate (useful if the training runtime differs from this host).
+    # not cover (CUDA context, cuDNN, fragmentation). `inference_chunk_size` overrides
+    # anomalib's nearest-neighbour query chunk size (positive int; unset uses anomalib's default).
     # An explicit `reserve_mib` argument overrides the config value.
     memory_cfg = train_config.get("memory") or {}
     if reserve_mib is None:
@@ -64,10 +61,12 @@ def estimate_max(train_config, num_samples=0, calibrate=None, reserve_mib=None):
     # everything we need from the config before building the model.
     coreset_sampling_ratio = model_params.get("coreset_sampling_ratio")
 
+    model = build_model(train_config["model"])
     estimator = make_memory_estimator(
-        model=build_model(train_config["model"]),
+        model=model,
         tile_config=tile_config,
-        precision=precision,
+        # build_model ignores the config's precision for models without that option
+        precision=next(model.parameters()).dtype,
         profiling_device="cuda",
     )
 

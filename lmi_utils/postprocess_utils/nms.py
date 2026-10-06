@@ -9,8 +9,6 @@ Result-dict convention (per-instance fields, all length N or absent):
 
 Overlap is kept as the list of intersecting pairs, never an N x N matrix: one tiled image can carry tens of
 thousands of detections, and a dense matrix of those costs tens of gigabytes while nearly every entry is zero.
-
-Generic and geometry-agnostic — no knowledge of how the instances were produced.
 """
 
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -32,14 +30,11 @@ def class_aware_nms(
     iou_thr: Optional[float],
     containment_thr: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """Greedy class-aware NMS over a merged result dict. No-op without usable scores/geometry.
+    """Greedy class-aware NMS over a merged result dict. Drops instances, never merges them.
 
-    Suppresses a lower-scoring instance of the same class when it either overlaps the kept one
-    past ``iou_thr`` or lies inside it past ``containment_thr`` (the containment rule catches a
-    fragment nested in a whole detection, which IoU alone misses). Instances that do not intersect
-    never suppress each other, whatever the thresholds. Suppression only — instances are dropped,
-    never merged. Returns ``merged`` unchanged when fewer than two scores are present, no geometry
-    field can yield an overlap, or both thresholds are None.
+    Suppresses a lower-scoring instance of the same class that overlaps a kept one past ``iou_thr``, or lies
+    inside it past ``containment_thr`` (catches a fragment nested in a whole detection, which IoU misses).
+    Returns ``merged`` unchanged with fewer than two scores, no usable geometry, or both thresholds None.
     """
     if iou_thr is None and containment_thr is None:
         return merged
@@ -83,9 +78,7 @@ def pairwise_overlap(merged: Dict[str, Any]) -> Optional[Overlap]:
 def intersecting_pairs(boxes: torch.Tensor) -> torch.Tensor:
     """(K, 2) index pairs i < j whose xyxy boxes overlap with positive area.
 
-    Sorted by left edge, a box can only meet the run of boxes that start before it ends, and one binary
-    search finds where that run stops. Comparing every pair instead costs N squared, which is what ran a
-    crowded tiled image out of memory and time. Runs on the device ``boxes`` is on.
+    Sorts by left edge and binary-searches each box's candidates, avoiding O(N^2). Runs on the device ``boxes`` is on.
     """
     n = len(boxes)
     dev = boxes.device
@@ -157,8 +150,7 @@ def _mask_overlap(masks: Union[torch.Tensor, MaskCrops]) -> Overlap:
     """Intersecting pairs, their intersection area, and areas, for binary instance masks, (N, H, W) or
     ``MaskCrops``, on the masks' own device.
 
-    Only pairs whose mask boxes overlap are measured, and only where the boxes overlap: most pairs in a
-    full-size image never touch, and comparing every pixel of every pair is what made tiled NMS slow.
+    Only pairs whose boxes overlap are measured, and only inside that overlap.
     """
     crops = masks if isinstance(masks, MaskCrops) else MaskCrops.from_masks(masks, tuple(masks.shape[1:]))
     pairs = intersecting_pairs(crops.boxes.float())
