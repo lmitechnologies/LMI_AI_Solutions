@@ -56,11 +56,12 @@ class _OutputBinding:
 
 
 class ONNXEngine:
-    """ONNX Runtime wrapper mirroring ``lmi_common.trt_engine.TRTEngine``'s public surface.
+    """ONNX Runtime wrapper mirroring ``lmi_common.trt_engine.TRTEngine``'s public surface, except that
+    ``max_batch`` is None for a dynamic-batch model.
 
     On CUDA, I/O is bound to torch CUDA tensors via ORT's IOBinding for a zero-copy GPU
     pipeline. Output buffers are reused across calls and grow by doubling, so a
-    dynamic-batch model takes any batch (``max_batch`` is None); callers must chunk large inputs to avoid OOM.
+    dynamic-batch model takes any batch; callers must chunk large inputs to avoid OOM.
     Only a symbolic batch dim (dim 0) is supported; symbolic non-batch dims raise ``NotImplementedError``.
 
     Embedded metadata written by ``lmi_common.model_metadata`` is exposed as ``self.metadata``
