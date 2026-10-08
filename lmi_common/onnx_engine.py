@@ -88,10 +88,14 @@ class ONNXEngine:
                 "pip install onnxruntime-gpu (or onnxruntime)"
             ) from e
 
-        # Resolve unindexed "cuda" against the current CUDA device
         self.device = torch.device(device)
         self._is_cuda = self.device.type == "cuda"
-        if self._is_cuda and self.device.index is None:
+        if self.device.type == "cpu":
+            # CPU tensors report no index, so "cpu:0" would never match an input.
+            self.device = torch.device("cpu")
+        elif not self._is_cuda:
+            raise ValueError(f"ONNXEngine needs a CUDA or CPU device, got '{device}'")
+        elif self.device.index is None:
             self.device = torch.device(f"cuda:{torch.cuda.current_device()}")
         self._device_id = self.device.index if self._is_cuda else 0
 
@@ -163,7 +167,8 @@ class ONNXEngine:
                     )
             dtype = _torch_dtype_from_ort(meta.type, f"output '{meta.name}'")
             alloc_shape: Tuple[int, ...] = () if not shape else ((dynamic_max_batch if dyn_batch else shape[0]), *shape[1:])
-            buf = torch.empty(alloc_shape, dtype=dtype, device=self.device)
+            # CPU runs return fresh arrays; a meta tensor keeps only the shape for _output_buffers.
+            buf = torch.empty(alloc_shape, dtype=dtype, device=self.device if self._is_cuda else "meta")
             output_names.append(meta.name)
             outputs[meta.name] = _OutputBinding(buffer=buf, np_dtype=_TORCH_TO_NP_DTYPE[dtype], dynamic_batch=dyn_batch)
             logger.info(f"ONNX output '{meta.name}': alloc_shape={alloc_shape}, dtype={dtype}, dynamic_batch={dyn_batch}")

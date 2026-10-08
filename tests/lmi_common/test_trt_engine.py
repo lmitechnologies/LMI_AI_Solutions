@@ -225,3 +225,17 @@ def test_non_cuda_device_rejected(dynamic_engine_path):
     _, engine_path = dynamic_engine_path
     with pytest.raises(ValueError, match="CUDA device"):
         TRTEngine(engine_path, device="cpu")
+
+
+class _NonZero(nn.Module):
+    def forward(self, x):
+        return torch.nonzero(x > 0).to(torch.int32)
+
+
+def test_data_dependent_output_shape_rejected(tmp_path):
+    onnx_path = str(tmp_path / "nonzero.onnx")
+    engine_path = str(tmp_path / "nonzero.engine")
+    torch.onnx.export(_NonZero(), torch.randn(1, 3, 32, 32), onnx_path, input_names=["input"], output_names=["output"], opset_version=17)
+    _build_engine(onnx_path, engine_path, min_b=0, opt_b=0, max_b=0, static=True)
+    with pytest.raises(NotImplementedError, match="data-dependent shape"):
+        TRTEngine(engine_path, device="cuda")

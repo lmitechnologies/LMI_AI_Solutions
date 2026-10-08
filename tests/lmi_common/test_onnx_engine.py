@@ -202,3 +202,18 @@ def test_input_on_other_gpu_rejected(dynamic_onnx_path):
     x = torch.randn(1, 3, 32, 32, dtype=torch.float32, device="cuda:1")
     with pytest.raises(ValueError, match="expected"):
         engine.infer(x)
+
+
+def test_indexed_cpu_device_accepts_cpu_inputs(dynamic_onnx_path):
+    engine = ONNXEngine(dynamic_onnx_path, device="cpu:0", dynamic_max_batch=8)
+    assert engine.infer(torch.randn(2, 3, 32, 32))[0].shape == (2, 4)
+
+
+def test_cpu_output_buffers_hold_no_memory(dynamic_onnx_path):
+    engine = ONNXEngine(dynamic_onnx_path, device="cpu", dynamic_max_batch=8)
+    assert [(b.device.type, tuple(b.shape)) for b in engine._output_buffers] == [("meta", (8, 4))]
+
+
+def test_non_cuda_non_cpu_device_rejected(dynamic_onnx_path):
+    with pytest.raises(ValueError, match="CUDA or CPU device"):
+        ONNXEngine(dynamic_onnx_path, device="meta")
