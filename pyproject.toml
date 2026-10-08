@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=84.0.0"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -26,6 +26,7 @@ test = [
     "pycocotools==2.0.11",
     "shapely==2.1.2",
     "tabulate>=0.9.0",
+    "setuptools<82",  # detectron2 model_zoo imports pkg_resources, removed in setuptools 82
 ]
 # CPU / CI env (GitHub runners): CPU torch + CPU onnxruntime. torch is also a
 # transitive dep of rfdetr/ultralytics, hence the ci/gpu conflict below.
@@ -50,12 +51,12 @@ ad-v2 = [
     "torch==2.6.0",  # anomalib 2.x requires torch>=2.6
     "torchvision==0.21.0",
 ]
-# GPU / TensorRT env (local + compose): cu124 torch, onnxruntime-gpu, and the
+# GPU / TensorRT env (local + compose, x86_64 only): cu124 torch, onnxruntime-gpu, and the
 # TensorRT engine-build stack. tensorrt is pinned to the nvcr:25.04 image's
 # version (10.9.0.34) so local engines match CI. pytest-html backs run_tests.sh.
 gpu = [
     { include-group = "test" },
-    "onnxruntime-gpu==1.21.0",
+    "onnxruntime-gpu==1.21.0; platform_machine == 'x86_64'",  # no aarch64 wheels
     "torch",
     "torchvision",
     "tensorrt==10.9.0.34",
@@ -64,8 +65,13 @@ gpu = [
 ]
 
 [tool.uv]
-# Scoped to the test images' Pythons (3.10 CI, 3.12 nvcr) rather than requires-python; numpy<2.0 breaks onnx on 3.13+.
-environments = ["python_full_version >= '3.10' and python_full_version < '3.13'"]
+# Linux CPython test images (3.10 CI, 3.12 nvcr): uv 0.12.18+ needs wheels for every env; numpy<2.0 breaks onnx on 3.13+.
+environments = [
+    """python_full_version >= '3.10' and python_full_version < '3.13' and sys_platform == 'linux' \
+    and platform_machine == 'x86_64' and platform_python_implementation == 'CPython'""",
+    """python_full_version >= '3.10' and python_full_version < '3.13' and sys_platform == 'linux' \
+    and platform_machine == 'aarch64' and platform_python_implementation == 'CPython'""",
+]
 # ci/gpu are incompatible torch builds (+cpu vs +cu124); ad-v1/ad-v2 are incompatible anomalib majors.
 conflicts = [
     [{ group = "ci" }, { group = "gpu" }],
@@ -82,14 +88,15 @@ name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
+# cu124 has no aarch64 torch 2.6.0, so gpu on aarch64 (unused) takes every torch version from PyPI.
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cpu", group = "ci" },
-    { index = "pytorch-cu124", group = "gpu" },
+    { index = "pytorch-cu124", group = "gpu", marker = "platform_machine == 'x86_64'" },
 ]
 torchvision = [
     { index = "pytorch-cpu", group = "ci" },
-    { index = "pytorch-cu124", group = "gpu" },
+    { index = "pytorch-cu124", group = "gpu", marker = "platform_machine == 'x86_64'" },
 ]
 
 [project.scripts]

@@ -29,3 +29,9 @@ updates:
       - dependency-name: "tensorrt*"
       - dependency-name: "onnx-graphsurgeon"
       - dependency-name: "nvidia-*"
+      # Pinned for anomalib 1.x; anomalib 2.x needs <4.47, so bumps can't resolve.
+      - dependency-name: "jsonargparse"
+      # ad-v1's anomalib 1.x pin. Dependabot names it by its extra, so ad-v2's plain `anomalib` still gets bumps.
+      - dependency-name: "anomalib[core]"
+      # Build-system floor stays low for JetPack 5 (Python 3.8); setuptools 76+ needs Python 3.9+.
+      - dependency-name: "setuptools"
