@@ -1243,7 +1243,7 @@ ci = [
     { name = "onnx", specifier = "==1.22.0" },
     { name = "onnx-graphsurgeon", specifier = ">=0.5.0" },
     { name = "onnxruntime", specifier = "==1.21.0" },
-    { name = "onnxslim", specifier = "==0.1.96" },
+    { name = "onnxslim", specifier = "==0.1.97" },
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "rfdetr", specifier = "==1.10.0" },
@@ -1263,7 +1263,7 @@ gpu = [
     { name = "onnx", specifier = "==1.22.0" },
     { name = "onnx-graphsurgeon", specifier = ">=0.5.0" },
     { name = "onnxruntime-gpu", marker = "platform_machine == 'x86_64'", specifier = "==1.21.0" },
-    { name = "onnxslim", specifier = "==0.1.96" },
+    { name = "onnxslim", specifier = "==0.1.97" },
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "pytest-html", specifier = ">=4.1.1" },
@@ -1285,7 +1285,7 @@ test = [
     { name = "albumentations", specifier = ">=2.0.8,<3.0.0" },
     { name = "numpy", specifier = "<2.0" },
     { name = "onnx", specifier = "==1.22.0" },
-    { name = "onnxslim", specifier = "==0.1.96" },
+    { name = "onnxslim", specifier = "==0.1.97" },
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "rfdetr", specifier = "==1.10.0" },
@@ -1844,7 +1844,7 @@ wheels = [
 
 [[package]]
 name = "onnxslim"
-version = "0.1.96"
+version = "0.1.97"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama" },
@@ -1853,9 +1853,9 @@ dependencies = [
     { name = "packaging" },
     { name = "sympy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/92/ac/b2230e9a0654a64d929398d703816b34655119998a9e136301c8f66585a3/onnxslim-0.1.96.tar.gz", hash = "sha256:386a1c64e61a66fb79cdd62de996323b9fb950d22de9b117cd31f211cac96048", size = 598898, upload-time = "2026-08-16T03:15:59.536Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/3b/6da464bf24226d9ca0a129030b92c88b71173fd5e4114d66b2f102961dff/onnxslim-0.1.97.tar.gz", hash = "sha256:036d0db5e1aca6464325f2d1f65c6685a77bed49a7ac78815e19104025500d55", size = 606121, upload-time = "2026-09-29T02:31:48.742Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/dc/c0/7a491ab9ebc7fc7dfccb7ca36251d9d54ee35b9c88427733f05b09fc40e9/onnxslim-0.1.96-py3-none-any.whl", hash = "sha256:a43f800d39434e6b4d542abe17c25afb7fcc33aabf53d20464cb0dae0f66cbb6", size = 239022, upload-time = "2026-08-16T03:15:58.121Z" },
+    { url = "https://files.pythonhosted.org/packages/a7/76/a3caa0489cc7722fe9d14cd2f58790c95bbc0fb21b9f226e3bedbaf42a6c/onnxslim-0.1.97-py3-none-any.whl", hash = "sha256:a775941253a00db3621c301e225266d89bd4426ba6bc4d38e533bdcd03db752c", size = 244468, upload-time = "2026-09-29T02:31:47.293Z" },
 ]
 
 [[package]]

@@ -18,7 +18,7 @@ test = [
     "numpy<2.0",
     "ultralytics==8.4.127",
     "onnx==1.22.0",
-    "onnxslim==0.1.96",
+    "onnxslim==0.1.97",
     "pytest==9.1.1",
     "rfdetr==1.10.0",
     "albumentations>=2.0.8,<3.0.0",
