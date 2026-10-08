@@ -17,7 +17,7 @@ test = [
     "tensorboard==2.21.0",
     "numpy<2.0",
     "ultralytics==8.4.170",
-    "onnx==1.22.0",
+    "onnx==1.23.1",
     "onnxslim==0.1.97",
     "pytest==9.1.1",
     "rfdetr==1.11.1",
@@ -47,7 +47,7 @@ ad-v1 = [
 ]
 ad-v2 = [
     "anomalib==2.6.0",
-    "onnx==1.22.0",  # train.py fixes exported ONNX output shapes
+    "onnx==1.23.1",  # train.py fixes exported ONNX output shapes
     "torch==2.6.0",  # anomalib 2.x requires torch>=2.6
     "torchvision==0.21.0",
 ]
