@@ -49,6 +49,8 @@ class TRTEngine:
         trt.init_libnvinfer_plugins(trt_logger, namespace="")
 
         self.device = torch.device(device)
+        if self.device.type != "cuda":
+            raise ValueError(f"TRTEngine needs a CUDA device, got '{device}'")
         if self.device.index is None:
             self.device = torch.device(f"cuda:{torch.cuda.current_device()}")
 

@@ -219,3 +219,9 @@ def test_engine_on_non_current_device(dynamic_engine_path):
     x_cpu = torch.randn(3, 3, 32, 32, dtype=torch.float32)
     out = engine.infer(x_cpu.to("cuda:1"))[0].cpu().numpy()
     np.testing.assert_allclose(out, _ort_reference(onnx_path, x_cpu.numpy()), atol=1e-3)
+
+
+def test_non_cuda_device_rejected(dynamic_engine_path):
+    _, engine_path = dynamic_engine_path
+    with pytest.raises(ValueError, match="CUDA device"):
+        TRTEngine(engine_path, device="cpu")
