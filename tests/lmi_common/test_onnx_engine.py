@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 import torch
@@ -217,3 +220,14 @@ def test_cpu_output_buffers_hold_no_memory(dynamic_onnx_path):
 def test_non_cuda_non_cpu_device_rejected(dynamic_onnx_path):
     with pytest.raises(ValueError, match="CUDA or CPU device"):
         ONNXEngine(dynamic_onnx_path, device="meta")
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_cuda_session_in_fresh_process(dynamic_onnx_path):
+    """Other tests load the CUDA libs into this process, so only a fresh one shows whether ONNXEngine finds them itself."""
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
+
+    code = f"from lmi_common.onnx_engine import ONNXEngine; ONNXEngine({dynamic_onnx_path!r}, device='cuda')"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr

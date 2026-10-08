@@ -10,7 +10,7 @@ from lmi_common.model_metadata import metadata_from_props
 logger = logging.getLogger(__name__)
 
 
-_NP_TO_TORCH_DTYPE: Dict[str, torch.dtype] = {
+_ORT_TO_TORCH_DTYPE: Dict[str, torch.dtype] = {
     "tensor(float)": torch.float32,
     "tensor(float16)": torch.float16,
     "tensor(double)": torch.float64,
@@ -41,10 +41,10 @@ def _is_static_dim(d) -> bool:
 
 def _torch_dtype_from_ort(ort_type: str, where: str) -> torch.dtype:
     try:
-        return _NP_TO_TORCH_DTYPE[ort_type]
+        return _ORT_TO_TORCH_DTYPE[ort_type]
     except KeyError:
         raise NotImplementedError(
-            f"Unsupported ONNX tensor type '{ort_type}' for {where}. Supported types: {sorted(_NP_TO_TORCH_DTYPE)}"
+            f"Unsupported ONNX tensor type '{ort_type}' for {where}. Supported types: {sorted(_ORT_TO_TORCH_DTYPE)}"
         ) from None
 
 
@@ -98,6 +98,10 @@ class ONNXEngine:
         elif self.device.index is None:
             self.device = torch.device(f"cuda:{torch.cuda.current_device()}")
         self._device_id = self.device.index if self._is_cuda else 0
+
+        # Without a system CUDA, the CUDA EP finds pip-installed libs (e.g. libnvrtc) only if already loaded. Added in ORT 1.21.
+        if self._is_cuda and hasattr(ort, "preload_dlls") and "CUDAExecutionProvider" in ort.get_available_providers():
+            ort.preload_dlls()
 
         providers = (
             [("CUDAExecutionProvider", {"device_id": self._device_id}), "CPUExecutionProvider"]
