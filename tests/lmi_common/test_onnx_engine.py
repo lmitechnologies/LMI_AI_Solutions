@@ -120,12 +120,12 @@ def test_copy_false_returns_aliased_views_cuda(dynamic_onnx_path):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 def test_dynamic_batch_has_no_limit_cuda(dynamic_onnx_path):
-    """Output buffers grow to the largest batch seen; smaller batches after that reuse them."""
+    """Output buffers grow by doubling, or to the batch when that is larger; smaller batches reuse them."""
     if "CUDAExecutionProvider" not in ort.get_available_providers():
         pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
 
     engine = ONNXEngine(dynamic_onnx_path, device="cuda")
-    for batch, capacity in [(2, 2), (40, 40), (3, 40)]:
+    for batch, capacity in [(2, 2), (3, 4), (40, 40), (3, 40)]:
         x_cpu = torch.randn(batch, 3, 32, 32, dtype=torch.float32)
         out = engine.infer(x_cpu.cuda())[0].cpu().numpy()
         np.testing.assert_allclose(out, _reference_output(dynamic_onnx_path, x_cpu.numpy()), atol=1e-4)

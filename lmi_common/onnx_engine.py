@@ -59,7 +59,7 @@ class ONNXEngine:
     """ONNX Runtime wrapper mirroring ``lmi_common.trt_engine.TRTEngine``'s public surface.
 
     On CUDA, I/O is bound to torch CUDA tensors via ORT's IOBinding for a zero-copy GPU
-    pipeline. Output buffers are reused across calls and grow to the largest batch seen, so a
+    pipeline. Output buffers are reused across calls and grow by doubling, so a
     dynamic-batch model takes any batch (``max_batch`` is None); callers must chunk large inputs to avoid OOM.
     Only a symbolic batch dim (dim 0) is supported; symbolic non-batch dims raise ``NotImplementedError``.
 
@@ -274,7 +274,9 @@ class ONNXEngine:
             if not b.dynamic_batch:
                 continue
             if b.buffer.shape[0] < actual_batch:
-                b.buffer = torch.empty((actual_batch, *b.buffer.shape[1:]), dtype=b.buffer.dtype, device=self.device)
+                # Exact-size growth on rising batches leaves unreusable blocks in torch's CUDA cache.
+                size = max(actual_batch, 2 * b.buffer.shape[0])
+                b.buffer = torch.empty((size, *b.buffer.shape[1:]), dtype=b.buffer.dtype, device=self.device)
             binding.bind_output(
                 name=name,
                 device_type="cuda",
