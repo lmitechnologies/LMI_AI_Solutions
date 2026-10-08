@@ -170,7 +170,7 @@ class ONNXEngine:
                         f"supported. Only a dynamic batch dimension (dim 0) is supported."
                     )
             dtype = _torch_dtype_from_ort(meta.type, f"output '{meta.name}'")
-            alloc_shape: Tuple[int, ...] = () if not shape else ((dynamic_max_batch if dyn_batch else shape[0]), *shape[1:])
+            alloc_shape: Tuple[int, ...] = () if not shape else ((max_batch if dyn_batch else shape[0]), *shape[1:])
             # CPU runs return fresh arrays; a meta tensor keeps only the shape for _output_buffers.
             buf = torch.empty(alloc_shape, dtype=dtype, device=self.device if self._is_cuda else "meta")
             output_names.append(meta.name)
@@ -291,7 +291,7 @@ class ONNXEngine:
             )
 
         # ORT runs on its own CUDA stream and does not wait for torch kernels still writing the inputs.
-        torch.cuda.synchronize(self.device)
+        torch.cuda.current_stream(self.device).synchronize()
         self._session.run_with_iobinding(binding)
         binding.synchronize_outputs()
         del contiguous_tensors

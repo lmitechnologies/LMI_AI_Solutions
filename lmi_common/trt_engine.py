@@ -133,6 +133,11 @@ class TRTEngine:
                 raise NotImplementedError(
                     f"Output '{name}' has a data-dependent shape {alloc_shape}. Only a dynamic batch dimension (dim 0) is supported."
                 )
+            if is_dynamic and alloc_shape[0] != max_batch:
+                raise NotImplementedError(
+                    f"Output '{name}' has dim 0 = {alloc_shape[0]} at max batch {max_batch}. "
+                    f"Only outputs whose dim 0 equals the batch are supported."
+                )
             output_buffers.append(torch.empty(alloc_shape, dtype=resolve_dtype(name), device=self.device))
             logger.info(f"TRT output '{name}': shape={alloc_shape}, dtype={output_buffers[-1].dtype}")
 

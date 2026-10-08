@@ -239,3 +239,26 @@ def test_data_dependent_output_shape_rejected(tmp_path):
     _build_engine(onnx_path, engine_path, min_b=0, opt_b=0, max_b=0, static=True)
     with pytest.raises(NotImplementedError, match="data-dependent shape"):
         TRTEngine(engine_path, device="cuda")
+
+
+class _FlattenBatch(nn.Module):
+    def forward(self, x):
+        return x.flatten(0, 1)
+
+
+def test_output_dim0_not_equal_to_batch_rejected(tmp_path):
+    """An output of B*C rows would be cut to B rows by the batch slice in infer()."""
+    onnx_path = str(tmp_path / "flatten.onnx")
+    engine_path = str(tmp_path / "flatten.engine")
+    torch.onnx.export(
+        _FlattenBatch(),
+        torch.randn(1, 3, 32, 32),
+        onnx_path,
+        input_names=["input"],
+        output_names=["output"],
+        dynamic_axes={"input": {0: "batch"}, "output": {0: "rows"}},
+        opset_version=17,
+    )
+    _build_engine(onnx_path, engine_path, min_b=1, opt_b=4, max_b=8, static=False)
+    with pytest.raises(NotImplementedError, match="dim 0 equals the batch"):
+        TRTEngine(engine_path, device="cuda")
