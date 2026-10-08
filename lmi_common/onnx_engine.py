@@ -60,8 +60,8 @@ class ONNXEngine:
 
     On CUDA, I/O is bound to torch CUDA tensors via ORT's IOBinding for a zero-copy GPU
     pipeline. Output buffers are reused across calls and grow to the largest batch seen, so a
-    dynamic-batch model takes any batch (``max_batch`` is None). Only a symbolic batch dim
-    (dim 0) is supported; symbolic non-batch dims raise ``NotImplementedError``.
+    dynamic-batch model takes any batch (``max_batch`` is None); callers must chunk large inputs to avoid OOM.
+    Only a symbolic batch dim (dim 0) is supported; symbolic non-batch dims raise ``NotImplementedError``.
 
     Embedded metadata written by ``lmi_common.model_metadata`` is exposed as ``self.metadata``
     ({} for a model without any).
