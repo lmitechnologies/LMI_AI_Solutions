@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 import torch
@@ -190,3 +193,41 @@ def test_input_still_being_written_by_torch_cuda(dynamic_onnx_path):
         out = engine.infer(x)[0].cpu().numpy()
         ref = _reference_output(dynamic_onnx_path, base_cpu.roll(shift, dims=0).numpy())
         np.testing.assert_allclose(out, ref, atol=1e-4)
+
+
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="needs 2 GPUs")
+def test_input_on_other_gpu_rejected(dynamic_onnx_path):
+    """An input on another GPU would skip the input sync, which only waits on the engine's GPU."""
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
+
+    engine = ONNXEngine(dynamic_onnx_path, device="cuda:0", dynamic_max_batch=8)
+    x = torch.randn(1, 3, 32, 32, dtype=torch.float32, device="cuda:1")
+    with pytest.raises(ValueError, match="expected"):
+        engine.infer(x)
+
+
+def test_indexed_cpu_device_accepts_cpu_inputs(dynamic_onnx_path):
+    engine = ONNXEngine(dynamic_onnx_path, device="cpu:0", dynamic_max_batch=8)
+    assert engine.infer(torch.randn(2, 3, 32, 32))[0].shape == (2, 4)
+
+
+def test_cpu_output_buffers_hold_no_memory(dynamic_onnx_path):
+    engine = ONNXEngine(dynamic_onnx_path, device="cpu", dynamic_max_batch=8)
+    assert [(b.device.type, tuple(b.shape)) for b in engine._output_buffers] == [("meta", (8, 4))]
+
+
+def test_non_cuda_non_cpu_device_rejected(dynamic_onnx_path):
+    with pytest.raises(ValueError, match="CUDA or CPU device"):
+        ONNXEngine(dynamic_onnx_path, device="meta")
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_cuda_session_in_fresh_process(dynamic_onnx_path):
+    """Other tests load the CUDA libs into this process, so only a fresh one shows whether ONNXEngine finds them itself."""
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
+
+    code = f"from lmi_common.onnx_engine import ONNXEngine; ONNXEngine({dynamic_onnx_path!r}, device='cuda')"
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr

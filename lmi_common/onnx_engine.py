@@ -10,7 +10,7 @@ from lmi_common.model_metadata import metadata_from_props
 logger = logging.getLogger(__name__)
 
 
-_NP_TO_TORCH_DTYPE: Dict[str, torch.dtype] = {
+_ORT_TO_TORCH_DTYPE: Dict[str, torch.dtype] = {
     "tensor(float)": torch.float32,
     "tensor(float16)": torch.float16,
     "tensor(double)": torch.float64,
@@ -41,10 +41,10 @@ def _is_static_dim(d) -> bool:
 
 def _torch_dtype_from_ort(ort_type: str, where: str) -> torch.dtype:
     try:
-        return _NP_TO_TORCH_DTYPE[ort_type]
+        return _ORT_TO_TORCH_DTYPE[ort_type]
     except KeyError:
         raise NotImplementedError(
-            f"Unsupported ONNX tensor type '{ort_type}' for {where}. Supported types: {sorted(_NP_TO_TORCH_DTYPE)}"
+            f"Unsupported ONNX tensor type '{ort_type}' for {where}. Supported types: {sorted(_ORT_TO_TORCH_DTYPE)}"
         ) from None
 
 
@@ -88,12 +88,20 @@ class ONNXEngine:
                 "pip install onnxruntime-gpu (or onnxruntime)"
             ) from e
 
-        # Resolve unindexed "cuda" against the current CUDA device
         self.device = torch.device(device)
         self._is_cuda = self.device.type == "cuda"
-        if self._is_cuda and self.device.index is None:
+        if self.device.type == "cpu":
+            # CPU tensors report no index, so "cpu:0" would never match an input.
+            self.device = torch.device("cpu")
+        elif not self._is_cuda:
+            raise ValueError(f"ONNXEngine needs a CUDA or CPU device, got '{device}'")
+        elif self.device.index is None:
             self.device = torch.device(f"cuda:{torch.cuda.current_device()}")
         self._device_id = self.device.index if self._is_cuda else 0
+
+        # Without a system CUDA, the CUDA EP finds pip-installed libs (e.g. libnvrtc) only if already loaded. Added in ORT 1.21.
+        if self._is_cuda and hasattr(ort, "preload_dlls") and "CUDAExecutionProvider" in ort.get_available_providers():
+            ort.preload_dlls()
 
         providers = (
             [("CUDAExecutionProvider", {"device_id": self._device_id}), "CPUExecutionProvider"]
@@ -163,7 +171,8 @@ class ONNXEngine:
                     )
             dtype = _torch_dtype_from_ort(meta.type, f"output '{meta.name}'")
             alloc_shape: Tuple[int, ...] = () if not shape else ((dynamic_max_batch if dyn_batch else shape[0]), *shape[1:])
-            buf = torch.empty(alloc_shape, dtype=dtype, device=self.device)
+            # CPU runs return fresh arrays; a meta tensor keeps only the shape for _output_buffers.
+            buf = torch.empty(alloc_shape, dtype=dtype, device=self.device if self._is_cuda else "meta")
             output_names.append(meta.name)
             outputs[meta.name] = _OutputBinding(buffer=buf, np_dtype=_TORCH_TO_NP_DTYPE[dtype], dynamic_batch=dyn_batch)
             logger.info(f"ONNX output '{meta.name}': alloc_shape={alloc_shape}, dtype={dtype}, dynamic_batch={dyn_batch}")
@@ -221,7 +230,7 @@ class ONNXEngine:
 
         Args:
             *inputs: One tensor per engine input, in ``self._input_names`` order. Must
-                match the engine device (CUDA or CPU) with ``shape[0] <= self.max_batch``.
+                be on ``self.device`` with ``shape[0] <= self.max_batch``.
                 Non-contiguous inputs incur a ``.contiguous()`` copy.
             copy: If True (default), return independent clones — safe to hold across
                 calls. If False, on CUDA return views into internal buffers that must be
@@ -239,12 +248,11 @@ class ONNXEngine:
         if not self.is_dynamic and actual_batch != self.max_batch:
             raise ValueError(f"Static engine requires batch size {self.max_batch}, got {actual_batch}")
 
-        expected_device_type = "cuda" if self._is_cuda else "cpu"
         for name, x in zip(self._input_names, inputs):
-            expected = (expected_device_type, self._input_dtypes[name], (actual_batch, *self._input_spatial[name]))
-            got = (x.device.type, x.dtype, tuple(x.shape))
+            expected = (self.device, self._input_dtypes[name], (actual_batch, *self._input_spatial[name]))
+            got = (x.device, x.dtype, tuple(x.shape))
             if got != expected:
-                raise ValueError(f"Input '{name}': expected (device_type, dtype, shape)={expected}, got={got}")
+                raise ValueError(f"Input '{name}': expected (device, dtype, shape)={expected}, got={got}")
 
         if self._is_cuda:
             return self._infer_cuda(inputs, actual_batch, copy=copy)
