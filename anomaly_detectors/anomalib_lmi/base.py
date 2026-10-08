@@ -75,9 +75,6 @@ class Anomalib_Base(ADBase):
 
         Returns:
             Preprocessed tensor [N,C,H,W] float32 (or float16 if fp16)
-
-        Raises:
-            ValueError: If batch size exceeds TensorRT engine limit
         """
         tensors = []
         for image in images:
@@ -86,12 +83,7 @@ class Anomalib_Base(ADBase):
 
         img = torch.stack(tensors) / 255.0  # [N,C,H,W]
 
-        batch = img.shape[0]
-        is_engine = isinstance(self, _AnomalibEngine)
-        if is_engine and batch > self.batch_size:
-            raise ValueError(f"Batch size {batch} exceeds {type(self).__name__} engine max batch size {self.batch_size}")
-
-        if is_engine and (img.shape[2] != self.image_size[0] or img.shape[3] != self.image_size[1]):
+        if isinstance(self, _AnomalibEngine) and (img.shape[2] != self.image_size[0] or img.shape[3] != self.image_size[1]):
             img = v2.Resize(self.image_size, antialias=self.RESIZE_ANTIALIAS)(img)
 
         img = img.contiguous()

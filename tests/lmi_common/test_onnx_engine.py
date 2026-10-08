@@ -46,9 +46,9 @@ def _reference_output(onnx_path: str, x: np.ndarray) -> np.ndarray:
 
 @pytest.mark.parametrize("actual_batch", [1, 3, 8])
 def test_dynamic_batch_output_matches_reference_cpu(dynamic_onnx_path, actual_batch):
-    engine = ONNXEngine(dynamic_onnx_path, device="cpu", dynamic_max_batch=8)
+    engine = ONNXEngine(dynamic_onnx_path, device="cpu")
     assert engine.is_dynamic
-    assert engine.max_batch == 8
+    assert engine.max_batch is None
 
     x = torch.randn(actual_batch, 3, 32, 32, dtype=torch.float32)
     out = engine.infer(x)[0].cpu().numpy()
@@ -61,12 +61,11 @@ def test_dynamic_batch_output_matches_reference_cpu(dynamic_onnx_path, actual_ba
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
 @pytest.mark.parametrize("actual_batch", [1, 3, 8])
 def test_dynamic_batch_output_matches_reference_cuda(dynamic_onnx_path, actual_batch):
-    """The key check for bug #2: with actual_batch < dynamic_max_batch and a one-time
-    output binding sized at max, does ORT still write correct values into our buffer?"""
+    """ORT must write correct values into our reused output buffer at every batch size."""
     if "CUDAExecutionProvider" not in ort.get_available_providers():
         pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
 
-    engine = ONNXEngine(dynamic_onnx_path, device="cuda", dynamic_max_batch=8)
+    engine = ONNXEngine(dynamic_onnx_path, device="cuda")
     assert engine.is_dynamic
 
     x_cpu = torch.randn(actual_batch, 3, 32, 32, dtype=torch.float32)
@@ -86,7 +85,7 @@ def test_copy_true_returns_independent_tensors_cuda(dynamic_onnx_path):
     if "CUDAExecutionProvider" not in ort.get_available_providers():
         pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
 
-    engine = ONNXEngine(dynamic_onnx_path, device="cuda", dynamic_max_batch=8)
+    engine = ONNXEngine(dynamic_onnx_path, device="cuda")
     x1 = torch.randn(4, 3, 32, 32, dtype=torch.float32, device="cuda")
     x2 = torch.randn(4, 3, 32, 32, dtype=torch.float32, device="cuda")
 
@@ -106,7 +105,7 @@ def test_copy_false_returns_aliased_views_cuda(dynamic_onnx_path):
     if "CUDAExecutionProvider" not in ort.get_available_providers():
         pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
 
-    engine = ONNXEngine(dynamic_onnx_path, device="cuda", dynamic_max_batch=8)
+    engine = ONNXEngine(dynamic_onnx_path, device="cuda")
     x1 = torch.randn(4, 3, 32, 32, dtype=torch.float32, device="cuda")
     x2 = torch.randn(4, 3, 32, 32, dtype=torch.float32, device="cuda")
 
@@ -117,6 +116,43 @@ def test_copy_false_returns_aliased_views_cuda(dynamic_onnx_path):
     assert out1.data_ptr() == out2.data_ptr()
     torch.testing.assert_close(out1, out2)
     assert not torch.allclose(out1, snapshot)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_dynamic_batch_has_no_limit_cuda(dynamic_onnx_path):
+    """Output buffers grow by doubling, or to the batch when that is larger; smaller batches reuse them."""
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
+
+    engine = ONNXEngine(dynamic_onnx_path, device="cuda")
+    for batch, capacity in [(2, 2), (3, 4), (40, 40), (3, 40)]:
+        x_cpu = torch.randn(batch, 3, 32, 32, dtype=torch.float32)
+        out = engine.infer(x_cpu.cuda())[0].cpu().numpy()
+        np.testing.assert_allclose(out, _reference_output(dynamic_onnx_path, x_cpu.numpy()), atol=1e-4)
+        assert engine._output_buffers[0].shape[0] == capacity
+
+
+@pytest.fixture(scope="module")
+def static_onnx_path(tmp_path_factory):
+    path = tmp_path_factory.mktemp("onnx_static") / "static_model.onnx"
+    torch.onnx.export(
+        _Tiny().eval(), torch.randn(2, 3, 32, 32), str(path), input_names=["input"], output_names=["output"], opset_version=17
+    )
+    return str(path)
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_static_batch_is_exact(static_onnx_path, device):
+    if device == "cuda" and (not torch.cuda.is_available() or "CUDAExecutionProvider" not in ort.get_available_providers()):
+        pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
+
+    engine = ONNXEngine(static_onnx_path, device=device)
+    assert not engine.is_dynamic
+    assert engine.max_batch == 2
+    assert engine.infer(torch.randn(2, 3, 32, 32, device=device))[0].shape == (2, 4)
+    for batch in (1, 3):
+        with pytest.raises(ValueError, match="requires batch size 2"):
+            engine.infer(torch.randn(batch, 3, 32, 32, device=device))
 
 
 @pytest.fixture(scope="module")
@@ -141,7 +177,7 @@ def static_output_dim0_onnx_path(tmp_path_factory):
 def test_static_output_dim0_with_dynamic_input_rejected(static_output_dim0_onnx_path):
     """Dynamic input batch + static output dim 0 is unsupported (would silently mis-slice)."""
     with pytest.raises(NotImplementedError, match="static dim 0"):
-        ONNXEngine(static_output_dim0_onnx_path, device="cpu", dynamic_max_batch=4)
+        ONNXEngine(static_output_dim0_onnx_path, device="cpu")
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
@@ -151,7 +187,7 @@ def test_unindexed_cuda_device_is_resolved(dynamic_onnx_path):
     if "CUDAExecutionProvider" not in ort.get_available_providers():
         pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
 
-    engine = ONNXEngine(dynamic_onnx_path, device="cuda", dynamic_max_batch=4)
+    engine = ONNXEngine(dynamic_onnx_path, device="cuda")
     assert engine.device.index is not None
     assert engine.device.index == engine._device_id
     # Sanity: output buffer ended up on the resolved device.
@@ -164,7 +200,7 @@ def test_non_contiguous_input_cuda(dynamic_onnx_path):
     if "CUDAExecutionProvider" not in ort.get_available_providers():
         pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
 
-    engine = ONNXEngine(dynamic_onnx_path, device="cuda", dynamic_max_batch=8)
+    engine = ONNXEngine(dynamic_onnx_path, device="cuda")
 
     base = torch.randn(4, 3, 32, 64, dtype=torch.float32, device="cuda")
     x = base[:, :, :, :32]  # non-contiguous view
@@ -181,7 +217,7 @@ def test_input_still_being_written_by_torch_cuda(dynamic_onnx_path):
     if "CUDAExecutionProvider" not in ort.get_available_providers():
         pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
 
-    engine = ONNXEngine(dynamic_onnx_path, device="cuda", dynamic_max_batch=8)
+    engine = ONNXEngine(dynamic_onnx_path, device="cuda")
     base_cpu = torch.randn(8, 3, 32, 32, dtype=torch.float32)
     base = base_cpu.cuda()
     busy = torch.randn(4096, 4096, device="cuda")
@@ -201,20 +237,20 @@ def test_input_on_other_gpu_rejected(dynamic_onnx_path):
     if "CUDAExecutionProvider" not in ort.get_available_providers():
         pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
 
-    engine = ONNXEngine(dynamic_onnx_path, device="cuda:0", dynamic_max_batch=8)
+    engine = ONNXEngine(dynamic_onnx_path, device="cuda:0")
     x = torch.randn(1, 3, 32, 32, dtype=torch.float32, device="cuda:1")
     with pytest.raises(ValueError, match="expected"):
         engine.infer(x)
 
 
 def test_indexed_cpu_device_accepts_cpu_inputs(dynamic_onnx_path):
-    engine = ONNXEngine(dynamic_onnx_path, device="cpu:0", dynamic_max_batch=8)
+    engine = ONNXEngine(dynamic_onnx_path, device="cpu:0")
     assert engine.infer(torch.randn(2, 3, 32, 32))[0].shape == (2, 4)
 
 
 def test_cpu_output_buffers_hold_no_memory(dynamic_onnx_path):
-    engine = ONNXEngine(dynamic_onnx_path, device="cpu", dynamic_max_batch=8)
-    assert [(b.device.type, tuple(b.shape)) for b in engine._output_buffers] == [("meta", (8, 4))]
+    engine = ONNXEngine(dynamic_onnx_path, device="cpu")
+    assert [(b.device.type, tuple(b.shape)) for b in engine._output_buffers] == [("meta", (1, 4))]
 
 
 def test_non_cuda_non_cpu_device_rejected(dynamic_onnx_path):

@@ -145,7 +145,8 @@ conversion:
 
 A batch-1 model runs the tiles of a tiled image one at a time. A dynamic-batch engine runs them together, and `predict()`
 splits a larger input into chunks of `max_batch`. On 12 tiles of 512 px, RF-DETR Small's TensorRT fp16 engine went from
-33.7 to 20.3 ms per image, using about 330 MB more GPU memory.
+33.7 to 20.3 ms per image, using about 330 MB more GPU memory. A dynamic-batch ONNX has no max and runs every tile in one
+pass; pass `predict(..., batch_size=N)` to bound its GPU memory.
 A dynamic-batch export needs `onnxruntime`: one batch-1 run sizes the outputs, which rfdetr leaves unsized.
 
 docker-compose file
