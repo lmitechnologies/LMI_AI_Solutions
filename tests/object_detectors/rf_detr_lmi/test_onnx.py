@@ -76,7 +76,7 @@ def test_dispatch_and_shapes(onnx_model):
 
 @pytest.mark.arch_sensitive
 def test_dynamic_batch_export(tmp_path, imgs_coco, onnx_model):
-    """A dynamic-batch export runs a whole batch in one pass, capped at the engine's max, and matches the static export."""
+    """A dynamic-batch export takes any batch in one pass and matches the static export."""
     from rfdetr import RFDETRSegSmall
 
     from object_detectors.rf_detr_lmi.convert import convert_to_onnx
@@ -86,7 +86,7 @@ def test_dynamic_batch_export(tmp_path, imgs_coco, onnx_model):
     )
     model = ObjectDetector(metadata=METADATA, model_path=str(path), image_size=[IMAGE_SIZE, IMAGE_SIZE], device="cpu")
     assert model.fixed_batch_size is None
-    assert model.max_batch_size == model.engine.max_batch
+    assert model.max_batch_size is None and model.engine.max_batch is None
 
     out, _ = model.predict(imgs_coco, configs=0.5)
     ref, _ = onnx_model.predict(imgs_coco, configs=0.5)

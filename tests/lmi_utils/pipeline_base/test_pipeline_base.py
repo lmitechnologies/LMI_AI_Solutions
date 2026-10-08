@@ -602,7 +602,7 @@ def test_clean_up_interleaved_trt_and_onnx_engines(tmp_path):
         if name.startswith("trt"):
             model = TRTEngine(engine_path, device="cuda")
         else:
-            model = ONNXEngine(onnx_path, device="cuda", dynamic_max_batch=4)
+            model = ONNXEngine(onnx_path, device="cuda")
         pipeline.models[name] = tracked(name, model)
 
     # Exercise every engine so contexts and buffers are live before teardown.

@@ -88,7 +88,7 @@ class Anomalib_Base(ADBase):
 
         batch = img.shape[0]
         is_engine = isinstance(self, _AnomalibEngine)
-        if is_engine and batch > self.batch_size:
+        if is_engine and self.batch_size is not None and batch > self.batch_size:
             raise ValueError(f"Batch size {batch} exceeds {type(self).__name__} engine max batch size {self.batch_size}")
 
         if is_engine and (img.shape[2] != self.image_size[0] or img.shape[3] != self.image_size[1]):

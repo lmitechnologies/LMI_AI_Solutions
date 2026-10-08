@@ -264,7 +264,7 @@ class _RfdetrEngine(RfdetrBase):
         """Run the engine.
 
         Args:
-            image: BCHW tensor with batch_size <= self.engine.max_batch.
+            image: BCHW tensor with batch_size <= self.engine.max_batch, or any batch when that is None.
 
         Returns:
             List of output tensors on self.device, each with shape (B, ...).
