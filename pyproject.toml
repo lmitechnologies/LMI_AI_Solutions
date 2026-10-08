@@ -16,7 +16,7 @@ test = [
     "scikit-learn==1.7.2",
     "tensorboard==2.21.0",
     "numpy<2.0",
-    "ultralytics==8.4.127",
+    "ultralytics==8.4.170",
     "onnx==1.22.0",
     "onnxslim==0.1.96",
     "pytest==9.1.1",

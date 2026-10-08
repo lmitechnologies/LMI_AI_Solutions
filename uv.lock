@@ -386,6 +386,15 @@ wheels = [
 ]
 
 [[package]]
+name = "cloudpickle"
+version = "3.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/27/fb/576f067976d320f5f0114a8d9fa1215425441bb35627b1993e5afd8111e5/cloudpickle-3.1.2.tar.gz", hash = "sha256:7fda9eb655c9c230dab534f1983763de5835249750e85fbcef43aaa30a9a2414", size = 22330, upload-time = "2025-11-03T09:25:26.604Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl", hash = "sha256:9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a", size = 22228, upload-time = "2025-11-03T09:25:25.534Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -1255,7 +1264,7 @@ ci = [
     { name = "torch", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "lmi-ai-solutions", group = "ci" } },
     { name = "torchvision", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "lmi-ai-solutions", group = "ci" } },
     { name = "transformers", specifier = "==5.16.1" },
-    { name = "ultralytics", specifier = "==8.4.127" },
+    { name = "ultralytics", specifier = "==8.4.170" },
 ]
 gpu = [
     { name = "albumentations", specifier = ">=2.0.8,<3.0.0" },
@@ -1279,7 +1288,7 @@ gpu = [
     { name = "torchvision", marker = "platform_machine != 'x86_64'" },
     { name = "torchvision", marker = "platform_machine == 'x86_64'", index = "https://download.pytorch.org/whl/cu124", conflict = { package = "lmi-ai-solutions", group = "gpu" } },
     { name = "transformers", specifier = "==5.16.1" },
-    { name = "ultralytics", specifier = "==8.4.127" },
+    { name = "ultralytics", specifier = "==8.4.170" },
 ]
 test = [
     { name = "albumentations", specifier = ">=2.0.8,<3.0.0" },
@@ -1295,7 +1304,7 @@ test = [
     { name = "tabulate", specifier = ">=0.9.0" },
     { name = "tensorboard", specifier = "==2.21.0" },
     { name = "transformers", specifier = "==5.16.1" },
-    { name = "ultralytics", specifier = "==8.4.127" },
+    { name = "ultralytics", specifier = "==8.4.170" },
 ]
 
 [[package]]
@@ -3750,9 +3759,10 @@ wheels = [
 
 [[package]]
 name = "ultralytics"
-version = "8.4.127"
+version = "8.4.170"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "cloudpickle" },
     { name = "filelock" },
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or python_full_version >= '3.13' or (extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu')" },
     { name = "matplotlib", version = "3.11.0", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and python_full_version < '3.13') or (python_full_version < '3.11' and extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (python_full_version >= '3.13' and extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (python_full_version < '3.11' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version < '3.11' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version >= '3.13' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version >= '3.13' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu')" },
@@ -3782,26 +3792,26 @@ dependencies = [
     { name = "ultralytics-platform", marker = "(python_full_version >= '3.11' and python_full_version < '3.13') or (python_full_version < '3.11' and extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (python_full_version >= '3.13' and extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (python_full_version < '3.11' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version < '3.11' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version >= '3.13' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version >= '3.13' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu')" },
     { name = "ultralytics-thop" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/87/3f/d36d80cb736edda287460d9cb106590352459d797348d54b806ddc9afe87/ultralytics-8.4.127.tar.gz", hash = "sha256:acb343a52f9580eaad39f1554a7003a66d19328f27b003d603c506e227e84986", size = 1214237, upload-time = "2026-08-23T18:40:32.148Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/08/0e/528a5bd093832825ff428eeefa9b10c90c75315980af3904fa5e1c7fddd4/ultralytics-8.4.170.tar.gz", hash = "sha256:9a03e4577e8a90e4c5c34151090a3dcb491124441b9fffc6226055c5c5c760ac", size = 1262028, upload-time = "2026-09-30T17:41:22.98Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a7/fb/52558b30ecb9aa294520df7c41df81c0ce3248e6b7803ed40df9ed9fc82b/ultralytics-8.4.127-py3-none-any.whl", hash = "sha256:46d30d0435f540d0669ec5f8f03e569d54eaac17a536ddbd31197c4b6eda6ab5", size = 1431152, upload-time = "2026-08-23T18:40:27.695Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/44/7c304a6fd5d1796264db4a5bd760d29dd4da3370ced9bbb7c0ddc527175d/ultralytics-8.4.170-py3-none-any.whl", hash = "sha256:fb8a7036ab6b42e3e4223a19334945ecbbf3d92f2552ba172ed540e9c20cd711", size = 1412292, upload-time = "2026-09-30T17:41:18.278Z" },
 ]
 
 [[package]]
 name = "ultralytics-platform"
-version = "0.1.5"
+version = "0.1.82"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx", marker = "(python_full_version >= '3.11' and python_full_version < '3.13') or (python_full_version < '3.11' and extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (python_full_version >= '3.13' and extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (python_full_version < '3.11' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version < '3.11' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version >= '3.13' and extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (python_full_version >= '3.13' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/53/898352d8c872aee2aacffb96b2d054d49ef06095c23c85c0f35db1fcd652/ultralytics_platform-0.1.5.tar.gz", hash = "sha256:72f6aba7f6251747c7f69d68253036d106e0142242fbc7244b4fa761e265c1ea", size = 52592, upload-time = "2026-08-15T17:22:42.942Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/eb/69/f04ec63a860a14bb9b9edaa921e5ee10d90205eb8937be828b0ccfb9ad27/ultralytics_platform-0.1.82.tar.gz", hash = "sha256:6f9547be07d205dc6f0090d16664fb8ba57d339ca3062271e7dbd021a6b98ee5", size = 86163, upload-time = "2026-10-07T00:44:08.253Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/56/684ae3e973f6fbf813714cb875eca1be09876cdfa34806e044f86b3844a1/ultralytics_platform-0.1.5-py3-none-any.whl", hash = "sha256:2e1b101b4b7a8a61757005c01101afa8cd535d653ab11f849653e17877bd14d9", size = 63884, upload-time = "2026-08-15T17:22:41.637Z" },
+    { url = "https://files.pythonhosted.org/packages/34/1c/3f1a23a33a22b932b2f32eb29a81c96a8bdfde20a9f7399f3016171b9410/ultralytics_platform-0.1.82-py3-none-any.whl", hash = "sha256:7bda4676e49db1fd3c0d692f78d07bc59b4855a933afa0ee8442526f47887b7d", size = 96112, upload-time = "2026-10-07T00:44:06.837Z" },
 ]
 
 [[package]]
 name = "ultralytics-thop"
-version = "2.1.6"
+version = "2.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
@@ -3813,9 +3823,9 @@ dependencies = [
     { name = "torch", version = "2.6.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci') or (extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu')" },
     { name = "torch", version = "2.6.0+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(platform_machine == 'x86_64' and extra != 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-gpu') or (extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/45/20/d6b6aaa8ecf7dbdeaf0c05f73bdcd04cf8ce468d936bc48dbcd368e75baf/ultralytics_thop-2.1.6.tar.gz", hash = "sha256:0ec2df8ebd3db35795e1f80cdc8bce6734446dbe989bca1b0c89396353f0f08c", size = 36364, upload-time = "2026-07-30T22:31:28.143Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/bf/b7b993e3b2411fc9894a26b8679931ca07c0d013f05bb620c63ae1911c5f/ultralytics_thop-2.2.2.tar.gz", hash = "sha256:149a89c26c2be35b709fa25951f4644dea13d63017025569a193159a5908e3ed", size = 39543, upload-time = "2026-10-01T09:34:58.406Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/98/f1fa3d40d548c8a2a3eec33b7f856063bb6c7d51e16d5198b1f390b2c79d/ultralytics_thop-2.1.6-py3-none-any.whl", hash = "sha256:23f7b8ad124fa3432c1a7de9279102c4fdda699216032a7dff49f87ec3d1a3af", size = 30479, upload-time = "2026-07-30T22:31:26.874Z" },
+    { url = "https://files.pythonhosted.org/packages/e7/53/0141f38ee122fc25b234ad1318e0c87050f3dfa84158f8dd46cd0c90da1a/ultralytics_thop-2.2.2-py3-none-any.whl", hash = "sha256:10ef0f4ab45261516008660619fef114cddc2b7c8383d9d3bd76c1e551208ca3", size = 32582, upload-time = "2026-10-01T09:34:57.074Z" },
 ]
 
 [[package]]
