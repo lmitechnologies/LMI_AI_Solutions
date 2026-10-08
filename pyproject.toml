@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=84.0.0"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -50,7 +50,7 @@ ad-v2 = [
     "torch==2.6.0",  # anomalib 2.x requires torch>=2.6
     "torchvision==0.21.0",
 ]
-# GPU / TensorRT env (local + compose): cu124 torch, onnxruntime-gpu, and the
+# GPU / TensorRT env (local + compose, x86_64 only): cu124 torch, onnxruntime-gpu, and the
 # TensorRT engine-build stack. tensorrt is pinned to the nvcr:25.04 image's
 # version (10.9.0.34) so local engines match CI. pytest-html backs run_tests.sh.
 gpu = [
@@ -64,12 +64,12 @@ gpu = [
 ]
 
 [tool.uv]
-# Scoped to the test images (Linux CPython; 3.10 CI, 3.12 nvcr) rather than requires-python; numpy<2.0 breaks onnx on 3.13+.
-# uv >= 0.12.18 fails the lock if a pin lacks wheels for any environment, so every pin must have Linux wheels here.
-# One entry per arch so the x86_64-only cu124 source below gets its own fork.
+# Linux CPython test images (3.10 CI, 3.12 nvcr): uv 0.12.18+ needs wheels for every env; numpy<2.0 breaks onnx on 3.13+.
 environments = [
-    "python_full_version >= '3.10' and python_full_version < '3.13' and sys_platform == 'linux' and platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
-    "python_full_version >= '3.10' and python_full_version < '3.13' and sys_platform == 'linux' and platform_machine == 'aarch64' and platform_python_implementation == 'CPython'",
+    """python_full_version >= '3.10' and python_full_version < '3.13' and sys_platform == 'linux' \
+    and platform_machine == 'x86_64' and platform_python_implementation == 'CPython'""",
+    """python_full_version >= '3.10' and python_full_version < '3.13' and sys_platform == 'linux' \
+    and platform_machine == 'aarch64' and platform_python_implementation == 'CPython'""",
 ]
 # ci/gpu are incompatible torch builds (+cpu vs +cu124); ad-v1/ad-v2 are incompatible anomalib majors.
 conflicts = [
@@ -87,7 +87,7 @@ name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"
 explicit = true
 
-# cu124 has no aarch64 torch 2.6.0 wheels; gpu on aarch64 (unused) falls back to PyPI.
+# cu124 has no aarch64 torch 2.6.0, so gpu on aarch64 (unused) takes every torch version from PyPI.
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cpu", group = "ci" },
