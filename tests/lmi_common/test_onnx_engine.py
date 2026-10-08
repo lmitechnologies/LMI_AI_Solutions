@@ -190,3 +190,15 @@ def test_input_still_being_written_by_torch_cuda(dynamic_onnx_path):
         out = engine.infer(x)[0].cpu().numpy()
         ref = _reference_output(dynamic_onnx_path, base_cpu.roll(shift, dims=0).numpy())
         np.testing.assert_allclose(out, ref, atol=1e-4)
+
+
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="needs 2 GPUs")
+def test_input_on_other_gpu_rejected(dynamic_onnx_path):
+    """An input on another GPU would skip the input sync, which only waits on the engine's GPU."""
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
+
+    engine = ONNXEngine(dynamic_onnx_path, device="cuda:0", dynamic_max_batch=8)
+    x = torch.randn(1, 3, 32, 32, dtype=torch.float32, device="cuda:1")
+    with pytest.raises(ValueError, match="expected"):
+        engine.infer(x)

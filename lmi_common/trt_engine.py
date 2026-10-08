@@ -37,29 +37,36 @@ class TRTEngine:
             trt.DataType.FLOAT: torch.float32,
             trt.DataType.HALF: torch.float16,
             trt.DataType.INT32: torch.int32,
-            trt.DataType.INT64: torch.int64,
             trt.DataType.INT8: torch.int8,
+            trt.DataType.UINT8: torch.uint8,
             trt.DataType.BOOL: torch.bool,
         }
+        # INT64 is TensorRT 10+.
+        if hasattr(trt.DataType, "INT64"):
+            dtype_map[trt.DataType.INT64] = torch.int64
 
         trt_logger = trt.Logger(log_level if log_level is not None else trt.Logger.WARNING)
         trt.init_libnvinfer_plugins(trt_logger, namespace="")
 
+        self.device = torch.device(device)
+        if self.device.index is None:
+            self.device = torch.device(f"cuda:{torch.cuda.current_device()}")
+
         runtime = trt.Runtime(trt_logger)
         with open(engine_path, "rb") as f:
             props, plan = split_engine_props(f.read())
-        engine = runtime.deserialize_cuda_engine(plan)
-        if engine is None:
-            raise RuntimeError(f"Failed to deserialize TensorRT engine: {engine_path}")
+        # TensorRT puts the engine on the current CUDA device, not on self.device.
+        with torch.cuda.device(self.device):
+            engine = runtime.deserialize_cuda_engine(plan)
+            if engine is None:
+                raise RuntimeError(f"Failed to deserialize TensorRT engine: {engine_path}")
+            self._engine = engine
+            self.context = engine.create_execution_context()
+            if self.context is None:
+                raise RuntimeError(f"Failed to create execution context for: {engine_path}")
         metadata = metadata_from_props(props)
         if metadata:
             logger.info(f"Engine metadata: {sorted(metadata)}")
-
-        self._engine = engine
-        self.context = engine.create_execution_context()
-        if self.context is None:
-            raise RuntimeError(f"Failed to create execution context for: {engine_path}")
-        self.device = torch.device(device)
 
         def resolve_dtype(name: str) -> torch.dtype:
             trt_dtype = engine.get_tensor_dtype(name)
@@ -184,8 +191,8 @@ class TRTEngine:
             got = (x.device, x.dtype, tuple(x.shape))
             if got != expected:
                 raise ValueError(f"Input '{name}': expected (device, dtype, shape)={expected}, got={got}")
-            if self.is_dynamic:
-                self.context.set_input_shape(name, tuple(x.shape))
+            if self.is_dynamic and not self.context.set_input_shape(name, tuple(x.shape)):
+                raise ValueError(f"Input '{name}': shape {tuple(x.shape)} is outside the engine's optimization profile")
             buf[:actual_batch].copy_(x)
 
         with torch.cuda.device(self.device):

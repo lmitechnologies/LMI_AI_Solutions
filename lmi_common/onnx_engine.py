@@ -221,7 +221,7 @@ class ONNXEngine:
 
         Args:
             *inputs: One tensor per engine input, in ``self._input_names`` order. Must
-                match the engine device (CUDA or CPU) with ``shape[0] <= self.max_batch``.
+                be on ``self.device`` with ``shape[0] <= self.max_batch``.
                 Non-contiguous inputs incur a ``.contiguous()`` copy.
             copy: If True (default), return independent clones — safe to hold across
                 calls. If False, on CUDA return views into internal buffers that must be
@@ -239,12 +239,11 @@ class ONNXEngine:
         if not self.is_dynamic and actual_batch != self.max_batch:
             raise ValueError(f"Static engine requires batch size {self.max_batch}, got {actual_batch}")
 
-        expected_device_type = "cuda" if self._is_cuda else "cpu"
         for name, x in zip(self._input_names, inputs):
-            expected = (expected_device_type, self._input_dtypes[name], (actual_batch, *self._input_spatial[name]))
-            got = (x.device.type, x.dtype, tuple(x.shape))
+            expected = (self.device, self._input_dtypes[name], (actual_batch, *self._input_spatial[name]))
+            got = (x.device, x.dtype, tuple(x.shape))
             if got != expected:
-                raise ValueError(f"Input '{name}': expected (device_type, dtype, shape)={expected}, got={got}")
+                raise ValueError(f"Input '{name}': expected (device, dtype, shape)={expected}, got={got}")
 
         if self._is_cuda:
             return self._infer_cuda(inputs, actual_batch, copy=copy)
