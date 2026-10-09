@@ -5,7 +5,7 @@
 
 ## Breaking changes
 
-- [ ] This PR introduces a breaking change — `PRERELEASE.md` has been updated with before/after examples.
+- [ ] This PR introduces a breaking change — `PRERELEASE.md` says what to update.
 
 ## Checklist
 

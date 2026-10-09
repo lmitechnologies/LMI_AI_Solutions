@@ -22,6 +22,5 @@ fi
 cat > "$src" <<EOF
 # Pre-Release Notes — ${tag} → next
 
-This document covers all **breaking changes and new features** introduced after the \`${tag}\` tag. Each section identifies what changed,
-which PR introduced it, and a concrete before/after comparison.
+Breaking changes and new features since \`${tag}\`. Each breaking change says what to update.
 EOF
