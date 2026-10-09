@@ -36,6 +36,8 @@ results, _ = model.predict(image, configs=0.5)
 boxes = results["boxes"][0]   # was results["boxes"]
 ```
 
+`results["classes"][i]` is a numpy string array, not a `list[str]`. `Results.to_dict(return_tensor=...)` is now `to_dict(return_numpy=...)`, with the meaning inverted.
+
 Segments: a segment is the mask's outer outline, with holes dropped. When a mask is in several pieces, YOLO joins them (as Ultralytics' `Results.masks.xy` does), while Detectron2 and RF-DETR keep the largest piece. RF-DETR used to chain all pieces' points into one list, so its segments change on such masks. With tiling, every backend keeps the largest piece.
 
 ### OD coordinates are floats, clamped at 0
@@ -72,6 +74,20 @@ ad_maps = model.predict([img1, img2, img3], batch_size=2)      # 3 maps
 ```python
 super().__init__(version="2")                                              # in your PipelineBase subclass
 manifest = get_models_from_static_manifest("manifest.json", version="2")
+```
+
+Gadget versions older than 2.4 (schema version `"1"`) are no longer supported and raise `ValueError` ([#180](../../pull/180)).
+
+### `Tiler` takes the scale mode in its constructor
+
+**PR:** [#406](../../pull/406)
+
+`lmi_utils.image_utils.tiler.Tiler` binds `scale_mode` and `overlap_mode` at construction, so `untile()` always undoes the scaling `tile()` used. The second positional argument of `untile()` is now `overlap_mode`.
+
+```python
+tiler = Tiler(tile_size, stride, scale_mode="padding")   # was Tiler(tile_size, stride)
+tiles = tiler.tile(im)                                    # was tiler.tile(im, mode=...)
+im = tiler.untile(tiles)                                  # was tiler.untile(tiles, scale_mode=...)
 ```
 
 ### Submodules removed
