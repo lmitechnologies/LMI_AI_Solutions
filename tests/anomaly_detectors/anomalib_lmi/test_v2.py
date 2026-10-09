@@ -22,6 +22,7 @@ from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v2_torchscript
 from anomaly_detectors.anomalib_lmi.v2.model import AnomalyModel as AnomalyModelV2
 from anomaly_detectors.anomalib_lmi.v2.train import build_data, build_model, build_preprocessor
+from tests.anomaly_detectors.anomalib_lmi.predict_checks import assert_predict_operators_match_reconstructor
 
 os.environ["TRUST_REMOTE_CODE"] = "1"
 
@@ -262,6 +263,16 @@ def test_predict_gpu_batch(ad_models, n_images):
 
     for r1, r2 in zip(results_bhwc_gpu, results_gpu):
         assert torch.allclose(r1, r2, atol=1e-5)
+
+
+@pytest.mark.parametrize("batch_size", [None, 3])
+def test_predict_operators_match_reconstructor(cpu_models, batch_size):
+    for model in cpu_models:
+        assert_predict_operators_match_reconstructor(model, batch_size)
+
+
+def test_trt_predict_operators_match_reconstructor(trt_model):
+    assert_predict_operators_match_reconstructor(trt_model)
 
 
 def test_compare_trt_onnx(trt_model):

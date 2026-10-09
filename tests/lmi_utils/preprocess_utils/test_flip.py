@@ -160,3 +160,15 @@ def test_flip_apply_coords_is_inverse_of_revert():
     round_trip = rec.reconstruct_coordinates(forward, history)
     assert torch.allclose(round_trip["boxes"][0], boxes)
     assert torch.allclose(round_trip["points"][0], original["points"][0])
+
+
+def test_flip_count_mismatch_raises():
+    """A meta for one image must not silently drop the other maps or results."""
+    rec = Reconstructor()
+    meta = steps.revert_flip(lr=[True], ud=[False], sizes=[[8, 6]])
+    with pytest.raises(ValueError, match="flip: image count"):
+        rec.reconstruct_images([_hwc_image(6, 8) for _ in range(4)], [meta])
+    with pytest.raises(ValueError, match="flip: results count"):
+        rec.reconstruct_coordinates(_empty_results(n=4), [meta])
+    with pytest.raises(ValueError, match="flip: results count"):
+        rec.apply_coordinates(_empty_results(n=4), [meta])

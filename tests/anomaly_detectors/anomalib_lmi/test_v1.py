@@ -20,6 +20,7 @@ from anomaly_detectors.anomalib_lmi.base import AnomalibONNX
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v1_torchscript
 from anomaly_detectors.anomalib_lmi.v1.model import AnomalyModel as AnomalyModelV1
 from lmi_utils.gadget_utils import pipeline_utils
+from tests.anomaly_detectors.anomalib_lmi.predict_checks import assert_predict_operators_match_reconstructor
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +336,16 @@ def test_predict_gpu(api_model, n_images):
 
     for r_gpu1, r_gpu2 in zip(results_bhwc_gpu, results_gpu):
         assert torch.allclose(r_gpu1, r_gpu2, atol=1e-5)
+
+
+@pytest.mark.parametrize("batch_size", [None, 3])
+def test_predict_operators_match_reconstructor(cpu_models, batch_size):
+    for model in cpu_models:
+        assert_predict_operators_match_reconstructor(model, batch_size)
+
+
+def test_trt_predict_operators_match_reconstructor(trt_model):
+    assert_predict_operators_match_reconstructor(trt_model)
 
 
 def test_trt_model(trt_model):

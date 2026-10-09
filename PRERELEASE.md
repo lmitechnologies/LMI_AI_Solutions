@@ -405,6 +405,8 @@ class MyADPipeline(PipelineBase):
 
 ```
 
+Steps 2 and 3 can also run as one call, as for OD: `self.models["ad-model"].predict(preprocessed_image, operators=ops_list)` returns the same maps as `revert_preprocess()`. Without `operators`, `predict()` returns maps at the model input size, as before.
+
 ---
 
 ### 2. Forward preprocessing — typed step builders
