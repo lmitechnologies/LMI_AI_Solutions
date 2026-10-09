@@ -79,8 +79,8 @@ class ADBase(ABC):
         pass
 
     @torch.inference_mode()
-    def predict(self, image: ImageBatch, **kwargs) -> List[ImageLike]:
-        """Run the full inference pipeline: normalize → preprocess → forward → postprocess.
+    def predict(self, image: ImageBatch, *, operators=None, **kwargs) -> List[ImageLike]:
+        """Run the full inference pipeline: normalize → preprocess → forward → postprocess → revert.
 
         Fixed-batch path (self.fixed_batch_size is set): images are chunked before preprocessing,
         the last chunk is zero-padded to match the engine's required batch size, and padding is
@@ -93,13 +93,19 @@ class ADBase(ABC):
         Args:
             image: A single HW or HWC uint8 image, a list of HW/HWC images, or a BHWC batch.
                 2D (HW) images are expanded to 3-channel RGB before preprocessing.
+            operators: Preprocessing history (list of typed ``Meta`` records) to revert the maps with, e.g. the history
+                from ``PipelineBase.preprocess()``. Gives the same maps as ``revert_preprocess(predict(image), operators)``.
+                None or empty: no revert. The maps start at ``image_size``, so a history from a bare ``Preprocessor``
+                whose last size differs from it needs a final ``steps.revert_resize``, as ``PipelineBase.preprocess()`` adds.
             **kwargs:
                 batch_size (int): chunk size for mini-batch inference (default: None = all at once).
                     Ignored when self.fixed_batch_size is set.
 
         Returns:
-            List of per-image anomaly maps [H,W]. dtype mirrors input:
-            numpy arrays if input was numpy, tensors if input was tensors.
+            List of per-image anomaly maps [H,W] at the model input size, or in the source image space when
+            ``operators`` is given (one map per source image with a tile step). dtype mirrors input:
+            numpy arrays if input was numpy, tensors if input was tensors. The revert runs where the maps are:
+            on the CPU for numpy input, on the input's device for tensors.
         """
         images = [to_3channel(img) for img in normalize_image_batch(image)]
         use_tensor = isinstance(images[0], torch.Tensor) if images else False
@@ -110,9 +116,13 @@ class ADBase(ABC):
         if batch_size is None:
             input_batch = self.preprocess(images)
             output = self.forward(input_batch)
-            return self.postprocess(output, return_numpy=not use_tensor)
+            maps = self.postprocess(output, return_numpy=not use_tensor)
+        else:
+            maps = self._run_batched_predict(images, batch_size, pad_last=fixed_bs is not None, return_numpy=not use_tensor)
 
-        return self._run_batched_predict(images, batch_size, pad_last=fixed_bs is not None, return_numpy=not use_tensor)
+        if not operators:
+            return maps
+        return pipeline_utils._reconstructor().reconstruct_images(maps, operators)
 
     @torch.inference_mode()
     def _run_batched_predict(

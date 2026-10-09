@@ -353,6 +353,56 @@ def test_pipeline_AD_tiles_and_stitches_the_score_map(caplog):
     assert np.isfinite(out).all()
 
 
+@pytest.mark.parametrize(
+    "preprocessing_steps, n_images",
+    [
+        ([{"type": "tile", "configuration": {"height": 300, "width": 300, "y_stride": 300, "x_stride": 300}}], 1),
+        ([{"type": "resize", "configuration": {"height": 320, "width": 320}}], 2),
+        (
+            [
+                {"type": "resize", "configuration": {"height": 224, "width": 448}},
+                {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}},
+            ],
+            2,
+        ),
+    ],
+)
+@pytest.mark.parametrize("batch_size", [None, 2])
+def test_pipeline_AD_predict_operators_matches_revert_preprocess(preprocessing_steps, n_images, batch_size):
+    model_path = os.path.abspath("tests/assets/models/ad/model_v1/model.pt")
+    image_path = os.path.join(os.path.abspath("tests/assets/images/nvtec-ad"), "000-bad.png")
+    pipeline = PipelineAD(version="3")
+    pipeline.load(_build_ad_model_roles("3", model_path, preprocessing_steps), {})
+    model = pipeline.models["mock-model"]
+
+    image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
+    images = [image, image[:-8, :-4]][:n_images]
+    inputs = [images] + ([[torch.from_numpy(im).cuda() for im in images]] if DEVICE == "cuda" else [])
+    for imgs in inputs:
+        processed, ops = pipeline.preprocess("mock-model", imgs)
+        reverted = pipeline.revert_preprocess(model.predict(processed, batch_size=batch_size), ops)
+        direct = model.predict(processed, operators=ops, batch_size=batch_size)
+
+        assert len(direct) == len(reverted) == n_images
+        for d, r, im in zip(direct, reverted, images):
+            assert type(d) is type(r)
+            assert d.shape[:2] == im.shape[:2]
+            if isinstance(d, torch.Tensor):
+                assert d.device == imgs[0].device, "tensor input must be reverted on its own device"
+                assert torch.equal(d, r)
+            else:
+                np.testing.assert_array_equal(d, r)
+
+
+def test_AD_predict_without_operators_returns_model_size_maps():
+    pipeline = PipelineAD(version="3")
+    pipeline.load(_build_ad_model_roles("3", os.path.abspath("tests/assets/models/ad/model_v1/model.pt"), []), {})
+    model = pipeline.models["mock-model"]
+    image = np.zeros((300, 260, 3), dtype=np.uint8)
+    assert model.predict(image)[0].shape == (224, 224)
+    assert model.predict(image, operators=[])[0].shape == (224, 224)
+
+
 def _build_ad_model_roles(version, model_path, preprocessing_steps):
     if version == "2":
         return {
