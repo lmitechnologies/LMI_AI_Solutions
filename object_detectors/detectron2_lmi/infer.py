@@ -56,7 +56,7 @@ def inference_run(args):
         with open(class_map_path, "r") as f:
             class_map = json.load(f)
     elif model_path.endswith(".engine"):
-        logger.warning(f"No class map file ({class_map_path}); using the class names embedded in the engine")
+        logger.info(f"No class map file ({class_map_path}); using the class names embedded in the engine")
     else:
         raise FileNotFoundError(f"Class map not found: {class_map_path}")
 
