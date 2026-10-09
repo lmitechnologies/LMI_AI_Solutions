@@ -147,7 +147,8 @@ def convert_v2_torchscript(model_path, output_path, batch_size=1, device="cpu"):
     image_size = None
 
     try:
-        for t in model.pre_processor.transform.transforms:
+        transform = model.pre_processor.transform
+        for t in getattr(transform, "transforms", [transform]):
             if type(t).__name__ == "Resize":
                 image_size = to_list(t.size)
                 break

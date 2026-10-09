@@ -332,7 +332,18 @@ def test_cli_rejects_batch_flags_that_do_not_apply(flags, tmp_path):
 
 def test_export_trt_rejects_max_batch_on_a_fixed_batch_onnx(tmp_path):
     with pytest.raises(ValueError, match="dynamic-batch ONNX"):
-        AnomalyModelV1(ONNX_PATH, device="cpu").export_trt(str(tmp_path), max_batch=2)
+        AnomalyModelV1(ONNX_PATH, device="cpu").export_trt(str(tmp_path / "out"), max_batch=2)
+    assert not (tmp_path / "out").exists()
+
+
+def test_torchscript_model_cannot_export_a_dynamic_batch(tmp_path):
+    with pytest.warns(FutureWarning, match="deprecated"):
+        ts_model = AnomalyModelV1(TS_PATH, device="cpu")
+    with pytest.raises(ValueError, match="traced at a fixed batch"):
+        ts_model.export_onnx(str(tmp_path / "model.onnx"), dynamic_batch=True)
+    with pytest.raises(ValueError, match="traced at a fixed batch"):
+        ts_model.export_trt(str(tmp_path / "out"), max_batch=2)
+    assert not list(tmp_path.iterdir())
 
 
 def test_export_trt_into_a_slash_ended_dir(monkeypatch, tmp_path):

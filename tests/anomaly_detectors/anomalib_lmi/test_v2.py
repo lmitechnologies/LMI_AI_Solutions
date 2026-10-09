@@ -172,6 +172,15 @@ def test_convert_to_torchscript(device, tmp_path):
         np.testing.assert_allclose(ts_model.predict(rgb)[0], pt_model.predict(rgb)[0], atol=1e-3, err_msg=os.path.basename(p))
 
 
+def test_convert_to_torchscript_reads_a_bare_resize(tmp_path):
+    ckpt = torch.load(MODEL_PATH, map_location="cpu", weights_only=False)
+    ckpt["model"].pre_processor.transform = v2.Resize([224, 224])
+    pt_path = str(tmp_path / "model.pt")
+    torch.save(ckpt, pt_path)
+    with pytest.warns(FutureWarning, match="deprecated"):
+        convert_v2_torchscript(pt_path, str(tmp_path / "model.ts"), device="cpu")
+
+
 def test_cli_onnx_export_matches_pt(cpu_models, tmp_path):
     """The CLI's ONNX export, run on CPU, gives the .pt model's anomaly maps."""
     cmd = [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v2.model", "convert", "-i", MODEL_PATH, "-o", str(tmp_path), "-c", "onnx"]

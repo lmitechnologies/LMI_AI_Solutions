@@ -127,6 +127,8 @@ class Anomalib_Base(ADBase):
         """
         if not hasattr(self, "pt_model"):
             raise TypeError(f"{type(self).__name__} has no PT model loaded; load a .pt file first")
+        if dynamic_batch:
+            self._check_dynamic_batch_source()
 
         # Write sidecar metadata.json next to the .onnx output, if available.
         if hasattr(self, "pt_metadata"):
@@ -161,18 +163,22 @@ class Anomalib_Base(ADBase):
         """
         if os.path.isfile(export_path):
             raise Exception("Export path should be a directory.")
+        from_pt = hasattr(self, "pt_model")
+        if from_pt:
+            if max_batch > 1:
+                self._check_dynamic_batch_source()
+        elif not self.model_path.endswith(".onnx"):
+            raise TypeError(f"{type(self).__name__} cannot export to TRT; load a .pt or .onnx model first")
+        elif max_batch > 1 and not self.engine.is_dynamic:
+            raise ValueError(f"max_batch={max_batch} needs a dynamic-batch ONNX, but {self.model_path} has a fixed batch")
+
         os.makedirs(export_path, exist_ok=True)
         trt_path = os.path.join(export_path, "model.engine")
-
-        if hasattr(self, "pt_model"):
+        if from_pt:
             onnx_path = os.path.join(export_path, "model.onnx")
             self.export_onnx(onnx_path, dynamic_batch=max_batch > 1)
-        elif self.model_path.endswith(".onnx"):
-            if max_batch > 1 and not self.engine.is_dynamic:
-                raise ValueError(f"max_batch={max_batch} needs a dynamic-batch ONNX, but {self.model_path} has a fixed batch")
-            onnx_path = self.model_path
         else:
-            raise TypeError(f"{type(self).__name__} cannot export to TRT; load a .pt or .onnx model first")
+            onnx_path = self.model_path
 
         onnx_to_trt(
             onnx_path,
@@ -188,6 +194,10 @@ class Anomalib_Base(ADBase):
         target = os.path.join(export_path, "metadata.json")
         if os.path.isfile(sidecar) and not (os.path.isfile(target) and os.path.samefile(sidecar, target)):
             shutil.copyfile(sidecar, target)
+
+    def _check_dynamic_batch_source(self) -> None:
+        if isinstance(self.pt_model, torch.jit.ScriptModule):
+            raise ValueError("A TorchScript model is traced at a fixed batch; export a dynamic batch from the .pt checkpoint")
 
     def test(self, *args, **kwargs):
         """Run evaluation on a directory of images. See `anomalib_lmi.evaluate.evaluate` for arguments."""
