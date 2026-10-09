@@ -603,4 +603,4 @@ maps = model.predict(tiles)                # 12 tiles run as 3 batches of 4
 
 > **Impact:** v2 training stops before training when the pre-processor has no Resize to a fixed `[h, w]`. Such a model used to export an ONNX with a dynamic height and width, which ONNX inference and the TensorRT conversion reject, or crash after training. Set `model.params.image_size`, or add a Resize with a `[h, w]` size to `pre_processor`.
 
-> **Deprecated:** TorchScript AD models (`.ts`, `.torchscript`, or a traced `.pt`) and `anomaly_detectors.anomalib_lmi.convert_to_torchscript` emit a `FutureWarning`. Use the `.pt` checkpoint, or its ONNX/TensorRT export.
+> **Deprecated:** TorchScript AD models (`.ts`, `.torchscript`, or a traced `.pt`) and `anomaly_detectors.anomalib_lmi.convert_to_torchscript` emit a `FutureWarning`, and a TorchScript model cannot be exported with a dynamic batch. Use the `.pt` checkpoint, or its ONNX/TensorRT export.
