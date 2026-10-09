@@ -97,6 +97,8 @@ class ODBase(abc.ABC):
         kwargs:
             batch_size (int): chunk size for dynamic mini-batch inference, capped at self.max_batch_size
                 (default: self.max_batch_size, or all at once when that is unset). Ignored when self.fixed_batch_size is set.
+            clip (bool): clamp reverted boxes, segments and the xy of points at 0 (default True). Pass False when a
+                later revert of an outer step follows.
             return_segments (bool): Whether to return 'segments' in the output dict when available. A segment is the
                 mask's outer outline, traced by the backend's own rule. With a tile step, segments are traced again from
                 the merged masks, largest piece only (``mask_segments.masks_to_segments``).
@@ -119,6 +121,7 @@ class ODBase(abc.ABC):
         operators = self._prepare_operators(operators, len(images))
         use_tensor = isinstance(images[0], torch.Tensor) if images else False
 
+        clip = kwargs.pop("clip", True)
         fixed_bs = self.fixed_batch_size
         batch_size = kwargs.pop("batch_size", None)
         if self.max_batch_size:
@@ -143,7 +146,7 @@ class ODBase(abc.ABC):
         # revert while still on the model's device: merging tiled masks on the CPU is several times slower
         results = self._aggregate_results(all_results, return_numpy=False)
         t0 = time.time()
-        results = self._revert_coordinates(results, operators)
+        results = self._revert_coordinates(results, operators, clip=clip)
         time_info["postproc"] += _elapsed_since(t0)
         if not use_tensor:
             t0 = time.time()
@@ -399,7 +402,7 @@ class ODBase(abc.ABC):
         prepared.reverse()
         return prepared
 
-    def _revert_coordinates(self, results: dict, operators: list, round: bool = True) -> dict:
+    def _revert_coordinates(self, results: dict, operators: list, clip: bool = True) -> dict:
         """Revert a batch of predictions to the original pre-transform space.
 
         Reverts boxes (regular and OBB), masks, segments, and points (with optional
@@ -410,9 +413,7 @@ class ODBase(abc.ABC):
             results: Aggregated batch dict as built by ``_aggregate_results`` — every value
                 is a list with one entry per image.
             operators: History whose batched fields are all at ``len(results)`` (see ``_prepare_operators``).
-            round: Round and clamp the reverted point-like coords (boxes, segments,
-                and the xy of points) to non-negative integers, matching
-                ``revert_to_origin``. Masks are not rounded.
+            clip: Clamp the reverted boxes, segments and the xy of points at 0. Masks are untouched.
 
         Returns:
             The reverted batch dict. Entries are keyed by source image, so the length can differ
@@ -421,37 +422,7 @@ class ODBase(abc.ABC):
         if not operators or not results:
             return results
 
-        reverted = pipeline_utils._reconstructor().reconstruct_coordinates(results, operators)
-
-        if round and "boxes" in reverted:  # (N,4) xyxy or (N,4,2) OBB
-            reverted["boxes"] = [self._round_clamp_coords(b) if b is not None and len(b) else b for b in reverted["boxes"]]
-
-        if round and "segments" in reverted:
-            reverted["segments"] = [
-                [self._round_clamp_coords(s) if len(s) else s for s in segs] if segs is not None else segs for segs in reverted["segments"]
-            ]
-
-        if round and "points" in reverted:  # (N,K,2) or (N,K,3) with a trailing visibility column
-            reverted["points"] = [self._round_clamp_points(p) for p in reverted["points"]]
-
-        return reverted
-
-    @staticmethod
-    def _round_clamp_coords(value):
-        """Round coords to nearest int and clamp to non-negative; mirrors ``revert_to_origin(round=True)``."""
-        if torch.is_tensor(value):
-            return value.round().clamp(min=0)
-        return np.clip(np.round(value), 0, None)
-
-    @classmethod
-    def _round_clamp_points(cls, pts):
-        """Round only the xy of keypoints; a trailing visibility column is left untouched."""
-        if pts is None or not len(pts):
-            return pts
-        if pts.shape[-1] == 3:
-            xy, vis = cls._round_clamp_coords(pts[..., :2]), pts[..., 2:]
-            return torch.cat((xy, vis), dim=-1) if torch.is_tensor(pts) else np.concatenate((xy, vis), axis=-1)
-        return cls._round_clamp_coords(pts)
+        return pipeline_utils._reconstructor().reconstruct_coordinates(results, operators, clip=clip)
 
     @staticmethod
     def _results_to_numpy(results: dict, float32: bool) -> dict:

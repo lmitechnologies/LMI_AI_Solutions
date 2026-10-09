@@ -430,6 +430,57 @@ class TestPoints:
         )
 
 
+class TestClip:
+    @staticmethod
+    def _crop_results():
+        # a 10px crop offset; boxes and points reach past its top-left edge
+        history = [steps.revert_cropbox(boxes=[[10, 10, 60, 60]], orig_sizes=[[100, 100]])]
+        results = {
+            "boxes": [torch.tensor([[-12.3, 2.4, 20.6, 30.5]])],
+            "scores": [torch.ones(1)],
+            "classes": [np.zeros(1, dtype=np.int32)],
+            "segments": [[torch.tensor([[-11.6, 2.4], [20.6, 30.5]])]],
+            "points": [torch.tensor([[[-15.2, 3.7, 0.4]]])],
+        }
+        return results, history
+
+    def test_clip_clamps_at_zero_without_rounding(self, pipeline):
+        _, recon = pipeline
+        results, history = self._crop_results()
+        out = recon.reconstruct_coordinates(results, history, clip=True)
+        assert torch.allclose(out["boxes"][0], torch.tensor([[0.0, 12.4, 30.6, 40.5]]))
+        assert torch.allclose(out["segments"][0][0], torch.tensor([[0.0, 12.4], [30.6, 40.5]]))
+        assert torch.allclose(out["points"][0], torch.tensor([[[0.0, 13.7, 0.4]]])), "visibility must stay as is"
+
+    def test_clip_points_without_visibility(self, pipeline):
+        _, recon = pipeline
+        results, history = self._crop_results()
+        results["points"] = [torch.tensor([[[-15.2, 3.7]]])]
+        out = recon.reconstruct_coordinates(results, history, clip=True)
+        assert torch.allclose(out["points"][0], torch.tensor([[[0.0, 13.7]]]))
+
+    def test_clip_skips_empty_points(self, pipeline):
+        _, recon = pipeline
+        results, history = self._crop_results()
+        results["points"] = [torch.zeros((0, 1, 3))]
+        out = recon.reconstruct_coordinates(results, history, clip=True)
+        assert out["points"][0].shape == (0, 1, 3)
+
+    def test_no_clip_by_default(self, pipeline):
+        _, recon = pipeline
+        results, history = self._crop_results()
+        out = recon.reconstruct_coordinates(results, history)
+        assert torch.allclose(out["boxes"][0], torch.tensor([[-2.3, 12.4, 30.6, 40.5]]))
+
+    def test_clip_keeps_numpy_type(self, pipeline):
+        _, recon = pipeline
+        results, history = self._crop_results()
+        results = {k: [[s.numpy() for s in v[0]]] if k == "segments" else [np.asarray(v[0])] for k, v in results.items()}
+        out = recon.reconstruct_coordinates(results, history, clip=True)
+        assert isinstance(out["boxes"][0], np.ndarray)
+        np.testing.assert_allclose(out["boxes"][0], [[0.0, 12.4, 30.6, 40.5]], rtol=1e-6)
+
+
 class TestEdgeCases:
     def test_empty_steps_returns_results_unchanged(self, pipeline):
         _, recon = pipeline

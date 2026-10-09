@@ -248,6 +248,21 @@ class Test_revert_to_origin:
             assert pts2.is_cuda
             assert np.array_equal(pts1, pts2.cpu().numpy())
 
+    def test_round_and_clip_are_independent(self):
+        pts = np.array([[2.3, 20.6], [30.2, 40.4]], dtype=np.float32)
+        ops = [_pad_entry(5, 0, 0, 0)]  # shifts x by -5
+        np.testing.assert_array_equal(pipeline_utils.revert_to_origin(pts, ops), [[0, 21], [25, 40]])
+        np.testing.assert_allclose(pipeline_utils.revert_to_origin(pts, ops, round=False), [[0, 20.6], [25.2, 40.4]], rtol=1e-6)
+        np.testing.assert_allclose(
+            pipeline_utils.revert_to_origin(pts, ops, round=False, clip=False), [[-2.7, 20.6], [25.2, 40.4]], rtol=1e-6
+        )
+        np.testing.assert_array_equal(pipeline_utils.revert_to_origin(pts, ops, clip=False), [[-3, 21], [25, 40]])
+
+    def test_empty_operations_still_clip(self):
+        pts = np.array([[-3.2, 5.0]], dtype=np.float32)
+        np.testing.assert_array_equal(pipeline_utils.revert_to_origin(pts, []), [[0, 5]])
+        np.testing.assert_array_equal(pipeline_utils.apply_operations(pts, [], clip=False), [[-3, 5]])
+
 
 class Test_profile_to_3d:
     def np_func(self, profile, resolution, offset):

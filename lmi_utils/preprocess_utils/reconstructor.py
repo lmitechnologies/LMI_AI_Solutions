@@ -4,6 +4,7 @@ import torch
 
 from lmi_utils.image_utils.types import ImageLike
 
+from ._coords import apply_coord_transform
 from .base import BaseProcessor
 from .operation import Meta, Operation
 from .ops import DEFAULT_OPERATIONS
@@ -37,15 +38,19 @@ class Reconstructor(BaseProcessor):
             raise ValueError("Operation must define `meta_cls`")
         self._ops[op.meta_cls] = op
 
-    def reconstruct_coordinates(self, results: Dict[str, Any], history: List[Meta]) -> Dict[str, Any]:
-        """Revert predicted coordinates to original pre-preprocessing space."""
-        return self._transform_coordinates(results, history, reverse=True)
+    def reconstruct_coordinates(self, results: Dict[str, Any], history: List[Meta], clip: bool = False) -> Dict[str, Any]:
+        """Revert predicted coordinates to original pre-preprocessing space.
 
-    def apply_coordinates(self, results: Dict[str, Any], history: List[Meta]) -> Dict[str, Any]:
-        """Forward-apply geometric ops to original-space coordinates."""
-        return self._transform_coordinates(results, history, reverse=False)
+        ``clip`` clamps boxes, segments and the xy of points at 0. Masks are untouched.
+        Empty ``results`` or ``history`` is returned as is.
+        """
+        return self._transform_coordinates(results, history, reverse=True, clip=clip)
 
-    def _transform_coordinates(self, results: Dict[str, Any], history: List[Meta], *, reverse: bool) -> Dict[str, Any]:
+    def apply_coordinates(self, results: Dict[str, Any], history: List[Meta], clip: bool = False) -> Dict[str, Any]:
+        """Forward-apply geometric ops to original-space coordinates. ``clip`` works as in ``reconstruct_coordinates``."""
+        return self._transform_coordinates(results, history, reverse=False, clip=clip)
+
+    def _transform_coordinates(self, results: Dict[str, Any], history: List[Meta], *, reverse: bool, clip: bool) -> Dict[str, Any]:
         """Run coord ops over ``history`` (reversed for revert, forward for apply)."""
         self._validate_history(history)
         if not results or not history:
@@ -75,6 +80,9 @@ class Reconstructor(BaseProcessor):
                 masks = r.get("masks")
                 if isinstance(masks, torch.Tensor) and len(masks) and masks.dtype != mask_dtype:
                     r["masks"] = masks.to(mask_dtype)
+
+        if clip:
+            per_image = [_clip_result(r) for r in per_image]
 
         per_image = self.from_tensor_results(per_image, is_numpy)
         keys = per_image[0].keys()
@@ -106,3 +114,7 @@ class Reconstructor(BaseProcessor):
         for i, m in enumerate(history):
             if not isinstance(m, Meta):
                 raise TypeError(f"history[{i}] must be a Meta instance, got {type(m)}")
+
+
+def _clip_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    return apply_coord_transform(result, xy_fn=lambda xy: xy.clamp(min=0))

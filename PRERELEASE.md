@@ -522,6 +522,10 @@ results = Reconstructor().reconstruct_coordinates(per_tile, history)   # 1 entry
 
 Inside a `PipelineBase` subclass the same two routes read as `self.preprocess("od-model", image)` followed by either `predict(..., operators=ops_list)` or `self.revert_preprocess(results, ops_list)` — `revert_preprocess()` dispatches a results dict to the `Reconstructor` (see new feature 1).
 
+Both routes return the same coordinates: float boxes, segments and keypoint x/y, clamped at 0. With numpy input and tiling, masks can still differ by a pixel: `predict` merges them on the GPU, `revert_preprocess` on the CPU. Pass `clip=False` to `revert_preprocess()` to keep negative values, e.g. on all but the last call of a chained revert. `Reconstructor.reconstruct_coordinates()` does not clamp unless given `clip=True`. `revert_to_origin()` and `apply_operations()` still round by default; pass `round=False` to match `predict` (they clamp at 0 unless given `clip=False`).
+
+> **Impact:** `predict(..., operators=...)` no longer rounds coordinates to whole pixels. Code that casts with `astype(int)` or `int()` now truncates the float value, so a result can move by 1 px; use `np.round(box).astype(int)` to keep the old numbers. `revert_preprocess()` now clamps negative coordinates to 0, and `revert_to_origin(..., round=False)` / `apply_operations(..., round=False)` now clamp too; pass `clip=False` to keep negative values. `predict` takes the same `clip` keyword.
+
 The results come back in the same form as the image you passed in: numpy arrays for a numpy image, torch tensors on the GPU for a GPU tensor (class names are always numpy). Call `.cpu().numpy()` on them if later code needs numpy.
 
 > **Performance:** after tiling, the tiles' detections must be merged back into one result per image, and for segmentation models this is heavy work on large masks.

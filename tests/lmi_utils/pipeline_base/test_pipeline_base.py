@@ -226,6 +226,16 @@ def test_pipeline_obb_predictions_become_rotated_box_labels():
         pipeline.clean_up()
 
 
+def test_revert_preprocess_clip_flag():
+    from lmi_utils.preprocess_utils import steps
+
+    ops = [steps.revert_cropbox(boxes=[[10, 10, 60, 60]], orig_sizes=[[100, 100]])]
+    results = {"boxes": [np.array([[-12.3, 2.4, 20.6, 30.4]], dtype=np.float32)], "scores": [np.ones(1, dtype=np.float32)]}
+    pipeline = PipelineOD(version="3")
+    np.testing.assert_allclose(pipeline.revert_preprocess(results, ops)["boxes"][0], [[0, 12.4, 30.6, 40.4]], rtol=1e-6)
+    np.testing.assert_allclose(pipeline.revert_preprocess(results, ops, clip=False)["boxes"][0], [[-2.3, 12.4, 30.6, 40.4]], rtol=1e-6)
+
+
 def test_pipeline_OD_injects_resize_on_size_mismatch(caplog):
     """When the preprocessed image does not match the OD model's input size, a corrective resize is
     injected and recorded in history so revert_preprocess still round-trips to the original space."""
@@ -285,7 +295,22 @@ def test_pipeline_OD_injects_resize_per_tile(caplog):
 
     # revert_preprocess must agree with passing the same history into predict()
     plain, _ = pipeline.models["mock-model"].predict(tiles, 0.25)
-    assert len(pipeline.revert_preprocess(plain, ops_list)["boxes"][0]) == len(boxes)
+    reverted = pipeline.revert_preprocess(plain, ops_list)
+    unclipped, _ = pipeline.models["mock-model"].predict(tiles, 0.25, operators=ops_list, clip=False)
+    np.testing.assert_array_equal(np.clip(unclipped["boxes"][0], 0, None), boxes)
+
+    np.testing.assert_array_equal(reverted["classes"][0], out["classes"][0])
+    for key in ("boxes", "scores"):  # CPU and GPU merges may differ in the last float digit
+        np.testing.assert_allclose(reverted[key][0], out[key][0], atol=1e-3, err_msg=key)
+
+    if DEVICE == "cuda":  # masks match exactly only on one device: CPU and GPU merges can differ by a pixel
+        tiles_gpu = [torch.from_numpy(t).cuda() for t in tiles]
+        out_gpu, _ = pipeline.models["mock-model"].predict(tiles_gpu, 0.25, operators=ops_list)
+        plain_gpu, _ = pipeline.models["mock-model"].predict(tiles_gpu, 0.25)
+        reverted_gpu = pipeline.revert_preprocess(plain_gpu, ops_list)
+        for key in ("boxes", "masks"):
+            assert torch.equal(reverted_gpu[key][0], out_gpu[key][0]), key
+        assert all(torch.equal(a, b) for a, b in zip(reverted_gpu["segments"][0], out_gpu["segments"][0]))
 
 
 class PipelineAD(PipelineBase):

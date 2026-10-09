@@ -408,7 +408,7 @@ def revert_masks_to_origin(masks, operations: list, interpolation: str = "biline
     return np.stack(results) if is_numpy else results
 
 
-def _transform_pts(pts, operations: list, *, reverse: bool, to_round: bool):
+def _transform_pts(pts, operations: list, *, reverse: bool, to_round: bool, clip: bool):
     """Route Nx2 points / Nx4 xyxy boxes through the Reconstructor's coord transform."""
     if not len(pts):
         return pts
@@ -424,19 +424,21 @@ def _transform_pts(pts, operations: list, *, reverse: bool, to_round: bool):
     recon = _reconstructor()
     transform = recon.reconstruct_coordinates if reverse else recon.apply_coordinates
     if pts.shape[1] == 4:
-        out = transform({"boxes": [pts]}, operations)["boxes"][0]
+        out = transform({"boxes": [pts]}, operations, clip=clip)["boxes"][0]
     else:
-        out = transform({"segments": [[pts]]}, operations)["segments"][0][0]
+        out = transform({"segments": [[pts]]}, operations, clip=clip)["segments"][0][0]
+    if clip and not operations:  # the Reconstructor returns an empty history untouched
+        out = out.clamp(min=0)
 
     if to_round:
-        out = out.round().clamp(min=0)
+        out = out.round()
     if is_tensor:
         return out
     return out.cpu().numpy() if is_numpy else out.tolist()
 
 
 @torch.inference_mode()
-def revert_to_origin(pts, operations: list, round: bool = True, **kwargs):
+def revert_to_origin(pts, operations: list, round: bool = True, clip: bool = True, **kwargs):
     """
     Revert Nx2 points or Nx4 xyxy boxes to original-image space.
 
@@ -445,22 +447,23 @@ def revert_to_origin(pts, operations: list, round: bool = True, **kwargs):
         operations: list of typed ``Meta`` records (one per preprocessing step), batch size 1.
 
     kwargs:
-        round (bool): round and clamp output to non-negative integers. Default True.
+        round (bool): round output to whole pixels. Default True.
+        clip (bool): clamp output at 0. Default True. ``round=False`` matches ``predict(..., operators=...)``.
 
     Returns:
         Same shape and type as input.
     """
-    return _transform_pts(pts, operations, reverse=True, to_round=round)
+    return _transform_pts(pts, operations, reverse=True, to_round=round, clip=clip)
 
 
 @torch.inference_mode()
-def apply_operations(pts, operations: list, round: bool = True):
+def apply_operations(pts, operations: list, round: bool = True, clip: bool = True):
     """
     Forward-apply preprocessing ops to original-space Nx2 points or Nx4 boxes.
 
-    Inverse of :func:`revert_to_origin`. Dispatches to each op's ``apply_coords``.
+    Inverse of :func:`revert_to_origin`, with the same ``round`` and ``clip``. Dispatches to each op's ``apply_coords``.
     """
-    return _transform_pts(pts, operations, reverse=False, to_round=round)
+    return _transform_pts(pts, operations, reverse=False, to_round=round, clip=clip)
 
 
 def convert_key_to_int(dt):
