@@ -77,7 +77,12 @@ def _run_training(tmp_path, monkeypatch, num_classes):
     monkeypatch.setattr(trainer.shutil, "which", lambda _: None)
     monkeypatch.setattr(trainer, "Trainer", lambda cfg, extras: trained.append(cfg) or _NoTrain())
     config = _write(
-        tmp_path, {"DATASETS": {"TRAIN": ["my_train"], "TEST": ["my_test"]}, "MODEL": {"ROI_HEADS": {"NUM_CLASSES": num_classes}}}
+        tmp_path,
+        {
+            "DATASETS": {"TRAIN": ["my_train"], "TEST": ["my_test"]},
+            "MODEL": {"ROI_HEADS": {"NUM_CLASSES": num_classes}},
+            "INPUT": {"FORMAT": "RGB"},
+        },
     )
     try:
         trainer.training_run({"config_file": config, "output": str(tmp_path / "out"), "dataset_dir": str(tmp_path / "data")})
@@ -99,7 +104,7 @@ def test_training_run_writes_what_convert_reads(tmp_path, monkeypatch):
     saved.merge_from_file(os.path.join(out_dir, "config.yaml"))
     assert saved.MODEL.WEIGHTS == os.path.join(out_dir, "model_final.pth")
     # detectron2 orders classes by category id
-    assert export_metadata(saved, None, os.path.join(out_dir, "config.yaml"))["class_names"] == ["scratch", "dent"]
+    assert export_metadata(saved, None, os.path.join(out_dir, "config.yaml")) == {"input_format": "RGB", "class_names": ["scratch", "dent"]}
 
 
 def test_training_stops_when_num_classes_does_not_match_the_dataset(tmp_path, monkeypatch):
