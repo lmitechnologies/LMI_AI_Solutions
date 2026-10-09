@@ -92,8 +92,8 @@ class ODBase(abc.ABC):
                 batch at once after inference. Accepts:
                 - None: no coordinate reversion.
                 - List of history entries matching what ``Preprocessor.preprocess()`` returns.
-                  Each entry's batched fields must have length 1 (broadcast to all images) or
-                  equal to the number of images that entry saw.
+                  Each entry's batched fields must have one value per image that entry saw;
+                  any other count raises.
         kwargs:
             batch_size (int): chunk size for dynamic mini-batch inference, capped at self.max_batch_size
                 (default: self.max_batch_size, or all at once when that is unset). Ignored when self.fixed_batch_size is set.
@@ -118,7 +118,7 @@ class ODBase(abc.ABC):
             entry: the tiles are merged, so the results are one entry per source image.
         """
         images = [to_3channel(img) for img in normalize_image_batch(image)]
-        operators = self._prepare_operators(operators, len(images))
+        operators = self._check_operators(operators)
         use_tensor = isinstance(images[0], torch.Tensor) if images else False
 
         clip = kwargs.pop("clip", True)
@@ -353,54 +353,19 @@ class ODBase(abc.ABC):
         return np.vectorize(confs.get)(classes, 1.0).astype(np.float32)
 
     @staticmethod
-    def _prepare_operators(operators, batch_size: int) -> list:
-        """Validate a typed preprocessing history and broadcast length-1 records to the batch.
+    def _check_operators(operators) -> list:
+        """Return ``operators`` as a list of typed ``Meta`` records; None or empty gives ``[]``.
 
-        The history is a list of typed ``Meta`` records (struct-of-arrays). Walking it backwards
-        (revert order) tracks how many results each record will be handed: most records leave the
-        count alone, while a tile record folds its tiles back onto one entry per source image.
-
-        Returns:
-            The history with every batched field sized to what its record sees during a single
-            Reconstructor pass over the whole batch.
+        Counts are not checked here: each record must hold one entry per image it saw, and the
+        Reconstructor raises on a mismatch, as ``revert_preprocess`` does.
         """
-        from dataclasses import fields
-
         from lmi_utils.preprocess_utils.operation import Meta
-        from lmi_utils.preprocess_utils.ops import TileMeta
 
         if not operators:
             return []
         if not isinstance(operators, list) or not all(isinstance(e, Meta) for e in operators):
             raise ValueError("operators must be a list of typed Meta records.")
-
-        prepared = []
-        count = batch_size
-        for entry in reversed(operators):
-            if isinstance(entry, TileMeta):
-                n_tiles = sum(h * w for h, w in entry.n_tiles)
-                if n_tiles != count:
-                    raise ValueError(f"tile history entry describes {n_tiles} tiles, but {count} images were passed to predict().")
-                count = len(entry.n_tiles)
-                prepared.append(entry)
-                continue
-
-            entry_fields = fields(entry)
-            list_field = next((f for f in entry_fields if isinstance(getattr(entry, f.name), list)), None)
-            n = len(getattr(entry, list_field.name)) if list_field else 1
-            if n not in (1, count):
-                raise ValueError(f"history entry '{type(entry).__name__}' batch size {n} is not 1 (broadcast) or {count} (per-image).")
-            if n == count:
-                prepared.append(entry)
-                continue
-            broadcast = type(entry).__new__(type(entry))
-            for f in entry_fields:
-                v = getattr(entry, f.name)
-                object.__setattr__(broadcast, f.name, [v[0]] * count if isinstance(v, list) else v)
-            prepared.append(broadcast)
-
-        prepared.reverse()
-        return prepared
+        return operators
 
     def _revert_coordinates(self, results: dict, operators: list, clip: bool = True) -> dict:
         """Revert a batch of predictions to the original pre-transform space.
@@ -412,7 +377,7 @@ class ODBase(abc.ABC):
         Args:
             results: Aggregated batch dict as built by ``_aggregate_results`` — every value
                 is a list with one entry per image.
-            operators: History whose batched fields are all at ``len(results)`` (see ``_prepare_operators``).
+            operators: Typed history with one entry per image each record saw.
             clip: Clamp the reverted boxes, segments and the xy of points at 0. Masks are untouched.
 
         Returns:

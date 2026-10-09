@@ -419,6 +419,34 @@ def test_pipeline_AD_predict_operators_matches_revert_preprocess(preprocessing_s
                 np.testing.assert_array_equal(d, r)
 
 
+def test_one_image_record_for_a_batch_raises_on_every_path():
+    """OD/AD predict(operators=...) and revert_preprocess all reject a one-value record for a batch of 2."""
+    from lmi_utils.preprocess_utils import steps
+
+    od = PipelineOD(version="3")
+    od.load(_build_od_model_roles("3", os.path.abspath("tests/assets/models/od/ultralytics/yolo11n-seg.pt"), []), {})
+    ad = PipelineAD(version="3")
+    ad.load(_build_ad_model_roles("3", os.path.abspath("tests/assets/models/ad/model_v1/model.pt"), []), {})
+
+    def one_value(size):
+        return [steps.revert_resize(src_sizes=[[2 * size, 2 * size]], dst_sizes=[[size, size]], pads=[[0, 0, 0, 0]])]
+
+    od_imgs = [np.zeros((640, 640, 3), dtype=np.uint8)] * 2
+    ad_imgs = [np.zeros((224, 224, 3), dtype=np.uint8)] * 2
+    od_model, ad_model = od.models["mock-model"], ad.models["mock-model"]
+    with pytest.raises(ValueError, match="resize"):
+        od_model.predict(od_imgs, 0.25, operators=one_value(640))
+    with pytest.raises(ValueError, match="resize"):
+        od.revert_preprocess(od_model.predict(od_imgs, 0.25)[0], one_value(640))
+    with pytest.raises(ValueError, match="resize"):
+        ad_model.predict(ad_imgs, operators=one_value(224))
+    with pytest.raises(ValueError, match="resize"):
+        ad.revert_preprocess(ad_model.predict(ad_imgs), one_value(224))
+
+    two_values = [steps.revert_resize(src_sizes=[[1280, 1280]] * 2, dst_sizes=[[640, 640]] * 2, pads=[[0, 0, 0, 0]] * 2)]
+    assert len(od_model.predict(od_imgs, 0.25, operators=two_values)[0]["boxes"]) == 2
+
+
 def test_AD_predict_without_operators_returns_model_size_maps():
     pipeline = PipelineAD(version="3")
     pipeline.load(_build_ad_model_roles("3", os.path.abspath("tests/assets/models/ad/model_v1/model.pt"), []), {})

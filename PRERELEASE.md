@@ -481,6 +481,17 @@ results2 = self.revert_preprocess(results1, history)
 
 > **Impact:** The revert path is now **typed-only**. Code that built legacy operator dicts must migrate to the revert step builders above — `revert_to_origin`, `revert_mask_to_origin`, `revert_masks_to_origin`, and `apply_operations` keep their names but raise `TypeError` on dict input.
 
+> **Impact:** Every record must hold one entry per image it saw (per tile after a `tile` step). `predict(..., operators=...)` no longer copies a one-entry record to every image in the batch; any other count raises `ValueError` on every path (`predict` and `revert_preprocess`, OD and AD). For a batch of 4 that shares one crop:
+>
+> ```python
+> # before: one entry, copied by predict()
+> steps.revert_cropbox(boxes=[[x1, y1, x2, y2]], orig_sizes=[[W, H]])
+> # after: one entry per image
+> steps.revert_cropbox(boxes=[[x1, y1, x2, y2]] * 4, orig_sizes=[[W, H]] * 4)
+> ```
+>
+> Histories from `preprocess()` already hold one entry per image and need no change.
+
 ---
 
 ### 4. Tiled object detection
