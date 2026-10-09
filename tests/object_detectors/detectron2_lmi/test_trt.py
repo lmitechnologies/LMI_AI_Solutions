@@ -78,7 +78,8 @@ def test_engine_carries_its_class_names_and_color_order(trt_model):
     assert model.input_format == "BGR"
 
 
-def test_cli_test_uses_the_embedded_class_names(trt_model, tmp_path):
+@pytest.mark.parametrize("class_map", ["missing.json", None])
+def test_cli_test_uses_the_embedded_class_names(trt_model, tmp_path, class_map):
     """Without a class map file, the test command runs an engine on its embedded names."""
     from object_detectors.detectron2_lmi.infer import inference_run
 
@@ -87,7 +88,7 @@ def test_cli_test_uses_the_embedded_class_names(trt_model, tmp_path):
             "weights": ENGINE_PATH,
             "input": "tests/assets/images/detectron2",
             "output": str(tmp_path),
-            "class_map": str(tmp_path / "missing.json"),
+            "class_map": class_map and str(tmp_path / class_map),
             "confidence": 0.5,
             "tile_step": None,
             "json": True,

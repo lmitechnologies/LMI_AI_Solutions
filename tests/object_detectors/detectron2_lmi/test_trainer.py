@@ -75,7 +75,7 @@ def _run_training(tmp_path, monkeypatch, num_classes):
         (tmp_path / "data" / name / "annotations.json").write_text(json.dumps({"images": [], "annotations": [], "categories": categories}))
     trained = []
     monkeypatch.setattr(trainer.shutil, "which", lambda _: None)
-    monkeypatch.setattr(trainer, "Trainer", lambda cfg, extras: trained.append(cfg) or _NoTrain(cfg))
+    monkeypatch.setattr(trainer, "Trainer", lambda cfg, extras: trained.append(cfg) or _NoTrain())
     config = _write(
         tmp_path, {"DATASETS": {"TRAIN": ["my_train"], "TEST": ["my_test"]}, "MODEL": {"ROI_HEADS": {"NUM_CLASSES": num_classes}}}
     )
@@ -105,13 +105,10 @@ def test_training_run_writes_what_convert_reads(tmp_path, monkeypatch):
 def test_training_stops_when_num_classes_does_not_match_the_dataset(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="NUM_CLASSES is 3, but the training set has 2 classes"):
         _run_training(tmp_path, monkeypatch, num_classes=3)
+    assert not (tmp_path / "out").exists(), "no run folder is made for a run that cannot train"
 
 
 class _NoTrain:
-    def __init__(self, cfg):
-        # the real trainer loads the training set, which records its class names
-        DatasetCatalog.get(cfg.DATASETS.TRAIN[0])
-
     def resume_or_load(self, resume):
         pass
 

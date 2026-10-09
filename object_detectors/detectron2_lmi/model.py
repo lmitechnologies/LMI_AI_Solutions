@@ -10,6 +10,7 @@ from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
 from lmi_utils.postprocess_utils.mask_segments import masks_to_segments
 from lmi_utils.postprocess_utils.mask_utils import rescale_masks
+from object_detectors.detectron2_lmi.convert import check_input_format
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 
@@ -37,8 +38,7 @@ class Detectron2Base(ODBase):
 
     def _set_input_format(self, input_format: str) -> None:
         """Set the channel order the model takes; predict() gets RGB images."""
-        if input_format not in ("RGB", "BGR"):
-            raise ValueError(f"Unsupported INPUT.FORMAT '{input_format}'; only RGB and BGR are supported")
+        check_input_format(input_format)
         self.input_format = input_format
 
     def _to_input_format(self, chw: torch.Tensor) -> torch.Tensor:

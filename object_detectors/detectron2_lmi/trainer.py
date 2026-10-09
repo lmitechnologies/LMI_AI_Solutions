@@ -8,7 +8,7 @@ import detectron2.data.transforms as T
 import yaml
 from detectron2 import model_zoo
 from detectron2.config import CfgNode, get_cfg
-from detectron2.data import DatasetMapper, MetadataCatalog, build_detection_train_loader
+from detectron2.data import DatasetMapper, build_detection_train_loader
 from detectron2.data.datasets import register_coco_instances
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.logger import setup_logger
@@ -87,33 +87,34 @@ def next_output_dir(output_dir):
     return os.path.join(output_dir, f"{date.today()}-v{version}")
 
 
-def write_class_map(cfg):
-    """Save the training class names as class_map.json beside config.yaml, where convert looks for them."""
-    # set when the trainer loads the dataset
-    names = MetadataCatalog.get(cfg.DATASETS.TRAIN[0]).get("thing_classes")
-    if names is None:
-        logger.warning("No class names in the training dataset; class_map.json not written")
-        return
-    if len(names) != cfg.MODEL.ROI_HEADS.NUM_CLASSES:
-        raise ValueError(f"MODEL.ROI_HEADS.NUM_CLASSES is {cfg.MODEL.ROI_HEADS.NUM_CLASSES}, but the training set has {len(names)} classes")
-    with open(os.path.join(cfg.OUTPUT_DIR, CLASS_MAP_NAME), "w") as f:
-        json.dump({str(i): name for i, name in enumerate(names)}, f, indent=2)
+def dataset_class_names(dataset_dir):
+    """A COCO dataset's class names in detectron2's order: by category id."""
+    with open(os.path.join(dataset_dir, "annotations.json")) as f:
+        categories = json.load(f)["categories"]
+    return [c["name"] for c in sorted(categories, key=lambda c: c["id"])]
 
 
 def training_run(args):
     cfg, extras = build_config(args["config_file"], args.get("detectron2_config"))
+    for name in (*cfg.DATASETS.TRAIN, *cfg.DATASETS.TEST):
+        register_dataset(os.path.join(args["dataset_dir"], name), name)
+    class_names = dataset_class_names(os.path.join(args["dataset_dir"], cfg.DATASETS.TRAIN[0]))
+    if len(class_names) != cfg.MODEL.ROI_HEADS.NUM_CLASSES:
+        raise ValueError(
+            f"MODEL.ROI_HEADS.NUM_CLASSES is {cfg.MODEL.ROI_HEADS.NUM_CLASSES}, but the training set has {len(class_names)} classes"
+        )
+
     cfg.OUTPUT_DIR = next_output_dir(args["output"])
     os.makedirs(cfg.OUTPUT_DIR)
     logger.info(f"Output directory: {cfg.OUTPUT_DIR}")
-
-    for name in (*cfg.DATASETS.TRAIN, *cfg.DATASETS.TEST):
-        register_dataset(os.path.join(args["dataset_dir"], name), name)
 
     # the config convert reads: the trainer keeps using the pretrained weights in memory
     final = cfg.clone()
     final.MODEL.WEIGHTS = os.path.join(cfg.OUTPUT_DIR, "model_final.pth")
     with open(os.path.join(cfg.OUTPUT_DIR, "config.yaml"), "w") as f:
         f.write(yaml.dump(yaml.safe_load(final.dump())))
+    with open(os.path.join(cfg.OUTPUT_DIR, CLASS_MAP_NAME), "w") as f:
+        json.dump({str(i): name for i, name in enumerate(class_names)}, f, indent=2)
 
     tensorboard = None
     if shutil.which("tensorboard"):
@@ -122,7 +123,6 @@ def training_run(args):
         logger.warning("tensorboard not found; training without it")
     try:
         trainer = Trainer(cfg, extras)
-        write_class_map(cfg)
         trainer.resume_or_load(resume=False)
         trainer.train()
     finally:

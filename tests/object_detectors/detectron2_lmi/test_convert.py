@@ -1,3 +1,4 @@
+import argparse
 import json
 import sys
 from types import SimpleNamespace
@@ -9,6 +10,8 @@ from onnx import numpy_helper
 from lmi_common.model_metadata import metadata_from_props
 from object_detectors.detectron2_lmi import cli
 from object_detectors.detectron2_lmi.convert import convert, export_metadata
+from object_detectors.detectron2_lmi.infer import add_args as add_infer_args
+from object_detectors.detectron2_lmi.infer import inference_run
 
 CONFIG_PATH = "tests/assets/models/od/detectron2/config.yaml"
 WEIGHTS = "tests/assets/models/od/detectron2/model_final_f10217.pkl"
@@ -85,9 +88,10 @@ def test_export_metadata_rejects_a_class_map_that_does_not_match_num_classes(tmp
         export_metadata(_cfg(), str(path), str(tmp_path / "config.yaml"))
 
 
-def test_export_metadata_explains_a_name_to_id_class_map(tmp_path):
+@pytest.mark.parametrize("class_map", [{"dent": 0, "scratch": 1, "chip": 2}, {"0": "dent", "1": None, "2": {"name": "chip"}}])
+def test_export_metadata_explains_a_class_map_that_is_not_ids_to_names(tmp_path, class_map):
     path = tmp_path / "class_map.json"
-    path.write_text(json.dumps({"dent": 0, "scratch": 1, "chip": 2}))
+    path.write_text(json.dumps(class_map))
     with pytest.raises(ValueError, match="0-based class ids to names"):
         export_metadata(_cfg(), str(path), str(tmp_path / "config.yaml"))
 
@@ -106,3 +110,14 @@ def test_cli_checks_the_class_map_flag(tmp_path, monkeypatch, capsys, flags, err
     with pytest.raises(SystemExit):
         cli.main()
     assert error in capsys.readouterr().err
+
+
+def test_standalone_infer_cli_does_not_need_a_class_map():
+    parser = argparse.ArgumentParser()
+    add_infer_args(parser)
+    assert parser.parse_args(["-w", "model.engine", "-i", "in", "-o", "out"]).class_map is None
+
+
+def test_infer_needs_a_class_map_file_for_a_pt(tmp_path):
+    with pytest.raises(FileNotFoundError, match="missing.json"):
+        inference_run({"weights": "model.pt", "input": str(tmp_path), "output": str(tmp_path), "class_map": str(tmp_path / "missing.json")})

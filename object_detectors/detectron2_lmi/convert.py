@@ -8,6 +8,12 @@ from lmi_common.trt_convert import onnx_to_trt
 logger = logging.getLogger(__name__)
 
 CLASS_MAP_NAME = "class_map.json"
+INPUT_FORMATS = ("RGB", "BGR")
+
+
+def check_input_format(input_format: str) -> None:
+    if input_format not in INPUT_FORMATS:
+        raise ValueError(f"Unsupported INPUT.FORMAT '{input_format}'; only {' and '.join(INPUT_FORMATS)} are supported")
 
 
 def convert(args):
@@ -60,8 +66,7 @@ def export_metadata(cfg, class_map_path, config_file) -> dict:
         class_map_path: A class map json ({"0": name, ...}), or None to use the class_map.json beside ``config_file`` if any.
         config_file: The config file path.
     """
-    if cfg.INPUT.FORMAT not in ("RGB", "BGR"):
-        raise ValueError(f"Unsupported INPUT.FORMAT '{cfg.INPUT.FORMAT}'; only RGB and BGR are supported")
+    check_input_format(cfg.INPUT.FORMAT)
     metadata = {"input_format": cfg.INPUT.FORMAT}
     if class_map_path is None:
         class_map_path = os.path.join(os.path.dirname(config_file), CLASS_MAP_NAME)
@@ -71,9 +76,11 @@ def export_metadata(cfg, class_map_path, config_file) -> dict:
     with open(class_map_path) as f:
         raw = json.load(f)
     try:
-        class_map = {int(k): str(v) for k, v in raw.items()}
+        class_map = {int(k): v for k, v in raw.items()}
     except (AttributeError, ValueError):
-        raise ValueError(f'{class_map_path} must map 0-based class ids to names, e.g. {{"0": "dent", "1": "scratch"}}') from None
+        class_map = None
+    if class_map is None or not all(isinstance(v, str) for v in class_map.values()):
+        raise ValueError(f'{class_map_path} must map 0-based class ids to names, e.g. {{"0": "dent", "1": "scratch"}}')
     num_classes = cfg.MODEL.ROI_HEADS.NUM_CLASSES
     if sorted(class_map) != list(range(num_classes)):
         raise ValueError(f"{class_map_path} must map exactly the ids 0..{num_classes - 1}, to match MODEL.ROI_HEADS.NUM_CLASSES")
