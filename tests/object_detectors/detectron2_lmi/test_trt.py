@@ -71,6 +71,32 @@ def _assert_all_cuda(outputs, keys=KEYS):
             assert v.is_cuda
 
 
+def test_engine_carries_its_class_names_and_color_order(trt_model):
+    """convert embeds the class_map.json beside the config, so the engine loads without class_map."""
+    model = Detectron2Model(ENGINE_PATH)
+    assert model.class_map == {int(k): v for k, v in class_map.items()}
+    assert model.input_format == "BGR"
+
+
+@pytest.mark.parametrize("class_map", ["missing.json", None])
+def test_cli_test_uses_the_embedded_class_names(trt_model, tmp_path, class_map):
+    """Without a class map file, the test command runs an engine on its embedded names."""
+    from object_detectors.detectron2_lmi.infer import inference_run
+
+    inference_run(
+        {
+            "weights": ENGINE_PATH,
+            "input": "tests/assets/images/detectron2",
+            "output": str(tmp_path),
+            "class_map": class_map and str(tmp_path / class_map),
+            "confidence": 0.5,
+            "tile_step": None,
+            "json": True,
+        }
+    )
+    assert os.path.isfile(tmp_path / "predictions.json")
+
+
 def test_warmup(trt_model):
     for _ in range(1):
         trt_model.warmup()

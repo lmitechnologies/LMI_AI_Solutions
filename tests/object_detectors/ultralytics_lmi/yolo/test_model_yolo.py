@@ -287,12 +287,11 @@ class Test_Yolo_Det:
         if len(resized_images) < 2:
             pytest.skip("Not enough images for batch test")
         model = yolo_models["det"][0]
-        # Per-image metadata length doesn't match batch size (and != 1, so no broadcast).
         from lmi_utils.preprocess_utils.ops import ResizeMeta
 
-        # 7 entries — not 1 (broadcast) and not batch size, so should raise.
+        # 7 entries for a smaller batch must raise.
         bad = [ResizeMeta(src_sizes=[[10, 10]] * 7, dst_sizes=[[640, 640]] * 7, pads=[[0, 0, 0, 0]] * 7)]
-        with pytest.raises(ValueError, match="not 1"):
+        with pytest.raises(ValueError, match="resize: input length"):
             model.predict(resized_images, configs=0.5, operators=bad)
 
     def test_insize_input_no_warning(self, imgs_coco, caplog):
@@ -607,7 +606,7 @@ def test_tiled_predict_rejects_a_tile_count_that_does_not_match(yolo_models, img
     images = imgs_coco[0][:1]
     tiles, history = Preprocessor().preprocess(images, [steps.tile(tile_size=[320, 320], stride=[320, 320], scale_mode="padding")])
 
-    with pytest.raises(ValueError, match="tiles, but"):
+    with pytest.raises(RuntimeError, match="tile results"):
         model.predict(tiles[:-1], configs=0.25, operators=history)
 
 

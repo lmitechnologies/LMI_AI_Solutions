@@ -226,6 +226,16 @@ def test_pipeline_obb_predictions_become_rotated_box_labels():
         pipeline.clean_up()
 
 
+def test_revert_preprocess_clip_flag():
+    from lmi_utils.preprocess_utils import steps
+
+    ops = [steps.revert_cropbox(boxes=[[10, 10, 60, 60]], orig_sizes=[[100, 100]])]
+    results = {"boxes": [np.array([[-12.3, 2.4, 20.6, 30.4]], dtype=np.float32)], "scores": [np.ones(1, dtype=np.float32)]}
+    pipeline = PipelineOD(version="3")
+    np.testing.assert_allclose(pipeline.revert_preprocess(results, ops)["boxes"][0], [[0, 12.4, 30.6, 40.4]], rtol=1e-6)
+    np.testing.assert_allclose(pipeline.revert_preprocess(results, ops, clip=False)["boxes"][0], [[-2.3, 12.4, 30.6, 40.4]], rtol=1e-6)
+
+
 def test_pipeline_OD_injects_resize_on_size_mismatch(caplog):
     """When the preprocessed image does not match the OD model's input size, a corrective resize is
     injected and recorded in history so revert_preprocess still round-trips to the original space."""
@@ -285,7 +295,22 @@ def test_pipeline_OD_injects_resize_per_tile(caplog):
 
     # revert_preprocess must agree with passing the same history into predict()
     plain, _ = pipeline.models["mock-model"].predict(tiles, 0.25)
-    assert len(pipeline.revert_preprocess(plain, ops_list)["boxes"][0]) == len(boxes)
+    reverted = pipeline.revert_preprocess(plain, ops_list)
+    unclipped, _ = pipeline.models["mock-model"].predict(tiles, 0.25, operators=ops_list, clip=False)
+    np.testing.assert_array_equal(np.clip(unclipped["boxes"][0], 0, None), boxes)
+
+    np.testing.assert_array_equal(reverted["classes"][0], out["classes"][0])
+    for key in ("boxes", "scores"):  # CPU and GPU merges may differ in the last float digit
+        np.testing.assert_allclose(reverted[key][0], out[key][0], atol=1e-3, err_msg=key)
+
+    if DEVICE == "cuda":  # masks match exactly only on one device: CPU and GPU merges can differ by a pixel
+        tiles_gpu = [torch.from_numpy(t).cuda() for t in tiles]
+        out_gpu, _ = pipeline.models["mock-model"].predict(tiles_gpu, 0.25, operators=ops_list)
+        plain_gpu, _ = pipeline.models["mock-model"].predict(tiles_gpu, 0.25)
+        reverted_gpu = pipeline.revert_preprocess(plain_gpu, ops_list)
+        for key in ("boxes", "masks"):
+            assert torch.equal(reverted_gpu[key][0], out_gpu[key][0]), key
+        assert all(torch.equal(a, b) for a, b in zip(reverted_gpu["segments"][0], out_gpu["segments"][0]))
 
 
 class PipelineAD(PipelineBase):
@@ -351,6 +376,84 @@ def test_pipeline_AD_tiles_and_stitches_the_score_map(caplog):
     out = restored[0].cpu().numpy() if isinstance(restored[0], torch.Tensor) else np.asarray(restored[0])
     assert out.shape[:2] == image.shape[:2], f"{out.shape} != {image.shape}"
     assert np.isfinite(out).all()
+
+
+@pytest.mark.parametrize(
+    "preprocessing_steps, n_images",
+    [
+        ([{"type": "tile", "configuration": {"height": 300, "width": 300, "y_stride": 300, "x_stride": 300}}], 1),
+        ([{"type": "resize", "configuration": {"height": 320, "width": 320}}], 2),
+        (
+            [
+                {"type": "resize", "configuration": {"height": 224, "width": 448}},
+                {"type": "tile", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}},
+            ],
+            2,
+        ),
+    ],
+)
+@pytest.mark.parametrize("batch_size", [None, 2])
+def test_pipeline_AD_predict_operators_matches_revert_preprocess(preprocessing_steps, n_images, batch_size):
+    model_path = os.path.abspath("tests/assets/models/ad/model_v1/model.pt")
+    image_path = os.path.join(os.path.abspath("tests/assets/images/nvtec-ad"), "000-bad.png")
+    pipeline = PipelineAD(version="3")
+    pipeline.load(_build_ad_model_roles("3", model_path, preprocessing_steps), {})
+    model = pipeline.models["mock-model"]
+
+    image = cv2.cvtColor(cv2.imread(image_path), cv2.COLOR_BGR2RGB)
+    images = [image, image[:-8, :-4]][:n_images]
+    inputs = [images] + ([[torch.from_numpy(im).cuda() for im in images]] if DEVICE == "cuda" else [])
+    for imgs in inputs:
+        processed, ops = pipeline.preprocess("mock-model", imgs)
+        reverted = pipeline.revert_preprocess(model.predict(processed, batch_size=batch_size), ops)
+        direct = model.predict(processed, operators=ops, batch_size=batch_size)
+
+        assert len(direct) == len(reverted) == n_images
+        for d, r, im in zip(direct, reverted, images):
+            assert type(d) is type(r)
+            assert d.shape[:2] == im.shape[:2]
+            if isinstance(d, torch.Tensor):
+                assert d.device == imgs[0].device, "tensor input must be reverted on its own device"
+                assert torch.equal(d, r)
+            else:
+                np.testing.assert_array_equal(d, r)
+
+
+def test_one_image_record_for_a_batch_raises_on_every_path():
+    """OD/AD predict(operators=...) and revert_preprocess all reject a one-value record for a batch of 2."""
+    from lmi_utils.preprocess_utils import steps
+
+    od = PipelineOD(version="3")
+    od.load(_build_od_model_roles("3", os.path.abspath("tests/assets/models/od/ultralytics/yolo11n-seg.pt"), []), {})
+    ad = PipelineAD(version="3")
+    ad.load(_build_ad_model_roles("3", os.path.abspath("tests/assets/models/ad/model_v1/model.pt"), []), {})
+
+    def one_value(size):
+        return [steps.revert_resize(src_sizes=[[2 * size, 2 * size]], dst_sizes=[[size, size]], pads=[[0, 0, 0, 0]])]
+
+    od_imgs = [np.zeros((640, 640, 3), dtype=np.uint8)] * 2
+    ad_imgs = [np.zeros((224, 224, 3), dtype=np.uint8)] * 2
+    od_model, ad_model = od.models["mock-model"], ad.models["mock-model"]
+    with pytest.raises(ValueError, match="resize"):
+        od_model.predict(od_imgs, 0.25, operators=one_value(640))
+    with pytest.raises(ValueError, match="resize"):
+        od.revert_preprocess(od_model.predict(od_imgs, 0.25)[0], one_value(640))
+    with pytest.raises(ValueError, match="resize"):
+        ad_model.predict(ad_imgs, operators=one_value(224))
+    with pytest.raises(ValueError, match="resize"):
+        ad.revert_preprocess(ad_model.predict(ad_imgs), one_value(224))
+
+    two_values = [steps.revert_resize(src_sizes=[[1280, 1280]] * 2, dst_sizes=[[640, 640]] * 2, pads=[[0, 0, 0, 0]] * 2)]
+    assert len(od_model.predict(od_imgs, 0.25, operators=two_values)[0]["boxes"]) == 2
+
+
+def test_AD_predict_without_operators_returns_model_size_maps():
+    pipeline = PipelineAD(version="3")
+    pipeline.load(_build_ad_model_roles("3", os.path.abspath("tests/assets/models/ad/model_v1/model.pt"), []), {})
+    model = pipeline.models["mock-model"]
+    image = np.zeros((300, 260, 3), dtype=np.uint8)
+    assert model.predict(image)[0].shape == (224, 224)
+    assert model.predict(image, operators=[])[0].shape == (224, 224)
 
 
 def _build_ad_model_roles(version, model_path, preprocessing_steps):
@@ -602,7 +705,7 @@ def test_clean_up_interleaved_trt_and_onnx_engines(tmp_path):
         if name.startswith("trt"):
             model = TRTEngine(engine_path, device="cuda")
         else:
-            model = ONNXEngine(onnx_path, device="cuda", dynamic_max_batch=4)
+            model = ONNXEngine(onnx_path, device="cuda")
         pipeline.models[name] = tracked(name, model)
 
     # Exercise every engine so contexts and buffers are live before teardown.

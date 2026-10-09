@@ -332,7 +332,7 @@ class PipelineBase(metaclass=ABCMeta):
         )
         return processed, history + [meta]
 
-    def revert_preprocess(self, data, ops: List[Meta]):
+    def revert_preprocess(self, data, ops: List[Meta], clip: bool = True):
         """Invert preprocessing transforms on either image data (AD) or detection coordinates (OD).
 
         Dispatches based on the type of ``data``:
@@ -355,13 +355,15 @@ class PipelineBase(metaclass=ABCMeta):
             data: Either a list of images (AD) or a batch results dict with keys
                   boxes, scores, classes, masks, segments, points (OD).
             ops (list[Meta]): Preprocessing history returned by preprocess().
+            clip (bool): OD only. Clamp boxes, segments and the xy of points at 0, matching ``predict(..., operators=ops)``.
+                Empty ``ops`` returns ``data`` as is. Pass False on all but the last call when chaining reverts.
 
         Returns:
             list[ImageLike] for the AD path (reconstructed images), or
             dict for the OD path (results with coordinates reverted to original image space).
         """
         if isinstance(data, dict):
-            return self.reconstructor.reconstruct_coordinates(data, ops)
+            return self.reconstructor.reconstruct_coordinates(data, ops, clip=clip)
         elif isinstance(data, list):
             return self.reconstructor.reconstruct_images(data, ops)
         else:

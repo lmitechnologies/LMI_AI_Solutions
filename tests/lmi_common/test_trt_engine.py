@@ -188,3 +188,77 @@ def test_infer_outside_default_stream_raises(dynamic_engine_path):
 
     with torch.cuda.stream(torch.cuda.Stream()), pytest.raises(RuntimeError, match="default CUDA stream"):
         engine.infer(x)
+
+
+def test_unindexed_cuda_device_is_resolved(dynamic_engine_path):
+    _, engine_path = dynamic_engine_path
+    engine = TRTEngine(engine_path, device="cuda")
+    assert engine.device == torch.device(f"cuda:{torch.cuda.current_device()}")
+
+
+def test_batch_outside_profile_raises(tmp_path):
+    """TensorRT rejects a shape outside the profile without raising; infer() must not run on the old shape."""
+    onnx_path = str(tmp_path / "dyn.onnx")
+    engine_path = str(tmp_path / "dyn_min2.engine")
+    _export_onnx(onnx_path, dynamic=True)
+    _build_engine(onnx_path, engine_path, min_b=2, opt_b=4, max_b=8, static=False)
+    engine = TRTEngine(engine_path, device="cuda")
+
+    x = torch.randn(1, 3, 32, 32, dtype=torch.float32, device="cuda")
+    with pytest.raises(ValueError, match="optimization profile"):
+        engine.infer(x)
+
+
+@pytest.mark.skipif(torch.cuda.device_count() < 2, reason="needs 2 GPUs")
+def test_engine_on_non_current_device(dynamic_engine_path):
+    """The engine must load on the requested GPU even when another GPU is current."""
+    onnx_path, engine_path = dynamic_engine_path
+    torch.cuda.set_device(0)
+    engine = TRTEngine(engine_path, device="cuda:1")
+
+    x_cpu = torch.randn(3, 3, 32, 32, dtype=torch.float32)
+    out = engine.infer(x_cpu.to("cuda:1"))[0].cpu().numpy()
+    np.testing.assert_allclose(out, _ort_reference(onnx_path, x_cpu.numpy()), atol=1e-3)
+
+
+def test_non_cuda_device_rejected(dynamic_engine_path):
+    _, engine_path = dynamic_engine_path
+    with pytest.raises(ValueError, match="CUDA device"):
+        TRTEngine(engine_path, device="cpu")
+
+
+class _NonZero(nn.Module):
+    def forward(self, x):
+        return torch.nonzero(x > 0).to(torch.int32)
+
+
+def test_data_dependent_output_shape_rejected(tmp_path):
+    onnx_path = str(tmp_path / "nonzero.onnx")
+    engine_path = str(tmp_path / "nonzero.engine")
+    torch.onnx.export(_NonZero(), torch.randn(1, 3, 32, 32), onnx_path, input_names=["input"], output_names=["output"], opset_version=17)
+    _build_engine(onnx_path, engine_path, min_b=0, opt_b=0, max_b=0, static=True)
+    with pytest.raises(NotImplementedError, match="data-dependent shape"):
+        TRTEngine(engine_path, device="cuda")
+
+
+class _FlattenBatch(nn.Module):
+    def forward(self, x):
+        return x.flatten(0, 1)
+
+
+def test_output_dim0_not_equal_to_batch_rejected(tmp_path):
+    """An output of B*C rows would be cut to B rows by the batch slice in infer()."""
+    onnx_path = str(tmp_path / "flatten.onnx")
+    engine_path = str(tmp_path / "flatten.engine")
+    torch.onnx.export(
+        _FlattenBatch(),
+        torch.randn(1, 3, 32, 32),
+        onnx_path,
+        input_names=["input"],
+        output_names=["output"],
+        dynamic_axes={"input": {0: "batch"}, "output": {0: "rows"}},
+        opset_version=17,
+    )
+    _build_engine(onnx_path, engine_path, min_b=1, opt_b=4, max_b=8, static=False)
+    with pytest.raises(NotImplementedError, match="dim 0 equals the batch"):
+        TRTEngine(engine_path, device="cuda")

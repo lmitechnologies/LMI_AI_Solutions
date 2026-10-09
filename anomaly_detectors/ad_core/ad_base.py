@@ -18,6 +18,9 @@ class ADBase(ABC):
     # Set to a positive integer in subclasses that use a fixed-batch-size model.
     fixed_batch_size: int = None
 
+    # Largest batch a dynamic-batch model accepts; predict() splits larger inputs into chunks of it.
+    max_batch_size: int = None
+
     # AD models stretch off-size inputs to image_size (no aspect preservation). The pipeline reads
     # this to record the matching inverse when preprocessing does not already resize to image_size.
     RESIZE_PRESERVE_ASPECT: bool = False
@@ -121,29 +124,36 @@ class ADBase(ABC):
         return maps, [scores[i] for i in range(scores.shape[0])]
 
     @torch.inference_mode()
-    def predict(self, image: ImageBatch, **kwargs) -> List[ImageLike]:
-        """Run the full inference pipeline: normalize → preprocess → forward → postprocess.
+    def predict(self, image: ImageBatch, *, operators=None, **kwargs) -> List[ImageLike]:
+        """Run the full inference pipeline: normalize → preprocess → forward → postprocess → revert.
 
         Fixed-batch path (self.fixed_batch_size is set): images are chunked before preprocessing,
         the last chunk is zero-padded to match the engine's required batch size, and padding is
         trimmed before collecting results. Use this for TRT engines with a fixed batch dimension.
 
-        Dynamic-batch path (batch_size kwarg): images are chunked before preprocessing so that
+        Dynamic-batch path (batch_size kwarg or self.max_batch_size): images are chunked before preprocessing so that
         preprocess, forward, and postprocess all operate on at most batch_size images at a time,
         keeping peak memory proportional to chunk size rather than total N.
 
         Args:
             image: A single HW or HWC uint8 image, a list of HW/HWC images, or a BHWC batch.
                 2D (HW) images are expanded to 3-channel RGB before preprocessing.
+            operators: Preprocessing history (list of typed ``Meta`` records) to revert the maps with, e.g. the history
+                from ``PipelineBase.preprocess()``. Gives the same maps as ``revert_preprocess(predict(image), operators)``.
+                None or empty: no revert. The maps start at ``image_size``, so a history from a bare ``Preprocessor``
+                whose last size differs from it needs a final ``steps.revert_resize``, as ``PipelineBase.preprocess()`` adds.
             **kwargs:
-                batch_size (int): chunk size for mini-batch inference (default: None = all at once).
-                    Ignored when self.fixed_batch_size is set.
+                batch_size (int): chunk size for mini-batch inference, capped at self.max_batch_size
+                    (default: self.max_batch_size, or all at once when that is unset). Ignored when self.fixed_batch_size is set.
                 return_scores (bool): Return ``(maps, scores)`` when True. Native image-level scores
                     are used when available; otherwise scores are the maximum of each anomaly map.
 
         Returns:
-            Per-image anomaly maps [H,W], or ``(maps, scores)`` when ``return_scores`` is True.
-            Map dtype mirrors input; scores are Python floats for numpy input and scalar tensors
+            Per-image anomaly maps [H,W] at the model input size, or in the source image space when
+            ``operators`` is given (one map per source image with a tile step). dtype mirrors input:
+            numpy arrays if input was numpy, tensors if input was tensors. The revert runs where the maps are:
+            on the CPU for numpy input, on the input's device for tensors. When ``return_scores`` is True,
+            returns ``(maps, scores)``; scores are Python floats for numpy input and scalar tensors
             for tensor input.
         """
         images = [to_3channel(img) for img in normalize_image_batch(image)]
@@ -151,18 +161,27 @@ class ADBase(ABC):
         return_scores = kwargs.get("return_scores", False)
 
         fixed_bs = self.fixed_batch_size
-        batch_size = fixed_bs or kwargs.get("batch_size", None)
+        batch_size = kwargs.get("batch_size", None)
+        if self.max_batch_size:
+            batch_size = min(batch_size or self.max_batch_size, self.max_batch_size)
+        batch_size = fixed_bs or batch_size
 
         if batch_size is None:
-            return self._predict_chunk(images, return_numpy=not use_tensor, return_scores=return_scores)
+            result = self._predict_chunk(images, return_numpy=not use_tensor, return_scores=return_scores)
+        else:
+            result = self._run_batched_predict(
+                images,
+                batch_size,
+                pad_last=fixed_bs is not None,
+                return_numpy=not use_tensor,
+                return_scores=return_scores,
+            )
 
-        return self._run_batched_predict(
-            images,
-            batch_size,
-            pad_last=fixed_bs is not None,
-            return_numpy=not use_tensor,
-            return_scores=return_scores,
-        )
+        maps, scores = result if return_scores else (result, None)
+        if not operators:
+            return (maps, scores) if return_scores else maps
+        maps = pipeline_utils._reconstructor().reconstruct_images(maps, operators)
+        return (maps, scores) if return_scores else maps
 
     @torch.inference_mode()
     def _run_batched_predict(

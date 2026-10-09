@@ -7,7 +7,8 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "uv version ${nextRelease.version} --no-sync"
+        "prepareCmd": "uv version ${nextRelease.version} --no-sync && bash .github/workflows/scripts/rotate_prerelease.sh ${nextRelease.gitTag}",
+        "successCmd": "bash .github/workflows/scripts/publish_release_notes.sh ${nextRelease.gitTag}"
       }
     ],
     "@semantic-release/github",
@@ -17,7 +18,9 @@
         "assets": [
           "CHANGELOG.md",
           "pyproject.toml",
-          "uv.lock"
+          "uv.lock",
+          "PRERELEASE.md",
+          "docs/releases/*.md"
         ],
         "message": "chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
       }

@@ -202,10 +202,7 @@ class DET2GraphSurgeon:
         input_tensor = self.graph.inputs[0]
 
         # Create preprocessing Sub node and connect input tensor to it.
-        sub_const = np.expand_dims(
-            np.asarray([255 * 0.406, 255 * 0.456, 255 * 0.485], dtype=np.float32),
-            axis=(1, 2),
-        )
+        sub_const = np.expand_dims(np.asarray(self.det2_cfg.MODEL.PIXEL_MEAN, dtype=np.float32), axis=(1, 2))
         sub_out = self.graph.op_with_const("Sub", "preprocessor/mean", input_tensor, sub_const)
 
         # Find first Div node and connect to output of Sub node.

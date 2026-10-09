@@ -57,14 +57,17 @@ class FlipOperation(Operation[FlipConfig, FlipMeta]):
 
     @torch.inference_mode()
     def revert_images(self, images: List[torch.Tensor], meta: FlipMeta) -> List[torch.Tensor]:
+        _check_count(images, meta, "image")
         return [_flip(img, lr, ud) for img, lr, ud in zip(images, meta.lr, meta.ud)]
 
     @torch.inference_mode()
     def revert_coords(self, results: List[Dict[str, Any]], meta: FlipMeta) -> List[Dict[str, Any]]:
+        _check_count(results, meta, "results")
         return [_apply_flip(r, lr, ud, s) for r, lr, ud, s in zip(results, meta.lr, meta.ud, meta.sizes)]
 
     @torch.inference_mode()
     def apply_coords(self, results: List[Dict[str, Any]], meta: FlipMeta) -> List[Dict[str, Any]]:
+        _check_count(results, meta, "results")
         return [_apply_flip(r, lr, ud, s) for r, lr, ud, s in zip(results, meta.lr, meta.ud, meta.sizes)]
 
 
@@ -115,3 +118,8 @@ def _apply_flip(result: Dict[str, Any], lr: bool, ud: bool, size: List[int]) -> 
         return out
 
     return apply_coord_transform(result, xy_fn=xy_fn, box_fn=box_fn, mask_fn=mask_fn)
+
+
+def _check_count(items, meta: FlipMeta, name: str) -> None:
+    if not len(items) == len(meta.lr) == len(meta.ud) == len(meta.sizes):
+        raise ValueError(f"flip: {name} count ({len(items)}) != meta count (lr {len(meta.lr)}, ud {len(meta.ud)}, sizes {len(meta.sizes)})")

@@ -65,10 +65,14 @@ class PadOperation(Operation[PadConfig, PadMeta]):
 
     @torch.inference_mode()
     def revert_coords(self, results: List[Dict[str, Any]], meta: PadMeta) -> List[Dict[str, Any]]:
+        if len(results) != len(meta.pads):
+            raise ValueError(f"pad: results count ({len(results)}) != meta count ({len(meta.pads)})")
         return [_apply_pad(r, p, forward=False) for r, p in zip(results, meta.pads)]
 
     @torch.inference_mode()
     def apply_coords(self, results: List[Dict[str, Any]], meta: PadMeta) -> List[Dict[str, Any]]:
+        if len(results) != len(meta.pads):
+            raise ValueError(f"pad: results count ({len(results)}) != meta count ({len(meta.pads)})")
         return [_apply_pad(r, p, forward=True) for r, p in zip(results, meta.pads)]
 
 

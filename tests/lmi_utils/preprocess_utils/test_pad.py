@@ -189,3 +189,12 @@ def test_pad_masks_with_negative_pad_crops_and_zero_pads_on_revert():
     assert out_masks[0, 2:12].eq(1).all()
     assert out_masks[0, :2].eq(0).all()
     assert out_masks[0, 12:].eq(0).all()
+
+
+def test_pad_coords_count_mismatch_raises():
+    rec = Reconstructor()
+    meta = steps.revert_pad(pads=[[1, 2, 3, 4]])
+    with pytest.raises(ValueError, match="pad: results count"):
+        rec.reconstruct_coordinates(_empty_results(n=4), [meta])
+    with pytest.raises(ValueError, match="pad: results count"):
+        rec.apply_coordinates(_empty_results(n=4), [meta])

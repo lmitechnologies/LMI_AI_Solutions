@@ -35,7 +35,9 @@ def add_args(parser: argparse.ArgumentParser, **defaults) -> None:
     """Add the inference flags. ``defaults`` may give weights, input, output and class_map paths."""
     add_infer_args(parser, confidence=0.5, weights=defaults.get("weights"), input=defaults.get("input"), output=defaults.get("output"))
     class_map = defaults.get("class_map")
-    parser.add_argument("-m", "--class_map", default=class_map, required=class_map is None, help="the path to the class map json file")
+    parser.add_argument(
+        "-m", "--class_map", default=class_map, help="the path to the class map json file; an engine falls back to its embedded class names"
+    )
 
 
 def inference_run(args):
@@ -49,8 +51,14 @@ def inference_run(args):
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
-    with open(class_map_path, "r") as f:
-        class_map = json.load(f)
+    class_map = None
+    if class_map_path and os.path.isfile(class_map_path):
+        with open(class_map_path, "r") as f:
+            class_map = json.load(f)
+    elif model_path.endswith(".engine"):
+        logger.info(f"No class map file ({class_map_path}); using the class names embedded in the engine")
+    else:
+        raise FileNotFoundError(f"Class map not found: {class_map_path}")
 
     from object_detectors.detectron2_lmi.model import Detectron2Model  # imports torch and detectron2: keep cli.py startup fast
 

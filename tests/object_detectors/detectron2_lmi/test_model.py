@@ -170,6 +170,35 @@ def test_torchscript_conversion_matches_original_model(og_cpu_instances, imgs_co
         assert np.array_equal(instances.pred_masks.numpy(), preds["masks"][0])
 
 
+def test_pt_reads_the_color_order_from_the_scripted_model(model):
+    assert model.input_format == "BGR"
+
+
+@pytest.mark.arch_sensitive
+def test_rgb_trained_model_gets_rgb_input(og_cpu_model, imgs_coco, tmp_path):
+    """A model with INPUT.FORMAT RGB is fed the RGB image as is, not flipped to BGR."""
+    from object_detectors.detectron2_lmi.convert import convert
+
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(open(CONFIG_PATH).read().replace("DEVICE: cuda", "DEVICE: cpu").replace("FORMAT: BGR", "FORMAT: RGB"))
+    convert({"config_file": str(cfg_path), "weights": OG_WEIGHTS_PATH, "output": str(tmp_path), "pt": True})
+    converted = Detectron2Model(str(tmp_path / "model.pt"), class_map=class_map, device="cpu")
+    assert converted.input_format == "RGB"
+
+    rgb = cv2.cvtColor(imgs_coco[0], cv2.COLOR_BGR2RGB)
+    with torch.no_grad():
+        instances = og_cpu_model.inference([{"image": torch.as_tensor(rgb.transpose(2, 0, 1).astype("float32"))}])[0]["instances"]
+    preds, _ = converted.predict(rgb, configs=0)
+    assert len(instances) > 0
+    assert np.array_equal(instances.scores.numpy(), preds["scores"][0])
+    assert np.array_equal(instances.pred_boxes.tensor.numpy(), preds["boxes"][0])
+
+
+def test_unsupported_color_order_is_rejected(model):
+    with pytest.raises(ValueError, match="INPUT.FORMAT"):
+        Detectron2PT._set_input_format(model, "YUV-BT.601")
+
+
 @pytest.mark.arch_sensitive
 def test_compare_with_original_model_nonsquare(og_cpu_model, model_cpu, imgs_coco):
     off_sizes = [(512, 640), (576, 704), (704, 512)]  # (h, w), non-square
