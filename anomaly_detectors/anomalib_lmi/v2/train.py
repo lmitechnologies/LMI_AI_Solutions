@@ -19,6 +19,8 @@ from anomalib.pre_processing.utils.transform import disable_antialiasing
 # import before anomalib to avoid partial-init circular import
 from torchvision.transforms import v2
 
+from lmi_common.onnx_shapes import pin_onnx_output_dims
+
 from .tiling import TilerConfigCallback
 
 logger = logging.getLogger(__name__)
@@ -153,38 +155,12 @@ def build_data(data_config: Dict[str, Any]) -> Folder:
 
 
 def get_image_size(model) -> Optional[tuple]:
-    """Extracts image size from model's pre-processor if available."""
-    for t in model.pre_processor.transform.transforms:
-        if type(t).__name__ == "Resize":
-            return t.size
+    """The (h, w) of the pre_processor's Resize, or None when it has no fixed-size Resize."""
+    transform = getattr(getattr(model, "pre_processor", None), "transform", None)
+    for t in getattr(transform, "transforms", [transform]):
+        if type(t).__name__ == "Resize" and isinstance(t.size, (list, tuple)) and len(t.size) == 2:
+            return tuple(t.size)
     return None
-
-
-def fix_onnx_output_shapes(onnx_path: Path) -> None:
-    """Record static non-batch output dims that torch's legacy exporter leaves symbolic (e.g. ``Clippred_score_dim_1``)."""
-    try:
-        import onnx
-    except ImportError:
-        logger.warning(f"onnx is not installed; output shapes in {onnx_path} stay symbolic and ONNXEngine will reject them.")
-        return
-
-    model = onnx.load(str(onnx_path), load_external_data=False)
-    probe = onnx.ModelProto()
-    probe.CopyFrom(model)
-    # inference keeps existing output dims, so clear them to get the inferred ones
-    for out in probe.graph.output:
-        out.type.tensor_type.ClearField("shape")
-    inferred = onnx.shape_inference.infer_shapes(probe, data_prop=True)
-
-    for out, inf in zip(model.graph.output, inferred.graph.output):
-        dims, inf_dims = out.type.tensor_type.shape.dim, inf.type.tensor_type.shape.dim
-        if len(dims) != len(inf_dims):
-            continue
-        # dim 0 keeps its exported name, e.g. batch_size
-        for dim, inf_dim in zip(dims[1:], inf_dims[1:]):
-            if inf_dim.HasField("dim_value"):
-                dim.dim_value = inf_dim.dim_value
-    onnx.save(model, str(onnx_path))
 
 
 def build_tiler(tile_size, stride, tiler_cls_name=None):
@@ -247,6 +223,12 @@ def main():
         tiler_cls_name=tiler_cls_name,
     )
     model = build_model(cfg["model"])
+    image_size = get_image_size(model)
+    if image_size is None:
+        raise ValueError(
+            "The pre_processor needs a Resize to a fixed [h, w] for the ONNX/TensorRT export; "
+            "set model.params.image_size or add a Resize to pre_processor."
+        )
 
     # --- Data Module Setup ---
     data_cfg = cfg["data"]
@@ -307,8 +289,8 @@ def main():
 
     def export_onnx(external_data=False):
         onnx_kwargs = {"external_data": external_data}
-        onnx_path = engine.export(model=model, export_type=ExportType.ONNX, input_size=get_image_size(model), onnx_kwargs=onnx_kwargs)
-        fix_onnx_output_shapes(onnx_path)
+        onnx_path = engine.export(model=model, export_type=ExportType.ONNX, input_size=image_size, onnx_kwargs=onnx_kwargs)
+        pin_onnx_output_dims(onnx_path)
 
     try:
         export_onnx()

@@ -37,7 +37,18 @@ def run_cli(model_cls):
     convert_ap.add_argument("-c", "--convert_type", default="trt", choices=["trt", "onnx"], help="convert type: trt or onnx")
     convert_ap.add_argument("--fp32", action="store_true", help="disable fp16 and use fp32 for TRT conversion")
     convert_ap.add_argument("-is", "--image_size", type=int, nargs=2, default=None)
+    convert_ap.add_argument("--dynamic_batch", action="store_true", help="onnx only: export a dynamic batch dimension")
+    convert_ap.add_argument(
+        "--max_batch", type=int, default=1, help="trt only: largest batch the engine takes; above 1 builds a dynamic-batch engine"
+    )
     args = vars(ap.parse_args())
+    if args["action"] == "convert":
+        if args["dynamic_batch"] and args["convert_type"] != "onnx":
+            ap.error("--dynamic_batch applies to -c onnx; for -c trt, use --max_batch")
+        if args["max_batch"] != 1 and args["convert_type"] != "trt":
+            ap.error("--max_batch applies to -c trt; for -c onnx, use --dynamic_batch")
+        if args["max_batch"] < 1:
+            ap.error(f"--max_batch must be at least 1, got {args['max_batch']}")
 
     action = args["action"]
     model_path = args["model_path"]
@@ -50,9 +61,9 @@ def run_cli(model_cls):
         export_dir = args["export_dir"]
         os.makedirs(export_dir, exist_ok=True)
         if args["convert_type"] == "onnx":
-            ad.export_onnx(os.path.join(export_dir, "model.onnx"))
+            ad.export_onnx(os.path.join(export_dir, "model.onnx"), dynamic_batch=args["dynamic_batch"])
         else:
-            ad.export_trt(export_dir, fp16=not args["fp32"])
+            ad.export_trt(export_dir, fp16=not args["fp32"], max_batch=args["max_batch"])
     elif action == "test":
         os.makedirs(args["annot_dir"], exist_ok=True)
         ad.test(

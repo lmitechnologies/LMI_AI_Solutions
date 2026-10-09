@@ -18,6 +18,9 @@ class ADBase(ABC):
     # Set to a positive integer in subclasses that use a fixed-batch-size model.
     fixed_batch_size: int = None
 
+    # Largest batch a dynamic-batch model accepts; predict() splits larger inputs into chunks of it.
+    max_batch_size: int = None
+
     # AD models stretch off-size inputs to image_size (no aspect preservation). The pipeline reads
     # this to record the matching inverse when preprocessing does not already resize to image_size.
     RESIZE_PRESERVE_ASPECT: bool = False
@@ -86,7 +89,7 @@ class ADBase(ABC):
         the last chunk is zero-padded to match the engine's required batch size, and padding is
         trimmed before collecting results. Use this for TRT engines with a fixed batch dimension.
 
-        Dynamic-batch path (batch_size kwarg): images are chunked before preprocessing so that
+        Dynamic-batch path (batch_size kwarg or self.max_batch_size): images are chunked before preprocessing so that
         preprocess, forward, and postprocess all operate on at most batch_size images at a time,
         keeping peak memory proportional to chunk size rather than total N.
 
@@ -98,8 +101,8 @@ class ADBase(ABC):
                 None or empty: no revert. The maps start at ``image_size``, so a history from a bare ``Preprocessor``
                 whose last size differs from it needs a final ``steps.revert_resize``, as ``PipelineBase.preprocess()`` adds.
             **kwargs:
-                batch_size (int): chunk size for mini-batch inference (default: None = all at once).
-                    Ignored when self.fixed_batch_size is set.
+                batch_size (int): chunk size for mini-batch inference, capped at self.max_batch_size
+                    (default: self.max_batch_size, or all at once when that is unset). Ignored when self.fixed_batch_size is set.
 
         Returns:
             List of per-image anomaly maps [H,W] at the model input size, or in the source image space when
@@ -111,7 +114,10 @@ class ADBase(ABC):
         use_tensor = isinstance(images[0], torch.Tensor) if images else False
 
         fixed_bs = self.fixed_batch_size
-        batch_size = fixed_bs or kwargs.get("batch_size", None)
+        batch_size = kwargs.get("batch_size", None)
+        if self.max_batch_size:
+            batch_size = min(batch_size or self.max_batch_size, self.max_batch_size)
+        batch_size = fixed_bs or batch_size
 
         if batch_size is None:
             input_batch = self.preprocess(images)

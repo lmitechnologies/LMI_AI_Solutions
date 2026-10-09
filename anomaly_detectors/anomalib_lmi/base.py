@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import shutil
+import warnings
 from typing import Any, Iterable, List
 
 import numpy as np
@@ -10,6 +11,7 @@ from torchvision.transforms import v2
 
 from anomaly_detectors.ad_core.ad_base import ADBase
 from lmi_common.onnx_engine import ONNXEngine
+from lmi_common.onnx_shapes import pin_onnx_output_dims
 from lmi_common.trt_convert import onnx_to_trt
 from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
@@ -118,10 +120,15 @@ class Anomalib_Base(ADBase):
         self.logger.info(f"Warming up model with input shape: {zeros.shape}")
         self.predict([zeros])
 
-    def export_onnx(self, export_path, opset_version=14):
-        """Export the loaded PT model to ONNX. Requires self.pt_model."""
+    def export_onnx(self, export_path, opset_version=14, dynamic_batch=False):
+        """Export the loaded PT model to ONNX. Requires self.pt_model.
+
+        dynamic_batch exports the batch dimension as dynamic instead of fixed at 1.
+        """
         if not hasattr(self, "pt_model"):
             raise TypeError(f"{type(self).__name__} has no PT model loaded; load a .pt file first")
+        if dynamic_batch:
+            self._check_dynamic_batch_source()
 
         # Write sidecar metadata.json next to the .onnx output, if available.
         if hasattr(self, "pt_metadata"):
@@ -139,30 +146,39 @@ class Anomalib_Base(ADBase):
                 opset_version=opset_version,
                 input_names=["input"],
                 output_names=["output"],
+                dynamic_axes={"input": {0: "batch_size"}} if dynamic_batch else None,
                 # folding a tiled model on CUDA fails on mixed CUDA and CPU constants
                 do_constant_folding=False,
             )
+        if dynamic_batch:
+            pin_onnx_output_dims(export_path)
         self.logger.info(f"ONNX model saved at {export_path}")
 
     def export_trt(self, export_path, fp16=True, workspace_gb=4, min_batch=1, opt_batch=None, max_batch=1):
         """Export to a TRT engine in `export_path`.
 
-        PT-loaded instance: chains PT → ONNX → TRT.
-        ONNX-loaded instance: reuses the source .onnx file.
+        PT-loaded instance: chains PT → ONNX → TRT, with a dynamic batch when max_batch > 1.
+        ONNX-loaded instance: reuses the source .onnx file, which needs a dynamic batch when max_batch > 1.
         Engine-loaded instance: nothing to convert.
         """
         if os.path.isfile(export_path):
             raise Exception("Export path should be a directory.")
+        from_pt = hasattr(self, "pt_model")
+        if from_pt:
+            if max_batch > 1:
+                self._check_dynamic_batch_source()
+        elif not self.model_path.endswith(".onnx"):
+            raise TypeError(f"{type(self).__name__} cannot export to TRT; load a .pt or .onnx model first")
+        elif max_batch > 1 and not self.engine.is_dynamic:
+            raise ValueError(f"max_batch={max_batch} needs a dynamic-batch ONNX, but {self.model_path} has a fixed batch")
+
         os.makedirs(export_path, exist_ok=True)
         trt_path = os.path.join(export_path, "model.engine")
-
-        if hasattr(self, "pt_model"):
+        if from_pt:
             onnx_path = os.path.join(export_path, "model.onnx")
-            self.export_onnx(onnx_path)
-        elif self.model_path.endswith(".onnx"):
-            onnx_path = self.model_path
+            self.export_onnx(onnx_path, dynamic_batch=max_batch > 1)
         else:
-            raise TypeError(f"{type(self).__name__} cannot export to TRT; load a .pt or .onnx model first")
+            onnx_path = self.model_path
 
         onnx_to_trt(
             onnx_path,
@@ -175,8 +191,13 @@ class Anomalib_Base(ADBase):
         )
 
         sidecar = os.path.join(os.path.dirname(onnx_path), "metadata.json")
-        if os.path.isfile(sidecar) and os.path.dirname(sidecar) != export_path:
-            shutil.copyfile(sidecar, os.path.join(export_path, "metadata.json"))
+        target = os.path.join(export_path, "metadata.json")
+        if os.path.isfile(sidecar) and not (os.path.isfile(target) and os.path.samefile(sidecar, target)):
+            shutil.copyfile(sidecar, target)
+
+    def _check_dynamic_batch_source(self) -> None:
+        if isinstance(self.pt_model, torch.jit.ScriptModule):
+            raise ValueError("A TorchScript model is traced at a fixed batch; export a dynamic batch from the .pt checkpoint")
 
     def test(self, *args, **kwargs):
         """Run evaluation on a directory of images. See `anomalib_lmi.evaluate.evaluate` for arguments."""
@@ -203,7 +224,9 @@ class _AnomalibEngine(Anomalib_Base):
         self.image_size = list(engine.input_shape[-2:])
         self.batch_size = engine.max_batch
         self.fp16 = engine.fp16
-        if not engine.is_dynamic:
+        if engine.is_dynamic:
+            self.max_batch_size = engine.max_batch
+        else:
             self.fixed_batch_size = engine.max_batch
 
         self._anomaly_output_idx = self._pick_anomaly_output_idx(engine._output_names, engine._output_buffers)
@@ -234,15 +257,13 @@ class AnomalibONNX(_AnomalibEngine):
 class AnomalibPT(Anomalib_Base):
     """PyTorch / TorchScript backend.
 
-    Loads either a TorchScript artifact or a full Anomalib checkpoint with metadata.
+    Loads either a full Anomalib checkpoint with metadata or a TorchScript artifact (deprecated).
     """
 
     def __init__(self, model_path: str, **kwargs: Any) -> None:
         self._init_common(model_path, **kwargs)
         try:
-            # Try loading as TorchScript model
             self.pt_model = torch.jit.load(model_path, map_location=self.device)
-            self.logger.info(f"Loaded TorchScript model with shape: {self.image_size}")
         except Exception:
             # Fall back to loading as checkpoint
             checkpoint = torch.load(model_path, map_location=self.device, weights_only=False)
@@ -260,6 +281,13 @@ class AnomalibPT(Anomalib_Base):
                     break
             if model_shape is not None and model_shape != list(self.image_size):
                 raise ValueError(f"Model input shape {model_shape} does not match the provided image_size {self.image_size}") from None
+        else:
+            warnings.warn(
+                "TorchScript AD models are deprecated; use the .pt checkpoint or its ONNX/TensorRT export.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            self.logger.info(f"Loaded TorchScript model with shape: {self.image_size}")
 
         self.pt_model.eval()
 

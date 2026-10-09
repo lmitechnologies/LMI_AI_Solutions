@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tempfile
 from functools import cache
+from types import SimpleNamespace
 from typing import List
 
 import cv2
@@ -17,11 +18,12 @@ import yaml
 from anomalib import __version__ as anomalib_version
 from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
+from torchvision.transforms import v2
 
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v2_torchscript
 from anomaly_detectors.anomalib_lmi.v2.model import AnomalyModel as AnomalyModelV2
-from anomaly_detectors.anomalib_lmi.v2.train import build_data, build_model, build_preprocessor
+from anomaly_detectors.anomalib_lmi.v2.train import build_data, build_model, build_preprocessor, get_image_size
 from tests.anomaly_detectors.anomalib_lmi.predict_checks import assert_predict_operators_match_reconstructor
 
 os.environ["TRUST_REMOTE_CODE"] = "1"
@@ -160,13 +162,23 @@ def test_convert_to_torchscript(device, tmp_path):
     if device == "cuda" and not USE_GPU:
         pytest.skip("GPU not available")
     outpath = str(tmp_path / "trace.pt")
-    convert_v2_torchscript(MODEL_PATH, outpath, device=device)
+    with pytest.warns(FutureWarning, match="deprecated"):
+        convert_v2_torchscript(MODEL_PATH, outpath, device=device)
 
     pt_model = AnomalyModelV2(MODEL_PATH, device=device)
     ts_model = AnomalyModelV2(outpath, device=device)
     for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
         rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
         np.testing.assert_allclose(ts_model.predict(rgb)[0], pt_model.predict(rgb)[0], atol=1e-3, err_msg=os.path.basename(p))
+
+
+def test_convert_to_torchscript_reads_a_bare_resize(tmp_path):
+    ckpt = torch.load(MODEL_PATH, map_location="cpu", weights_only=False)
+    ckpt["model"].pre_processor.transform = v2.Resize([224, 224])
+    pt_path = str(tmp_path / "model.pt")
+    torch.save(ckpt, pt_path)
+    with pytest.warns(FutureWarning, match="deprecated"):
+        convert_v2_torchscript(pt_path, str(tmp_path / "model.ts"), device="cpu")
 
 
 def test_cli_onnx_export_matches_pt(cpu_models, tmp_path):
@@ -196,6 +208,26 @@ def test_cli_trt_export_matches_pt(ad_models, tmp_path):
         rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
         expected = ad_models[0].predict(rgb)[0]
         np.testing.assert_allclose(engine.predict(rgb)[0], expected, atol=2e-3, err_msg=os.path.basename(p))
+
+
+@pytest.mark.parametrize("model_path", [MODEL_PATH, ONNX_PATH], ids=["pt", "training onnx"])
+def test_cli_max_batch_trt_export_matches_pt(ad_models, model_path, tmp_path):
+    """A --max_batch 4 engine, from the .pt or the training ONNX, runs larger inputs in chunks of at most 4."""
+    if not USE_GPU:
+        pytest.skip("GPU not available")
+    pytest.importorskip("tensorrt")
+    cmd = [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v2.model", "convert", "-i", model_path, "-o", str(tmp_path)]
+    result = subprocess.run([*cmd, "--fp32", "--max_batch", "4"], capture_output=True, text=True)
+    assert result.returncode == 0, f"convert failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+
+    engine = AnomalyModelV2(str(tmp_path / "model.engine"), device="cuda")
+    assert (engine.max_batch_size, engine.fixed_batch_size) == (4, None)
+    images = [cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB) for p in sorted(glob.glob(os.path.join(DATA_PATH, "*.png")))]
+    assert len(images) > 4
+    expected = ad_models[0].predict(images)
+    for batch_size in (None, 3):
+        for actual, exp in zip(engine.predict(images, batch_size=batch_size), expected):
+            np.testing.assert_allclose(actual, exp, atol=2e-3)
 
 
 def test_predict_input_variants():
@@ -497,6 +529,26 @@ def test_tiled_model_exports_to_onnx_from_cuda(tiled_padim_pt, tmp_path):
 
 
 @_needs_gpu
+@pytest.mark.parametrize("model_fixture", ["tiled_padim_pt", "tiled_patchcore_pt"])
+def test_tiled_model_exports_a_dynamic_batch_onnx(model_fixture, request, tmp_path):
+    """A batch of tiled images through one dynamic-batch ONNX run gives that ONNX's single-image maps.
+
+    Tiled Patchcore's ONNX differs from its .pt by ~2% of the peak at any batch, so the .pt check is loose.
+    """
+    pt_model = AnomalyModelV2(request.getfixturevalue(model_fixture), device="cuda", image_size=[448, 448])
+    onnx_path = str(tmp_path / "model.onnx")
+    pt_model.export_onnx(onnx_path, dynamic_batch=True)
+
+    onnx_model = AnomalyModelV2(onnx_path, device="cuda")
+    assert onnx_model.engine.is_dynamic
+    images = [cv2.imread(p) for p in sorted(glob.glob(os.path.join(DATA_PATH, "*.png")))[:3]]
+    for image, actual, expected in zip(images, onnx_model.predict(images), pt_model.predict(images)):
+        peak = float(np.abs(expected).max())
+        np.testing.assert_allclose(actual, onnx_model.predict([image])[0], atol=2e-3 * peak)
+        np.testing.assert_allclose(actual, expected, atol=3e-2 * peak)
+
+
+@_needs_gpu
 def test_tiled_model_traces_to_torchscript_on_cpu(tiled_padim_pt, tmp_path):
     # the trace check runs the model twice, so both runs must build the same graph
     ts_path = str(tmp_path / "model.ts")
@@ -637,6 +689,39 @@ def test_build_model_trains_with_the_resize_exported_models_use(params):
 def test_invalid_precision_raises():
     with pytest.raises(ValueError, match="Invalid precision"):
         build_model({"class_name": "Patchcore", "params": {"backbone": "resnet18", "layers": ["layer1"], "precision": "float8"}})
+
+
+def test_cli_fails_before_training_without_a_fixed_size_resize(tmp_path):
+    """Without one, the ONNX would take any height and width, which ONNXEngine and onnx_to_trt reject."""
+    config_path = _write_patchcore_config(tmp_path)
+    config = yaml.safe_load(config_path.read_text())
+    config["model"]["params"].pop("image_size")
+    config["model"]["params"]["pre_processor"] = [
+        {"class_name": "Normalize", "params": {"mean": [0.485, 0.456, 0.406], "std": [0.229, 0.224, 0.225]}}
+    ]
+    config_path.write_text(yaml.safe_dump(config))
+
+    cmd = [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v2.train", "--config", str(config_path), "--skip-mem-estimate"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "needs a Resize to a fixed [h, w]" in result.stderr
+    assert not (tmp_path / "out").exists()
+
+
+@pytest.mark.parametrize(
+    "transform,expected",
+    [
+        (v2.Compose([v2.Resize([64, 96]), v2.Normalize([0.5] * 3, [0.5] * 3)]), (64, 96)),
+        (v2.Resize([64, 96]), (64, 96)),
+        (v2.Compose([v2.Normalize([0.5] * 3, [0.5] * 3)]), None),
+        (v2.Compose([v2.Resize(64)]), None),
+        (None, None),
+    ],
+    ids=["compose", "bare resize", "no resize", "shorter-side resize", "no transform"],
+)
+def test_get_image_size(transform, expected):
+    model = SimpleNamespace(pre_processor=SimpleNamespace(transform=transform))
+    assert get_image_size(model) == expected
 
 
 def test_patchcore_cli_trains_with_precision(tmp_path):

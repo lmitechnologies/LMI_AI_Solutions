@@ -16,6 +16,7 @@ from anomalib.data.utils import read_image
 from anomalib.deploy.inferencers.torch_inferencer import TorchInferencer
 
 from anomaly_detectors.ad_core.anomaly_detector import AnomalyDetector
+from anomaly_detectors.anomalib_lmi import base as ad_base
 from anomaly_detectors.anomalib_lmi.base import AnomalibONNX
 from anomaly_detectors.anomalib_lmi.convert_to_torchscript import convert_v1_torchscript
 from anomaly_detectors.anomalib_lmi.v1.model import AnomalyModel as AnomalyModelV1
@@ -229,7 +230,8 @@ def test_convert_to_torchscript(device, tmp_path):
     if device == "cuda" and not USE_GPU:
         pytest.skip("GPU not available")
     outpath = str(tmp_path / "trace.pt")
-    convert_v1_torchscript(MODEL_PATH, outpath, device=device)
+    with pytest.warns(FutureWarning, match="deprecated"):
+        convert_v1_torchscript(MODEL_PATH, outpath, device=device)
 
     pt_model = AnomalyModelV1(MODEL_PATH, device=device)
     ts_model = AnomalyModelV1(outpath, device=device)
@@ -278,6 +280,82 @@ def test_cli_trt_export_matches_pt(ad_model, tmp_path):
         rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
         expected = ad_model.predict(rgb)[0]
         np.testing.assert_allclose(engine.predict(rgb)[0], expected, atol=0.02 * np.abs(expected).max(), err_msg=os.path.basename(p))
+
+
+def _convert_cli(*args, **kwargs):
+    cmd = [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v1.model", "convert", "-i", MODEL_PATH, *args]
+    return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+
+
+def _test_images():
+    return [cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB) for p in sorted(glob.glob(os.path.join(DATA_PATH, "*.png")))]
+
+
+def test_cli_dynamic_batch_onnx_export_matches_pt(cpu_models, tmp_path):
+    """A --dynamic_batch ONNX runs all images in one batch and gives the .pt model's anomaly maps."""
+    result = _convert_cli("-o", str(tmp_path), "-c", "onnx", "--dynamic_batch", env=os.environ | {"CUDA_VISIBLE_DEVICES": ""})
+    assert result.returncode == 0, f"convert failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+
+    onnx_model = AnomalyModelV1(str(tmp_path / "model.onnx"), device="cpu")
+    assert onnx_model.engine.is_dynamic
+    images = _test_images()
+    for actual, expected in zip(onnx_model.predict(images), cpu_models[0].predict(images)):
+        np.testing.assert_allclose(actual, expected, atol=1e-3)
+
+
+def test_cli_max_batch_trt_export_matches_pt(ad_model, tmp_path):
+    """A --max_batch 4 engine runs larger inputs in chunks of at most 4 and gives the .pt model's anomaly maps."""
+    if not USE_GPU:
+        pytest.skip("GPU not available")
+    pytest.importorskip("tensorrt")
+    result = _convert_cli("-o", str(tmp_path), "--fp32", "--max_batch", "4")
+    assert result.returncode == 0, f"convert failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
+
+    engine = AnomalyModelV1(str(tmp_path / "model.engine"), device="cuda")
+    assert (engine.max_batch_size, engine.fixed_batch_size) == (4, None)
+    images = _test_images()
+    assert len(images) > 4
+    expected = ad_model.predict(images)
+    for batch_size in (None, 3):
+        for actual, exp in zip(engine.predict(images, batch_size=batch_size), expected):
+            np.testing.assert_allclose(actual, exp, atol=0.02 * np.abs(exp).max())
+
+
+@pytest.mark.parametrize(
+    "flags", [["-c", "onnx", "--max_batch", "2"], ["-c", "trt", "--dynamic_batch"], ["--max_batch", "0"]], ids=["onnx", "trt", "zero"]
+)
+def test_cli_rejects_batch_flags_that_do_not_apply(flags, tmp_path):
+    result = _convert_cli("-o", str(tmp_path), *flags)
+    assert result.returncode == 2, result.stderr[-3000:]
+    assert "--max_batch" in result.stderr
+
+
+def test_export_trt_rejects_max_batch_on_a_fixed_batch_onnx(tmp_path):
+    with pytest.raises(ValueError, match="dynamic-batch ONNX"):
+        AnomalyModelV1(ONNX_PATH, device="cpu").export_trt(str(tmp_path / "out"), max_batch=2)
+    assert not (tmp_path / "out").exists()
+
+
+def test_torchscript_model_cannot_export_a_dynamic_batch(tmp_path):
+    with pytest.warns(FutureWarning, match="deprecated"):
+        ts_model = AnomalyModelV1(TS_PATH, device="cpu")
+    with pytest.raises(ValueError, match="traced at a fixed batch"):
+        ts_model.export_onnx(str(tmp_path / "model.onnx"), dynamic_batch=True)
+    with pytest.raises(ValueError, match="traced at a fixed batch"):
+        ts_model.export_trt(str(tmp_path / "out"), max_batch=2)
+    assert not list(tmp_path.iterdir())
+
+
+def test_export_trt_into_a_slash_ended_dir(monkeypatch, tmp_path):
+    """The metadata.json written beside the ONNX is the export dir's own, so it is not copied onto itself."""
+    monkeypatch.setattr(ad_base, "onnx_to_trt", lambda *args, **kwargs: None)
+    AnomalyModelV1(MODEL_PATH, device="cpu").export_trt(str(tmp_path) + "/")
+    assert (tmp_path / "metadata.json").is_file()
+
+
+def test_torchscript_model_is_deprecated():
+    with pytest.warns(FutureWarning, match="deprecated"):
+        AnomalyModelV1(TS_PATH, device="cpu")
 
 
 def test_predict_input_variants(api_model):
