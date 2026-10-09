@@ -1,13 +1,15 @@
 import glob
+import json
 import os
 
 import detectron2.data.transforms as T
 import pytest
 import yaml
 from detectron2.config import get_cfg
-from detectron2.data import DatasetCatalog
+from detectron2.data import DatasetCatalog, MetadataCatalog
 
 from object_detectors.detectron2_lmi import trainer
+from object_detectors.detectron2_lmi.convert import export_metadata
 from object_detectors.detectron2_lmi.trainer import build_config, train_mapper_args
 
 CONFIG_DIR = "object_detectors/detectron2_lmi/configs"
@@ -65,20 +67,30 @@ def test_unknown_augmentation_is_rejected(tmp_path):
         build_config(_write(tmp_path, {"AUGMENTATIONS": {"BLUR": {"SIGMA": 1}}}))
 
 
-def test_training_run_writes_what_convert_reads(tmp_path, monkeypatch):
+def _run_training(tmp_path, monkeypatch, num_classes):
+    """training_run on a two-class dataset with the trainer stubbed out; returns the configs it trained with."""
     for name in ("my_train", "my_test"):
         os.makedirs(tmp_path / "data" / name / "images")
-        (tmp_path / "data" / name / "annotations.json").write_text('{"images": [], "annotations": [], "categories": []}')
-    os.makedirs(trainer.next_output_dir(str(tmp_path / "out")))
+        categories = [{"id": 7, "name": "dent"}, {"id": 3, "name": "scratch"}]
+        (tmp_path / "data" / name / "annotations.json").write_text(json.dumps({"images": [], "annotations": [], "categories": categories}))
     trained = []
     monkeypatch.setattr(trainer.shutil, "which", lambda _: None)
-    monkeypatch.setattr(trainer, "Trainer", lambda cfg, extras: trained.append(cfg) or _NoTrain())
-    config = _write(tmp_path, {"DATASETS": {"TRAIN": ["my_train"], "TEST": ["my_test"]}})
+    monkeypatch.setattr(trainer, "Trainer", lambda cfg, extras: trained.append(cfg) or _NoTrain(cfg))
+    config = _write(
+        tmp_path, {"DATASETS": {"TRAIN": ["my_train"], "TEST": ["my_test"]}, "MODEL": {"ROI_HEADS": {"NUM_CLASSES": num_classes}}}
+    )
     try:
         trainer.training_run({"config_file": config, "output": str(tmp_path / "out"), "dataset_dir": str(tmp_path / "data")})
     finally:
         for name in ("my_train", "my_test"):
             DatasetCatalog.remove(name)
+            MetadataCatalog.remove(name)
+    return trained
+
+
+def test_training_run_writes_what_convert_reads(tmp_path, monkeypatch):
+    os.makedirs(trainer.next_output_dir(str(tmp_path / "out")))
+    trained = _run_training(tmp_path, monkeypatch, num_classes=2)
 
     out_dir = trained[0].OUTPUT_DIR
     assert out_dir.endswith("-v2"), "an existing run folder must not be reused"
@@ -86,9 +98,20 @@ def test_training_run_writes_what_convert_reads(tmp_path, monkeypatch):
     saved = get_cfg()
     saved.merge_from_file(os.path.join(out_dir, "config.yaml"))
     assert saved.MODEL.WEIGHTS == os.path.join(out_dir, "model_final.pth")
+    # detectron2 orders classes by category id
+    assert export_metadata(saved, None, os.path.join(out_dir, "config.yaml"))["class_names"] == ["scratch", "dent"]
+
+
+def test_training_stops_when_num_classes_does_not_match_the_dataset(tmp_path, monkeypatch):
+    with pytest.raises(ValueError, match="NUM_CLASSES is 3, but the training set has 2 classes"):
+        _run_training(tmp_path, monkeypatch, num_classes=3)
 
 
 class _NoTrain:
+    def __init__(self, cfg):
+        # the real trainer loads the training set, which records its class names
+        DatasetCatalog.get(cfg.DATASETS.TRAIN[0])
+
     def resume_or_load(self, resume):
         pass
 

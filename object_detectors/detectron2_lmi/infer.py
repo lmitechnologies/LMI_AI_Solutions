@@ -49,8 +49,12 @@ def inference_run(args):
     if not os.path.exists(out_path):
         os.makedirs(out_path)
 
-    with open(class_map_path, "r") as f:
-        class_map = json.load(f)
+    class_map = None
+    if os.path.isfile(class_map_path):
+        with open(class_map_path, "r") as f:
+            class_map = json.load(f)
+    else:
+        logger.warning(f"No class map at {class_map_path}; using the class names embedded in the model")
 
     from object_detectors.detectron2_lmi.model import Detectron2Model  # imports torch and detectron2: keep cli.py startup fast
 

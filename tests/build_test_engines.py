@@ -18,7 +18,7 @@ Run this inside the test container (see ``tests/dockerfile.tests``) from the com
 
 ``tests/run_tests.sh`` calls this automatically before each suite with ``--skip-existing
 --if-available``, so engines are built on demand:
-    --skip-existing : leave engines that already exist untouched.
+    --skip-existing : leave engines that already exist untouched, unless they predate what the tests read.
     --if-available  : exit 0 when no GPU/TensorRT is present (the TRT tests then skip). With a GPU,
                       a failed build still exits non-zero, after trying the remaining backends.
 
@@ -32,6 +32,8 @@ import argparse
 import glob
 import logging
 import os
+
+from lmi_common.model_metadata import _MAX_HEADER_BYTES, metadata_from_props, split_engine_props
 
 logger = logging.getLogger("build_test_engines")
 
@@ -208,6 +210,22 @@ ENGINE_PATHS = {
 }
 
 
+def _det2_engine_has_class_names() -> bool:
+    with open(DET2_ENGINE, "rb") as f:
+        props, _ = split_engine_props(f.read(4 + _MAX_HEADER_BYTES))
+    return "class_names" in metadata_from_props(props)
+
+
+def _engines_current(name: str) -> bool:
+    """The backend's engines all exist, and none predates what the tests read from it."""
+    if not all(os.path.isfile(p) for p in ENGINE_PATHS[name]):
+        return False
+    if name == "detectron2" and not _det2_engine_has_class_names():
+        logger.info("[detectron2] engine has no embedded class names; rebuilding")
+        return False
+    return True
+
+
 def _parse_backends(value: str) -> list:
     """Expand a --backend value ('all' or a comma-separated list) into backend names."""
     if value == "all":
@@ -225,7 +243,7 @@ def main() -> None:
     ap.add_argument("--backend", default="all", help=f"Backend(s) to build: 'all' or a comma-separated list of {', '.join(BUILDERS)}.")
     ap.add_argument("--no-fp16", dest="fp16", action="store_false", help="Build in FP32 instead of FP16.")
     ap.add_argument("--keep-onnx", action="store_true", help="Keep the intermediate ONNX files.")
-    ap.add_argument("--skip-existing", action="store_true", help="Skip engines that already exist.")
+    ap.add_argument("--skip-existing", action="store_true", help="Skip engines that already exist and are current.")
     ap.add_argument(
         "--if-available",
         action="store_true",
@@ -242,7 +260,7 @@ def main() -> None:
 
     failed = []
     for name in _parse_backends(args.backend):
-        if args.skip_existing and all(os.path.isfile(p) for p in ENGINE_PATHS[name]):
+        if args.skip_existing and _engines_current(name):
             logger.info("[%s] engines exist, skipping: %s", name, ", ".join(ENGINE_PATHS[name]))
             continue
         # yolo builds several engines, so it skips the existing ones itself

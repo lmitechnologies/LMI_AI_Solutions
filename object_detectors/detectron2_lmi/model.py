@@ -33,6 +33,17 @@ class Detectron2Base(ODBase):
 
     RESIZE_PRESERVE_ASPECT = False  # stretch (see preprocess())
     RESIZE_ANTIALIAS = True  # training and DefaultPredictor resize with PIL bilinear, which antialiases
+    input_format = "BGR"  # detectron2's INPUT.FORMAT default
+
+    def _set_input_format(self, input_format: str) -> None:
+        """Set the channel order the model takes; predict() gets RGB images."""
+        if input_format not in ("RGB", "BGR"):
+            raise ValueError(f"Unsupported INPUT.FORMAT '{input_format}'; only RGB and BGR are supported")
+        self.input_format = input_format
+
+    def _to_input_format(self, chw: torch.Tensor) -> torch.Tensor:
+        """Reorder an RGB CHW tensor to the model's channel order."""
+        return chw.flip(0) if self.input_format == "BGR" else chw
 
     def _postprocess_masks(self, raw_masks, boxes, image_size, mask_threshold, **kwargs):
         """Rescale masks and optionally compute polygon segments.
@@ -127,6 +138,8 @@ class Detectron2Base(ODBase):
 
 @Detectron2Model.register("engine")
 class Detectron2TRT(Detectron2Base):
+    """TensorRT backend. class_map defaults to the class names embedded at export."""
+
     logger = logging.getLogger("Detectron2TRT")
 
     def __init__(self, model_path, **kwargs):
@@ -140,9 +153,14 @@ class Detectron2TRT(Detectron2Base):
         if not self.trt.is_dynamic:
             self.fixed_batch_size = self.trt.max_batch
 
+        # an engine exported without metadata was fed BGR
+        self._set_input_format(self.trt.metadata.get("input_format", "BGR"))
         class_map = kwargs.get("class_map", None)
         if class_map is None:
-            raise ValueError("class_map is required for [Detectron2TRT]")
+            class_names = self.trt.metadata.get("class_names")
+            if not class_names:
+                raise ValueError(f"class_map is required: {model_path} has no embedded class names; re-export it to embed them")
+            class_map = dict(enumerate(class_names))
         self._setup_class_map(class_map)
 
     def warmup(self):
@@ -175,7 +193,8 @@ class Detectron2TRT(Detectron2Base):
             images: A list of HWC RGB images as numpy arrays or torch tensors.
 
         Returns:
-            torch.Tensor: A batch of CHW BGR preprocessed images with shape (batch_size, 3, image_h, image_w) on the model device.
+            torch.Tensor: A batch of CHW images in the model's channel order, with shape (batch_size, 3, image_h, image_w) on the model
+                device.
         """
         images = self._fit_to_input_size(images, preserve_aspect=False)
         tensors = []
@@ -184,8 +203,7 @@ class Detectron2TRT(Detectron2Base):
                 t = img.permute(2, 0, 1).to(dtype=self.input_dtype, device=self.device)
             else:
                 t = torch.from_numpy(img.transpose(2, 0, 1)).to(dtype=self.input_dtype, device=self.device)
-            # to BGR
-            tensors.append(t.flip(0))
+            tensors.append(self._to_input_format(t))
         return torch.stack(tensors)
 
     def forward(self, inputs):
@@ -280,6 +298,8 @@ class Detectron2PT(Detectron2Base):
             self.model = torch.jit.load(model_path, map_location=self.device)
         except Exception as e:
             raise RuntimeError(f"Failed to load TorchScript model from {model_path}") from e
+        # scripting keeps the wrapped model's INPUT.FORMAT
+        self._set_input_format(getattr(getattr(self.model, "model", None), "input_format", "BGR"))
 
         class_map = kwargs.get("class_map", None)
         if class_map is None:
@@ -314,7 +334,7 @@ class Detectron2PT(Detectron2Base):
             images: A list of HWC RGB images as numpy arrays or torch tensors.
 
         Returns:
-            list: A list of dicts with key 'image' mapping to a CHW BGR float32 tensor on self.device.
+            list: A list of dicts with key 'image' mapping to a CHW float32 tensor in the model's channel order on self.device.
         """
         inputs = []
         for image in images:
@@ -322,8 +342,7 @@ class Detectron2PT(Detectron2Base):
                 t = image.permute(2, 0, 1).to(dtype=torch.float32, device=self.device)
             else:
                 t = torch.from_numpy(image.astype(np.float32)).permute(2, 0, 1).to(self.device)
-            # to BGR
-            inputs.append(dict(image=t.flip(0)))
+            inputs.append(dict(image=self._to_input_format(t)))
         return inputs
 
     def forward(self, inputs):

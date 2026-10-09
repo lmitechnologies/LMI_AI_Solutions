@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -7,10 +8,12 @@ import detectron2.data.transforms as T
 import yaml
 from detectron2 import model_zoo
 from detectron2.config import CfgNode, get_cfg
-from detectron2.data import DatasetMapper, build_detection_train_loader
+from detectron2.data import DatasetMapper, MetadataCatalog, build_detection_train_loader
 from detectron2.data.datasets import register_coco_instances
 from detectron2.engine import DefaultTrainer
 from detectron2.utils.logger import setup_logger
+
+from object_detectors.detectron2_lmi.convert import CLASS_MAP_NAME
 
 logger = setup_logger()
 
@@ -84,6 +87,19 @@ def next_output_dir(output_dir):
     return os.path.join(output_dir, f"{date.today()}-v{version}")
 
 
+def write_class_map(cfg):
+    """Save the training class names as class_map.json beside config.yaml, where convert looks for them."""
+    # set when the trainer loads the dataset
+    names = MetadataCatalog.get(cfg.DATASETS.TRAIN[0]).get("thing_classes")
+    if names is None:
+        logger.warning("No class names in the training dataset; class_map.json not written")
+        return
+    if len(names) != cfg.MODEL.ROI_HEADS.NUM_CLASSES:
+        raise ValueError(f"MODEL.ROI_HEADS.NUM_CLASSES is {cfg.MODEL.ROI_HEADS.NUM_CLASSES}, but the training set has {len(names)} classes")
+    with open(os.path.join(cfg.OUTPUT_DIR, CLASS_MAP_NAME), "w") as f:
+        json.dump({str(i): name for i, name in enumerate(names)}, f, indent=2)
+
+
 def training_run(args):
     cfg, extras = build_config(args["config_file"], args.get("detectron2_config"))
     cfg.OUTPUT_DIR = next_output_dir(args["output"])
@@ -106,6 +122,7 @@ def training_run(args):
         logger.warning("tensorboard not found; training without it")
     try:
         trainer = Trainer(cfg, extras)
+        write_class_map(cfg)
         trainer.resume_or_load(resume=False)
         trainer.train()
     finally:

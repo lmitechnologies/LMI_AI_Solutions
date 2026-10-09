@@ -146,6 +146,8 @@ services:
 ```
 *The training process automatically starts tensorboard*
 
+Training saves `config.yaml` and `class_map.json` (the class names from the training set, in detectron2's order) in the run folder.
+
 ### Tensorboard
 
 Served up at the following address [localhost:6006](http://localhost:6006)
@@ -213,6 +215,10 @@ With `--json`, all predictions are saved as `predictions.json`, in the LMI datas
 The engine has a fixed input size, set with `--image_size H W` (multiples of 32); every image is resized to it at inference. Pick the
 size the model sees at test time, e.g. `INPUT.MIN_SIZE_TEST` for square images. `--trt` builds the ONNX first, so `--onnx` is not
 needed with it. `--pt` (TorchScript) needs no size.
+
+The ONNX and engine embed the class names and the color order (`INPUT.FORMAT`), so an engine loads without a class map. The names
+come from `-m/--class_map`, or by default from the `class_map.json` beside the config file. Without either, they are not embedded,
+and loading the engine needs a class map.
 
 *Default batch size is 1 although batch size can be changed to any batch size using -b*
 

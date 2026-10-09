@@ -58,6 +58,13 @@ def main():
         metavar=("H", "W"),
         help="Engine input size, multiples of 32; needed for --onnx/--trt",
     )
+    convert_ap.add_argument(
+        "-m",
+        "--class_map",
+        "--class-map",
+        default=None,
+        help='Class map json ({"0": name, ...}, ids from 0) embedded in the ONNX/engine; defaults to the class_map.json beside the config',
+    )
     convert_ap.add_argument("-b", "--batch-size", type=int, default=1, help="Batch size for the model")
     convert_ap.add_argument("--fp16", action="store_true", help="Use fp16")
     convert_ap.add_argument("--pt", action="store_true", help="Convert to pt")
@@ -87,6 +94,10 @@ def main():
             ap.error(f"Weights file must be a .pth or .pkl file, got: {weights}")
         if (args["onnx"] or args["trt"]) and args["image_size"] is None:
             ap.error("--image_size H W is required for --onnx and --trt")
+        if args["class_map"] is not None and not (args["onnx"] or args["trt"]):
+            ap.error("--class_map is embedded only by --onnx and --trt")
+        if args["class_map"] is not None and not os.path.isfile(args["class_map"]):
+            ap.error(f"Class map not found: {args['class_map']}")
         convert(args)
 
 
