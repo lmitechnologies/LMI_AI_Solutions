@@ -22,6 +22,7 @@ This document covers all **breaking changes and new features** introduced after 
 2. [Forward preprocessing — typed step builders (`lmi_utils.preprocess_utils.steps`)](#2-forward-preprocessing--typed-step-builders)
 3. [Revert path — typed history for manual reconstruction](#3-revert-path--typed-history-for-manual-reconstruction)
 4. [Tiled object detection](#4-tiled-object-detection)
+5. [Dynamic-batch anomaly detection export](#5-dynamic-batch-anomaly-detection-export)
 
 
 ---
@@ -572,3 +573,34 @@ python -m lmi_utils.label_utils.apply_ops -i images -oi tiled_images \
 ```
 
 Each tile becomes its own file carrying `source_id`, so tiles of one image stay on the same side of a train/val split. Tiles with no labels are dropped unless you pass `--bg`.
+
+---
+
+### 5. Dynamic-batch anomaly detection export
+
+**PRs:** [#442](../../pull/442)
+
+AD models can be exported with a dynamic batch, so one ONNX or TensorRT run takes several images, e.g. all tiles of one image. Exports stay at batch 1 unless you ask for more. The same flags work for v1 and v2 (`python -m anomaly_detectors.anomalib_lmi.v2.model convert ...`):
+
+| Source | Command | Result |
+|---|---|---|
+| `.pt` | `convert -i model.pt -o OUT -c onnx --dynamic_batch` | ONNX that takes any batch |
+| `.pt` | `convert -i model.pt -o OUT --max_batch N` | TensorRT engine that takes any batch from 1 to N |
+| v2 training ONNX | `convert -i model.onnx -o OUT --max_batch N` | TensorRT engine that takes any batch from 1 to N; the ONNX v2 training writes already has a dynamic batch |
+
+From Python, `export_onnx(path, dynamic_batch=True)` and `export_trt(export_dir, max_batch=N)` do the same.
+
+`predict()` splits a larger input into chunks of the engine's max batch. A dynamic ONNX has no max, so it runs the whole input at once unless you pass `batch_size`.
+
+```python
+from anomaly_detectors.anomalib_lmi.v2.model import AnomalyModel
+
+model = AnomalyModel("OUT/model.engine")   # built with --max_batch 4
+maps = model.predict(tiles)                # 12 tiles run as 3 batches of 4
+```
+
+> **Impact:** `export_trt(max_batch=N)` with N > 1 on a fixed-batch ONNX raises `ValueError`; it used to ignore `max_batch` and build a batch-1 engine.
+
+> **Impact:** v2 training stops before training when the pre-processor has no Resize to a fixed `[h, w]`. Such a model used to export an ONNX with a dynamic height and width, which ONNX inference and the TensorRT conversion reject, or crash after training. Set `model.params.image_size`, or add a Resize with a `[h, w]` size to `pre_processor`.
+
+> **Deprecated:** TorchScript AD models (`.ts`, `.torchscript`, or a traced `.pt`) and `anomaly_detectors.anomalib_lmi.convert_to_torchscript` emit a `FutureWarning`. Use the `.pt` checkpoint, or its ONNX/TensorRT export.
