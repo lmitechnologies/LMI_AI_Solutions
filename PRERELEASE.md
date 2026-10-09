@@ -1,596 +1,304 @@
 # Pre-Release Notes — v1.6.0 → next
 
-This document covers all **breaking changes and new features** introduced after the `v1.6.0` tag. Each section identifies what changed, which PR introduced it, and a concrete before/after comparison.
+Breaking changes and new features since `v1.6.0`. Each breaking change says what to update.
 
----
+## Breaking changes
 
-## Table of Contents
+### Install from the repo root
 
-**Breaking Changes**
-1. [Installation: unified single-package install](#1-installation-unified-single-package-install)
-2. [Import paths: fully-qualified module paths required](#2-import-paths-fully-qualified-module-paths-required)
-3. [OD predict() — batched output and renamed parameters](#3-od-predict--batched-output-and-renamed-parameters)
-4. [AD predict() — now returns a list and supports batch_size](#4-ad-predict--now-returns-a-list-and-supports-batch_size)
-5. [YOLO v0 support dropped](#5-yolo-v0-support-dropped)
-6. [Anomaly model files renamed to versioned sub-packages, and AD tiling moved to the pipeline](#6-anomaly-model-files-renamed-to-versioned-sub-packages-and-ad-tiling-moved-to-the-pipeline)
-7. [Inference scripts renamed to `infer.py` with shared flags](#7-inference-scripts-renamed-to-inferpy-with-shared-flags)
-8. [Detectron2 convert takes `--image_size` instead of a sample image](#8-detectron2-convert-takes---image_size-instead-of-a-sample-image)
+**PRs:** [#183](../../pull/183), [#219](../../pull/219)
 
-**New Features**
+`lmi_utils`, `object_detectors`, `classifiers` and `anomaly_detectors` are now one package, `lmi_ai_solutions`. Replace the four sub-package installs in CI, Dockerfiles and dev setups with:
 
-1. [`preprocess` & `revert_preprocess` — batch processing with history-based reconstruction](#1-preprocess--revert_preprocess--batch-processing-with-history-based-reconstruction)
-2. [Forward preprocessing — typed step builders (`lmi_utils.preprocess_utils.steps`)](#2-forward-preprocessing--typed-step-builders)
-3. [Revert path — typed history for manual reconstruction](#3-revert-path--typed-history-for-manual-reconstruction)
-4. [Tiled object detection](#4-tiled-object-detection)
-5. [Dynamic-batch anomaly detection export](#5-dynamic-batch-anomaly-detection-export)
-
-
----
-
-## 1. Installation: unified single-package install
-
-**PRs:** [#183](../../pull/183) (consolidate pyproject.toml), [#219](../../pull/219) (auto package discovery)
-
-**What changed:** The four separate installable packages (`lmi_utils`, `object_detectors`, `classifiers`, `anomaly_detectors`) have been merged into a single root package `lmi_ai_solutions`. All sub-directory `pyproject.toml` files have been removed. Package discovery is now automatic.
-
-**Before (v1.6.0):**
 ```bash
-# Install each sub-package separately
-pip install -e lmi_utils/
-pip install -e object_detectors/
-pip install -e classifiers/
-pip install -e anomaly_detectors/
-```
-
-**After:**
-```bash
-# Install everything from the repo root
 pip install -e .
 ```
 
-> **Impact:** Any CI/CD pipeline, Dockerfile, or developer setup that installs sub-packages individually will break. Update all install steps to use the single root install.
-
----
-
-## 2. Import paths: fully-qualified module paths required
+### Use full import paths
 
 **PR:** [#207](../../pull/207)
 
-**What changed:** Short-form bare imports (relying on `PYTHONPATH` entries pointing at subdirectories) no longer work. All imports must use the full package path from the repo root.
+`lmi_ai.env` no longer adds every subdirectory to `PYTHONPATH`, so short imports raise `ModuleNotFoundError`. Re-source `lmi_ai.env` and import from the repo root:
 
-**Before:**
 ```python
-from gadget_utils.pipeline_utils import revert_to_origin
-from ultralytics_lmi.yolo.model import Yolo
+from lmi_utils.gadget_utils.pipeline_utils import revert_to_origin   # was gadget_utils.pipeline_utils
+from object_detectors.ultralytics_lmi.yolo.model import Yolo         # was ultralytics_lmi.yolo.model
 ```
 
-**After:**
-```python
-from lmi_utils.gadget_utils.pipeline_utils import revert_to_origin
-from object_detectors.ultralytics_lmi.yolo.model import Yolo
-```
-
-Also, `lmi_ai.env` has been simplified — it no longer adds every subdirectory to `PYTHONPATH`. Re-sourcing the new `lmi_ai.env` is required.
-
-> **Impact:** Every script that uses bare sub-package imports will raise `ModuleNotFoundError` at runtime.
-
----
-
-## 3. OD predict() — batched output and renamed parameters
+### OD `predict()` returns one entry per image
 
 **PR:** [#250](../../pull/250)
 
-**What changed:** `predict()` is now implemented in `ODBase` and shared by all backends. The return value changed from a single-image result dict to a **batched** result dict where every value is a list (one entry per image).
+Every value in the result dict is now a list with one entry per input image, even when you pass one image. Pass a list to run a batch.
 
-**Before:**
 ```python
-results, time_info = model.predict(image, configs=0.5)
-
-# results was a flat dict for a single image
-boxes   = results["boxes"]    # shape (N, 4)
-scores  = results["scores"]   # shape (N,)
-classes = results["classes"]  # list[str]
+results, _ = model.predict(image, configs=0.5)
+boxes = results["boxes"][0]   # was results["boxes"]
 ```
 
-**After:**
-```python
-results, time_info = model.predict(image, configs=0.5)
+Segments: a segment is the mask's outer outline, with holes dropped. When a mask is in several pieces, YOLO joins them (as Ultralytics' `Results.masks.xy` does), while Detectron2 and RF-DETR keep the largest piece. RF-DETR used to chain all pieces' points into one list, so its segments change on such masks. With tiling, every backend keeps the largest piece.
 
-# results is now batched — index [0] to get the single-image data
-boxes   = results["boxes"][0]    # shape (N, 4)
-scores  = results["scores"][0]   # shape (N,)
-classes = results["classes"][0]  # list[str]
-```
+### OD coordinates are floats, clamped at 0
 
-**Batch usage (new capability):**
-```python
-images = [img1, img2, img3]
-results, time_info = model.predict(images, configs=0.5)
+**PR:** [#439](../../pull/439)
 
-for boxes, scores, classes in zip(results["boxes"], results["scores"], results["classes"]):
-    ...  # process per image
-```
+`predict(..., operators=...)` no longer rounds coordinates to whole pixels, so `astype(int)` or `int()` now truncates and a result can move by 1 px. Use `np.round(box).astype(int)` to get the old numbers.
 
-**Segments without tiling keep each backend's own rule; tiled segments keep the largest piece.** A segment is the mask's outer outline: holes are dropped, and the mask keeps the exact shape. YOLO joins pieces that do not touch, as Ultralytics does (`Results.masks.xy`); Detectron2 and RF-DETR keep the largest piece. RF-DETR used to chain the pieces' points in one list, so its segments change on such masks. With a tile step, segments are traced from the merged masks and keep the largest piece for every backend, so a YOLO mask in pieces is outlined differently tiled and untiled.
+`revert_preprocess()` now clamps negative coordinates to 0, and so do `revert_to_origin(..., round=False)` and `apply_operations(..., round=False)`. Pass `clip=False` to any of these, or to `predict`, to keep negative values. `revert_to_origin()` and `apply_operations()` still round by default.
 
-The `operators` parameter is also now formally typed and uses the **unified preprocessing-history schema** — the same shape returned by `Preprocessor.preprocess()` and consumed by `Reconstructor`. See new feature 3 below.
-
----
-
-## 4. AD predict() — now returns a list and supports batch_size
+### AD `predict()` returns a list
 
 **PR:** [#263](../../pull/263)
 
-**What changed:** `AnomalyDetector.predict()` (and all `ADBase` subclasses) now return a **list** of per-image anomaly maps instead of a single array. A `batch_size` kwarg is added for chunked inference.
+`AnomalyDetector.predict()` and all `ADBase` subclasses return a list of maps, one per image, and take a `batch_size` keyword.
 
-**Before:**
 ```python
-ad_score = model.predict(image)  # np.ndarray [H, W]
+ad_map = model.predict(image)[0]                               # was model.predict(image)
+ad_maps = model.predict([img1, img2, img3], batch_size=2)      # 3 maps
 ```
 
-**After:**
-```python
-ad_scores = model.predict(image)      # list[np.ndarray], length 1 for a single image
-ad_score  = model.predict(image)[0]   # index [0] to recover previous behaviour
-
-# batch usage
-ad_scores = model.predict([img1, img2, img3], batch_size=2)  # list of 3 maps
-```
-
-The `predict()` signature is now:
-```python
-def predict(self, image: ImageBatch, **kwargs) -> List[ImageLike]:
-    ...
-    # kwargs:
-    #   batch_size (int): chunk size for mini-batch inference
-```
-
-> **Impact:** Any code that assigns the return value of `predict()` to a single array and then indexes it directly (e.g., `score[y, x]`) will fail with a `TypeError` or unexpected result. Always index `[0]` after calling predict with a single image.
-
----
-
-## 5. YOLO v0 support dropped
+### YOLO `version="v0"` removed
 
 **PR:** [#224](../../pull/224)
 
-**What changed:** The `v0` YOLO model variant is no longer registered and cannot be instantiated.
+`version="v0"` raises an error. Use `version="v1"` in the `ObjectDetector` metadata.
 
-**Before:**
+### Pipelines read GoFactory v3 manifests by default
+
+**PR:** [#287](../../pull/287)
+
+`PipelineBase` and `get_models_from_static_manifest` now expect the GoFactory v3 manifest schema. For a GoFactory v2 manifest, pass `version="2"` to both:
+
 ```python
-model = ObjectDetector(
-    metadata=dict(
-        version="v0",
-        model_name="yolov8",
-        task=task,
-        framework="ultralytics",
-        model_path=path,
-        image_size=image_size,
-    ),
-    device=device,
-)
+super().__init__(version="2")                                              # in your PipelineBase subclass
+manifest = get_models_from_static_manifest("manifest.json", version="2")
 ```
 
-**After:**
-```python
-model = ObjectDetector(
-    metadata=dict(
-        version="v1",
-        model_name="yolov8",
-        task=task,
-        framework="ultralytics",
-        model_path=path,
-        image_size=image_size,
-    ),
-    device=device,
-)
-```
+### Submodules removed
 
-> **Impact:** Passing `version="v0"` will raise an error. Update all instantiations to `version="v1"`.
+**PRs:** [#218](../../pull/218), [#226](../../pull/226)
 
----
+The `classifiers/efficientnet`, `object_detectors/tf_objdet` and `ocr_models/PaddleOCR` submodules and the OCR folder are gone. Pin `v1.6.0` if you still need them.
 
-## 6. Anomaly model files renamed to versioned sub-packages, and AD tiling moved to the pipeline
+### Resizes match training
+
+**PRs:** [#408](../../pull/408), [#427](../../pull/427)
+
+Inference now resizes the way each model was trained, so outputs of existing models can shift slightly. Re-check thresholds for:
+- AD v1 TensorRT and ONNX models, which now antialias like the `.pt` model.
+- Detectron2, which now antialiases like the PIL bilinear resize it trains with.
+
+AD v2 now trains without antialiasing, the resize its exported models run. Models trained before saw a slightly different resize than their exports; retrain to remove the gap.
+
+`labels-preprocess resize` and `resize_with_csv` now use cv2 `INTER_LINEAR`, as inference does. `labels-preprocess resize` also changes the width when the height already matches the target.
+
+### AD model modules moved, and AD tiling moved to the pipeline
 
 **PR:** [#261](../../pull/261)
 
-**What changed:** The three anomaly model files have been reorganised into per-version sub-packages under `anomaly_detectors/anomalib_lmi/`.
-
-| Old path | New path |
+| Old module | New module |
 |---|---|
 | `anomaly_detectors/anomalib_lmi/anomaly_model.py` | `anomaly_detectors/anomalib_lmi/v0/model.py` |
 | `anomaly_detectors/anomalib_lmi/anomaly_model2.py` | `anomaly_detectors/anomalib_lmi/v1/model.py` |
 | `anomaly_detectors/anomalib_lmi/anomaly_model_v2.py` | `anomaly_detectors/anomalib_lmi/v2/model.py` |
 
-**Tiling is no longer configured on the AD model.** At `v1.6.0`, `AnomalyDetector` read `tile_size`, `stride` and `tile_mode` from the metadata (or from the first three positional arguments) and passed them to the model as `tile=`, `stride=`, `tile_mode=`, which built a `self.tiler` on it. The repackaged backends take `(model_path, **kwargs)` and read only `device` and `image_size`, so those three keys stopped reaching anything. They have now been removed from `AnomalyDetector`. Tile an AD model with the pipeline's `tile` preprocessing step instead, which also stitches the per-tile score maps back to the source image size.
+`AnomalyDetector` no longer reads `tile_size`, `stride` or `tile_mode` from the metadata, or tile settings from its first three positional arguments (with `model_path` in the metadata, positional arguments are ignored with a warning). Tile with a pipeline `tile` step instead, which also stitches the maps back to the source image size:
 
-**Before:**
 ```python
-model = AnomalyDetector({"model_path": "model.pt", "tile_size": [300, 300], "stride": [300, 300]})
-anom_map = model.predict([img])[0]
-```
-
-**After:**
-```python
-from lmi_utils.preprocess_utils import steps as pre_steps
+from lmi_utils.preprocess_utils import steps
 from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 from lmi_utils.preprocess_utils.reconstructor import Reconstructor
 
-model = AnomalyDetector({"model_path": "model.pt"})
-step = pre_steps.tile(tile_size=[300, 300], stride=[300, 300])
-
-tiles, history = Preprocessor().preprocess([img], [step])
-ad_maps = model.predict(tiles)
-anom_map = Reconstructor().reconstruct_images(ad_maps, history)[0]  # back at the source image size
+model = AnomalyDetector({"model_path": "model.pt"})   # was {..., "tile_size": [300, 300], "stride": [300, 300]}
+tiles, history = Preprocessor().preprocess([img], [steps.tile(tile_size=[300, 300], stride=[300, 300])])
+anom_map = Reconstructor().reconstruct_images(model.predict(tiles), history)[0]
 ```
 
-`PipelineBase` does the same thing from a manifest — declare a `tile` step in the model's preprocessing and `revert_preprocess()` stitches the score map (see new feature 1).
+In a `PipelineBase`, declare a `tile` step in the model's preprocessing instead.
 
-> **Impact:** All direct imports using the old module paths will raise `ModuleNotFoundError`. `AnomalyDetector` no longer reads `tile_size`, `stride` or `tile_mode` from the metadata, and no longer treats the first three positional arguments as tile settings — with `model_path` in the metadata, positional arguments are ignored with a warning. Note that between the repackaging and their removal these keys were accepted and silently ignored, so an intermediate build ran untiled with no warning: check any AD config that sets them.
+### Inference scripts renamed to `infer.py`, with shared flags
 
----
-
-## 7. Inference scripts renamed to `infer.py` with shared flags
-
-**What changed:** Every model's command-line inference script is now called `infer.py`, and the object detection scripts take the same flags.
+**PR:** [#401](../../pull/401)
 
 | Old command | New command |
 |---|---|
 | `python -m object_detectors.ultralytics_lmi.yolo.run_model` | `python -m object_detectors.ultralytics_lmi.yolo.infer` |
 | `python -m classifiers.ultralytics_lmi.yolo.run_model` | `python -m classifiers.ultralytics_lmi.yolo.infer` |
 | `python -m object_detectors.rf_detr_lmi.infer` | unchanged |
-| `python -m object_detectors.detectron2_lmi.cli test` | unchanged, and `python -m object_detectors.detectron2_lmi.infer` now works too |
+| `python -m object_detectors.detectron2_lmi.cli test` | unchanged; `python -m object_detectors.detectron2_lmi.infer` also works |
 
-Flags shared by the object detection scripts:
+The detector scripts share one set of flags; run any of them with `-h` to list them. The classifier script takes `-w`, `-i`, `-o` and an optional `-s`.
 
-| Flag | Meaning | Replaces |
-|---|---|---|
-| `-w`, `--weights` | model weights file | `--wts_file` (YOLO) |
-| `-i`, `--input` | input image folder | `--path_imgs` (YOLO) |
-| `-o`, `--output` | output folder | `--path_out` (YOLO) |
-| `-c`, `--confidence` | confidence threshold | `--conf` (RF-DETR), which still works as a short form |
-| `-s`, `--image_size` | model input size: one int for a square, or `h w`. Optional: read from the model by default | `--sz h w`, required (YOLO) |
-| `--json` | save predictions to `predictions.json` in the output folder, in the LMI dataset json format | `--csv` (YOLO's `preds.csv`); Detectron2's `predictions.csv`, written every run |
-| `--tile`, `--stride` | run on tiles and merge the results back; one int for a square, or `h w`. Also saves an image per input to `tiles/` showing the tile grid and each detection colored by how merging built it | new |
-| `--no_label` | do not draw class names and scores on the output images | `--no-label` (YOLO only), which still works |
-| `--line_thickness` | px width of the drawn boxes and tile grid lines; grows with the image size by default | new |
-
-The classifier script takes `-w/--weights`, `-i/--input`, `-o/--output` and an optional `-s/--image_size`.
-
-**Before:**
 ```bash
+# before
 python -m object_detectors.ultralytics_lmi.yolo.run_model -w best.pt -i images -o out --sz 640 640 --csv
-python -m object_detectors.rf_detr_lmi.infer -w best.pth -i images -o out --conf 0.5
-```
-
-**After:**
-```bash
+# after
 python -m object_detectors.ultralytics_lmi.yolo.infer -w best.pt -i images -o out --json
-python -m object_detectors.rf_detr_lmi.infer -w best.pth -i images -o out -c 0.5
 ```
 
-> **Impact:** Commands that call `run_model`, or pass `--wts_file`, `--path_imgs`, `--path_out` or `--sz`, fail with an error. No script writes a CSV any more: pass `--json` for `predictions.json`. RF-DETR no longer resizes each image to the model input size before drawing, so its output images and predictions are at the original image size.
+No script writes a CSV any more. RF-DETR no longer resizes images to the model input size before drawing, so its output images and predictions are at the original image size.
 
+### Detectron2 `convert` takes `--image_size`
 
----
+**PR:** [#425](../../pull/425)
 
-## 8. Detectron2 convert takes `--image_size` instead of a sample image
+`convert` no longer reads `sample_image.png` from the weights folder, and training no longer writes it. `-is/--image_size H W` (multiples of 32) is required for `--onnx` and `--trt`. `--trt` builds the ONNX itself, so `--onnx` is not needed with it.
 
-**What changed:** `convert` no longer reads a `sample_image.png` from the weights folder to set the engine input size. Pass the size with `-is/--image_size H W` (multiples of 32); it is required for `--onnx` and `--trt`. `--trt` now builds the ONNX itself, so `--onnx` is no longer needed with it. Training no longer writes `sample_image.png` to its output folder.
-
-**Before:**
 ```bash
-# sample_image.png in the weights folder sets the engine size
-python -m object_detectors.detectron2_lmi.cli convert --onnx --trt --fp16
+python -m object_detectors.detectron2_lmi.cli convert --trt --fp16 --image_size 800 800   # was: convert --onnx --trt --fp16
 ```
 
-**After:**
-```bash
-python -m object_detectors.detectron2_lmi.cli convert --trt --fp16 --image_size 800 800
+Pick the size the model sees at test time, e.g. `INPUT.MIN_SIZE_TEST` for square images. Engines now always match the anchors; a sample image whose size differed from the test-time resize could break that before.
+
+### Preprocessing history is typed, with one entry per image
+
+**PRs:** [#306](../../pull/306), [#441](../../pull/441)
+
+The revert path takes only typed history from the step builders (see "Building a history by hand"). `revert_to_origin`, `revert_mask_to_origin`, `revert_masks_to_origin` and `apply_operations` raise `TypeError` on the old operator dicts.
+
+Each history entry must hold one value per image it saw (per tile after a `tile` step); any other count raises `ValueError` in `predict` and `revert_preprocess`, for OD and AD. Histories from `preprocess()` already hold one entry per image.
+
+```python
+# a batch of 4 sharing one crop
+steps.revert_cropbox(boxes=[[x1, y1, x2, y2]] * 4, orig_sizes=[[W, H]] * 4)
 ```
 
-> **Impact:** `-s/--sample_image` is gone, and `convert --onnx` or `--trt` without `--image_size` exits with an error. Pick the size the model sees at test time, e.g. `INPUT.MIN_SIZE_TEST` for square images. Before, a sample image whose size differed from detectron2's test-time resize could give anchors that did not match the engine input; engines built now always match.
+### AD export and training checks
 
----
+**PR:** [#442](../../pull/442)
 
-## New Features
+- v2 training stops before it starts when the pre-processor has no Resize to a fixed `[h, w]`, since such models export an ONNX with dynamic height and width that inference and TensorRT conversion reject. Set `model.params.image_size`, or add a fixed-size Resize to `pre_processor`.
+- Deprecated: TorchScript AD models (`.ts`, `.torchscript`, or a traced `.pt`) and `anomaly_detectors.anomalib_lmi.convert_to_torchscript` emit a `FutureWarning` and cannot be exported with a dynamic batch. Use the `.pt` checkpoint or its ONNX/TensorRT export.
 
-### 1. `preprocess` & `revert_preprocess` — batch processing with history-based reconstruction
+## New features
+
+### Pipeline `preprocess()` and `revert_preprocess()`
 
 **PRs:** [#180](../../pull/180), [#269](../../pull/269)
 
-`PipelineBase` now exposes `preprocess()` and `revert_preprocess()` as the standard preprocessing pair. `preprocess()` accepts a single image, a list of images, or a BHWC array and returns `(processed_images, history)`. `revert_preprocess()` uses the history to invert the operations — restoring original resolution for images (AD) or reverting coordinates back to the original image space (OD).
+`PipelineBase.preprocess(role, image)` runs the steps in the model's manifest and returns `(images, history)`. It takes one image, a list, or a BHWC array. `revert_preprocess(results, history)` undoes the steps: OD coordinates go back to the original image, AD maps back to the original size. Supported manifest steps are `resize`, `tile` and `rotate`, and they can be chained (e.g. resize → tile → tile).
 
-Supported step types: `resize`, `tile`. Steps can be chained and nested (e.g. resize → tile → tile).
-
-When an OD model's preprocessed input still doesn't match its training size, the pipeline auto-injects a final resize. A letterbox injection pads with the model's `RESIZE_PAD_VALUE` (`114` for YOLO, `0` otherwise) to match training-time padding. A manifest-declared `resize` step pads with `0` unless its configuration sets `pad_value`. `labels-preprocess resize --par` pads a dataset with `0` too; pass `--pad_value 114` to match the YOLO letterbox. The injected resize also antialiases when the model's `RESIZE_ANTIALIAS` is set (Detectron2, which trains and predicts with PIL bilinear).
-
-**Resize with Object Detection**
-
-OD model role from gofactory:
 ```json
-"od-model": {
-    "format": "pt",
-    "details": {
-        "classes": ["defect_a"],
-        "confidence_threshold": 0.5,
-        "image_size": [640, 640],
-        "preprocessing": [
-            {"type": "resize", "id": "a1f2c3d4-5e6f-4a7b-8c9d-0e1f2a3b4c5d", "configuration": {"height": 640, "width": 640, "preserve_aspect": true}}
-        ],
-        "training_package": "Ultralytics",
-        "training_algorithm": "Yolo"
-    },
-    "artifacts": {"pt": {"attributes": {}, "model_path": model_path}},
-    "model_role": "od-model",
-    "model_name": "od-model",
-    "model_type": "InstanceSegmentation",
-    "model_version": "1"
-}
+"preprocessing": [
+    {"type": "resize", "id": "...", "configuration": {"height": 224, "width": 448, "preserve_aspect": true}},
+    {"type": "tile", "id": "...", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}}
+]
 ```
-
-Pipeline example:
-```python
-from lmi_utils.pipeline_base.pipeline_base import PipelineBase
-
-class MyODPipeline(PipelineBase):
-    def load(self, model_roles, configs):
-        self.load_models(model_roles, configs, device=device)
-
-    def predict(self, configs, inputs):
-        image = inputs["image"]  # single HWC numpy image
-
-        # 1. Preprocess
-        preprocessed, ops_list = self.preprocess("od-model", image)  # preprocessed is a list of images
-
-        # 2. Inference
-        results1, _ = self.models["od-model"].predict(preprocessed, 0.5)
-
-        # 3. Revert coordinates to original image space
-        results2 = self.revert_preprocess(results1, ops_list)
-
-        # 4. Annotate
-        r = {k: v[0] for k, v in results2.items()}  # remove the batch dim
-        annotated = self.models["od-model"].annotate_image(r, image)
-
-```
-
-A `tile` step changes the image count, so results come back one entry per source image rather than per tile — see new feature 4.
-
-**Tiling with anomaly detection**
-
-`Tiler` is no longer embedded inside anomaly model subclasses ([#263](../../pull/263)). Tiling must now be orchestrated explicitly via `preprocess()` before calling `predict()`, and `revert_preprocess()` stitches the per-tile anomaly maps back into a full-resolution map.
-
-AD model role from gofactory:
-```json
-"ad-model": {
-    "format": "pt",
-    "details": {
-        "image_size": [224, 224],
-        "min_threshold": 0.0,
-        "max_threshold": 1.0,
-        "preprocessing": [
-            {"type": "resize", "id": "7b2d4e6f-8a9c-4b1d-9e3f-5a6b7c8d9e0f", "configuration": {"height": 224, "width": 448, "preserve_aspect": true}},
-            {"type": "tile", "id": "c3e5f7a9-1b2d-4c6e-8f0a-2b4d6f8a0c1e", "configuration": {"height": 224, "width": 224, "y_stride": 112, "x_stride": 112}}
-        ],
-        "training_package": "Anomalib1",
-        "training_algorithm": "Patchcore"
-    },
-    "artifacts": {"pt": {"attributes": {}, "model_path": model_path}},
-    "model_role": "ad-model",
-    "model_name": "ad-model",
-    "model_type": "AnomalyDetection",
-    "model_version": "1"
-}
-```
-
-Pipeline example:
-```python
-from lmi_utils.pipeline_base.pipeline_base import PipelineBase
-
-class MyADPipeline(PipelineBase):
-    def load(self, model_roles, configs):
-        self.load_models(model_roles, configs, device=device)
-
-    def predict(self, configs, inputs):
-        image = inputs["image"]
-
-        # 1. Preprocess: resize -> tile
-        preprocessed_image, ops_list = self.preprocess("ad-model", image)
-
-        # 2. Inference on tiles
-        scores = self.models["ad-model"].predict(preprocessed_image)
-
-        # 3. reconstruct the score with the same shape as image
-        final_scores = self.revert_preprocess(scores, ops_list)  # returns a list of images
-        final_score = final_scores[0]
-
-```
-
-Steps 2 and 3 can also run as one call, as for OD: `self.models["ad-model"].predict(preprocessed_image, operators=ops_list)` returns the same maps as `revert_preprocess()`. Without `operators`, `predict()` returns maps at the model input size, as before.
-
----
-
-### 2. Forward preprocessing — typed step builders
-
-When you need to apply preprocessing **beyond what the model manifest declares** — e.g. extra flip, resize or crop — build the step list with `lmi_utils.preprocess_utils.steps`.
-
-**Forward step builders:**
-
-| Step builder | Required kwargs | Notes |
-|---|---|---|
-| `steps.resize(width=..., height=..., preserve_aspect=False, pad_value=0, mode="bilinear", antialias=False)` | — | Each dim defaults to the source image's matching dim. `pad_value` is the letterbox fill, only used when `preserve_aspect=True` (e.g. `114` to match YOLO). `antialias=True` low-passes before shrinking, as PIL and torchvision do |
-| `steps.cropbox(boxes=...)` | `boxes` | One `[x1, y1, x2, y2]` per image |
-| `steps.flip(lr=False, ud=False)` | — | Defaults to a no-op |
-| `steps.pad(width=None, height=None, pad=None, value=0)` | one of `width/height` or `pad` | `pad=[L, R, T, B]` is positive to pad / negative to crop; a `width`/`height` smaller than the input center-crops, otherwise pad |
-| `steps.tile(tile_size=..., stride=..., scale_mode="padding", overlap_mode="average")` | `tile_size`, `stride` | Scalars are broadcast to `[h, w]`. Takes further options controlling how tiled detections are merged back — see new feature 4 |
-
-**Usage — inside a `PipelineBase` subclass:**
 
 ```python
-from lmi_utils.preprocess_utils import steps
-
 class MyPipeline(PipelineBase):
     def predict(self, configs, inputs):
         image = inputs["image"]
 
-        ops = [
-            steps.cropbox(boxes=[[100, 50, 900, 700]]),
-            steps.resize(width=640, height=640, preserve_aspect=True),
-            steps.flip(lr=True),
-        ]
+        images, history = self.preprocess("od-model", image)
+        results, _ = self.models["od-model"].predict(images, 0.5)
+        results = self.revert_preprocess(results, history)   # coordinates in `image`
+        annotated = self.models["od-model"].annotate_image({k: v[0] for k, v in results.items()}, image)
 
-        preprocessed, history = self.preprocessor.preprocess(image, ops)
-        # preprocessed: list of transformed images, ready for model.predict(...)
-        # history:      record of what each step did — feed into the revert path (see new feature 3)
+        tiles, history = self.preprocess("ad-model", image)
+        ad_maps = self.models["ad-model"].predict(tiles)
+        ad_map = self.revert_preprocess(ad_maps, history)[0]   # same size as `image`
 ```
 
----
+OD and AD `predict()` also take the history as `operators` and revert their results, so the predict and revert above can run as one call ([#440](../../pull/440)). The results are the same as `revert_preprocess()`:
 
-### 3. Revert path — typed history for manual reconstruction
+```python
+results, _ = self.models["od-model"].predict(images, 0.5, operators=history)   # coordinates in `image`
+ad_map = self.models["ad-model"].predict(tiles, operators=history)[0]           # same size as `image`
+```
 
-To map coordinates back to the original image, the revert path needs to know what each preprocessing step did. That record is the **history** — one entry per step. **If the `Preprocessor` did the preprocessing**, you already have the history — just feed it back (the typical flow is in new feature 1).
+Without `operators`, OD coordinates stay in the model input and AD maps come back at the model input size.
 
-This section covers the other case: the image was preprocessed **outside** the `Preprocessor` (e.g. cropped by an earlier stage), so no history exists yet. You still want coordinates back in the original space, so you build the history yourself — one entry per step — using the revert step builders below.
+If an OD model's input still does not match its training size after the manifest steps, the pipeline adds a final resize:
+- A letterbox pads with the model's `RESIZE_PAD_VALUE`: `114` for YOLO, `0` otherwise. A manifest `resize` pads with `0` unless its configuration sets `pad_value`.
+- It antialiases when the model's `RESIZE_ANTIALIAS` is set (Detectron2, which trains and predicts with PIL bilinear).
+- `labels-preprocess resize --par` pads a dataset with `0`; pass `--pad_value 114` to match the YOLO letterbox.
 
-**Revert step builders:**
+### Preprocessing step builders
 
-| Step builder | Key fields (per-image lists, length B) |
+**PRs:** [#306](../../pull/306), [#313](../../pull/313), [#403](../../pull/403)
+
+Build extra steps beyond the manifest with `lmi_utils.preprocess_utils.steps` (`resize`, `cropbox`, `flip`, `pad`, `rotate`, `tile`), then run them with `self.preprocessor.preprocess(image, ops)`:
+
+```python
+ops = [steps.cropbox(boxes=[[100, 50, 900, 700]]), steps.resize(width=640, height=640, preserve_aspect=True), steps.flip(lr=True)]
+images, history = self.preprocessor.preprocess(image, ops)
+```
+
+### Building a history by hand
+
+When an image was changed outside the `Preprocessor`, e.g. cropped by an earlier stage, build its history with the revert step builders so coordinates can still go back to the original image. Each field is a list with one value per image, so a single image still needs the outer list.
+
+| Step | Fields |
 |---|---|
-| `steps.revert_cropbox(boxes=..., orig_sizes=...)` | `boxes` = `[x1, y1, x2, y2]` used; `orig_sizes` = `[W, H]` of the pre-crop canvas |
-| `steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...)` | `src_sizes` / `dst_sizes` = `[W, H]`; `pads` = `[L, R, T, B]` letterbox padding |
-| `steps.revert_pad(pads=...)` | `pads` = `[L, R, T, B]` applied |
-| `steps.revert_flip(lr=..., ud=..., sizes=...)` | `lr`, `ud` flags; `sizes` = `[W, H]` of the flipped image |
-| `steps.revert_tile(tile_sizes=..., strides=..., im_sizes=..., scale_sizes=..., n_tiles=..., batch_sizes=..., num_channels=..., scale_modes=..., overlap_modes=...)` | One entry per *source* image |
-
-**Example — image was cropped upstream; revert OD detections into the original frame:**
+| `steps.revert_cropbox(boxes=..., orig_sizes=...)` | `boxes` = `[[x1, y1, x2, y2], ...]` used; `orig_sizes` = `[[W, H], ...]` before the crop |
+| `steps.revert_resize(src_sizes=..., dst_sizes=..., pads=...)` | `[[W, H], ...]` sizes; `pads` = `[[L, R, T, B], ...]` letterbox padding |
+| `steps.revert_pad(pads=...)` | `[[L, R, T, B], ...]` applied |
+| `steps.revert_flip(lr=..., ud=..., sizes=...)` | `[bool, ...]` flags; `sizes` = `[[W, H], ...]` of the flipped image |
+| `steps.revert_rotate(angles=..., src_sizes=..., dst_sizes=...)` | `[deg, ...]`; `[[W, H], ...]` before and after the rotation |
+| `steps.revert_tile(tile_sizes=..., strides=..., im_sizes=..., scale_sizes=..., n_tiles=..., batch_sizes=..., num_channels=..., scale_modes=..., overlap_modes=...)` | one value per source image |
 
 ```python
-from lmi_utils.preprocess_utils import steps
-
-# foreground_im was already cropped from the full-resolution image at [x1, y1, x2, y2];
-# original canvas was W x H. Build the matching history and let predict() revert for us.
+# foreground_im was cropped at [x1, y1, x2, y2] from a W x H image
 history = [steps.revert_cropbox(boxes=[[x1, y1, x2, y2]], orig_sizes=[[W, H]])]
-
-results, _ = model.predict(foreground_im, 0.5, operators=history)
-# results["boxes"][0] is now in the original (W, H) coordinate space.
-
-# Or run inference first and revert afterward — the same history works with revert_preprocess():
-results1, _ = model.predict(foreground_im, 0.5)      # coords still in crop space
-results2 = self.revert_preprocess(results1, history)
-# results2["boxes"][0] is now in the original (W, H) coordinate space.
+results, _ = model.predict(foreground_im, 0.5, operators=history)   # boxes in the W x H image
 ```
 
-> **Impact:** The revert path is now **typed-only**. Code that built legacy operator dicts must migrate to the revert step builders above — `revert_to_origin`, `revert_mask_to_origin`, `revert_masks_to_origin`, and `apply_operations` keep their names but raise `TypeError` on dict input.
+### Tiled object detection
 
-> **Impact:** Every record must hold one entry per image it saw (per tile after a `tile` step). `predict(..., operators=...)` no longer copies a one-entry record to every image in the batch; any other count raises `ValueError` on every path (`predict` and `revert_preprocess`, OD and AD). For a batch of 4 that shares one crop:
->
-> ```python
-> # before: one entry, copied by predict()
-> steps.revert_cropbox(boxes=[[x1, y1, x2, y2]], orig_sizes=[[W, H]])
-> # after: one entry per image
-> steps.revert_cropbox(boxes=[[x1, y1, x2, y2]] * 4, orig_sizes=[[W, H]] * 4)
-> ```
->
-> Histories from `preprocess()` already hold one entry per image and need no change.
+**PRs:** [#401](../../pull/401), [#407](../../pull/407), [#410](../../pull/410), [#412](../../pull/412)
 
----
+Run a detector on overlapping tiles of a large image and get one set of detections back in image coordinates. Use it when objects are too small to survive downscaling the whole image. Works for boxes, segments and masks; keypoints and oriented boxes raise.
 
-### 4. Tiled object detection
+Add a `tile` step to the model's preprocessing in the manifest:
 
-Run a detector on overlapping tiles of a large image and get one set of detections back in image coordinates. Useful when objects are small relative to the image, so downscaling the whole frame to the model's input size would lose them.
-
-Supported for boxes, segments and masks. Keypoints and oriented boxes raise.
-
-**The result is per source image, not per tile.** `predict()` is handed N tiles but the tile history folds them back, so every value in the result dict has one entry per *source* image.
-
-There are two ways to run it, differing only in when the merge happens.
-
-**Either let `predict()` revert and merge:**
+```json
+"preprocessing": [
+    {"type": "tile", "id": "...", "configuration": {"height": 640, "width": 640, "y_stride": 512, "x_stride": 512}}
+]
+```
 
 ```python
-import numpy as np
-import torch
+class MyPipeline(PipelineBase):
+    def predict(self, configs, inputs):
+        image = torch.from_numpy(np.ascontiguousarray(inputs["image"])).cuda()   # optional; faster merging for segmentation models
+        tiles, history = self.preprocess("od-model", image)
 
-from lmi_utils.preprocess_utils import steps
-from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+        # predict and merge in one call
+        results, _ = self.models["od-model"].predict(tiles, 0.5, operators=history)   # one entry per source image, not per tile
 
-image = torch.from_numpy(np.ascontiguousarray(image)).cuda()  # optional, faster for segmentation models (see below)
-
-step = steps.tile(tile_size=[640, 640], stride=[512, 512])
-tiles, history = Preprocessor().preprocess([image], [step])   # e.g. 12 tiles
-
-results, _ = model.predict(tiles, operators=history, configs=0.5)
-boxes = results["boxes"][0]   # one entry, not 12 — already in `image` coordinates
+        # or keep the per-tile results and merge afterwards
+        per_tile, _ = self.models["od-model"].predict(tiles, 0.5)
+        results = self.revert_preprocess(per_tile, history)
 ```
 
-**Or predict first and revert afterwards**, when you want the per-tile detections too, or the tiles go through something else in between:
+Outside a pipeline, use `Preprocessor().preprocess([image], [steps.tile(tile_size=..., stride=...)])` and `Reconstructor().reconstruct_coordinates(...)`. The detector scripts do this behind `--tile`/`--stride`.
 
-```python
-from lmi_utils.preprocess_utils.reconstructor import Reconstructor
+Objects split by a tile seam are joined back into one detection, then class-aware NMS runs across tiles. Merge options such as `nms_iou` and `score_threshold` are on `steps.tile(...)`; a manifest `tile` step uses their defaults.
 
-tiles, history = Preprocessor().preprocess([image], [step])
+For speed, export a dynamic-batch engine so all tiles of an image run in one pass (YOLO: `dynamic: True` with `batch`; RF-DETR: `dynamic_batch: true` with `max_batch`).
 
-per_tile, _ = model.predict(tiles, configs=0.5)                        # 12 entries, each in its own tile's coords
-results = Reconstructor().reconstruct_coordinates(per_tile, history)   # 1 entry, in image coordinates
-```
-
-Inside a `PipelineBase` subclass the same two routes read as `self.preprocess("od-model", image)` followed by either `predict(..., operators=ops_list)` or `self.revert_preprocess(results, ops_list)` — `revert_preprocess()` dispatches a results dict to the `Reconstructor` (see new feature 1).
-
-Both routes return the same coordinates: float boxes, segments and keypoint x/y, clamped at 0. With numpy input and tiling, masks can still differ by a pixel: `predict` merges them on the GPU, `revert_preprocess` on the CPU. Pass `clip=False` to `revert_preprocess()` to keep negative values, e.g. on all but the last call of a chained revert. `Reconstructor.reconstruct_coordinates()` does not clamp unless given `clip=True`. `revert_to_origin()` and `apply_operations()` still round by default; pass `round=False` to match `predict` (they clamp at 0 unless given `clip=False`).
-
-> **Impact:** `predict(..., operators=...)` no longer rounds coordinates to whole pixels. Code that casts with `astype(int)` or `int()` now truncates the float value, so a result can move by 1 px; use `np.round(box).astype(int)` to keep the old numbers. `revert_preprocess()` now clamps negative coordinates to 0, and `revert_to_origin(..., round=False)` / `apply_operations(..., round=False)` now clamp too; pass `clip=False` to keep negative values. `predict` takes the same `clip` keyword.
-
-The results come back in the same form as the image you passed in: numpy arrays for a numpy image, torch tensors on the GPU for a GPU tensor (class names are always numpy). Call `.cpu().numpy()` on them if later code needs numpy.
-
-> **Performance:** after tiling, the tiles' detections must be merged back into one result per image, and for segmentation models this is heavy work on large masks.
-> - `predict(..., operators=history)` always merges on the GPU, whatever image you passed in.
-> - Reverting afterwards merges on the GPU only if the image was a GPU tensor. With a numpy image it merges on the CPU, which was about twice as slow in our tests.
->
-> So if you revert afterwards, convert the image to a GPU tensor first, as in the example above. Box-only models are barely affected either way.
-
-The detector scripts do this for you behind `--tile`/`--stride` (see breaking change 7). `object_detectors.od_core.infer_cli.predict_tiled(model, image, step, **predict_kwargs)` is the first route plus the tile rectangles for plotting.
-
-**Objects split across a seam are rejoined.** A tile only sees part of an object that crosses its edge, so the detector's box stops at the edge. Merging groups those pieces and emits one detection per object: if some tile saw the object whole, that detection wins; if every view is cut, the group's boxes and masks are combined. Class-aware NMS then runs across tiles. Segments are not merged as polygons: each result's segment is traced from its merged mask, so tiled segments need masks, and segments without masks raise. Pass `return_segments=False` to skip the model's per-tile tracing when you do not need segments.
-
-**Merge options** — all on `steps.tile(...)`, applied when coordinates are reverted:
-
-| Option | Default | Meaning |
-|---|---|---|
-| `merge_fragments` | `True` | On for every grid, including `scale_mode="interpolation"`, where merging runs in the scaled image's coordinates and the result is mapped back; `False` leaves seam-split objects split |
-| `score_threshold` | `0.0` | An extra threshold on top of the per-class `configs` confidence the model already applied, dropping detections *before* merging so a weak piece cannot represent its group and take the whole group down with it. Off by default |
-| `nms_iou` | `0.5` | Class-aware NMS IoU across tiles; `None` disables NMS. With merging off, NMS also drops a detection that lies 80% inside a higher-scoring one |
-| `edge_tolerance` | `2.0` | Px from a tile edge that still counts as touching it. Absolute, not a fraction of the tile: it tracks the detector's box-regression error at a crop boundary. Below `2`, tiles without overlap stop joining |
-| `min_label_size` | `0.0` | Forward direction only: drop a clipped *label* thinner than this many px on either axis when projecting ground truth into tiles |
-| `report_merge_origin` | `False` | Add a `merge_origin` code per detection saying how it was built |
-
-The detector scripts turn `report_merge_origin` on and colour each box by how merging built it, in the plot they write to `tiles/` in the output folder. That plot is the quickest way to see whether a grid is merging the way you expect. The codes themselves are the `ORIGIN_*` constants in `lmi_utils.postprocess_utils.tile_merge`.
-
-**Training on tiles.** `apply_ops tile` cuts a labeled dataset into the same grid, clipping each label into every tile it reaches:
+**Training on tiles:** `apply_ops tile` cuts a labeled dataset into the same grid, clipping each label into every tile it reaches. Each tile carries `source_id`, so tiles of one image stay on the same side of a train/val split. Tiles with no labels are dropped unless you pass `--bg`.
 
 ```bash
-python -m lmi_utils.label_utils.apply_ops -i images -oi tiled_images \
-    tile --width 640 --height 640 --stride 512 --min_label_size 8
+python -m lmi_utils.label_utils.apply_ops -i images -oi tiled_images tile --width 640 --height 640 --stride 512 --min_label_size 8
 ```
 
-Each tile becomes its own file carrying `source_id`, so tiles of one image stay on the same side of a train/val split. Tiles with no labels are dropped unless you pass `--bg`.
+### Dynamic-batch AD export
 
----
+**PR:** [#442](../../pull/442)
 
-### 5. Dynamic-batch anomaly detection export
-
-**PRs:** [#442](../../pull/442)
-
-AD models can be exported with a dynamic batch, so one ONNX or TensorRT run takes several images, e.g. all tiles of one image. Exports stay at batch 1 unless you ask for more. The same flags work for v1 and v2 (`python -m anomaly_detectors.anomalib_lmi.v2.model convert ...`):
+AD models can be exported to take a batch of images, e.g. all tiles of one image, in one ONNX or TensorRT run. Exports stay at batch 1 unless you ask. The flags are the same for v1 and v2 (`python -m anomaly_detectors.anomalib_lmi.v2.model convert ...`):
 
 | Source | Command | Result |
 |---|---|---|
-| `.pt` | `convert -i model.pt -o OUT -c onnx --dynamic_batch` | ONNX that takes any batch |
-| `.pt` | `convert -i model.pt -o OUT --max_batch N` | TensorRT engine that takes any batch from 1 to N |
-| v2 training ONNX | `convert -i model.onnx -o OUT --max_batch N` | TensorRT engine that takes any batch from 1 to N; the ONNX v2 training writes already has a dynamic batch |
+| `.pt` | `convert -i model.pt -o OUT -c onnx --dynamic_batch` | ONNX for any batch |
+| `.pt` | `convert -i model.pt -o OUT --max_batch N` | TensorRT engine for batches 1 to N |
+| v2 training ONNX | `convert -i model.onnx -o OUT --max_batch N` | TensorRT engine for batches 1 to N (v2 training ONNX already has a dynamic batch) |
 
-From Python, `export_onnx(path, dynamic_batch=True)` and `export_trt(export_dir, max_batch=N)` do the same.
+From Python: `export_onnx(path, dynamic_batch=True)` and `export_trt(export_dir, max_batch=N)`. `max_batch` > 1 needs a dynamic-batch ONNX; a fixed-batch one raises `ValueError`.
 
-`predict()` splits a larger input into chunks of the engine's max batch. A dynamic ONNX has no max, so it runs the whole input at once unless you pass `batch_size`.
+`predict()` splits larger inputs into chunks of the engine's max batch. A dynamic ONNX has no max, so it runs the whole input at once unless you pass `batch_size`.
 
 ```python
 from anomaly_detectors.anomalib_lmi.v2.model import AnomalyModel
@@ -599,8 +307,77 @@ model = AnomalyModel("OUT/model.engine")   # built with --max_batch 4
 maps = model.predict(tiles)                # 12 tiles run as 3 batches of 4
 ```
 
-> **Impact:** `export_trt(max_batch=N)` with N > 1 on a fixed-batch ONNX raises `ValueError`; it used to ignore `max_batch` and build a batch-1 engine.
+### AD ONNX inference
 
-> **Impact:** v2 training stops before training when the pre-processor has no Resize to a fixed `[h, w]`. Such a model used to export an ONNX with a dynamic height and width, which ONNX inference and the TensorRT conversion reject, or crash after training. Set `model.params.image_size`, or add a Resize with a `[h, w]` size to `pre_processor`.
+**PR:** [#291](../../pull/291)
 
-> **Deprecated:** TorchScript AD models (`.ts`, `.torchscript`, or a traced `.pt`) and `anomaly_detectors.anomalib_lmi.convert_to_torchscript` emit a `FutureWarning`, and a TorchScript model cannot be exported with a dynamic batch. Use the `.pt` checkpoint, or its ONNX/TensorRT export.
+AD v1 and v2 models load `.onnx` files and run them with ONNX Runtime, next to `.pt` and `.engine`:
+
+```python
+model = AnomalyModel("OUT/model.onnx")
+```
+
+### Classifier batch inference
+
+**PR:** [#281](../../pull/281)
+
+Classifier `predict()` takes one image, a list, or a BHWC array, plus a `batch_size` keyword. Every value in the result dict is a list with one entry per image.
+
+### Class names inside ONNX and engine files
+
+**PRs:** [#382](../../pull/382), [#383](../../pull/383), [#443](../../pull/443)
+
+RF-DETR and Detectron2 exports store their class names in the `.onnx` (`metadata_props`) and `.engine` (a JSON header) files, so a model deploys as one file. Passing `class_map` still works and is required for models exported elsewhere.
+
+### Detectron2 exports follow the config
+
+**PR:** [#443](../../pull/443)
+
+- Training saves `class_map.json`; `convert` embeds it, or the file given by `--class_map`.
+- The ONNX subtracts the config's `PIXEL_MEAN` instead of a fixed mean.
+- Inference follows `INPUT.FORMAT` (RGB or BGR) instead of always using BGR.
+
+Re-convert models with a non-default `PIXEL_MEAN` or an RGB `INPUT.FORMAT`.
+
+### YOLO26, OBB and pose models
+
+**PRs:** [#224](../../pull/224), [#402](../../pull/402), [#432](../../pull/432)
+
+- YOLO26 models load through the `ultralytics_lmi` backends.
+- GoFactory v3 static manifests accept `OrientedObjectDetection` and `KeypointDetection` models. Pipeline results turn 4-corner OBB boxes into rotated boxes.
+- Tested with ultralytics 8.4.170. From that version YOLO26 runs its one-to-many head with NMS by default, so engines exported with an older ultralytics do not match the `.pt`. Re-export them.
+
+### RF-DETR
+
+**PRs:** [#356](../../pull/356), [#381](../../pull/381), [#384](../../pull/384)
+
+- `.onnx` backend, on CUDA or CPU, and a `batch_size` argument for `.pth`.
+- `convert` and `export` read the model type from the checkpoint; `model_type` is needed only for checkpoints from rfdetr before 1.7.0.
+- GoFactory training: `num_classes` comes from the checkpoint, and training can include background images.
+- Sparse COCO class ids are supported.
+
+### Anomalib v2 on 2.6.0, with a memory estimate
+
+**PRs:** [#373](../../pull/373), [#409](../../pull/409)
+
+The v2 environment uses anomalib 2.6.0 with torch 2.6; v1 stays on anomalib 1.1.1 with torch 2.5.1. Before training, `anomaly_detectors.anomalib_lmi.v2.train` estimates the peak GPU memory and the largest dataset that fits. Pass `--skip-mem-estimate` to skip it.
+
+### Engines
+
+**PRs:** [#435](../../pull/435), [#438](../../pull/438)
+
+- TensorRT engines load on the GPU you pass (e.g. `cuda:1`), not the current one, and work with TensorRT 8.5.
+- Dynamic-batch ONNX models take any batch size; the limit of 32 is gone.
+
+### AD masking with instance segmentation
+
+**PR:** [#304](../../pull/304)
+
+`masked_ad_predict`, `apply_ad_mask` and `masked_ad_annotate` in `lmi_utils.gadget_utils.pipeline_utils` mask or damp an anomaly map with an OD model's instance masks. See `lmi_utils/gadget_utils/MASKING_README.md`.
+
+### Label tools
+
+**PRs:** [#190](../../pull/190), [#231](../../pull/231)
+
+- `python -m lmi_utils.label_utils.json_to_factory -i images -o factory_dataset` converts an LMI `labels.json` dataset to the Factory format (`-j` for another JSON path).
+- `Point2d`, `Box`, `Polygon` and `Mask` in `lmi_utils.dataset_utils.representations` have a `flip()` method.
