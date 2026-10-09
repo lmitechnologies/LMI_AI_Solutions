@@ -1,5 +1,8 @@
+"""Deprecated: trace Anomalib checkpoints to TorchScript. Use the .pt checkpoint, or export ONNX or TensorRT from it."""
+
 import argparse
 import logging
+import warnings
 
 import torch
 import torch.nn as nn
@@ -8,6 +11,10 @@ from torchvision.transforms import v2
 from anomaly_detectors.anomalib_lmi.base import to_list
 
 logger = logging.getLogger()
+
+
+def _warn_deprecated():
+    warnings.warn("TorchScript conversion is deprecated; use the .pt checkpoint or its ONNX/TensorRT export.", FutureWarning, stacklevel=3)
 
 
 class SafeNormalize(nn.Module):
@@ -87,6 +94,7 @@ def convert_v1_torchscript(model_path, output_path, device, batch_size=1):
     Returns:
         torch.jit.ScriptModule: The converted TorchScript model.
     """
+    _warn_deprecated()
     logger.info(f"Converting {model_path} to TorchScript format on {device}")
     ckpt = torch.load(model_path, map_location=device, weights_only=False)
     model = ckpt["model"].eval()
@@ -97,6 +105,8 @@ def convert_v1_torchscript(model_path, output_path, device, batch_size=1):
     for d in model.transform.transforms:
         if isinstance(d, v2.Resize):
             image_size = to_list(d.size)
+    if image_size is None:
+        raise ValueError(f"No Resize transform in {model_path}; cannot pick a trace size")
     image_size = [image_size[0] + 1, image_size[1] + 1]
 
     # trace the model
@@ -121,6 +131,7 @@ def convert_v2_torchscript(model_path, output_path, batch_size=1, device="cpu"):
     Returns:
         torch.jit.ScriptModule: The converted TorchScript model.
     """
+    _warn_deprecated()
     logger.info(f"Converting {model_path} to TorchScript format.")
     ckpt = torch.load(model_path, map_location=device, weights_only=False)
     model = ckpt["model"].eval()
@@ -138,14 +149,13 @@ def convert_v2_torchscript(model_path, output_path, batch_size=1, device="cpu"):
     try:
         for t in model.pre_processor.transform.transforms:
             if type(t).__name__ == "Resize":
-                image_size = t.size
+                image_size = to_list(t.size)
                 break
     except AttributeError:
-        logger.warning("Could not access transforms. Using default size.")
+        pass
 
     if image_size is None:
-        logger.warning("Resize transform not found. Defaulting image size to [256, 256].")
-        image_size = [256, 256]
+        raise ValueError(f"No Resize transform in {model_path}; cannot pick a trace size")
 
     logger.info(f"Using image size: {image_size}")
 

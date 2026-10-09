@@ -202,7 +202,7 @@ services:
     ipc: host
     runtime: nvidia # ensure that Nvidia Container Toolkit is installed
     command: >
-      bash -c "python -m anomaly_detectors.anomalib_lmi.v1.model convert -i /app/weights/torch/model.pt -e /app/weights/engine"
+      bash -c "python -m anomaly_detectors.anomalib_lmi.v1.model convert -i /app/weights/torch/model.pt -o /app/weights/engine"
 
 ```
 
@@ -300,3 +300,6 @@ python -m anomaly_detectors.anomalib_lmi.v1.model test -i PATH_MODEL -d PATH_DAT
 ```bash
 python -m anomaly_detectors.anomalib_lmi.v1.model convert -i MODEL_PATH -o EXPORT_PATH
 ```
+
+The engine takes one image per run. Add `--max_batch N` to build an engine that takes any batch from 1 to N; `predict()` splits
+larger inputs into chunks of N. For an ONNX export (`-c onnx`), `--dynamic_batch` exports a batch dimension of any size.

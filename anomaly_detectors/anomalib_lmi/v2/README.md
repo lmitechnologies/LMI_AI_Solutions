@@ -168,3 +168,7 @@ services:
         trtexec --onnx=/app/weights/Patchcore/dataset/v0/weights/onnx/model.onnx --saveEngine=/app/weights/Patchcore/dataset/v0/weights/model.engine --memPoolSize=workspace:4096
 ```
 
+That engine takes one image per run. To take any batch from 1 to N, build it with
+`python3 -m anomaly_detectors.anomalib_lmi.v2.model convert -i PATH/onnx/model.onnx -o OUT_DIR --max_batch N` instead;
+`predict()` splits larger inputs into chunks of N.
+
