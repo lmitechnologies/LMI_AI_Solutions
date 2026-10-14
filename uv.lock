@@ -1169,7 +1169,7 @@ ci = [
     { name = "onnxslim", specifier = "==0.1.97" },
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
-    { name = "rfdetr", specifier = "==1.11.1" },
+    { name = "rfdetr", specifier = "==1.11.2" },
     { name = "scikit-learn", specifier = "==1.7.2" },
     { name = "setuptools", specifier = "<82" },
     { name = "shapely", specifier = "==2.1.2" },
@@ -1187,7 +1187,7 @@ gpu = [
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "pytest-html", specifier = ">=4.1.1" },
-    { name = "rfdetr", specifier = "==1.11.1" },
+    { name = "rfdetr", specifier = "==1.11.2" },
     { name = "scikit-learn", specifier = "==1.7.2" },
     { name = "setuptools", specifier = "<82" },
     { name = "shapely", specifier = "==2.1.2" },
@@ -1205,7 +1205,7 @@ test = [
     { name = "onnxslim", specifier = "==0.1.97" },
     { name = "pycocotools", specifier = "==2.0.11" },
     { name = "pytest", specifier = "==9.1.1" },
-    { name = "rfdetr", specifier = "==1.11.1" },
+    { name = "rfdetr", specifier = "==1.11.2" },
     { name = "scikit-learn", specifier = "==1.7.2" },
     { name = "setuptools", specifier = "<82" },
     { name = "shapely", specifier = "==2.1.2" },
@@ -2376,7 +2376,7 @@ wheels = [
 
 [[package]]
 name = "rfdetr"
-version = "1.11.1"
+version = "1.11.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
@@ -2402,9 +2402,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "transformers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c5/46/a70b2c73509819aa3f04719eb049ecf2ddb19746908cc2633957d02c4f20/rfdetr-1.11.1.tar.gz", hash = "sha256:66ed968b2f9e4bcff4c0d3586afbe489cd3a83a8db5bcb82f2a125637a219854", size = 715269, upload-time = "2026-09-30T11:18:16.325Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ee/5c/56408bdb7d30e4fdb7cd332c7d0a29c1fa06bee93fb730359367d8198564/rfdetr-1.11.2.tar.gz", hash = "sha256:11c3395b004c2ffdd30b7bf83c324a2b8caf5e5609c7407c73b484b9ce7454d3", size = 734014, upload-time = "2026-10-04T11:23:11.706Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/69/79/a170c8761ee780b6b48e7e7aabefbdb9da35dc37d5566749e2da41857c72/rfdetr-1.11.1-py3-none-any.whl", hash = "sha256:cb29c790ca75f9d671d405e9d52155afed37c98b2b53ac554489a7692e85caab", size = 768670, upload-time = "2026-09-30T11:18:14.265Z" },
+    { url = "https://files.pythonhosted.org/packages/16/94/a592dd9ba73df327ed82a15665948683b88365428139cc175c540f8a8f84/rfdetr-1.11.2-py3-none-any.whl", hash = "sha256:2f23589567123b59302f1cfa9d14d23630f9f583ee6f3468c5891e33fb103b2a", size = 788908, upload-time = "2026-10-04T11:23:09.757Z" },
 ]
 
 [[package]]
