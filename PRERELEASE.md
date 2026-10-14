@@ -6,6 +6,8 @@ Breaking changes and new features since `v2.0.0`. Each breaking change says what
 
 ### `gofactory_AD` removed
 
+**PR:** [#452](https://github.com/lmitechnologies/LMI_AI_Solutions/pull/452)
+
 `anomaly_detectors.anomalib_lmi.gofactory_AD`, the script GoFactory's Anomalib v1 trainer ran on its validation and testing images, is gone. GoFactory now keeps that step in its own repository.
 
 Its `--tile` and `--stride` options had no effect since [#263](https://github.com/lmitechnologies/LMI_AI_Solutions/pull/263), which moved AD tiling out of the model. To score a folder of images, with or without tiling, use the `test` action:
