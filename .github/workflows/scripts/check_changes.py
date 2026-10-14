@@ -9,6 +9,7 @@ Environment variables (injected by the workflow step):
   EVENT_NAME     github.event_name  ("push" | "pull_request")
   BASE_REF       github.base_ref    (PR target branch, e.g. "main")
   BEFORE         github.event.before (push: SHA of commit before the push)
+  GH_TOKEN       token for the GitHub API (push: finds the last successful CI run)
   GITHUB_OUTPUT  path to the GitHub Actions output file
 """
 
@@ -63,12 +64,33 @@ def run(cmd: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, capture_output=True, text=True, check=True)
 
 
+def last_successful_push_sha() -> str | None:
+    """Return the head SHA of the last successful push CI run on this branch, if it is an ancestor of HEAD."""
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    branch = os.environ.get("GITHUB_REF_NAME")
+    if not repo or not branch:
+        return None
+    url = f"repos/{repo}/actions/workflows/ci.yaml/runs?branch={branch}&event=push&status=success&per_page=1"
+    try:
+        sha = run(["gh", "api", url, "--jq", ".workflow_runs[0].head_sha // empty"]).stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"⚠️  Could not query the last successful CI run ({e}).", flush=True)
+        return None
+    if not sha or subprocess.run(["git", "merge-base", "--is-ancestor", sha, "HEAD"]).returncode != 0:
+        return None
+    return sha
+
+
 def resolve_base(event_name: str, base_ref: str, before: str) -> str:
     null_sha = "0" * 40
 
     if event_name == "pull_request":
         run(["git", "fetch", "origin", base_ref])
         return f"origin/{base_ref}"
+
+    # Queued runs get cancelled by newer pushes, so `before` can miss their changes.
+    if event_name == "push" and (sha := last_successful_push_sha()):
+        return sha
 
     if not before or before == null_sha:
         print("ℹ️  Initial push detected — using HEAD~1 as base.", flush=True)

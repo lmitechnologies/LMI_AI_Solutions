@@ -15,6 +15,9 @@ jobs:
   check-changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       skip_tests: ${{ steps.check.outputs.skip_tests }}
       req_changed: ${{ steps.check.outputs.req_changed }}
@@ -39,6 +42,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
           BEFORE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
 
   build-images:
     needs: check-changes
