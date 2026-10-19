@@ -288,10 +288,7 @@ def _save_graph(path, nodes, initializers, inp_shape, out_shape):
 
 
 def _resize_onnx(path, rows_follow_batch=True, out_shape=("batch", "n")):
-    """Resize sizes built from the input's own shape, as torch exports F.interpolate, leave ORT's output dims symbolic.
-
-    The output has 6 columns, and one row per image, or one row for the whole batch (batch / batch) without rows_follow_batch.
-    """
+    """6 columns, and one row per image or, without rows_follow_batch, one per batch; ORT can't size it, as with F.interpolate."""
     onnx = pytest.importorskip("onnx")
     TensorProto, helper = onnx.TensorProto, onnx.helper
 
@@ -307,8 +304,8 @@ def _resize_onnx(path, rows_follow_batch=True, out_shape=("batch", "n")):
     return _save_graph(path, nodes, inits, ["batch", 4], list(out_shape))
 
 
-def _slice_onnx(path, inp_shape, axis=1):
-    """Keeps the first max(x) + 1 entries along axis, so that output dim depends on the data."""
+def _slice_onnx(path, inp_shape, axis=1, extra=1.0):
+    """Keeps the first max(x) + extra entries along axis."""
     onnx = pytest.importorskip("onnx")
     TensorProto, helper = onnx.TensorProto, onnx.helper
 
@@ -319,7 +316,7 @@ def _slice_onnx(path, inp_shape, axis=1):
         helper.make_node("Reshape", ["end_s", "shape1"], ["end"]),
         helper.make_node("Slice", ["input", "zero", "end", "axis"], ["output"]),
     ]
-    inits = [helper.make_tensor("one", TensorProto.FLOAT, [], [1.0])]
+    inits = [helper.make_tensor("one", TensorProto.FLOAT, [], [extra])]
     inits += [helper.make_tensor(n, TensorProto.INT64, [1], [v]) for n, v in (("shape1", 1), ("zero", 0), ("axis", axis))]
     out_shape = ["n", inp_shape[1]] if axis == 0 else [inp_shape[0], "n"]
     return _save_graph(path, nodes, inits, inp_shape, out_shape)
@@ -336,7 +333,9 @@ def test_symbolic_output_dims_are_sized_at_load(tmp_path, device):
     torch.testing.assert_close(engine.infer(x)[0], x[:, [0, 0, 1, 2, 2, 3]])
 
 
-@pytest.mark.parametrize("out_shape", [("batch", "n"), ("rows", 6)], ids=["symbolic width", "only dim 0 symbolic"])
+@pytest.mark.parametrize(
+    "out_shape", [("batch", "n"), ("rows", 6), ("batch", 6)], ids=["symbolic width", "only dim 0 symbolic", "named like the batch"]
+)
 def test_dynamic_batch_output_dim0_that_does_not_follow_the_batch_is_rejected(tmp_path, out_shape):
     path = _resize_onnx(tmp_path / "resize.onnx", rows_follow_batch=False, out_shape=out_shape)
     with pytest.raises(NotImplementedError, match=r"shape \(1, 6\) at batch 2"):
@@ -348,10 +347,9 @@ def test_dynamic_batch_output_dim0_named_apart_from_the_batch_loads_when_it_foll
     assert engine.infer(torch.randn(3, 4))[0].shape == (3, 6)
 
 
-def test_outputs_named_like_the_batch_skip_the_run_at_load(dynamic_onnx_path, caplog):
-    with caplog.at_level("INFO", logger="lmi_common.onnx_engine"):
-        ONNXEngine(dynamic_onnx_path, device="cpu")
-    assert "sized from" not in caplog.text
+def test_output_empty_on_zeros_is_rejected(tmp_path):
+    with pytest.raises(NotImplementedError, match="is empty"):
+        ONNXEngine(_slice_onnx(tmp_path / "slice.onnx", [2, 4], axis=0, extra=0.0), device="cpu")
 
 
 def test_static_batch_output_dims_are_sized_at_that_batch(tmp_path):
