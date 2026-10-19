@@ -373,3 +373,26 @@ def test_data_dependent_output_dim_fails_when_it_changes_cuda(tmp_path):
     assert engine.infer(torch.zeros(1, 4, device="cuda"))[0].shape == (1, 1)
     with pytest.raises(Exception, match="shape verification failed"):
         engine.infer(torch.full((1, 4), 2.0, device="cuda"))
+
+
+def test_a_failed_run_at_load_is_reported_clearly(dynamic_onnx_path, monkeypatch):
+    def fail(self, *args, **kwargs):
+        raise RuntimeError("cannot reshape")
+
+    monkeypatch.setattr(ort.InferenceSession, "run", fail)
+    with pytest.raises(RuntimeError, match="failed a batch-2 run on zeros at load: cannot reshape"):
+        ONNXEngine(dynamic_onnx_path, device="cpu")
+
+
+def test_non_tensor_output_is_rejected_before_the_run(tmp_path):
+    onnx = pytest.importorskip("onnx")
+    helper = onnx.helper
+
+    inp = helper.make_tensor_value_info("input", onnx.TensorProto.FLOAT, ["batch", 4])
+    out = helper.make_tensor_sequence_value_info("output", onnx.TensorProto.FLOAT, None)
+    graph = helper.make_graph([helper.make_node("SequenceConstruct", ["input"], ["output"])], "g", [inp], [out])
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    model.ir_version = 8
+    onnx.save(model, str(tmp_path / "seq.onnx"))
+    with pytest.raises(NotImplementedError, match="Unsupported ONNX tensor type"):
+        ONNXEngine(str(tmp_path / "seq.onnx"), device="cpu")
