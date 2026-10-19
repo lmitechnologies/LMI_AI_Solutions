@@ -160,9 +160,17 @@ class ONNXEngine:
 
         # Exporters can leave fixed output dims symbolic; with every input dim but the batch fixed, one run gives their sizes.
         # A dynamic batch runs at 2: at 1, an output whose dim 0 is always 1 would pass for one that follows the batch.
+        # ORT holds dims sharing a name to one size, so an output dim 0 named like the input batch needs no run.
         probe_batch = max_batch or 2
+        batch_names = {meta.shape[0] for meta in ort_inputs if not _is_static_dim(meta.shape[0])}
+
+        def needs_run(shape) -> bool:
+            if not is_dynamic:
+                return not all(_is_static_dim(d) for d in shape)
+            return shape[0] not in batch_names or not all(_is_static_dim(d) for d in shape[1:])
+
         probed: Dict[str, Tuple[int, ...]] = {}
-        if any(not _is_static_dim(d) for meta in ort_outputs for d in (meta.shape[1:] if is_dynamic else meta.shape)):
+        if any(needs_run(meta.shape) for meta in ort_outputs):
             feeds = {n: np.zeros((probe_batch, *input_spatial[n]), dtype=_TORCH_TO_NP_DTYPE[input_dtypes[n]]) for n in input_names}
             names = [meta.name for meta in ort_outputs]
             probed = {n: r.shape for n, r in zip(names, self._session.run(names, feeds))}

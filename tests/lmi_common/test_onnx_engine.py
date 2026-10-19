@@ -287,7 +287,7 @@ def _save_graph(path, nodes, initializers, inp_shape, out_shape):
     return str(path)
 
 
-def _resize_onnx(path, rows_follow_batch=True):
+def _resize_onnx(path, rows_follow_batch=True, out_shape=("batch", "n")):
     """Resize sizes built from the input's own shape, as torch exports F.interpolate, leave ORT's output dims symbolic.
 
     The output has 6 columns, and one row per image, or one row for the whole batch (batch / batch) without rows_follow_batch.
@@ -304,7 +304,7 @@ def _resize_onnx(path, rows_follow_batch=True):
         helper.make_node("Resize", ["input", "", "", "sizes"], ["output"], mode="nearest"),
     ]
     inits = [helper.make_tensor(n, TensorProto.INT64, [1], [v]) for n, v in (("zero", 0), ("one", 1), ("width", 6))]
-    return _save_graph(path, nodes, inits, ["batch", 4], ["batch", "n"])
+    return _save_graph(path, nodes, inits, ["batch", 4], list(out_shape))
 
 
 def _slice_onnx(path, inp_shape, axis=1):
@@ -336,9 +336,22 @@ def test_symbolic_output_dims_are_sized_at_load(tmp_path, device):
     torch.testing.assert_close(engine.infer(x)[0], x[:, [0, 0, 1, 2, 2, 3]])
 
 
-def test_dynamic_batch_output_dim0_that_does_not_follow_the_batch_is_rejected(tmp_path):
+@pytest.mark.parametrize("out_shape", [("batch", "n"), ("rows", 6)], ids=["symbolic width", "only dim 0 symbolic"])
+def test_dynamic_batch_output_dim0_that_does_not_follow_the_batch_is_rejected(tmp_path, out_shape):
+    path = _resize_onnx(tmp_path / "resize.onnx", rows_follow_batch=False, out_shape=out_shape)
     with pytest.raises(NotImplementedError, match=r"shape \(1, 6\) at batch 2"):
-        ONNXEngine(_resize_onnx(tmp_path / "resize.onnx", rows_follow_batch=False), device="cpu")
+        ONNXEngine(path, device="cpu")
+
+
+def test_dynamic_batch_output_dim0_named_apart_from_the_batch_loads_when_it_follows(tmp_path):
+    engine = ONNXEngine(_resize_onnx(tmp_path / "resize.onnx", out_shape=("rows", 6)), device="cpu")
+    assert engine.infer(torch.randn(3, 4))[0].shape == (3, 6)
+
+
+def test_outputs_named_like_the_batch_skip_the_run_at_load(dynamic_onnx_path, caplog):
+    with caplog.at_level("INFO", logger="lmi_common.onnx_engine"):
+        ONNXEngine(dynamic_onnx_path, device="cpu")
+    assert "sized from" not in caplog.text
 
 
 def test_static_batch_output_dims_are_sized_at_that_batch(tmp_path):
