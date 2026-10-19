@@ -282,6 +282,9 @@ def main():
                 logger.info(f"{name}: shape={tuple(value.shape)}, dtype={value.dtype}, device={value.device}")
 
     # --- Export to Torch---
+    # EfficientAd's __getstate__ bypasses LightningModule's, which drops the trainer, so model.pt would
+    # otherwise pickle the trainer, its datamodule, and the synthetic test dataset that deletes its temp dir
+    model.trainer = None
     engine.export(model=model, export_type=ExportType.TORCH)
 
     # --- Export to ONNX---
