@@ -241,6 +241,8 @@ def main():
         devices=eng_cfg["devices"],
         default_root_dir=Path(eng_cfg["default_root_dir"]),
         callbacks=tiler_callbacks,
+        # Engine turns Lightning logging off by default, which leaves no TensorBoard metrics to read
+        logger=True,
     )
 
     if not args.skip_mem_estimate:
