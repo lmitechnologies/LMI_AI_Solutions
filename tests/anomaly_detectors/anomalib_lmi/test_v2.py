@@ -3,6 +3,7 @@ import hashlib
 import logging
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -452,13 +453,14 @@ def _write_padim_config(root, tile_size, stride, image_size=(448, 448)):
     return config_path
 
 
-def _train_via_cli(config_path):
+def _train_via_cli(config_path, env=None):
     """Run the training entry point the way a user does, and return the checkpoint it writes."""
     result = subprocess.run(
         [sys.executable, "-m", "anomaly_detectors.anomalib_lmi.v2.train", "--config", str(config_path), "--skip-mem-estimate"],
         capture_output=True,
         text=True,
         cwd=os.getcwd(),
+        env=env,
     )
     assert result.returncode == 0, f"training CLI failed:\n{result.stdout[-3000:]}\n{result.stderr[-3000:]}"
     return result
@@ -574,6 +576,51 @@ def test_torchscript_model_still_predicts_after_onnx_export(tiled_patchcore_pt, 
 
     ts_model.export_onnx(str(tmp_path / "model.onnx"))
     ts_model.predict([_bad_image()])
+
+
+@pytest.fixture(scope="module")
+def efficientad_out(tmp_path_factory):
+    """EfficientAd trained through the CLI offline: the repo images stand in for Imagenette and a random teacher for the pretrained one."""
+    from anomalib.models.image.efficient_ad.torch_model import EfficientAdModel
+
+    root = tmp_path_factory.mktemp("efficientad")
+    config_path = _write_padim_config(root, tile_size=None, stride=None, image_size=(256, 256))
+    # ImageFolder needs one subfolder per class
+    imagenet = root / "imagenet" / "any"
+    imagenet.mkdir(parents=True)
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        shutil.copy(p, imagenet)
+    config = yaml.safe_load(config_path.read_text())
+    params = {"imagenet_dir": str(imagenet.parent), "model_size": "small", "image_size": [256, 256]}
+    config["model"] = {"class_name": "EfficientAd", "params": params}
+    config["data"] |= {"train_batch_size": 1, "eval_batch_size": 1}
+    config_path.write_text(yaml.safe_dump(config))
+
+    # anomalib looks for the teacher in the user cache before downloading it
+    teacher_dir = root / "cache" / "anomalib" / "pre_trained" / "efficientad_pretrained_weights"
+    teacher_dir.mkdir(parents=True)
+    teacher = EfficientAdModel(teacher_out_channels=384, model_size="small").teacher
+    torch.save(teacher.state_dict(), teacher_dir / "pretrained_teacher_small.pth")
+    _train_via_cli(config_path, env=os.environ | {"XDG_CACHE_HOME": str(root / "cache")})
+
+    weights = root / "out" / "EfficientAd"
+    return glob.glob(str(weights / "**" / "model.pt"), recursive=True)[0], glob.glob(str(weights / "**" / "model.onnx"), recursive=True)[0]
+
+
+def test_efficientad_torch_export_loads_without_the_training_data(efficientad_out):
+    code = "import sys, torch; torch.load(sys.argv[1], weights_only=False)"
+    result = subprocess.run([sys.executable, "-c", code, efficientad_out[0]], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr[-3000:]
+    assert "Exception ignored" not in result.stderr, result.stderr[-3000:]
+
+
+def test_efficientad_onnx_export_matches_pt(efficientad_out):
+    pt_path, onnx_path = efficientad_out
+    pt_model = AnomalyModelV2(pt_path, device=DEVICE, image_size=[256, 256])
+    onnx_model = AnomalyModelV2(onnx_path, device=DEVICE)
+    for p in glob.glob(os.path.join(DATA_PATH, "*.png")):
+        rgb = cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2RGB)
+        np.testing.assert_allclose(onnx_model.predict(rgb)[0], pt_model.predict(rgb)[0], atol=1e-3, err_msg=os.path.basename(p))
 
 
 def test_padim_cli_tiled_and_untiled_agree_on_the_embedding_grid(tmp_path):

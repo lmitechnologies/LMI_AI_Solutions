@@ -21,28 +21,8 @@ def convert_to_onnx(model, output_dir: str, **kwargs) -> str:
     # rfdetr defaults verbose to True, which makes torch.onnx.export dump every node in the graph.
     kwargs.setdefault("verbose", False)
     onnx_path = model.export(output_dir=output_dir, opset_version=kwargs.pop("opset_version", 17), **kwargs)
-    if kwargs.get("dynamic_batch"):
-        _pin_output_dims(onnx_path)
     embed_onnx_metadata(onnx_path, metadata.as_payload())
     return onnx_path
-
-
-def _pin_output_dims(onnx_path: str) -> None:
-    """Size every output dim but the batch from one batch-1 run; a dynamic-batch export leaves them symbolic and ONNXEngine
-    rejects that."""
-    import numpy as np
-    import onnx
-    import onnxruntime as ort
-
-    session = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
-    (inp,) = session.get_inputs()
-    outputs = session.run(None, {inp.name: np.zeros([1, *inp.shape[1:]], dtype=np.float32)})
-    sizes = {meta.name: out.shape for meta, out in zip(session.get_outputs(), outputs)}
-    model = onnx.load(onnx_path)
-    for out in model.graph.output:
-        for dim, size in zip(out.type.tensor_type.shape.dim[1:], sizes[out.name][1:]):
-            dim.dim_value = size
-    onnx.save(model, onnx_path)
 
 
 def convert_to_tensorrt(onnx_path: str, **kwargs) -> str:

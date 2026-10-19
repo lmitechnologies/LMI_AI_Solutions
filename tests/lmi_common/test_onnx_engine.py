@@ -267,3 +267,79 @@ def test_cuda_session_in_fresh_process(dynamic_onnx_path):
     code = f"from lmi_common.onnx_engine import ONNXEngine; ONNXEngine({dynamic_onnx_path!r}, device='cuda')"
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def _devices():
+    cuda = torch.cuda.is_available() and "CUDAExecutionProvider" in ort.get_available_providers()
+    return ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(not cuda, reason="onnxruntime-gpu / CUDAExecutionProvider not available"))]
+
+
+def _save_graph(path, nodes, initializers, inp_shape, out_shape):
+    onnx = pytest.importorskip("onnx")
+    from onnx import TensorProto, helper
+
+    inp = helper.make_tensor_value_info("input", TensorProto.FLOAT, inp_shape)
+    out = helper.make_tensor_value_info("output", TensorProto.FLOAT, out_shape)
+    graph = helper.make_graph(nodes, "g", [inp], [out], initializer=initializers)
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    model.ir_version = 8
+    onnx.save(model, str(path))
+    return str(path)
+
+
+def _resize_onnx(path):
+    """Resize sizes built from the input's own shape, as torch exports F.interpolate, leave ORT's output dims symbolic."""
+    from onnx import TensorProto, helper
+
+    nodes = [
+        helper.make_node("Shape", ["input"], ["shape"]),
+        helper.make_node("Slice", ["shape", "zero", "one"], ["batch"]),
+        helper.make_node("Concat", ["batch", "width"], ["sizes"], axis=0),
+        helper.make_node("Resize", ["input", "", "", "sizes"], ["output"], mode="nearest"),
+    ]
+    inits = [helper.make_tensor(n, TensorProto.INT64, [1], [v]) for n, v in (("zero", 0), ("one", 1), ("width", 6))]
+    return _save_graph(path, nodes, inits, ["batch", 4], ["batch", "n"])
+
+
+def _slice_onnx(path, inp_shape):
+    """Keeps the first max(x) + 1 columns, so the output width depends on the data."""
+    from onnx import TensorProto, helper
+
+    nodes = [
+        helper.make_node("ReduceMax", ["input"], ["max"], keepdims=0),
+        helper.make_node("Add", ["max", "one"], ["end_f"]),
+        helper.make_node("Cast", ["end_f"], ["end_s"], to=TensorProto.INT64),
+        helper.make_node("Reshape", ["end_s", "shape1"], ["end"]),
+        helper.make_node("Slice", ["input", "zero", "end", "axis1"], ["output"]),
+    ]
+    inits = [helper.make_tensor("one", TensorProto.FLOAT, [], [1.0])]
+    inits += [helper.make_tensor(n, TensorProto.INT64, [1], [v]) for n, v in (("shape1", 1), ("zero", 0), ("axis1", 1))]
+    return _save_graph(path, nodes, inits, inp_shape, [inp_shape[0], "n"])
+
+
+@pytest.mark.parametrize("device", _devices())
+def test_symbolic_output_dims_are_sized_at_load(tmp_path, device):
+    path = _resize_onnx(tmp_path / "resize.onnx")
+    assert not isinstance(ort.InferenceSession(path, providers=["CPUExecutionProvider"]).get_outputs()[0].shape[1], int)
+
+    engine = ONNXEngine(path, device=device)
+    assert engine._output_buffers[0].shape[1:] == (6,)
+    x = torch.randn(3, 4, device=device)
+    torch.testing.assert_close(engine.infer(x)[0], x[:, [0, 0, 1, 2, 2, 3]])
+
+
+def test_static_batch_output_dims_are_sized_at_that_batch(tmp_path):
+    engine = ONNXEngine(_slice_onnx(tmp_path / "slice.onnx", [2, 4]), device="cpu")
+    assert tuple(engine._output_buffers[0].shape) == (2, 1)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_data_dependent_output_dim_fails_when_it_changes_cuda(tmp_path):
+    """Zeros at load size the output to 1 column; twos need 3."""
+    if "CUDAExecutionProvider" not in ort.get_available_providers():
+        pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
+
+    engine = ONNXEngine(_slice_onnx(tmp_path / "slice.onnx", ["batch", 4]), device="cuda")
+    assert engine.infer(torch.zeros(1, 4, device="cuda"))[0].shape == (1, 1)
+    with pytest.raises(Exception, match="shape verification failed"):
+        engine.infer(torch.full((1, 4), 2.0, device="cuda"))

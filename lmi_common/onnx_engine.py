@@ -62,7 +62,9 @@ class ONNXEngine:
     On CUDA, I/O is bound to torch CUDA tensors via ORT's IOBinding for a zero-copy GPU
     pipeline. Output buffers are reused across calls and grow by doubling, so a
     dynamic-batch model takes any batch; callers must chunk large inputs to avoid OOM.
-    Only a symbolic batch dim (dim 0) is supported; symbolic non-batch dims raise ``NotImplementedError``.
+    Only a symbolic batch dim (dim 0) is supported in the inputs; symbolic non-batch input dims raise ``NotImplementedError``.
+    Symbolic non-batch output dims are sized from one run on zeros at load; on CUDA, an output whose size depends on the
+    input data then fails when it differs from that run.
 
     Embedded metadata written by ``lmi_common.model_metadata`` is exposed as ``self.metadata``
     ({} for a model without any).
@@ -148,10 +150,19 @@ class ONNXEngine:
                 )
             logger.info(f"ONNX input  '{meta.name}': shape={shape}, dtype={input_dtypes[meta.name]}, dynamic_batch={dyn}")
 
+        ort_outputs = self._session.get_outputs()
+        # Exporters can leave fixed output dims symbolic; with every input dim but the batch fixed, one run gives their sizes.
+        probed: Dict[str, Tuple[int, ...]] = {}
+        if any(not _is_static_dim(d) for meta in ort_outputs for d in meta.shape[1:]):
+            feeds = {n: np.zeros((max_batch or 1, *input_spatial[n]), dtype=_TORCH_TO_NP_DTYPE[input_dtypes[n]]) for n in input_names}
+            names = [meta.name for meta in ort_outputs]
+            probed = {n: r.shape for n, r in zip(names, self._session.run(names, feeds))}
+            logger.info(f"ONNX output dims sized from a batch-{max_batch or 1} run: {probed}")
+
         # Outputs — pre-allocate at the static batch, or 1 for a dynamic one; track which outputs have a dynamic batch dim.
         output_names: List[str] = []
         outputs: Dict[str, _OutputBinding] = {}
-        for meta in self._session.get_outputs():
+        for meta in ort_outputs:
             shape = meta.shape
             dyn_batch = len(shape) > 0 and not _is_static_dim(shape[0])
             if is_dynamic and not dyn_batch:
@@ -159,12 +170,8 @@ class ONNXEngine:
                     f"Output '{meta.name}' has static dim 0 ({shape[0] if shape else 'scalar'}) but the model "
                     f"has a dynamic input batch. Outputs whose dim 0 does not scale with batch are not supported."
                 )
-            for d in shape[1:]:
-                if not _is_static_dim(d):
-                    raise NotImplementedError(
-                        f"Dynamic non-batch dimensions in output '{meta.name}' (shape={shape}) are not "
-                        f"supported. Only a dynamic batch dimension (dim 0) is supported."
-                    )
+            if meta.name in probed:
+                shape = [shape[0], *probed[meta.name][1:]]
             dtype = _torch_dtype_from_ort(meta.type, f"output '{meta.name}'")
             alloc_shape: Tuple[int, ...] = () if not shape else (((max_batch or 1) if dyn_batch else shape[0]), *shape[1:])
             # CPU runs return fresh arrays; a meta tensor keeps only the shape for _output_buffers.
