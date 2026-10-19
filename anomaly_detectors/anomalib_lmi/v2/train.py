@@ -19,8 +19,6 @@ from anomalib.pre_processing.utils.transform import disable_antialiasing
 # import before anomalib to avoid partial-init circular import
 from torchvision.transforms import v2
 
-from lmi_common.onnx_shapes import pin_onnx_output_dims
-
 from .tiling import TilerConfigCallback
 
 logger = logging.getLogger(__name__)
@@ -291,9 +289,7 @@ def main():
     model = model.float()
 
     def export_onnx(external_data=False):
-        onnx_kwargs = {"external_data": external_data}
-        onnx_path = engine.export(model=model, export_type=ExportType.ONNX, input_size=image_size, onnx_kwargs=onnx_kwargs)
-        pin_onnx_output_dims(onnx_path)
+        engine.export(model=model, export_type=ExportType.ONNX, input_size=image_size, onnx_kwargs={"external_data": external_data})
 
     try:
         export_onnx()

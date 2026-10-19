@@ -11,7 +11,6 @@ from torchvision.transforms import v2
 
 from anomaly_detectors.ad_core.ad_base import ADBase
 from lmi_common.onnx_engine import ONNXEngine
-from lmi_common.onnx_shapes import pin_onnx_output_dims
 from lmi_common.trt_convert import onnx_to_trt
 from lmi_common.trt_engine import TRTEngine
 from lmi_utils.image_utils.types import ImageLike
@@ -150,8 +149,6 @@ class Anomalib_Base(ADBase):
                 # folding a tiled model on CUDA fails on mixed CUDA and CPU constants
                 do_constant_folding=False,
             )
-        if dynamic_batch:
-            pin_onnx_output_dims(export_path)
         self.logger.info(f"ONNX model saved at {export_path}")
 
     def export_trt(self, export_path, fp16=True, workspace_gb=4, min_batch=1, opt_batch=None, max_batch=1):

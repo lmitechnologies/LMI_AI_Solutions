@@ -267,3 +267,132 @@ def test_cuda_session_in_fresh_process(dynamic_onnx_path):
     code = f"from lmi_common.onnx_engine import ONNXEngine; ONNXEngine({dynamic_onnx_path!r}, device='cuda')"
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+_CUDA_EP = torch.cuda.is_available() and "CUDAExecutionProvider" in ort.get_available_providers()
+_needs_cuda_ep = pytest.mark.skipif(not _CUDA_EP, reason="onnxruntime-gpu / CUDAExecutionProvider not available")
+_DEVICES = ["cpu", pytest.param("cuda", marks=_needs_cuda_ep)]
+
+
+def _save_graph(path, nodes, initializers, inp_shape, out_shape):
+    onnx = pytest.importorskip("onnx")
+    helper = onnx.helper
+
+    inp = helper.make_tensor_value_info("input", onnx.TensorProto.FLOAT, inp_shape)
+    out = helper.make_tensor_value_info("output", onnx.TensorProto.FLOAT, out_shape)
+    graph = helper.make_graph(nodes, "g", [inp], [out], initializer=initializers)
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    model.ir_version = 8
+    onnx.save(model, str(path))
+    return str(path)
+
+
+def _resize_onnx(path, rows_follow_batch=True, out_shape=("batch", "n")):
+    """6 columns, and one row per image or, without rows_follow_batch, one per batch; ORT can't size it, as with F.interpolate."""
+    onnx = pytest.importorskip("onnx")
+    TensorProto, helper = onnx.TensorProto, onnx.helper
+
+    rows = "batch" if rows_follow_batch else "rows"
+    nodes = [
+        helper.make_node("Shape", ["input"], ["shape"]),
+        helper.make_node("Slice", ["shape", "zero", "one"], ["batch"]),
+        helper.make_node("Div", ["batch", "batch"], ["rows"]),
+        helper.make_node("Concat", [rows, "width"], ["sizes"], axis=0),
+        helper.make_node("Resize", ["input", "", "", "sizes"], ["output"], mode="nearest"),
+    ]
+    inits = [helper.make_tensor(n, TensorProto.INT64, [1], [v]) for n, v in (("zero", 0), ("one", 1), ("width", 6))]
+    return _save_graph(path, nodes, inits, ["batch", 4], list(out_shape))
+
+
+def _slice_onnx(path, inp_shape, axis=1, extra=1.0):
+    """Keeps the first max(x) + extra entries along axis."""
+    onnx = pytest.importorskip("onnx")
+    TensorProto, helper = onnx.TensorProto, onnx.helper
+
+    nodes = [
+        helper.make_node("ReduceMax", ["input"], ["max"], keepdims=0),
+        helper.make_node("Add", ["max", "one"], ["end_f"]),
+        helper.make_node("Cast", ["end_f"], ["end_s"], to=TensorProto.INT64),
+        helper.make_node("Reshape", ["end_s", "shape1"], ["end"]),
+        helper.make_node("Slice", ["input", "zero", "end", "axis"], ["output"]),
+    ]
+    inits = [helper.make_tensor("one", TensorProto.FLOAT, [], [extra])]
+    inits += [helper.make_tensor(n, TensorProto.INT64, [1], [v]) for n, v in (("shape1", 1), ("zero", 0), ("axis", axis))]
+    out_shape = ["n", inp_shape[1]] if axis == 0 else [inp_shape[0], "n"]
+    return _save_graph(path, nodes, inits, inp_shape, out_shape)
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+def test_symbolic_output_dims_are_sized_at_load(tmp_path, device):
+    path = _resize_onnx(tmp_path / "resize.onnx")
+    assert not isinstance(ort.InferenceSession(path, providers=["CPUExecutionProvider"]).get_outputs()[0].shape[1], int)
+
+    engine = ONNXEngine(path, device=device)
+    assert engine._output_buffers[0].shape[1:] == (6,)
+    x = torch.randn(3, 4, device=device)
+    torch.testing.assert_close(engine.infer(x)[0], x[:, [0, 0, 1, 2, 2, 3]])
+
+
+@pytest.mark.parametrize(
+    "out_shape", [("batch", "n"), ("rows", 6), ("batch", 6)], ids=["symbolic width", "only dim 0 symbolic", "named like the batch"]
+)
+def test_dynamic_batch_output_dim0_that_does_not_follow_the_batch_is_rejected(tmp_path, out_shape):
+    path = _resize_onnx(tmp_path / "resize.onnx", rows_follow_batch=False, out_shape=out_shape)
+    with pytest.raises(NotImplementedError, match=r"shape \(1, 6\) at batch 2"):
+        ONNXEngine(path, device="cpu")
+
+
+def test_dynamic_batch_output_dim0_named_apart_from_the_batch_loads_when_it_follows(tmp_path):
+    engine = ONNXEngine(_resize_onnx(tmp_path / "resize.onnx", out_shape=("rows", 6)), device="cpu")
+    assert engine.infer(torch.randn(3, 4))[0].shape == (3, 6)
+
+
+def test_output_empty_on_zeros_is_rejected(tmp_path):
+    with pytest.raises(NotImplementedError, match="is empty"):
+        ONNXEngine(_slice_onnx(tmp_path / "slice.onnx", [2, 4], axis=0, extra=0.0), device="cpu")
+
+
+def test_static_batch_output_dims_are_sized_at_that_batch(tmp_path):
+    engine = ONNXEngine(_slice_onnx(tmp_path / "slice.onnx", [2, 4]), device="cpu")
+    assert tuple(engine._output_buffers[0].shape) == (2, 1)
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+def test_static_batch_output_dim0_is_sized_from_the_run(tmp_path, device):
+    """Zeros keep one row of the batch-2 input, so dim 0 is 1, not the batch."""
+    engine = ONNXEngine(_slice_onnx(tmp_path / "slice.onnx", [2, 4], axis=0), device=device)
+    assert tuple(engine._output_buffers[0].shape) == (1, 4)
+    x = torch.zeros(2, 4, device=device)
+    torch.testing.assert_close(engine.infer(x)[0], x[:1])
+
+
+@_needs_cuda_ep
+def test_data_dependent_output_dim_fails_when_it_changes_cuda(tmp_path):
+    """Zeros at load size the output to 1 column; twos need 3."""
+    engine = ONNXEngine(_slice_onnx(tmp_path / "slice.onnx", ["batch", 4]), device="cuda")
+    assert engine.infer(torch.zeros(1, 4, device="cuda"))[0].shape == (1, 1)
+    with pytest.raises(Exception, match="shape verification failed"):
+        engine.infer(torch.full((1, 4), 2.0, device="cuda"))
+
+
+def test_a_failed_run_at_load_is_reported_clearly(dynamic_onnx_path, monkeypatch):
+    def fail(self, *args, **kwargs):
+        raise RuntimeError("cannot reshape")
+
+    monkeypatch.setattr(ort.InferenceSession, "run", fail)
+    with pytest.raises(RuntimeError, match="failed a batch-2 run on zeros at load: cannot reshape"):
+        ONNXEngine(dynamic_onnx_path, device="cpu")
+
+
+def test_non_tensor_output_is_rejected_before_the_run(tmp_path):
+    onnx = pytest.importorskip("onnx")
+    helper = onnx.helper
+
+    inp = helper.make_tensor_value_info("input", onnx.TensorProto.FLOAT, ["batch", 4])
+    out = helper.make_tensor_sequence_value_info("output", onnx.TensorProto.FLOAT, None)
+    graph = helper.make_graph([helper.make_node("SequenceConstruct", ["input"], ["output"])], "g", [inp], [out])
+    model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
+    model.ir_version = 8
+    onnx.save(model, str(tmp_path / "seq.onnx"))
+    with pytest.raises(NotImplementedError, match="Unsupported ONNX tensor type"):
+        ONNXEngine(str(tmp_path / "seq.onnx"), device="cpu")

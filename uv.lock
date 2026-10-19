@@ -1067,7 +1067,6 @@ ad-v1 = [
 ]
 ad-v2 = [
     { name = "anomalib", version = "2.6.0", source = { registry = "https://pypi.org/simple" } },
-    { name = "onnx" },
     { name = "torch", version = "2.6.0", source = { registry = "https://pypi.org/simple" }, marker = "(platform_machine != 'x86_64' and extra == 'group-16-lmi-ai-solutions-ad-v2' and extra != 'group-16-lmi-ai-solutions-ci') or (extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (extra == 'group-16-lmi-ai-solutions-ad-v2' and extra != 'group-16-lmi-ai-solutions-ci' and extra != 'group-16-lmi-ai-solutions-gpu')" },
     { name = "torch", version = "2.6.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "(extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (extra == 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci') or (extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu')" },
     { name = "torch", version = "2.6.0+cu124", source = { registry = "https://download.pytorch.org/whl/cu124" }, marker = "(platform_machine != 'x86_64' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (platform_machine == 'x86_64' and extra == 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-gpu') or (extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ad-v2') or (extra == 'group-16-lmi-ai-solutions-ad-v1' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu') or (extra != 'group-16-lmi-ai-solutions-ad-v2' and extra == 'group-16-lmi-ai-solutions-ci' and extra == 'group-16-lmi-ai-solutions-gpu')" },
@@ -1148,7 +1147,6 @@ ad-v1 = [
 ]
 ad-v2 = [
     { name = "anomalib", specifier = "==2.6.0" },
-    { name = "onnx", specifier = "==1.23.1" },
     { name = "torch", specifier = "==2.6.0" },
     { name = "torchvision", specifier = "==0.21.0" },
 ]
