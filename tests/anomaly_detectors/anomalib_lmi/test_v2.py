@@ -733,14 +733,14 @@ def test_build_model_trains_with_the_resize_exported_models_use(params):
     assert torch.equal(trained_on, model.pre_processor.export_transform(image))
 
 
-def test_build_model_computes_its_test_metrics_on_validation():
-    """Training only fits, so test-only metrics would never be computed or logged."""
+def test_build_model_scores_on_validation():
+    """Training only fits, so metrics computed only on test would never be logged."""
     params = {"backbone": "resnet18", "layers": ["layer1"], "pre_trained": False, "n_features": 64, "image_size": [64, 64]}
     evaluator = build_model({"class_name": "Padim", "params": params}).evaluator
 
     unthresholded = [m.name for m in evaluator.test_metrics if not {"pred_label", "pred_mask"} & set(m.fields)]
     assert unthresholded
-    assert [m.name for m in evaluator.val_metrics] == unthresholded
+    assert [m.name for m in evaluator.val_metrics] == [*unthresholded, "image_F1Max", "pixel_F1Max"]
     assert not {id(m) for m in evaluator.val_metrics} & {id(m) for m in evaluator.test_metrics}
 
 

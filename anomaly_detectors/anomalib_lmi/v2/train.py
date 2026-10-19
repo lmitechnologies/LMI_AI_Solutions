@@ -14,7 +14,7 @@ from anomalib import PrecisionType
 from anomalib.data import Folder
 from anomalib.deploy import ExportType
 from anomalib.engine import Engine
-from anomalib.metrics import Evaluator
+from anomalib.metrics import Evaluator, F1Max
 from anomalib.pre_processing import PreProcessor
 from anomalib.pre_processing.utils.transform import disable_antialiasing
 
@@ -93,9 +93,14 @@ THRESHOLDED_FIELDS = {"pred_label", "pred_mask"}
 
 
 def build_evaluator(model_class) -> Evaluator:
-    """The model's default evaluator, with its test metrics on unthresholded outputs also computed on validation."""
+    """The model's default evaluator, also computing on validation its test metrics on unthresholded outputs and the
+    best image and pixel F1 over all thresholds."""
     test_metrics = list(model_class.configure_evaluator().test_metrics)
     val_metrics = [copy.deepcopy(m) for m in test_metrics if not THRESHOLDED_FIELDS & set(m.fields)]
+    val_metrics += [
+        F1Max(fields=["pred_score", "gt_label"], prefix="image_"),
+        F1Max(fields=["anomaly_map", "gt_mask"], prefix="pixel_", strict=False),
+    ]
     return Evaluator(val_metrics=val_metrics, test_metrics=test_metrics)
 
 
