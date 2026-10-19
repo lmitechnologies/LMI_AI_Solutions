@@ -269,17 +269,17 @@ def test_cuda_session_in_fresh_process(dynamic_onnx_path):
     assert result.returncode == 0, result.stderr
 
 
-def _devices():
-    cuda = torch.cuda.is_available() and "CUDAExecutionProvider" in ort.get_available_providers()
-    return ["cpu", pytest.param("cuda", marks=pytest.mark.skipif(not cuda, reason="onnxruntime-gpu / CUDAExecutionProvider not available"))]
+_CUDA_EP = torch.cuda.is_available() and "CUDAExecutionProvider" in ort.get_available_providers()
+_needs_cuda_ep = pytest.mark.skipif(not _CUDA_EP, reason="onnxruntime-gpu / CUDAExecutionProvider not available")
+_DEVICES = ["cpu", pytest.param("cuda", marks=_needs_cuda_ep)]
 
 
 def _save_graph(path, nodes, initializers, inp_shape, out_shape):
     onnx = pytest.importorskip("onnx")
-    from onnx import TensorProto, helper
+    helper = onnx.helper
 
-    inp = helper.make_tensor_value_info("input", TensorProto.FLOAT, inp_shape)
-    out = helper.make_tensor_value_info("output", TensorProto.FLOAT, out_shape)
+    inp = helper.make_tensor_value_info("input", onnx.TensorProto.FLOAT, inp_shape)
+    out = helper.make_tensor_value_info("output", onnx.TensorProto.FLOAT, out_shape)
     graph = helper.make_graph(nodes, "g", [inp], [out], initializer=initializers)
     model = helper.make_model(graph, opset_imports=[helper.make_opsetid("", 13)])
     model.ir_version = 8
@@ -287,37 +287,45 @@ def _save_graph(path, nodes, initializers, inp_shape, out_shape):
     return str(path)
 
 
-def _resize_onnx(path):
-    """Resize sizes built from the input's own shape, as torch exports F.interpolate, leave ORT's output dims symbolic."""
-    from onnx import TensorProto, helper
+def _resize_onnx(path, rows_follow_batch=True):
+    """Resize sizes built from the input's own shape, as torch exports F.interpolate, leave ORT's output dims symbolic.
 
+    The output has 6 columns, and one row per image, or one row for the whole batch (batch / batch) without rows_follow_batch.
+    """
+    onnx = pytest.importorskip("onnx")
+    TensorProto, helper = onnx.TensorProto, onnx.helper
+
+    rows = "batch" if rows_follow_batch else "rows"
     nodes = [
         helper.make_node("Shape", ["input"], ["shape"]),
         helper.make_node("Slice", ["shape", "zero", "one"], ["batch"]),
-        helper.make_node("Concat", ["batch", "width"], ["sizes"], axis=0),
+        helper.make_node("Div", ["batch", "batch"], ["rows"]),
+        helper.make_node("Concat", [rows, "width"], ["sizes"], axis=0),
         helper.make_node("Resize", ["input", "", "", "sizes"], ["output"], mode="nearest"),
     ]
     inits = [helper.make_tensor(n, TensorProto.INT64, [1], [v]) for n, v in (("zero", 0), ("one", 1), ("width", 6))]
     return _save_graph(path, nodes, inits, ["batch", 4], ["batch", "n"])
 
 
-def _slice_onnx(path, inp_shape):
-    """Keeps the first max(x) + 1 columns, so the output width depends on the data."""
-    from onnx import TensorProto, helper
+def _slice_onnx(path, inp_shape, axis=1):
+    """Keeps the first max(x) + 1 entries along axis, so that output dim depends on the data."""
+    onnx = pytest.importorskip("onnx")
+    TensorProto, helper = onnx.TensorProto, onnx.helper
 
     nodes = [
         helper.make_node("ReduceMax", ["input"], ["max"], keepdims=0),
         helper.make_node("Add", ["max", "one"], ["end_f"]),
         helper.make_node("Cast", ["end_f"], ["end_s"], to=TensorProto.INT64),
         helper.make_node("Reshape", ["end_s", "shape1"], ["end"]),
-        helper.make_node("Slice", ["input", "zero", "end", "axis1"], ["output"]),
+        helper.make_node("Slice", ["input", "zero", "end", "axis"], ["output"]),
     ]
     inits = [helper.make_tensor("one", TensorProto.FLOAT, [], [1.0])]
-    inits += [helper.make_tensor(n, TensorProto.INT64, [1], [v]) for n, v in (("shape1", 1), ("zero", 0), ("axis1", 1))]
-    return _save_graph(path, nodes, inits, inp_shape, [inp_shape[0], "n"])
+    inits += [helper.make_tensor(n, TensorProto.INT64, [1], [v]) for n, v in (("shape1", 1), ("zero", 0), ("axis", axis))]
+    out_shape = ["n", inp_shape[1]] if axis == 0 else [inp_shape[0], "n"]
+    return _save_graph(path, nodes, inits, inp_shape, out_shape)
 
 
-@pytest.mark.parametrize("device", _devices())
+@pytest.mark.parametrize("device", _DEVICES)
 def test_symbolic_output_dims_are_sized_at_load(tmp_path, device):
     path = _resize_onnx(tmp_path / "resize.onnx")
     assert not isinstance(ort.InferenceSession(path, providers=["CPUExecutionProvider"]).get_outputs()[0].shape[1], int)
@@ -328,17 +336,28 @@ def test_symbolic_output_dims_are_sized_at_load(tmp_path, device):
     torch.testing.assert_close(engine.infer(x)[0], x[:, [0, 0, 1, 2, 2, 3]])
 
 
+def test_dynamic_batch_output_dim0_that_does_not_follow_the_batch_is_rejected(tmp_path):
+    with pytest.raises(NotImplementedError, match=r"shape \(1, 6\) at batch 2"):
+        ONNXEngine(_resize_onnx(tmp_path / "resize.onnx", rows_follow_batch=False), device="cpu")
+
+
 def test_static_batch_output_dims_are_sized_at_that_batch(tmp_path):
     engine = ONNXEngine(_slice_onnx(tmp_path / "slice.onnx", [2, 4]), device="cpu")
     assert tuple(engine._output_buffers[0].shape) == (2, 1)
 
 
-@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+@pytest.mark.parametrize("device", _DEVICES)
+def test_static_batch_output_dim0_is_sized_from_the_run(tmp_path, device):
+    """Zeros keep one row of the batch-2 input, so dim 0 is 1, not the batch."""
+    engine = ONNXEngine(_slice_onnx(tmp_path / "slice.onnx", [2, 4], axis=0), device=device)
+    assert tuple(engine._output_buffers[0].shape) == (1, 4)
+    x = torch.zeros(2, 4, device=device)
+    torch.testing.assert_close(engine.infer(x)[0], x[:1])
+
+
+@_needs_cuda_ep
 def test_data_dependent_output_dim_fails_when_it_changes_cuda(tmp_path):
     """Zeros at load size the output to 1 column; twos need 3."""
-    if "CUDAExecutionProvider" not in ort.get_available_providers():
-        pytest.skip("onnxruntime-gpu / CUDAExecutionProvider not available")
-
     engine = ONNXEngine(_slice_onnx(tmp_path / "slice.onnx", ["batch", 4]), device="cuda")
     assert engine.infer(torch.zeros(1, 4, device="cuda"))[0].shape == (1, 1)
     with pytest.raises(Exception, match="shape verification failed"):
