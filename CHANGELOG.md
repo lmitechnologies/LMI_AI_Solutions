@@ -1,3 +1,11 @@
+## [2.0.1](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v2.0.0...v2.0.1) (2026-10-19)
+
+### Bug Fixes
+
+* **ad:** drop the trainer before the anomalib v2 torch export ([#453](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/453)) ([d9a4bec](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/d9a4becff5731407110ce0789c896c080b34354d))
+* **ci:** compare pushes against the last successful CI run ([#451](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/451)) ([03057d2](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/03057d226102ae9472d7e3266f556800d1c33b0e))
+* **onnx:** size symbolic output dims at load instead of rejecting them ([#455](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/455)) ([085f697](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/085f6976dfec7675c948afe26e00d513243c513b))
+
 ## [2.0.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v1.6.0...v2.0.0) (2026-10-09)
 
 ### ⚠ BREAKING CHANGES
