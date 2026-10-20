@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 import torch
 from ultralytics import YOLO
+from ultralytics.utils import nms
 
 from object_detectors.od_core.object_detector import ObjectDetector
 from object_detectors.ultralytics_lmi.yolo.model import Yolo, YoloObb, YoloPose, YoloSeg
@@ -507,6 +508,26 @@ def test_clamp_keypoints_to_image(yolo_models):
     assert (pts[..., 0] >= 0).all() and (pts[..., 0] <= image_w).all()
     assert (pts[..., 1] >= 0).all() and (pts[..., 1] <= image_h).all()
     assert torch.allclose(pts[..., 2], torch.full_like(pts[..., 2], 0.7))
+
+
+@pytest.mark.parametrize("task", ["det", "pose"])
+def test_flipped_boxes_are_dropped(yolo_models, monkeypatch, task):
+    """Boxes whose max corner lies before their min corner are dropped, with their keypoints."""
+    model = yolo_models[task][0]
+    net_h, net_w = model.image_size
+    img = torch.zeros((1, 3, net_h, net_w))
+    orig_img = np.zeros((net_h, net_w, 3), dtype=np.uint8)
+    n_extra = model.model.kpt_shape[0] * model.model.kpt_shape[1] if task == "pose" else 0
+    pred = torch.zeros((3, 6 + n_extra))
+    pred[:, :4] = torch.tensor([[10.0, 10.0, 50.0, 50.0], [50.0, 10.0, 10.0, 50.0], [10.0, 50.0, 50.0, 10.0]])
+    pred[:, 4] = 0.9
+    monkeypatch.setattr(nms, "non_max_suppression", lambda *args, **kwargs: [pred.clone()])
+
+    result = model.postprocess(None, preprocessed=img, images=[orig_img], configs=0.5)[0]
+
+    assert result.boxes.tolist() == [[10.0, 10.0, 50.0, 50.0]]
+    if task == "pose":
+        assert len(result.points) == 1
 
 
 def _tile_and_predict(model, images, conf, **tile_kwargs):
