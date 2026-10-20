@@ -109,7 +109,7 @@ def evaluate(
     anom_max=None,
     tile=None,
     stride=None,
-    overlap_mode="gaussian",
+    overlap_mode="average",
     scale_mode="padding",
     limit=None,
 ):
