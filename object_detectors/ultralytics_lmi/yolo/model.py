@@ -137,7 +137,9 @@ class Yolo(YoloCore, ODBase):
         """runs non-maximum suppression on inference results"""
         end2end = getattr(self.model, "end2end", False)
         nc = 0 if self.task == "detect" else len(self.model.names)
-        return nms.non_max_suppression(preds, conf, iou, agnostic=agnostic, max_det=max_det, nc=nc, end2end=end2end)
+        preds = nms.non_max_suppression(preds, conf, iou, agnostic=agnostic, max_det=max_det, nc=nc, end2end=end2end)
+        # A head without DFL (YOLO26) can predict negative edge distances, which flip a box
+        return [p[(p[:, 2] >= p[:, 0]) & (p[:, 3] >= p[:, 1])] for p in preds]
 
     @smart_inference_mode()
     def postprocess(self, preds, **kwargs):
