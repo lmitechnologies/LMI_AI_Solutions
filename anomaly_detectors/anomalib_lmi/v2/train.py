@@ -1,4 +1,5 @@
 import argparse
+import copy
 import inspect
 import logging
 import subprocess
@@ -13,6 +14,7 @@ from anomalib import PrecisionType
 from anomalib.data import Folder
 from anomalib.deploy import ExportType
 from anomalib.engine import Engine
+from anomalib.metrics import Evaluator, F1Max
 from anomalib.pre_processing import PreProcessor
 from anomalib.pre_processing.utils.transform import disable_antialiasing
 
@@ -86,6 +88,22 @@ def disable_train_antialias(model) -> None:
         disable_antialiasing(pre_processor.transform)
 
 
+# Validation batches have no thresholded predictions; the post-processor sets thresholds at the end of validation
+THRESHOLDED_FIELDS = {"pred_label", "pred_mask"}
+
+
+def build_evaluator(model_class) -> Evaluator:
+    """The model's default evaluator, also computing on validation its test metrics on unthresholded outputs and the
+    best image and pixel F1 over all thresholds."""
+    test_metrics = list(model_class.configure_evaluator().test_metrics)
+    val_metrics = [copy.deepcopy(m) for m in test_metrics if not THRESHOLDED_FIELDS & set(m.fields)]
+    val_metrics += [
+        F1Max(fields=["pred_score", "gt_label"], prefix="image_"),
+        F1Max(fields=["anomaly_map", "gt_mask"], prefix="pixel_", strict=False),
+    ]
+    return Evaluator(val_metrics=val_metrics, test_metrics=test_metrics)
+
+
 def build_model(model_config: Dict[str, Any]):
     """
     Dynamically builds the Anomalib model.
@@ -130,6 +148,10 @@ def build_model(model_config: Dict[str, Any]):
             params["pre_processor"] = pre_processor
     else:
         params["pre_processor"] = build_preprocessor(params["pre_processor"])
+
+    # anomalib's default evaluator scores only on test, and training never tests
+    if "evaluator" not in params:
+        params["evaluator"] = build_evaluator(model_class)
 
     # 4. Instantiate the model
     try:
@@ -241,6 +263,8 @@ def main():
         devices=eng_cfg["devices"],
         default_root_dir=Path(eng_cfg["default_root_dir"]),
         callbacks=tiler_callbacks,
+        # Engine turns Lightning logging off by default, which leaves no TensorBoard metrics to read
+        logger=True,
     )
 
     if not args.skip_mem_estimate:
