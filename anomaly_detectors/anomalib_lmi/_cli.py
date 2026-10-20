@@ -22,7 +22,7 @@ def run_cli(model_cls):
     test_ap.add_argument(
         "-om",
         "--overlap_mode",
-        default="gaussian",
+        default="average",  # the deployment pipeline's tile step merges with TileConfig's default
         help='overlap blending mode for tiling: "average", "max", "cosine", "linear", "gaussian"',
     )
     test_ap.add_argument(
