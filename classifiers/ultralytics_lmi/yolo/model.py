@@ -1,8 +1,9 @@
 import logging
 from collections import defaultdict
-from typing import List
+from typing import Dict, List
 
 import cv2
+import numpy as np
 import torch
 from PIL import Image
 from ultralytics.data.augment import classify_transforms
@@ -27,6 +28,7 @@ class YoloCls(YoloCore, ClassifierBase):
         """
         YoloCore.__init__(self, model_path, device, data, fp16, **kwargs)
         self.task = "classify"
+        self._setup_class_map(self.model.names)
 
         updated = (
             self.model.model.transforms.transforms[0].size != max(self.image_size)
@@ -57,19 +59,21 @@ class YoloCls(YoloCore, ClassifierBase):
         return batch.half() if self.model.fp16 else batch.float()
 
     @smart_inference_mode()
-    def postprocess(self, preds):
-        """Postprocesses predictions and returns a list of Results objects.
+    def postprocess(self, preds, return_all_scores: bool = False) -> Dict:
+        """Postprocesses predictions.
 
         Args:
-            preds (torch.Tensor | list): Predictions from the model.
-
+            preds (torch.Tensor | list): raw model output.
+            return_all_scores: when True, also populate ``all_scores`` with the full softmax
+                vector (np.ndarray, shape (n_classes,)) per image — used by tile aggregation.
         """
-
         results = defaultdict(list)
         preds = preds[0] if isinstance(preds, (list, tuple)) else preds
         for pred in preds:
-            pred = pred.cpu().numpy()
-            idx = pred.argmax()
-            results["scores"].append(pred[idx].item())
+            pred_np: np.ndarray = pred.cpu().numpy()
+            idx = int(pred_np.argmax())
+            results["scores"].append(pred_np[idx].item())
             results["classes"].append(self.model.names[idx])
+            if return_all_scores:
+                results["all_scores"].append(pred_np)
         return results
