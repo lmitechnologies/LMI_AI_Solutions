@@ -47,6 +47,13 @@ def add_infer_args(
         help=f"[optional] step between tiles: one int, or two ints: h w. Overlap = tile - stride. "
         f"Saves a tile-grid debug image per image to {TILE_PLOT_DIR}/ in the output folder.",
     )
+    parser.add_argument(
+        "-c",
+        "--confidence",
+        type=float,
+        default=0,
+        help="[optional] confidence threshold in [0, 1]. Predictions below it are reported as no detection. Default 0 = no filtering",
+    )
 
 
 def check_infer_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
@@ -55,6 +62,8 @@ def check_infer_args(parser: argparse.ArgumentParser, args: argparse.Namespace) 
         size = _size("--image_size", args.image_size)
         args.image_size = None if size is None else _pair(size)
         args.tile_step = tile_step(args.tile, args.stride)
+        if args.confidence < 0:
+            raise ValueError(f"--confidence must be >= 0, got {args.confidence}")
     except ValueError as e:
         parser.error(str(e))
 

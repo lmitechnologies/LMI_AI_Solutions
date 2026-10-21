@@ -158,3 +158,74 @@ def test_tile_count_mismatch_raises():
 def test_tiling_without_class_map_raises():
     with pytest.raises(RuntimeError, match="_setup_class_map"):
         StubClassifier(class_map=None).predict(np.zeros((8, 8, 3), np.uint8), operators=[_tile_meta([[1, 1]])])
+
+
+# ── confidence filtering ─────────────────────────────────────────────────────
+
+
+def test_confidence_zero_keeps_all():
+    stub = StubClassifier()
+    out, _ = stub.predict([np.full((8, 8, 3), v, np.uint8) for v in (0, 1, 2)], confidence=0)
+    assert out["classes"] == ["cat", "dog", "bird"]
+    assert out["scores"] == pytest.approx([0.8, 0.9, 0.8], abs=1e-6)
+
+
+def test_confidence_threshold_filters_low_scores():
+    # cat=0.8, dog=0.9, bird=0.8 → threshold 0.85 filters cat and bird
+    stub = StubClassifier()
+    out, _ = stub.predict([np.full((8, 8, 3), v, np.uint8) for v in (0, 1, 2)], confidence=0.85)
+    assert out["classes"] == [None, "dog", None]
+    assert out["scores"] == [None, pytest.approx(0.9, abs=1e-6), None]
+
+
+def test_confidence_threshold_below_score_passes():
+    # dog=0.9, threshold=0.89 → 0.9 < 0.89 is False, so dog passes
+    stub = StubClassifier()
+    out, _ = stub.predict([np.full((8, 8, 3), 1, np.uint8)], confidence=0.89)
+    assert out["classes"] == ["dog"]
+    assert out["scores"] == pytest.approx([0.9], abs=1e-6)
+
+
+def test_confidence_threshold_filters_all():
+    # threshold 0.95 > max score 0.9 → all filtered
+    stub = StubClassifier()
+    out, _ = stub.predict([np.full((8, 8, 3), v, np.uint8) for v in (0, 1, 2)], confidence=0.95)
+    assert out["classes"] == [None, None, None]
+    assert out["scores"] == [None, None, None]
+
+
+def test_confidence_dict_per_class():
+    # cat=0.8, dog=0.9, bird=0.8; thresholds: cat=0.5 (pass), dog=0.95 (fail), bird=0.5 (pass)
+    stub = StubClassifier()
+    out, _ = stub.predict(
+        [np.full((8, 8, 3), v, np.uint8) for v in (0, 1, 2)],
+        confidence={"cat": 0.5, "dog": 0.95, "bird": 0.5},
+    )
+    assert out["classes"] == ["cat", None, "bird"]
+    assert out["scores"] == [pytest.approx(0.8, abs=1e-6), None, pytest.approx(0.8, abs=1e-6)]
+
+
+def test_confidence_dict_unknown_class_defaults_to_one():
+    # bird absent from the dict → threshold 1.0 (OD default) → always filtered
+    stub = StubClassifier()
+    out, _ = stub.predict(
+        [np.full((8, 8, 3), v, np.uint8) for v in (0, 1, 2)],
+        confidence={"cat": 0.5, "dog": 0.5},
+    )
+    assert out["classes"] == ["cat", "dog", None]
+    assert out["scores"] == [pytest.approx(0.8, abs=1e-6), pytest.approx(0.9, abs=1e-6), None]
+
+
+def test_confidence_none_raises():
+    stub = StubClassifier()
+    with pytest.raises(ValueError, match="not None"):
+        stub.predict([np.full((8, 8, 3), 0, np.uint8)], confidence=None)
+
+
+def test_confidence_filter_applies_after_tile_merge():
+    # 3 dog tiles (0.9) + 1 cat tile (0.8) → merged dog at 0.7286; threshold 0.95 filters it
+    tiles, history = _tile([_image([1, 1, 0, 1])])
+    stub = StubClassifier()
+    out, _ = stub.predict(tiles, operators=history, confidence=0.95)
+    assert out["classes"] == [None]
+    assert out["scores"] == [None]
