@@ -7,6 +7,8 @@ import torch
 
 from classifiers.cls_core.classifier import Classifier
 from classifiers.ultralytics_lmi.yolo.model import YoloCls
+from lmi_utils.preprocess_utils import steps
+from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 
 logger = logging.getLogger(__name__)
 
@@ -119,3 +121,47 @@ def test_predict_batch_size(model_det, imgs_coco):
     for model in model_det:
         out, time_info = model.predict(resized_images, batch_size=2)
         _assert_results(out, len(resized_images))
+
+
+def test_class_map_matches_model_names(model_det):
+    for model in model_det:
+        assert model.class_map == {int(k): str(v) for k, v in model.model.names.items()}
+
+
+def test_all_scores_are_a_softmax_that_agrees_with_the_top_class(model_det, imgs_coco):
+    _, resized_images, _ = imgs_coco
+    for model in model_det:
+        out = model.postprocess(model.forward(model.preprocess(resized_images[:2])), return_all_scores=True)
+        for vec, cls, score in zip(out["all_scores"], out["classes"], out["scores"]):
+            assert vec.shape == (len(model.class_map),)
+            assert float(vec.sum()) == pytest.approx(1.0, abs=1e-3)
+            assert model.class_map[int(vec.argmax())] == cls
+            assert float(vec.max()) == pytest.approx(score)
+
+
+def test_tiled_predict_merges_a_multi_tile_grid_per_image(model_det, imgs_coco):
+    images, _, _ = imgs_coco
+    tile_cfg = steps.tile(tile_size=MODEL_SZ, stride=MODEL_SZ // 2)
+    tiles, history = Preprocessor().preprocess(images[:2], [tile_cfg])
+    assert all(h * w > 1 for h, w in history[0].n_tiles)
+    for model in model_det:
+        out, _ = model.predict(tiles, operators=history)
+        _assert_results(out, 2)
+        assert set(out["classes"]) <= set(model.class_map.values())
+        assert all(0.0 < s <= 1.0 for s in out["scores"])
+        chunked, _ = model.predict(tiles, operators=history, batch_size=3)
+        assert chunked["classes"] == out["classes"]
+        assert chunked["scores"] == pytest.approx(out["scores"], abs=1e-4)
+
+
+def test_tiled_predict_on_a_1x1_grid_matches_plain_predict(model_det, imgs_coco):
+    _, resized_images, _ = imgs_coco
+    tile_cfg = steps.tile(tile_size=MODEL_SZ, stride=MODEL_SZ)
+    for model in model_det:
+        img = resized_images[0]
+        plain, _ = model.predict(img)
+        tiles, history = Preprocessor().preprocess([img], [tile_cfg])
+        assert history[0].n_tiles == [[1, 1]]
+        tiled, _ = model.predict(tiles, operators=history)
+        assert tiled["classes"] == plain["classes"]
+        assert tiled["scores"] == pytest.approx(plain["scores"], abs=1e-4)
