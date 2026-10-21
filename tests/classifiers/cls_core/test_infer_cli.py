@@ -90,3 +90,30 @@ def test_save_tile_plot_writes_the_grid_without_touching_the_input(tmp_path):
     assert not image.any()
     saved = cv2.imread(str(tmp_path / TILE_PLOT_DIR / "out.png"))
     assert saved.shape == image.shape and saved.any()
+
+
+# ── confidence flag ──────────────────────────────────────────────────────────
+
+
+def test_confidence_default_is_zero():
+    assert _parse().confidence == 0
+
+
+def test_confidence_parses_float():
+    assert _parse("-c", "0.75").confidence == 0.75
+    assert _parse("--confidence", "0.5").confidence == 0.5
+
+
+def test_negative_confidence_exits_with_usage_error():
+    with pytest.raises(SystemExit):
+        _parse("-c", "-0.1")
+
+
+def test_predict_tiled_passes_confidence_through():
+    class EchoModel:
+        def predict(self, tiles, operators=None, **kwargs):
+            return {"n_tiles": len(tiles), "operators": operators, **kwargs}, {}
+
+    step = _parse("--tile", "512", "--stride", "256").tile_step
+    results, _, _ = predict_tiled(EchoModel(), np.zeros((1024, 1024, 3), np.uint8), step, confidence=0.5)
+    assert results["confidence"] == 0.5

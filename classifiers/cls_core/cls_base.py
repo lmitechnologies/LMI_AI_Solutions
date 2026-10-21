@@ -50,7 +50,7 @@ class ClassifierBase(abc.ABC):
         pass
 
     @torch.no_grad()
-    def predict(self, image: ImageBatch, operators: Optional[List] = None, **kwargs):
+    def predict(self, image: ImageBatch, operators: Optional[List] = None, confidence=0, **kwargs):
         """Run the full inference pipeline: preprocess → forward → postprocess.
 
         Supports both single image and batch inference. When ``self.fixed_batch_size``
@@ -63,6 +63,9 @@ class ClassifierBase(abc.ABC):
             operators: Preprocessing history returned by ``Preprocessor.preprocess()``.
                 When a ``TileMeta`` entry is present, per-tile results are aggregated back
                 to one prediction per source image via weighted-vote over softmax scores.
+            confidence: Confidence threshold (float) or per-class dict. Default 0 = no filtering.
+                An image whose top score is below its class threshold is reported as no
+                detection (classes[i] = scores[i] = None).
         kwargs:
             batch_size (int): chunk size for dynamic mini-batch inference (default: None = all at once).
                 Ignored when self.fixed_batch_size is set.
@@ -113,6 +116,11 @@ class ClassifierBase(abc.ABC):
             results = self._merge_tile_predictions(results, tile_meta)
             time_info["postproc"] += _elapsed_since(t0)
 
+        class_map = getattr(self, "class_map", None)
+        if class_map is not None:
+            confs = self._parse_confidence_config(confidence, list(class_map.values()))
+            results = self._apply_confidence_filter(results, confs)
+
         return results, time_info
 
     @staticmethod
@@ -153,6 +161,50 @@ class ClassifierBase(abc.ABC):
             merged_scores.append(confidence)
 
         return {"classes": merged_classes, "scores": merged_scores}
+
+    @staticmethod
+    def _parse_confidence_config(confidence, class_names):
+        """Normalise the confidence threshold to a per-class dict.
+
+        Args:
+            confidence: A float (applied to every class) or a dict mapping class name → threshold.
+            class_names: List of class names (values of ``self.class_map``).
+
+        Returns:
+            dict mapping every class name to its threshold.
+
+        Raises:
+            ValueError: If ``confidence`` is None.
+        """
+        if confidence is None:
+            raise ValueError("confidence must be a float or a dict, not None")
+        if isinstance(confidence, (int, float)):
+            return {name: float(confidence) for name in class_names}
+        if isinstance(confidence, dict):
+            return confidence
+        raise ValueError(f"confidence must be a float or dict, got {type(confidence).__name__}")
+
+    @staticmethod
+    def _apply_confidence_filter(results, confs):
+        """Zero out predictions whose score is below the per-class threshold.
+
+        Args:
+            results: Dict with "classes" (list of str) and "scores" (list of float).
+            confs: Dict mapping class name → threshold.
+
+        Returns:
+            New dict with the same list lengths; filtered entries have classes[i] = scores[i] = None.
+            A class absent from ``confs`` defaults to threshold 1.0 (always filtered), matching OD.
+        """
+        classes = list(results["classes"])
+        scores = list(results["scores"])
+        for i, (cls, score) in enumerate(zip(classes, scores)):
+            if cls is None or score is None:
+                continue
+            if score < confs.get(cls, 1.0):
+                classes[i] = None
+                scores[i] = None
+        return {"classes": classes, "scores": scores}
 
     def _run_batched_predict(self, images, batch_size, pad_last=False, **post_kwargs):
         """Run preprocess → forward → postprocess in chunks and collect per-image results.

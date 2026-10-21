@@ -54,19 +54,21 @@ if __name__ == "__main__":
             im0 = cv2.cvtColor(im0, cv2.COLOR_BGR2RGB)
 
             if tiling:
-                results, _, tile_boxes = predict_tiled(model, im0, args.tile_step)
+                results, _, tile_boxes = predict_tiled(model, im0, args.tile_step, confidence=args.confidence)
                 save_tile_plot(args.output, fname, im0, tile_boxes)
             else:
-                results, _ = model.predict(im0)
+                results, _ = model.predict(im0, confidence=args.confidence)
             t2 = time.time()
 
             cls, conf = results["classes"][0], results["scores"][0]
             logger.info(f"file: {fname}")
-            logger.info(f"class: {cls}, conf: {conf:.4f}")
-
-            out_path = os.path.join(args.output, cls)
-            os.makedirs(out_path, exist_ok=True)
-            save_path = os.path.join(out_path, fname)
-            cv2.imwrite(save_path, im0[:, :, ::-1])
+            if cls is None:
+                logger.info(f"below confidence threshold ({args.confidence}), skipping save")
+            else:
+                logger.info(f"class: {cls}, conf: {conf:.4f}")
+                out_path = os.path.join(args.output, cls)
+                os.makedirs(out_path, exist_ok=True)
+                save_path = os.path.join(out_path, fname)
+                cv2.imwrite(save_path, im0[:, :, ::-1])
             t3 = time.time()
             logger.info(f"proc time: {t2 - t1:.4f}, cycle time: {t3 - t1:.4f}\n")
