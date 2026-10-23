@@ -83,6 +83,32 @@ def test_convert_to_yolo_indexes_val_against_the_shared_class_map(tmp_path):
     assert val_rows[0.75] == 1  # beta, bottom-right -- the map's index, not val's observation order
 
 
+def test_convert_to_yolo_indexes_val_against_the_train_class_map_without_a_provided_map(tmp_path):
+    train_path = tmp_path / "train"
+    val_path = tmp_path / "val"
+    _write_detection_dataset(train_path, [_ALPHA_BOX, _BETA_BOX])
+    _write_detection_dataset(val_path, [_BETA_BOX, _ALPHA_BOX])
+
+    output_path = tmp_path / "output"
+    convert_to_yolo(_args(train_path, output_path, val_path))
+
+    with open(output_path / "dataset.yaml") as stream:
+        names = yaml.safe_load(stream)["names"]
+    val_rows = _val_rows_by_center(output_path)
+    assert names[val_rows[0.25]] == "alpha"
+    assert names[val_rows[0.75]] == "beta"
+
+
+def test_convert_to_yolo_rejects_a_val_class_missing_from_train_without_a_provided_map(tmp_path):
+    train_path = tmp_path / "train"
+    val_path = tmp_path / "val"
+    _write_detection_dataset(train_path, [_ALPHA_BOX])
+    _write_detection_dataset(val_path, [_BETA_BOX, _ALPHA_BOX])
+
+    with pytest.raises(ValueError, match="beta"):
+        convert_to_yolo(_args(train_path, tmp_path / "output", val_path))
+
+
 def test_convert_to_yolo_writes_three_dimensional_keypoint_shape(tmp_path):
     train_path = tmp_path / "train"
     _write_pose_dataset(train_path, 2)

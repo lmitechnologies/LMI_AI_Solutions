@@ -54,6 +54,18 @@ def get_args():
     return args
 
 
+def _reindex_rows(yolo_dataset, class_map):
+    """Renumber a converted split's rows, in place, from the class map it derived to ``class_map`` (name -> index)."""
+    names = {idx: name for name, idx in yolo_dataset["class_map"].items()}
+    missing = sorted(set(names.values()) - set(class_map))
+    if missing:
+        raise ValueError(f"The validation dataset has classes the training dataset does not: {missing}")
+    for rows in yolo_dataset["image_labels"].values():
+        for row in rows:
+            row[0] = class_map[names[row[0]]]
+    yolo_dataset["class_map"] = dict(class_map)
+
+
 def write_txts(fname_to_rows, path_txts, fnames, file_id_map):
     """
     write to the yolo format txts
@@ -172,9 +184,11 @@ def convert_to_yolo(args):
             to_object_detection=mask_to_od,
             target_classes=target_classes,
             use_obb=use_obb,
-            # Index the val split against the same class map as train.
             class_map=class_map,
         )
+        if class_map is None:
+            # without a provided map each split numbers classes in its own order of appearance
+            _reindex_rows(val_yolo_dataset, train_yolo_dataset["class_map"])
     else:
         val_yolo_dataset = train_yolo_dataset
         val_file_id_map = train_file_id_map
