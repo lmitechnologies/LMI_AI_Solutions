@@ -40,7 +40,7 @@ def _merge(boxes, scores, tile_idx, classes=None, containment=0.8, **kwargs):
 
 def test_seam_fragments_union_into_one_box():
     # Cut at x=100 (T0's right edge) / x=60 (T1's left edge): both halves are flagged and pair.
-    out = _merge([[40, 20, 100, 50], [60, 20, 120, 50]], [0.4, 0.9], [0, 1])
+    out = _merge([[40, 20, 100, 50], [60, 20, 120, 50]], [0.6, 0.9], [0, 1])
     assert out["boxes"].shape == (1, 4)
     assert torch.allclose(out["boxes"][0], torch.tensor([40.0, 20.0, 120.0, 50.0]))
     assert out["scores"].item() == pytest.approx(0.9)  # group max, not mean
@@ -51,7 +51,7 @@ def test_covered_fragment_joins_the_whole_detection_and_keeps_its_extent():
     # instead of pairing with T1's left-flagged detection, and the whole detection's box is kept.
     out = _merge(
         [[70, 20, 100, 50], [70, 20, 120, 50], [60, 20, 120, 50]],
-        [0.4, 0.9, 0.5],
+        [0.6, 0.9, 0.5],
         [0, 1, 1],
     )
     assert out["boxes"].shape == (1, 4)
@@ -95,7 +95,7 @@ def test_a_sliver_inside_one_object_seen_from_two_tiles_still_merges():
     # x=60 seam, so it keeps both joins and everything collapses to a single box.
     out = _merge(
         [[20, 30, 80, 60], [20, 30, 80, 60], [60, 30, 80, 60]],
-        [0.9, 0.8, 0.3],
+        [0.9, 0.8, 0.5],
         [0, 0, 1],
     )
     assert out["boxes"].shape == (1, 4)
@@ -106,7 +106,7 @@ def test_a_neighbour_box_that_contains_a_fragment_does_not_claim_it():
     # Q and S are whole in T0 and look cut at T1's left edge (x=60). P's cut box in T0 contains both T1 copies,
     # but trimmed to the shared strip x 60-100 it is far larger than either, so it joins to neither.
     p, q, s = [30, 10, 100, 70], [61, 20, 75, 40], [61, 45, 75, 65]
-    out = _merge([p, q, s, q, s], [0.4, 0.9, 0.8, 0.5, 0.5], [0, 0, 0, 1, 1])
+    out = _merge([p, q, s, q, s], [0.6, 0.9, 0.8, 0.5, 0.5], [0, 0, 0, 1, 1])
     assert sorted(map(tuple, out["boxes"].tolist())) == sorted(tuple(map(float, b)) for b in (p, q, s))
 
 
@@ -128,7 +128,7 @@ def test_a_leftover_fragment_the_other_tile_saw_in_full_is_dropped():
     # A is whole in T1. Its T0 piece is cut at x=100 but, from an irregular shape, spans only y 40-60 there,
     # so it does not agree with A in the shared strip and stays unjoined. T1 saw all of it, so it is dropped.
     a = [65, 20, 120, 80]
-    out = _merge([[65, 40, 100, 60], a], [0.4, 0.9], [0, 1])
+    out = _merge([[65, 40, 100, 60], a], [0.6, 0.9], [0, 1])
     assert out["boxes"].tolist() == [list(map(float, a))]
 
 
@@ -179,7 +179,7 @@ def test_masks_union_traces_one_outline():
     merged = {
         "boxes": torch.tensor([[40.0, 20, 100, 50], [60.0, 20, 120, 50]]),
         "masks": masks,
-        "scores": torch.tensor([0.4, 0.9]),
+        "scores": torch.tensor([0.6, 0.9]),
         "classes": np.array([0, 0], dtype=np.int32),
     }
     out = merge_tile_fragments(merged, torch.tensor([0, 1]), _ORIGINS, _TILE_SIZE, _IM_SIZE, 0.8)
@@ -193,12 +193,12 @@ def test_masks_union_traces_one_outline():
 def test_fragment_that_stops_short_of_the_seam_is_not_flagged():
     # Known gap: edge contact is a proxy. T0's half ends 8px before the tile edge, so it never
     # looks truncated and its true partner is lost.
-    out = _merge([[40, 20, 92, 50], [60, 20, 120, 50]], [0.4, 0.9], [0, 1])
+    out = _merge([[40, 20, 92, 50], [60, 20, 120, 50]], [0.6, 0.9], [0, 1])
     assert out["boxes"].shape == (2, 4)
 
 
 def test_fragment_within_the_edge_tolerance_still_pairs():
-    out = _merge([[40, 20, 99, 50], [60, 20, 120, 50]], [0.4, 0.9], [0, 1])
+    out = _merge([[40, 20, 99, 50], [60, 20, 120, 50]], [0.6, 0.9], [0, 1])
     assert out["boxes"].shape == (1, 4)
     assert torch.allclose(out["boxes"][0], torch.tensor([40.0, 20.0, 120.0, 50.0]))
 
@@ -302,7 +302,7 @@ def test_object_spanning_a_3x2_block_of_six_tiles():
                 [60, 60, 160, 140],
                 [120, 60, 200, 140],
             ],
-            [0.3, 0.35, 0.4, 0.45, 0.7, 0.5],
+            [0.4, 0.45, 0.5, 0.55, 0.7, 0.6],
         ),
         torch.tensor([0, 1, 2, 3, 4, 5]),
         origins,
@@ -333,11 +333,39 @@ def test_masks_union_across_a_three_tile_chain():
     assert int(out["masks"].sum()) == 30 * 160  # x 40..200, y 30..60
 
 
-def test_a_low_score_fragment_still_pairs():
-    # removing weak views is the caller's score threshold, not merging's job
-    out = _merge([[40, 20, 100, 50], [60, 20, 120, 50]], [0.001, 0.9], [0, 1])
-    assert out["boxes"].shape == (1, 4)
-    assert torch.allclose(out["boxes"][0], torch.tensor([40.0, 20.0, 120.0, 50.0]))
+def test_a_fragment_under_half_the_best_score_stays_out_of_the_group():
+    out = _merge([[40, 20, 100, 50], [60, 20, 120, 50]], [0.4, 0.9], [0, 1])
+    assert out["boxes"].tolist() == [[40.0, 20.0, 100.0, 50.0], [60.0, 20.0, 120.0, 50.0]]
+    assert out["scores"].tolist() == pytest.approx([0.4, 0.9])
+
+
+def test_a_fragment_at_half_the_best_score_still_pairs():
+    out = _merge([[40, 20, 100, 50], [60, 20, 120, 50]], [0.45, 0.9], [0, 1])
+    assert out["boxes"].tolist() == [[40.0, 20.0, 120.0, 50.0]]
+
+
+def test_strong_halves_combine_past_a_weak_whole_detection_of_one_of_them():
+    # T0's weak whole box holds most of T1's half, so without the score rule it joins that half and stands for the object
+    out = _merge([[40, 20, 100, 50], [60, 20, 96, 50], [58, 20, 94, 50]], [0.97, 0.96, 0.02], [0, 1, 0], report_origin=True)
+    strongest = int(out["scores"].argmax())
+    assert out["boxes"][strongest].tolist() == [40.0, 20.0, 100.0, 50.0]
+    assert out["scores"][strongest].item() == pytest.approx(0.97)
+    assert out["merge_origin"][strongest].item() == tile_merge.ORIGIN_UNION
+
+
+def test_a_weak_fragment_does_not_chain_two_objects_into_one():
+    # two objects, each cut at the seam, and one weak T1 fragment that agrees with the top and bottom halves alike
+    boxes = [[40, 10, 100, 46], [60, 10, 120, 46], [40, 44, 100, 80], [60, 44, 120, 80], [60, 10, 120, 80]]
+    out = _merge(boxes, [0.9, 0.9, 0.9, 0.9, 0.02], [0, 1, 0, 1, 1])
+    strong = out["boxes"][out["scores"] > 0.5].tolist()
+    assert sorted(strong) == [[40.0, 10.0, 120.0, 46.0], [40.0, 44.0, 120.0, 80.0]]
+
+
+def test_a_weak_link_to_a_stronger_object_does_not_break_up_a_moderate_one():
+    # the bottom object's halves score 0.3, under half the top object's 0.9, but they only meet it through the 0.02 piece
+    boxes = [[40, 10, 100, 46], [60, 10, 120, 46], [40, 44, 100, 80], [60, 44, 120, 80], [60, 10, 120, 80]]
+    out = _merge(boxes, [0.9, 0.9, 0.3, 0.3, 0.02], [0, 1, 0, 1, 1])
+    assert out["boxes"][out["scores"] == 0.3].tolist() == [[40.0, 44.0, 120.0, 80.0]]
 
 
 def test_a_low_score_whole_detection_is_kept():
@@ -372,13 +400,13 @@ def test_results_without_scores_still_merge():
 
 def test_a_wider_edge_tolerance_recovers_the_fragment_it_missed():
     # The 8px-short half from the test above, with a tolerance wide enough to reach it.
-    out = _merge([[40, 20, 92, 50], [60, 20, 120, 50]], [0.4, 0.9], [0, 1], edge_tolerance=10)
+    out = _merge([[40, 20, 92, 50], [60, 20, 120, 50]], [0.6, 0.9], [0, 1], edge_tolerance=10)
     assert out["boxes"].shape == (1, 4)
     assert torch.allclose(out["boxes"][0], torch.tensor([40.0, 20.0, 120.0, 50.0]))
 
 
 def test_a_zero_edge_tolerance_still_joins_within_the_join_margin():
-    assert _merge([[40, 20, 99, 50], [60, 20, 120, 50]], [0.4, 0.9], [0, 1], edge_tolerance=0)["boxes"].shape == (1, 4)
+    assert _merge([[40, 20, 99, 50], [60, 20, 120, 50]], [0.6, 0.9], [0, 1], edge_tolerance=0)["boxes"].shape == (1, 4)
 
 
 def test_a_zero_edge_tolerance_drops_only_a_sliver_that_hits_the_edge_exactly():
@@ -394,17 +422,17 @@ def test_a_whole_object_near_the_seam_is_not_dropped_as_a_fragment():
 
 
 def test_merge_origin_is_absent_unless_asked():
-    out = _merge([[40, 20, 100, 50], [60, 20, 120, 50]], [0.4, 0.9], [0, 1])
+    out = _merge([[40, 20, 100, 50], [60, 20, 120, 50]], [0.6, 0.9], [0, 1])
     assert "merge_origin" not in out
 
 
 def test_merge_origin_marks_a_union_of_fragments():
-    out = _merge([[40, 20, 100, 50], [60, 20, 120, 50]], [0.4, 0.9], [0, 1], report_origin=True)
+    out = _merge([[40, 20, 100, 50], [60, 20, 120, 50]], [0.6, 0.9], [0, 1], report_origin=True)
     assert out["merge_origin"].tolist() == [tile_merge.ORIGIN_UNION]
 
 
 def test_merge_origin_marks_a_whole_detection_that_absorbed_fragments():
-    out = _merge([[70, 20, 100, 50], [70, 20, 120, 50], [60, 20, 120, 50]], [0.4, 0.9, 0.5], [0, 1, 1], report_origin=True)
+    out = _merge([[70, 20, 100, 50], [70, 20, 120, 50], [60, 20, 120, 50]], [0.6, 0.9, 0.5], [0, 1, 1], report_origin=True)
     assert out["merge_origin"].tolist() == [tile_merge.ORIGIN_WHOLE_GROUPED]
 
 
@@ -479,34 +507,34 @@ def _no_overlap(boxes, scores, tile_idx, classes=None, containment=0.8, **kwargs
 
 
 def test_no_overlap_tiles_union_a_cut_object():
-    out = _no_overlap([[40, 20, 100, 50], [100, 21, 160, 50]], [0.4, 0.9], [0, 1])
+    out = _no_overlap([[40, 20, 100, 50], [100, 21, 160, 50]], [0.6, 0.9], [0, 1])
     assert out["boxes"].shape == (1, 4)
     assert torch.allclose(out["boxes"][0], torch.tensor([40.0, 20.0, 160.0, 50.0]))
 
 
 def test_no_overlap_tiles_keep_pieces_that_do_not_line_up_along_the_seam():
-    out = _no_overlap([[40, 20, 100, 50], [100, 60, 160, 90]], [0.4, 0.9], [0, 1])
+    out = _no_overlap([[40, 20, 100, 50], [100, 60, 160, 90]], [0.6, 0.9], [0, 1])
     assert out["boxes"].shape == (2, 4)
 
 
 def test_no_overlap_tiles_leave_a_piece_that_stops_short_of_the_seam():
     # 10px short is well outside the band, so nothing pairs with it.
-    out = _no_overlap([[40, 20, 90, 50], [100, 20, 160, 50]], [0.4, 0.9], [0, 1])
+    out = _no_overlap([[40, 20, 90, 50], [100, 20, 160, 50]], [0.6, 0.9], [0, 1])
     assert out["boxes"].shape == (2, 4)
 
 
 def test_no_overlap_tiles_pair_within_the_edge_tolerance():
-    out = _no_overlap([[40, 20, 99, 50], [100, 20, 160, 50]], [0.4, 0.9], [0, 1])
+    out = _no_overlap([[40, 20, 99, 50], [100, 20, 160, 50]], [0.6, 0.9], [0, 1])
     assert out["boxes"].shape == (1, 4)
 
 
 def test_no_overlap_tiles_do_not_pair_different_classes():
-    out = _no_overlap([[40, 20, 100, 50], [100, 20, 160, 50]], [0.4, 0.9], [0, 1], classes=[0, 1])
+    out = _no_overlap([[40, 20, 100, 50], [100, 20, 160, 50]], [0.6, 0.9], [0, 1], classes=[0, 1])
     assert out["boxes"].shape == (2, 4)
 
 
 def test_no_overlap_tiles_mark_the_union_and_keep_a_lone_fragment():
-    out = _no_overlap([[40, 20, 100, 50], [100, 20, 160, 50], [100, 70, 140, 90]], [0.4, 0.9, 0.5], [0, 1, 1], report_origin=True)
+    out = _no_overlap([[40, 20, 100, 50], [100, 20, 160, 50], [100, 70, 140, 90]], [0.6, 0.9, 0.5], [0, 1, 1], report_origin=True)
     assert out["merge_origin"].tolist() == [tile_merge.ORIGIN_UNION, tile_merge.ORIGIN_FRAGMENT]
 
 
@@ -540,13 +568,13 @@ def _slanted_masks(gap):
 def test_no_overlap_tiles_join_a_slanted_object_by_its_mask():
     # Box y extents are 20..57 and 50..87 - a 1D IoU of 0.1, far under AGREEMENT_IOU. Only the masks
     # meeting at the seam show they are one object.
-    res = {"masks": _slanted_masks(0), "scores": torch.tensor([0.4, 0.9]), "classes": np.array([0, 0], np.int32)}
+    res = {"masks": _slanted_masks(0), "scores": torch.tensor([0.6, 0.9]), "classes": np.array([0, 0], np.int32)}
     out = merge_tile_fragments(res, torch.tensor([0, 1]), _NO_OVERLAP_ORIGINS, _TILE_SIZE, _NO_OVERLAP_IM_SIZE, 0.8)
     assert len(out["masks"]) == 1
 
 
 def test_no_overlap_tiles_keep_slanted_pieces_that_miss_each_other_at_the_seam():
-    res = {"masks": _slanted_masks(20), "scores": torch.tensor([0.4, 0.9]), "classes": np.array([0, 0], np.int32)}
+    res = {"masks": _slanted_masks(20), "scores": torch.tensor([0.6, 0.9]), "classes": np.array([0, 0], np.int32)}
     out = merge_tile_fragments(res, torch.tensor([0, 1]), _NO_OVERLAP_ORIGINS, _TILE_SIZE, _NO_OVERLAP_IM_SIZE, 0.8)
     assert len(out["masks"]) == 2
 
@@ -554,7 +582,7 @@ def test_no_overlap_tiles_keep_slanted_pieces_that_miss_each_other_at_the_seam()
 def test_a_mask_that_stops_short_of_the_seam_still_does_not_pair():
     masks = _slanted_masks(0)
     masks[0, :, 90:] = False  # the left half now ends 10px before the seam
-    res = {"masks": masks, "scores": torch.tensor([0.4, 0.9]), "classes": np.array([0, 0], np.int32)}
+    res = {"masks": masks, "scores": torch.tensor([0.6, 0.9]), "classes": np.array([0, 0], np.int32)}
     out = merge_tile_fragments(res, torch.tensor([0, 1]), _NO_OVERLAP_ORIGINS, _TILE_SIZE, _NO_OVERLAP_IM_SIZE, 0.8)
     assert len(out["masks"]) == 2
 
@@ -565,7 +593,7 @@ def test_no_overlap_tiles_compare_a_mask_that_ends_at_the_band_edge():
     masks = torch.zeros(2, 100, 200, dtype=torch.bool)
     masks[0, 20:50, 40:97] = True
     masks[1, 20:50, 100:160] = True
-    res = {"masks": masks, "scores": torch.tensor([0.4, 0.9]), "classes": np.array([0, 0], np.int32)}
+    res = {"masks": masks, "scores": torch.tensor([0.6, 0.9]), "classes": np.array([0, 0], np.int32)}
     out = merge_tile_fragments(res, torch.tensor([0, 1]), _NO_OVERLAP_ORIGINS, _TILE_SIZE, _NO_OVERLAP_IM_SIZE, 0.8)
     assert len(out["masks"]) == 2
 
@@ -575,7 +603,7 @@ def _seam_pieces(a_end: int, b_start: int, dent_x: Optional[int] = None):
 
     ``dent_x`` cuts a 2px wide notch into A's top edge there, far from the seam.
     """
-    merged = _result([[40, 20, a_end, 50], [b_start, 20, 160, 50]], [0.4, 0.9])
+    merged = _result([[40, 20, a_end, 50], [b_start, 20, 160, 50]], [0.6, 0.9])
     m = torch.zeros((2, 100, 200), dtype=torch.uint8)
     m[0, 20:50, 40:a_end] = 1
     m[1, 20:50, b_start:160] = 1
@@ -612,7 +640,7 @@ def test_overlapping_tiles_do_not_close_the_combined_mask():
     masks[0, 20:50, 40:100] = 1
     masks[1, 20:50, 60:120] = 1
     masks[:, 20:23, 70:72] = 0
-    merged = _result([[40, 20, 100, 50], [60, 20, 120, 50]], [0.4, 0.9])
+    merged = _result([[40, 20, 100, 50], [60, 20, 120, 50]], [0.6, 0.9])
     merged["masks"] = masks
     out = merge_tile_fragments(merged, torch.tensor([0, 1]), _ORIGINS, _TILE_SIZE, _IM_SIZE, 0.8)
     assert int(out["masks"].sum()) == 30 * 80 - 3 * 2
@@ -624,7 +652,7 @@ def test_masks_without_boxes_merge_on_cuda():
     masks = torch.zeros((2, 100, 150), dtype=torch.uint8)
     masks[0, 20:50, 40:100] = 1
     masks[1, 20:50, 60:120] = 1
-    merged = {"masks": masks.cuda(), "scores": torch.tensor([0.4, 0.9]).cuda(), "classes": np.array([0, 0], dtype=np.int32)}
+    merged = {"masks": masks.cuda(), "scores": torch.tensor([0.6, 0.9]).cuda(), "classes": np.array([0, 0], dtype=np.int32)}
     out = merge_tile_fragments(merged, torch.tensor([0, 1]), _ORIGINS, _TILE_SIZE, _IM_SIZE, 0.8)
     assert out["masks"].shape == (1, 100, 150) and out["masks"].is_cuda
     assert int(out["masks"].sum()) == 30 * 80
@@ -632,7 +660,7 @@ def test_masks_without_boxes_merge_on_cuda():
 
 def test_a_mask_that_misses_the_seam_does_not_join_through_its_box():
     # A's box reaches the seam at x 100 but its mask stops at 90, so nothing of it crosses there
-    merged = _result([[40, 20, 100, 50], [100, 20, 160, 50]], [0.4, 0.9])
+    merged = _result([[40, 20, 100, 50], [100, 20, 160, 50]], [0.6, 0.9])
     masks = torch.zeros((2, 100, 200), dtype=torch.uint8)
     masks[0, 20:50, 40:90] = 1
     masks[1, 20:50, 100:160] = 1
