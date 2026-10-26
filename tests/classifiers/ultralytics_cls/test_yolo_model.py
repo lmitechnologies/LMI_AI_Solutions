@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 IMG_DIR = "tests/assets/images/coco"
-OUT_DIR = "tests/outputs/cls/yolov8"
+OUT_DIR = "tests/outputs/cls/yolo"
 MODEL_SZ = 224
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
