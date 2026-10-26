@@ -361,6 +361,13 @@ def test_a_weak_fragment_does_not_chain_two_objects_into_one():
     assert sorted(strong) == [[40.0, 10.0, 120.0, 46.0], [40.0, 44.0, 120.0, 80.0]]
 
 
+def test_a_weak_link_to_a_stronger_object_does_not_break_up_a_moderate_one():
+    # the bottom object's halves score 0.3, under half the top object's 0.9, but they only meet it through the 0.02 piece
+    boxes = [[40, 10, 100, 46], [60, 10, 120, 46], [40, 44, 100, 80], [60, 44, 120, 80], [60, 10, 120, 80]]
+    out = _merge(boxes, [0.9, 0.9, 0.3, 0.3, 0.02], [0, 1, 0, 1, 1])
+    assert out["boxes"][out["scores"] == 0.3].tolist() == [[40.0, 44.0, 120.0, 80.0]]
+
+
 def test_a_low_score_whole_detection_is_kept():
     out = _merge([[10, 20, 40, 50], [10, 60, 40, 90]], [0.001, 0.9], [0, 0])
     assert out["boxes"].shape == (2, 4)

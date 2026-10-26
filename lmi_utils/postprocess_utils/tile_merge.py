@@ -34,7 +34,7 @@ JOIN_MARGIN = 16.0  # px from a seam within which a box may be joined; capped by
 CONTAINMENT = 0.8  # a fragment joins a whole detection when this share of it lies inside; F1 barely moves over 0.5-0.95
 SAME_OBJECT_CONTAINMENT = 0.95  # two whole detections are one object when this share of one lies inside the other
 AGREEMENT_IOU = 0.5  # to join, two boxes must reach this IoU within the area both tiles cover
-RATIO_BEST_SCORE = 0.5  # a detection under this fraction of its group's best score stays out of the group; little change over 0.25-0.75
+RATIO_BEST_SCORE = 0.5  # a detection under this fraction of a group's best score does not join it; little change over 0.25-0.75
 _NO_PAIRS = torch.zeros(0, 2, dtype=torch.long)  # an (L, 2) index-pair list with nothing in it
 
 
@@ -71,7 +71,7 @@ def merge_tile_fragments(
     Returns:
         The dict with one detection per object. A group with a whole detection keeps its best-scoring one; a group of
         only fragments becomes their union with the best score, deleted when another tile saw its whole area. A
-        detection scoring under ``RATIO_BEST_SCORE`` of its group's best stays out of the group and is returned on its own.
+        detection scoring under ``RATIO_BEST_SCORE`` of a group's best does not join it and is returned on its own.
     """
     # no early return for a single detection: it still needs the cut test and the drop rule
     if not len(tile_idx):
@@ -275,19 +275,46 @@ def _joins(
 def _without_weak_joins(merged: Dict[str, Any], joins: torch.Tensor, n: int) -> torch.Tensor:
     """Remove the joins of weak detections, so each one stays on its own.
 
-    A detection is weak when it scores under ``RATIO_BEST_SCORE`` of the best detection it is joined to, directly or through
-    others. Left in, it could stand for the whole group, stretch the group's outline, or link two objects into one.
+    Groups are built from the highest score down. A detection joins the group of a higher-scoring detection only if it
+    scores at least ``RATIO_BEST_SCORE`` of that group's best. Left in, a weak detection could stand for the whole group,
+    stretch the group's outline, or link two objects into one. Built in score order, a weak link between a strong object
+    and a moderate one does not make the moderate one weak too.
     """
     scores = merged.get("scores")
     if not len(joins) or not isinstance(scores, torch.Tensor) or len(scores) != n:
         return joins
-    scores = scores.detach().cpu().float()
-    rows = _Rows(_connected_groups(joins, n))
-    best = torch.zeros(len(rows.sizes)).scatter_reduce_(0, rows.gid, scores[rows.members], reduce="amax", include_self=False)
-    group_best = torch.empty(n)
-    group_best[rows.members] = best[rows.gid]
-    strong = scores >= RATIO_BEST_SCORE * group_best
-    return joins[strong[joins[:, 0]] & strong[joins[:, 1]]]
+    score = scores.detach().cpu().float().tolist()
+    pairs = joins.tolist()
+    by_detection: List[List[int]] = [[] for _ in range(n)]
+    for k, (a, b) in enumerate(pairs):
+        by_detection[a].append(k)
+        by_detection[b].append(k)
+
+    parent = list(range(n))
+    best = list(score)  # the group's best score, kept at its root
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    keep = [False] * len(pairs)
+    seen = [False] * n
+    for d in sorted(range(n), key=lambda i: -score[i]):
+        seen[d] = True
+        for k in by_detection[d]:
+            other = pairs[k][0] if pairs[k][1] == d else pairs[k][1]
+            if not seen[other]:
+                continue
+            root = find(other)
+            if score[d] >= RATIO_BEST_SCORE * best[root]:
+                keep[k] = True
+                mine = find(d)
+                if mine != root:
+                    parent[mine] = root
+                    best[root] = max(best[root], best[mine])
+    return joins[torch.tensor(keep, dtype=torch.bool)]
 
 
 def _touching_pairs(merged: Dict[str, Any], boxes: torch.Tensor, cut: torch.Tensor, pad: torch.Tensor) -> torch.Tensor:
