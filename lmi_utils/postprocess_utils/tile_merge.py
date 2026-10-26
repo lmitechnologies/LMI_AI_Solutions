@@ -34,6 +34,7 @@ JOIN_MARGIN = 16.0  # px from a seam within which a box may be joined; capped by
 CONTAINMENT = 0.8  # a fragment joins a whole detection when this share of it lies inside; F1 barely moves over 0.5-0.95
 SAME_OBJECT_CONTAINMENT = 0.95  # two whole detections are one object when this share of one lies inside the other
 AGREEMENT_IOU = 0.5  # to join, two boxes must reach this IoU within the area both tiles cover
+RATIO_OF_HIGHEST = 0.5  # a detection under this fraction of its group's best score stays out of the group; little change over 0.25-0.75
 _NO_PAIRS = torch.zeros(0, 2, dtype=torch.long)  # an (L, 2) index-pair list with nothing in it
 
 
@@ -69,7 +70,8 @@ def merge_tile_fragments(
 
     Returns:
         The dict with one detection per object. A group with a whole detection keeps its best-scoring one; a group of
-        only fragments becomes their union with the best score, deleted when another tile saw its whole area.
+        only fragments becomes their union with the best score, deleted when another tile saw its whole area. A
+        detection scoring under ``RATIO_OF_HIGHEST`` of its group's best stays out of the group and is returned on its own.
     """
     # no early return for a single detection: it still needs the cut test and the drop rule
     if not len(tile_idx):
@@ -92,7 +94,7 @@ def merge_tile_fragments(
     at_edge = _cut_flags(boxes, tile_idx, grid, edge_tolerance)
     whole = ~cut
     touching = _touching_pairs(merged, boxes, cut, grid.seam_band)
-    joins = _joins(merged, boxes, cut, tile_idx, grid, containment, touching)
+    joins = _without_weak_joins(merged, _joins(merged, boxes, cut, tile_idx, grid, containment, touching), len(tile_idx))
     groups = _split_distinct_whole(merged, boxes, _connected_groups(joins, len(tile_idx)), whole, joins, touching)
 
     if any(len(g) > 1 for g in groups):
@@ -268,6 +270,24 @@ def _joins(
         keep[uncut] = _containment(merged, boxes, j[uncut], i[uncut]) >= containment
         j, i = j[keep], i[keep]
     return torch.stack([j, i], dim=1) if len(j) else _NO_PAIRS
+
+
+def _without_weak_joins(merged: Dict[str, Any], joins: torch.Tensor, n: int) -> torch.Tensor:
+    """Remove the joins of weak detections, so each one stays on its own.
+
+    A detection is weak when it scores under ``RATIO_OF_HIGHEST`` of the best detection it is joined to, directly or through
+    others. Left in, it could stand for the whole group, stretch the group's outline, or link two objects into one.
+    """
+    scores = merged.get("scores")
+    if not len(joins) or not isinstance(scores, torch.Tensor) or len(scores) != n:
+        return joins
+    scores = scores.detach().cpu().float()
+    rows = _Rows(_connected_groups(joins, n))
+    best = torch.zeros(len(rows.sizes)).scatter_reduce_(0, rows.gid, scores[rows.members], reduce="amax", include_self=False)
+    group_best = torch.empty(n)
+    group_best[rows.members] = best[rows.gid]
+    strong = scores >= RATIO_OF_HIGHEST * group_best
+    return joins[strong[joins[:, 0]] & strong[joins[:, 1]]]
 
 
 def _touching_pairs(merged: Dict[str, Any], boxes: torch.Tensor, cut: torch.Tensor, pad: torch.Tensor) -> torch.Tensor:

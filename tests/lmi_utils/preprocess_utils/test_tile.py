@@ -637,7 +637,7 @@ def test_tile_score_threshold_drops_weak_fragments_before_merging():
             torch.tensor([[0.0, 20.0, 100.0, 50.0]]),
             torch.tensor([[0.0, 20.0, 80.0, 50.0]]),
         ],
-        scores=[torch.tensor([s]) for s in (0.4, 0.3, 0.7)],
+        scores=[torch.tensor([s]) for s in (0.4, 0.5, 0.7)],
         classes=[np.array([0], np.int32) for _ in range(3)],
         points=[torch.zeros((0, 1, 3)) for _ in range(3)],
     )
@@ -727,7 +727,7 @@ def test_tile_merge_runs_with_overlap_on_one_axis_only():
     pre, rec = Preprocessor(), Reconstructor()
     img = torch.zeros(100, 198, 3)
     _, history = pre.preprocess([img], [steps.tile(tile_size=[100, 100], stride=[60, 98], merge_fragments=True)])
-    results = _two_tile_results(boxes=[[[40, 20, 100, 50]], [[0, 20, 42, 50]]], scores=[[0.4], [0.9]])
+    results = _two_tile_results(boxes=[[[40, 20, 100, 50]], [[0, 20, 42, 50]]], scores=[[0.6], [0.9]])
     out = rec.reconstruct_coordinates(results, history)
     assert out["boxes"][0].shape == (1, 4)
     assert torch.allclose(out["boxes"][0], torch.tensor([[40.0, 20.0, 140.0, 50.0]]))
@@ -770,7 +770,7 @@ def test_tile_merge_accepts_any_edge_tolerance():
 def test_tile_edge_tolerance_reaches_the_merge_step():
     # Both halves stop 8px short of the seam, so only the wider tolerance pairs them.
     boxes = [[[40, 20, 92, 50]], [[0, 20, 60, 50]]]
-    scores = [[0.4], [0.9]]
+    scores = [[0.6], [0.9]]
     rec, history = _merge_history()
     assert rec.reconstruct_coordinates(_two_tile_results(boxes, scores), history)["boxes"][0].shape == (2, 4)
     rec, history = _merge_history(edge_tolerance=10)
@@ -835,7 +835,7 @@ def test_tile_merge_auto_unions_a_genuinely_cut_object():
     results = _empty_results(
         n=2,
         boxes=[torch.tensor([[40.0, 20.0, 100.0, 50.0]]), torch.tensor([[0.0, 20.0, 60.0, 50.0]])],
-        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        scores=[torch.tensor([0.6]), torch.tensor([0.9])],
         classes=[np.array([0], np.int32) for _ in range(2)],
         points=[torch.zeros((0, 1, 3)) for _ in range(2)],
     )
@@ -877,7 +877,7 @@ def test_tile_merge_false_stays_off_with_overlap():
     results = _empty_results(
         n=2,
         boxes=[torch.tensor([[40.0, 20.0, 100.0, 50.0]]), torch.tensor([[0.0, 20.0, 60.0, 50.0]])],
-        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        scores=[torch.tensor([0.6]), torch.tensor([0.9])],
         classes=[np.array([0], np.int32) for _ in range(2)],
         points=[torch.zeros((0, 1, 3)) for _ in range(2)],
     )
@@ -899,7 +899,7 @@ def _seam_pair_reverted(**cfg):
     results = _empty_results(
         n=2,
         boxes=[torch.tensor([[40.0, 20.0, 100.0, 50.0]]), torch.tensor([[0.0, 20.0, 60.0, 50.0]])],
-        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        scores=[torch.tensor([0.6]), torch.tensor([0.9])],
         classes=[np.array([0], dtype=np.int32), np.array([0], dtype=np.int32)],
     )
     return rec.reconstruct_coordinates(results, history)
@@ -936,7 +936,7 @@ def test_merge_under_interpolation_scales_each_axis_on_its_own():
     results = _empty_results(
         n=2,
         boxes=[torch.tensor([[40.0, 20.0, 100.0, 50.0]]), torch.tensor([[0.0, 20.0, 60.0, 50.0]])],
-        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        scores=[torch.tensor([0.6]), torch.tensor([0.9])],
         classes=[np.array([0], dtype=np.int32), np.array([0], dtype=np.int32)],
     )
     reverted = rec.reconstruct_coordinates(results, history)
@@ -954,7 +954,7 @@ def test_merge_unions_masks_under_interpolation():
     results = _empty_results(
         n=2,
         masks=[left, right],
-        scores=[torch.tensor([0.4]), torch.tensor([0.9])],
+        scores=[torch.tensor([0.6]), torch.tensor([0.9])],
         classes=[np.array([0], dtype=np.int32), np.array([0], dtype=np.int32)],
     )
     reverted = rec.reconstruct_coordinates(results, history)
@@ -962,8 +962,8 @@ def test_merge_unions_masks_under_interpolation():
     assert reverted["masks"][0][0, 25:45, 45:110].eq(1).all()
 
 
-def _weak_whole_and_strong_fragment(fragment_x0=0.0, **cfg):
-    """A low-scoring whole detection in tile 0, and a high-scoring fragment of the same object in tile 1.
+def _weak_whole_and_strong_fragment(fragment_x0=0.0, whole_score=0.05, **cfg):
+    """A whole detection in tile 0, low-scoring by default, and a high-scoring fragment of the same object in tile 1.
 
     The fragment lies 0.83 inside the whole detection, so it joins at 0.8 but not at 0.9. The whole detection ends
     6px short of its tile edge, just outside the 5px join margin of this 40px overlap. ``fragment_x0`` moves the
@@ -973,7 +973,7 @@ def _weak_whole_and_strong_fragment(fragment_x0=0.0, **cfg):
     results = _empty_results(
         n=2,
         boxes=[torch.tensor([[65.0, 20.0, 94.0, 50.0]]), torch.tensor([[fragment_x0, 20.0, 35.0, 50.0]])],
-        scores=[torch.tensor([0.05]), torch.tensor([0.9])],
+        scores=[torch.tensor([whole_score]), torch.tensor([0.9])],
         classes=[np.zeros(1, dtype=np.int32), np.zeros(1, dtype=np.int32)],
     )
     return rec.reconstruct_coordinates(results, history)
@@ -987,5 +987,13 @@ def test_score_threshold_drops_a_weak_view_before_it_can_represent_its_group():
 
 
 def test_a_fragment_mostly_inside_a_whole_detection_joins_it():
-    reverted = _weak_whole_and_strong_fragment(merge_fragments=True, nms_iou=None, report_merge_origin=True)
+    reverted = _weak_whole_and_strong_fragment(whole_score=0.6, merge_fragments=True, nms_iou=None, report_merge_origin=True)
     assert reverted["merge_origin"][0].tolist() == [tile_merge.ORIGIN_WHOLE_GROUPED]
+
+
+def test_a_weak_whole_detection_does_not_stand_for_a_strong_fragment():
+    # the score_threshold test's input with no threshold: the merge alone keeps the fragment's box and score
+    reverted = _weak_whole_and_strong_fragment(3.0, merge_fragments=True, nms_iou=None)
+    strongest = int(reverted["scores"][0].argmax())
+    assert reverted["scores"][0][strongest].item() == pytest.approx(0.9)
+    assert reverted["boxes"][0][strongest].tolist() == [63.0, 20.0, 95.0, 50.0]
