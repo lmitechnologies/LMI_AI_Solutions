@@ -6,10 +6,10 @@ import logging
 import os
 
 import numpy as np
-from label_studio_sdk.converter.brush import decode_rle
 
 from lmi_utils.label_utils.bbox_utils import convert_from_ls
 from lmi_utils.label_utils.csv_utils import write_to_csv
+from lmi_utils.label_utils.lst_brush import decode_mask
 from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
 
 logger = logging.getLogger(__name__)
@@ -55,8 +55,7 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
     elif result_type == "brushlabels":
         rle = result["value"]["rle"]
         h, w = result["original_height"], result["original_width"]
-        img = decode_rle(rle).reshape(h, w, 4)[:, :, 3]
-        mask = img > 128
+        mask = decode_mask(rle, h, w)
         brush = Brush(im_name=fname, category=label, mask=mask, confidence=conf)
         return brush
     elif result_type == "keypointlabels":
