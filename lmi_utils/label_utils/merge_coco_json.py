@@ -17,11 +17,11 @@ def _image_dir(json_path: str) -> str:
     return images_dir if os.path.isdir(images_dir) else json_dir
 
 
-def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0) -> None:
+def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 1) -> None:
     """
     Merges multiple COCO JSON files into one dataset in the json_to_coco layout:
     <output_path>/_annotations.coco.json with the images beside it.
-    Handles ID conflicts by re-indexing images, annotations, and categories.
+    Handles ID conflicts by re-indexing images, annotations, and categories; category ids start at indx_start.
     """
     merged = CocoDataset()
     merged.info.description = "Merged Dataset"
@@ -132,6 +132,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Merge multiple COCO datasets.")
     parser.add_argument("-i", "--inputs", nargs="+", required=True, help="List of input COCO JSON files to merge")
     parser.add_argument("-o", "--output", required=True, help="Output directory for the merged dataset")
+    parser.add_argument("--idx0", action="store_true", help="start category ids from 0 instead of 1, as json_to_coco --idx0")
 
     args = parser.parse_args()
-    merge_datasets(args.inputs, args.output)
+    merge_datasets(args.inputs, args.output, indx_start=0 if args.idx0 else 1)

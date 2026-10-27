@@ -1,13 +1,14 @@
 import argparse
 import json
 import logging
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import cv2
-import lxml.etree as ET
 
 from lmi_utils.label_utils.csv_labels.csv_utils import load_csv
 from lmi_utils.label_utils.csv_labels.shapes import Mask, Rect
+from lmi_utils.label_utils.json_to_lst import to_image_root
 
 logger = logging.getLogger(__name__)
 
@@ -101,21 +102,15 @@ def write_xml(out_path, box_class, polygon_class):
             label.set("value", name)
             # label.set("background", "blue")
 
-    str = ET.tostring(root, pretty_print=True, encoding="unicode")
+    ET.indent(root)
+    str = ET.tostring(root, encoding="unicode") + "\n"
     html_path = f"{out_path}/labeling_interface.xml"
     with open(html_path, "w") as file:
         file.write(str)
 
 
 def write_to_lst(shapes: dict, out_path: Path, img_dir: Path, gs_path: str, is_pred: bool):
-    if not gs_path.startswith("gs://"):
-        if not gs_path.startswith("/"):
-            raise Exception("The local storage path must be absolute path starting with /")
-        li = gs_path.split("/")[1:]
-        logger.info(f"found local path: {gs_path}.")
-        logger.info(f"Assume that LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT is /{li[0]}")
-        gs_path = f"/data/local-files/?d={str('/').join(li[1:])}"
-        logger.info(f"converted to local path: {gs_path}")
+    image_root = to_image_root(gs_path)
 
     labels = []
     box_class = set()
@@ -143,7 +138,7 @@ def write_to_lst(shapes: dict, out_path: Path, img_dir: Path, gs_path: str, is_p
         im = cv2.imread(img_path)
         height, width = im.shape[:2]
 
-        gs_fname = f"{gs_path}/{fname}"
+        gs_fname = image_root + fname
         label_obj = init_label_obj(gs_fname, is_pred)
         target = "predictions" if is_pred else "annotations"
 

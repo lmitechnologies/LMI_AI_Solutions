@@ -5,9 +5,7 @@ import json
 import logging
 import os
 
-import numpy as np
-
-from lmi_utils.label_utils.bbox_utils import convert_from_ls
+from lmi_utils.label_utils.bbox_utils import ls_box_to_pixels, ls_points_to_pixels
 from lmi_utils.label_utils.csv_labels.csv_utils import write_to_csv
 from lmi_utils.label_utils.csv_labels.shapes import Brush, Keypoint, Mask, Rect
 from lmi_utils.label_utils.lst_brush import decode_mask
@@ -33,9 +31,7 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
     conf = result["value"]["score"] if load_confidence else 1.0
     if result_type == "rectanglelabels":
         # get bbox
-        x, y, w, h, angle = convert_from_ls(result)
-        x1, y1, w, h = list(map(int, [x, y, w, h]))
-        x2, y2 = x1 + w, y1 + h
+        x1, y1, x2, y2, angle = ls_box_to_pixels(result)
         rect = Rect(
             im_name=fname,
             category=label,
@@ -46,10 +42,7 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
         )
         return rect
     elif result_type == "polygonlabels":
-        points = result["value"]["points"]
-        points_np = np.array(points)
-        xs = (points_np[:, 0] / 100 * result["original_width"]).astype(np.int32)
-        ys = (points_np[:, 1] / 100 * result["original_height"]).astype(np.int32)
+        xs, ys = ls_points_to_pixels(result)
         mask = Mask(im_name=fname, category=label, x_vals=xs, y_vals=ys, confidence=conf)
         return mask
     elif result_type == "brushlabels":

@@ -46,7 +46,8 @@ def test_merge_json_to_coco_outputs(tmp_path):
     names = [img["file_name"] for img in merged["images"]]
     assert names == ["id1_img0.png", "id2_img1.png", "id3_img0.png", "id4_img1.png"]
     assert {f for f in os.listdir(out) if f.endswith(".png")} == set(names)
-    assert {c["name"] for c in merged["categories"]} == {"scratch", "dent"}
+    # numbered from 1, as json_to_coco does by default
     cat_ids = {c["name"]: c["id"] for c in merged["categories"]}
+    assert cat_ids == {"scratch": 1, "dent": 2}
     img_cat = {ann["image_id"]: ann["category_id"] for ann in merged["annotations"]}
     assert img_cat == {1: cat_ids["scratch"], 2: cat_ids["scratch"], 3: cat_ids["dent"], 4: cat_ids["dent"]}

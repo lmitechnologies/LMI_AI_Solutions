@@ -5,7 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from lmi_utils.label_utils.csv_labels.csv_to_lst import POLYGON_NAME, RECT_NAME, write_xml
+from lmi_utils.label_utils.json_to_lst import CONTROL_NAMES, XML_NAME, labeling_interface
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +89,6 @@ def convert_to_ls(files, destination, bucket):
     Output: A label.json file to be imported in Label Studio
     """
     labels = []
-    box_class = set()
-    polygon_class = set()
     cnt_box = 0
     cnt_polygon = 0
     for key in files:
@@ -114,7 +112,6 @@ def convert_to_ls(files, destination, bucket):
 
             if "boxes" in label_json:
                 for box in label_json["boxes"]:
-                    box_class.add(box["object"])
                     box_lst = {
                         "original_width": width,
                         "original_height": height,
@@ -128,7 +125,7 @@ def convert_to_ls(files, destination, bucket):
                             "rotation": box.get("rotation", 0),
                             "rectanglelabels": [box["object"]],
                         },
-                        "from_name": RECT_NAME,
+                        "from_name": CONTROL_NAMES["rectanglelabels"][0],
                         "to_name": "image",
                         "type": "rectanglelabels",
                     }
@@ -137,7 +134,6 @@ def convert_to_ls(files, destination, bucket):
 
             if "polygons" in label_json:
                 for polygon in label_json["polygons"]:
-                    polygon_class.add(polygon["object"])
                     polygon_lst = {
                         "original_width": width,
                         "original_height": height,
@@ -147,7 +143,7 @@ def convert_to_ls(files, destination, bucket):
                             "polygonlabels": [polygon["object"]],
                             "score": polygon.get("score", None),
                         },
-                        "from_name": POLYGON_NAME,
+                        "from_name": CONTROL_NAMES["polygonlabels"][0],
                         "to_name": "image",
                         "type": "polygonlabels",
                     }
@@ -172,7 +168,8 @@ def convert_to_ls(files, destination, bucket):
     with open(label_path, "w") as file:
         json.dump(labels, file, indent=4)
 
-    write_xml(destination, box_class, polygon_class)
+    with open(Path(destination) / XML_NAME, "w") as file:
+        file.write(labeling_interface(labels))
 
 
 if __name__ == "__main__":

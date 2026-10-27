@@ -1,10 +1,9 @@
 import argparse
 import json
 import logging
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import List
-
-import lxml.etree as ET
 
 from lmi_utils.dataset_utils.representations import Annotation, Box, Dataset, Mask, Point2d, Polygon, rle2mask
 from lmi_utils.label_utils.lst_brush import encode_mask
@@ -20,6 +19,7 @@ CONTROL_NAMES = {
     "brushlabels": ("brush", "BrushLabels"),
     "keypointlabels": ("keypoint", "KeyPointLabels"),
 }
+CONTROL_ATTRS = {"polygonlabels": {"strokeWidth": "3", "pointSize": "small", "opacity": "0.9"}}
 
 
 def annotation_to_lst(annot: Annotation, height: int, width: int, is_pred: bool) -> dict:
@@ -61,23 +61,28 @@ def annotation_to_lst(annot: Annotation, height: int, width: int, is_pred: bool)
 
 
 def to_image_root(path: str) -> str:
-    """Return the image root written into each task; a local absolute path becomes a Label Studio local-files URL."""
+    """Return the prefix joined with each image path; a local absolute path becomes a Label Studio local-files URL.
+
+    The first folder of a local path is taken as LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT.
+    """
     if path.startswith("gs://"):
-        return path.rstrip("/")
+        return path.rstrip("/") + "/"
     if not path.startswith("/"):
         raise ValueError("The local storage path must be absolute path starting with /")
-    parts = path.strip("/").split("/")
+    parts = [p for p in path.split("/") if p]
+    if not parts:
+        raise ValueError("The local storage path must include the document root folder")
     logger.info(f"Assume that LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT is /{parts[0]}")
-    return f"/data/local-files/?d={'/'.join(parts[1:])}"
+    return "/data/local-files/?d=" + "".join(p + "/" for p in parts[1:])
 
 
 def dataset_to_lst(dataset: Dataset, image_root: str) -> List[dict]:
-    """Convert a dataset to a list of Label Studio tasks; annotations and predictions both carry over."""
+    """Convert a dataset to Label Studio tasks, with annotations and predictions; image_root comes from to_image_root."""
     tasks = []
     for file in sorted(dataset.files, key=lambda f: f.path):
         if file.height is None or file.width is None:
             raise ValueError(f"missing image size for {file.path}")
-        task = {"data": {"image": f"{image_root}/{Path(file.path).as_posix()}"}}
+        task = {"data": {"image": image_root + Path(file.path).as_posix()}}
         if file.annotations:
             results = [annotation_to_lst(a, file.height, file.width, is_pred=False) for a in file.annotations]
             task["annotations"] = [{"result": results}]
@@ -100,10 +105,11 @@ def labeling_interface(tasks: List[dict]) -> str:
     ET.SubElement(root, "Image", name="image", value="$image", zoom="true")
     for result_type, (name, tag) in CONTROL_NAMES.items():
         if result_type in classes:
-            control = ET.SubElement(root, tag, name=name, toName="image")
+            control = ET.SubElement(root, tag, name=name, toName="image", **CONTROL_ATTRS.get(result_type, {}))
             for label in sorted(classes[result_type]):
                 ET.SubElement(control, "Label", value=label)
-    return ET.tostring(root, pretty_print=True, encoding="unicode")
+    ET.indent(root)
+    return ET.tostring(root, encoding="unicode") + "\n"
 
 
 def main():

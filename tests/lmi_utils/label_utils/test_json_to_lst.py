@@ -16,6 +16,7 @@ from lmi_utils.dataset_utils.representations import (
     Polygon,
     rle2mask,
 )
+from lmi_utils.label_utils.gadget_to_lst import convert_to_ls
 from lmi_utils.label_utils.json_to_lst import dataset_to_lst, labeling_interface, to_image_root
 from lmi_utils.label_utils.lst_brush import decode_mask, encode_mask
 from lmi_utils.label_utils.lst_to_json import get_annotations_from_json
@@ -88,7 +89,7 @@ def test_json_to_lst_round_trips_through_lst_to_json(tmp_path):
     imgs.mkdir()
     cv2.imwrite(str(imgs / "img0.png"), np.zeros((H, W, 3), dtype=np.uint8))
     lst_path = tmp_path / "lst.json"
-    lst_path.write_text(json.dumps(dataset_to_lst(build_dataset(mask), "gs://bucket/imgs")))
+    lst_path.write_text(json.dumps(dataset_to_lst(build_dataset(mask), to_image_root("gs://bucket/imgs"))))
 
     files, labels = get_annotations_from_json(str(lst_path), str(imgs))
 
@@ -104,12 +105,34 @@ def test_json_to_lst_round_trips_through_lst_to_json(tmp_path):
 
 
 def test_labeling_interface_lists_each_type():
-    xml = labeling_interface(dataset_to_lst(build_dataset(random_mask()), "gs://b"))
+    xml = labeling_interface(dataset_to_lst(build_dataset(random_mask()), to_image_root("gs://b")))
     tags = ['RectangleLabels name="label"', 'PolygonLabels name="polygon"', 'BrushLabels name="brush"', 'KeyPointLabels name="keypoint"']
     for tag in tags:
         assert tag in xml
 
 
 def test_local_image_root_becomes_local_files_url():
-    assert to_image_root("/data/project/imgs") == "/data/local-files/?d=project/imgs"
-    assert to_image_root("gs://bucket/imgs/") == "gs://bucket/imgs"
+    assert to_image_root("/data/project/imgs") == "/data/local-files/?d=project/imgs/"
+    assert to_image_root("gs://bucket/imgs/") == "gs://bucket/imgs/"
+
+
+def test_image_root_at_the_document_root_has_no_leading_slash():
+    [task] = dataset_to_lst(build_dataset(random_mask()), to_image_root("/imgs"))
+    assert task["data"]["image"] == "/data/local-files/?d=img0.png"
+
+
+def test_gadget_to_lst_uses_json_to_lst_names(tmp_path):
+    image = tmp_path / "folder" / "sensor" / "image" / "1.png"
+    labels = tmp_path / "folder" / "pipeline" / "labels" / "1.label.json"
+    for path in (image, labels):
+        path.parent.mkdir(parents=True)
+    image.write_bytes(b"")
+    box = {"object": "dent", "x": 10, "y": 10, "width": 20, "height": 20, "score": 0.9}
+    labels.write_text(json.dumps({"image_width": W, "image_height": H, "boxes": [box]}))
+
+    convert_to_ls({"1": {"image": image, "labels": labels}}, str(tmp_path / "out"), "bucket/folder")
+
+    [task] = json.loads((tmp_path / "out" / "label.json").read_text())
+    assert task["predictions"][0]["result"][0]["from_name"] == "label"
+    xml = (tmp_path / "out" / "labeling_interface.xml").read_text()
+    assert '<RectangleLabels name="label" toName="image">' in xml and '<Label value="dent" />' in xml

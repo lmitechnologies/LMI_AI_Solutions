@@ -20,14 +20,11 @@ from lmi_utils.dataset_utils.representations import (
     Point2d,
     Polygon,
 )
-from lmi_utils.label_utils.bbox_utils import convert_from_ls
+from lmi_utils.label_utils.bbox_utils import ls_box_to_pixels, ls_points_to_pixels
 from lmi_utils.label_utils.lst_brush import decode_mask
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
 logger = logging.getLogger(__name__)
-
-# percent -> pixel math lands just under whole numbers (529.9999); nudge before truncating
-TRUNC_EPS = 1e-6
 
 
 LABEL_NAME = "labels.json"
@@ -49,16 +46,11 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
     conf = result["value"].get("score", 1.0) if load_confidence else 1.0
     if result_type == "rectanglelabels":
         # get bbox
-        x, y, w, h, angle = convert_from_ls(result)
-        x1, y1, w, h = [int(v + TRUNC_EPS) for v in (x, y, w, h)]
-        x2, y2 = x1 + w, y1 + h
+        x1, y1, x2, y2, angle = ls_box_to_pixels(result)
         box = Box(x_min=x1, y_min=y1, x_max=x2, y_max=y2, angle=angle)
         return box, label, conf, AnnotationType.BOX
     elif result_type == "polygonlabels":
-        points = result["value"]["points"]
-        points_np = np.array(points)
-        xs = (points_np[:, 0] / 100 * result["original_width"] + TRUNC_EPS).astype(np.int32)
-        ys = (points_np[:, 1] / 100 * result["original_height"] + TRUNC_EPS).astype(np.int32)
+        xs, ys = ls_points_to_pixels(result)
         points_np = np.stack([xs, ys], axis=1)
         return (
             Polygon(points=points_np.astype(int).tolist()),
