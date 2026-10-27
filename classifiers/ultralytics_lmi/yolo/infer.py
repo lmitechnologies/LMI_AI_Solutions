@@ -15,7 +15,7 @@ if __name__ == "__main__":
     import time
 
     parser = argparse.ArgumentParser()
-    add_infer_args(parser)
+    add_infer_args(parser, confidence=0)
     args = parser.parse_args()
     check_infer_args(parser, args)
 

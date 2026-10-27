@@ -11,7 +11,7 @@ from lmi_utils.preprocess_utils.preprocessor import Preprocessor
 
 def _parse(*argv, **defaults):
     parser = argparse.ArgumentParser()
-    add_infer_args(parser, **defaults)
+    add_infer_args(parser, confidence=0, **defaults)
     args = parser.parse_args(["-w", "m.pt", "-i", "in", "-o", "out", *argv])
     check_infer_args(parser, args)
     return args
@@ -29,7 +29,7 @@ def test_defaults():
 
 def test_paths_with_defaults_are_optional():
     parser = argparse.ArgumentParser()
-    add_infer_args(parser, weights="/w/m.pt", input="/in", output="/out")
+    add_infer_args(parser, confidence=0, weights="/w/m.pt", input="/in", output="/out")
     args = parser.parse_args([])
     assert (args.weights, args.input, args.output) == ("/w/m.pt", "/in", "/out")
 

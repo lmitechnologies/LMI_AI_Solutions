@@ -294,6 +294,33 @@ services:
 ### Start prediction
 Run the container (see [Spin up the container](#spin-up-the-container)) using `docker-compose_predict.yaml`. The output will be saved in `./prediction/2026-03-11`.
 
+### Tiled prediction
+To classify large images tile by tile, use infer script instead of `run_cmd`. Replace the `command` in `docker-compose_predict.yaml` with:
+```yaml
+    command: >
+      python3 -m classifiers.ultralytics_lmi.yolo.infer -w /app/trained-inference-models/best.pt -i /app/data -o /app/prediction/2026-03-11
+      --tile 224 --stride 112
+```
+`--tile` and `--stride` each take one int for a square or two ints for `h w`. Each tile is classified, then the tiles of an image are
+merged into one prediction by a confidence-weighted vote, so the output is one class per image. Each image is copied to a subfolder
+of the output folder named after its class. Tiling also saves an image per input to `tiles/` in the output folder, showing the tile grid.
+
+Add `--confidence` (default 0, no filtering) to drop low-confidence predictions: an image whose score is below the threshold has
+no class and is not saved.
+
+From Python, pass the preprocessing history to `predict`:
+```python
+from classifiers.ultralytics_lmi.yolo.model import YoloCls
+from lmi_utils.preprocess_utils import steps
+from lmi_utils.preprocess_utils.preprocessor import Preprocessor
+
+model = YoloCls("best.pt", image_size=[224, 224])
+tiles, history = Preprocessor().preprocess([image], [steps.tile(tile_size=224, stride=112)])
+results, _ = model.predict(tiles, operators=history, confidence={"good": 0.5, "bad": 0.8})
+# results["classes"][0] is None when the image's score is below its class threshold
+```
+`confidence` is a float for every class, or a dict of per-class thresholds; a class missing from the dict is always dropped.
+
 
 ## Generate TensorRT engines
 The TensorRT engines can be generated in two systems: x86 and ARM. Both systems share the same hyperparameter file, while the dockerfile and docker-compose files are different.
