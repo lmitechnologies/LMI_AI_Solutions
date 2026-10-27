@@ -12,6 +12,7 @@ from lmi_utils.dataset_utils.representations import (
     Dataset,
     FileAnnotations,
     Label,
+    Mask,
     Point2d,
     Polygon,
 )
@@ -87,14 +88,21 @@ def read_csv(csv_path: str, img_dir: str):
                 # mtype = AnnotationType.MASK
                 shape = Polygon(xy.tolist())
                 mtype = AnnotationType.POLYGON
-            if shape_type == "rect":
+            elif shape_type == "rect":
                 if angle is None:
                     angle = 0
                 shape = Box(x_min=c1[0], y_min=c1[1], x_max=c2[0], y_max=c2[1], angle=angle)
                 mtype = AnnotationType.BOX
-            if shape_type == "keypoint":
+            elif shape_type == "keypoint":
                 shape = Point2d(x=c1[0], y=c2[0])
                 mtype = AnnotationType.KEYPOINT
+            elif shape_type == "brush":
+                mask = np.zeros((height, width), dtype=bool)
+                mask[np.array(c2, dtype=int), np.array(c1, dtype=int)] = True
+                shape = Mask(mask=mask)
+                mtype = AnnotationType.MASK
+            else:
+                raise ValueError(f"unsupported shape type '{shape_type}' in {fname}")
 
             label_set.add(category)
 
