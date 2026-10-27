@@ -1,7 +1,6 @@
-from .brush import Brush
-from .keypoint import Keypoint
-from .mask import Mask
-from .rect import Rect
-from .shape import Shape
+"""Deprecated path: moved to lmi_utils.label_utils.csv_labels.shapes."""
 
-__all__ = ["Shape", "Keypoint", "Mask", "Rect", "Brush"]
+from lmi_utils.label_utils.csv_labels import warn_moved
+from lmi_utils.label_utils.csv_labels.shapes import Brush, Keypoint, Mask, Rect, Shape  # noqa: F401
+
+warn_moved("shapes")

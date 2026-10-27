@@ -1,6 +1,5 @@
-class Shape:
-    def __init__(self, im_name="", fullpath="", category="", confidence=1.0):
-        self.im_name = im_name
-        self.fullpath = fullpath
-        self.category = category
-        self.confidence = confidence
+"""Deprecated path: moved to lmi_utils.label_utils.csv_labels.shapes.shape."""
+
+from lmi_utils.label_utils.csv_labels import redirect
+
+redirect("shapes.shape", __name__)

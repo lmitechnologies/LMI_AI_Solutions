@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from lmi_utils.label_utils.resize_with_csv import resize_imgs_with_csv
+from lmi_utils.label_utils.csv_labels.resize_with_csv import resize_imgs_with_csv
 
 
 def _write(tmp_path, image):
