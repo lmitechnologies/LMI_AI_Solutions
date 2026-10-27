@@ -18,6 +18,28 @@ An upright box drawn as a mask (`json_to_yolo --seg`) covers the pixels whose ce
 
 `apply_ops crop-by-label` cuts the other labels at the crop's edge the same way, so boxes and polygons outside the crop are dropped instead of kept with corners moved onto its edge or with inverted coordinates. It now keeps keypoints instead of failing on them; keypoints linked to the crop box are dropped with it, as padding drops the keypoints of a box it removes. The crop covers the pixels whose centers are inside the box, the same pixels as its mask. A rotated crop box of any angle fails, as do a crop label that is not a box and one that covers no pixel. `crop_dataset_by_label` drops its `clip` argument, and its helpers `crop_kp`, `crop_bbox`, `crop_mask` and `crop_by_percent` are removed.
 
+### `tile_step` moved to `lmi_common.infer_cli`
+
+**PR:** [#469](https://github.com/lmitechnologies/LMI_AI_Solutions/pull/469)
+
+The infer CLI helpers shared by detectors and classifiers now live in `lmi_common.infer_cli`. `tile_step` is no longer importable
+from `object_detectors.od_core.infer_cli`; `TILE_PLOT_DIR` and `predict_tiled` still are. Update the import:
+
+```python
+from lmi_common.infer_cli import tile_step
+```
+
+## New features
+
+### Classifier tiling and confidence threshold
+
+**PR:** [#469](https://github.com/lmitechnologies/LMI_AI_Solutions/pull/469)
+
+`ClassifierBase.predict()` takes `operators` from `Preprocessor.preprocess()`; with a tile step, the tiles' softmax scores are
+merged by a weighted vote into one prediction per image. It also takes `confidence`, a float or per-class dict like the detectors;
+an image below its class threshold gets `None` for its class and score. The YOLO classifier `infer.py` gains `-c`, `--tile` and
+`--stride`.
+
 ## Deprecations
 
 ### CSV label tools
