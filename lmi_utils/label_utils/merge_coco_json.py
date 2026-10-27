@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import re
 import shutil
 from typing import Dict, List
 
@@ -9,9 +10,17 @@ from lmi_utils.dataset_utils.coco_dataset import CocoAnnotation, CocoCategory, C
 logger = logging.getLogger(__name__)
 
 
+def _image_dir(json_path: str) -> str:
+    # csv_to_coco puts images in images/; json_to_coco puts them beside the json.
+    json_dir = os.path.dirname(json_path)
+    images_dir = os.path.join(json_dir, "images")
+    return images_dir if os.path.isdir(images_dir) else json_dir
+
+
 def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0) -> None:
     """
-    Merges multiple COCO JSON files into a single dataset.
+    Merges multiple COCO JSON files into one dataset in the json_to_coco layout:
+    <output_path>/_annotations.coco.json with the images beside it.
     Handles ID conflicts by re-indexing images, annotations, and categories.
     """
     merged = CocoDataset()
@@ -32,22 +41,14 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
     current_ann_id = 1
     current_lic_id = 1
 
-    if not os.path.exists(output_path):
-        os.makedirs(output_path)
-
-    # create a directory for images output if it doesn't exist
-    if not os.path.exists(os.path.join(output_path, "images")):
-        os.makedirs(os.path.join(output_path, "images"))
+    os.makedirs(output_path, exist_ok=True)
 
     logger.info(f"Starting merge of {len(input_paths)} datasets...")
 
     for path in input_paths:
         logger.info(f"Processing: {path}")
-        try:
-            ds = CocoDataset.load_from_json(path)
-        except Exception as e:
-            logger.error(f"Error loading {path}: {e}")
-            continue
+        ds = CocoDataset.load_from_json(path)
+        image_dir = _image_dir(path)
 
         # --- 1. Merge Licenses ---
         local_lic_map = {}  # old_id -> new_id
@@ -75,13 +76,8 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
         for img in ds.images:
             # Handle license mapping (default to 0 if not found)
             new_lic_id = local_lic_map.get(img.license, 0)
-            full_image_path = os.path.join(os.path.dirname(path), "images", img.file_name)
-            new_name = img.file_name.replace(img.file_name, f"id{current_img_id}_" + img.file_name)
-            try:
-                shutil.copy(full_image_path, os.path.join(output_path, "images", new_name))
-            except Exception as e:
-                logger.error(f"Error copying image {full_image_path}: {e}")
-                exit(1)
+            new_name = f"id{current_img_id}_" + re.sub(r"^id\d+_", "", img.file_name)
+            shutil.copy(os.path.join(image_dir, img.file_name), os.path.join(output_path, new_name))
 
             new_img = CocoImage(
                 id=current_img_id,
@@ -121,7 +117,7 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
 
     # Save
     logger.info(f"Saving merged dataset to {output_path}...")
-    merged.save_to_json(os.path.join(output_path, "merged.json"))
+    merged.save_to_json(os.path.join(output_path, "_annotations.coco.json"))
 
     # Print stats
     stats = merged.get_statistics()
@@ -134,8 +130,8 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 0
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Merge multiple COCO datasets.")
-    parser.add_argument("-i", "--inputs", nargs="+", help="List of input COCO JSON files to merge")
-    parser.add_argument("-o", "--output", required=True, help="Output path for the merged JSON file")
+    parser.add_argument("-i", "--inputs", nargs="+", required=True, help="List of input COCO JSON files to merge")
+    parser.add_argument("-o", "--output", required=True, help="Output directory for the merged dataset")
 
     args = parser.parse_args()
     merge_datasets(args.inputs, args.output)
