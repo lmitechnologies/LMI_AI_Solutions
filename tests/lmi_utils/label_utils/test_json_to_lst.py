@@ -3,6 +3,7 @@ import json
 import cv2
 import numpy as np
 import pytest
+from label_studio_sdk.converter import brush as ls_brush
 
 from lmi_utils.dataset_utils.representations import (
     Annotation,
@@ -44,13 +45,23 @@ def test_brush_rle_long_run_round_trip():
     assert np.array_equal(decode_mask(encode_mask(mask), 300, 300), mask)
 
 
-def test_brush_rle_matches_label_studio_sdk():
-    brush = pytest.importorskip("label_studio_sdk.converter.brush")
-    mask = random_mask(1)
-    ours = encode_mask(mask)
-    theirs = brush.mask2rle(mask.astype(np.uint8) * 255)
-    assert np.array_equal(brush.decode_rle(ours).reshape(H, W, 4)[:, :, 3] > 128, mask)
-    assert np.array_equal(decode_mask(theirs, H, W), mask)
+SDK_MASKS = {
+    "noise": random_mask(1),
+    "dense_noise": np.random.default_rng(2).random((H, W)) > 0.5,
+    "empty": np.zeros((H, W), dtype=bool),
+    "full": np.ones((H, W), dtype=bool),
+    "long_run": np.pad(np.ones((1, 1), dtype=bool), ((299, 0), (299, 0))),
+}
+
+
+@pytest.mark.parametrize("name", SDK_MASKS)
+def test_brush_rle_matches_label_studio_sdk(name):
+    mask = SDK_MASKS[name]
+    h, w = mask.shape
+    rgba = np.repeat(mask.ravel().astype(np.uint8) * 255, 4)
+    # the SDK decodes our encoding to the same RGBA bytes, and we decode the SDK's encoding to the same mask
+    assert np.array_equal(ls_brush.decode_rle(encode_mask(mask)), rgba)
+    assert np.array_equal(decode_mask(ls_brush.mask2rle(mask.astype(np.uint8) * 255), h, w), mask)
 
 
 def annot(i, kind, value, conf=None):
