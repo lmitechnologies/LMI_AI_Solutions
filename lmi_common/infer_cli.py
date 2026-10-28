@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 if TYPE_CHECKING:
     from lmi_utils.preprocess_utils.ops import TileConfig
 
-TILE_PLOT_DIR = "tiles"  # tiled runs save their tile plots in this subfolder of the output folder
+TILE_PLOT_DIR = "_tile_plots"  # tiled runs save their tile plots in this subfolder of the output folder
 
 
 def add_infer_args(

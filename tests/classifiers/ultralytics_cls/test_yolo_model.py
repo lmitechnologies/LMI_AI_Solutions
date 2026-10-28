@@ -193,3 +193,21 @@ def test_high_confidence_threshold_filters_predictions(model_det, imgs_coco):
         for cls, score in zip(at_max["classes"], at_max["scores"]):
             if cls is not None:
                 assert score == pytest.approx(max_score, abs=1e-4)
+
+
+def test_tiled_predict_on_a_static_batch_export(tmp_path, imgs_coco):
+    """A static-batch export takes one image at a time; tiling must chunk to it instead of sending every tile."""
+    pytest.importorskip("onnx")
+    from ultralytics import YOLO
+
+    source = tmp_path / "model.pt"
+    source.write_bytes(open(CLS_MODELS[1][0], "rb").read())
+    onnx_path = YOLO(str(source), task="classify").export(format="onnx", imgsz=MODEL_SZ, simplify=False, verbose=False)
+    model = YoloCls(onnx_path, device="cpu", image_size=[MODEL_SZ, MODEL_SZ])
+    assert (model.fixed_batch_size, model.max_batch_size) == (1, None)
+
+    images, _, _ = imgs_coco
+    tiles, history = Preprocessor().preprocess(images[:2], [steps.tile(tile_size=MODEL_SZ, stride=MODEL_SZ)])
+    assert len(tiles) > 2
+    out, _ = model.predict(tiles, operators=history)
+    _assert_results(out, 2)

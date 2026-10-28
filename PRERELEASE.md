@@ -29,6 +29,13 @@ from `object_detectors.od_core.infer_cli`; `TILE_PLOT_DIR` and `predict_tiled` s
 from lmi_common.infer_cli import tile_step
 ```
 
+### Tile plots moved to `_tile_plots/`
+
+**PR:** [#469](https://github.com/lmitechnologies/LMI_AI_Solutions/pull/469)
+
+Tiled `infer.py` runs now save their tile plots to `_tile_plots/` in the output folder instead of `tiles/`, so they cannot collide
+with a classifier's per-class folder named `tiles`. Update any script that reads `tiles/`.
+
 ## New features
 
 ### Classifier tiling and confidence threshold

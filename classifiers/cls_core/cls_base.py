@@ -22,6 +22,9 @@ class ClassifierBase(abc.ABC):
     # Set to a positive integer in subclasses that use a fixed-batch-size model.
     fixed_batch_size: int = None
 
+    # Largest batch a dynamic-batch model accepts; predict() splits larger inputs into chunks of it.
+    max_batch_size: int = None
+
     def _setup_class_map(self, class_names: dict) -> None:
         """Populate self.class_map {int softmax index → str class name}. Call from __init__ of each subclass."""
         if class_names is None:
@@ -55,7 +58,9 @@ class ClassifierBase(abc.ABC):
 
         Supports both single image and batch inference. When ``self.fixed_batch_size``
         is set (e.g. TRT engines with a hard-coded batch dimension), the input is
-        processed in chunks of that size and the last chunk is zero-padded.
+        processed in chunks of that size and the last chunk is zero-padded. When
+        ``self.max_batch_size`` is set (dynamic-batch engines), chunks are at most that size
+        and are not padded.
 
         Args:
             image: A single HW or HWC image, a list of HW/HWC images, or a BHWC batch.
@@ -67,8 +72,8 @@ class ClassifierBase(abc.ABC):
                 An image whose top score is below its class threshold is reported as no
                 detection (classes[i] = scores[i] = None).
         kwargs:
-            batch_size (int): chunk size for dynamic mini-batch inference (default: None = all at once).
-                Ignored when self.fixed_batch_size is set.
+            batch_size (int): chunk size for dynamic mini-batch inference, capped at self.max_batch_size
+                (default: self.max_batch_size, or all at once when that is unset). Ignored when self.fixed_batch_size is set.
 
         Returns:
             (results, time_info)
@@ -94,6 +99,8 @@ class ClassifierBase(abc.ABC):
 
         fixed_bs = self.fixed_batch_size
         batch_size = kwargs.pop("batch_size", None)
+        if self.max_batch_size:
+            batch_size = min(batch_size or self.max_batch_size, self.max_batch_size)
         effective_bs = fixed_bs or batch_size
 
         if effective_bs:
@@ -194,14 +201,14 @@ class ClassifierBase(abc.ABC):
 
         Returns:
             New dict with the same list lengths; filtered entries have classes[i] = scores[i] = None.
-            A class absent from ``confs`` defaults to threshold 1.0 (always filtered), matching OD.
+            A class absent from ``confs`` is always filtered, matching OD.
         """
         classes = list(results["classes"])
         scores = list(results["scores"])
         for i, (cls, score) in enumerate(zip(classes, scores)):
             if cls is None or score is None:
                 continue
-            if score < confs.get(cls, 1.0):
+            if score < confs.get(cls, float("inf")):
                 classes[i] = None
                 scores[i] = None
         return {"classes": classes, "scores": scores}

@@ -303,7 +303,7 @@ To classify large images tile by tile, use infer script instead of `run_cmd`. Re
 ```
 `--tile` and `--stride` each take one int for a square or two ints for `h w`. Each tile is classified, then the tiles of an image are
 merged into one prediction by a confidence-weighted vote, so the output is one class per image. Each image is copied to a subfolder
-of the output folder named after its class. Tiling also saves an image per input to `tiles/` in the output folder, showing the tile grid.
+of the output folder named after its class. Tiling also saves an image per input to `_tile_plots/` in the output folder, showing the tile grid.
 
 Add `--confidence` (default 0, no filtering) to drop low-confidence predictions: an image whose score is below the threshold has
 no class and is not saved.

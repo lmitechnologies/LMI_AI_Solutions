@@ -150,6 +150,17 @@ def test_tiled_predict_drops_fixed_batch_padding():
     assert [c["n"] for c in stub.postprocess_calls] == [3, 3, 3]
 
 
+@pytest.mark.parametrize("batch_size, chunks", [(None, [3, 3, 2]), (2, [2, 2, 2, 2]), (5, [3, 3, 2])])
+def test_tiled_predict_caps_chunks_at_max_batch_size(batch_size, chunks):
+    tiles, history = _tile([_image([1, 1, 1, 1]), _image([2, 2, 2, 2])])
+    stub = StubClassifier()
+    stub.max_batch_size = 3
+    kwargs = {} if batch_size is None else {"batch_size": batch_size}
+    out, _ = stub.predict(tiles, operators=history, **kwargs)
+    assert out["classes"] == ["dog", "bird"]
+    assert [c["n"] for c in stub.postprocess_calls] == chunks
+
+
 def test_tile_count_mismatch_raises():
     with pytest.raises(ValueError, match="describes 4 tiles, but 3 images"):
         StubClassifier().predict([np.zeros((8, 8, 3), np.uint8)] * 3, operators=[_tile_meta([[2, 2]])])
@@ -205,8 +216,8 @@ def test_confidence_dict_per_class():
     assert out["scores"] == [pytest.approx(0.8, abs=1e-6), None, pytest.approx(0.8, abs=1e-6)]
 
 
-def test_confidence_dict_unknown_class_defaults_to_one():
-    # bird absent from the dict → threshold 1.0 (OD default) → always filtered
+def test_confidence_dict_unknown_class_is_dropped():
+    # bird absent from the dict → always filtered, like OD
     stub = StubClassifier()
     out, _ = stub.predict(
         [np.full((8, 8, 3), v, np.uint8) for v in (0, 1, 2)],
@@ -214,6 +225,12 @@ def test_confidence_dict_unknown_class_defaults_to_one():
     )
     assert out["classes"] == ["cat", "dog", None]
     assert out["scores"] == [pytest.approx(0.8, abs=1e-6), pytest.approx(0.9, abs=1e-6), None]
+
+
+def test_confidence_dict_unknown_class_is_dropped_at_score_one():
+    results = {"classes": ["cat", "bird"], "scores": [1.0, 1.0]}
+    out = ClassifierBase._apply_confidence_filter(results, {"cat": 0.5})
+    assert out == {"classes": ["cat", None], "scores": [1.0, None]}
 
 
 def test_confidence_none_raises():

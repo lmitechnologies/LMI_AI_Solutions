@@ -29,6 +29,13 @@ class YoloCls(YoloCore, ClassifierBase):
         YoloCore.__init__(self, model_path, device, data, fp16, **kwargs)
         self.task = "classify"
         self._setup_class_map(self.model.names)
+        batch = self.engine_batch()
+        if batch is not None:
+            size, dynamic = batch
+            if dynamic:
+                self.max_batch_size = size
+            else:
+                self.fixed_batch_size = size
 
         updated = (
             self.model.model.transforms.transforms[0].size != max(self.image_size)

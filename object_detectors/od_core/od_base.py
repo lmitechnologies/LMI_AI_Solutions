@@ -343,14 +343,14 @@ class ODBase(abc.ABC):
 
         Args:
             classes: 1-D numpy array of class name strings.
-            confs: Dict mapping class name to threshold. Unknown classes default to 1.0.
+            confs: Dict mapping class name to threshold. Unknown classes get inf, so they are always dropped.
 
         Returns:
             float32 numpy array of thresholds, same length as classes.
         """
         if len(classes) == 0:
             return np.empty(0, dtype=np.float32)
-        return np.vectorize(confs.get)(classes, 1.0).astype(np.float32)
+        return np.vectorize(confs.get)(classes, np.inf).astype(np.float32)
 
     @staticmethod
     def _check_operators(operators) -> list:

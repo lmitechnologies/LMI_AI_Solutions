@@ -63,3 +63,9 @@ def test_fixed_batch_pads_the_last_chunk():
     out, _ = model.predict(_images(5), configs=0.5)
     assert model.batches == [2, 2, 2]
     assert _scores(out) == [0, 1, 2, 3, 4]
+
+
+def test_a_class_missing_from_the_confidence_dict_is_dropped_even_at_score_one():
+    thresholds = ODBase._compute_thresholds(np.array(["a", "b"]), {"a": 0.5})
+    scores = np.array([1.0, 1.0], dtype=np.float32)
+    assert (scores >= thresholds).tolist() == [True, False]
