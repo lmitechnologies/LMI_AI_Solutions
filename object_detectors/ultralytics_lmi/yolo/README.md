@@ -81,10 +81,6 @@ input_path=/app/data/allImages
 W=640
 H=640
 
-# convert labels from VGG json: to csv, then to json
-# python -m lmi_utils.label_utils.csv_labels.via_json_to_csv -d $input_path --output_fname labels.csv
-# python -m lmi_utils.label_utils.csv_to_json --csv $input_path/labels.csv -i $input_path -o $input_path/labels.json
-
 # convert labels from label studio to json
 python -m lmi_utils.label_utils.lst_to_json -i $input_path -imgs $input_path -of $input_path/labels.json
 
