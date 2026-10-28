@@ -78,8 +78,11 @@ def dataset_paths(dataset_dir):
     """The COCO annotation file and image folder of a dataset split.
 
     Accepts _annotations.coco.json with the images beside it (json_to_coco, RF-DETR), or the deprecated csv_to_coco layout:
-    annotations.json with an images/ folder.
+    annotations.json with an images/ folder. A folder holding both uses _annotations.coco.json.
     """
+    annotations = os.path.join(dataset_dir, "_annotations.coco.json")
+    if os.path.isfile(annotations):
+        return annotations, dataset_dir
     annotations, images = os.path.join(dataset_dir, "annotations.json"), os.path.join(dataset_dir, "images")
     if os.path.isfile(annotations) and os.path.isdir(images):
         warnings.warn(
@@ -88,14 +91,7 @@ def dataset_paths(dataset_dir):
             stacklevel=2,
         )
         return annotations, images
-    annotations = os.path.join(dataset_dir, "_annotations.coco.json")
-    if os.path.isfile(annotations):
-        return annotations, dataset_dir
     raise ValueError(f"{dataset_dir} needs annotations.json and an images folder, or _annotations.coco.json with the images beside it")
-
-
-def register_dataset(dataset_dir, name):
-    register_coco_instances(name, {}, *dataset_paths(dataset_dir))
 
 
 def next_output_dir(output_dir):
@@ -105,18 +101,19 @@ def next_output_dir(output_dir):
     return os.path.join(output_dir, f"{date.today()}-v{version}")
 
 
-def dataset_class_names(dataset_dir):
-    """A COCO dataset's class names in detectron2's order: by category id."""
-    with open(dataset_paths(dataset_dir)[0]) as f:
+def dataset_class_names(annotations):
+    """The class names of a COCO annotation file in detectron2's order: by category id."""
+    with open(annotations) as f:
         categories = json.load(f)["categories"]
     return [c["name"] for c in sorted(categories, key=lambda c: c["id"])]
 
 
 def training_run(args):
     cfg, extras = build_config(args["config_file"], args.get("detectron2_config"))
-    for name in (*cfg.DATASETS.TRAIN, *cfg.DATASETS.TEST):
-        register_dataset(os.path.join(args["dataset_dir"], name), name)
-    class_names = dataset_class_names(os.path.join(args["dataset_dir"], cfg.DATASETS.TRAIN[0]))
+    paths = {name: dataset_paths(os.path.join(args["dataset_dir"], name)) for name in (*cfg.DATASETS.TRAIN, *cfg.DATASETS.TEST)}
+    for name, (annotations, images) in paths.items():
+        register_coco_instances(name, {}, annotations, images)
+    class_names = dataset_class_names(paths[cfg.DATASETS.TRAIN[0]][0])
     if len(class_names) != cfg.MODEL.ROI_HEADS.NUM_CLASSES:
         raise ValueError(
             f"MODEL.ROI_HEADS.NUM_CLASSES is {cfg.MODEL.ROI_HEADS.NUM_CLASSES}, but the training set has {len(class_names)} classes"

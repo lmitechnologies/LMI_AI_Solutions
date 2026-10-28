@@ -1,4 +1,5 @@
 import json
+import random
 
 import cv2
 import numpy as np
@@ -19,7 +20,7 @@ from lmi_utils.dataset_utils.representations import (
 )
 from lmi_utils.label_utils.gadget_to_lst import convert_to_ls
 from lmi_utils.label_utils.json_to_lst import dataset_to_lst
-from lmi_utils.label_utils.lst_brush import decode_mask, encode_mask
+from lmi_utils.label_utils.lst_brush import _decode_values, decode_mask, encode_mask
 from lmi_utils.label_utils.lst_project import labeling_interface, to_image_root
 from lmi_utils.label_utils.lst_to_json import get_annotations_from_json
 
@@ -62,6 +63,35 @@ def test_brush_rle_matches_label_studio_sdk(name):
     # the SDK decodes our encoding to the same RGBA bytes, and we decode the SDK's encoding to the same mask
     assert np.array_equal(ls_brush.decode_rle(encode_mask(mask)), rgba)
     assert np.array_equal(decode_mask(ls_brush.mask2rle(mask.astype(np.uint8) * 255), h, w), mask)
+
+
+def random_rle_stream(rng):
+    """A valid brush RLE with a random header and a random mix of run and multi-value literal blocks."""
+    word_size = rng.randint(1, 8)
+    rle_sizes = [rng.randint(1, 16) for _ in range(4)]
+    num = rng.randint(0, 3000)
+    parts = [f"{num:032b}", f"{word_size - 1:05b}"] + [f"{s - 1:04b}" for s in rle_sizes]
+    values = []
+    while len(values) < num:
+        k = rng.randrange(4)
+        n = min(rng.randint(1, 1 << rle_sizes[k]), num - len(values))
+        is_run = rng.random() < 0.5
+        block = [rng.randrange(1 << word_size)] * n if is_run else [rng.randrange(1 << word_size) for _ in range(n)]
+        parts.append(f"{int(is_run)}{k:02b}{n - 1:0{rle_sizes[k]}b}")
+        parts += [f"{v:0{word_size}b}" for v in (block[:1] if is_run else block)]
+        values += block
+    bits = "".join(parts)
+    bits += "0" * (-len(bits) % 8)
+    return [int(bits[i : i + 8], 2) for i in range(0, len(bits), 8)], np.array(values, dtype=np.uint8)
+
+
+def test_brush_rle_decode_matches_label_studio_sdk_on_random_streams():
+    # the SDK's encoder never writes multi-value literal blocks or non-default headers, but the LS frontend may
+    rng = random.Random(0)
+    for _ in range(500):
+        rle, values = random_rle_stream(rng)
+        assert np.array_equal(_decode_values(rle), values)
+        assert np.array_equal(ls_brush.decode_rle(rle), values)
 
 
 def annot(i, kind, value, conf=None):

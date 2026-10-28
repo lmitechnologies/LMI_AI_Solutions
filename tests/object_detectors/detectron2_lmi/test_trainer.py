@@ -79,7 +79,7 @@ def _write_split(split_dir, json_to_coco_layout):
         (split_dir / "annotations.json").write_text(coco)
 
 
-def _run_training(tmp_path, monkeypatch, num_classes, json_to_coco_layout=False):
+def _run_training(tmp_path, monkeypatch, num_classes, json_to_coco_layout=True):
     """training_run on a two-class dataset with the trainer stubbed out; returns the configs it trained with."""
     for name in ("my_train", "my_test"):
         _write_split(tmp_path / "data" / name, json_to_coco_layout)
@@ -117,8 +117,10 @@ def test_training_run_writes_what_convert_reads(tmp_path, monkeypatch):
     assert export_metadata(saved, None, os.path.join(out_dir, "config.yaml")) == {"input_format": "RGB", "class_names": ["scratch", "dent"]}
 
 
-def test_training_reads_the_json_to_coco_layout(tmp_path, monkeypatch):
-    trained = _run_training(tmp_path, monkeypatch, num_classes=2, json_to_coco_layout=True)
+def test_training_reads_the_deprecated_csv_to_coco_layout_with_one_warning_per_split(tmp_path, monkeypatch):
+    with pytest.warns(FutureWarning, match="csv_to_coco layout") as record:
+        trained = _run_training(tmp_path, monkeypatch, num_classes=2, json_to_coco_layout=False)
+    assert sorted(str(w.message).split(":")[0].rsplit("/", 1)[-1] for w in record) == ["my_test", "my_train"]
     with open(os.path.join(trained[0].OUTPUT_DIR, trainer.CLASS_MAP_NAME)) as f:
         assert json.load(f) == {"0": "scratch", "1": "dent"}
 
@@ -135,6 +137,14 @@ def test_dataset_paths_by_layout(tmp_path):
     assert json_paths == (str(tmp_path / "json" / "_annotations.coco.json"), str(tmp_path / "json"))
     with pytest.raises(ValueError, match="_annotations.coco.json"):
         trainer.dataset_paths(str(tmp_path))
+
+
+def test_dataset_paths_prefers_json_to_coco_when_both_layouts_exist(tmp_path):
+    _write_split(tmp_path / "both", json_to_coco_layout=False)
+    (tmp_path / "both" / "_annotations.coco.json").write_text("{}")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert trainer.dataset_paths(str(tmp_path / "both")) == (str(tmp_path / "both" / "_annotations.coco.json"), str(tmp_path / "both"))
 
 
 def test_training_stops_when_num_classes_does_not_match_the_dataset(tmp_path, monkeypatch):
