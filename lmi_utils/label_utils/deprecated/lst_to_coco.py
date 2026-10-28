@@ -6,7 +6,7 @@ import os
 import numpy as np
 
 from lmi_utils.label_utils.bbox_utils import convert_from_ls, rotate
-from lmi_utils.label_utils.COCO_dataset import Annotation, COCO_Dataset
+from lmi_utils.label_utils.deprecated.COCO_dataset import Annotation, COCO_Dataset
 
 logger = logging.getLogger(__name__)
 

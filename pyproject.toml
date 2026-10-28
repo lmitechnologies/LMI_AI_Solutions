@@ -23,6 +23,7 @@ test = [
     "pycocotools==2.0.11",
     "shapely==2.1.2",
     "tabulate>=0.9.0",
+    "label-studio-sdk==2.0.5",  # reference for the lst_brush RLE codec
     "setuptools<82",  # detectron2 model_zoo imports pkg_resources, removed in setuptools 82
 ]
 # CPU / CI env (GitHub runners): CPU torch + CPU onnxruntime. torch is also a

@@ -38,6 +38,28 @@ def convert_from_ls(result):
     )
 
 
+# percent -> pixel math lands just under whole numbers (529.9999); nudge before truncating
+TRUNC_EPS = 1e-6
+
+
+def ls_box_to_pixels(result):
+    """Convert a Label Studio rectangle result to integer pixels.
+
+    Returns:
+        tuple: x1, y1, x2, y2, angle, where (x1, y1) is the rotation pivot and angle is in degrees
+    """
+    x, y, w, h, angle = convert_from_ls(result)
+    return int(x + TRUNC_EPS), int(y + TRUNC_EPS), int(x + w + TRUNC_EPS), int(y + h + TRUNC_EPS), angle
+
+
+def ls_points_to_pixels(result):
+    """Convert a Label Studio polygon result to integer pixel arrays xs, ys."""
+    points = np.array(result["value"]["points"])
+    xs = (points[:, 0] / 100 * result["original_width"] + TRUNC_EPS).astype(np.int32)
+    ys = (points[:, 1] / 100 * result["original_height"] + TRUNC_EPS).astype(np.int32)
+    return xs, ys
+
+
 def rotate(x, y, w, h, angle=0.0, rot_center="up_left", unit="degree"):
     """rotate the bbox from [x,y,w,h] using the angle to a array of [4,2].
 

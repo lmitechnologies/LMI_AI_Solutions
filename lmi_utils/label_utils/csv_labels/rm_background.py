@@ -1,0 +1,39 @@
+import argparse
+import glob
+import logging
+import os
+import shutil
+
+import lmi_utils.label_utils.csv_labels.csv_utils as csv_utils
+
+logger = logging.getLogger(__name__)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-i", "--path_imgs", required=True, help="the path to images")
+    ap.add_argument(
+        "--path_csv",
+        default="labels.csv",
+        help='the path to csv file, default="labels.csv" in path_imgs',
+    )
+    ap.add_argument("-o", "--out_path", required=True, help="the output path")
+    args = ap.parse_args()
+
+    if not os.path.exists(args.out_path):
+        os.makedirs(args.out_path)
+
+    if args.path_csv == "labels.csv":
+        args.path_csv = os.path.join(args.path_imgs, args.path_csv)
+
+    # read csv
+    dt, _ = csv_utils.load_csv(args.path_csv, args.path_imgs)
+
+    lists = glob.glob(args.path_imgs + "/*.png")
+    for p in lists:
+        fname = os.path.basename(p)
+        # skip if the image is not in the csv
+        if fname in dt:
+            shutil.copy2(p, os.path.join(args.out_path, fname))
+    shutil.copy2(args.path_csv, os.path.join(args.out_path, os.path.basename(args.path_csv)))

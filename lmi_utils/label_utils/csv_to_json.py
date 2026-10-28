@@ -12,6 +12,7 @@ from lmi_utils.dataset_utils.representations import (
     Dataset,
     FileAnnotations,
     Label,
+    Mask,
     Point2d,
     Polygon,
 )
@@ -75,9 +76,13 @@ def read_csv(csv_path: str, img_dir: str):
             row1 = reader[i]
             row2 = reader[i + 1]
             fname, category, conf, shape_type, c1, c2, angle = read_two_rows(row1, row2)
-            p = os.path.join(img_dir, fname)
-            im = cv2.imread(p)
-            height, width = im.shape[:2]
+            if fname in file_map:
+                height, width = file_map[fname].height, file_map[fname].width
+            else:
+                im = cv2.imread(os.path.join(img_dir, fname))
+                if im is None:
+                    raise FileNotFoundError(f"cannot read image: {os.path.join(img_dir, fname)}")
+                height, width = im.shape[:2]
 
             if shape_type == "polygon":
                 xy = np.array([[x, y] for x, y in zip(c1, c2)]).astype(int)
@@ -87,14 +92,22 @@ def read_csv(csv_path: str, img_dir: str):
                 # mtype = AnnotationType.MASK
                 shape = Polygon(xy.tolist())
                 mtype = AnnotationType.POLYGON
-            if shape_type == "rect":
+            elif shape_type == "rect":
                 if angle is None:
                     angle = 0
                 shape = Box(x_min=c1[0], y_min=c1[1], x_max=c2[0], y_max=c2[1], angle=angle)
                 mtype = AnnotationType.BOX
-            if shape_type == "keypoint":
+            elif shape_type == "keypoint":
                 shape = Point2d(x=c1[0], y=c2[0])
                 mtype = AnnotationType.KEYPOINT
+            elif shape_type == "brush":
+                mask = np.zeros((height, width), dtype=bool)
+                # rint rounds half to even, as Brush.to_mask does
+                mask[np.rint(c2).astype(int), np.rint(c1).astype(int)] = True
+                shape = Mask(mask=mask)
+                mtype = AnnotationType.MASK
+            else:
+                raise ValueError(f"unsupported shape type '{shape_type}' in {fname}")
 
             label_set.add(category)
 

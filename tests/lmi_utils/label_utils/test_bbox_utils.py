@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import pytest
 
-from lmi_utils.label_utils.bbox_utils import get_rotated_bbox, rotate
+from lmi_utils.label_utils.bbox_utils import get_rotated_bbox, ls_box_to_pixels, ls_points_to_pixels, rotate
 
 
 # --- Helper to generate rotated rectangles ---
@@ -123,3 +123,21 @@ def test_input_resilience():
 
     assert x == pytest.approx(x2)
     assert y == pytest.approx(y2)
+
+
+def ls_result(img_w, img_h, **value):
+    return {"original_width": img_w, "original_height": img_h, "value": value}
+
+
+def test_ls_box_edges_truncate_from_the_true_edge():
+    # x=10.6, w=9.8: the right edge is at 20.4, so x2 is 20, not int(10.6) + int(9.8) = 19
+    result = ls_result(100, 100, x=10.6, y=5.0, width=9.8, height=10.0)
+    assert ls_box_to_pixels(result) == (10, 5, 20, 15, 0)
+
+
+def test_ls_pixels_survive_float_noise():
+    # 530 / 1000 * 100 / 100 * 1000 evaluates just under 530
+    x = 530 / 1000 * 100
+    assert ls_box_to_pixels(ls_result(1000, 1000, x=x, y=x, width=x, height=x))[:4] == (530, 530, 1060, 1060)
+    xs, ys = ls_points_to_pixels(ls_result(1000, 1000, points=[[x, x]]))
+    assert (xs[0], ys[0]) == (530, 530)

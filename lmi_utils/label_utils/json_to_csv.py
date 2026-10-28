@@ -4,8 +4,8 @@ import logging
 import os
 
 from lmi_utils.dataset_utils.representations import AnnotationType, Dataset
-from lmi_utils.label_utils.csv_utils import write_to_csv
-from lmi_utils.label_utils.shapes import Brush, Keypoint, Mask, Rect
+from lmi_utils.label_utils.csv_labels.csv_utils import write_to_csv
+from lmi_utils.label_utils.csv_labels.shapes import Brush, Keypoint, Mask, Rect
 
 
 def json_to_csv(path_json, path_out):
