@@ -37,3 +37,7 @@ python -m lmi_utils.label_utils.json_to_yolo -ti /app/data/resized -o /app/data/
 ```
 
 An existing `labels.csv` converts with `python -m lmi_utils.label_utils.csv_to_json --csv labels.csv -i <images> -o labels.json`.
+
+### detectron2 `csv_to_coco` dataset layout
+
+The detectron2 trainer now reads the `json_to_coco` layout: `_annotations.coco.json` with the images beside it. The `csv_to_coco` layout, `annotations.json` with an `images/` folder, still trains but prints a `FutureWarning`, and will be removed together with the CSV tools.

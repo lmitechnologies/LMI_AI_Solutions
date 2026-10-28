@@ -2,25 +2,23 @@
 
 ## Dataset
 
-The required dataset format is COCO, in the following structure:
+The required dataset format is COCO, as `json_to_coco` writes it: each dataset folder holds `_annotations.coco.json` with the images beside it.
 
-
-```text
-<DATASETS DIR>/
-    -<DATASET_NAME>/
-        --images/
-            ...
-        --annotations.json
+```bash
+python -m lmi_utils.label_utils.json_to_coco -ti <images> -o coco
 ```
-example:
 
 ```text
 coco/
     train/
-        images/
-            ...
-        annotations.json
+        _annotations.coco.json
+        ...
+    valid/
+        _annotations.coco.json
+        ...
 ```
+
+The `csv_to_coco` layout, `annotations.json` with an `images/` folder, still works but is deprecated and prints a warning.
 
 *Dataset name should be the same name as the name declared in the config yaml file*
 
@@ -193,7 +191,7 @@ services:
       - 6006:6006 # tensorboard
     volumes:
       - ./training/maskrcnn/2024-12-26-v3/:/home/weights   # weights
-      - ./data/coco/train/images/:/home/input  # inference data
+      - ./data/coco/train/:/home/input  # inference data
       - ./prediction/maskrcnn/test/:/home/output  # inference output
       - ./configs/class_map.json:/home/class_map.json  # class map
     stdin_open: true # docker run -i

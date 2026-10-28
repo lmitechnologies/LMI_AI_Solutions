@@ -63,13 +63,14 @@ def read_csv(csv_path: str, img_dir: str):
         img_dir (str): a directory containing images
 
     Returns:
-        list: a list of two maps
+        tuple: labels (dict, label names in first-seen order) and file_map (dict, filename to FileAnnotations)
     """
     # TODO: load predictions
     with open(csv_path, newline="") as f:
         reader = list(csv.reader(f, delimiter=";"))
 
-        label_set = set()
+        # dict, not set: class ids must not change between runs
+        labels = {}
         file_map = {}
         annot_id = 0
         for i in range(0, len(reader), 2):
@@ -109,7 +110,7 @@ def read_csv(csv_path: str, img_dir: str):
             else:
                 raise ValueError(f"unsupported shape type '{shape_type}' in {fname}")
 
-            label_set.add(category)
+            labels.setdefault(category)
 
             if fname not in file_map:
                 # TODO: add id to filename
@@ -134,19 +135,19 @@ def read_csv(csv_path: str, img_dir: str):
                 annot_id += 1
                 file.annotations.append(annot)
 
-    return label_set, file_map
+    return labels, file_map
 
 
-def write_to_json(label_set: dict, file_map: dict, json_path: str):
+def write_to_json(labels: dict, file_map: dict, json_path: str):
     """write to a json file using the new representation classes
 
     Args:
-        label_set (dict): a set of labels
+        labels (dict): label names as keys, in class order
         file_map (dict): a dictionary mapping filenames to FileAnnotations
         json_path (str): path to a json file
     """
     dataset = Dataset(labels=[], files=[])
-    dataset.labels = [Label(id=str(label_name)) for label_name in label_set]
+    dataset.labels = [Label(id=str(label_name)) for label_name in labels]
     dataset.files = list(file_map.values())
     dataset.save(json_path)
     logger.info(f"save {len(dataset.labels)} labels to {json_path}")
