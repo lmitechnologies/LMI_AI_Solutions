@@ -1,6 +1,7 @@
 import glob
 import json
 import os
+import warnings
 
 import detectron2.data.transforms as T
 import pytest
@@ -125,8 +126,13 @@ def test_training_reads_the_json_to_coco_layout(tmp_path, monkeypatch):
 def test_dataset_paths_by_layout(tmp_path):
     _write_split(tmp_path / "csv", json_to_coco_layout=False)
     _write_split(tmp_path / "json", json_to_coco_layout=True)
-    assert trainer.dataset_paths(str(tmp_path / "csv")) == (str(tmp_path / "csv" / "annotations.json"), str(tmp_path / "csv" / "images"))
-    assert trainer.dataset_paths(str(tmp_path / "json")) == (str(tmp_path / "json" / "_annotations.coco.json"), str(tmp_path / "json"))
+    with pytest.warns(FutureWarning, match="csv_to_coco layout"):
+        csv_paths = trainer.dataset_paths(str(tmp_path / "csv"))
+    assert csv_paths == (str(tmp_path / "csv" / "annotations.json"), str(tmp_path / "csv" / "images"))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        json_paths = trainer.dataset_paths(str(tmp_path / "json"))
+    assert json_paths == (str(tmp_path / "json" / "_annotations.coco.json"), str(tmp_path / "json"))
     with pytest.raises(ValueError, match="_annotations.coco.json"):
         trainer.dataset_paths(str(tmp_path))
 

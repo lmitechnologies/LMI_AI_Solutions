@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import subprocess
+import warnings
 from datetime import date
 
 import detectron2.data.transforms as T
@@ -76,11 +77,16 @@ class Trainer(DefaultTrainer):
 def dataset_paths(dataset_dir):
     """The COCO annotation file and image folder of a dataset split.
 
-    Accepts annotations.json with an images/ folder (csv_to_coco), or _annotations.coco.json with the images beside it
-    (json_to_coco, RF-DETR).
+    Accepts _annotations.coco.json with the images beside it (json_to_coco, RF-DETR), or the deprecated csv_to_coco layout:
+    annotations.json with an images/ folder.
     """
     annotations, images = os.path.join(dataset_dir, "annotations.json"), os.path.join(dataset_dir, "images")
     if os.path.isfile(annotations) and os.path.isdir(images):
+        warnings.warn(
+            f"{dataset_dir}: the csv_to_coco layout (annotations.json with images/) is deprecated; build the dataset with json_to_coco",
+            FutureWarning,
+            stacklevel=2,
+        )
         return annotations, images
     annotations = os.path.join(dataset_dir, "_annotations.coco.json")
     if os.path.isfile(annotations):
