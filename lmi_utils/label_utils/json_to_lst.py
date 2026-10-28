@@ -1,25 +1,16 @@
 import argparse
 import json
 import logging
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import List
 
 from lmi_utils.dataset_utils.representations import Annotation, Box, Dataset, Mask, Point2d, Polygon, rle2mask
 from lmi_utils.label_utils.lst_brush import encode_mask
+from lmi_utils.label_utils.lst_project import CONTROL_NAMES, XML_NAME, labeling_interface, to_image_root
 
 logger = logging.getLogger(__name__)
 
 OUT_NAME = "lst.json"
-XML_NAME = "labeling_interface.xml"
-# must match the control tag names in the Label Studio labeling interface; "label" keeps csv_to_lst projects working
-CONTROL_NAMES = {
-    "rectanglelabels": ("label", "RectangleLabels"),
-    "polygonlabels": ("polygon", "PolygonLabels"),
-    "brushlabels": ("brush", "BrushLabels"),
-    "keypointlabels": ("keypoint", "KeyPointLabels"),
-}
-CONTROL_ATTRS = {"polygonlabels": {"strokeWidth": "3", "pointSize": "small", "opacity": "0.9"}}
 
 
 def annotation_to_lst(annot: Annotation, height: int, width: int, is_pred: bool) -> dict:
@@ -60,22 +51,6 @@ def annotation_to_lst(annot: Annotation, height: int, width: int, is_pred: bool)
     }
 
 
-def to_image_root(path: str) -> str:
-    """Return the prefix joined with each image path; a local absolute path becomes a Label Studio local-files URL.
-
-    The first folder of a local path is taken as LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT.
-    """
-    if path.startswith("gs://"):
-        return path.rstrip("/") + "/"
-    if not path.startswith("/"):
-        raise ValueError("The local storage path must be absolute path starting with /")
-    parts = [p for p in path.split("/") if p]
-    if not parts:
-        raise ValueError("The local storage path must include the document root folder")
-    logger.info(f"Assume that LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT is /{parts[0]}")
-    return "/data/local-files/?d=" + "".join(p + "/" for p in parts[1:])
-
-
 def dataset_to_lst(dataset: Dataset, image_root: str) -> List[dict]:
     """Convert a dataset to Label Studio tasks, with annotations and predictions; image_root comes from to_image_root."""
     tasks = []
@@ -91,25 +66,6 @@ def dataset_to_lst(dataset: Dataset, image_root: str) -> List[dict]:
             task["predictions"] = [{"model_version": "prediction", "result": results}]
         tasks.append(task)
     return tasks
-
-
-def labeling_interface(tasks: List[dict]) -> str:
-    """Build a labeling interface XML with one control tag per result type found in the tasks."""
-    classes = {}
-    for task in tasks:
-        for key in ("annotations", "predictions"):
-            for result in (r for item in task.get(key, []) for r in item["result"]):
-                classes.setdefault(result["type"], set()).update(result["value"][result["type"]])
-
-    root = ET.Element("View")
-    ET.SubElement(root, "Image", name="image", value="$image", zoom="true")
-    for result_type, (name, tag) in CONTROL_NAMES.items():
-        if result_type in classes:
-            control = ET.SubElement(root, tag, name=name, toName="image", **CONTROL_ATTRS.get(result_type, {}))
-            for label in sorted(classes[result_type]):
-                ET.SubElement(control, "Label", value=label)
-    ET.indent(root)
-    return ET.tostring(root, encoding="unicode") + "\n"
 
 
 def main():

@@ -1,21 +1,20 @@
 import argparse
 import json
 import logging
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import cv2
 
 from lmi_utils.label_utils.csv_labels.csv_utils import load_csv
 from lmi_utils.label_utils.csv_labels.shapes import Mask, Rect
-from lmi_utils.label_utils.json_to_lst import to_image_root
+from lmi_utils.label_utils.lst_project import CONTROL_NAMES, XML_NAME, labeling_interface, to_image_root
 
 logger = logging.getLogger(__name__)
 
 
 OUT_NAME = "lst.json"
-RECT_NAME = "label"
-POLYGON_NAME = "polygon"
+RECT_NAME = CONTROL_NAMES["rectanglelabels"][0]
+POLYGON_NAME = CONTROL_NAMES["polygonlabels"][0]
 
 
 def rect_to_lst(rect_obj, width, height, is_pred):
@@ -74,47 +73,10 @@ def init_label_obj(path_img, is_pred):
     return label_obj
 
 
-def write_xml(out_path, box_class, polygon_class):
-    root = ET.Element("View")
-    image = ET.SubElement(root, "Image")
-    image.set("name", "image")
-    image.set("value", "$image")
-    image.set("zoom", "true")
-
-    if len(box_class) > 0:
-        rect = ET.SubElement(root, "RectangleLabels")
-        rect.set("name", RECT_NAME)
-        rect.set("toName", "image")
-        for name in box_class:
-            label = ET.SubElement(rect, "Label")
-            label.set("value", name)
-            # label.set("background", "green")
-
-    if len(polygon_class) > 0:
-        polygon = ET.SubElement(root, "PolygonLabels")
-        polygon.set("name", POLYGON_NAME)
-        polygon.set("toName", "image")
-        polygon.set("strokeWidth", "3")
-        polygon.set("pointSize", "small")
-        polygon.set("opacity", "0.9")
-        for name in polygon_class:
-            label = ET.SubElement(polygon, "Label")
-            label.set("value", name)
-            # label.set("background", "blue")
-
-    ET.indent(root)
-    str = ET.tostring(root, encoding="unicode") + "\n"
-    html_path = f"{out_path}/labeling_interface.xml"
-    with open(html_path, "w") as file:
-        file.write(str)
-
-
 def write_to_lst(shapes: dict, out_path: Path, img_dir: Path, gs_path: str, is_pred: bool):
     image_root = to_image_root(gs_path)
 
     labels = []
-    box_class = set()
-    polygon_class = set()
     cnt_box = 0
     cnt_polygon = 0
     cnt_img = len(shapes)
@@ -147,12 +109,10 @@ def write_to_lst(shapes: dict, out_path: Path, img_dir: Path, gs_path: str, is_p
                 box = rect_to_lst(shape, width, height, is_pred)
                 label_obj[target][0]["result"].append(box)
                 cnt_box += 1
-                box_class.add(shape.category)
             elif isinstance(shape, Mask):
                 polygon = mask_to_lst(shape, width, height, is_pred)
                 label_obj[target][0]["result"].append(polygon)
                 cnt_polygon += 1
-                polygon_class.add(shape.category)
             else:
                 raise Exception(f"Invalid shape type: {type(shape)}")
         labels.append(label_obj)
@@ -162,7 +122,8 @@ def write_to_lst(shapes: dict, out_path: Path, img_dir: Path, gs_path: str, is_p
         json.dump(labels, f, indent=4)
 
     # write the xml file
-    write_xml(out_path, box_class, polygon_class)
+    with open(out_path / XML_NAME, "w") as f:
+        f.write(labeling_interface(labels))
 
     logger.info(f"Number of images: {cnt_img}")
     logger.info(f"Number of boxes: {cnt_box}")

@@ -17,8 +17,9 @@ from lmi_utils.dataset_utils.representations import (
     rle2mask,
 )
 from lmi_utils.label_utils.gadget_to_lst import convert_to_ls
-from lmi_utils.label_utils.json_to_lst import dataset_to_lst, labeling_interface, to_image_root
+from lmi_utils.label_utils.json_to_lst import dataset_to_lst
 from lmi_utils.label_utils.lst_brush import decode_mask, encode_mask
+from lmi_utils.label_utils.lst_project import labeling_interface, to_image_root
 from lmi_utils.label_utils.lst_to_json import get_annotations_from_json
 
 H, W = 100, 200

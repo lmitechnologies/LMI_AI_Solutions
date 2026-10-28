@@ -76,9 +76,13 @@ def read_csv(csv_path: str, img_dir: str):
             row1 = reader[i]
             row2 = reader[i + 1]
             fname, category, conf, shape_type, c1, c2, angle = read_two_rows(row1, row2)
-            p = os.path.join(img_dir, fname)
-            im = cv2.imread(p)
-            height, width = im.shape[:2]
+            if fname in file_map:
+                height, width = file_map[fname].height, file_map[fname].width
+            else:
+                im = cv2.imread(os.path.join(img_dir, fname))
+                if im is None:
+                    raise FileNotFoundError(f"cannot read image: {os.path.join(img_dir, fname)}")
+                height, width = im.shape[:2]
 
             if shape_type == "polygon":
                 xy = np.array([[x, y] for x, y in zip(c1, c2)]).astype(int)

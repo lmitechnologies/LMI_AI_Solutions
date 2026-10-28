@@ -43,13 +43,14 @@ def decode_mask(rle: List[int], height: int, width: int) -> np.ndarray:
 
 def encode_mask(mask: np.ndarray) -> List[int]:
     """Encode a 2D mask (nonzero = foreground) as a Label Studio brush RLE."""
-    values = np.repeat((np.asarray(mask) > 0).ravel().astype(np.uint8) * 255, 4)
-    starts = np.concatenate(([0], np.flatnonzero(values[1:] != values[:-1]) + 1))
-    lengths = np.diff(np.append(starts, len(values)))
+    flat = (np.asarray(mask) > 0).ravel()
+    starts = np.concatenate(([0], np.flatnonzero(flat[1:] != flat[:-1]) + 1))
+    # all four RGBA channels carry the mask value, so each pixel run is 4x as long
+    lengths = np.diff(np.append(starts, len(flat))) * 4
 
-    parts = [f"{len(values):032b}", f"{WORD_SIZE - 1:05b}"] + [f"{s - 1:04b}" for s in RLE_SIZES]
+    parts = [f"{len(flat) * 4:032b}", f"{WORD_SIZE - 1:05b}"] + [f"{s - 1:04b}" for s in RLE_SIZES]
     for start, length in zip(starts, lengths):
-        value = int(values[start])
+        value = 255 if flat[start] else 0
         while length > 0:
             n = int(min(length, 1 << RLE_SIZES[-1]))
             idx = next(k for k, s in enumerate(RLE_SIZES) if n <= 1 << s)

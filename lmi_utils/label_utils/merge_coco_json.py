@@ -35,7 +35,6 @@ def merge_datasets(input_paths: List[str], output_path: str, indx_start: int = 1
     global_license_map: Dict[tuple, int] = {}
 
     # Global counters for new unique IDs
-    # We start at 1 to stay safe with COCO conventions
     current_cat_id = indx_start
     current_img_id = 1
     current_ann_id = 1

@@ -5,7 +5,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from lmi_utils.label_utils.json_to_lst import CONTROL_NAMES, XML_NAME, labeling_interface
+from lmi_utils.label_utils.lst_project import CONTROL_NAMES, XML_NAME, labeling_interface
 
 logger = logging.getLogger(__name__)
 
