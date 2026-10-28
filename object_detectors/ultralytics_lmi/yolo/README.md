@@ -54,6 +54,8 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install libgl1 -y
 RUN pip install --user opencv-python
 RUN pip install ultralytics
+# needed by the json label tools
+RUN pip install pycocotools shapely
 
 # clone LMI AI Solutions repository
 WORKDIR /repos
@@ -64,14 +66,14 @@ RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && \
 
 ## Prepare the dataset
 Prepare the dataset by doing the following:
-- convert json to csv
-- resize images and labels in csv
+- convert Label Studio labels to json
+- resize images and labels in json
 - convert labeling data to YOLO format
 
 **YOLO models require the dimensions of images to be dividable by 32**. In this tutorial, we resize images to 640x640.
 
 ### Create a script for data processing
-First, create a script `./preprocess/2026-03-11.sh`, which converts labels from Label Studio JSON to CSV, resizes images, and converts data to YOLO format.
+First, create a script `./preprocess/2026-03-11.sh`, which converts labels from Label Studio to json, resizes images, and converts data to YOLO format.
 ```bash
 # modify to your data path
 input_path=/app/data/allImages
@@ -79,18 +81,15 @@ input_path=/app/data/allImages
 W=640
 H=640
 
-# convert labels from VGG json to csv
-# python -m lmi_utils.label_utils.via_json_to_csv -d $input_path --output_fname labels.csv
-
-# convert labels from label studio to csv
-python -m lmi_utils.label_utils.lst_to_csv -i $input_path -o $input_path
+# convert labels from label studio to json
+python -m lmi_utils.label_utils.lst_to_json -i $input_path -imgs $input_path -of $input_path/labels.json
 
 # resize images with labels
-python -m lmi_utils.label_utils.resize_with_csv -i $input_path -o /app/data/resized --width $W --height $H
+python -m lmi_utils.label_utils.apply_ops -i $input_path -oi /app/data/resized resize --width $W --height $H
 
 # convert to YOLO format
 # remove the --seg flag if you want to train an object detection model
-python -m lmi_utils.label_utils.csv_to_yolo -i /app/data/resized -o /app/data/resized_yolo --seg
+python -m lmi_utils.label_utils.json_to_yolo -ti /app/data/resized -o /app/data/resized_yolo --seg
 ```
 
 ### Create a docker-compose file
