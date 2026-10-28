@@ -98,7 +98,8 @@ def read_csv(csv_path: str, img_dir: str):
                 mtype = AnnotationType.KEYPOINT
             elif shape_type == "brush":
                 mask = np.zeros((height, width), dtype=bool)
-                mask[np.array(c2, dtype=int), np.array(c1, dtype=int)] = True
+                # rint rounds half to even, as Brush.to_mask does
+                mask[np.rint(c2).astype(int), np.rint(c1).astype(int)] = True
                 shape = Mask(mask=mask)
                 mtype = AnnotationType.MASK
             else:
