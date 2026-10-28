@@ -67,12 +67,21 @@ def test_unknown_augmentation_is_rejected(tmp_path):
         build_config(_write(tmp_path, {"AUGMENTATIONS": {"BLUR": {"SIGMA": 1}}}))
 
 
-def _run_training(tmp_path, monkeypatch, num_classes):
+def _write_split(split_dir, json_to_coco_layout):
+    categories = [{"id": 7, "name": "dent"}, {"id": 3, "name": "scratch"}]
+    coco = json.dumps({"images": [], "annotations": [], "categories": categories})
+    if json_to_coco_layout:
+        os.makedirs(split_dir)
+        (split_dir / "_annotations.coco.json").write_text(coco)
+    else:
+        os.makedirs(split_dir / "images")
+        (split_dir / "annotations.json").write_text(coco)
+
+
+def _run_training(tmp_path, monkeypatch, num_classes, json_to_coco_layout=False):
     """training_run on a two-class dataset with the trainer stubbed out; returns the configs it trained with."""
     for name in ("my_train", "my_test"):
-        os.makedirs(tmp_path / "data" / name / "images")
-        categories = [{"id": 7, "name": "dent"}, {"id": 3, "name": "scratch"}]
-        (tmp_path / "data" / name / "annotations.json").write_text(json.dumps({"images": [], "annotations": [], "categories": categories}))
+        _write_split(tmp_path / "data" / name, json_to_coco_layout)
     trained = []
     monkeypatch.setattr(trainer.shutil, "which", lambda _: None)
     monkeypatch.setattr(trainer, "Trainer", lambda cfg, extras: trained.append(cfg) or _NoTrain())
@@ -105,6 +114,21 @@ def test_training_run_writes_what_convert_reads(tmp_path, monkeypatch):
     assert saved.MODEL.WEIGHTS == os.path.join(out_dir, "model_final.pth")
     # detectron2 orders classes by category id
     assert export_metadata(saved, None, os.path.join(out_dir, "config.yaml")) == {"input_format": "RGB", "class_names": ["scratch", "dent"]}
+
+
+def test_training_reads_the_json_to_coco_layout(tmp_path, monkeypatch):
+    trained = _run_training(tmp_path, monkeypatch, num_classes=2, json_to_coco_layout=True)
+    with open(os.path.join(trained[0].OUTPUT_DIR, trainer.CLASS_MAP_NAME)) as f:
+        assert json.load(f) == {"0": "scratch", "1": "dent"}
+
+
+def test_dataset_paths_by_layout(tmp_path):
+    _write_split(tmp_path / "csv", json_to_coco_layout=False)
+    _write_split(tmp_path / "json", json_to_coco_layout=True)
+    assert trainer.dataset_paths(str(tmp_path / "csv")) == (str(tmp_path / "csv" / "annotations.json"), str(tmp_path / "csv" / "images"))
+    assert trainer.dataset_paths(str(tmp_path / "json")) == (str(tmp_path / "json" / "_annotations.coco.json"), str(tmp_path / "json"))
+    with pytest.raises(ValueError, match="_annotations.coco.json"):
+        trainer.dataset_paths(str(tmp_path))
 
 
 def test_training_stops_when_num_classes_does_not_match_the_dataset(tmp_path, monkeypatch):

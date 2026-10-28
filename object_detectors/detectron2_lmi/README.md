@@ -22,6 +22,22 @@ coco/
         annotations.json
 ```
 
+The `json_to_coco` layout also works: each dataset folder holds `_annotations.coco.json` with the images beside it.
+
+```bash
+python -m lmi_utils.label_utils.json_to_coco -ti <images> -o coco
+```
+
+```text
+coco/
+    train/
+        _annotations.coco.json
+        ...
+    valid/
+        _annotations.coco.json
+        ...
+```
+
 *Dataset name should be the same name as the name declared in the config yaml file*
 
 ## Training

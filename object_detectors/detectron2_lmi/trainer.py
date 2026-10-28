@@ -73,11 +73,23 @@ class Trainer(DefaultTrainer):
         return build_detection_train_loader(cfg, mapper=DatasetMapper(**train_mapper_args(cfg, self.extra_augmentations)))
 
 
-def register_dataset(dataset_dir, name):
+def dataset_paths(dataset_dir):
+    """The COCO annotation file and image folder of a dataset split.
+
+    Accepts annotations.json with an images/ folder (csv_to_coco), or _annotations.coco.json with the images beside it
+    (json_to_coco, RF-DETR).
+    """
     annotations, images = os.path.join(dataset_dir, "annotations.json"), os.path.join(dataset_dir, "images")
-    if not (os.path.isfile(annotations) and os.path.isdir(images)):
-        raise ValueError(f"Dataset {name}: {dataset_dir} needs annotations.json and an images folder")
-    register_coco_instances(name, {}, annotations, images)
+    if os.path.isfile(annotations) and os.path.isdir(images):
+        return annotations, images
+    annotations = os.path.join(dataset_dir, "_annotations.coco.json")
+    if os.path.isfile(annotations):
+        return annotations, dataset_dir
+    raise ValueError(f"{dataset_dir} needs annotations.json and an images folder, or _annotations.coco.json with the images beside it")
+
+
+def register_dataset(dataset_dir, name):
+    register_coco_instances(name, {}, *dataset_paths(dataset_dir))
 
 
 def next_output_dir(output_dir):
@@ -89,7 +101,7 @@ def next_output_dir(output_dir):
 
 def dataset_class_names(dataset_dir):
     """A COCO dataset's class names in detectron2's order: by category id."""
-    with open(os.path.join(dataset_dir, "annotations.json")) as f:
+    with open(dataset_paths(dataset_dir)[0]) as f:
         categories = json.load(f)["categories"]
     return [c["name"] for c in sorted(categories, key=lambda c: c["id"])]
 

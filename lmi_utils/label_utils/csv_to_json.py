@@ -69,7 +69,8 @@ def read_csv(csv_path: str, img_dir: str):
     with open(csv_path, newline="") as f:
         reader = list(csv.reader(f, delimiter=";"))
 
-        label_set = set()
+        # dict keeps labels in first-seen order, so class ids are the same on every run
+        label_set = {}
         file_map = {}
         annot_id = 0
         for i in range(0, len(reader), 2):
@@ -109,7 +110,7 @@ def read_csv(csv_path: str, img_dir: str):
             else:
                 raise ValueError(f"unsupported shape type '{shape_type}' in {fname}")
 
-            label_set.add(category)
+            label_set.setdefault(category)
 
             if fname not in file_map:
                 # TODO: add id to filename
