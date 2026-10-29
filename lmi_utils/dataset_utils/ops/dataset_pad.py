@@ -180,7 +180,7 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
             elif status == "clip":
                 logger.log(crop_warning_level, f"Polygon {shape.id} was clipped to image dimensions [{W}, {H}]")
                 is_warning = True
-                polygon = Polygon(points=[[x, y] for x, y in zip(new_X, new_Y)])
+                polygon = Polygon(points=np.stack([new_X, new_Y], axis=1).astype(float).tolist())
                 shape.value = polygon if shape.type == AnnotationType.POLYGON else polygon.to_mask(h=H, w=W)
 
         elif shape.type == AnnotationType.KEYPOINT:

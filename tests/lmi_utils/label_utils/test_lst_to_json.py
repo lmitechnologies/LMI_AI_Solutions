@@ -71,14 +71,22 @@ def test_shapes_keep_fractional_pixels():
         [box("a", "cap", 0, 0, 500, 500), keypoint("p", "other", 10, 10), keypoint("k", "cap_l", 100, 100, "p")],
         [box("a", "cap", 0, 0, 500, 500), keypoint("k", "cap_l", 100, 100, "missing")],
         [box("a", "cap", 0, 0, 500, 500, rotation=10), keypoint("k", "cap_l", 100, 100, "a")],
-        [box("a", "cap", 0, 0, 500, 500), box("b", "string", 600, 600, 900, 900, rotation=10), keypoint("k", "cap_l", 100, 100)],
+        [box("a", "cap", 0, 0, 500, 500), box("b", "string", 400, 400, 900, 900, rotation=10), keypoint("k", "cap_l", 450, 450)],
     ],
-    ids=["in two boxes", "in no box", "parent is a keypoint", "parent not in the list", "rotated parent", "beside a rotated box"],
+    ids=["in two boxes", "in no box", "parent is a keypoint", "parent not in the list", "rotated parent", "within a rotated box"],
 )
 def test_a_keypoint_that_cannot_be_linked_is_reported_and_left_unlinked(results):
     by_label, errors = link(results)
     assert len(errors) == 1
     assert by_label["cap_l"].bounding_box_id is None
+
+
+def test_a_keypoint_away_from_a_rotated_box_still_links():
+    by_label, errors = link(
+        [box("a", "cap", 0, 0, 300, 300), box("b", "string", 600, 600, 900, 900, rotation=10), keypoint("k", "cap_l", 100, 100)]
+    )
+    assert errors == []
+    assert by_label["cap_l"].bounding_box_id == by_label["cap"].id
 
 
 def test_keypoints_repeating_a_name_on_one_box_are_reported_and_unlinked():

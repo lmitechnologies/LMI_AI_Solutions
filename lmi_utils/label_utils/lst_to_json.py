@@ -21,7 +21,7 @@ from lmi_utils.dataset_utils.representations import (
     Polygon,
     link_keypoints,
 )
-from lmi_utils.label_utils.bbox_utils import convert_from_ls
+from lmi_utils.label_utils.bbox_utils import convert_from_ls, convert_points_from_ls
 from lmi_utils.label_utils.lst_brush import decode_mask
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
@@ -51,9 +51,7 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
         box = Box(x_min=x, y_min=y, x_max=x + w, y_max=y + h, angle=angle)
         return box, label, conf, AnnotationType.BOX
     elif result_type == "polygonlabels":
-        w, h = result["original_width"], result["original_height"]
-        points = [[px / 100 * w, py / 100 * h] for px, py in result["value"]["points"]]
-        return Polygon(points=points), label, conf, AnnotationType.POLYGON
+        return Polygon(points=convert_points_from_ls(result)), label, conf, AnnotationType.POLYGON
     elif result_type == "brushlabels":
         rle = result["value"]["rle"]
         h, w = result["original_height"], result["original_width"]
@@ -133,7 +131,10 @@ def collect_results(results, out_list, counter, label_dict, labels, fname, load_
             keypoint.bounding_box_id = parent.id
             continue
         unlinkable.add(keypoint.id)
-    errors += link_keypoints([a for a in listed if a.id not in unlinkable])
+    for keypoint, message in link_keypoints([a for a in listed if a.id not in unlinkable]):
+        keypoint.bounding_box_id = None
+        if message not in errors:
+            errors.append(message)
     return counter, [f"{fname}: {error}" for error in errors]
 
 

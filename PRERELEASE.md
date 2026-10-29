@@ -12,7 +12,7 @@ Breaking changes and new features since `v2.0.1`. Each breaking change says what
 
 ### `lst_to_json` keeps fractional pixels
 
-`lst_to_json` writes box corners and polygon points as Label Studio gives them, instead of truncating them to whole pixels, so converted labels shift by up to a pixel from earlier conversions. `json_to_yolo` pose exports now reject keypoints linked to, or positioned next to, rotated boxes, the same rule `lst_to_json` applies.
+`lst_to_json` writes box corners and polygon points as Label Studio gives them, instead of truncating them to whole pixels, so converted labels shift by up to a pixel from earlier conversions. `json_to_yolo` pose exports now reject a keypoint linked to a rotated target box, or unlinked within a rotated target box's extent, the same rule `lst_to_json` applies; before, rotated boxes were treated as upright.
 
 ## Deprecations
 
