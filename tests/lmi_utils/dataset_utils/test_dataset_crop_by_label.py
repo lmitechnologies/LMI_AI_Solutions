@@ -43,9 +43,15 @@ def test_a_polygon_crossing_the_crop_keeps_the_part_inside():
 
 
 def test_a_box_outside_the_crop_is_deleted_and_one_crossing_it_is_clipped():
-    _, kept, _ = _crop([BoxAnnotation("out", "dent", Box(70, 70, 90, 90)), BoxAnnotation("cross", "dent", Box(50, 10, 80, 30))])
-    assert list(kept) == ["cross"]
+    boxes = [
+        BoxAnnotation("out", "dent", Box(70, 70, 90, 90)),
+        BoxAnnotation("cross", "dent", Box(50, 10, 80, 30)),
+        BoxAnnotation("on_top_edge", "dent", Box(10, 20, 30, 40)),
+    ]
+    _, kept, _ = _crop(boxes)
+    assert list(kept) == ["cross", "on_top_edge"]
     assert kept["cross"].value.to_numpy().tolist() == [30, 0, 40, 10, 0]
+    assert kept["on_top_edge"].value.to_numpy().tolist() == [0, 0, 10, 20, 0]
 
 
 def test_keypoints_follow_the_crop():
@@ -55,9 +61,8 @@ def test_keypoints_follow_the_crop():
         KeypointAnnotation("on_gone", "nose", Point2d(30, 30), bounding_box_id="gone"),
     ]
     _, kept, _ = _crop([BoxAnnotation("gone", "dent", Box(80, 80, 90, 90))] + keypoints)
-    assert set(kept) == {"free", "on_roi"}
+    assert list(kept) == ["free"]
     assert (kept["free"].value.x, kept["free"].value.y) == (10, 5)
-    assert kept["on_roi"].bounding_box_id is None
 
 
 def test_a_mask_is_cropped_and_an_empty_one_deleted():

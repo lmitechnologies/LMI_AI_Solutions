@@ -111,7 +111,7 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
         tuple: the shapes inside, one per piece of a polygon the edge cut apart; and whether any shape was changed or removed
     """
     is_warning = False
-    delete_ids = []
+    delete_ids = set()
     pieces = {}
     for shape in shapes:
         is_del = 0
@@ -121,7 +121,7 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
             inside = corners.clip(W, H)
             if not inside:
                 is_del = 1
-                delete_ids.append(shape.id)
+                delete_ids.add(shape.id)
                 logger.log(crop_warning_level, f"Rotated box {shape.id} was excluded by image dimensions [{W},{H}]")
             elif inside[0] is not corners:
                 logger.log(crop_warning_level, f"Rotated box {shape.id} was clipped to image dimensions [{W}, {H}]")
@@ -134,16 +134,12 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
 
             if np.all(new_box == 0) or new_box[0] == new_box[2] or new_box[1] == new_box[3]:
                 is_del = 1
-                delete_ids.append(shape.id)
+                delete_ids.add(shape.id)
                 logger.log(
                     crop_warning_level,
                     f"Bounding box {box} was excluded by image dimensions [{W},{H}]",
                 )
-            elif (
-                (np.any(new_box == W) and np.all(box != W))
-                or (np.any(new_box == H) and np.all(box != H))
-                or (np.any(new_box == 0) and np.all(box != 0))
-            ):
+            elif not np.array_equal(new_box, box):
                 logger.log(
                     crop_warning_level,
                     f"Bounding box {box} was clipped to image dimensions [{W}, {H}]",
@@ -153,17 +149,17 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
                 shape.value = Box(*new_box)
 
         elif shape.type == AnnotationType.MASK:
-            # Mask.pad already cropped the mask to [W,H]
+            # the caller already cut the mask to [W,H]
             if not shape.value.to_numpy(h=H, w=W).any():
                 is_del = 1
-                delete_ids.append(shape.id)
+                delete_ids.add(shape.id)
                 logger.log(crop_warning_level, f"Mask {shape.id} was excluded by image dimensions [{W},{H}]")
 
         elif shape.type == AnnotationType.POLYGON:
             inside = shape.value.clip(W, H)
             if not inside:
                 is_del = 1
-                delete_ids.append(shape.id)
+                delete_ids.add(shape.id)
                 logger.log(crop_warning_level, f"Polygon {shape.id} was excluded by image dimensions [{W},{H}]")
             elif inside[0] is not shape.value:
                 logger.log(crop_warning_level, f"Polygon {shape.id} was clipped to image dimensions [{W}, {H}]")
@@ -182,7 +178,7 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
                     crop_warning_level,
                     f"keypoint ({x},{y}) was excluded by image dimensions [{W},{H}]",
                 )
-                delete_ids.append(shape.id)
+                delete_ids.add(shape.id)
             else:
                 shape.value = Point2d(x=x, y=y, visibility=shape.value.visibility)
 
@@ -191,12 +187,8 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
 
     # Keep linked pose annotations atomic when cropping removes their owning box.
     deleted_box_ids = {shape.id for shape in shapes if shape.type == AnnotationType.BOX and shape.id in delete_ids}
-    delete_ids.extend(
-        shape.id
-        for shape in shapes
-        if shape.type == AnnotationType.KEYPOINT
-        and getattr(shape, "bounding_box_id", None) in deleted_box_ids
-        and shape.id not in delete_ids
+    delete_ids.update(
+        shape.id for shape in shapes if shape.type == AnnotationType.KEYPOINT and getattr(shape, "bounding_box_id", None) in deleted_box_ids
     )
 
     kept = []

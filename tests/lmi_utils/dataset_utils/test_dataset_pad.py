@@ -113,3 +113,9 @@ def test_keypoints_kept_with_a_clipped_box_stay_inside_it(angle):
     left = [a for a in kept if a.id != "b"]
     assert 0 < len(left) < len(keypoints)
     assert all(ShapelyPolygon(clipped.value.to_polygon().points).covers(ShapelyPoint(a.value.x, a.value.y)) for a in left)
+
+
+@pytest.mark.parametrize("coords", [(-5, 0, 50, 50), (50, 10, 120, 100)], ids=["left, on the top edge", "right, on the bottom edge"])
+def test_a_box_crossing_the_edge_is_clipped_when_it_also_touches_another(coords):
+    [clipped], changed = clip_shapes([BoxAnnotation("b", "dent", Box(*coords))], 100, 100)
+    assert changed and np.clip(coords, 0, 100).tolist() == clipped.value.to_numpy()[:-1].tolist()

@@ -1,5 +1,4 @@
 import logging
-import math
 
 from lmi_utils.dataset_utils.ops.dataset_pad import clip_shapes
 from lmi_utils.dataset_utils.representations import AnnotationType, Mask
@@ -38,20 +37,20 @@ def crop_dataset_by_label(dataset, images, target_label, crop_warning_level=logg
         if image is None:
             raise ValueError(f"failed to read {file.path}")
         h, w = image.shape[:2]
-        v = target.value
-        x1, x2 = (min(w, max(0, math.ceil(c - 0.5))) for c in (v.x_min, v.x_max))
-        y1, y2 = (min(h, max(0, math.ceil(c - 0.5))) for c in (v.y_min, v.y_max))
+        x1, y1, x2, y2 = target.value.pixel_bounds()
+        x1, x2 = min(w, x1), min(w, x2)
+        y1, y2 = min(h, y1), min(h, y2)
         cw, ch = x2 - x1, y2 - y1
         if not cw or not ch:
             raise ValueError(f"the {target_label} box in {file.path} covers no pixel")
 
+        # the crop box's keypoints go with it, as padding drops the keypoints of a box it removes
+        file.annotations = [a for a in file.annotations if getattr(a, "bounding_box_id", None) != target.id]
         for annot in file.annotations:
             if annot.type == AnnotationType.MASK:
                 annot.value = Mask(mask=annot.value.to_numpy(h=h, w=w)[y1:y2, x1:x2].copy())
             else:
                 annot.value = annot.value.pad(pl=-x1, pt=-y1)
-            if getattr(annot, "bounding_box_id", None) == target.id:
-                annot.bounding_box_id = None
         file.annotations, is_warning = clip_shapes(file.annotations, W=cw, H=ch, crop_warning_level=crop_warning_level)
         cnt_warnings += is_warning
 

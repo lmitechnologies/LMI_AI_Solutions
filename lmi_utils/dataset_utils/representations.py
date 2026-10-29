@@ -295,13 +295,16 @@ class Box(Base):
         if self.angle != 0:
             cv2.fillPoly(mask, [_pixel_points(self._rotated_corners(**kwargs))], 1)
         else:
-            # a pixel belongs to the box when its center is inside it
-            y1, y2, x1, x2 = (max(0, math.ceil(v - 0.5)) for v in (self.y_min, self.y_max, self.x_min, self.x_max))
+            x1, y1, x2, y2 = self.pixel_bounds()
             mask[y1:y2, x1:x2] = 1
         return Mask(mask=mask)
 
     def to_polygon(self, **kwargs):
         return Polygon(points=self._corners(**kwargs).tolist())
+
+    def pixel_bounds(self) -> tuple:
+        """x1, y1, x2, y2 of the pixels whose centers are inside the upright box, as slice bounds clamped at 0."""
+        return tuple(max(0, math.ceil(v - 0.5)) for v in (self.x_min, self.y_min, self.x_max, self.y_max))
 
     def fit(self, points) -> "Box":
         """The smallest box at this box's angle that encloses points."""
@@ -411,11 +414,14 @@ class Polygon(Base):
         if len(self.points) < 3:
             return []
         points = np.asarray(self.points, dtype=float)
+        inside = points.min() >= 0 and points[:, 0].max() <= w and points[:, 1].max() <= h
+        if inside and ShapelyPolygon(points).area:
+            return [self]
         # make_valid keeps every lobe of a self-crossing outline, which intersection() would reject
         shape = shapely.make_valid(ShapelyPolygon(points))
         if not shape.area:
             return []
-        if points.min() >= 0 and points[:, 0].max() <= w and points[:, 1].max() <= h:
+        if inside:
             return [self]
         clipped = shape.intersection(shapely_box(0, 0, w, h))
         parts = [g for g in getattr(clipped, "geoms", [clipped]) if isinstance(g, ShapelyPolygon) and not g.is_empty]
