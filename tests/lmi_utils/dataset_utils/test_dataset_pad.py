@@ -36,6 +36,11 @@ def test_a_polygon_inside_the_image_is_unchanged():
     assert polygon.value is value and not changed
 
 
+def test_a_flat_polygon_is_deleted():
+    kept, changed = clip_shapes([PolygonAnnotation("f", "dent", Polygon(points=[[100, 10], [100, 50], [100, 30]]))], 100, 100)
+    assert kept == [] and changed
+
+
 def test_a_polygon_the_edge_cuts_apart_becomes_one_label_per_piece():
     # a U whose bottom lies outside the image: two arms are left
     u = [[10, 50], [30, 50], [30, 120], [60, 120], [60, 50], [80, 50], [80, 140], [10, 140]]

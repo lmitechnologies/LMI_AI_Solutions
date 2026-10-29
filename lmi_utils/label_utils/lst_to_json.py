@@ -19,6 +19,7 @@ from lmi_utils.dataset_utils.representations import (
     Mask,
     Point2d,
     Polygon,
+    describe_keypoint,
     link_keypoints,
 )
 from lmi_utils.label_utils.bbox_utils import convert_from_ls, convert_points_from_ls
@@ -119,7 +120,7 @@ def collect_results(results, out_list, counter, label_dict, labels, fname, load_
     errors = []
     unlinkable = set()
     for keypoint, parent_id in parents:
-        where = f"keypoint '{keypoint.label_id}' at ({keypoint.value.x:.1f}, {keypoint.value.y:.1f})"
+        where = describe_keypoint(keypoint)
         parent = regions.get(parent_id)
         if parent_id not in regions:
             errors.append(f"{where} is nested under region {parent_id}, which is not a labeled region of the same annotation")
@@ -131,10 +132,10 @@ def collect_results(results, out_list, counter, label_dict, labels, fname, load_
             keypoint.bounding_box_id = parent.id
             continue
         unlinkable.add(keypoint.id)
-    for keypoint, message in link_keypoints([a for a in listed if a.id not in unlinkable]):
-        keypoint.bounding_box_id = None
-        if message not in errors:
-            errors.append(message)
+    for keypoints, message in link_keypoints([a for a in listed if a.id not in unlinkable]):
+        for keypoint in keypoints:
+            keypoint.bounding_box_id = None
+        errors.append(message)
     return counter, [f"{fname}: {error}" for error in errors]
 
 

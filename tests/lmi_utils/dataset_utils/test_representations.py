@@ -363,7 +363,7 @@ def test_link_keypoints_rejects_rotated_target_boxes():
     far = KeypointAnnotation("c", "eye", Point2d(70, 70))
     boxes = [BoxAnnotation("box", "person", Box(0, 0, 20, 20, 10)), BoxAnnotation("other", "person", Box(60, 60, 80, 80))]
     problems = link_keypoints(boxes + [linked, near, far])
-    assert [keypoint.id for keypoint, _ in problems] == ["a", "b"]
+    assert [[keypoint.id for keypoint in keypoints] for keypoints, _ in problems] == [["a"], ["b"]]
     assert (linked.bounding_box_id, near.bounding_box_id, far.bounding_box_id) == ("box", None, "other")
 
 
@@ -384,10 +384,17 @@ def test_link_keypoints_checks_only_target_boxes():
     assert point.bounding_box_id == "box"
 
 
-def test_link_keypoints_reports_each_keypoint_repeating_a_name():
+def test_link_keypoints_reports_keypoints_repeating_a_name_once():
     points = [KeypointAnnotation(f"k{i}", "nose", Point2d(10 + i, 10), bounding_box_id="box") for i in range(2)]
     problems = link_keypoints([BoxAnnotation("box", "person", Box(0, 0, 20, 20))] + points)
-    assert [keypoint for keypoint, _ in problems] == points
+    assert [keypoints for keypoints, _ in problems] == [points]
+
+
+def test_link_keypoints_undoes_links_it_reports():
+    points = [KeypointAnnotation(f"k{i}", "nose", Point2d(10 + i, 10)) for i in range(2)]
+    problems = link_keypoints([BoxAnnotation("box", "person", Box(0, 0, 20, 20))] + points)
+    assert [keypoints for keypoints, _ in problems] == [points]
+    assert [p.bounding_box_id for p in points] == [None, None]
 
 
 def test_assign_keypoints_leaves_links_when_it_raises():

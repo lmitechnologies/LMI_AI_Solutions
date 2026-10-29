@@ -402,10 +402,13 @@ class Polygon(Base):
         if len(self.points) < 3:
             return []
         points = np.asarray(self.points, dtype=float)
+        # make_valid keeps every lobe of a self-crossing outline, which intersection() would reject
+        shape = shapely.make_valid(ShapelyPolygon(points))
+        if not shape.area:
+            return []
         if points.min() >= 0 and points[:, 0].max() <= w and points[:, 1].max() <= h:
             return [self]
-        # make_valid keeps every lobe of a self-crossing outline, which intersection() would reject
-        clipped = shapely.make_valid(ShapelyPolygon(points)).intersection(shapely_box(0, 0, w, h))
+        clipped = shape.intersection(shapely_box(0, 0, w, h))
         parts = [g for g in getattr(clipped, "geoms", [clipped]) if isinstance(g, ShapelyPolygon) and not g.is_empty]
         return [Polygon(points=[[x, y] for x, y in part.exterior.coords[:-1]]) for part in parts]
 
@@ -649,35 +652,40 @@ def link_keypoints(annotations: List[Annotation], target_ids=None) -> List[tuple
         target_ids (list): box classes keypoints may link to and are checked against; all when empty
 
     Returns:
-        list: (keypoint, message) for each keypoint that is unlinked, links to a missing or rotated box, or repeats a name on
-            its box; their links are left as they were
+        list: (keypoints, message) for each problem: a keypoint unlinked, linked to a missing or rotated box, or keypoints
+            repeating a name on their box; their links are left as they were
     """
     problems = []
     boxes_by_id = {a.id: a for a in annotations if a.type == AnnotationType.BOX}
     targets = {box.id: box for box in boxes_by_id.values() if not target_ids or box.label_id in target_ids}
+    rotated = [(box, box.value._enclosing_bounds()) for box in targets.values() if box.value.angle]
     keypoints = [a for a in annotations if a.type == AnnotationType.KEYPOINT]
+    linked_here = set()
     for keypoint in keypoints:
         x, y = keypoint.value.x, keypoint.value.y
-        where = f"keypoint '{keypoint.label_id}' at ({x:.1f}, {y:.1f})"
+        where = describe_keypoint(keypoint)
         if keypoint.bounding_box_id is not None:
             box = boxes_by_id.get(keypoint.bounding_box_id)
             if box is None:
-                problems.append((keypoint, f"Bounding box {keypoint.bounding_box_id} not found for {where}"))
+                problems.append(([keypoint], f"Bounding box {keypoint.bounding_box_id} not found for {where}"))
             elif box.id in targets and box.value.angle:
-                problems.append((keypoint, f"{where} links to the rotated {_describe(box)}; keypoints on rotated boxes are not supported"))
+                problems.append(
+                    ([keypoint], f"{where} links to the rotated {_describe(box)}; keypoints on rotated boxes are not supported")
+                )
             continue
         # a rotated box may contain the point anywhere within its enclosing bounds
-        near = [box for box in targets.values() if box.value.angle and _in_bounds(box.value._enclosing_bounds(), x, y)]
+        near = [box for box, bounds in rotated if _in_bounds(bounds, x, y)]
         if near:
-            problems.append((keypoint, f"{where} is not linked and lies near the rotated {_describe(near[0])}"))
+            problems.append(([keypoint], f"{where} is not linked and lies near the rotated {_describe(near[0])}"))
             continue
         inside = [box for box in targets.values() if not box.value.angle and box.value.point_in_box(x, y)]
         if len(inside) == 1:
             keypoint.bounding_box_id = inside[0].id
+            linked_here.add(keypoint.id)
         elif not inside:
-            problems.append((keypoint, f"{where} not assigned to any box"))
+            problems.append(([keypoint], f"{where} not assigned to any box"))
         else:
-            problems.append((keypoint, f"{where} is contained by multiple boxes: " + ", ".join(_describe(b) for b in inside)))
+            problems.append(([keypoint], f"{where} is contained by multiple boxes: " + ", ".join(_describe(b) for b in inside)))
 
     by_slot = {}
     for keypoint in keypoints:
@@ -685,9 +693,15 @@ def link_keypoints(annotations: List[Annotation], target_ids=None) -> List[tuple
             by_slot.setdefault((keypoint.bounding_box_id, keypoint.label_id), []).append(keypoint)
     for (box_id, name), repeated in by_slot.items():
         if len(repeated) > 1:
-            message = f"the {_describe(targets[box_id])} has {len(repeated)} keypoints '{name}'"
-            problems += [(keypoint, message) for keypoint in repeated]
+            problems.append((repeated, f"the {_describe(targets[box_id])} has {len(repeated)} keypoints '{name}'"))
+            for keypoint in repeated:
+                if keypoint.id in linked_here:
+                    keypoint.bounding_box_id = None
     return problems
+
+
+def describe_keypoint(keypoint: Annotation) -> str:
+    return f"keypoint '{keypoint.label_id}' at ({keypoint.value.x:.1f}, {keypoint.value.y:.1f})"
 
 
 def _in_bounds(bounds, x, y) -> bool:
@@ -771,7 +785,7 @@ class FileAnnotations(Base):
         Raises:
             ValueError: listing every keypoint that cannot be linked
         """
-        messages = list(dict.fromkeys(message for _, message in link_keypoints(self.annotations, target_ids)))
+        messages = [message for _, message in link_keypoints(self.annotations, target_ids)]
         if messages:
             raise ValueError(f"{self.path}: " + "; ".join(messages))
         return self
