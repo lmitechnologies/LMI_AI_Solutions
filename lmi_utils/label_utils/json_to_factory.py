@@ -86,7 +86,8 @@ def convert_json_to_factory(dataset: Dataset, image_dir: Path, output_dir: Path)
             annots["predictions"].append(to_dict(prediction))
 
         rel_path = image_path.relative_to(image_dir)
-        outname = rel_path.with_suffix(".label.json")
+        # Factory reads a folder of image.* and annotation.* files as one item, so image.label.json would import as an image
+        outname = rel_path.with_name("annotation.label.json") if rel_path.stem == "image" else rel_path.with_suffix(".label.json")
         fname_to_list[outname] = annots
 
     # write annotation files

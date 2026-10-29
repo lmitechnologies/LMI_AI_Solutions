@@ -40,7 +40,8 @@ def annotation_to_lst(annot: Annotation, height: int, width: int, is_pred: bool)
     value[result_type] = [annot.label_id]
     if is_pred:
         value["score"] = 1.0 if annot.confidence is None else annot.confidence
-    return {
+    result = {
+        "id": annot.id,
         "original_width": width,
         "original_height": height,
         "image_rotation": 0,
@@ -49,6 +50,11 @@ def annotation_to_lst(annot: Annotation, height: int, width: int, is_pred: bool)
         "to_name": "image",
         "type": result_type,
     }
+    # Label Studio's Regions-panel nesting, which lst_to_json reads back as bounding_box_id
+    bounding_box_id = getattr(annot, "bounding_box_id", None)
+    if bounding_box_id is not None:
+        result["parentID"] = bounding_box_id
+    return result
 
 
 def dataset_to_lst(dataset: Dataset, image_root: str) -> List[dict]:
