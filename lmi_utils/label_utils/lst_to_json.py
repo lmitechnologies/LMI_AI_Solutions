@@ -115,7 +115,8 @@ def collect_results(results, out_list, counter, label_dict, labels, fname, load_
         out_list.append(annotation)
         counter += 1
         if result.get("id") is not None:
-            regions[result["id"]] = annotation
+            # a shared id names no single region
+            regions[result["id"]] = None if result["id"] in regions else annotation
         if annot_type == AnnotationType.BOX:
             x, y, w, h, _ = convert_from_ls(result)
             boxes.append((annotation, (x, y, x + w, y + h)))
@@ -129,21 +130,24 @@ def link_keypoints(keypoints, boxes, regions, fname) -> List[str]:
 
     Args:
         keypoints (list): (KeypointAnnotation, the Label Studio id of its parent region or None)
-        boxes (list): (box Annotation, unrounded (x1, y1, x2, y2)); truncated bounds can put a keypoint on a shared edge in both boxes
-        regions (dict): Label Studio result id to its Annotation, for the same result list
+        boxes (list): (box Annotation, unrounded (x1, y1, x2, y2)); truncated bounds put a keypoint on a shared edge in both boxes
+        regions (dict): Label Studio result id to its Annotation, or None for an id several results share
         fname (str): the image, for messages
 
     Returns:
-        list: a message for each keypoint left unlinked, and for each box given two keypoints of one name
+        list: a message for each keypoint left unlinked; keypoints repeating a name on one box are all unlinked
     """
     errors = []
     rotated = [box for box, _ in boxes if box.value.angle]
     for keypoint, parent_id in keypoints:
         where = f"{fname}: keypoint '{keypoint.label_id}' at ({keypoint.value.x:.1f}, {keypoint.value.y:.1f})"
         if parent_id is not None:
-            box = regions.get(parent_id)
+            if parent_id not in regions:
+                errors.append(f"{where} is nested under region {parent_id}, which is not a labeled region of the same annotation")
+                continue
+            box = regions[parent_id]
             if box is None:
-                errors.append(f"{where} is nested under region {parent_id}, which is not in the same annotation")
+                errors.append(f"{where} is nested under region {parent_id}, an id several regions share")
                 continue
             if box.type != AnnotationType.BOX:
                 errors.append(f"{where} is nested under a '{box.label_id}' region, which is not a box")
@@ -165,14 +169,16 @@ def link_keypoints(keypoints, boxes, regions, fname) -> List[str]:
         keypoint.bounding_box_id = box.id
 
     boxes_by_id = {box.id: box for box, _ in boxes}
-    seen = set()
+    by_slot = {}
     for keypoint, _ in keypoints:
-        key = (keypoint.bounding_box_id, keypoint.label_id)
-        if keypoint.bounding_box_id is None or key not in seen:
-            seen.add(key)
-            continue
-        box = boxes_by_id[keypoint.bounding_box_id]
-        errors.append(f"{fname}: the '{box.label_id}' box {_bounds(box)} has more than one keypoint '{keypoint.label_id}'")
+        if keypoint.bounding_box_id is not None:
+            by_slot.setdefault((keypoint.bounding_box_id, keypoint.label_id), []).append(keypoint)
+    for (box_id, name), repeated in by_slot.items():
+        if len(repeated) > 1:
+            box = boxes_by_id[box_id]
+            errors.append(f"{fname}: the '{box.label_id}' box {_bounds(box)} has {len(repeated)} keypoints '{name}'")
+            for keypoint in repeated:
+                keypoint.bounding_box_id = None
     return errors
 
 

@@ -135,7 +135,7 @@ def test_json_to_lst_round_trips_through_lst_to_json(tmp_path):
     lst_path = tmp_path / "lst.json"
     lst_path.write_text(json.dumps(dataset_to_lst(build_dataset(mask), to_image_root("gs://bucket/imgs"))))
 
-    # the point sits in a rotated box, which keypoints cannot be linked to
+    # keypoints on rotated boxes are not linked
     files, labels = get_annotations_from_json(str(lst_path), str(imgs), keep_unlinked_keypoints=True)
 
     assert [f.path for f in files] == ["img0.png"]

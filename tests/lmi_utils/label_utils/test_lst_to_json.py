@@ -69,9 +69,18 @@ def test_a_keypoint_that_cannot_be_linked_is_reported_and_left_unlinked(results)
     assert by_label["cap_l"].bounding_box_id is None
 
 
-def test_a_box_with_two_keypoints_of_one_name_is_reported():
-    _, errors = link([box("a", "cap", 0, 0, 500, 500), keypoint("k1", "cap_l", 10, 10, "a"), keypoint("k2", "cap_l", 20, 20, "a")])
+def test_keypoints_repeating_a_name_on_one_box_are_reported_and_unlinked():
+    out = []
+    results = [box("a", "cap", 0, 0, 500, 500), keypoint("k1", "cap_l", 10, 10, "a"), keypoint("k2", "cap_l", 20, 20, "a")]
+    _, errors = collect_results(results, out, 0, set(), [], "img.png")
     assert len(errors) == 1
+    assert [a.bounding_box_id for a in out if a.label_id == "cap_l"] == [None, None]
+
+
+def test_a_keypoint_nested_under_a_shared_region_id_is_reported():
+    by_label, errors = link([box("a", "cap", 0, 0, 500, 500), box("a", "crimp", 0, 600, 500, 900), keypoint("k", "cap_l", 100, 100, "a")])
+    assert len(errors) == 1
+    assert by_label["cap_l"].bounding_box_id is None
 
 
 def write_project(tmp_path, task):

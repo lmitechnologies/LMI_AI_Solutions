@@ -65,6 +65,8 @@ def convert_json_to_factory(dataset: Dataset, image_dir: Path, output_dir: Path)
         output_dir (Path): Path to the output Factory dataset directory.
     """
     fname_to_list = {}
+    # Factory reads image.* and annotation.* as one item per folder only when every file is named that way
+    item_folders = all(Path(file.path).stem == "image" for file in dataset.files)
     for file in dataset.files:
         image_path = image_dir / file.path
         if not image_path.exists():
@@ -86,8 +88,7 @@ def convert_json_to_factory(dataset: Dataset, image_dir: Path, output_dir: Path)
             annots["predictions"].append(to_dict(prediction))
 
         rel_path = image_path.relative_to(image_dir)
-        # Factory reads a folder of image.* and annotation.* files as one item, so image.label.json would import as an image
-        outname = rel_path.with_name("annotation.label.json") if rel_path.stem == "image" else rel_path.with_suffix(".label.json")
+        outname = rel_path.with_name("annotation.label.json") if item_folders else rel_path.with_suffix(".label.json")
         fname_to_list[outname] = annots
 
     # write annotation files
