@@ -9,6 +9,7 @@ from lmi_utils.dataset_utils.representations import (
     Box,
     Point2d,
     PolygonAnnotation,
+    derive_annotation,
 )
 from lmi_utils.gadget_utils.pipeline_utils import fit_array_to_size
 
@@ -171,12 +172,7 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
                     shape.value = inside[0]
                 else:
                     # each piece of an outline the edge cut apart is its own label, named as dataset_tile names them
-                    pieces[shape.id] = [
-                        PolygonAnnotation(
-                            f"{shape.id}_p{i}", shape.label_id, part, link=shape.link, confidence=shape.confidence, iou=shape.iou
-                        )
-                        for i, part in enumerate(inside)
-                    ]
+                    pieces[shape.id] = [derive_annotation(shape, PolygonAnnotation, part, f"_p{i}") for i, part in enumerate(inside)]
 
         elif shape.type == AnnotationType.KEYPOINT:
             x, y = shape.value.coords()

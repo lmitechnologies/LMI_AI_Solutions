@@ -16,6 +16,7 @@ from lmi_utils.dataset_utils.representations import (
     MaskAnnotation,
     Polygon,
     PolygonAnnotation,
+    derive_annotation,
 )
 from lmi_utils.image_utils.tiler import Tiler, compute_new_edges
 
@@ -39,24 +40,13 @@ def _too_thin(width: float, height: float, min_label_size: float) -> bool:
     return min(width, height) < min_label_size
 
 
-def _derive(annot: Annotation, cls, value, suffix: str = ""):
-    return cls(
-        id=f"{annot.id}{suffix}",
-        label_id=annot.label_id,
-        value=value,
-        link=annot.link,
-        confidence=annot.confidence,
-        iou=annot.iou,
-    )
-
-
 def _clip_box(annot: Annotation, x1: int, y1: int, tile_w: int, tile_h: int, min_label_size: float) -> List[Annotation]:
     box = annot.value
     nx1, ny1 = max(0.0, box.x_min - x1), max(0.0, box.y_min - y1)
     nx2, ny2 = min(float(tile_w), box.x_max - x1), min(float(tile_h), box.y_max - y1)
     if nx2 <= nx1 or ny2 <= ny1 or _too_thin(nx2 - nx1, ny2 - ny1, min_label_size):
         return []
-    return [_derive(annot, BoxAnnotation, Box(x_min=nx1, y_min=ny1, x_max=nx2, y_max=ny2))]
+    return [derive_annotation(annot, BoxAnnotation, Box(x_min=nx1, y_min=ny1, x_max=nx2, y_max=ny2))]
 
 
 def _clip_polygon(annot: Annotation, x1: int, y1: int, tile_w: int, tile_h: int, min_label_size: float) -> List[Annotation]:
@@ -68,7 +58,7 @@ def _clip_polygon(annot: Annotation, x1: int, y1: int, tile_w: int, tile_h: int,
         if _too_thin(*(points.max(axis=0) - points.min(axis=0)), min_label_size):
             continue
         # each piece of an outline the edge cut apart is its own label
-        out.append(_derive(annot, PolygonAnnotation, part, f"_p{len(out)}" if len(parts) > 1 else ""))
+        out.append(derive_annotation(annot, PolygonAnnotation, part, f"_p{len(out)}" if len(parts) > 1 else ""))
     return out
 
 
@@ -95,7 +85,7 @@ def _clip_mask(
         return []
     sub = np.zeros((tile_h, tile_w), dtype=crop.dtype)
     sub[oy1 - y1 : oy2 - y1, ox1 - x1 : ox2 - x1] = part
-    return [_derive(annot, MaskAnnotation, Mask(mask=sub))]
+    return [derive_annotation(annot, MaskAnnotation, Mask(mask=sub))]
 
 
 def _tile_span(lo: float, hi: float, tile: int, stride: int, n: int) -> range:

@@ -70,3 +70,12 @@ def test_a_cropped_mask_keeps_its_pixels_inside_the_image():
     _, [annotation], _ = pad_annotated_image(np.zeros((100, 100, 3), np.uint8), [MaskAnnotation("m", "dent", Mask(mask=mask))], 60, 60)
     expected, *_ = fit_array_to_size(mask, 60, 60)
     assert np.array_equal(annotation.value.to_numpy(h=60, w=60), expected)
+
+
+def test_a_self_crossing_polygon_keeps_its_lobe_inside():
+    # a figure eight half outside: its left lobe is inside
+    eight = PolygonAnnotation("e", "dent", Polygon(points=[[50, 50], [150, 90], [150, 50], [50, 90]]))
+    kept, changed = clip_shapes([eight], 100, 100)
+    assert changed and [p.id for p in kept] == ["e"]
+    assert area(kept[0]) == pytest.approx(1000)
+    assert np.asarray(kept[0].value.points)[:, 0].max() <= 100

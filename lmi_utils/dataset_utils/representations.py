@@ -1,12 +1,14 @@
 import enum
 import json
 import logging
+import math
 import os
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional, Union
 
 import cv2
 import numpy as np
+import shapely
 import torch
 from pycocotools import mask as coco_mask
 from shapely.geometry import Polygon as ShapelyPolygon
@@ -294,7 +296,7 @@ class Box(Base):
             cv2.fillPoly(mask, [_pixel_points(self._rotated_corners(**kwargs))], 1)
         else:
             # a pixel belongs to the box when its center is inside it
-            y1, y2, x1, x2 = (max(0, int(np.rint(v))) for v in (self.y_min, self.y_max, self.x_min, self.x_max))
+            y1, y2, x1, x2 = (max(0, math.ceil(v - 0.5)) for v in (self.y_min, self.y_max, self.x_min, self.x_max))
             mask[y1:y2, x1:x2] = 1
         return Mask(mask=mask)
 
@@ -399,15 +401,11 @@ class Polygon(Base):
         """
         if len(self.points) < 3:
             return []
-        poly = ShapelyPolygon(self.points)
-        if not poly.is_valid:
-            poly = poly.buffer(0)  # self-intersecting outlines make intersection() raise
-        if poly.is_empty:
-            return []
-        x1, y1, x2, y2 = poly.bounds
-        if x1 >= 0 and y1 >= 0 and x2 <= w and y2 <= h:
+        points = np.asarray(self.points, dtype=float)
+        if points.min() >= 0 and points[:, 0].max() <= w and points[:, 1].max() <= h:
             return [self]
-        clipped = poly.intersection(shapely_box(0, 0, w, h))
+        # make_valid keeps every lobe of a self-crossing outline, which intersection() would reject
+        clipped = shapely.make_valid(ShapelyPolygon(points)).intersection(shapely_box(0, 0, w, h))
         parts = [g for g in getattr(clipped, "geoms", [clipped]) if isinstance(g, ShapelyPolygon) and not g.is_empty]
         return [Polygon(points=[[x, y] for x, y in part.exterior.coords[:-1]]) for part in parts]
 
@@ -638,6 +636,11 @@ def _annotation_encloses_area(annotation: Annotation, h: int, w: int) -> bool:
     return True
 
 
+def derive_annotation(annot: Annotation, cls, value, suffix: str = "") -> Annotation:
+    """A new annotation of type cls with the given value, carrying annot's label, link, confidence and iou; its id gets suffix."""
+    return cls(id=f"{annot.id}{suffix}", label_id=annot.label_id, value=value, link=annot.link, confidence=annot.confidence, iou=annot.iou)
+
+
 def link_keypoints(annotations: List[Annotation], target_ids=None) -> List[tuple]:
     """Link each unlinked keypoint to the one upright box containing it, and check every link to a target box.
 
@@ -823,6 +826,9 @@ class FileAnnotations(Base):
                 else [annotation.to_yolo(h, w, use_obb=use_obb)]
             )
             for conv in converted:
+                if not len(conv):
+                    logger.warning(f"Skipping {annotation.type.value} annotation {annotation.id}, which covers no pixel center")
+                    continue
                 if annotation.type == AnnotationType.MASK:
                     instance = []
                     for p in conv:

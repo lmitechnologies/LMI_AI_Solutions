@@ -110,6 +110,10 @@ def test_box_to_mask():
     mask[20:81, 11:50] = 1
     assert np.array_equal(m.to_numpy(h=100, w=100), mask)
 
+    # a half-pixel edge counts its pixel the same way wherever it falls
+    for x in (10.5, 11.5):
+        assert Box(x, 0, x + 1, 10, 0).to_mask(h=100, w=100).to_numpy(h=100, w=100).sum() == 10
+
     # test rotated box
     b = Box(10, 20, 50, 80, 30)  # 30 degrees rotation
     m = b.to_mask(h=100, w=100)
@@ -392,6 +396,12 @@ def test_assign_keypoints_leaves_links_when_it_raises():
     with pytest.raises(ValueError, match="2 keypoints 'nose'"):
         annotations.assign_keypoints()
     assert [p.bounding_box_id for p in points] == ["box", "box"]
+
+
+def test_to_yolo_skips_a_box_covering_no_pixel_center():
+    annotations = FileAnnotations("file", "image.jpg", 20, 20, [BoxAnnotation("b", "dent", Box(11.6, 0, 12.4, 10))])
+    rows, _ = annotations.to_yolo({"dent": 0}, to_segmentation=True)
+    assert rows == []
 
 
 def test_file_annotations_to_yolo(dummy_file_annotations):
