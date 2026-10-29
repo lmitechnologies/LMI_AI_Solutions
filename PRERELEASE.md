@@ -2,6 +2,14 @@
 
 Breaking changes and new features since `v2.0.1`. Each breaking change says what to update.
 
+## Breaking Changes
+
+### `lst_to_json` links keypoints to their boxes
+
+`lst_to_json` now sets each annotated keypoint's `bounding_box_id`: the box it is nested under in Label Studio's Regions panel, else the one box that contains it. It fails, listing every problem, when a keypoint lies in no box or in several, is nested under something other than an upright box, or repeats a name already on its box. Nest those keypoints under their boxes, or pass `--keep_unlinked_keypoints` to write them unlinked as before, for datasets whose keypoints are unused or are linked later by `json_to_yolo --target_classes`. Prediction keypoints that cannot be linked only print a warning.
+
+`json_to_lst` writes the links back as Label Studio nesting, so keypoints keep their boxes through a round trip.
+
 ## Deprecations
 
 ### CSV label tools

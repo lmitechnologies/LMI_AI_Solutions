@@ -10,8 +10,10 @@ from lmi_utils.dataset_utils.representations import (
     Annotation,
     AnnotationType,
     Box,
+    BoxAnnotation,
     Dataset,
     FileAnnotations,
+    KeypointAnnotation,
     Label,
     Mask,
     Point2d,
@@ -133,7 +135,8 @@ def test_json_to_lst_round_trips_through_lst_to_json(tmp_path):
     lst_path = tmp_path / "lst.json"
     lst_path.write_text(json.dumps(dataset_to_lst(build_dataset(mask), to_image_root("gs://bucket/imgs"))))
 
-    files, labels = get_annotations_from_json(str(lst_path), str(imgs))
+    # keypoints on rotated boxes are not linked
+    files, labels = get_annotations_from_json(str(lst_path), str(imgs), keep_unlinked_keypoints=True)
 
     assert [f.path for f in files] == ["img0.png"]
     by_label = {a.label_id: a.value for a in files[0].annotations}
@@ -178,3 +181,21 @@ def test_gadget_to_lst_uses_json_to_lst_names(tmp_path):
     assert task["predictions"][0]["result"][0]["from_name"] == "label"
     xml = (tmp_path / "out" / "labeling_interface.xml").read_text()
     assert '<RectangleLabels name="label" toName="image">' in xml and '<Label value="dent" />' in xml
+
+
+def test_json_to_lst_round_trips_keypoint_links(tmp_path):
+    imgs = tmp_path / "imgs"
+    imgs.mkdir()
+    cv2.imwrite(str(imgs / "img0.png"), np.zeros((H, W, 3), dtype=np.uint8))
+    # the point lies in both boxes, so only the nesting can say which one owns it
+    outer = BoxAnnotation(id="7", label_id="outer", value=Box(x_min=0, y_min=0, x_max=150, y_max=90))
+    inner = BoxAnnotation(id="8", label_id="inner", value=Box(x_min=20, y_min=20, x_max=80, y_max=80))
+    point = KeypointAnnotation(id="9", label_id="tip", value=Point2d(x=50, y=50), bounding_box_id="8")
+    file = FileAnnotations(id="0", path="img0.png", height=H, width=W, annotations=[outer, inner, point])
+    lst_path = tmp_path / "lst.json"
+    lst_path.write_text(json.dumps(dataset_to_lst(Dataset(labels=[], files=[file]), to_image_root("gs://bucket/imgs"))))
+
+    [converted], _ = get_annotations_from_json(str(lst_path), str(imgs))
+
+    by_label = {a.label_id: a for a in converted.annotations}
+    assert by_label["tip"].bounding_box_id == by_label["inner"].id
