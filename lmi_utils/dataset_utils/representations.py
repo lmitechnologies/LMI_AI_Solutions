@@ -303,6 +303,15 @@ class Box(Base):
     def to_polygon(self, **kwargs):
         return Polygon(points=self._corners(**kwargs).tolist())
 
+    def fit(self, points) -> "Box":
+        """The smallest box at this box's angle that encloses points."""
+        a = math.radians(self.angle)
+        u, v = np.array([math.cos(a), math.sin(a)]), np.array([-math.sin(a), math.cos(a)])
+        pts = np.asarray(points, dtype=float)
+        s, t = pts @ u, pts @ v
+        x, y = (s.min() * u + t.min() * v).tolist()
+        return Box(x_min=x, y_min=y, x_max=x + s.max() - s.min(), y_max=y + t.max() - t.min(), angle=self.angle)
+
     def point_in_box(self, x: int, y: int):
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
 

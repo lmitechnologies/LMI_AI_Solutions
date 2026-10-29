@@ -64,9 +64,15 @@ def test_a_rotated_box_crossing_the_edge_is_refit_to_the_part_inside():
     inside = ShapelyPolygon(original.to_polygon().points).intersection(ShapelyPolygon([(0, 0), (100, 0), (100, 100), (0, 100)]))
     [clipped], changed = clip_shapes([BoxAnnotation("r", "string", Box(80, 40, 120, 60, 10))], 100, 100)
     refit = ShapelyPolygon(clipped.value.to_polygon().points)
-    # the smallest rotated box around the part inside, not the original box; minAreaRect works in float32
-    assert changed and clipped.value.angle != 0
-    assert refit.buffer(1e-3).contains(inside) and refit.area < original.area()
+    assert changed and clipped.value.angle == original.angle
+    assert refit.buffer(1e-9).contains(inside) and refit.area < original.area()
+
+
+def test_box_fit_keeps_the_angle_and_encloses_the_points_tightly():
+    box = Box(80, 40, 120, 60, 30)
+    corners = box.to_polygon().points
+    fitted = Box(0, 0, 1, 1, 30).fit(corners)
+    np.testing.assert_allclose(fitted.to_numpy(), box.to_numpy(), atol=1e-9)
 
 
 @pytest.mark.parametrize("cells, kept", [((slice(10, 20), 0), True), ((slice(0, 0), slice(0, 0)), False)], ids=["on the edge", "empty"])

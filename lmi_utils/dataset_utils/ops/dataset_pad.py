@@ -116,7 +116,7 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
     for shape in shapes:
         is_del = 0
         if shape.type == AnnotationType.BOX and shape.value.angle != 0:
-            # clip the rotated footprint, not the unrotated bounds, and refit a rotated box to what is left
+            # clip the rotated footprint, not the unrotated bounds, and refit the box at its own angle to what is left
             corners = shape.value.to_polygon()
             inside = corners.clip(W, H)
             if not inside:
@@ -126,7 +126,7 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
             elif inside[0] is not corners:
                 logger.log(crop_warning_level, f"Rotated box {shape.id} was clipped to image dimensions [{W}, {H}]")
                 is_warning = True
-                shape.value = inside[0].to_rbox()
+                shape.value = shape.value.fit(inside[0].points)
 
         elif shape.type == AnnotationType.BOX:
             box = shape.value.to_numpy()[:-1]
