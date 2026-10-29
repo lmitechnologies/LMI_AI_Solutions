@@ -14,7 +14,7 @@ Breaking changes and new features since `v2.0.1`. Each breaking change says what
 
 `lst_to_json` writes box corners and polygon points as Label Studio gives them, instead of truncating them to whole pixels, so converted labels shift by up to a pixel from earlier conversions. `json_to_yolo` pose exports now reject a keypoint linked to a rotated target box, or unlinked within a rotated target box's extent, the same rule `lst_to_json` applies; before, rotated boxes were treated as upright.
 
-An upright box drawn as a mask (`json_to_yolo --seg`) covers the pixels whose centers are inside it; it used to truncate its edges, which only differs for fractional boxes. Padding and cropping (`apply_ops pad`) drop a mask only when no pixel of it is left; a mask whose pixels all sat in the first row or column was dropped before.
+An upright box drawn as a mask (`json_to_yolo --seg`) covers the pixels whose centers are inside it; it used to truncate its edges, which only differs for fractional boxes. Padding and cropping (`apply_ops pad`) drop a mask only when no pixel of it is left; a mask whose pixels all sat in the first row or column was dropped before. Polygons and rotated boxes are cut at the image edge instead of having their outside corners moved onto it, which kept shapes lying wholly outside and distorted shapes crossing an edge at an angle; a polygon the edge cuts apart becomes one label per piece (`<id>_p0`, `<id>_p1`, …), as tiling names them. `dataset_pad.clip_shapes` now returns the clipped shapes instead of the ids to delete.
 
 ## Deprecations
 

@@ -4,8 +4,6 @@ import os
 from typing import List, Optional, Tuple
 
 import numpy as np
-from shapely.geometry import Polygon as ShapelyPolygon
-from shapely.geometry import box as shapely_box
 
 # LMI packages
 from lmi_utils.dataset_utils.representations import (
@@ -62,23 +60,15 @@ def _clip_box(annot: Annotation, x1: int, y1: int, tile_w: int, tile_h: int, min
 
 
 def _clip_polygon(annot: Annotation, x1: int, y1: int, tile_w: int, tile_h: int, min_label_size: float) -> List[Annotation]:
-    points = np.asarray(annot.value.points, dtype=float) - [x1, y1]
-    if len(points) < 3:
-        return []
-    poly = ShapelyPolygon(points)
-    if not poly.is_valid:
-        poly = poly.buffer(0)  # self-intersecting outlines make intersection() raise
-    clipped = poly.intersection(shapely_box(0, 0, tile_w, tile_h))
-    parts = [g for g in getattr(clipped, "geoms", [clipped]) if isinstance(g, ShapelyPolygon) and not g.is_empty]
-
+    shifted = Polygon(points=(np.asarray(annot.value.points, dtype=float) - [x1, y1]).tolist())
+    parts = shifted.clip(tile_w, tile_h)
     out = []
     for part in parts:
-        px1, py1, px2, py2 = part.bounds
-        if _too_thin(px2 - px1, py2 - py1, min_label_size):
+        points = np.asarray(part.points)
+        if _too_thin(*(points.max(axis=0) - points.min(axis=0)), min_label_size):
             continue
-        # a concave outline crossing a corner can come back in pieces; each piece is its own label
-        suffix = f"_p{len(out)}" if len(parts) > 1 else ""
-        out.append(_derive(annot, PolygonAnnotation, Polygon(points=[[x, y] for x, y in part.exterior.coords[:-1]]), suffix))
+        # each piece of an outline the edge cut apart is its own label
+        out.append(_derive(annot, PolygonAnnotation, part, f"_p{len(out)}" if len(parts) > 1 else ""))
     return out
 
 

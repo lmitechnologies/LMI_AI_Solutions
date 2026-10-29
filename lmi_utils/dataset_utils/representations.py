@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from pycocotools import mask as coco_mask
 from shapely.geometry import Polygon as ShapelyPolygon
+from shapely.geometry import box as shapely_box
 from torchvision.ops import masks_to_boxes
 
 from lmi_utils.dataset_utils.mask_encoder import mask2rle, rle2mask
@@ -390,6 +391,25 @@ class Polygon(Base):
     def to_rbox(self, **kwargs):
         x1, y1, w, h, angle = get_rotated_bbox(self.to_numpy())
         return Box(x_min=x1, y_min=y1, x_max=x1 + w, y_max=y1 + h, angle=angle)
+
+    def clip(self, w: float, h: float) -> List["Polygon"]:
+        """The parts of the outline inside [0, w] x [0, h]: itself when wholly inside, none when no area is left.
+
+        A concave outline crossing the edge can come back in several pieces.
+        """
+        if len(self.points) < 3:
+            return []
+        poly = ShapelyPolygon(self.points)
+        if not poly.is_valid:
+            poly = poly.buffer(0)  # self-intersecting outlines make intersection() raise
+        if poly.is_empty:
+            return []
+        x1, y1, x2, y2 = poly.bounds
+        if x1 >= 0 and y1 >= 0 and x2 <= w and y2 <= h:
+            return [self]
+        clipped = poly.intersection(shapely_box(0, 0, w, h))
+        parts = [g for g in getattr(clipped, "geoms", [clipped]) if isinstance(g, ShapelyPolygon) and not g.is_empty]
+        return [Polygon(points=[[x, y] for x, y in part.exterior.coords[:-1]]) for part in parts]
 
 
 @dataclass
