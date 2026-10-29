@@ -2,10 +2,20 @@ import json
 
 import numpy as np
 import pytest
+from shapely.geometry import Point as ShapelyPoint
 from shapely.geometry import Polygon as ShapelyPolygon
 
 from lmi_utils.dataset_utils.ops.dataset_pad import clip_shapes, pad_annotated_image
-from lmi_utils.dataset_utils.representations import Box, BoxAnnotation, Mask, MaskAnnotation, Polygon, PolygonAnnotation
+from lmi_utils.dataset_utils.representations import (
+    Box,
+    BoxAnnotation,
+    KeypointAnnotation,
+    Mask,
+    MaskAnnotation,
+    Point2d,
+    Polygon,
+    PolygonAnnotation,
+)
 from lmi_utils.gadget_utils.pipeline_utils import fit_array_to_size
 
 
@@ -84,3 +94,16 @@ def test_a_self_crossing_polygon_keeps_its_lobe_inside():
     assert changed and [p.id for p in kept] == ["e"]
     assert area(kept[0]) == pytest.approx(1000)
     assert np.asarray(kept[0].value.points)[:, 0].max() <= 100
+
+
+@pytest.mark.parametrize("angle", [0, 30])
+def test_keypoints_kept_with_a_clipped_box_stay_inside_it(angle):
+    box = Box(60, 20, 140, 60, angle)
+    outline = ShapelyPolygon(box.to_polygon().points)
+    points = [[x, y] for x in range(60, 141, 4) for y in range(-20, 121, 4) if outline.covers(ShapelyPoint(x, y))]
+    keypoints = [KeypointAnnotation(f"k{i}", "tip", Point2d(x, y), bounding_box_id="b") for i, (x, y) in enumerate(points)]
+    kept, _ = clip_shapes([BoxAnnotation("b", "part", box)] + keypoints, 100, 100)
+    [clipped] = [a for a in kept if a.id == "b"]
+    left = [a for a in kept if a.id != "b"]
+    assert 0 < len(left) < len(keypoints)
+    assert all(ShapelyPolygon(clipped.value.to_polygon().points).covers(ShapelyPoint(a.value.x, a.value.y)) for a in left)
