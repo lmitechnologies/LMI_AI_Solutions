@@ -830,7 +830,9 @@ def test_patchcore_cli_float16_bank_is_half_float32(tmp_path):
 # TolerantAnomalyDINO (.pt) tests
 # ---------------------------------------------------------------------------
 
-TAD_MODEL_PATH = "/home/justice.vidal/projects/lmi_anomalib_utils/training/BMX_cap_ad/TolerantAnomalyDINO/dataset/v68/weights/torch/model.pt"
+TAD_MODEL_PATH = (
+    "/home/justice.vidal/projects/lmi_anomalib_utils/training/BMX_cap_ad/TolerantAnomalyDINO/dataset/v68/weights/torch/model.pt"
+)
 
 
 @pytest.fixture(scope="module")

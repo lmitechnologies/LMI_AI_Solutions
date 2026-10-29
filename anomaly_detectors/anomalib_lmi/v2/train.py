@@ -12,9 +12,6 @@ import torch
 import yaml
 from anomalib import PrecisionType
 from anomalib.data import Folder
-from .models import TolerantAnomalyDINO  # noqa: F401 — registers class into anomalib.models
-
-ad_models.TolerantAnomalyDINO = TolerantAnomalyDINO
 from anomalib.deploy import ExportType
 from anomalib.engine import Engine
 from anomalib.metrics import Evaluator, F1Max
@@ -23,9 +20,12 @@ from anomalib.pre_processing.utils.transform import disable_antialiasing
 
 # import before anomalib to avoid partial-init circular import
 from torchvision.transforms import v2
+
+from .models import TolerantAnomalyDINO  # noqa: F401 — registers class into anomalib.models
+from .tiling import TilerConfigCallback
 from .training_hooks import notify_model_exported, prepare_model_training_config
 
-from .tiling import TilerConfigCallback
+ad_models.TolerantAnomalyDINO = TolerantAnomalyDINO
 
 logger = logging.getLogger(__name__)
 

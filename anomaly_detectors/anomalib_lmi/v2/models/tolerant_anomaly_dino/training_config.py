@@ -360,9 +360,7 @@ def _configure_defect_augmentations(params: dict[str, Any], data_cfg: dict[str, 
             elif mode in {"none", "off", "disabled"}:
                 requested = None
             else:
-                raise ValueError(
-                    "data.defect_augmentations must be a transform list, null, or 'same_as_train'"
-                )
+                raise ValueError("data.defect_augmentations must be a transform list, null, or 'same_as_train'")
         params["defect_augmentations"] = copy.deepcopy(requested)
 
     augmentations_enabled = bool(params.get("defect_augmentations"))
@@ -370,9 +368,7 @@ def _configure_defect_augmentations(params: dict[str, Any], data_cfg: dict[str, 
         repeats = data_cfg.get("defect_augmentation_repeats", 1 if augmentations_enabled else 0)
         params["defect_augmentation_repeats"] = int(repeats)
     if "defect_augmentation_include_original" not in params:
-        params["defect_augmentation_include_original"] = bool(
-            data_cfg.get("defect_augmentation_include_original", True)
-        )
+        params["defect_augmentation_include_original"] = bool(data_cfg.get("defect_augmentation_include_original", True))
 
 
 def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dict:
@@ -408,9 +404,7 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
     extensions = _normalize_extensions(data_cfg.get("extensions"))
     source_images = {group: _iter_images(path, extensions) for group, path in source_roots.items()}
     if not source_images["good"]:
-        raise RuntimeError(
-            f"TolerantAnomalyDINO requires normal images; none found in {source_roots['good']}"
-        )
+        raise RuntimeError(f"TolerantAnomalyDINO requires normal images; none found in {source_roots['good']}")
 
     seed = int(data_cfg.get("split_seed", data_cfg.get("seed", 1337)))
     test_mode = str(data_cfg.get("test_split_mode", "synthetic")).lower()
@@ -426,18 +420,30 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
 
     splits = {
         "good": _split_group(
-            source_roots["good"], source_images["good"], group="good", seed=seed,
-            test_ratio=test_ratio, calibration_fraction_of_holdout=calibration_fraction,
+            source_roots["good"],
+            source_images["good"],
+            group="good",
+            seed=seed,
+            test_ratio=test_ratio,
+            calibration_fraction_of_holdout=calibration_fraction,
             stratify=False,
         ),
         "acceptable": _split_group(
-            source_roots["acceptable"], source_images["acceptable"], group="acceptable", seed=seed,
-            test_ratio=test_ratio, calibration_fraction_of_holdout=calibration_fraction,
+            source_roots["acceptable"],
+            source_images["acceptable"],
+            group="acceptable",
+            seed=seed,
+            test_ratio=test_ratio,
+            calibration_fraction_of_holdout=calibration_fraction,
             stratify=bool(data_cfg.get("stratify_acceptable", True)),
         ),
         "reject": _split_group(
-            source_roots["reject"], source_images["reject"], group="reject", seed=seed,
-            test_ratio=test_ratio, calibration_fraction_of_holdout=calibration_fraction,
+            source_roots["reject"],
+            source_images["reject"],
+            group="reject",
+            seed=seed,
+            test_ratio=test_ratio,
+            calibration_fraction_of_holdout=calibration_fraction,
             stratify=bool(data_cfg.get("stratify_reject", True)),
         ),
     }
@@ -466,51 +472,55 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
         params["reject_dir"] = str(split_root / "reference" / "reject")
         logger.info("TAD data mode: full ACCEPT+REJECT tolerance model.")
     elif tolerance_mode == "accept_only":
-        params.update({
-            "acceptable_dir": str(split_root / "reference" / "acceptable"),
-            "reject_dir": None,
-            "image_accept_enable": True,
-            "image_accept_threshold": 0.0,
-            "projected_image_accept_enable": False,
-            "image_reject_boost_enable": False,
-            "projected_reject_boost_enable": False,
-            "residual_projection_enable": False,
-        })
+        params.update(
+            {
+                "acceptable_dir": str(split_root / "reference" / "acceptable"),
+                "reject_dir": None,
+                "image_accept_enable": True,
+                "image_accept_threshold": 0.0,
+                "projected_image_accept_enable": False,
+                "image_reject_boost_enable": False,
+                "projected_reject_boost_enable": False,
+                "residual_projection_enable": False,
+            }
+        )
         logger.warning(
             "TAD data mode: ACCEPT-only (%d acceptable, 0 reject). "
             "Standalone acceptable suppression enabled; reject precision/recall unavailable.",
             len(source_images["acceptable"]),
         )
     elif tolerance_mode == "reject_only":
-        params.update({
-            "acceptable_dir": None,
-            "reject_dir": str(split_root / "reference" / "reject"),
-            "image_accept_enable": False,
-            "projected_image_accept_enable": False,
-            "image_reject_boost_enable": True,
-            "image_reject_boost_advantage_threshold": 0.0,
-            "image_reject_boost_lambda": 1.0,
-            "projected_reject_boost_enable": False,
-            "residual_projection_enable": False,
-        })
+        params.update(
+            {
+                "acceptable_dir": None,
+                "reject_dir": str(split_root / "reference" / "reject"),
+                "image_accept_enable": False,
+                "projected_image_accept_enable": False,
+                "image_reject_boost_enable": True,
+                "image_reject_boost_advantage_threshold": 0.0,
+                "image_reject_boost_lambda": 1.0,
+                "projected_reject_boost_enable": False,
+                "residual_projection_enable": False,
+            }
+        )
         logger.warning(
             "TAD data mode: REJECT-only (0 acceptable, %d reject). "
             "Standalone reject boosting and good-vs-reject threshold calibration enabled.",
             len(source_images["reject"]),
         )
     else:
-        params.update({
-            "acceptable_dir": None,
-            "reject_dir": None,
-            "image_accept_enable": False,
-            "projected_image_accept_enable": False,
-            "image_reject_boost_enable": False,
-            "projected_reject_boost_enable": False,
-            "residual_projection_enable": False,
-        })
-        logger.warning(
-            "TAD data mode: normal-only. Base AnomalyDINO scoring with normal/FPR threshold fallback."
+        params.update(
+            {
+                "acceptable_dir": None,
+                "reject_dir": None,
+                "image_accept_enable": False,
+                "projected_image_accept_enable": False,
+                "image_reject_boost_enable": False,
+                "projected_reject_boost_enable": False,
+                "residual_projection_enable": False,
+            }
         )
+        logger.warning("TAD data mode: normal-only. Base AnomalyDINO scoring with normal/FPR threshold fallback.")
 
     params["normal_reference_dir"] = str(split_root / "reference" / "good")
 
@@ -531,15 +541,9 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
     n_test_nonreject = _count(splits, "good", "test") + _count(splits, "acceptable", "test")
     diagnostics_available = n_test_reject > 0 and n_test_nonreject > 0
     params["diagnostic_enable"] = diagnostics_available
-    params["diagnostic_good_dir"] = _path_or_none(
-        split_root / "test" / "good", _count(splits, "good", "test")
-    )
-    params["diagnostic_acceptable_dir"] = _path_or_none(
-        split_root / "test" / "acceptable", _count(splits, "acceptable", "test")
-    )
-    params["diagnostic_reject_dir"] = _path_or_none(
-        split_root / "test" / "reject", _count(splits, "reject", "test")
-    )
+    params["diagnostic_good_dir"] = _path_or_none(split_root / "test" / "good", _count(splits, "good", "test"))
+    params["diagnostic_acceptable_dir"] = _path_or_none(split_root / "test" / "acceptable", _count(splits, "acceptable", "test"))
+    params["diagnostic_reject_dir"] = _path_or_none(split_root / "test" / "reject", _count(splits, "reject", "test"))
     params["diagnostic_output_dir"] = str(artifact_root)
 
     # Internal bookkeeping for the model-owned post-export publication hook.
@@ -591,10 +595,7 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
         "counts": {
             group: {
                 "total": len(source_images[group]),
-                **{
-                    partition: len(splits[group][partition])
-                    for partition in ("reference", "calibration", "test")
-                },
+                **{partition: len(splits[group][partition]) for partition in ("reference", "calibration", "test")},
             }
             for group in ("good", "acceptable", "reject")
         },
@@ -607,21 +608,14 @@ def prepare_training_config(model_class, cfg: dict, *, config_path: Path) -> dic
         },
         "diagnostics_available": diagnostics_available,
         "partitions": {
-            partition: {
-                group: [str(path.resolve()) for path in splits[group][partition]]
-                for group in ("good", "acceptable", "reject")
-            }
+            partition: {group: [str(path.resolve()) for path in splits[group][partition]] for group in ("good", "acceptable", "reject")}
             for partition in ("reference", "calibration", "test")
         },
     }
 
     workspace.mkdir(parents=True, exist_ok=True)
-    (workspace / "split_manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8"
-    )
-    (workspace / "resolved_train_config.yaml").write_text(
-        yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8"
-    )
+    (workspace / "split_manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    (workspace / "resolved_train_config.yaml").write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
 
     logger.info(
         "TAD auto split: good=%s acceptable=%s reject=%s",
