@@ -1,6 +1,5 @@
 import logging
 
-import cv2
 import numpy as np
 
 # LMI packages
@@ -8,7 +7,6 @@ from lmi_utils.dataset_utils.representations import (
     Annotation,
     AnnotationType,
     Box,
-    Mask,
     Point2d,
     Polygon,
 )
@@ -182,13 +180,8 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
             elif status == "clip":
                 logger.log(crop_warning_level, f"Polygon {shape.id} was clipped to image dimensions [{W}, {H}]")
                 is_warning = True
-                pts = np.array(list(zip(new_X, new_Y))).astype(int)
-                if shape.type == AnnotationType.POLYGON:
-                    shape.value = Polygon(points=pts.tolist())
-                else:
-                    img = np.zeros((H, W), dtype=np.uint8)
-                    cv2.fillPoly(img, [pts], 1)
-                    shape.value = Mask(mask=img)
+                polygon = Polygon(points=[[x, y] for x, y in zip(new_X, new_Y)])
+                shape.value = polygon if shape.type == AnnotationType.POLYGON else polygon.to_mask(h=H, w=W)
 
         elif shape.type == AnnotationType.KEYPOINT:
             x, y = shape.value.coords()

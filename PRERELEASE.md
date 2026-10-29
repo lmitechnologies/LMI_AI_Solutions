@@ -10,6 +10,10 @@ Breaking changes and new features since `v2.0.1`. Each breaking change says what
 
 `json_to_lst` writes the links back as Label Studio nesting, so keypoints keep their boxes through a round trip.
 
+### `lst_to_json` keeps fractional pixels
+
+`lst_to_json` writes box corners and polygon points as Label Studio gives them, instead of truncating them to whole pixels, so converted labels shift by up to a pixel from earlier conversions. `json_to_yolo` pose exports now reject keypoints linked to, or positioned next to, rotated boxes, the same rule `lst_to_json` applies.
+
 ## Deprecations
 
 ### CSV label tools

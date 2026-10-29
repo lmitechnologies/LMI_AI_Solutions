@@ -20,6 +20,7 @@ from lmi_utils.dataset_utils.representations import (
     Point2d,
     Polygon,
     PolygonAnnotation,
+    link_keypoints,
 )
 from lmi_utils.label_utils.bbox_utils import rotate
 
@@ -346,6 +347,37 @@ def test_file_annotations_assign_keypoints_requires_unique_containment():
     assert point.bounding_box_id == "box-1"
 
 
+def test_link_keypoints_rejects_rotated_boxes():
+    linked = KeypointAnnotation("a", "nose", Point2d(10, 10), bounding_box_id="box")
+    unlinked = KeypointAnnotation("b", "eye", Point2d(70, 70))
+    boxes = [BoxAnnotation("box", "person", Box(0, 0, 20, 20, 10)), BoxAnnotation("other", "person", Box(60, 60, 80, 80))]
+    errors = link_keypoints(boxes + [linked, unlinked])
+    assert len(errors) == 2
+    assert linked.bounding_box_id is None and unlinked.bounding_box_id is None
+
+
+def test_link_keypoints_checks_only_target_boxes():
+    # a rotated box and a repeated name outside the targets do not matter
+    point = KeypointAnnotation("a", "nose", Point2d(10, 10))
+    repeated = [KeypointAnnotation(f"r{i}", "tail", Point2d(55, 55), bounding_box_id="dog") for i in range(2)]
+    annotations = [
+        BoxAnnotation("box", "person", Box(0, 0, 20, 20)),
+        BoxAnnotation("dog", "dog", Box(50, 50, 60, 60)),
+        BoxAnnotation("string", "string", Box(0, 0, 90, 90, 10)),
+        point,
+        *repeated,
+    ]
+    assert link_keypoints(annotations, target_ids=["person"]) == []
+    assert point.bounding_box_id == "box"
+
+
+def test_link_keypoints_unlinks_a_repeated_name():
+    points = [KeypointAnnotation(f"k{i}", "nose", Point2d(10 + i, 10), bounding_box_id="box") for i in range(2)]
+    errors = link_keypoints([BoxAnnotation("box", "person", Box(0, 0, 20, 20))] + points)
+    assert len(errors) == 1
+    assert [p.bounding_box_id for p in points] == [None, None]
+
+
 def test_file_annotations_to_yolo(dummy_file_annotations):
     yolo, label_ids = dummy_file_annotations.to_yolo(
         to_segmentation=False,
@@ -402,7 +434,7 @@ def test_file_annotations_to_yolo_pads_mixed_layouts():
                 KeypointAnnotation("a", "nose", Point2d(10, 10), bounding_box_id="box"),
                 KeypointAnnotation("b", "nose", Point2d(11, 11), bounding_box_id="box"),
             ],
-            "Duplicate keypoint",
+            "2 keypoints 'nose'",
         ),
         ([KeypointAnnotation("a", "ear", Point2d(10, 10), bounding_box_id="box")], "not in the layout"),
     ],

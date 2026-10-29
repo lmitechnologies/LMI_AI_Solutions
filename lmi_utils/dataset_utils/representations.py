@@ -351,7 +351,7 @@ class Polygon(Base):
 
     def area(self, **kwargs):
         x, y = self.coords(**kwargs)
-        return ShapelyPolygon([(int(xi), int(yi)) for xi, yi in zip(x, y)]).area
+        return ShapelyPolygon(list(zip(x, y))).area
 
     def coords(self, **kwargs):
         points = np.array(self.points)
@@ -616,6 +616,61 @@ def _annotation_encloses_area(annotation: Annotation, h: int, w: int) -> bool:
     return True
 
 
+def link_keypoints(annotations: List[Annotation], target_ids=None) -> List[str]:
+    """Check each keypoint's link to its box, and link an unlinked keypoint to the one upright box containing it.
+
+    A keypoint whose link is wrong, or that repeats a name on its box, is left unlinked.
+
+    Args:
+        annotations (list): one file's annotations, from one annotator
+        target_ids (list): box classes keypoints may link to and are checked against; all when empty
+
+    Returns:
+        list: a message for each keypoint left unlinked
+    """
+    errors = []
+    boxes_by_id = {a.id: a for a in annotations if a.type == AnnotationType.BOX}
+    targets = [box for box in boxes_by_id.values() if not target_ids or box.label_id in target_ids]
+    rotated = [box for box in targets if box.value.angle]
+    keypoints = [a for a in annotations if a.type == AnnotationType.KEYPOINT]
+    for keypoint in keypoints:
+        x, y = keypoint.value.x, keypoint.value.y
+        where = f"keypoint {keypoint.id} '{keypoint.label_id}' at ({x:.1f}, {y:.1f})"
+        if keypoint.bounding_box_id is not None:
+            box = boxes_by_id.get(keypoint.bounding_box_id)
+            if box is None:
+                errors.append(f"Bounding box {keypoint.bounding_box_id} not found for {where}")
+                keypoint.bounding_box_id = None
+            elif box.value.angle:
+                errors.append(f"{where} links to a rotated '{box.label_id}' box; keypoints on rotated boxes are not supported")
+                keypoint.bounding_box_id = None
+            continue
+        if rotated:
+            errors.append(f"{where} is not linked, and cannot be linked by position next to rotated boxes")
+            continue
+        inside = [box for box in targets if box.value.point_in_box(x, y)]
+        if len(inside) == 1:
+            keypoint.bounding_box_id = inside[0].id
+        elif not inside:
+            errors.append(f"{where} not assigned to any box")
+        else:
+            found = ", ".join(f"'{b.label_id}' {b.id}" for b in inside)
+            errors.append(f"{where} is contained by multiple boxes: {found}")
+
+    target_box_ids = {box.id for box in targets}
+    by_slot = {}
+    for keypoint in keypoints:
+        if keypoint.bounding_box_id in target_box_ids:
+            by_slot.setdefault((keypoint.bounding_box_id, keypoint.label_id), []).append(keypoint)
+    for (box_id, name), repeated in by_slot.items():
+        if len(repeated) > 1:
+            box = boxes_by_id[box_id]
+            errors.append(f"the '{box.label_id}' box {box_id} has {len(repeated)} keypoints '{name}'")
+            for keypoint in repeated:
+                keypoint.bounding_box_id = None
+    return errors
+
+
 @dataclass
 class FileAnnotations(Base):
     id: str  # File ID
@@ -682,29 +737,14 @@ class FileAnnotations(Base):
         setattr(self, list_type, annotations)
 
     def assign_keypoints(self, target_ids=None):
-        target_ids = target_ids or []
-        boxes_by_id = {annotation.id: annotation for annotation in self.annotations if annotation.type == AnnotationType.BOX}
-        for annotation in self.annotations:
-            if annotation.type != AnnotationType.KEYPOINT:
-                continue
-            if annotation.bounding_box_id is not None:
-                # Exporters provide authoritative links; containment is only a fallback for standalone conversions.
-                if annotation.bounding_box_id not in boxes_by_id:
-                    raise ValueError(f"Bounding box {annotation.bounding_box_id} not found for keypoint {annotation.id}")
-                continue
+        """Link each keypoint to its box (see link_keypoints).
 
-            candidates = [
-                box
-                for box in boxes_by_id.values()
-                if (not target_ids or box.label_id in target_ids) and box.value.point_in_box(annotation.value.x, annotation.value.y)
-            ]
-            if len(candidates) == 1:
-                annotation.bounding_box_id = candidates[0].id
-            elif not candidates:
-                raise ValueError(f"Keypoint {annotation.id} not assigned to any box")
-            else:
-                raise ValueError(f"Keypoint {annotation.id} is contained by multiple boxes")
-
+        Raises:
+            ValueError: listing every keypoint that cannot be linked
+        """
+        errors = link_keypoints(self.annotations, target_ids)
+        if errors:
+            raise ValueError(f"{self.path}: " + "; ".join(errors))
         return self
 
     def to_yolo(
@@ -775,10 +815,7 @@ class FileAnnotations(Base):
             for annotation in self.annotations:
                 if annotation.type != AnnotationType.KEYPOINT or annotation.bounding_box_id not in yolo_annotations_map:
                     continue
-                points_by_label = keypoints_by_box.setdefault(annotation.bounding_box_id, {})
-                if annotation.label_id in points_by_label:
-                    raise ValueError(f"Duplicate keypoint label {annotation.label_id} for bounding box {annotation.bounding_box_id}")
-                points_by_label[annotation.label_id] = annotation
+                keypoints_by_box.setdefault(annotation.bounding_box_id, {})[annotation.label_id] = annotation
 
             boxes_by_id = {annotation.id: annotation for annotation in self.annotations if annotation.type == AnnotationType.BOX}
             for box_id, row in yolo_annotations_map.items():
