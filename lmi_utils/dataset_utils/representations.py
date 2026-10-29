@@ -1,15 +1,18 @@
 import enum
 import json
 import logging
+import math
 import os
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional, Union
 
 import cv2
 import numpy as np
+import shapely
 import torch
 from pycocotools import mask as coco_mask
 from shapely.geometry import Polygon as ShapelyPolygon
+from shapely.geometry import box as shapely_box
 from torchvision.ops import masks_to_boxes
 
 from lmi_utils.dataset_utils.mask_encoder import mask2rle, rle2mask
@@ -292,11 +295,25 @@ class Box(Base):
         if self.angle != 0:
             cv2.fillPoly(mask, [_pixel_points(self._rotated_corners(**kwargs))], 1)
         else:
-            mask[int(self.y_min) : int(self.y_max), int(self.x_min) : int(self.x_max)] = 1
+            x1, y1, x2, y2 = self.pixel_bounds()
+            mask[y1:y2, x1:x2] = 1
         return Mask(mask=mask)
 
     def to_polygon(self, **kwargs):
         return Polygon(points=self._corners(**kwargs).tolist())
+
+    def pixel_bounds(self) -> tuple:
+        """x1, y1, x2, y2 of the pixels whose centers are inside the upright box, as slice bounds clamped at 0."""
+        return tuple(max(0, math.ceil(v - 0.5)) for v in (self.x_min, self.y_min, self.x_max, self.y_max))
+
+    def fit(self, points) -> "Box":
+        """The smallest box at this box's angle that encloses points."""
+        a = math.radians(self.angle)
+        u, v = np.array([math.cos(a), math.sin(a)]), np.array([-math.sin(a), math.cos(a)])
+        pts = np.asarray(points, dtype=float)
+        s, t = pts @ u, pts @ v
+        x, y = (s.min() * u + t.min() * v).tolist()
+        return Box(x_min=x, y_min=y, x_max=x + s.max() - s.min(), y_max=y + t.max() - t.min(), angle=self.angle)
 
     def point_in_box(self, x: int, y: int):
         return self.x_min <= x <= self.x_max and self.y_min <= y <= self.y_max
@@ -351,7 +368,7 @@ class Polygon(Base):
 
     def area(self, **kwargs):
         x, y = self.coords(**kwargs)
-        return ShapelyPolygon([(int(xi), int(yi)) for xi, yi in zip(x, y)]).area
+        return ShapelyPolygon(list(zip(x, y))).area
 
     def coords(self, **kwargs):
         points = np.array(self.points)
@@ -388,6 +405,27 @@ class Polygon(Base):
     def to_rbox(self, **kwargs):
         x1, y1, w, h, angle = get_rotated_bbox(self.to_numpy())
         return Box(x_min=x1, y_min=y1, x_max=x1 + w, y_max=y1 + h, angle=angle)
+
+    def clip(self, w: float, h: float) -> List["Polygon"]:
+        """The parts of the outline inside [0, w] x [0, h]: itself when wholly inside, none when no area is left.
+
+        A concave outline crossing the edge can come back in several pieces.
+        """
+        if len(self.points) < 3:
+            return []
+        points = np.asarray(self.points, dtype=float)
+        inside = points.min() >= 0 and points[:, 0].max() <= w and points[:, 1].max() <= h
+        if inside and ShapelyPolygon(points).area:
+            return [self]
+        # make_valid keeps every lobe of a self-crossing outline, which intersection() would reject
+        shape = shapely.make_valid(ShapelyPolygon(points))
+        if not shape.area:
+            return []
+        if inside:
+            return [self]
+        clipped = shape.intersection(shapely_box(0, 0, w, h))
+        parts = [g for g in getattr(clipped, "geoms", [clipped]) if isinstance(g, ShapelyPolygon) and not g.is_empty]
+        return [Polygon(points=[[x, y] for x, y in part.exterior.coords[:-1]]) for part in parts]
 
 
 @dataclass
@@ -616,6 +654,81 @@ def _annotation_encloses_area(annotation: Annotation, h: int, w: int) -> bool:
     return True
 
 
+def derive_annotation(annot: Annotation, cls, value, suffix: str = "") -> Annotation:
+    """A new annotation of type cls with the given value, carrying annot's label, link, confidence and iou; its id gets suffix."""
+    return cls(id=f"{annot.id}{suffix}", label_id=annot.label_id, value=value, link=annot.link, confidence=annot.confidence, iou=annot.iou)
+
+
+def link_keypoints(annotations: List[Annotation], target_ids=None) -> List[tuple]:
+    """Link each unlinked keypoint to the one upright box containing it, and check every link to a target box.
+
+    Args:
+        annotations (list): one file's annotations, from one annotator
+        target_ids (list): box classes keypoints may link to and are checked against; all when empty
+
+    Returns:
+        list: (keypoints, message) for each problem: a keypoint unlinked, linked to a missing or rotated box, or keypoints
+            repeating a name on their box; their links are left as they were
+    """
+    problems = []
+    boxes_by_id = {a.id: a for a in annotations if a.type == AnnotationType.BOX}
+    targets = {box.id: box for box in boxes_by_id.values() if not target_ids or box.label_id in target_ids}
+    rotated = [(box, box.value._enclosing_bounds()) for box in targets.values() if box.value.angle]
+    keypoints = [a for a in annotations if a.type == AnnotationType.KEYPOINT]
+    linked_here = set()
+    for keypoint in keypoints:
+        x, y = keypoint.value.x, keypoint.value.y
+        where = describe_keypoint(keypoint)
+        if keypoint.bounding_box_id is not None:
+            box = boxes_by_id.get(keypoint.bounding_box_id)
+            if box is None:
+                problems.append(([keypoint], f"Bounding box {keypoint.bounding_box_id} not found for {where}"))
+            elif box.id in targets and box.value.angle:
+                problems.append(
+                    ([keypoint], f"{where} links to the rotated {_describe(box)}; keypoints on rotated boxes are not supported")
+                )
+            continue
+        # a rotated box may contain the point anywhere within its enclosing bounds
+        near = [box for box, bounds in rotated if _in_bounds(bounds, x, y)]
+        if near:
+            problems.append(([keypoint], f"{where} is not linked and lies near the rotated {_describe(near[0])}"))
+            continue
+        inside = [box for box in targets.values() if not box.value.angle and box.value.point_in_box(x, y)]
+        if len(inside) == 1:
+            keypoint.bounding_box_id = inside[0].id
+            linked_here.add(keypoint.id)
+        elif not inside:
+            problems.append(([keypoint], f"{where} not assigned to any box"))
+        else:
+            problems.append(([keypoint], f"{where} is contained by multiple boxes: " + ", ".join(_describe(b) for b in inside)))
+
+    by_slot = {}
+    for keypoint in keypoints:
+        if keypoint.bounding_box_id in targets:
+            by_slot.setdefault((keypoint.bounding_box_id, keypoint.label_id), []).append(keypoint)
+    for (box_id, name), repeated in by_slot.items():
+        if len(repeated) > 1:
+            problems.append((repeated, f"the {_describe(targets[box_id])} has {len(repeated)} keypoints '{name}'"))
+            for keypoint in repeated:
+                if keypoint.id in linked_here:
+                    keypoint.bounding_box_id = None
+    return problems
+
+
+def describe_keypoint(keypoint: Annotation) -> str:
+    return f"keypoint '{keypoint.label_id}' at ({keypoint.value.x:.1f}, {keypoint.value.y:.1f})"
+
+
+def _in_bounds(bounds, x, y) -> bool:
+    x1, y1, x2, y2 = bounds
+    return x1 <= x <= x2 and y1 <= y <= y2
+
+
+def _describe(box: Annotation) -> str:
+    v = box.value
+    return f"'{box.label_id}' box ({v.x_min:.0f}, {v.y_min:.0f}, {v.x_max:.0f}, {v.y_max:.0f})"
+
+
 @dataclass
 class FileAnnotations(Base):
     id: str  # File ID
@@ -682,29 +795,14 @@ class FileAnnotations(Base):
         setattr(self, list_type, annotations)
 
     def assign_keypoints(self, target_ids=None):
-        target_ids = target_ids or []
-        boxes_by_id = {annotation.id: annotation for annotation in self.annotations if annotation.type == AnnotationType.BOX}
-        for annotation in self.annotations:
-            if annotation.type != AnnotationType.KEYPOINT:
-                continue
-            if annotation.bounding_box_id is not None:
-                # Exporters provide authoritative links; containment is only a fallback for standalone conversions.
-                if annotation.bounding_box_id not in boxes_by_id:
-                    raise ValueError(f"Bounding box {annotation.bounding_box_id} not found for keypoint {annotation.id}")
-                continue
+        """Link each keypoint to its box (see link_keypoints).
 
-            candidates = [
-                box
-                for box in boxes_by_id.values()
-                if (not target_ids or box.label_id in target_ids) and box.value.point_in_box(annotation.value.x, annotation.value.y)
-            ]
-            if len(candidates) == 1:
-                annotation.bounding_box_id = candidates[0].id
-            elif not candidates:
-                raise ValueError(f"Keypoint {annotation.id} not assigned to any box")
-            else:
-                raise ValueError(f"Keypoint {annotation.id} is contained by multiple boxes")
-
+        Raises:
+            ValueError: listing every keypoint that cannot be linked
+        """
+        messages = [message for _, message in link_keypoints(self.annotations, target_ids)]
+        if messages:
+            raise ValueError(f"{self.path}: " + "; ".join(messages))
         return self
 
     def to_yolo(
@@ -757,6 +855,9 @@ class FileAnnotations(Base):
                 else [annotation.to_yolo(h, w, use_obb=use_obb)]
             )
             for conv in converted:
+                if not len(conv):
+                    logger.warning(f"Skipping {annotation.type.value} annotation {annotation.id}, which covers no pixel center")
+                    continue
                 if annotation.type == AnnotationType.MASK:
                     instance = []
                     for p in conv:
@@ -775,10 +876,7 @@ class FileAnnotations(Base):
             for annotation in self.annotations:
                 if annotation.type != AnnotationType.KEYPOINT or annotation.bounding_box_id not in yolo_annotations_map:
                     continue
-                points_by_label = keypoints_by_box.setdefault(annotation.bounding_box_id, {})
-                if annotation.label_id in points_by_label:
-                    raise ValueError(f"Duplicate keypoint label {annotation.label_id} for bounding box {annotation.bounding_box_id}")
-                points_by_label[annotation.label_id] = annotation
+                keypoints_by_box.setdefault(annotation.bounding_box_id, {})[annotation.label_id] = annotation
 
             boxes_by_id = {annotation.id: annotation for annotation in self.annotations if annotation.type == AnnotationType.BOX}
             for box_id, row in yolo_annotations_map.items():

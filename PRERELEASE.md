@@ -10,6 +10,14 @@ Breaking changes and new features since `v2.0.1`. Each breaking change says what
 
 `json_to_lst` writes the links back as Label Studio nesting, so keypoints keep their boxes through a round trip.
 
+### `lst_to_json` keeps fractional pixels
+
+`lst_to_json` writes box corners and polygon points as Label Studio gives them, instead of truncating them to whole pixels, so converted labels shift by up to a pixel from earlier conversions. `json_to_yolo` pose exports now reject a keypoint linked to a rotated target box, or unlinked within a rotated target box's extent, the same rule `lst_to_json` applies; before, rotated boxes were treated as upright.
+
+An upright box drawn as a mask (`json_to_yolo --seg`) covers the pixels whose centers are inside it; it used to truncate its edges, which only differs for fractional boxes. Padding and cropping (`apply_ops pad`) drop a mask only when no pixel of it is left; a mask whose pixels all sat in the first row or column was dropped before. Polygons and rotated boxes are cut at the image edge instead of having their outside corners moved onto it, which kept shapes lying wholly outside and distorted shapes crossing an edge at an angle; a polygon the edge cuts apart becomes one label per piece (`<id>_p0`, `<id>_p1`, …), as tiling names them. A cut rotated box keeps its angle and is refit to the part inside, so its corners can still reach past the edge. `dataset_pad.clip_shapes` now returns the clipped shapes instead of the ids to delete.
+
+`apply_ops crop-by-label` cuts the other labels at the crop's edge the same way, so boxes and polygons outside the crop are dropped instead of kept with corners moved onto its edge or with inverted coordinates. It now keeps keypoints instead of failing on them; keypoints linked to the crop box are dropped with it, as padding drops the keypoints of a box it removes. The crop covers the pixels whose centers are inside the box, the same pixels as its mask. A rotated crop box of any angle fails, as do a crop label that is not a box and one that covers no pixel. `crop_dataset_by_label` drops its `clip` argument, and its helpers `crop_kp`, `crop_bbox`, `crop_mask` and `crop_by_percent` are removed.
+
 ## Deprecations
 
 ### CSV label tools

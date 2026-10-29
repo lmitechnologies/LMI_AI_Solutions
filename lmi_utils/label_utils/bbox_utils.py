@@ -52,11 +52,17 @@ def ls_box_to_pixels(result):
     return int(x + TRUNC_EPS), int(y + TRUNC_EPS), int(x + w + TRUNC_EPS), int(y + h + TRUNC_EPS), angle
 
 
+def convert_points_from_ls(result):
+    """Convert a Label Studio polygon result to pixel points [[x, y], ...]."""
+    w, h = result["original_width"], result["original_height"]
+    return [[x / 100 * w, y / 100 * h] for x, y in result["value"]["points"]]
+
+
 def ls_points_to_pixels(result):
     """Convert a Label Studio polygon result to integer pixel arrays xs, ys."""
-    points = np.array(result["value"]["points"])
-    xs = (points[:, 0] / 100 * result["original_width"] + TRUNC_EPS).astype(np.int32)
-    ys = (points[:, 1] / 100 * result["original_height"] + TRUNC_EPS).astype(np.int32)
+    points = np.array(convert_points_from_ls(result))
+    xs = (points[:, 0] + TRUNC_EPS).astype(np.int32)
+    ys = (points[:, 1] + TRUNC_EPS).astype(np.int32)
     return xs, ys
 
 

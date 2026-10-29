@@ -20,6 +20,7 @@ from lmi_utils.dataset_utils.representations import (
     Point2d,
     Polygon,
     PolygonAnnotation,
+    link_keypoints,
 )
 from lmi_utils.label_utils.bbox_utils import rotate
 
@@ -102,6 +103,16 @@ def test_box_to_mask():
     mask = np.zeros((100, 100), dtype=np.uint8)
     mask[20:80, 10:50] = 1
     assert np.allclose(m.to_numpy(h=100, w=100), mask)
+
+    # a pixel belongs to the box when its center is inside it
+    m = Box(10.6, 20.4, 50.4, 80.6, 0).to_mask(h=100, w=100)
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[20:81, 11:50] = 1
+    assert np.array_equal(m.to_numpy(h=100, w=100), mask)
+
+    # a half-pixel edge counts its pixel the same way wherever it falls
+    for x in (10.5, 11.5):
+        assert Box(x, 0, x + 1, 10, 0).to_mask(h=100, w=100).to_numpy(h=100, w=100).sum() == 10
 
     # test rotated box
     b = Box(10, 20, 50, 80, 30)  # 30 degrees rotation
@@ -346,6 +357,60 @@ def test_file_annotations_assign_keypoints_requires_unique_containment():
     assert point.bounding_box_id == "box-1"
 
 
+def test_link_keypoints_rejects_rotated_target_boxes():
+    linked = KeypointAnnotation("a", "nose", Point2d(10, 10), bounding_box_id="box")
+    near = KeypointAnnotation("b", "eye", Point2d(18, 2))
+    far = KeypointAnnotation("c", "eye", Point2d(70, 70))
+    boxes = [BoxAnnotation("box", "person", Box(0, 0, 20, 20, 10)), BoxAnnotation("other", "person", Box(60, 60, 80, 80))]
+    problems = link_keypoints(boxes + [linked, near, far])
+    assert [[keypoint.id for keypoint in keypoints] for keypoints, _ in problems] == [["a"], ["b"]]
+    assert (linked.bounding_box_id, near.bounding_box_id, far.bounding_box_id) == ("box", None, "other")
+
+
+def test_link_keypoints_checks_only_target_boxes():
+    # a rotated box and a repeated name outside the targets do not matter
+    point = KeypointAnnotation("a", "nose", Point2d(10, 10))
+    on_rotated = KeypointAnnotation("s", "end", Point2d(5, 5), bounding_box_id="string")
+    repeated = [KeypointAnnotation(f"r{i}", "tail", Point2d(55, 55), bounding_box_id="dog") for i in range(2)]
+    annotations = [
+        BoxAnnotation("box", "person", Box(0, 0, 20, 20)),
+        BoxAnnotation("dog", "dog", Box(50, 50, 60, 60)),
+        BoxAnnotation("string", "string", Box(30, 30, 90, 90, 10)),
+        point,
+        on_rotated,
+        *repeated,
+    ]
+    assert link_keypoints(annotations, target_ids=["person"]) == []
+    assert point.bounding_box_id == "box"
+
+
+def test_link_keypoints_reports_keypoints_repeating_a_name_once():
+    points = [KeypointAnnotation(f"k{i}", "nose", Point2d(10 + i, 10), bounding_box_id="box") for i in range(2)]
+    problems = link_keypoints([BoxAnnotation("box", "person", Box(0, 0, 20, 20))] + points)
+    assert [keypoints for keypoints, _ in problems] == [points]
+
+
+def test_link_keypoints_undoes_links_it_reports():
+    points = [KeypointAnnotation(f"k{i}", "nose", Point2d(10 + i, 10)) for i in range(2)]
+    problems = link_keypoints([BoxAnnotation("box", "person", Box(0, 0, 20, 20))] + points)
+    assert [keypoints for keypoints, _ in problems] == [points]
+    assert [p.bounding_box_id for p in points] == [None, None]
+
+
+def test_assign_keypoints_leaves_links_when_it_raises():
+    points = [KeypointAnnotation(f"k{i}", "nose", Point2d(10 + i, 10), bounding_box_id="box") for i in range(2)]
+    annotations = FileAnnotations("file", "image.jpg", 100, 100, [BoxAnnotation("box", "person", Box(0, 0, 20, 20))] + points)
+    with pytest.raises(ValueError, match="2 keypoints 'nose'"):
+        annotations.assign_keypoints()
+    assert [p.bounding_box_id for p in points] == ["box", "box"]
+
+
+def test_to_yolo_skips_a_box_covering_no_pixel_center():
+    annotations = FileAnnotations("file", "image.jpg", 20, 20, [BoxAnnotation("b", "dent", Box(11.6, 0, 12.4, 10))])
+    rows, _ = annotations.to_yolo({"dent": 0}, to_segmentation=True)
+    assert rows == []
+
+
 def test_file_annotations_to_yolo(dummy_file_annotations):
     yolo, label_ids = dummy_file_annotations.to_yolo(
         to_segmentation=False,
@@ -402,7 +467,7 @@ def test_file_annotations_to_yolo_pads_mixed_layouts():
                 KeypointAnnotation("a", "nose", Point2d(10, 10), bounding_box_id="box"),
                 KeypointAnnotation("b", "nose", Point2d(11, 11), bounding_box_id="box"),
             ],
-            "Duplicate keypoint",
+            "2 keypoints 'nose'",
         ),
         ([KeypointAnnotation("a", "ear", Point2d(10, 10), bounding_box_id="box")], "not in the layout"),
     ],

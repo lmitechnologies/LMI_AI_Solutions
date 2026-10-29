@@ -4,8 +4,6 @@ import os
 from typing import List, Optional, Tuple
 
 import numpy as np
-from shapely.geometry import Polygon as ShapelyPolygon
-from shapely.geometry import box as shapely_box
 
 # LMI packages
 from lmi_utils.dataset_utils.representations import (
@@ -18,6 +16,7 @@ from lmi_utils.dataset_utils.representations import (
     MaskAnnotation,
     Polygon,
     PolygonAnnotation,
+    derive_annotation,
 )
 from lmi_utils.image_utils.tiler import Tiler, compute_new_edges
 
@@ -41,44 +40,25 @@ def _too_thin(width: float, height: float, min_label_size: float) -> bool:
     return min(width, height) < min_label_size
 
 
-def _derive(annot: Annotation, cls, value, suffix: str = ""):
-    return cls(
-        id=f"{annot.id}{suffix}",
-        label_id=annot.label_id,
-        value=value,
-        link=annot.link,
-        confidence=annot.confidence,
-        iou=annot.iou,
-    )
-
-
 def _clip_box(annot: Annotation, x1: int, y1: int, tile_w: int, tile_h: int, min_label_size: float) -> List[Annotation]:
     box = annot.value
     nx1, ny1 = max(0.0, box.x_min - x1), max(0.0, box.y_min - y1)
     nx2, ny2 = min(float(tile_w), box.x_max - x1), min(float(tile_h), box.y_max - y1)
     if nx2 <= nx1 or ny2 <= ny1 or _too_thin(nx2 - nx1, ny2 - ny1, min_label_size):
         return []
-    return [_derive(annot, BoxAnnotation, Box(x_min=nx1, y_min=ny1, x_max=nx2, y_max=ny2))]
+    return [derive_annotation(annot, BoxAnnotation, Box(x_min=nx1, y_min=ny1, x_max=nx2, y_max=ny2))]
 
 
 def _clip_polygon(annot: Annotation, x1: int, y1: int, tile_w: int, tile_h: int, min_label_size: float) -> List[Annotation]:
-    points = np.asarray(annot.value.points, dtype=float) - [x1, y1]
-    if len(points) < 3:
-        return []
-    poly = ShapelyPolygon(points)
-    if not poly.is_valid:
-        poly = poly.buffer(0)  # self-intersecting outlines make intersection() raise
-    clipped = poly.intersection(shapely_box(0, 0, tile_w, tile_h))
-    parts = [g for g in getattr(clipped, "geoms", [clipped]) if isinstance(g, ShapelyPolygon) and not g.is_empty]
-
+    shifted = Polygon(points=(np.asarray(annot.value.points, dtype=float) - [x1, y1]).tolist())
+    parts = shifted.clip(tile_w, tile_h)
     out = []
     for part in parts:
-        px1, py1, px2, py2 = part.bounds
-        if _too_thin(px2 - px1, py2 - py1, min_label_size):
+        points = np.asarray(part.points)
+        if _too_thin(*(points.max(axis=0) - points.min(axis=0)), min_label_size):
             continue
-        # a concave outline crossing a corner can come back in pieces; each piece is its own label
-        suffix = f"_p{len(out)}" if len(parts) > 1 else ""
-        out.append(_derive(annot, PolygonAnnotation, Polygon(points=[[x, y] for x, y in part.exterior.coords[:-1]]), suffix))
+        # each piece of an outline the edge cut apart is its own label
+        out.append(derive_annotation(annot, PolygonAnnotation, part, f"_p{len(out)}" if len(parts) > 1 else ""))
     return out
 
 
@@ -105,7 +85,7 @@ def _clip_mask(
         return []
     sub = np.zeros((tile_h, tile_w), dtype=crop.dtype)
     sub[oy1 - y1 : oy2 - y1, ox1 - x1 : ox2 - x1] = part
-    return [_derive(annot, MaskAnnotation, Mask(mask=sub))]
+    return [derive_annotation(annot, MaskAnnotation, Mask(mask=sub))]
 
 
 def _tile_span(lo: float, hi: float, tile: int, stride: int, n: int) -> range:

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import List, Union
 
 import cv2
-import numpy as np
 
 from lmi_utils.dataset_utils.representations import (
     Annotation,
@@ -20,8 +19,10 @@ from lmi_utils.dataset_utils.representations import (
     Mask,
     Point2d,
     Polygon,
+    describe_keypoint,
+    link_keypoints,
 )
-from lmi_utils.label_utils.bbox_utils import convert_from_ls, ls_box_to_pixels, ls_points_to_pixels
+from lmi_utils.label_utils.bbox_utils import convert_from_ls, convert_points_from_ls
 from lmi_utils.label_utils.lst_brush import decode_mask
 from lmi_utils.system_utils.path_utils import get_relative_paths
 
@@ -47,18 +48,11 @@ def lst_to_shape(result: dict, fname: str, load_confidence=False):
     conf = result["value"].get("score", 1.0) if load_confidence else 1.0
     if result_type == "rectanglelabels":
         # get bbox
-        x1, y1, x2, y2, angle = ls_box_to_pixels(result)
-        box = Box(x_min=x1, y_min=y1, x_max=x2, y_max=y2, angle=angle)
+        x, y, w, h, angle = convert_from_ls(result)
+        box = Box(x_min=x, y_min=y, x_max=x + w, y_max=y + h, angle=angle)
         return box, label, conf, AnnotationType.BOX
     elif result_type == "polygonlabels":
-        xs, ys = ls_points_to_pixels(result)
-        points_np = np.stack([xs, ys], axis=1)
-        return (
-            Polygon(points=points_np.astype(int).tolist()),
-            label,
-            conf,
-            AnnotationType.POLYGON,
-        )
+        return Polygon(points=convert_points_from_ls(result)), label, conf, AnnotationType.POLYGON
     elif result_type == "brushlabels":
         rle = result["value"]["rle"]
         h, w = result["original_height"], result["original_width"]
@@ -91,12 +85,14 @@ def generate_file_ids(files: List[str]):
 def collect_results(results, out_list, counter, label_dict, labels, fname, load_confidence=False):
     """Parse one Label Studio result list, append its Annotations to out_list, and link its keypoints to their boxes.
 
+    A keypoint links to the box it is nested under in Label Studio, else as representations.link_keypoints does.
+
     Returns:
-        tuple: the updated counter, and a message for each keypoint that could not be linked (see link_keypoints)
+        tuple: the updated counter, and a message for each keypoint left unlinked
     """
     regions = {}
-    boxes = []
-    keypoints = []
+    parents = []
+    listed = []
     for result in results:
         shape, label, conf, annot_type = lst_to_shape(result, fname, load_confidence=load_confidence)
         if shape is None:
@@ -112,78 +108,35 @@ def collect_results(results, out_list, counter, label_dict, labels, fname, load_
             value=shape,
             confidence=conf if load_confidence else None,
         )
-        out_list.append(annotation)
+        listed.append(annotation)
         counter += 1
         if result.get("id") is not None:
             # a shared id names no single region
             regions[result["id"]] = None if result["id"] in regions else annotation
-        if annot_type == AnnotationType.BOX:
-            x, y, w, h, _ = convert_from_ls(result)
-            boxes.append((annotation, (x, y, x + w, y + h)))
-        elif annot_type == AnnotationType.KEYPOINT:
-            keypoints.append((annotation, result.get("parentID")))
-    return counter, link_keypoints(keypoints, boxes, regions, fname)
+        if annot_type == AnnotationType.KEYPOINT and result.get("parentID") is not None:
+            parents.append((annotation, result["parentID"]))
+    out_list.extend(listed)
 
-
-def link_keypoints(keypoints, boxes, regions, fname) -> List[str]:
-    """Set each keypoint's bounding_box_id: the box it is nested under in Label Studio, else the one box that contains it.
-
-    Args:
-        keypoints (list): (KeypointAnnotation, the Label Studio id of its parent region or None)
-        boxes (list): (box Annotation, unrounded (x1, y1, x2, y2)); truncated bounds put a keypoint on a shared edge in both boxes
-        regions (dict): Label Studio result id to its Annotation, or None for an id several results share
-        fname (str): the image, for messages
-
-    Returns:
-        list: a message for each keypoint left unlinked; keypoints repeating a name on one box are all unlinked
-    """
     errors = []
-    rotated = [box for box, _ in boxes if box.value.angle]
-    for keypoint, parent_id in keypoints:
-        where = f"{fname}: keypoint '{keypoint.label_id}' at ({keypoint.value.x:.1f}, {keypoint.value.y:.1f})"
-        if parent_id is not None:
-            if parent_id not in regions:
-                errors.append(f"{where} is nested under region {parent_id}, which is not a labeled region of the same annotation")
-                continue
-            box = regions[parent_id]
-            if box is None:
-                errors.append(f"{where} is nested under region {parent_id}, an id several regions share")
-                continue
-            if box.type != AnnotationType.BOX:
-                errors.append(f"{where} is nested under a '{box.label_id}' region, which is not a box")
-                continue
-            if box.value.angle:
-                errors.append(f"{where} is nested under a rotated '{box.label_id}' box; keypoints on rotated boxes are not supported")
-                continue
-        elif rotated:
-            errors.append(f"{where} is not nested under a box, and cannot be linked by position next to rotated boxes")
-            continue
+    unlinkable = set()
+    for keypoint, parent_id in parents:
+        where = describe_keypoint(keypoint)
+        parent = regions.get(parent_id)
+        if parent_id not in regions:
+            errors.append(f"{where} is nested under region {parent_id}, which is not a labeled region of the same annotation")
+        elif parent is None:
+            errors.append(f"{where} is nested under region {parent_id}, an id several regions share")
+        elif parent.type != AnnotationType.BOX:
+            errors.append(f"{where} is nested under a '{parent.label_id}' region, which is not a box")
         else:
-            x, y = keypoint.value.x, keypoint.value.y
-            inside = [box for box, (x1, y1, x2, y2) in boxes if x1 <= x <= x2 and y1 <= y <= y2]
-            if len(inside) != 1:
-                found = ", ".join(f"'{b.label_id}' {_bounds(b)}" for b in inside) if inside else "no box"
-                errors.append(f"{where} is not nested under a box and lies inside {found}")
-                continue
-            box = inside[0]
-        keypoint.bounding_box_id = box.id
-
-    boxes_by_id = {box.id: box for box, _ in boxes}
-    by_slot = {}
-    for keypoint, _ in keypoints:
-        if keypoint.bounding_box_id is not None:
-            by_slot.setdefault((keypoint.bounding_box_id, keypoint.label_id), []).append(keypoint)
-    for (box_id, name), repeated in by_slot.items():
-        if len(repeated) > 1:
-            box = boxes_by_id[box_id]
-            errors.append(f"{fname}: the '{box.label_id}' box {_bounds(box)} has {len(repeated)} keypoints '{name}'")
-            for keypoint in repeated:
-                keypoint.bounding_box_id = None
-    return errors
-
-
-def _bounds(box: Annotation) -> str:
-    return f"({box.value.x_min:.0f}, {box.value.y_min:.0f}, {box.value.x_max:.0f}, {box.value.y_max:.0f})"
+            keypoint.bounding_box_id = parent.id
+            continue
+        unlinkable.add(keypoint.id)
+    for keypoints, message in link_keypoints([a for a in listed if a.id not in unlinkable]):
+        for keypoint in keypoints:
+            keypoint.bounding_box_id = None
+        errors.append(message)
+    return counter, [f"{fname}: {error}" for error in errors]
 
 
 def get_annotations_from_json(path_json, images_dir, background=False, keep_unlinked_keypoints=False):

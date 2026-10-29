@@ -247,7 +247,7 @@ def apply_ops(args):
     # Crop images by label
     elif args["operation"] == "crop-by-label":
         logger.debug(f"Cropping images by label: {args['target_label']}")
-        output_images, output_dataset = crop_dataset_by_label(dataset, images, args["target_label"])
+        output_images, output_dataset = crop_dataset_by_label(dataset, images, args["target_label"], crop_warning_level=crop_warning_level)
 
     if not args["bg"]:
         # remove files with no annotations

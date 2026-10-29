@@ -23,6 +23,11 @@ def keypoint(region_id, label, x, y, parent=None):
     return result
 
 
+def polygon(region_id, label, points):
+    value = {"points": [[x / W * 100, y / H * 100] for x, y in points], "polygonlabels": [label]}
+    return {"id": region_id, "type": "polygonlabels", "value": value, "original_width": W, "original_height": H}
+
+
 def link(results):
     """The converted annotations by Label Studio label, and the linking errors."""
     out = []
@@ -42,13 +47,20 @@ def test_an_unnested_keypoint_links_to_the_one_box_containing_it():
     assert by_label["cap_l"].bounding_box_id == by_label["cap"].id
 
 
-def test_containment_uses_unrounded_bounds():
-    # truncated to whole pixels the crimp box would start at y=359 and contain the keypoint too
+def test_a_keypoint_between_touching_boxes_links_to_the_one_containing_it():
+    # rounded down to whole pixels the crimp box would start at y=359 and contain the keypoint too
     by_label, errors = link(
         [box("a", "cap", 100, 200, 900, 359.2), box("b", "crimp", 100, 359.6, 900, 600), keypoint("k", "cap_l", 120, 359.1)]
     )
     assert errors == []
     assert by_label["cap_l"].bounding_box_id == by_label["cap"].id
+
+
+def test_shapes_keep_fractional_pixels():
+    by_label, _ = link([box("a", "cap", 100.4, 200.6, 300.2, 400.8), polygon("p", "dent", [(10.5, 20.5), (30.25, 20.5), (30.25, 40.75)])])
+    cap = by_label["cap"].value
+    assert (cap.x_min, cap.y_min, cap.x_max, cap.y_max) == pytest.approx((100.4, 200.6, 300.2, 400.8))
+    np.testing.assert_allclose(by_label["dent"].value.points, [[10.5, 20.5], [30.25, 20.5], [30.25, 40.75]])
 
 
 @pytest.mark.parametrize(
@@ -59,14 +71,22 @@ def test_containment_uses_unrounded_bounds():
         [box("a", "cap", 0, 0, 500, 500), keypoint("p", "other", 10, 10), keypoint("k", "cap_l", 100, 100, "p")],
         [box("a", "cap", 0, 0, 500, 500), keypoint("k", "cap_l", 100, 100, "missing")],
         [box("a", "cap", 0, 0, 500, 500, rotation=10), keypoint("k", "cap_l", 100, 100, "a")],
-        [box("a", "cap", 0, 0, 500, 500), box("b", "string", 600, 600, 900, 900, rotation=10), keypoint("k", "cap_l", 100, 100)],
+        [box("a", "cap", 0, 0, 500, 500), box("b", "string", 400, 400, 900, 900, rotation=10), keypoint("k", "cap_l", 450, 450)],
     ],
-    ids=["in two boxes", "in no box", "parent is a keypoint", "parent not in the list", "rotated parent", "beside a rotated box"],
+    ids=["in two boxes", "in no box", "parent is a keypoint", "parent not in the list", "rotated parent", "within a rotated box"],
 )
 def test_a_keypoint_that_cannot_be_linked_is_reported_and_left_unlinked(results):
     by_label, errors = link(results)
     assert len(errors) == 1
     assert by_label["cap_l"].bounding_box_id is None
+
+
+def test_a_keypoint_away_from_a_rotated_box_still_links():
+    by_label, errors = link(
+        [box("a", "cap", 0, 0, 300, 300), box("b", "string", 600, 600, 900, 900, rotation=10), keypoint("k", "cap_l", 100, 100)]
+    )
+    assert errors == []
+    assert by_label["cap_l"].bounding_box_id == by_label["cap"].id
 
 
 def test_keypoints_repeating_a_name_on_one_box_are_reported_and_unlinked():
