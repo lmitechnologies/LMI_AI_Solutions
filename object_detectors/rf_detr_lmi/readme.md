@@ -234,4 +234,4 @@ fall back to. An `.onnx` or `.engine` carries its own input size and ignores the
 To run on tiles, add `--tile` and `--stride`, each one int for a square or two ints for `h w`, e.g. `--tile 384 --stride 288`.
 The tile predictions are merged back, so outputs are per image, in the original image coordinates. Add `--json` to also save
 the predictions to `predictions.json`, in the LMI dataset json format, in the output folder. Tiling also saves an image per
-input to `tiles/` in the output folder, showing the tile grid and each detection colored by how merging built it.
+input to `_tile_plots/` in the output folder, showing the tile grid and each detection colored by how merging built it.

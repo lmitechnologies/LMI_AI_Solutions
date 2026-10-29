@@ -202,7 +202,7 @@ services:
 
 To run on tiles, add `--tile` and `--stride`, each one int for a square or two ints for `h w`, e.g. `--tile 640 --stride 480`.
 The tile predictions are merged back, so outputs are per image, in the original image coordinates. Tiling also saves an image per
-input to `tiles/` in the output folder, showing the tile grid and each detection colored by how merging built it.
+input to `_tile_plots/` in the output folder, showing the tile grid and each detection colored by how merging built it.
 
 ### Outputs
 
