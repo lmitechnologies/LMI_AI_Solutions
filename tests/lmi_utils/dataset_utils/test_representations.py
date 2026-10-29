@@ -104,6 +104,12 @@ def test_box_to_mask():
     mask[20:80, 10:50] = 1
     assert np.allclose(m.to_numpy(h=100, w=100), mask)
 
+    # a pixel belongs to the box when its center is inside it
+    m = Box(10.6, 20.4, 50.4, 80.6, 0).to_mask(h=100, w=100)
+    mask = np.zeros((100, 100), dtype=np.uint8)
+    mask[20:81, 11:50] = 1
+    assert np.array_equal(m.to_numpy(h=100, w=100), mask)
+
     # test rotated box
     b = Box(10, 20, 50, 80, 30)  # 30 degrees rotation
     m = b.to_mask(h=100, w=100)

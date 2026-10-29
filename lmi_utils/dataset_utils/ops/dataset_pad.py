@@ -170,7 +170,14 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
 
                 shape.value = Box(*new_box)
 
-        elif shape.type == AnnotationType.MASK or shape.type == AnnotationType.POLYGON:
+        elif shape.type == AnnotationType.MASK:
+            # Mask.pad already cropped the mask to [W,H]
+            if not shape.value.to_numpy(h=H, w=W).any():
+                is_del = 1
+                delete_ids.append(shape.id)
+                logger.log(crop_warning_level, f"Mask {shape.id} was excluded by image dimensions [{W},{H}]")
+
+        elif shape.type == AnnotationType.POLYGON:
             X, Y = shape.value.coords(w=W, h=H)
             new_X, new_Y, status = _clip_corner_coords(X, Y, W, H)
             if status == "delete":
@@ -180,8 +187,7 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
             elif status == "clip":
                 logger.log(crop_warning_level, f"Polygon {shape.id} was clipped to image dimensions [{W}, {H}]")
                 is_warning = True
-                polygon = Polygon(points=np.stack([new_X, new_Y], axis=1).astype(float).tolist())
-                shape.value = polygon if shape.type == AnnotationType.POLYGON else polygon.to_mask(h=H, w=W)
+                shape.value = Polygon(points=np.stack([new_X, new_Y], axis=1).astype(float).tolist())
 
         elif shape.type == AnnotationType.KEYPOINT:
             x, y = shape.value.coords()

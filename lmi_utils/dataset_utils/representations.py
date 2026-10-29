@@ -292,7 +292,9 @@ class Box(Base):
         if self.angle != 0:
             cv2.fillPoly(mask, [_pixel_points(self._rotated_corners(**kwargs))], 1)
         else:
-            mask[int(self.y_min) : int(self.y_max), int(self.x_min) : int(self.x_max)] = 1
+            # a pixel belongs to the box when its center is inside it
+            y1, y2, x1, x2 = (max(0, int(np.rint(v))) for v in (self.y_min, self.y_max, self.x_min, self.x_max))
+            mask[y1:y2, x1:x2] = 1
         return Mask(mask=mask)
 
     def to_polygon(self, **kwargs):
