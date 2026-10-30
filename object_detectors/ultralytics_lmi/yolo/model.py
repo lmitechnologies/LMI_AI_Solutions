@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import Dict, List
 
 import numpy as np
 import torch
@@ -295,6 +295,19 @@ class YoloPose(Yolo):
     def __init__(self, model_path: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.task = "pose"
+        self.kpt_names = self._resolve_kpt_names()
+
+    def _resolve_kpt_names(self) -> Dict[int, List[str]]:
+        """Class index -> keypoint name per slot, as recorded at training; ultralytics' "0", "1", ... when the model has none."""
+        metadata = getattr(self.model, "metadata", None)
+        names = metadata.get("kpt_names") if isinstance(metadata, dict) else None
+        if names is None:
+            # a .pt keeps them on the network, which AutoBackend does not copy up
+            names = getattr(getattr(self.model, "model", None), "kpt_names", None)
+        if names is None:
+            slots = [str(i) for i in range(self.model.kpt_shape[0])]
+            return {int(c): list(slots) for c in self.model.names}
+        return {int(c): [str(n) for n in slot_names] for c, slot_names in names.items()}
 
     def construct_result(self, pred, img, orig_img, conf, **kwargs):
         """Constructs a Results object from the model prediction.

@@ -237,9 +237,12 @@ def convert_to_yolo(args):
             "val": "images/train" if len(val_files) == 0 or use_train_for_val is True else "images/val",
             "test": None,
         }
+        train_class_map = train_yolo_dataset["class_map"]
         if train_yolo_dataset["n_kpts"]:
             dt["kpt_shape"] = [train_yolo_dataset["n_kpts"], 3]
-        dt["names"] = {int(v): k for k, v in train_yolo_dataset["class_map"].items()}
+            layouts = train_yolo_dataset["keypoint_layouts"]
+            dt["kpt_names"] = {int(idx): list(layouts.get(name, [])) for name, idx in train_class_map.items()}
+        dt["names"] = {int(v): k for k, v in train_class_map.items()}
         yaml.dump(dt, f, sort_keys=False)
 
     fname = os.path.join(args["path_out"], "class_map.json")

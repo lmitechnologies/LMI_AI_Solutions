@@ -103,8 +103,10 @@ def save_tile_plot(
 class PredictionsJson:
     """Collect per-image predictions and save them in the LMI dataset json format."""
 
-    def __init__(self, class_names):
+    def __init__(self, class_names, keypoint_names: Optional[Dict[str, List[str]]] = None):
+        """``keypoint_names`` maps a class to its keypoint name per model slot; without it a keypoint is labeled with its box's class."""
         self.class_names = [str(n) for n in class_names]
+        self.keypoint_names = {str(c): [str(n) for n in names] for c, names in (keypoint_names or {}).items()}
         self.files = []
         self.annotation_type = None
         self._next_id = 0
@@ -129,9 +131,14 @@ class PredictionsJson:
         from lmi_utils.dataset_utils.representations import AnnotationType, Dataset, Label
 
         kind = self.annotation_type or AnnotationType.BOX
-        seen = {a.label_id for f in self.files for a in f.predictions}
+        predictions = [a for f in self.files for a in f.predictions]
+        seen = {a.label_id for a in predictions if a.type != AnnotationType.KEYPOINT}
         names = self.class_names + sorted(seen - set(self.class_names))
-        Dataset(labels=[Label(id=n, annotation_type=kind) for n in names], files=self.files).save(path)
+        labels = [Label(id=n, annotation_type=kind, keypoints=self.keypoint_names.get(n)) for n in names]
+        keypoint_ids = {n for layout in self.keypoint_names.values() for n in layout}
+        keypoint_ids |= {a.label_id for a in predictions if a.type == AnnotationType.KEYPOINT}
+        labels += [Label(id=n, annotation_type=AnnotationType.KEYPOINT) for n in sorted(keypoint_ids - set(names))]
+        Dataset(labels=labels, files=self.files).save(path)
 
     def _annotations(self, label: str, score: float, box, mask, points) -> List:
         import numpy as np
@@ -149,9 +156,13 @@ class PredictionsJson:
 
         box_id = self._new_id()
         out = [Annotation(id=box_id, label_id=label, type=kind, value=value, confidence=score)]
-        for pt in [] if points is None else np.asarray(points, dtype=float):
+        slot_names = self.keypoint_names.get(label)
+        for slot, pt in enumerate([] if points is None else np.asarray(points, dtype=float)):
+            if slot_names is not None and slot >= len(slot_names):
+                break  # slots past the class's layout are padding
+            name = label if slot_names is None else slot_names[slot]
             # the model's third column is a confidence, not a labeled visibility flag, so it is not written
-            out.append(KeypointAnnotation(id=self._new_id(), label_id=label, value=Point2d(pt[0], pt[1]), bounding_box_id=box_id))
+            out.append(KeypointAnnotation(id=self._new_id(), label_id=name, value=Point2d(pt[0], pt[1]), bounding_box_id=box_id))
         return out
 
     def _new_id(self) -> str:

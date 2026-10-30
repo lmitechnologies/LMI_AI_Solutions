@@ -120,6 +120,17 @@ def test_convert_to_yolo_writes_three_dimensional_keypoint_shape(tmp_path):
     assert dataset_yaml["kpt_shape"] == [2, 3]
 
 
+def test_convert_to_yolo_writes_keypoint_names_per_class(tmp_path):
+    train_path = tmp_path / "train"
+    _write_pose_dataset(train_path, 2)
+
+    convert_to_yolo(_args(train_path, tmp_path / "output"))
+
+    with open(tmp_path / "output" / "dataset.yaml") as stream:
+        dataset_yaml = yaml.safe_load(stream)
+    assert dataset_yaml["kpt_names"] == {0: ["point-0", "point-1"]}
+
+
 def test_convert_to_yolo_rejects_train_val_keypoint_mismatch(tmp_path):
     train_path = tmp_path / "train"
     val_path = tmp_path / "val"

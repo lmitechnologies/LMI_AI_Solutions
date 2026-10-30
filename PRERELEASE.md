@@ -36,7 +36,19 @@ from lmi_common.infer_cli import tile_step
 Tiled `infer.py` runs now save their tile plots to `_tile_plots/` in the output folder instead of `tiles/`, so they cannot collide
 with a classifier's per-class folder named `tiles`. Update any script that reads `tiles/`.
 
+### Pose `predictions.json` names keypoints by slot
+
+The YOLO `infer.py --pose --json` output labels each keypoint with its slot name from the model's `kpt_names`, instead of
+its box's class. Box labels list their keypoint names, and the keypoint names are declared as keypoint labels, so the file
+reads as a pose dataset. A model trained without `kpt_names` gives `"0"`, `"1"`, …. Update any script that matched keypoints
+by their box's class.
+
 ## New features
+
+### Keypoint names
+
+`json_to_yolo` writes `kpt_names` to `dataset.yaml`, each box class's layout keyed by class index, so a trained model
+records them. `YoloPose.kpt_names` returns them from a `.pt` or an exported model, keyed by class index.
 
 ### Classifier tiling and confidence threshold
 
