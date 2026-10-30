@@ -483,6 +483,20 @@ def test_pose_kpt_names_survive_onnx_export(yolo_models, tmp_path):
     assert YoloPose(onnx_path, device="cpu").kpt_names == yolo_models["pose"][0].kpt_names
 
 
+def test_end_to_end_head_returns_more_than_its_default_top_k(tmp_path):
+    """An end-to-end head keeps 300 candidates by default, which would cap max_det."""
+    end2end = YOLO(OD_DET_MODELS[0])
+    end2end.model.end2end = True
+    end2end.save(str(tmp_path / "end2end.pt"))
+    model = Yolo(str(tmp_path / "end2end.pt"), device=DEVICE, image_size=IMGSZ)
+    image = np.random.default_rng(0).integers(0, 255, (*IMGSZ, 3), dtype=np.uint8)
+
+    out, _ = model.predict(image, configs=0.0, max_det=400)
+
+    assert model.model.end2end
+    assert len(out["boxes"][0]) == 400
+
+
 def test_clamp_boxes_to_image(yolo_models):
     """Detection boxes must be clamped to the original image (ultralytics scale_boxes clips)."""
     model = yolo_models["det"][0]

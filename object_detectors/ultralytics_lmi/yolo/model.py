@@ -10,7 +10,7 @@ from ultralytics.utils.torch_utils import smart_inference_mode
 
 from lmi_common.yolo_core import YoloCore
 from lmi_utils.gadget_utils.pipeline_utils import resize_image
-from lmi_utils.image_utils.types import ImageLike, to_3channel
+from lmi_utils.image_utils.types import ImageBatch, ImageLike, to_3channel
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 
@@ -64,6 +64,13 @@ class Yolo(YoloCore, ODBase):
                 self.max_batch_size = size
             else:
                 self.fixed_batch_size = size
+
+    def predict(self, image: ImageBatch, configs, operators=None, **kwargs):
+        net = getattr(self.model, "model", None)  # the torch network of a .pt
+        if getattr(net, "end2end", False) and hasattr(net, "set_head_attr"):
+            # an end-to-end head truncates to its own top-k before postprocess; ultralytics' predictor widens it the same way
+            net.set_head_attr(max_det=max(kwargs.get("max_det", 300), 300), agnostic_nms=kwargs.get("agnostic", False))
+        return super().predict(image, configs, operators, **kwargs)
 
     @smart_inference_mode()
     def _preprocess_single(self, im: ImageLike) -> torch.Tensor:
