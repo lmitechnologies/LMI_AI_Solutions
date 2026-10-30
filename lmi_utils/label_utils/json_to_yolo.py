@@ -66,6 +66,15 @@ def _reindex_rows(yolo_dataset, class_map):
     yolo_dataset["class_map"] = dict(class_map)
 
 
+def _check_layouts_match(train_yolo_dataset, val_yolo_dataset):
+    """Raise if a class orders its keypoints differently in the two splits."""
+    train = {name: layout for name, layout in train_yolo_dataset["keypoint_layouts"].items() if layout}
+    val = {name: layout for name, layout in val_yolo_dataset["keypoint_layouts"].items() if layout}
+    mismatched = [f"{name}: {train[name]} and {val[name]}" for name in sorted(train.keys() & val.keys()) if train[name] != val[name]]
+    if mismatched:
+        raise ValueError(f"Training and validation datasets have different keypoint layouts: {'; '.join(mismatched)}")
+
+
 def write_txts(fname_to_rows, path_txts, fnames, file_id_map):
     """
     write to the yolo format txts
@@ -198,6 +207,7 @@ def convert_to_yolo(args):
             f"Training and validation datasets have different keypoint counts: "
             f"{train_yolo_dataset['n_kpts']} and {val_yolo_dataset['n_kpts']}"
         )
+    _check_layouts_match(train_yolo_dataset, val_yolo_dataset)
 
     # path for labels files
     path_txts_train = os.path.join(path_out, "labels/train")
@@ -237,9 +247,12 @@ def convert_to_yolo(args):
             "val": "images/train" if len(val_files) == 0 or use_train_for_val is True else "images/val",
             "test": None,
         }
+        train_class_map = train_yolo_dataset["class_map"]
         if train_yolo_dataset["n_kpts"]:
             dt["kpt_shape"] = [train_yolo_dataset["n_kpts"], 3]
-        dt["names"] = {int(v): k for k, v in train_yolo_dataset["class_map"].items()}
+            layouts = train_yolo_dataset["keypoint_layouts"]
+            dt["kpt_names"] = {int(idx): list(layouts.get(name, [])) for name, idx in train_class_map.items()}
+        dt["names"] = {int(v): k for k, v in train_class_map.items()}
         yaml.dump(dt, f, sort_keys=False)
 
     fname = os.path.join(args["path_out"], "class_map.json")

@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 
 import cv2
 import numpy as np
@@ -464,6 +465,35 @@ class Test_Yolo_Pose:
         for model in all_models["pose"]:
             out, _ = model.predict(resized_images, configs=0.5, operators=ops_list)
             _assert_batch_output(out, self.KEYS, num_imgs)
+
+
+def test_pose_kpt_names_come_from_the_pt(yolo_models):
+    """yolo26n-pose was trained with COCO keypoint names; yolo11n-pose predates them and gets ultralytics' slot numbers."""
+    named, unnamed = yolo_models["pose"][0], yolo_models["pose"][1]
+    assert named.kpt_names[0][:3] == ["nose", "left_eye", "right_eye"]
+    assert len(named.kpt_names[0]) == named.model.kpt_shape[0]
+    assert unnamed.kpt_names == {0: [str(i) for i in range(unnamed.model.kpt_shape[0])]}
+
+
+def test_pose_kpt_names_survive_onnx_export(yolo_models, tmp_path):
+    weights = tmp_path / os.path.basename(OD_POSE_MODELS[0])
+    shutil.copy(OD_POSE_MODELS[0], weights)  # ultralytics writes the export next to the weights
+    onnx_path = YOLO(str(weights), task="pose").export(format="onnx", imgsz=IMGSZ)
+
+    assert YoloPose(onnx_path, device="cpu").kpt_names == yolo_models["pose"][0].kpt_names
+
+
+def test_end_to_end_head_returns_more_than_its_default_top_k(tmp_path):
+    end2end = YOLO(OD_DET_MODELS[0])
+    end2end.model.end2end = True
+    end2end.save(str(tmp_path / "end2end.pt"))
+    model = Yolo(str(tmp_path / "end2end.pt"), device=DEVICE, image_size=IMGSZ)
+    image = np.random.default_rng(0).integers(0, 255, (*IMGSZ, 3), dtype=np.uint8)
+
+    out, _ = model.predict(image, configs=0.0, max_det=400)
+
+    assert model.model.end2end
+    assert 300 < len(out["boxes"][0]) <= 400
 
 
 def test_clamp_boxes_to_image(yolo_models):

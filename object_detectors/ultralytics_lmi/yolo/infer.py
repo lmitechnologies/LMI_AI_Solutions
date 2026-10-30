@@ -91,7 +91,8 @@ if __name__ == "__main__":
     logger.info(f"warmup input shape: {sz}")
     logger.info(f"warmup proc time -> {t2 - t1:.4f}")
 
-    predictions_json = PredictionsJson(model.names.values())
+    keypoint_names = {model.names[c]: names for c, names in model.kpt_names.items()} if args.pose else None
+    predictions_json = PredictionsJson(model.names.values(), keypoint_names)
     batches = get_img_path_batches(batch_size=BATCH_SIZE, img_dir=args.input, fmt="jpg") + get_img_path_batches(
         batch_size=BATCH_SIZE, img_dir=args.input, fmt="png"
     )

@@ -1044,4 +1044,5 @@ class Dataset(Base):
             image_labels=image_to_labels,
             class_map=label_id_index,
             n_kpts=n_kpts,
+            keypoint_layouts=keypoint_layouts,
         )

@@ -165,3 +165,19 @@ def test_predictions_json_round_trips_boxes_masks_rotated_boxes_and_keypoints(tm
     assert (keypoint.value.x, keypoint.value.y) == (2.0, 3.0)
     assert empty.predictions == []
     assert len({a.id for f in dataset.files for a in f.predictions}) == 4
+
+
+def test_predictions_json_names_keypoints_by_slot_and_skips_padding(tmp_path):
+    writer = PredictionsJson(["a", "b"], keypoint_names={"a": ["tip", "base"], "b": ["tip"]})
+    points = np.array([[[1.0, 1.0, 0.9], [2.0, 2.0, 0.8]], [[3.0, 3.0, 0.7], [4.0, 4.0, 0.1]]])
+    boxes = np.array([[0.0, 0.0, 5.0, 5.0], [0.0, 0.0, 6.0, 6.0]])
+    writer.add("pose.png", 20, 30, {"boxes": boxes, "scores": np.array([0.9, 0.8]), "classes": ["a", "b"], "points": points})
+    writer.save(str(tmp_path / "predictions.json"))
+
+    dataset = Dataset.load(str(tmp_path / "predictions.json"))
+    labels = {label.id: label for label in dataset.labels}
+    assert labels["a"].keypoints == ["tip", "base"] and labels["b"].keypoints == ["tip"]
+    assert {labels[n].annotation_type for n in ("tip", "base")} == {AnnotationType.KEYPOINT.value}
+    box_a, tip_a, base_a, box_b, tip_b = dataset.files[0].predictions
+    assert [tip_a.label_id, base_a.label_id, tip_b.label_id] == ["tip", "base", "tip"]
+    assert tip_b.bounding_box_id == box_b.id and (tip_b.value.x, tip_b.value.y) == (3.0, 3.0)

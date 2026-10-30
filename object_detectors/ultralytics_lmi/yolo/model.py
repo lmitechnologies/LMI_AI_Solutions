@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import Dict, List
 
 import numpy as np
 import torch
@@ -10,7 +10,7 @@ from ultralytics.utils.torch_utils import smart_inference_mode
 
 from lmi_common.yolo_core import YoloCore
 from lmi_utils.gadget_utils.pipeline_utils import resize_image
-from lmi_utils.image_utils.types import ImageLike, to_3channel
+from lmi_utils.image_utils.types import ImageBatch, ImageLike, to_3channel
 from object_detectors.od_core.od_base import ODBase
 from object_detectors.od_core.results import Results
 
@@ -64,6 +64,13 @@ class Yolo(YoloCore, ODBase):
                 self.max_batch_size = size
             else:
                 self.fixed_batch_size = size
+
+    def predict(self, image: ImageBatch, configs, operators=None, **kwargs):
+        net = getattr(self.model, "model", None)  # the torch network of a .pt
+        if getattr(net, "end2end", False) and hasattr(net, "set_head_attr"):
+            # an end-to-end head truncates to its own top-k before postprocess; ultralytics' predictor widens it the same way
+            net.set_head_attr(max_det=max(kwargs.get("max_det", 300), 300), agnostic_nms=kwargs.get("agnostic", False))
+        return super().predict(image, configs, operators, **kwargs)
 
     @smart_inference_mode()
     def _preprocess_single(self, im: ImageLike) -> torch.Tensor:
@@ -295,6 +302,19 @@ class YoloPose(Yolo):
     def __init__(self, model_path: str, device="cuda", data=None, fp16=False, **kwargs) -> None:
         super().__init__(model_path, device, data, fp16, **kwargs)
         self.task = "pose"
+        self.kpt_names = self._resolve_kpt_names()
+
+    def _resolve_kpt_names(self) -> Dict[int, List[str]]:
+        """Class index -> keypoint name per slot, as recorded at training; ultralytics' "0", "1", ... when the model has none."""
+        metadata = getattr(self.model, "metadata", None)
+        names = metadata.get("kpt_names") if isinstance(metadata, dict) else None
+        if names is None:
+            # a .pt keeps them on the network, which AutoBackend does not copy up
+            names = getattr(getattr(self.model, "model", None), "kpt_names", None)
+        if names is None:
+            slots = [str(i) for i in range(self.model.kpt_shape[0])]
+            return {int(c): list(slots) for c in self.model.names}
+        return {int(c): [str(n) for n in slot_names] for c, slot_names in names.items()}
 
     def construct_result(self, pred, img, orig_img, conf, **kwargs):
         """Constructs a Results object from the model prediction.
