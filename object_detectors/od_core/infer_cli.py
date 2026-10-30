@@ -131,12 +131,10 @@ class PredictionsJson:
         from lmi_utils.dataset_utils.representations import AnnotationType, Dataset, Label
 
         kind = self.annotation_type or AnnotationType.BOX
-        predictions = [a for f in self.files for a in f.predictions]
-        seen = {a.label_id for a in predictions if a.type != AnnotationType.KEYPOINT}
+        seen = {a.label_id for f in self.files for a in f.predictions if a.type != AnnotationType.KEYPOINT}
         names = self.class_names + sorted(seen - set(self.class_names))
         labels = [Label(id=n, annotation_type=kind, keypoints=self.keypoint_names.get(n)) for n in names]
         keypoint_ids = {n for layout in self.keypoint_names.values() for n in layout}
-        keypoint_ids |= {a.label_id for a in predictions if a.type == AnnotationType.KEYPOINT}
         labels += [Label(id=n, annotation_type=AnnotationType.KEYPOINT) for n in sorted(keypoint_ids - set(names))]
         Dataset(labels=labels, files=self.files).save(path)
 
