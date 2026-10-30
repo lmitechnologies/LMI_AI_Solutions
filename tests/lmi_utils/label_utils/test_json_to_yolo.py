@@ -161,3 +161,16 @@ def test_convert_to_yolo_accepts_a_pose_class_absent_from_val(tmp_path):
     _write_pose_dataset(val_path, 2)
 
     convert_to_yolo(_args(train_path, tmp_path / "output", val_path))
+
+
+def test_convert_to_yolo_treats_empty_and_missing_layouts_alike(tmp_path):
+    train_path = tmp_path / "train"
+    val_path = tmp_path / "val"
+    _write_pose_dataset(train_path, 2)
+    _write_pose_dataset(val_path, 2)
+    for path, layout in ((train_path, None), (val_path, [])):
+        dataset = Dataset.load(str(path / "labels.json"))
+        dataset.labels.append(Label(id="dog", keypoints=layout))
+        dataset.save(str(path / "labels.json"))
+
+    convert_to_yolo(_args(train_path, tmp_path / "output", val_path))

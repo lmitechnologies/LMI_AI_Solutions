@@ -66,14 +66,11 @@ def _reindex_rows(yolo_dataset, class_map):
     yolo_dataset["class_map"] = dict(class_map)
 
 
-def _check_layouts_match(train_dataset, val_dataset):
-    """Raise if a class orders its keypoints differently in the two splits, which would put val points in the wrong slots."""
-    train_layouts = {label.id: label.keypoints for label in train_dataset.labels}
-    mismatched = [
-        f"{label.id}: {train_layouts[label.id]} and {label.keypoints}"
-        for label in val_dataset.labels
-        if label.id in train_layouts and label.keypoints != train_layouts[label.id]
-    ]
+def _check_layouts_match(train_yolo_dataset, val_yolo_dataset):
+    """Raise if a class orders its keypoints differently in the two splits."""
+    train = {name: layout for name, layout in train_yolo_dataset["keypoint_layouts"].items() if layout}
+    val = {name: layout for name, layout in val_yolo_dataset["keypoint_layouts"].items() if layout}
+    mismatched = [f"{name}: {train[name]} and {val[name]}" for name in sorted(train.keys() & val.keys()) if train[name] != val[name]]
     if mismatched:
         raise ValueError(f"Training and validation datasets have different keypoint layouts: {'; '.join(mismatched)}")
 
@@ -210,8 +207,7 @@ def convert_to_yolo(args):
             f"Training and validation datasets have different keypoint counts: "
             f"{train_yolo_dataset['n_kpts']} and {val_yolo_dataset['n_kpts']}"
         )
-    if not use_train_for_val:
-        _check_layouts_match(train_dataset, val_dataset)
+    _check_layouts_match(train_yolo_dataset, val_yolo_dataset)
 
     # path for labels files
     path_txts_train = os.path.join(path_out, "labels/train")
