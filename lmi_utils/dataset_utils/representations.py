@@ -992,7 +992,10 @@ class Dataset(Base):
 
         # generate label counts
         if class_map:
-            if len(class_map) != len(self.labels):
+            # A label loaded from json keeps its annotation type as a string
+            keypoint_types = (AnnotationType.KEYPOINT, AnnotationType.KEYPOINT.value)
+            class_labels = [label for label in self.labels if label.annotation_type not in keypoint_types]
+            if len(class_map) != len(class_labels):
                 raise ValueError("Class map must have the same number of classes as the dataset")
             label_id_index = {name: idx for idx, name in class_map.items()}
         else:
