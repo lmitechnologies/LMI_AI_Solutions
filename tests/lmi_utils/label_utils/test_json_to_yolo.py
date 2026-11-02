@@ -3,7 +3,16 @@ import numpy as np
 import pytest
 import yaml
 
-from lmi_utils.dataset_utils.representations import Box, BoxAnnotation, Dataset, FileAnnotations, KeypointAnnotation, Label, Point2d
+from lmi_utils.dataset_utils.representations import (
+    AnnotationType,
+    Box,
+    BoxAnnotation,
+    Dataset,
+    FileAnnotations,
+    KeypointAnnotation,
+    Label,
+    Point2d,
+)
 from lmi_utils.label_utils.json_to_yolo import convert_to_yolo
 
 
@@ -107,6 +116,28 @@ def test_convert_to_yolo_rejects_a_val_class_missing_from_train_without_a_provid
 
     with pytest.raises(ValueError, match="beta"):
         convert_to_yolo(_args(train_path, tmp_path / "output", val_path))
+
+
+def test_convert_to_yolo_applies_a_class_map_to_a_dataset_listing_keypoint_labels(tmp_path):
+    # Label Studio exports list each keypoint name as a label; only the box class belongs in the class map
+    train_path = tmp_path / "train"
+    _write_pose_dataset(train_path, 2)
+    dataset = Dataset.load(str(train_path / "labels.json"))
+    dataset.labels.append(Label(id="point-0", annotation_type=AnnotationType.KEYPOINT))
+    dataset.save(str(train_path / "labels.json"))
+
+    class_map_path = tmp_path / "class_map.yaml"
+    with open(class_map_path, "w") as stream:
+        yaml.safe_dump({"names": {0: "person"}}, stream)
+
+    args = _args(train_path, tmp_path / "output")
+    args["path_dataset_yaml"] = str(class_map_path)
+    convert_to_yolo(args)
+
+    with open(tmp_path / "output" / "dataset.yaml") as stream:
+        dataset_yaml = yaml.safe_load(stream)
+    assert dataset_yaml["names"] == {0: "person"}
+    assert dataset_yaml["kpt_shape"] == [2, 3]
 
 
 def test_convert_to_yolo_writes_three_dimensional_keypoint_shape(tmp_path):
