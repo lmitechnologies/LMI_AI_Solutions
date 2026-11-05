@@ -7,28 +7,28 @@ class ObjectDetectorRegistry(ModelRegistry):
     BACKENDS = [
         {
             "frameworks": ["ultralytics", "ultralytics8"],
-            "model_names": ["yolo", "yolov8", "yolov11"],
+            "model_names": ["yolo", "yolov8", "yolov11", "yolov26"],
             "tasks": ["od", "objectdetection"],
             "versions": ["v1"],
             "class_path": "object_detectors.ultralytics_lmi.yolo.model:Yolo",
         },
         {
             "frameworks": ["ultralytics", "ultralytics8"],
-            "model_names": ["yolo", "yolov8", "yolov11"],
+            "model_names": ["yolo", "yolov8", "yolov11", "yolov26"],
             "tasks": ["seg", "instancesegmentation"],
             "versions": ["v1"],
             "class_path": "object_detectors.ultralytics_lmi.yolo.model:YoloSeg",
         },
         {
             "frameworks": ["ultralytics", "ultralytics8"],
-            "model_names": ["yolo", "yolov8", "yolov11"],
+            "model_names": ["yolo", "yolov8", "yolov11", "yolov26"],
             "tasks": ["obb", "orientedobjectdetection"],
             "versions": ["v1"],
             "class_path": "object_detectors.ultralytics_lmi.yolo.model:YoloObb",
         },
         {
             "frameworks": ["ultralytics", "ultralytics8"],
-            "model_names": ["yolo", "yolov8", "yolov11"],
+            "model_names": ["yolo", "yolov8", "yolov11", "yolov26"],
             "tasks": ["pose", "keypointdetection"],
             "versions": ["v1"],
             "class_path": "object_detectors.ultralytics_lmi.yolo.model:YoloPose",

@@ -92,7 +92,7 @@ def yolo_models_api():
             m = ObjectDetector(
                 metadata=dict(
                     version="v1",
-                    model_name="yolov8" if "yolov8n" in path else "yolov11",
+                    model_name="yolov8" if "yolov8n" in path else "yolov26" if "yolo26n" in path else "yolov11",
                     task=task,
                     framework="ultralytics",
                     model_path=path,
