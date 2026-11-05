@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from typing_extensions import Annotated
 
 
@@ -29,6 +29,8 @@ class Details(BaseModel):
     training_algorithm: str = ""
     confidence_threshold: Optional[float] = None
     classes: Optional[List[str]] = None
+    # KeypointDetection only: each class's keypoint name per model slot, parallel to `classes`
+    keypoint_labels: Optional[List[List[str]]] = None
 
 
 class ODConfigs(BaseModel):
@@ -77,10 +79,21 @@ class _ModelBase(BaseModel):
 
 
 class ODModel(_ModelBase):
-    # kpt model is currently only supported for static models.
-    # TODO: once kpt feature branch on FSP repo is merged to main, update kpt contract in this repo.
     model_type: Literal["ObjectDetection", "InstanceSegmentation", "OrientedObjectDetection", "KeypointDetection"]
     configs: ODConfigs
+
+    @model_validator(mode="after")
+    def _check_keypoint_layout(self) -> "ODModel":
+        labels, classes = self.details.keypoint_labels, self.details.classes
+        if self.model_type == "KeypointDetection" and labels is not None and (classes is None or len(labels) != len(classes)):
+            raise ValueError("details.keypoint_labels must have one layout per entry of details.classes")
+        return self
+
+    def get_metadata(self) -> Dict[str, Any]:
+        metadata = super().get_metadata()
+        if self.model_type == "KeypointDetection" and self.details.keypoint_labels is not None:
+            metadata["keypoint_names"] = dict(zip(self.details.classes, self.details.keypoint_labels))
+        return metadata
 
 
 class ADModel(_ModelBase):

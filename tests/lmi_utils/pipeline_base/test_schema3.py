@@ -131,3 +131,28 @@ def test_rotate_step_reaches_typed_config(schema3):
     cfg = parse_steps(ops)[0]
     assert isinstance(cfg, RotateConfig)
     assert cfg.angle == 90.0 and cfg.id == "r1"
+
+
+def test_keypoint_layout_reaches_metadata(schema3):
+    details = schema3["top_seg_foreground"]["details"]
+    schema3["top_seg_foreground"]["model_type"] = "KeypointDetection"
+    details["classes"] = ["board", "pin"]
+    details["keypoint_labels"] = [["tl", "br"], ["tip", "base"]]
+
+    meta = ModelCollectionV3.from_dict(schema3).get_metadata()["top_seg_foreground"]
+    assert meta["keypoint_names"] == {"board": ["tl", "br"], "pin": ["tip", "base"]}
+
+
+@pytest.mark.parametrize("classes, keypoint_labels", [(["board"], [["tl"], ["tip"]]), (None, [])])
+def test_keypoint_layout_count_must_match_classes(schema3, classes, keypoint_labels):
+    details = schema3["top_seg_foreground"]["details"]
+    schema3["top_seg_foreground"]["model_type"] = "KeypointDetection"
+    details["classes"], details["keypoint_labels"] = classes, keypoint_labels
+    with pytest.raises(ValidationError):
+        ModelCollectionV3.from_dict(schema3)
+
+
+def test_keypoint_layout_ignored_for_other_model_types(schema3):
+    schema3["top_seg_foreground"]["details"]["keypoint_labels"] = []
+    meta = ModelCollectionV3.from_dict(schema3).get_metadata()["top_seg_foreground"]
+    assert "keypoint_names" not in meta

@@ -137,11 +137,12 @@ OBB_CASE = ("OrientedObjectDetection", "yolo11n-obb.pt", (1024, 1024), "tests/as
 POSE_CASE = ("KeypointDetection", "yolo11n-pose.pt", (640, 640), "tests/assets/images/coco", "YoloPose")
 
 
-def _load_pipeline_from_manifest(model_type, weights, image_size, version="3"):
+def _load_pipeline_from_manifest(model_type, weights, image_size, version="3", details=None):
     """Load a v3 manifest through PipelineBase, the way the gadget does."""
     model_path = os.path.abspath(f"tests/assets/models/od/ultralytics/{weights}")
     steps = [{"type": "resize", "id": "r1", "configuration": {"height": image_size[0], "width": image_size[1], "preserve_aspect": True}}]
     model_roles = _build_od_model_roles(version, model_path, steps, model_type=model_type, image_size=image_size)
+    model_roles["mock-model"]["details"].update(details or {})
 
     pipeline = PipelineOD(version=version)
     pipeline.load(model_roles, {})
@@ -772,3 +773,97 @@ def test_add_prediction_box_shapes():
     assert obb["angle"] == pytest.approx(30.0, abs=1e-3)
     assert obb["x_max"] - obb["x_min"] == pytest.approx(40.0, abs=1e-3)
     assert obb["y_max"] - obb["y_min"] == pytest.approx(20.0, abs=1e-3)
+
+
+def test_add_prediction_links_keypoints_to_box():
+    """A box with keypoints becomes the box plus one keypoint per named slot, linked to the box."""
+    pipeline = PipelineOD(version="3")
+    pipeline.keypoint_names["kp-model"] = {"pin": ["tip", "base"]}
+    pipeline.add_prediction("boxes", [0, 0, 5, 5], 0.4, "other", 100, 100)
+
+    keypoints = torch.tensor([[12, 22, 0.9], [28, 38, 0.2], [0, 0, 0.0]])  # the last slot is padding
+    pipeline.add_prediction("boxes", [10, 20, 30, 40], 0.8, "pin", 100, 100, keypoints=keypoints, model_role="kp-model")
+
+    preds = pipeline.results["outputs"]["labels"]["content"]["predictions"]
+    assert [(p["id"], p["type"], p["label_id"]) for p in preds] == [
+        ("0", "Box", "other"),
+        ("1", "Box", "pin"),
+        ("2", "Keypoint", "tip"),
+        ("3", "Keypoint", "base"),
+    ]
+    assert [p["bounding_box_id"] for p in preds[2:]] == ["1", "1"]
+    assert [p["confidence"] for p in preds[2:]] == pytest.approx([0.9, 0.2])
+    # GoFactory rejects null optional keypoint fields
+    assert preds[2]["value"] == {"x": 12.0, "y": 22.0}
+    assert "bounding_box_id" not in preds[0]
+    assert pipeline.check_return_types()
+
+
+def test_add_prediction_rejects_bad_keypoints():
+    pipeline = PipelineOD(version="3")
+    pipeline.keypoint_names["kp-model"] = {"pin": ["tip", "base"]}
+    pts = [[0, 0], [1, 1]]
+    with pytest.raises(ValueError, match='attach to "boxes"'):
+        pipeline.add_prediction("polygons", [[0, 0], [1, 0], [1, 1]], 0.5, "pin", 10, 10, keypoints=pts, model_role="kp-model")
+    with pytest.raises(ValueError, match="loaded keypoint model"):
+        pipeline.add_prediction("boxes", [0, 0, 1, 1], 0.5, "pin", 10, 10, keypoints=pts)
+    with pytest.raises(ValueError, match="loaded keypoint model"):
+        pipeline.add_prediction("boxes", [0, 0, 1, 1], 0.5, "pin", 10, 10, keypoints=pts, model_role="other-model")
+    with pytest.raises(ValueError, match='class "bolt"'):
+        pipeline.add_prediction("boxes", [0, 0, 1, 1], 0.5, "bolt", 10, 10, keypoints=pts, model_role="kp-model")
+    with pytest.raises(ValueError, match="has 2 keypoints"):
+        pipeline.add_prediction("boxes", [0, 0, 1, 1], 0.5, "pin", 10, 10, keypoints=[[0, 0]], model_role="kp-model")
+    assert "labels" not in pipeline.results["outputs"]
+
+
+@pytest.mark.parametrize(
+    "weights, details, expected",
+    [
+        ("yolo26n-pose.pt", {}, ["nose", "left_eye", "right_eye"]),  # names stored in the weights
+        ("yolo11n-pose.pt", {}, ["0", "1", "2"]),  # older weights carry no names
+        ("yolo26n-pose.pt", {"classes": ["person"], "keypoint_labels": [[f"k{i}" for i in range(17)]]}, ["k0", "k1", "k2"]),
+    ],
+)
+def test_pipeline_pose_predictions_become_linked_keypoint_labels(weights, details, expected):
+    """A loaded pose role takes its keypoint names from model_roles, else the weights, and its detections upload as linked keypoints."""
+    _, _, image_size, image_dir, _ = POSE_CASE
+    pipeline = _load_pipeline_from_manifest("KeypointDetection", weights, image_size, details=details)
+    try:
+        assert pipeline.keypoint_names["mock-model"]["person"][:3] == expected
+
+        image = _read_images(image_dir, limit=1)[0]
+        processed, ops = pipeline.preprocess("mock-model", image)
+        raw, _ = pipeline.models["mock-model"].predict(processed, 0.25)
+        reverted = pipeline.revert_preprocess(raw, ops)
+
+        boxes, points = reverted["boxes"][0], reverted["points"][0]
+        assert len(boxes), "expected at least one detection"
+        h, w = image.shape[:2]
+        for box, kpts, label, score in zip(boxes, points, reverted["classes"][0], reverted["scores"][0]):
+            pipeline.add_prediction("boxes", box, float(score), str(label), h, w, keypoints=kpts, model_role="mock-model")
+
+        preds = pipeline.results["outputs"]["labels"]["content"]["predictions"]
+        box_ids = {p["id"] for p in preds if p["type"] == "Box"}
+        keypoints = [p for p in preds if p["type"] == "Keypoint"]
+        assert len(box_ids) == len(boxes) and len(keypoints) == 17 * len(boxes)
+        assert {p["bounding_box_id"] for p in keypoints} == box_ids
+        assert pipeline.check_return_types()
+
+        pipeline.clean_up()
+        assert pipeline.keypoint_names == {}
+    finally:
+        pipeline.clean_up()
+
+
+def test_pipeline_rejects_a_keypoint_layout_for_other_classes():
+    _, weights, image_size, _, _ = POSE_CASE
+    details = {"classes": ["Person"], "keypoint_labels": [[f"k{i}" for i in range(17)]]}
+    with pytest.raises(ValueError, match="keypoint layout classes"):
+        _load_pipeline_from_manifest("KeypointDetection", weights, image_size, details=details)
+
+
+def test_pipeline_rejects_a_keypoint_layout_larger_than_the_model():
+    _, weights, image_size, _, _ = POSE_CASE
+    details = {"classes": ["person"], "keypoint_labels": [[f"k{i}" for i in range(18)]]}
+    with pytest.raises(ValueError, match="exceed the model's 17 keypoint slots"):
+        _load_pipeline_from_manifest("KeypointDetection", weights, image_size, details=details)
