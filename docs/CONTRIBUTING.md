@@ -72,7 +72,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) to drive aut
 | `chore` | Build, CI, tooling, deps | — |
 | `perf` | Performance improvement | patch |
 
-Add `!` after the type/scope for **breaking changes** → major bump:
+Add `!` after the type/scope for **breaking changes** → minor bump (major only when the Release workflow runs with `major` checked):
 
 ```
 feat!: remove deprecated v1 anomaly API
