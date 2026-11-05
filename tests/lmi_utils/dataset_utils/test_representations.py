@@ -846,7 +846,7 @@ def test_dataset_json_format_preserved():
     assert kp_value["x"] == pytest.approx(30.0)
     assert kp_value["y"] == pytest.approx(40.0)
     assert kp_value["visibility"] == 1
-    assert "bounding_box_id" in kp_ann
+    assert "bounding_box_id" not in kp_ann  # unset
 
     # PolygonAnnotation value structure
     assert "Polygon" in anns_by_type
@@ -1037,3 +1037,14 @@ def test_file_annotations_source_id_defaults_to_none_and_survives_a_round_trip()
     restored = FileAnnotations.from_dict(json.loads(json.dumps(tile.to_dict())))
     assert restored.source_id == "1"
     assert FileAnnotations.from_dict(json.loads(json.dumps(plain.to_dict()))).source_id is None
+
+
+def test_to_dict_leaves_out_unset_keypoint_optionals():
+    """A None visibility or bounding_box_id is left out of the dict; other None fields stay."""
+    loose = KeypointAnnotation("k", "tip", Point2d(1, 2)).to_dict()
+    assert loose["value"] == {"x": 1.0, "y": 2.0}
+    assert "bounding_box_id" not in loose and loose["link"] is None
+
+    linked = KeypointAnnotation("k", "tip", Point2d(1, 2, visibility=1), bounding_box_id="b").to_dict()
+    assert linked["value"]["visibility"] == 1 and linked["bounding_box_id"] == "b"
+    assert KeypointAnnotation.from_dict({**loose, "type": "Keypoint"}).bounding_box_id is None

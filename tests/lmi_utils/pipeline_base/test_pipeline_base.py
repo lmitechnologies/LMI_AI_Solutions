@@ -1,5 +1,6 @@
 import logging
 import os
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -772,3 +773,74 @@ def test_add_prediction_box_shapes():
     assert obb["angle"] == pytest.approx(30.0, abs=1e-3)
     assert obb["x_max"] - obb["x_min"] == pytest.approx(40.0, abs=1e-3)
     assert obb["y_max"] - obb["y_min"] == pytest.approx(20.0, abs=1e-3)
+
+
+def test_add_prediction_links_keypoints_to_box():
+    """A box with keypoints becomes the box plus one keypoint per named slot, linked to the box."""
+    pipeline = PipelineOD(version="3")
+    pipeline.models["kp-model"] = SimpleNamespace(keypoint_layout={"pin": ["tip", "base"]})
+    pipeline.add_prediction("boxes", [0, 0, 5, 5], 0.4, "other", 100, 100)
+
+    keypoints = torch.tensor([[12, 22, 0.9], [28, 38, 0.2], [0, 0, 0.0]])  # the last slot is padding
+    pipeline.add_prediction("boxes", [10, 20, 30, 40], 0.8, "pin", 100, 100, keypoints=keypoints, model_role="kp-model")
+
+    preds = pipeline.results["outputs"]["labels"]["content"]["predictions"]
+    assert [(p["id"], p["type"], p["label_id"]) for p in preds] == [
+        ("0", "Box", "other"),
+        ("1", "Box", "pin"),
+        ("2", "Keypoint", "tip"),
+        ("3", "Keypoint", "base"),
+    ]
+    assert [p["bounding_box_id"] for p in preds[2:]] == ["1", "1"]
+    assert [p["confidence"] for p in preds[2:]] == pytest.approx([0.9, 0.2])
+    # GoFactory rejects null optional keypoint fields
+    assert preds[2]["value"] == {"x": 12.0, "y": 22.0}
+    assert "bounding_box_id" not in preds[0]
+    assert pipeline.check_return_types()
+
+
+def test_add_prediction_rejects_bad_keypoints():
+    pipeline = PipelineOD(version="3")
+    pipeline.models["kp-model"] = SimpleNamespace(keypoint_layout={"pin": ["tip", "base"]})
+    pipeline.models["box-model"] = SimpleNamespace()
+    pts = [[0, 0], [1, 1]]
+    with pytest.raises(ValueError, match='attach to "boxes"'):
+        pipeline.add_prediction("polygons", [[0, 0], [1, 0], [1, 1]], 0.5, "pin", 10, 10, keypoints=pts, model_role="kp-model")
+    for role, label in [(None, "pin"), ("other-model", "pin"), ("box-model", "pin"), ("kp-model", "bolt")]:
+        with pytest.raises(ValueError, match="not a loaded keypoint model"):
+            pipeline.add_prediction("boxes", [0, 0, 1, 1], 0.5, label, 10, 10, keypoints=pts, model_role=role)
+    assert "labels" not in pipeline.results["outputs"]
+
+
+@pytest.mark.parametrize(
+    "weights, expected",
+    [
+        ("yolo26n-pose.pt", ["nose", "left_eye", "right_eye"]),  # names stored in the weights
+        ("yolo11n-pose.pt", ["0", "1", "2"]),  # older weights carry no names
+    ],
+)
+def test_pipeline_pose_predictions_become_linked_keypoint_labels(weights, expected):
+    """A pose role's detections upload as boxes with linked keypoints, named by the weights' keypoint layout."""
+    _, _, image_size, image_dir, _ = POSE_CASE
+    pipeline = _load_pipeline_from_manifest("KeypointDetection", weights, image_size)
+    try:
+        image = _read_images(image_dir, limit=1)[0]
+        processed, ops = pipeline.preprocess("mock-model", image)
+        raw, _ = pipeline.models["mock-model"].predict(processed, 0.25)
+        reverted = pipeline.revert_preprocess(raw, ops)
+
+        boxes, points = reverted["boxes"][0], reverted["points"][0]
+        assert len(boxes), "expected at least one detection"
+        h, w = image.shape[:2]
+        for box, kpts, label, score in zip(boxes, points, reverted["classes"][0], reverted["scores"][0]):
+            pipeline.add_prediction("boxes", box, float(score), str(label), h, w, keypoints=kpts, model_role="mock-model")
+
+        preds = pipeline.results["outputs"]["labels"]["content"]["predictions"]
+        box_ids = {p["id"] for p in preds if p["type"] == "Box"}
+        keypoints = [p for p in preds if p["type"] == "Keypoint"]
+        assert len(box_ids) == len(boxes) and len(keypoints) == 17 * len(boxes)
+        assert {p["bounding_box_id"] for p in keypoints} == box_ids
+        assert [p["label_id"] for p in keypoints[:3]] == expected
+        assert pipeline.check_return_types()
+    finally:
+        pipeline.clean_up()

@@ -77,8 +77,6 @@ class _ModelBase(BaseModel):
 
 
 class ODModel(_ModelBase):
-    # kpt model is currently only supported for static models.
-    # TODO: once kpt feature branch on FSP repo is merged to main, update kpt contract in this repo.
     model_type: Literal["ObjectDetection", "InstanceSegmentation", "OrientedObjectDetection", "KeypointDetection"]
     configs: ODConfigs
 

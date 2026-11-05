@@ -48,9 +48,15 @@ def compact_json(obj: Any, indent: int = 2) -> str:
     )
 
 
+def _as_numpy(value: object) -> np.ndarray:
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().numpy()
+    return np.asarray(value)
+
+
 def _box_value(value: object) -> Box:
     """A 4-corner OBB becomes a rotated box; anything else is xyxy with an optional trailing angle."""
-    arr = np.asarray(value, dtype=float)
+    arr = _as_numpy(value).astype(float)
     if arr.size == 8:
         return Polygon(points=arr.reshape(4, 2)).to_rbox()
     return Box(x_min=arr[0], y_min=arr[1], x_max=arr[2], y_max=arr[3], angle=arr[4] if arr.size > 4 else 0)
@@ -377,9 +383,15 @@ class PipelineBase(metaclass=ABCMeta):
         label: str,
         image_height: int,
         image_width: int,
-        **kwargs: Any,
+        keypoints: Optional[object] = None,
+        model_role: Optional[str] = None,
+        key: str = "outputs",
+        sub_key: str = "labels",
     ) -> None:
         """add a single prediction to results for uploading to Label Studio.
+
+        A keypoint model's box takes its ``keypoints``: each becomes a keypoint linked to the box by ``bounding_box_id``,
+        named by its slot in the model's ``keypoint_layout[label]``. Slots past the layout are padding and are skipped.
 
         Args:
             pred_type (str): the type of the predictions to be updated, e.g., 'boxes', 'polygons', 'masks', 'keypoints'.
@@ -388,32 +400,35 @@ class PipelineBase(metaclass=ABCMeta):
             label (str): the label of the prediction.
             image_height (int): the height of the image that the prediction is made on.
             image_width (int): the width of the image that the prediction is made on.
-            kwargs (dict): additional arguments to be passed to the _add_predictions method, such as 'key' and 'sub_key'.
-        """
-        if pred_type not in self._PREDICTION_HANDLERS:
-            raise ValueError(f'Unsupported prediction type: "{pred_type}"')
-
-        predictions = {pred_type: {"classes": [label], "objects": [value], "confidences": [score]}}
-        self._add_predictions(predictions, image_height, image_width, **kwargs)
-
-    def _add_predictions(
-        self,
-        predictions: dict,
-        image_height: int,
-        image_width: int,
-        key="outputs",
-        sub_key="labels",
-    ) -> None:
-        """a helper function to add a batch of predictions to results for Label Studio.
-
-        Args:
-            predictions (dict): a dictionary of predictions with one of these keys: boxes, polygons, masks and keypoints. e.g.,
-                {"boxes": {"classes": [], "objects": [], "confidences": []}}.
-            image_height (int): the height of the image.
-            image_width (int): the width of the image.
+            keypoints (object, optional): 'boxes' only. [K, 2] or [K, 3] keypoints in slot order; a third column is the
+                keypoint confidence. Requires model_role.
+            model_role (str, optional): the keypoint model role that made the prediction; its layout names the slots.
             key (str, optional): the key of the self.results. Defaults to 'outputs'.
             sub_key (str, optional): the key of the sub dictionary to be updated. Defaults to 'labels'.
         """
+        handler = self._PREDICTION_HANDLERS.get(pred_type)
+        if handler is None:
+            raise ValueError(f'Unsupported prediction type: "{pred_type}"')
+        slot_names, points = [], []
+        if keypoints is not None:
+            if pred_type != "boxes":
+                raise ValueError(f'keypoints attach to "boxes", not "{pred_type}"')
+            layout = getattr(self.models.get(model_role), "keypoint_layout", None)
+            if layout is None or str(label) not in layout:
+                raise ValueError(f'model_role "{model_role}" is not a loaded keypoint model with class "{label}"')
+            slot_names, points = layout[str(label)], _as_numpy(keypoints).astype(float)
+
+        prediction_list = self._prediction_list(image_height, image_width, key, sub_key)
+        box_id = self._append_annotation(prediction_list, handler["value_factory"](value), str(label), float(score), handler["type"])
+        for name, pt in zip(slot_names, points):
+            # the third column is a confidence, not a visibility flag
+            confidence = float(pt[2]) if len(pt) > 2 else None
+            self._append_annotation(
+                prediction_list, Point2d(x=pt[0], y=pt[1]), str(name), confidence, AnnotationType.KEYPOINT.value, bounding_box_id=box_id
+            )
+
+    def _prediction_list(self, image_height: int, image_width: int, key: str, sub_key: str) -> List[dict]:
+        """The predictions list of the label entry at results[key][sub_key], created for this image size if absent."""
         default_entry = {
             "type": "object",
             "format": "json",
@@ -436,41 +451,23 @@ class PipelineBase(metaclass=ABCMeta):
         ch, cw = content["height"], content["width"]
         if ch != image_height or cw != image_width:
             raise ValueError(f"Image size mismatch: {ch}x{cw} != {image_height}x{image_width}")
+        return content["predictions"]
 
-        prediction_list = content["predictions"]
-        for pred_type, handler in self._PREDICTION_HANDLERS.items():
-            if pred_type in predictions:
-                data = predictions[pred_type]
-                self._validate_prediction_data(pred_type, data)
-
-                for obj, cls, conf in zip(data["objects"], data["classes"], data["confidences"]):
-                    value_object = handler["value_factory"](obj)
-                    annotation = Annotation(
-                        id=str(len(prediction_list)),
-                        value=value_object,
-                        label_id=cls,
-                        confidence=float(conf),
-                        type=handler["type"],
-                    )
-                    prediction_list.append(annotation.to_dict())
-
-    def _validate_prediction_data(self, pred_type: str, data: dict) -> None:
-        """validate the structure and lengths of prediction data.
-
-        Args:
-            pred_type (str): the type of the prediction.
-            data (dict): the prediction data to validate.
-
-        Raises:
-            ValueError: if the structure or lengths are invalid.
-        """
-        required_keys = ["objects", "classes", "confidences"]
-        if not all(k in data for k in required_keys):
-            raise ValueError(f"Missing required keys for {pred_type}: {required_keys}")
-
-        # Validate lengths match
-        if not (len(data["classes"]) == len(data["confidences"]) == len(data["objects"])):
-            raise ValueError(f"Array length of 'classes', 'confidences' and 'objects' mismatch for {pred_type}.")
+    @staticmethod
+    def _append_annotation(
+        prediction_list: List[dict],
+        value: object,
+        label: str,
+        confidence: Optional[float],
+        ann_type: str,
+        bounding_box_id: Optional[str] = None,
+    ) -> str:
+        """Append one annotation dict and return its id."""
+        entry = Annotation(id=str(len(prediction_list)), value=value, label_id=label, confidence=confidence, type=ann_type).to_dict()
+        if bounding_box_id is not None:
+            entry["bounding_box_id"] = bounding_box_id
+        prediction_list.append(entry)
+        return entry["id"]
 
     def init_results(self) -> None:
         """

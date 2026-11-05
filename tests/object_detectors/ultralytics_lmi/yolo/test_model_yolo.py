@@ -473,6 +473,8 @@ def test_pose_kpt_names_come_from_the_pt(yolo_models):
     assert named.kpt_names[0][:3] == ["nose", "left_eye", "right_eye"]
     assert len(named.kpt_names[0]) == named.model.kpt_shape[0]
     assert unnamed.kpt_names == {0: [str(i) for i in range(unnamed.model.kpt_shape[0])]}
+    assert named.keypoint_layout == {"person": named.kpt_names[0]}
+    assert named.n_kpts == named.model.kpt_shape[0]
 
 
 def test_pose_kpt_names_survive_onnx_export(yolo_models, tmp_path):
@@ -722,3 +724,9 @@ def test_onnx_export_matches_pt(cls, path, task, imgsz, images, tmp_path, reques
             a, b = np.asarray(ref["masks"][i]) > 0, np.asarray(out["masks"][i]) > 0
             iou = (a & b).sum((1, 2)) / np.maximum((a | b).sum((1, 2)), 1)
             assert (iou >= 0.99).all(), f"image {i}: mask IoU {iou.min():.4f} < 0.99"
+
+
+def test_pose_without_kpt_names_warns(caplog):
+    with caplog.at_level(logging.WARNING, logger="yolo-pose"):
+        YoloPose(OD_POSE_MODELS[1], device="cpu")
+    assert "no keypoint names" in caplog.text

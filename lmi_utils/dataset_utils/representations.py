@@ -57,10 +57,18 @@ class AnnotationType(enum.Enum):
     KEYPOINT = "Keypoint"
 
 
+# GoFactory parses a keypoint with a null visibility or bounding_box_id as an unknown annotation
+_OMIT_IF_NONE = frozenset({"visibility", "bounding_box_id"})
+
+
+def _dict_without_unset_optionals(items) -> dict:
+    return {k: v for k, v in items if v is not None or k not in _OMIT_IF_NONE}
+
+
 class Base:
     def to_dict(self) -> dict:
-        """Convert the dataclass to a dictionary."""
-        return asdict(self)
+        """Convert the dataclass to a dictionary; a None visibility or bounding_box_id is left out."""
+        return asdict(self, dict_factory=_dict_without_unset_optionals)
 
     def to_json(self) -> str:
         """Convert the dataclass to a JSON string."""
