@@ -724,3 +724,9 @@ def test_onnx_export_matches_pt(cls, path, task, imgsz, images, tmp_path, reques
             a, b = np.asarray(ref["masks"][i]) > 0, np.asarray(out["masks"][i]) > 0
             iou = (a & b).sum((1, 2)) / np.maximum((a | b).sum((1, 2)), 1)
             assert (iou >= 0.99).all(), f"image {i}: mask IoU {iou.min():.4f} < 0.99"
+
+
+def test_pose_without_kpt_names_warns(caplog):
+    with caplog.at_level(logging.WARNING, logger="yolo-pose"):
+        YoloPose(OD_POSE_MODELS[1], device="cpu")
+    assert "no keypoint names" in caplog.text

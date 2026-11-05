@@ -312,6 +312,7 @@ class YoloPose(Yolo):
             # a .pt keeps them on the network, which AutoBackend does not copy up
             names = getattr(getattr(self.model, "model", None), "kpt_names", None)
         if names is None:
+            self.logger.warning("The model carries no keypoint names; its keypoints are named by slot number")
             slots = [str(i) for i in range(self.model.kpt_shape[0])]
             return {int(c): list(slots) for c in self.model.names}
         return {int(c): [str(n) for n in slot_names] for c, slot_names in names.items()}

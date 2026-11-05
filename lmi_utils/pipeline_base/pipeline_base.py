@@ -105,12 +105,9 @@ class PipelineBase(metaclass=ABCMeta):
             version: the gadget version. It determines which model_roles handler to be used.
             preprocessor: an instance of Preprocessor class for preprocessing inputs.
             reconstructor: an instance of Reconstructor class for reconstructing outputs.
-            keypoint_names: per keypoint model role, each class's keypoint name per model slot, e.g.,
-                {model_role: {class_name: ['tip', 'base']}}
         """
         self.models = collections.OrderedDict()
         self._preprocessing = collections.OrderedDict()
-        self.keypoint_names: Dict[str, Dict[str, List[str]]] = {}
         self.version = str(kwargs.get("version", "3"))
         self.preprocessor = Preprocessor()
         self.reconstructor = Reconstructor()
@@ -148,20 +145,6 @@ class PipelineBase(metaclass=ABCMeta):
             raise ValueError(f"model_type '{model_type}' is not supported")
 
         self.models[model_name] = model_class(meta_copy, **kwargs)
-
-    def _resolve_keypoint_names(self, model_role: str, metadata: dict) -> Dict[str, List[str]]:
-        """Class name -> keypoint name per model slot: the layout GoFactory recorded at training, else the one in the weights."""
-        model = self.models[model_role]
-        names = metadata.get("keypoint_names") or model.keypoint_layout
-
-        model_classes = {str(c) for c in model.keypoint_layout}
-        if {str(c) for c in names} != model_classes:
-            raise ValueError(f"[{model_role}] keypoint layout classes {sorted(names)} != model classes {sorted(model_classes)}")
-        n_slots = model.n_kpts
-        oversized = {c: len(slots) for c, slots in names.items() if len(slots) > n_slots}
-        if oversized:
-            raise ValueError(f"[{model_role}] keypoint layouts {oversized} exceed the model's {n_slots} keypoint slots")
-        return {str(c): [str(n) for n in slots] for c, slots in names.items()}
 
     def _parse_model_roles(self, model_roles: dict, version: Optional[str] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """Parse model_roles by version and convert it to match the required format for initializing AIS repo models.
@@ -232,8 +215,6 @@ class PipelineBase(metaclass=ABCMeta):
                     continue
 
                 self._load_model(model_key, model_meta, **kwargs)
-                if model_meta["model_type"].lower() == "keypointdetection":
-                    self.keypoint_names[model_key] = self._resolve_keypoint_names(model_key, model_meta)
 
                 # Empty preprocessing is legal; the schemas emit an entry (possibly []) for every role.
                 self._preprocessing[model_key] = parse_steps(global_preprocessing.get(model_key, []))
@@ -410,7 +391,7 @@ class PipelineBase(metaclass=ABCMeta):
         """add a single prediction to results for uploading to Label Studio.
 
         A keypoint model's box takes its ``keypoints``: each becomes a keypoint linked to the box by ``bounding_box_id``,
-        named by its slot in ``self.keypoint_names[model_role][label]``. Slots past the layout are padding and are skipped.
+        named by its slot in the model's ``keypoint_layout[label]``. Slots past the layout are padding and are skipped.
 
         Args:
             pred_type (str): the type of the predictions to be updated, e.g., 'boxes', 'polygons', 'masks', 'keypoints'.
@@ -430,7 +411,12 @@ class PipelineBase(metaclass=ABCMeta):
             raise ValueError(f'Unsupported prediction type: "{pred_type}"')
         slot_names, points = [], []
         if keypoints is not None:
-            slot_names, points = self._named_slots(pred_type, keypoints, model_role, str(label))
+            if pred_type != "boxes":
+                raise ValueError(f'keypoints attach to "boxes", not "{pred_type}"')
+            layout = getattr(self.models.get(model_role), "keypoint_layout", None)
+            if layout is None or str(label) not in layout:
+                raise ValueError(f'model_role "{model_role}" is not a loaded keypoint model with class "{label}"')
+            slot_names, points = layout[str(label)], _as_numpy(keypoints).astype(float)
 
         prediction_list = self._prediction_list(image_height, image_width, key, sub_key)
         box_id = self._append_annotation(prediction_list, handler["value_factory"](value), str(label), float(score), handler["type"])
@@ -440,21 +426,6 @@ class PipelineBase(metaclass=ABCMeta):
             self._append_annotation(
                 prediction_list, Point2d(x=pt[0], y=pt[1]), str(name), confidence, AnnotationType.KEYPOINT.value, bounding_box_id=box_id
             )
-
-    def _named_slots(self, pred_type: str, keypoints: object, model_role: Optional[str], label: str) -> Tuple[List[str], np.ndarray]:
-        if pred_type != "boxes":
-            raise ValueError(f'keypoints attach to "boxes", not "{pred_type}"')
-        if model_role not in self.keypoint_names:
-            raise ValueError(f"keypoints need the model_role of a loaded keypoint model, got: {model_role}")
-        slot_names = self.keypoint_names[model_role].get(label)
-        if slot_names is None:
-            raise ValueError(f'No keypoint layout for class "{label}" of model role: {model_role}')
-        points = _as_numpy(keypoints).astype(float)
-        if points.ndim != 2 or points.shape[1] not in (2, 3):
-            raise ValueError(f"keypoints must be [K, 2] or [K, 3], got shape {points.shape}")
-        if len(points) < len(slot_names):
-            raise ValueError(f'class "{label}" has {len(slot_names)} keypoints but the prediction has {len(points)}')
-        return slot_names, points
 
     def _prediction_list(self, image_height: int, image_width: int, key: str, sub_key: str) -> List[dict]:
         """The predictions list of the label entry at results[key][sub_key], created for this image size if absent."""
@@ -584,7 +555,6 @@ class PipelineBase(metaclass=ABCMeta):
 
         self.init_results()
         self._preprocessing.clear()
-        self.keypoint_names.clear()
         self.logger.info("preprocessing is cleaned up")
 
         gc.collect()

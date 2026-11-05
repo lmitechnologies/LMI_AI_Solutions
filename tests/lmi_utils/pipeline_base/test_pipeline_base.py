@@ -1,5 +1,6 @@
 import logging
 import os
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -137,12 +138,11 @@ OBB_CASE = ("OrientedObjectDetection", "yolo11n-obb.pt", (1024, 1024), "tests/as
 POSE_CASE = ("KeypointDetection", "yolo11n-pose.pt", (640, 640), "tests/assets/images/coco", "YoloPose")
 
 
-def _load_pipeline_from_manifest(model_type, weights, image_size, version="3", details=None):
+def _load_pipeline_from_manifest(model_type, weights, image_size, version="3"):
     """Load a v3 manifest through PipelineBase, the way the gadget does."""
     model_path = os.path.abspath(f"tests/assets/models/od/ultralytics/{weights}")
     steps = [{"type": "resize", "id": "r1", "configuration": {"height": image_size[0], "width": image_size[1], "preserve_aspect": True}}]
     model_roles = _build_od_model_roles(version, model_path, steps, model_type=model_type, image_size=image_size)
-    model_roles["mock-model"]["details"].update(details or {})
 
     pipeline = PipelineOD(version=version)
     pipeline.load(model_roles, {})
@@ -778,7 +778,7 @@ def test_add_prediction_box_shapes():
 def test_add_prediction_links_keypoints_to_box():
     """A box with keypoints becomes the box plus one keypoint per named slot, linked to the box."""
     pipeline = PipelineOD(version="3")
-    pipeline.keypoint_names["kp-model"] = {"pin": ["tip", "base"]}
+    pipeline.models["kp-model"] = SimpleNamespace(keypoint_layout={"pin": ["tip", "base"]})
     pipeline.add_prediction("boxes", [0, 0, 5, 5], 0.4, "other", 100, 100)
 
     keypoints = torch.tensor([[12, 22, 0.9], [28, 38, 0.2], [0, 0, 0.0]])  # the last slot is padding
@@ -801,36 +801,29 @@ def test_add_prediction_links_keypoints_to_box():
 
 def test_add_prediction_rejects_bad_keypoints():
     pipeline = PipelineOD(version="3")
-    pipeline.keypoint_names["kp-model"] = {"pin": ["tip", "base"]}
+    pipeline.models["kp-model"] = SimpleNamespace(keypoint_layout={"pin": ["tip", "base"]})
+    pipeline.models["box-model"] = SimpleNamespace()
     pts = [[0, 0], [1, 1]]
     with pytest.raises(ValueError, match='attach to "boxes"'):
         pipeline.add_prediction("polygons", [[0, 0], [1, 0], [1, 1]], 0.5, "pin", 10, 10, keypoints=pts, model_role="kp-model")
-    with pytest.raises(ValueError, match="loaded keypoint model"):
-        pipeline.add_prediction("boxes", [0, 0, 1, 1], 0.5, "pin", 10, 10, keypoints=pts)
-    with pytest.raises(ValueError, match="loaded keypoint model"):
-        pipeline.add_prediction("boxes", [0, 0, 1, 1], 0.5, "pin", 10, 10, keypoints=pts, model_role="other-model")
-    with pytest.raises(ValueError, match='class "bolt"'):
-        pipeline.add_prediction("boxes", [0, 0, 1, 1], 0.5, "bolt", 10, 10, keypoints=pts, model_role="kp-model")
-    with pytest.raises(ValueError, match="has 2 keypoints"):
-        pipeline.add_prediction("boxes", [0, 0, 1, 1], 0.5, "pin", 10, 10, keypoints=[[0, 0]], model_role="kp-model")
+    for role, label in [(None, "pin"), ("other-model", "pin"), ("box-model", "pin"), ("kp-model", "bolt")]:
+        with pytest.raises(ValueError, match="not a loaded keypoint model"):
+            pipeline.add_prediction("boxes", [0, 0, 1, 1], 0.5, label, 10, 10, keypoints=pts, model_role=role)
     assert "labels" not in pipeline.results["outputs"]
 
 
 @pytest.mark.parametrize(
-    "weights, details, expected",
+    "weights, expected",
     [
-        ("yolo26n-pose.pt", {}, ["nose", "left_eye", "right_eye"]),  # names stored in the weights
-        ("yolo11n-pose.pt", {}, ["0", "1", "2"]),  # older weights carry no names
-        ("yolo26n-pose.pt", {"classes": ["person"], "keypoint_labels": [[f"k{i}" for i in range(17)]]}, ["k0", "k1", "k2"]),
+        ("yolo26n-pose.pt", ["nose", "left_eye", "right_eye"]),  # names stored in the weights
+        ("yolo11n-pose.pt", ["0", "1", "2"]),  # older weights carry no names
     ],
 )
-def test_pipeline_pose_predictions_become_linked_keypoint_labels(weights, details, expected):
-    """A loaded pose role takes its keypoint names from model_roles, else the weights, and its detections upload as linked keypoints."""
+def test_pipeline_pose_predictions_become_linked_keypoint_labels(weights, expected):
+    """A pose role's detections upload as boxes with linked keypoints, named by the weights' keypoint layout."""
     _, _, image_size, image_dir, _ = POSE_CASE
-    pipeline = _load_pipeline_from_manifest("KeypointDetection", weights, image_size, details=details)
+    pipeline = _load_pipeline_from_manifest("KeypointDetection", weights, image_size)
     try:
-        assert pipeline.keypoint_names["mock-model"]["person"][:3] == expected
-
         image = _read_images(image_dir, limit=1)[0]
         processed, ops = pipeline.preprocess("mock-model", image)
         raw, _ = pipeline.models["mock-model"].predict(processed, 0.25)
@@ -847,23 +840,7 @@ def test_pipeline_pose_predictions_become_linked_keypoint_labels(weights, detail
         keypoints = [p for p in preds if p["type"] == "Keypoint"]
         assert len(box_ids) == len(boxes) and len(keypoints) == 17 * len(boxes)
         assert {p["bounding_box_id"] for p in keypoints} == box_ids
+        assert [p["label_id"] for p in keypoints[:3]] == expected
         assert pipeline.check_return_types()
-
-        pipeline.clean_up()
-        assert pipeline.keypoint_names == {}
     finally:
         pipeline.clean_up()
-
-
-def test_pipeline_rejects_a_keypoint_layout_for_other_classes():
-    _, weights, image_size, _, _ = POSE_CASE
-    details = {"classes": ["Person"], "keypoint_labels": [[f"k{i}" for i in range(17)]]}
-    with pytest.raises(ValueError, match="keypoint layout classes"):
-        _load_pipeline_from_manifest("KeypointDetection", weights, image_size, details=details)
-
-
-def test_pipeline_rejects_a_keypoint_layout_larger_than_the_model():
-    _, weights, image_size, _, _ = POSE_CASE
-    details = {"classes": ["person"], "keypoint_labels": [[f"k{i}" for i in range(18)]]}
-    with pytest.raises(ValueError, match="exceed the model's 17 keypoint slots"):
-        _load_pipeline_from_manifest("KeypointDetection", weights, image_size, details=details)
