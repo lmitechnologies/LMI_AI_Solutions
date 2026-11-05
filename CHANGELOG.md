@@ -1,3 +1,28 @@
+## [2.1.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v2.0.1...v2.1.0) (2026-11-05)
+
+### ⚠ BREAKING CHANGES
+
+* **od:** pose predictions.json labels keypoints by slot name instead of their box's class
+* **cls:** support tiling for classifier models (#469)
+
+### Features
+
+* **cls:** add yolov26 to registered models ([#467](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/467)) ([5b76483](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/5b7648381964c9f33871d8987692b402f68a122a))
+* **cls:** support tiling for classifier models ([#469](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/469)) ([b77aef1](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/b77aef1e253b2fd2fcaec42ddc8d125a1e4d6f23))
+* **labels:** make json the hub label format and add json_to_lst ([#468](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/468)) ([af46b45](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/af46b45badf1f93d04a0e2af875d701424988701))
+* **od:** carry keypoint names through pose export, YoloPose and predictions.json ([#474](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/474)) ([cd36934](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/cd36934bc125a4584ab8feddda9ca755c33a0e62))
+* **od:** train detectron2 on the json_to_coco layout ([#471](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/471)) ([7d97508](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/7d975088d2196518460300ddb0f4f6b66a780aed))
+
+### Bug Fixes
+
+* **ad:** default tile overlap mode to average in test CLI and evaluate ([#461](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/461)) ([52770fa](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/52770fa63c3bebb1ace4dd2f57ae41d87a80072e))
+* **ad:** log anomalib v2 training metrics to TensorBoard ([#459](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/459)) ([848692e](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/848692ee6daf08e32411063224726b1f336bfaa7))
+* **labels:** index json_to_yolo val classes by the train class map ([#462](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/462)) ([93c01f2](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/93c01f2ec0257fdce63bfc0818feaf6b5afa0ec8))
+* **labels:** keep keypoint-to-box links through Label Studio conversions ([#472](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/472)) ([7d4ec87](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/7d4ec878fc947cf7a0556ea47796f7b007d4db2b))
+* **labels:** leave keypoint labels out of the class map count in json_to_yolo ([#477](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/477)) ([5262cd2](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/5262cd286f19355d5a7b40b7a8ab6af967c85292))
+* **od:** drop flipped YOLO boxes after NMS ([#460](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/460)) ([9db9bfa](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/9db9bfa1ed1426bc6b0a3f07060202a969c97a62))
+* **od:** keep weak detections out of tile merge groups ([#466](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/466)) ([753f9bd](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/753f9bd97ce8e844383a8d9cfcfa72c79aed1c5a))
+
 ## [2.0.1](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v2.0.0...v2.0.1) (2026-10-19)
 
 ### Bug Fixes
