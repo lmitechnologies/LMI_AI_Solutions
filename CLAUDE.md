@@ -44,4 +44,4 @@ docker compose -f tests/docker-compose.yaml run --rm --no-deps test_ais_ad_v2 ba
 
 ## Commits
 
-Use Conventional Commits (`feat:`, `fix:`, `chore:`, etc.) — prefixes drive the automated release (`.releaserc.json`).
+Use Conventional Commits (`feat:`, `fix:`, `chore:`, etc.) — prefixes drive the automated release (`release.config.cjs`).
