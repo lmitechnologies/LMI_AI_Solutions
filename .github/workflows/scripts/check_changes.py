@@ -101,10 +101,10 @@ def resolve_base(event_name: str, base_ref: str, before: str) -> str:
 
 
 def get_changed_files(base: str) -> list[str]:
-    result = subprocess.run(["git", "diff", "--name-only", base, "HEAD"], capture_output=True, text=True)
+    result = subprocess.run(["git", "diff", "--name-only", "--no-renames", base, "HEAD"], capture_output=True, text=True)
     if result.returncode != 0:
         print(f"⚠️  Could not diff against {base} (force push may have orphaned the commit) — falling back to HEAD~1.", flush=True)
-        result = run(["git", "diff", "--name-only", "HEAD~1", "HEAD"])
+        result = run(["git", "diff", "--name-only", "--no-renames", "HEAD~1", "HEAD"])
 
     return [line for line in result.stdout.splitlines() if line.strip()]
 
