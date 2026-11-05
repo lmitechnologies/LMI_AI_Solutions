@@ -20,12 +20,12 @@ import tempfile
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
-# Configuration — edit these to change what counts as "docs only"
+# Configuration — edit these to change what counts as non-code
 # ---------------------------------------------------------------------------
 
 # Files matching any of these patterns are considered non-code and will NOT
 # trigger the test suite on their own.
-DOCS_PATTERNS: list[re.Pattern] = [
+NON_CODE_PATTERNS: list[re.Pattern] = [
     re.compile(r"^docs/"),
     re.compile(r"\.md$"),
     re.compile(r"^\.gitignore$"),
@@ -127,7 +127,7 @@ def lock_changes_images(base: str) -> bool:
 
 def is_code_file(path: str) -> bool:
     """Return True if the file should trigger the test suite."""
-    if any(p.search(path) for p in DOCS_PATTERNS):
+    if any(p.search(path) for p in NON_CODE_PATTERNS):
         return False
 
     if any(p.match(path) for p in GITHUB_DIR_PATTERNS):
