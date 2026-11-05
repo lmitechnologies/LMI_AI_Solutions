@@ -473,6 +473,8 @@ def test_pose_kpt_names_come_from_the_pt(yolo_models):
     assert named.kpt_names[0][:3] == ["nose", "left_eye", "right_eye"]
     assert len(named.kpt_names[0]) == named.model.kpt_shape[0]
     assert unnamed.kpt_names == {0: [str(i) for i in range(unnamed.model.kpt_shape[0])]}
+    assert named.keypoint_layout == {"person": named.kpt_names[0]}
+    assert named.n_kpts == named.model.kpt_shape[0]
 
 
 def test_pose_kpt_names_survive_onnx_export(yolo_models, tmp_path):

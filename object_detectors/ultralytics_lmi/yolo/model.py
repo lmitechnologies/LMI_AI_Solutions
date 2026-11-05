@@ -316,6 +316,16 @@ class YoloPose(Yolo):
             return {int(c): list(slots) for c in self.model.names}
         return {int(c): [str(n) for n in slot_names] for c, slot_names in names.items()}
 
+    @property
+    def keypoint_layout(self) -> Dict[str, List[str]]:
+        """Class name -> keypoint name per slot, for the classes the model has."""
+        return {self.model.names[c]: slots for c, slots in self.kpt_names.items() if c in self.model.names}
+
+    @property
+    def n_kpts(self) -> int:
+        """Keypoint slots per detection."""
+        return self.model.kpt_shape[0]
+
     def construct_result(self, pred, img, orig_img, conf, **kwargs):
         """Constructs a Results object from the model prediction.
 

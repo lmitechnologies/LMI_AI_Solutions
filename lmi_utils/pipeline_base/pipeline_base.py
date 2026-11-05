@@ -152,15 +152,12 @@ class PipelineBase(metaclass=ABCMeta):
     def _resolve_keypoint_names(self, model_role: str, metadata: dict) -> Dict[str, List[str]]:
         """Class name -> keypoint name per model slot: the layout GoFactory recorded at training, else the one in the weights."""
         model = self.models[model_role]
-        network = model.model
-        names = metadata.get("keypoint_names")
-        if names is None:
-            names = {network.names[c]: slots for c, slots in model.kpt_names.items()}
+        names = metadata.get("keypoint_names") or model.keypoint_layout
 
-        model_classes = {str(c) for c in network.names.values()}
+        model_classes = {str(c) for c in model.keypoint_layout}
         if {str(c) for c in names} != model_classes:
             raise ValueError(f"[{model_role}] keypoint layout classes {sorted(names)} != model classes {sorted(model_classes)}")
-        n_slots = network.kpt_shape[0]
+        n_slots = model.n_kpts
         oversized = {c: len(slots) for c, slots in names.items() if len(slots) > n_slots}
         if oversized:
             raise ValueError(f"[{model_role}] keypoint layouts {oversized} exceed the model's {n_slots} keypoint slots")
@@ -438,8 +435,8 @@ class PipelineBase(metaclass=ABCMeta):
         prediction_list = self._prediction_list(image_height, image_width, key, sub_key)
         box_id = self._append_annotation(prediction_list, handler["value_factory"](value), str(label), float(score), handler["type"])
         for name, pt in zip(slot_names, points):
-            confidence = float(pt[2]) if len(pt) > 2 else None
             # the third column is a confidence, not a visibility flag
+            confidence = float(pt[2]) if len(pt) > 2 else None
             self._append_annotation(
                 prediction_list, Point2d(x=pt[0], y=pt[1]), str(name), confidence, AnnotationType.KEYPOINT.value, bounding_box_id=box_id
             )
@@ -487,14 +484,17 @@ class PipelineBase(metaclass=ABCMeta):
 
     @staticmethod
     def _append_annotation(
-        prediction_list: List[dict], value: object, label: str, confidence: Optional[float], ann_type: str, **extra: Any
+        prediction_list: List[dict],
+        value: object,
+        label: str,
+        confidence: Optional[float],
+        ann_type: str,
+        bounding_box_id: Optional[str] = None,
     ) -> str:
         """Append one annotation dict and return its id."""
         entry = Annotation(id=str(len(prediction_list)), value=value, label_id=label, confidence=confidence, type=ann_type).to_dict()
-        if ann_type == AnnotationType.KEYPOINT.value:
-            # GoFactory parses a keypoint with a null visibility or bounding_box_id as an unknown annotation
-            entry["value"] = {k: v for k, v in entry["value"].items() if v is not None}
-        entry.update({k: v for k, v in extra.items() if v is not None})
+        if bounding_box_id is not None:
+            entry["bounding_box_id"] = bounding_box_id
         prediction_list.append(entry)
         return entry["id"]
 

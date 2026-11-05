@@ -143,7 +143,10 @@ def test_keypoint_layout_reaches_metadata(schema3):
     assert meta["keypoint_names"] == {"board": ["tl", "br"], "pin": ["tip", "base"]}
 
 
-@pytest.mark.parametrize("classes, keypoint_labels", [(["board"], [["tl"], ["tip"]]), (None, [])])
+@pytest.mark.parametrize(
+    "classes, keypoint_labels",
+    [(["board"], [["tl"], ["tip"]]), (None, []), (["pin", "pin"], [["tip"], ["base"]])],
+)
 def test_keypoint_layout_count_must_match_classes(schema3, classes, keypoint_labels):
     details = schema3["top_seg_foreground"]["details"]
     schema3["top_seg_foreground"]["model_type"] = "KeypointDetection"

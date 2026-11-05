@@ -85,8 +85,11 @@ class ODModel(_ModelBase):
     @model_validator(mode="after")
     def _check_keypoint_layout(self) -> "ODModel":
         labels, classes = self.details.keypoint_labels, self.details.classes
-        if self.model_type == "KeypointDetection" and labels is not None and (classes is None or len(labels) != len(classes)):
-            raise ValueError("details.keypoint_labels must have one layout per entry of details.classes")
+        if self.model_type == "KeypointDetection" and labels is not None:
+            if classes is None or len(labels) != len(classes):
+                raise ValueError("details.keypoint_labels must have one layout per entry of details.classes")
+            if len(set(classes)) != len(classes):
+                raise ValueError("details.classes must be unique to key the keypoint layouts")
         return self
 
     def get_metadata(self) -> Dict[str, Any]:
