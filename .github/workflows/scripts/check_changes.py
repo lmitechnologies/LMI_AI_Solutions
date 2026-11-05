@@ -31,6 +31,7 @@ DOCS_PATTERNS: list[re.Pattern] = [
     re.compile(r"^\.gitignore$"),
     re.compile(r"^\.gitattributes$"),
     re.compile(r"^\.pre-commit-config\.yaml$"),
+    re.compile(r"^release\.config\.cjs$"),
 ]
 
 # Files whose change always requires rebuilding the CI test Docker images.
