@@ -1,3 +1,10 @@
+## [2.2.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v2.1.0...v2.2.0) (2026-11-09)
+
+### Features
+
+* **od:** add yolov26 to registered models ([#482](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/482)) ([5abfc56](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/5abfc56e10a62e420f323997845491d7c261dbb5))
+* **pipeline:** upload keypoint model detections as boxes with linked keypoints ([#481](https://github.com/lmitechnologies/LMI_AI_Solutions/issues/481)) ([83e2d00](https://github.com/lmitechnologies/LMI_AI_Solutions/commit/83e2d0088e09120f34551a7d8dbaeb1809def50f))
+
 ## [2.1.0](https://github.com/lmitechnologies/LMI_AI_Solutions/compare/v2.0.1...v2.1.0) (2026-11-05)
 
 ### ⚠ BREAKING CHANGES

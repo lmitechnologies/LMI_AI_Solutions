@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lmi_ai_solutions"
-version = "2.1.0"
+version = "2.2.0"
 description = "LMI AI Solutions mono-repo package"
 requires-python = ">=3.8"
 dependencies = []
