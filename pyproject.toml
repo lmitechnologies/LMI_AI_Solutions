@@ -18,7 +18,7 @@ test = [
     "ultralytics==8.4.198",
     "onnx==1.23.2",
     "onnxslim==0.1.98",
-    "pytest==9.1.1",
+    "pytest==9.2.0",
     "rfdetr==1.11.2",
     "pycocotools==2.0.11",
     "shapely==2.1.2",
