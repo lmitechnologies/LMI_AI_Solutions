@@ -147,11 +147,11 @@ def test_nonpositive_batch_size_rejected():
         RfdetrModel(PTH_FILE, device="cpu", class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE], batch_size=0)
 
 
-def test_batch_size_chunks_and_pads(imgs_coco):
-    """batch_size=2 over 3 images must chunk and zero-pad the short last chunk, returning one result per image."""
+def test_batch_size_chunks(imgs_coco):
+    """batch_size=2 over 3 images must chunk, with a short last chunk, returning one result per image."""
     imgs = [cv2.resize(img, (IMAGE_SIZE, IMAGE_SIZE)) for img in imgs_coco[:3]]
     batched = RfdetrModel(PTH_FILE, device=DEVICE, class_map=COCO_CLASSES, image_size=[IMAGE_SIZE, IMAGE_SIZE], batch_size=2)
-    assert batched.fixed_batch_size == 2
+    assert batched.max_batch_size == 2 and batched.fixed_batch_size is None
 
     out, _ = batched.predict(imgs, configs=0.5)
     assert len(out["boxes"]) == len(imgs)

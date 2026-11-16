@@ -104,6 +104,7 @@ class RfdetrBase(ODBase):
         RfdetrBase.logger.info(f"Loaded {len(embedded_names)} class names embedded in {model_path}")
         return RfdetrBase._class_map_from_names(embedded_names, num_logit_slots)
 
+    @torch.no_grad()
     def warmup(self) -> None:
         """Warm up the model by running a dummy inference. Requires self.image_size."""
         batch = self.fixed_batch_size or 1
@@ -326,8 +327,7 @@ class RfdetrPTH(RfdetrBase):
             device: Device to run on (cuda/cpu). Default: cuda if available
             image_size: Tuple of (height, width); must be square. Default: the variant's own resolution, which a
                 checkpoint trained at another size does not carry — pass it to run at the training resolution.
-            batch_size: Number of images per forward pass. Fixed at load time, so predict() chunks to it and zero-pads
-                a short final chunk. Default: 1
+            batch_size: Most images per forward pass; predict() splits larger inputs into chunks of it. Default: 1
 
         Raises:
             FileNotFoundError: If model_path does not exist
@@ -404,22 +404,21 @@ class RfdetrPTH(RfdetrBase):
                 f"Provided class_map values {set(class_map.values())} do not match model class names {set(self.model.class_names)}"
             )
         self._setup_class_map(class_map)
-        # The traced graph has batch_size baked in, so fixed_batch_size must match it.
-        # rfdetr renamed optimize_for_inference() to inference() in 1.9.0; the old name is still an alias there.
-        optimize = getattr(self.model, "inference", None) or self.model.optimize_for_inference
-        optimize(batch_size=batch_size)
-        self.fixed_batch_size = batch_size
+        # Eager rather than rfdetr's inference(): its compiled output moved out of self.model in 1.12.
+        self.inference_model = self.model.model.model.to(self.device).eval()
+        self.inference_model.export()
+        self.max_batch_size = batch_size
         self._init_common()
-        # Built from the checkpoint's resolved config, and survives the optimize call above.
+        # Built from the checkpoint's resolved config.
         self.postprocessor = self.model.model.postprocess
 
     def forward(self, image: torch.Tensor, **kwargs) -> list:
         """Perform inference on a batch of images.
 
         Args:
-            image: BCHW tensor with batch size exactly self.fixed_batch_size.
+            image: BCHW tensor.
 
         Returns:
             List of output tensors, each with batch dimension (B, ...).
         """
-        return self.model.model.inference_model(image)
+        return self.inference_model(image)
