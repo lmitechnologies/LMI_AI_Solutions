@@ -19,7 +19,7 @@ test = [
     "onnx==1.23.2",
     "onnxslim==0.1.98",
     "pytest==9.2.0",
-    "rfdetr==1.11.2",
+    "rfdetr==1.12.0",
     "pycocotools==2.0.11",
     "shapely==2.1.2",
     "tabulate>=0.9.0",
