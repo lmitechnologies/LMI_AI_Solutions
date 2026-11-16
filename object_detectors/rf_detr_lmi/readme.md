@@ -201,12 +201,12 @@ Any additional keys under `export` (e.g. `device`) are passed to the model const
 
 | Extension | Backend | Device |
 | :--- | :--- | :--- |
-| `.pth` | rfdetr checkpoint, JIT-traced at load | cuda or cpu |
+| `.pth` | rfdetr checkpoint, run eagerly in PyTorch | cuda or cpu |
 | `.onnx` | ONNX Runtime | cuda or cpu |
 | `.engine` | TensorRT | cuda |
 
-The `.pth` backend reads its variant from the checkpoint and takes an optional `batch_size` (fixed at load time, since
-the traced graph bakes it in). It runs at the variant's default resolution unless passing a `image_size`.
+The `.pth` backend reads its variant from the checkpoint and takes an optional `batch_size`, the most images per forward
+pass (default 1). It runs at the variant's default resolution unless passing a `image_size`.
 The `.onnx` and `.engine` backends read the batch size and resolution from the model, and take class names from `class_map`
 or from the metadata embedded at export (`metadata_props` in an ONNX, a JSON header on an engine). Passing `class_map`
 is required for a model exported elsewhere, which carries no embedded names.
