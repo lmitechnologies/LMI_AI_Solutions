@@ -9,7 +9,7 @@ from lmi_utils.dataset_utils.representations import Dataset
 
 logger = logging.getLogger(__name__)
 
-IMAGE_FORMATS = IMG_FORMATS = ["jpeg", "jpg", "png", "tif", "tiff", "heic"]
+IMAGE_FORMATS = IMG_FORMATS = ["jpeg", "jpg", "png", "tif", "tiff", "heic", "webp"]
 
 _EXIF_ORIENTATION_TAG = ExifTags.Base.Orientation
 _EXIF_QUARTER_TURNS = {5, 6, 7, 8}  # the orientations that transpose the axes; a flip or half turn does not
