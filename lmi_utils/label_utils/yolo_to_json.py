@@ -223,7 +223,7 @@ def _keypoints(box: BoxAnnotation, layout: List[str], values: List[float], dims:
                 id=f"{box.id}-{layout[slot]}",
                 label_id=layout[slot],
                 value=Point2d(x=x * file.width, y=y * file.height, visibility=visibility),
-                bounding_box_id=box.id,
+                parent_id=box.id,
             )
         )
     return keypoints

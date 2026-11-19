@@ -390,7 +390,7 @@ class PipelineBase(metaclass=ABCMeta):
     ) -> None:
         """add a single prediction to results for uploading to Label Studio.
 
-        A keypoint model's box takes its ``keypoints``: each becomes a keypoint linked to the box by ``bounding_box_id``,
+        A keypoint model's box takes its ``keypoints``: each becomes a keypoint linked to the box by ``parent_id``,
         named by its slot in the model's ``keypoint_layout[label]``. Slots past the layout are padding and are skipped.
 
         Args:
@@ -424,7 +424,7 @@ class PipelineBase(metaclass=ABCMeta):
             # the third column is a confidence, not a visibility flag
             confidence = float(pt[2]) if len(pt) > 2 else None
             self._append_annotation(
-                prediction_list, Point2d(x=pt[0], y=pt[1]), str(name), confidence, AnnotationType.KEYPOINT.value, bounding_box_id=box_id
+                prediction_list, Point2d(x=pt[0], y=pt[1]), str(name), confidence, AnnotationType.KEYPOINT.value, parent_id=box_id
             )
 
     def _prediction_list(self, image_height: int, image_width: int, key: str, sub_key: str) -> List[dict]:
@@ -460,12 +460,12 @@ class PipelineBase(metaclass=ABCMeta):
         label: str,
         confidence: Optional[float],
         ann_type: str,
-        bounding_box_id: Optional[str] = None,
+        parent_id: Optional[str] = None,
     ) -> str:
         """Append one annotation dict and return its id."""
         entry = Annotation(id=str(len(prediction_list)), value=value, label_id=label, confidence=confidence, type=ann_type).to_dict()
-        if bounding_box_id is not None:
-            entry["bounding_box_id"] = bounding_box_id
+        if parent_id is not None:
+            entry["parent_id"] = parent_id
         prediction_list.append(entry)
         return entry["id"]
 

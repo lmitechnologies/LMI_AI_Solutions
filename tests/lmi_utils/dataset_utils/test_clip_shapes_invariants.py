@@ -98,7 +98,7 @@ def _case(rng):
                     break
         else:
             x, y = _coord(rng, W), _coord(rng, H)
-        shapes.append(KeypointAnnotation(f"k{i}", "tip", Point2d(x, y), bounding_box_id=box.id if box else None))
+        shapes.append(KeypointAnnotation(f"k{i}", "tip", Point2d(x, y), parent_id=box.id if box else None))
     return W, H, shapes
 
 
@@ -173,14 +173,14 @@ def _check(W, H, shapes):
 
         elif orig.type == AnnotationType.KEYPOINT:
             x, y = v.x, v.y
-            box_removed = orig.bounding_box_id is not None and orig.bounding_box_id not in by_id
+            box_removed = orig.parent_id is not None and orig.parent_id not in by_id
             if not (0 <= x <= W and 0 <= y <= H) or box_removed:
                 assert out == [], f"{orig.id} at ({x}, {y}) should be dropped"
                 any_change = True
                 continue
             [kp] = out
-            assert (kp.value.x, kp.value.y) == (x, y) and kp.bounding_box_id == orig.bounding_box_id
-            box = next((b for b in before if b.id == orig.bounding_box_id), None)
+            assert (kp.value.x, kp.value.y) == (x, y) and kp.parent_id == orig.parent_id
+            box = next((b for b in before if b.id == orig.parent_id), None)
             if box is not None and _outline(box.value).buffer(TOL).covers(ShapelyPoint(x, y)):
                 assert _outline(by_id[box.id].value).buffer(TOL).covers(ShapelyPoint(x, y)), f"{orig.id} left its box"
 

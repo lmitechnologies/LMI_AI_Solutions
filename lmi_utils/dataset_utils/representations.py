@@ -57,8 +57,8 @@ class AnnotationType(enum.Enum):
     KEYPOINT = "Keypoint"
 
 
-# GoFactory parses a keypoint with a null visibility or bounding_box_id as an unknown annotation
-_OMIT_IF_NONE = frozenset({"visibility", "bounding_box_id"})
+# GoFactory parses a keypoint with a null visibility or parent_id as an unknown annotation
+_OMIT_IF_NONE = frozenset({"visibility", "parent_id"})
 
 
 def _dict_without_unset_optionals(items) -> dict:
@@ -67,7 +67,7 @@ def _dict_without_unset_optionals(items) -> dict:
 
 class Base:
     def to_dict(self) -> dict:
-        """Convert the dataclass to a dictionary; a None visibility or bounding_box_id is left out."""
+        """Convert the dataclass to a dictionary; a None visibility or parent_id is left out."""
         return asdict(self, dict_factory=_dict_without_unset_optionals)
 
     def to_json(self) -> str:
@@ -629,7 +629,8 @@ class MaskAnnotation(Annotation):
 
 @dataclass
 class KeypointAnnotation(Annotation):
-    bounding_box_id: Optional[str] = None
+    # The id of the annotation in the same list that contains this one: for a keypoint, its box
+    parent_id: Optional[str] = None
 
     def __post_init__(self):
         self.type = AnnotationType.KEYPOINT
@@ -637,7 +638,7 @@ class KeypointAnnotation(Annotation):
 
     @classmethod
     def from_dict(cls, data: dict) -> "KeypointAnnotation":
-        return cls(**cls._base_fields(data), value=Point2d.from_dict(data["value"]), bounding_box_id=data.get("bounding_box_id"))
+        return cls(**cls._base_fields(data), value=Point2d.from_dict(data["value"]), parent_id=data.get("parent_id"))
 
 
 @dataclass
@@ -687,10 +688,10 @@ def link_keypoints(annotations: List[Annotation], target_ids=None) -> List[tuple
     for keypoint in keypoints:
         x, y = keypoint.value.x, keypoint.value.y
         where = describe_keypoint(keypoint)
-        if keypoint.bounding_box_id is not None:
-            box = boxes_by_id.get(keypoint.bounding_box_id)
+        if keypoint.parent_id is not None:
+            box = boxes_by_id.get(keypoint.parent_id)
             if box is None:
-                problems.append(([keypoint], f"Bounding box {keypoint.bounding_box_id} not found for {where}"))
+                problems.append(([keypoint], f"Bounding box {keypoint.parent_id} not found for {where}"))
             elif box.id in targets and box.value.angle:
                 problems.append(
                     ([keypoint], f"{where} links to the rotated {_describe(box)}; keypoints on rotated boxes are not supported")
@@ -703,7 +704,7 @@ def link_keypoints(annotations: List[Annotation], target_ids=None) -> List[tuple
             continue
         inside = [box for box in targets.values() if not box.value.angle and box.value.point_in_box(x, y)]
         if len(inside) == 1:
-            keypoint.bounding_box_id = inside[0].id
+            keypoint.parent_id = inside[0].id
             linked_here.add(keypoint.id)
         elif not inside:
             problems.append(([keypoint], f"{where} not assigned to any box"))
@@ -712,14 +713,14 @@ def link_keypoints(annotations: List[Annotation], target_ids=None) -> List[tuple
 
     by_slot = {}
     for keypoint in keypoints:
-        if keypoint.bounding_box_id in targets:
-            by_slot.setdefault((keypoint.bounding_box_id, keypoint.label_id), []).append(keypoint)
+        if keypoint.parent_id in targets:
+            by_slot.setdefault((keypoint.parent_id, keypoint.label_id), []).append(keypoint)
     for (box_id, name), repeated in by_slot.items():
         if len(repeated) > 1:
             problems.append((repeated, f"the {_describe(targets[box_id])} has {len(repeated)} keypoints '{name}'"))
             for keypoint in repeated:
                 if keypoint.id in linked_here:
-                    keypoint.bounding_box_id = None
+                    keypoint.parent_id = None
     return problems
 
 
@@ -882,9 +883,9 @@ class FileAnnotations(Base):
             keypoint_layouts = keypoint_layouts or {}
             keypoints_by_box = {}
             for annotation in self.annotations:
-                if annotation.type != AnnotationType.KEYPOINT or annotation.bounding_box_id not in yolo_annotations_map:
+                if annotation.type != AnnotationType.KEYPOINT or annotation.parent_id not in yolo_annotations_map:
                     continue
-                keypoints_by_box.setdefault(annotation.bounding_box_id, {})[annotation.label_id] = annotation
+                keypoints_by_box.setdefault(annotation.parent_id, {})[annotation.label_id] = annotation
 
             boxes_by_id = {annotation.id: annotation for annotation in self.annotations if annotation.type == AnnotationType.BOX}
             for box_id, row in yolo_annotations_map.items():
@@ -986,7 +987,7 @@ class Dataset(Base):
                         if ann.label_id in target_classes
                         or (
                             ann.type == AnnotationType.KEYPOINT
-                            and (getattr(ann, "bounding_box_id", None) is None or ann.bounding_box_id in kept_box_ids)
+                            and (getattr(ann, "parent_id", None) is None or ann.parent_id in kept_box_ids)
                         )
                     ]
                     file_ann.update_annotations(filtered, list_type=list_type)

@@ -188,7 +188,7 @@ def clip_shapes(shapes, W, H, crop_warning_level=logging.DEBUG):
     # Keep linked pose annotations atomic when cropping removes their owning box.
     deleted_box_ids = {shape.id for shape in shapes if shape.type == AnnotationType.BOX and shape.id in delete_ids}
     delete_ids.update(
-        shape.id for shape in shapes if shape.type == AnnotationType.KEYPOINT and getattr(shape, "bounding_box_id", None) in deleted_box_ids
+        shape.id for shape in shapes if shape.type == AnnotationType.KEYPOINT and getattr(shape, "parent_id", None) in deleted_box_ids
     )
 
     kept = []

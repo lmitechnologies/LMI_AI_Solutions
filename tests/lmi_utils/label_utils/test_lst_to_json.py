@@ -38,13 +38,13 @@ def link(results):
 def test_a_nested_keypoint_links_to_its_parent_even_inside_another_box():
     by_label, errors = link([box("a", "outer", 0, 0, 900, 900), box("b", "inner", 100, 100, 300, 300), keypoint("k", "tip", 200, 200, "b")])
     assert errors == []
-    assert by_label["tip"].bounding_box_id == by_label["inner"].id
+    assert by_label["tip"].parent_id == by_label["inner"].id
 
 
 def test_an_unnested_keypoint_links_to_the_one_box_containing_it():
     by_label, errors = link([box("a", "cap", 100, 100, 500, 300), box("b", "crimp", 100, 400, 500, 600), keypoint("k", "cap_l", 120, 290)])
     assert errors == []
-    assert by_label["cap_l"].bounding_box_id == by_label["cap"].id
+    assert by_label["cap_l"].parent_id == by_label["cap"].id
 
 
 def test_a_keypoint_between_touching_boxes_links_to_the_one_containing_it():
@@ -53,7 +53,7 @@ def test_a_keypoint_between_touching_boxes_links_to_the_one_containing_it():
         [box("a", "cap", 100, 200, 900, 359.2), box("b", "crimp", 100, 359.6, 900, 600), keypoint("k", "cap_l", 120, 359.1)]
     )
     assert errors == []
-    assert by_label["cap_l"].bounding_box_id == by_label["cap"].id
+    assert by_label["cap_l"].parent_id == by_label["cap"].id
 
 
 def test_shapes_keep_fractional_pixels():
@@ -78,7 +78,7 @@ def test_shapes_keep_fractional_pixels():
 def test_a_keypoint_that_cannot_be_linked_is_reported_and_left_unlinked(results):
     by_label, errors = link(results)
     assert len(errors) == 1
-    assert by_label["cap_l"].bounding_box_id is None
+    assert by_label["cap_l"].parent_id is None
 
 
 def test_a_keypoint_away_from_a_rotated_box_still_links():
@@ -86,7 +86,7 @@ def test_a_keypoint_away_from_a_rotated_box_still_links():
         [box("a", "cap", 0, 0, 300, 300), box("b", "string", 600, 600, 900, 900, rotation=10), keypoint("k", "cap_l", 100, 100)]
     )
     assert errors == []
-    assert by_label["cap_l"].bounding_box_id == by_label["cap"].id
+    assert by_label["cap_l"].parent_id == by_label["cap"].id
 
 
 def test_keypoints_repeating_a_name_on_one_box_are_reported_and_unlinked():
@@ -94,13 +94,13 @@ def test_keypoints_repeating_a_name_on_one_box_are_reported_and_unlinked():
     results = [box("a", "cap", 0, 0, 500, 500), keypoint("k1", "cap_l", 10, 10, "a"), keypoint("k2", "cap_l", 20, 20, "a")]
     _, errors = collect_results(results, out, 0, set(), [], "img.png")
     assert len(errors) == 1
-    assert [a.bounding_box_id for a in out if a.label_id == "cap_l"] == [None, None]
+    assert [a.parent_id for a in out if a.label_id == "cap_l"] == [None, None]
 
 
 def test_a_keypoint_nested_under_a_shared_region_id_is_reported():
     by_label, errors = link([box("a", "cap", 0, 0, 500, 500), box("a", "crimp", 0, 600, 500, 900), keypoint("k", "cap_l", 100, 100, "a")])
     assert len(errors) == 1
-    assert by_label["cap_l"].bounding_box_id is None
+    assert by_label["cap_l"].parent_id is None
 
 
 def write_project(tmp_path, task):
@@ -125,7 +125,7 @@ def test_conversion_fails_listing_every_unlinkable_keypoint(tmp_path, caplog):
 def test_keep_unlinked_keypoints_writes_them_unlinked(tmp_path):
     path, imgs = write_project(tmp_path, {"annotations": [{"result": UNLINKABLE}]})
     [file], _ = get_annotations_from_json(path, imgs, keep_unlinked_keypoints=True)
-    assert [a.bounding_box_id for a in file.annotations if a.label_id in ("cap_l", "cap_r")] == [None, None]
+    assert [a.parent_id for a in file.annotations if a.label_id in ("cap_l", "cap_r")] == [None, None]
 
 
 def test_unlinkable_prediction_keypoints_do_not_fail_the_conversion(tmp_path):

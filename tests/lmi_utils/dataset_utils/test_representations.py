@@ -56,9 +56,9 @@ def test_point2d_resize_and_pad():
 def test_padding_preserves_visibility_and_drops_points_with_box():
     image = np.zeros((100, 100, 3), dtype=np.uint8)
     kept_box = BoxAnnotation("kept", "person", Box(40, 40, 60, 60))
-    kept_point = KeypointAnnotation("kept-point", "nose", Point2d(50, 50, visibility=1), bounding_box_id="kept")
+    kept_point = KeypointAnnotation("kept-point", "nose", Point2d(50, 50, visibility=1), parent_id="kept")
     dropped_box = BoxAnnotation("dropped", "person", Box(0, 0, 20, 20))
-    dropped_point = KeypointAnnotation("dropped-point", "nose", Point2d(50, 50), bounding_box_id="dropped")
+    dropped_point = KeypointAnnotation("dropped-point", "nose", Point2d(50, 50), parent_id="dropped")
 
     _, annotations, _ = pad_annotated_image(image, [kept_box, kept_point, dropped_box, dropped_point], 50, 50)
 
@@ -330,13 +330,13 @@ def test_file_annotations_assign_keypoints_error():
 
 def test_file_annotations_assign_keypoints_accepts_prelinked():
     box = BoxAnnotation("box", "person", Box(10, 10, 90, 90))
-    point = KeypointAnnotation("point", "nose", Point2d(20, 20), bounding_box_id="box")
+    point = KeypointAnnotation("point", "nose", Point2d(20, 20), parent_id="box")
     FileAnnotations("file", "image.jpg", 100, 100, [point, box]).assign_keypoints()
-    assert point.bounding_box_id == "box"
+    assert point.parent_id == "box"
 
 
 def test_file_annotations_assign_keypoints_rejects_dangling_link():
-    point = KeypointAnnotation("point", "nose", Point2d(20, 20), bounding_box_id="missing")
+    point = KeypointAnnotation("point", "nose", Point2d(20, 20), parent_id="missing")
     annotations = FileAnnotations("file", "image.jpg", 100, 100, [point])
     with pytest.raises(ValueError, match="missing.*point"):
         annotations.assign_keypoints()
@@ -354,24 +354,24 @@ def test_file_annotations_assign_keypoints_requires_unique_containment():
 
     annotations.annotations.pop(1)
     annotations.assign_keypoints()
-    assert point.bounding_box_id == "box-1"
+    assert point.parent_id == "box-1"
 
 
 def test_link_keypoints_rejects_rotated_target_boxes():
-    linked = KeypointAnnotation("a", "nose", Point2d(10, 10), bounding_box_id="box")
+    linked = KeypointAnnotation("a", "nose", Point2d(10, 10), parent_id="box")
     near = KeypointAnnotation("b", "eye", Point2d(18, 2))
     far = KeypointAnnotation("c", "eye", Point2d(70, 70))
     boxes = [BoxAnnotation("box", "person", Box(0, 0, 20, 20, 10)), BoxAnnotation("other", "person", Box(60, 60, 80, 80))]
     problems = link_keypoints(boxes + [linked, near, far])
     assert [[keypoint.id for keypoint in keypoints] for keypoints, _ in problems] == [["a"], ["b"]]
-    assert (linked.bounding_box_id, near.bounding_box_id, far.bounding_box_id) == ("box", None, "other")
+    assert (linked.parent_id, near.parent_id, far.parent_id) == ("box", None, "other")
 
 
 def test_link_keypoints_checks_only_target_boxes():
     # a rotated box and a repeated name outside the targets do not matter
     point = KeypointAnnotation("a", "nose", Point2d(10, 10))
-    on_rotated = KeypointAnnotation("s", "end", Point2d(5, 5), bounding_box_id="string")
-    repeated = [KeypointAnnotation(f"r{i}", "tail", Point2d(55, 55), bounding_box_id="dog") for i in range(2)]
+    on_rotated = KeypointAnnotation("s", "end", Point2d(5, 5), parent_id="string")
+    repeated = [KeypointAnnotation(f"r{i}", "tail", Point2d(55, 55), parent_id="dog") for i in range(2)]
     annotations = [
         BoxAnnotation("box", "person", Box(0, 0, 20, 20)),
         BoxAnnotation("dog", "dog", Box(50, 50, 60, 60)),
@@ -381,11 +381,11 @@ def test_link_keypoints_checks_only_target_boxes():
         *repeated,
     ]
     assert link_keypoints(annotations, target_ids=["person"]) == []
-    assert point.bounding_box_id == "box"
+    assert point.parent_id == "box"
 
 
 def test_link_keypoints_reports_keypoints_repeating_a_name_once():
-    points = [KeypointAnnotation(f"k{i}", "nose", Point2d(10 + i, 10), bounding_box_id="box") for i in range(2)]
+    points = [KeypointAnnotation(f"k{i}", "nose", Point2d(10 + i, 10), parent_id="box") for i in range(2)]
     problems = link_keypoints([BoxAnnotation("box", "person", Box(0, 0, 20, 20))] + points)
     assert [keypoints for keypoints, _ in problems] == [points]
 
@@ -394,15 +394,15 @@ def test_link_keypoints_undoes_links_it_reports():
     points = [KeypointAnnotation(f"k{i}", "nose", Point2d(10 + i, 10)) for i in range(2)]
     problems = link_keypoints([BoxAnnotation("box", "person", Box(0, 0, 20, 20))] + points)
     assert [keypoints for keypoints, _ in problems] == [points]
-    assert [p.bounding_box_id for p in points] == [None, None]
+    assert [p.parent_id for p in points] == [None, None]
 
 
 def test_assign_keypoints_leaves_links_when_it_raises():
-    points = [KeypointAnnotation(f"k{i}", "nose", Point2d(10 + i, 10), bounding_box_id="box") for i in range(2)]
+    points = [KeypointAnnotation(f"k{i}", "nose", Point2d(10 + i, 10), parent_id="box") for i in range(2)]
     annotations = FileAnnotations("file", "image.jpg", 100, 100, [BoxAnnotation("box", "person", Box(0, 0, 20, 20))] + points)
     with pytest.raises(ValueError, match="2 keypoints 'nose'"):
         annotations.assign_keypoints()
-    assert [p.bounding_box_id for p in points] == ["box", "box"]
+    assert [p.parent_id for p in points] == ["box", "box"]
 
 
 def test_to_yolo_skips_a_box_covering_no_pixel_center():
@@ -426,8 +426,8 @@ def test_file_annotations_to_yolo(dummy_file_annotations):
 
 def test_file_annotations_to_yolo_uses_layout_slots_and_visibility():
     box = BoxAnnotation("box", "person", Box(10, 20, 50, 80))
-    left = KeypointAnnotation("left", "left_eye", Point2d(20, 30, visibility=1), bounding_box_id="box")
-    right = KeypointAnnotation("right", "right_eye", Point2d(40, 30), bounding_box_id="box")
+    left = KeypointAnnotation("left", "left_eye", Point2d(20, 30, visibility=1), parent_id="box")
+    right = KeypointAnnotation("right", "right_eye", Point2d(40, 30), parent_id="box")
     file_annotations = FileAnnotations("file", "image.jpg", 100, 100, [right, box, left])
 
     rows, _ = file_annotations.to_yolo(
@@ -442,9 +442,9 @@ def test_file_annotations_to_yolo_uses_layout_slots_and_visibility():
 def test_file_annotations_to_yolo_pads_mixed_layouts():
     annotations = [
         BoxAnnotation("person", "person", Box(0, 0, 20, 20)),
-        KeypointAnnotation("nose", "nose", Point2d(10, 10), bounding_box_id="person"),
+        KeypointAnnotation("nose", "nose", Point2d(10, 10), parent_id="person"),
         BoxAnnotation("animal", "animal", Box(20, 20, 40, 40)),
-        KeypointAnnotation("paw", "paw", Point2d(30, 30), bounding_box_id="animal"),
+        KeypointAnnotation("paw", "paw", Point2d(30, 30), parent_id="animal"),
         BoxAnnotation("object", "object", Box(40, 40, 60, 60)),
     ]
     file_annotations = FileAnnotations("file", "image.jpg", 100, 100, annotations)
@@ -464,12 +464,12 @@ def test_file_annotations_to_yolo_pads_mixed_layouts():
     [
         (
             [
-                KeypointAnnotation("a", "nose", Point2d(10, 10), bounding_box_id="box"),
-                KeypointAnnotation("b", "nose", Point2d(11, 11), bounding_box_id="box"),
+                KeypointAnnotation("a", "nose", Point2d(10, 10), parent_id="box"),
+                KeypointAnnotation("b", "nose", Point2d(11, 11), parent_id="box"),
             ],
             "2 keypoints 'nose'",
         ),
-        ([KeypointAnnotation("a", "ear", Point2d(10, 10), bounding_box_id="box")], "not in the layout"),
+        ([KeypointAnnotation("a", "ear", Point2d(10, 10), parent_id="box")], "not in the layout"),
     ],
 )
 def test_file_annotations_to_yolo_rejects_invalid_slots(points, message):
@@ -573,7 +573,7 @@ def test_dataset_to_yolo_derives_keypoint_count_from_layouts():
             100,
             [
                 BoxAnnotation("box-1", "person", Box(0, 0, 50, 50)),
-                KeypointAnnotation("nose-1", "nose", Point2d(10, 10), bounding_box_id="box-1"),
+                KeypointAnnotation("nose-1", "nose", Point2d(10, 10), parent_id="box-1"),
             ],
         ),
         FileAnnotations(
@@ -584,8 +584,8 @@ def test_dataset_to_yolo_derives_keypoint_count_from_layouts():
             [
                 BoxAnnotation("box-2", "person", Box(0, 0, 50, 50)),
                 BoxAnnotation("box-3", "person", Box(50, 50, 100, 100)),
-                KeypointAnnotation("nose-2", "nose", Point2d(10, 10), bounding_box_id="box-2"),
-                KeypointAnnotation("nose-3", "nose", Point2d(60, 60), bounding_box_id="box-3"),
+                KeypointAnnotation("nose-2", "nose", Point2d(10, 10), parent_id="box-2"),
+                KeypointAnnotation("nose-3", "nose", Point2d(60, 60), parent_id="box-3"),
             ],
         ),
     ]
@@ -846,7 +846,7 @@ def test_dataset_json_format_preserved():
     assert kp_value["x"] == pytest.approx(30.0)
     assert kp_value["y"] == pytest.approx(40.0)
     assert kp_value["visibility"] == 1
-    assert "bounding_box_id" not in kp_ann  # unset
+    assert "parent_id" not in kp_ann  # unset
 
     # PolygonAnnotation value structure
     assert "Polygon" in anns_by_type
@@ -1040,11 +1040,11 @@ def test_file_annotations_source_id_defaults_to_none_and_survives_a_round_trip()
 
 
 def test_to_dict_leaves_out_unset_keypoint_optionals():
-    """A None visibility or bounding_box_id is left out of the dict; other None fields stay."""
+    """A None visibility or parent_id is left out of the dict; other None fields stay."""
     loose = KeypointAnnotation("k", "tip", Point2d(1, 2)).to_dict()
     assert loose["value"] == {"x": 1.0, "y": 2.0}
-    assert "bounding_box_id" not in loose and loose["link"] is None
+    assert "parent_id" not in loose and loose["link"] is None
 
-    linked = KeypointAnnotation("k", "tip", Point2d(1, 2, visibility=1), bounding_box_id="b").to_dict()
-    assert linked["value"]["visibility"] == 1 and linked["bounding_box_id"] == "b"
-    assert KeypointAnnotation.from_dict({**loose, "type": "Keypoint"}).bounding_box_id is None
+    linked = KeypointAnnotation("k", "tip", Point2d(1, 2, visibility=1), parent_id="b").to_dict()
+    assert linked["value"]["visibility"] == 1 and linked["parent_id"] == "b"
+    assert KeypointAnnotation.from_dict({**loose, "type": "Keypoint"}).parent_id is None

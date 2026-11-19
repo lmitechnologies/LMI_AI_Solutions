@@ -190,7 +190,7 @@ def test_json_to_lst_round_trips_keypoint_links(tmp_path):
     # the point lies in both boxes, so only the nesting can say which one owns it
     outer = BoxAnnotation(id="7", label_id="outer", value=Box(x_min=0, y_min=0, x_max=150, y_max=90))
     inner = BoxAnnotation(id="8", label_id="inner", value=Box(x_min=20, y_min=20, x_max=80, y_max=80))
-    point = KeypointAnnotation(id="9", label_id="tip", value=Point2d(x=50, y=50), bounding_box_id="8")
+    point = KeypointAnnotation(id="9", label_id="tip", value=Point2d(x=50, y=50), parent_id="8")
     file = FileAnnotations(id="0", path="img0.png", height=H, width=W, annotations=[outer, inner, point])
     lst_path = tmp_path / "lst.json"
     lst_path.write_text(json.dumps(dataset_to_lst(Dataset(labels=[], files=[file]), to_image_root("gs://bucket/imgs"))))
@@ -198,4 +198,4 @@ def test_json_to_lst_round_trips_keypoint_links(tmp_path):
     [converted], _ = get_annotations_from_json(str(lst_path), str(imgs))
 
     by_label = {a.label_id: a for a in converted.annotations}
-    assert by_label["tip"].bounding_box_id == by_label["inner"].id
+    assert by_label["tip"].parent_id == by_label["inner"].id
