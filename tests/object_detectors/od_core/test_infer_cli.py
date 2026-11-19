@@ -161,7 +161,7 @@ def test_predictions_json_round_trips_boxes_masks_rotated_boxes_and_keypoints(tm
     assert seg.predictions[0].value.to_numpy(h=20, w=30).sum() == mask.sum()
     assert obb.predictions[0].type == AnnotationType.BOX and obb.predictions[0].value.to_polygon().to_numpy().shape == (4, 2)
     box, keypoint = pose.predictions
-    assert keypoint.type == AnnotationType.KEYPOINT and keypoint.bounding_box_id == box.id
+    assert keypoint.type == AnnotationType.KEYPOINT and keypoint.parent_id == box.id
     assert (keypoint.value.x, keypoint.value.y) == (2.0, 3.0)
     assert empty.predictions == []
     assert len({a.id for f in dataset.files for a in f.predictions}) == 4
@@ -180,4 +180,4 @@ def test_predictions_json_names_keypoints_by_slot_and_skips_padding(tmp_path):
     assert {labels[n].annotation_type for n in ("tip", "base")} == {AnnotationType.KEYPOINT.value}
     box_a, tip_a, base_a, box_b, tip_b = dataset.files[0].predictions
     assert [tip_a.label_id, base_a.label_id, tip_b.label_id] == ["tip", "base", "tip"]
-    assert tip_b.bounding_box_id == box_b.id and (tip_b.value.x, tip_b.value.y) == (3.0, 3.0)
+    assert tip_b.parent_id == box_b.id and (tip_b.value.x, tip_b.value.y) == (3.0, 3.0)

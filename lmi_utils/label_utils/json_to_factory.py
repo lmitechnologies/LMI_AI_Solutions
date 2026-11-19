@@ -117,7 +117,7 @@ def build_label_dictionary(dataset: Dataset) -> Dict[str, dict]:
                     if annotation.type == AnnotationType.BOX and annotation.value.angle:
                         oriented.add(annotation.label_id)
                     continue
-                box = boxes[annotation.bounding_box_id]
+                box = boxes[annotation.parent_id]
                 point_names.setdefault(box.label_id, set()).add(annotation.label_id)
                 v = box.value
                 if not v.angle and v.x_max > v.x_min and v.y_max > v.y_min:

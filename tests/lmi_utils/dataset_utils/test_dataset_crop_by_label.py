@@ -57,8 +57,8 @@ def test_a_box_outside_the_crop_is_deleted_and_one_crossing_it_is_clipped():
 def test_keypoints_follow_the_crop():
     keypoints = [
         KeypointAnnotation("free", "nose", Point2d(30, 25)),
-        KeypointAnnotation("on_roi", "nose", Point2d(40, 40), bounding_box_id="roi"),
-        KeypointAnnotation("on_gone", "nose", Point2d(30, 30), bounding_box_id="gone"),
+        KeypointAnnotation("on_roi", "nose", Point2d(40, 40), parent_id="roi"),
+        KeypointAnnotation("on_gone", "nose", Point2d(30, 30), parent_id="gone"),
     ]
     _, kept, _ = _crop([BoxAnnotation("gone", "dent", Box(80, 80, 90, 90))] + keypoints)
     assert list(kept) == ["free"]

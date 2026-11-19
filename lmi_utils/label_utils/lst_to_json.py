@@ -129,12 +129,12 @@ def collect_results(results, out_list, counter, label_dict, labels, fname, load_
         elif parent.type != AnnotationType.BOX:
             errors.append(f"{where} is nested under a '{parent.label_id}' region, which is not a box")
         else:
-            keypoint.bounding_box_id = parent.id
+            keypoint.parent_id = parent.id
             continue
         unlinkable.add(keypoint.id)
     for keypoints, message in link_keypoints([a for a in listed if a.id not in unlinkable]):
         for keypoint in keypoints:
-            keypoint.bounding_box_id = None
+            keypoint.parent_id = None
         errors.append(message)
     return counter, [f"{fname}: {error}" for error in errors]
 

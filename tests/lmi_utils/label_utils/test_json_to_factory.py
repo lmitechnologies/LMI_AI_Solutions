@@ -57,7 +57,7 @@ def box(box_id, label, x_min=0, y_min=0, x_max=100, y_max=100, angle=0):
 
 
 def keypoint(name, x, y, box_id="b"):
-    return KeypointAnnotation(f"{box_id}-{name}", name, Point2d(x, y), bounding_box_id=box_id)
+    return KeypointAnnotation(f"{box_id}-{name}", name, Point2d(x, y), parent_id=box_id)
 
 
 def test_a_pose_label_carries_its_declared_points_where_they_sit_on_average(tmp_path):
@@ -99,7 +99,7 @@ def test_shape_labels_are_typed_ordered_and_oriented(tmp_path):
 def test_an_unlinked_keypoint_links_to_the_one_box_it_lies_in(tmp_path):
     convert_labeled(tmp_path, [], [box("b", "part", 0, 0, 50, 50), box("c", "part", 60, 60, 90, 90), keypoint("tip", 10, 10, None)])
     annotations = json.loads((tmp_path / "out" / "a.label.json").read_text())["annotations"]
-    assert [a["bounding_box_id"] for a in annotations if a["type"] == "Keypoint"] == ["b"]
+    assert [a["parent_id"] for a in annotations if a["type"] == "Keypoint"] == ["b"]
 
 
 @pytest.mark.parametrize(

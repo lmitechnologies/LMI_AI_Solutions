@@ -107,7 +107,7 @@ def test_keypoints_kept_with_a_clipped_box_stay_inside_it(angle):
     box = Box(60, 20, 140, 60, angle)
     outline = ShapelyPolygon(box.to_polygon().points)
     points = [[x, y] for x in range(60, 141, 4) for y in range(-20, 121, 4) if outline.covers(ShapelyPoint(x, y))]
-    keypoints = [KeypointAnnotation(f"k{i}", "tip", Point2d(x, y), bounding_box_id="b") for i, (x, y) in enumerate(points)]
+    keypoints = [KeypointAnnotation(f"k{i}", "tip", Point2d(x, y), parent_id="b") for i, (x, y) in enumerate(points)]
     kept, _ = clip_shapes([BoxAnnotation("b", "part", box)] + keypoints, 100, 100)
     [clipped] = [a for a in kept if a.id == "b"]
     left = [a for a in kept if a.id != "b"]

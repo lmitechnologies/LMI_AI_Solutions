@@ -45,7 +45,7 @@ def crop_dataset_by_label(dataset, images, target_label, crop_warning_level=logg
             raise ValueError(f"the {target_label} box in {file.path} covers no pixel")
 
         # the crop box's keypoints go with it, as padding drops the keypoints of a box it removes
-        file.annotations = [a for a in file.annotations if getattr(a, "bounding_box_id", None) != target.id]
+        file.annotations = [a for a in file.annotations if getattr(a, "parent_id", None) != target.id]
         for annot in file.annotations:
             if annot.type == AnnotationType.MASK:
                 annot.value = Mask(mask=annot.value.to_numpy(h=h, w=w)[y1:y2, x1:x2].copy())

@@ -160,7 +160,7 @@ class PredictionsJson:
                 break  # slots past the class's layout are padding
             name = label if slot_names is None else slot_names[slot]
             # the model's third column is a confidence, not a labeled visibility flag, so it is not written
-            out.append(KeypointAnnotation(id=self._new_id(), label_id=name, value=Point2d(pt[0], pt[1]), bounding_box_id=box_id))
+            out.append(KeypointAnnotation(id=self._new_id(), label_id=name, value=Point2d(pt[0], pt[1]), parent_id=box_id))
         return out
 
     def _new_id(self) -> str:

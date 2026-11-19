@@ -41,7 +41,7 @@ def test_pose_rows_become_boxes_with_linked_keypoints(tmp_path):
     assert (box.label_id, box.value.x_min, box.value.y_min, box.value.x_max, box.value.y_max) == ("tiger", 10, 5, 30, 15)
     keypoints = shapes(dataset, AnnotationType.KEYPOINT)
     # the zeroed slot is unlabeled, not a point at the origin
-    assert [(k.label_id, k.value.x, k.value.y, k.value.visibility, k.bounding_box_id) for k in keypoints] == [
+    assert [(k.label_id, k.value.x, k.value.y, k.value.visibility, k.parent_id) for k in keypoints] == [
         ("point-0", 10, 10, None, box.id),
         ("point-2", 30, 10, None, box.id),
     ]

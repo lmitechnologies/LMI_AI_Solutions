@@ -791,11 +791,11 @@ def test_add_prediction_links_keypoints_to_box():
         ("2", "Keypoint", "tip"),
         ("3", "Keypoint", "base"),
     ]
-    assert [p["bounding_box_id"] for p in preds[2:]] == ["1", "1"]
+    assert [p["parent_id"] for p in preds[2:]] == ["1", "1"]
     assert [p["confidence"] for p in preds[2:]] == pytest.approx([0.9, 0.2])
     # GoFactory rejects null optional keypoint fields
     assert preds[2]["value"] == {"x": 12.0, "y": 22.0}
-    assert "bounding_box_id" not in preds[0]
+    assert "parent_id" not in preds[0]
     assert pipeline.check_return_types()
 
 
@@ -839,7 +839,7 @@ def test_pipeline_pose_predictions_become_linked_keypoint_labels(weights, expect
         box_ids = {p["id"] for p in preds if p["type"] == "Box"}
         keypoints = [p for p in preds if p["type"] == "Keypoint"]
         assert len(box_ids) == len(boxes) and len(keypoints) == 17 * len(boxes)
-        assert {p["bounding_box_id"] for p in keypoints} == box_ids
+        assert {p["parent_id"] for p in keypoints} == box_ids
         assert [p["label_id"] for p in keypoints[:3]] == expected
         assert pipeline.check_return_types()
     finally:

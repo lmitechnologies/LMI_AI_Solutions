@@ -22,7 +22,7 @@ def _write_pose_dataset(path, n_kpts, layout=None):
     layout = layout or [f"point-{index}" for index in range(n_kpts)]
     annotations = [BoxAnnotation("box", "person", Box(0, 0, 20, 20))]
     if layout:
-        annotations.append(KeypointAnnotation("point", layout[0], Point2d(10, 10), bounding_box_id="box"))
+        annotations.append(KeypointAnnotation("point", layout[0], Point2d(10, 10), parent_id="box"))
     dataset = Dataset(
         labels=[Label(id="person", keypoints=layout)],
         files=[FileAnnotations("file", "image.png", 20, 20, annotations)],

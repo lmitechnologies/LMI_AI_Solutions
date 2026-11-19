@@ -50,10 +50,10 @@ def annotation_to_lst(annot: Annotation, height: int, width: int, is_pred: bool)
         "to_name": "image",
         "type": result_type,
     }
-    # Label Studio's Regions-panel nesting, which lst_to_json reads back as bounding_box_id
-    bounding_box_id = getattr(annot, "bounding_box_id", None)
-    if bounding_box_id is not None:
-        result["parentID"] = bounding_box_id
+    # Label Studio's Regions-panel nesting, which lst_to_json reads back as parent_id
+    parent_id = getattr(annot, "parent_id", None)
+    if parent_id is not None:
+        result["parentID"] = parent_id
     return result
 
 
