@@ -73,7 +73,7 @@ def _annotation_lists(file: FileAnnotations):
     return (file.annotations, file.predictions)
 
 
-def _raise_problems(problems: List[str], summary: str):
+def raise_problems(problems: List[str], summary: str):
     if problems:
         listed = problems[:MAX_LISTED_PROBLEMS]
         more = len(problems) - len(listed)
@@ -90,12 +90,12 @@ def link_keypoints_to_boxes(dataset: Dataset):
     for file in dataset.files:
         for annotations in _annotation_lists(file):
             problems += [f"{file.path}: {message}" for _, message in link_keypoints(annotations)]
-    _raise_problems(problems, "These keypoints cannot be linked to a box")
+    raise_problems(problems, "These keypoints cannot be linked to a box")
 
 
 def check_image_types(dataset: Dataset):
     unread = [file.path for file in dataset.files if Path(file.path).suffix.lower() not in FACTORY_IMAGE_SUFFIXES]
-    _raise_problems(unread, f"Factory imports only {', '.join(sorted(FACTORY_IMAGE_SUFFIXES))} images, so it would skip")
+    raise_problems(unread, f"Factory imports only {', '.join(sorted(FACTORY_IMAGE_SUFFIXES))} images, so it would skip")
 
 
 def build_label_dictionary(dataset: Dataset) -> Dict[str, dict]:
@@ -147,7 +147,7 @@ def build_label_dictionary(dataset: Dataset) -> Dict[str, dict]:
             kinds = ", ".join(sorted(t.value for t in drawn | {label_type}))
             problems.append(f"label '{name}' is drawn as {kinds}; a Factory label is one Box, Polygon or Bitmask")
             continue
-        _check_name(name, f"label '{name}'", problems)
+        check_name(name, f"label '{name}'", problems)
         entry = {"id": name, "annotationType": label_type.value, "order": len(dictionary)}
         color = label.color if label is not None else None
         if color and COLOR_PATTERN.match(color):
@@ -165,16 +165,16 @@ def build_label_dictionary(dataset: Dataset) -> Dict[str, dict]:
             if label_type != AnnotationType.BOX:
                 problems.append(f"label '{name}' is a {label_type.value}, and only a box holds keypoints")
             for point in layout:
-                _check_name(point, f"keypoint '{point}' of label '{name}'", problems)
+                check_name(point, f"keypoint '{point}' of label '{name}'", problems)
             if len(set(layout)) != len(layout):
                 problems.append(f"label '{name}' names a keypoint twice: {layout}")
             entry["points"] = [_point(point, fractions.get((name, point))) for point in layout]
         dictionary[name] = entry
-    _raise_problems(problems, "Factory refuses these labels")
+    raise_problems(problems, "Factory refuses these labels")
     return dictionary
 
 
-def _check_name(name: str, where: str, problems: List[str]):
+def check_name(name: str, where: str, problems: List[str]):
     if name != name.strip() or not 0 < len(name) <= NAME_MAX_LENGTH:
         problems.append(f"{where} must be 1 to {NAME_MAX_LENGTH} characters with no surrounding spaces")
 

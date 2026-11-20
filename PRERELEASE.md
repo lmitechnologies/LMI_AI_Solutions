@@ -8,3 +8,9 @@ Breaking changes and new features since `v2.2.0`. Each breaking change says what
   as `parent_id` instead of `bounding_box_id`, a name that can hold other containment relationships later. GoFactory reads only
   `parent_id`. Rename the key in label JSON written by earlier versions, e.g.
   `find <dataset> -name '*.json' -exec sed -i 's/"bounding_box_id"/"parent_id"/g' {} +`, and in code that reads or writes it.
+
+## New Features
+
+- **Class folders to Factory**: `python -m lmi_utils.label_utils.class_folders_to_factory -i <dataset> -o <factory_dataset>` converts a
+  classification dataset laid out as one folder per class (optionally inside `train`/`val`/`test`) to a Factory dataset.
+  `--link` hard-links the images instead of copying them, and `--per_class N` keeps a random sample of each class.
