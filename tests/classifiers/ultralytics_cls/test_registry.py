@@ -13,6 +13,7 @@ def test_backends_table_covers_known_classifiers():
         ("ultralytics", "yolo", "classification", "v1"),
         ("ultralytics", "yolov11", "classification", "v1"),
         ("ultralytics", "yolov26", "classification", "v1"),
+        ("ultralytics8", "yolo", "classification", "v1"),
     ]
 
     for key in to_be_tested_keys:
