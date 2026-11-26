@@ -87,7 +87,6 @@ class ADModel(_ModelBase):
 
 
 class ClassificationModel(_ModelBase):
-    # only used for static models
     model_type: Literal["Classification"]
     configs: ClassificationConfigs
 

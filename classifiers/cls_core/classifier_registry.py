@@ -4,7 +4,7 @@ from lmi_common.model_registry import ModelRegistry
 class ClassifierRegistry(ModelRegistry):
     BACKENDS = [
         {
-            "frameworks": ["ultralytics"],
+            "frameworks": ["ultralytics", "ultralytics8"],
             "model_names": ["yolo", "yolov8", "yolov11", "yolov26"],
             "tasks": ["classification"],
             "versions": ["v1"],
